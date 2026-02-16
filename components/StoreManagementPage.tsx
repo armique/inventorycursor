@@ -140,6 +140,19 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
 
   const unreadCount = inquiries.filter((i) => !i.read).length;
 
+  const mostInquired = React.useMemo(() => {
+    const byItem: Record<string, { itemName: string; count: number }> = {};
+    inquiries.forEach((inq) => {
+      const id = inq.itemId;
+      if (!byItem[id]) byItem[id] = { itemName: inq.itemName || id, count: 0 };
+      byItem[id].count++;
+    });
+    return Object.entries(byItem)
+      .map(([itemId, { itemName, count }]) => ({ itemId, itemName, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+  }, [inquiries]);
+
   const totalInStock = storeVisibleItems.length;
   const visibleCount = storeVisibleItems.filter((i) => i.storeVisible !== false).length;
   const onSaleCount = storeVisibleItems.filter((i) => i.storeVisible !== false && i.storeOnSale).length;
@@ -231,6 +244,19 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
             <span>·</span>
             <span>{TEXTS.inquiriesLast7}: {inquiries.filter((i) => new Date(i.createdAt) > new Date(Date.now() - 7 * 24 * 3600 * 1000)).length}</span>
           </div>
+          {mostInquired.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-slate-200">
+              <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Most inquired</p>
+              <ul className="space-y-1">
+                {mostInquired.slice(0, 5).map(({ itemId, itemName, count }) => (
+                  <li key={itemId} className="flex justify-between items-center text-xs">
+                    <span className="truncate max-w-[180px]" title={itemName}>{itemName}</span>
+                    <span className="font-bold text-slate-700 shrink-0">{count}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
         <div className="flex flex-col items-end gap-2">
           <button
