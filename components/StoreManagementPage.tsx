@@ -542,44 +542,51 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
       
       // Fetch the image with better error handling and CORS support
       let blob: Blob;
-      try {
-        const response = await fetch(imageUrl, {
-          mode: 'cors',
-          credentials: 'omit',
-        });
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
+      
+      // Handle data URLs (base64 images)
+      if (imageUrl.startsWith('data:')) {
+        const response = await fetch(imageUrl);
         blob = await response.blob();
-      } catch (fetchError: any) {
-        // Fallback: use image element to load and convert to blob
-        console.warn('Direct fetch failed, trying image element method:', fetchError);
-        blob = await new Promise<Blob>((resolve, reject) => {
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
-          img.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = img.width;
-            canvas.height = img.height;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) {
-              reject(new Error('Canvas context not available'));
-              return;
-            }
-            ctx.drawImage(img, 0, 0);
-            canvas.toBlob((blob) => {
-              if (blob) {
-                resolve(blob);
-              } else {
-                reject(new Error('Failed to convert image to blob'));
+      } else {
+        try {
+          const response = await fetch(imageUrl, {
+            mode: 'cors',
+            credentials: 'omit',
+          });
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+          blob = await response.blob();
+        } catch (fetchError: any) {
+          // Fallback: use image element to load and convert to blob
+          console.warn('Direct fetch failed, trying image element method:', fetchError);
+          blob = await new Promise<Blob>((resolve, reject) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              canvas.width = img.width;
+              canvas.height = img.height;
+              const ctx = canvas.getContext('2d');
+              if (!ctx) {
+                reject(new Error('Canvas context not available'));
+                return;
               }
-            }, 'image/png');
-          };
-          img.onerror = () => {
-            reject(new Error(`Failed to load image from ${imageUrl}. This might be a CORS issue or the image URL is invalid.`));
-          };
-          img.src = imageUrl;
-        });
+              ctx.drawImage(img, 0, 0);
+              canvas.toBlob((blob) => {
+                if (blob) {
+                  resolve(blob);
+                } else {
+                  reject(new Error('Failed to convert image to blob'));
+                }
+              }, 'image/png');
+            };
+            img.onerror = () => {
+              reject(new Error(`Failed to load image from ${imageUrl}. This might be a CORS issue or the image URL is invalid.`));
+            };
+            img.src = imageUrl;
+          });
+        }
       }
       
       if (!blob || blob.size === 0) {
