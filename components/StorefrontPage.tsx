@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { MessageCircle, ChevronLeft, ChevronRight, Tag, X, Send, Loader2, Package, Sparkles, LayoutGrid, List, ArrowUp, FileText, Share2, Heart, Moon, Sun, Search as SearchIcon, SlidersHorizontal } from 'lucide-react';
+import { MessageCircle, ChevronLeft, ChevronRight, Tag, X, Send, Loader2, Package, Sparkles, LayoutGrid, List, ArrowUp, FileText, Share2, Heart, Moon, Sun, Search as SearchIcon, SlidersHorizontal, Home } from 'lucide-react';
 import { subscribeToStoreCatalog, createStoreInquiry, type StoreCatalogPayload } from '../services/firebaseService';
 import { useNavigate } from 'react-router-dom';
 import LegalModal, { type LegalModalType } from './LegalModal';
@@ -56,6 +56,9 @@ const TEXTS = {
   share: 'Teilen',
   similarItems: 'Ähnliche Artikel',
   recentlyViewed: 'Zuletzt angesehen',
+  home: 'Start',
+  badgeNew: 'Neu',
+  badgePriceReduced: 'Preis reduziert',
 };
 
 /** Preferred order for PC/build-style specs so CPU, GPU, RAM etc. show first. */
@@ -184,6 +187,16 @@ const StorefrontPage: React.FC = () => {
       .slice(0, 3);
   }, [galleryItem, items]);
 
+  /** Breadcrumb counts: total, per category, per subcategory. */
+  const breadcrumbCounts = useMemo(() => {
+    const total = items.length;
+    const inCategory = categoryFilter ? items.filter((i) => i.category === categoryFilter).length : 0;
+    const inSubCategory = categoryFilter && subCategoryFilter
+      ? items.filter((i) => i.category === categoryFilter && i.subCategory === subCategoryFilter).length
+      : 0;
+    return { total, inCategory, inSubCategory };
+  }, [items, categoryFilter, subCategoryFilter]);
+
   const recentlyViewedItems = useMemo(() => {
     const ids = getRecentlyViewedIds();
     return ids.map((id) => items.find((i) => i.id === id)).filter(Boolean) as StoreItem[];
@@ -301,6 +314,40 @@ const StorefrontPage: React.FC = () => {
         return (
           <section className={`sticky top-[57px] z-40 border-b ${darkMode ? 'bg-slate-800/95 border-slate-700' : 'bg-white/95 border-slate-200/80'} backdrop-blur-sm`}>
             <div className="mx-auto max-w-6xl px-3 sm:px-6 py-2">
+              {/* Breadcrumbs: Home → Category → SubCategory with counts */}
+              <nav className="flex items-center gap-1 text-xs mb-2 min-h-[20px]" aria-label="Breadcrumb">
+                <button
+                  type="button"
+                  onClick={() => { setCategoryFilter(''); setSubCategoryFilter(''); }}
+                  className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 -ml-1.5 transition-colors ${categoryFilter || subCategoryFilter ? (darkMode ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-700' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200') : (darkMode ? 'text-slate-300 font-medium' : 'text-slate-700 font-medium')}`}
+                >
+                  <Home size={12} strokeWidth={2} />
+                  <span>{TEXTS.home}</span>
+                  <span className={darkMode ? 'text-slate-500' : 'text-slate-400'}>({breadcrumbCounts.total})</span>
+                </button>
+                {categoryFilter && (
+                  <>
+                    <ChevronRight size={14} className={darkMode ? 'text-slate-600' : 'text-slate-300'} aria-hidden />
+                    <button
+                      type="button"
+                      onClick={() => setSubCategoryFilter('')}
+                      className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 -ml-1 transition-colors ${subCategoryFilter ? (darkMode ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-700' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200') : (darkMode ? 'text-slate-300 font-medium' : 'text-slate-700 font-medium')}`}
+                    >
+                      <span>{categoryFilter}</span>
+                      <span className={darkMode ? 'text-slate-500' : 'text-slate-400'}>({breadcrumbCounts.inCategory})</span>
+                    </button>
+                  </>
+                )}
+                {categoryFilter && subCategoryFilter && (
+                  <>
+                    <ChevronRight size={14} className={darkMode ? 'text-slate-600' : 'text-slate-300'} aria-hidden />
+                    <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 ${darkMode ? 'text-slate-300 font-medium' : 'text-slate-700 font-medium'}`}>
+                      <span>{subCategoryFilter}</span>
+                      <span className={darkMode ? 'text-slate-500' : 'text-slate-400'}>({breadcrumbCounts.inSubCategory})</span>
+                    </span>
+                  </>
+                )}
+              </nav>
               {/* Single row: search, category, subcategory, price, sort, view */}
               <div className="flex flex-wrap items-center gap-2">
                 <div className={`relative flex-1 min-w-0 max-w-[180px] sm:max-w-[240px]`}>
@@ -575,7 +622,14 @@ const StorefrontPage: React.FC = () => {
               {/* Header */}
               <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-200 bg-white shrink-0">
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-bold text-slate-900 text-base sm:text-lg truncate">{galleryItem.name}</h3>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-bold text-slate-900 text-base sm:text-lg truncate">{galleryItem.name}</h3>
+                    {galleryItem.badge && (
+                      <span className={`shrink-0 px-2 py-0.5 rounded-lg text-xs font-bold uppercase ${galleryItem.badge === 'New' ? 'bg-emerald-600 text-white' : 'bg-blue-600 text-white'}`}>
+                        {galleryItem.badge === 'New' ? TEXTS.badgeNew : TEXTS.badgePriceReduced}
+                      </span>
+                    )}
+                  </div>
                   {galleryImages.length > 1 && (
                     <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
                       {currentIndex + 1} von {galleryImages.length}
@@ -773,7 +827,14 @@ const StoreItemCard: React.FC<{
 
   const contentBlock = (
     <>
-      <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">{item.category}{item.subCategory ? ` / ${item.subCategory}` : ''}</p>
+      <div className="flex items-center gap-2 flex-wrap">
+        <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">{item.category}{item.subCategory ? ` / ${item.subCategory}` : ''}</p>
+        {item.badge && (
+          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${item.badge === 'New' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}`}>
+            {item.badge === 'New' ? texts.badgeNew : texts.badgePriceReduced}
+          </span>
+        )}
+      </div>
       <h2 className="font-semibold text-slate-900 mt-1 line-clamp-2 text-base leading-snug">{item.name}</h2>
       {item.storeDescription && (
         <p className="text-sm text-slate-600 mt-2 whitespace-pre-line line-clamp-4">{item.storeDescription}</p>
@@ -881,7 +942,12 @@ const StoreItemCard: React.FC<{
                 {texts.onSale}
               </span>
             )}
-            <div className="absolute top-3 left-3 flex gap-2 z-10">
+            {item.badge && (
+              <span className={`absolute top-3 left-3 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wide shadow z-10 pointer-events-none ${item.badge === 'New' ? 'bg-emerald-600 text-white' : 'bg-blue-600 text-white'}`}>
+                {item.badge === 'New' ? texts.badgeNew : texts.badgePriceReduced}
+              </span>
+            )}
+            <div className={`absolute top-3 z-10 flex gap-2 ${item.badge ? 'left-3 mt-10' : 'left-3'}`}>
               {onToggleWishlist && (
                 <button type="button" onClick={(e) => { e.stopPropagation(); onToggleWishlist(); }} className="p-2 rounded-full bg-white/90 shadow hover:bg-white text-slate-700" title={isInWishlist ? texts.removeFromWishlist : texts.addToWishlist}>
                   <Heart size={18} className={isInWishlist ? 'fill-rose-500 text-rose-500' : ''} />

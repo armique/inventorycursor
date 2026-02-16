@@ -599,6 +599,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
   const [storeOnSale, setStoreOnSale] = useState(!!item.storeOnSale);
   const [storeSalePrice, setStoreSalePriceState] = useState<string>(item.storeSalePrice != null ? String(item.storeSalePrice) : '');
   const [storeVisible, setStoreVisible] = useState<boolean>(item.storeVisible !== false);
+  const [storeBadge, setStoreBadge] = useState<'auto' | 'New' | 'Price reduced' | 'none'>(item.storeBadge ?? 'auto');
   /** Ordered list: [0] = main image (carousel #1), rest = gallery. */
   const [storeImageUrls, setStoreImageUrls] = useState<string[]>(() => {
     const main = item.imageUrl?.trim();
@@ -768,6 +769,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
       storeVisible,
       storeOnSale,
       storeSalePrice: storeSalePrice === '' ? undefined : parseFloat(storeSalePrice) || undefined,
+      storeBadge: storeBadge === 'auto' ? undefined : storeBadge,
       imageUrl: main || undefined,
       storeGalleryUrls: rest?.length ? rest : undefined,
     });
@@ -876,6 +878,16 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
               <input type="number" min={0} step={0.01} value={storeSalePrice} onChange={(e) => setStoreSalePriceState(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400" />
             </div>
           )}
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Store badge</label>
+            <select value={storeBadge} onChange={(e) => setStoreBadge(e.target.value as 'auto' | 'New' | 'Price reduced' | 'none')} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400">
+              <option value="auto">Auto (New this week / Price reduced from history)</option>
+              <option value="New">Always show “New”</option>
+              <option value="Price reduced">Always show “Price reduced”</option>
+              <option value="none">No badge</option>
+            </select>
+            <p className="mt-1 text-[11px] text-slate-500">Auto: “New” if added in last 7 days; “Price reduced” if sell price was lowered (from price history).</p>
+          </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">{texts.galleryUrls}</label>
             <p className="text-[11px] text-slate-500 mb-2">{texts.galleryNote}</p>

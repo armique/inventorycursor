@@ -147,6 +147,8 @@ export interface InventoryItem {
   storeGalleryUrls?: string[];
   /** Optional short description for the store listing (overrides or supplements comment). */
   storeDescription?: string;
+  /** Store badge: 'auto' = derive from data, 'New' | 'Price reduced' = show this, 'none' = never show. */
+  storeBadge?: 'auto' | 'New' | 'Price reduced' | 'none';
 }
 
 /** Inquiry from a visitor about a store item (stored in Firebase). */
@@ -176,6 +178,8 @@ export interface StoreCatalogItem {
   storeDescription?: string;
   specs?: Record<string, string | number>;
   categoryFields?: string[]; // field names for this category for display order
+  /** Badge shown on store: 'New' (e.g. new this week), 'Price reduced' (from price history). */
+  badge?: 'New' | 'Price reduced';
 }
 
 export interface Competitor {
