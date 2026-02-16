@@ -313,6 +313,18 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [filteredItems, taxMode]);
 
+  // Todo from data: items needing attention
+  const todoFromData = useMemo(() => {
+    const inStock = items.filter(i => i.status === ItemStatus.IN_STOCK);
+    const noImage = inStock.filter(i => !i.imageUrl || (typeof i.imageUrl === 'string' && !i.imageUrl.trim()));
+    const hiddenFromStore = inStock.filter(i => i.storeVisible === false);
+    const unansweredInquiries = 0; // Could be passed as prop from parent if needed
+    return [
+      { id: 'no-image', label: 'Items without image', count: noImage.length, href: '/panel/inventory' },
+      { id: 'hidden-store', label: 'Items hidden from store', count: hiddenFromStore.length, href: '/panel/store-management' },
+    ].filter(t => t.count > 0);
+  }, [items]);
+
   // Recent Activity Data
   const activityFeed = useMemo(() => {
     const actions: { type: string, date: string, item: string, amount: number }[] = [];
@@ -589,6 +601,26 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
             )}
          </div>
       </div>
+
+      {/* Todo from data */}
+      {todoFromData.length > 0 && (
+         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 sm:p-5">
+            <h3 className="text-sm font-bold text-amber-900 mb-3 flex items-center gap-2">
+               <AlertCircle size={18} className="text-amber-600"/> Data to review
+            </h3>
+            <ul className="space-y-2">
+               {todoFromData.map(t => (
+                  <li key={t.id} className="flex items-center justify-between gap-3">
+                     <span className="text-sm font-medium text-amber-800">{t.label}</span>
+                     <a href={t.href} className="inline-flex items-center gap-1.5 text-sm font-bold text-amber-700 hover:text-amber-900 hover:underline">
+                        <span className="bg-amber-200 text-amber-900 px-2 py-0.5 rounded-lg">{t.count}</span>
+                        <ArrowRight size={14}/>
+                     </a>
+                  </li>
+               ))}
+            </ul>
+         </div>
+      )}
 
       {/* TASKS & ACTIVITY ROW */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
