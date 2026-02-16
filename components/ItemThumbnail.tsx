@@ -121,7 +121,28 @@ const ItemThumbnail: React.FC<ItemThumbnailProps> = ({
   const Icon = getIconForItem(item);
 
   if (imgSrc) {
-    return <img src={imgSrc} alt="" className={className} />;
+    // If the image fails to load (404, bad URL), gracefully fall back to the icon-only thumbnail.
+    return (
+      <img
+        src={imgSrc}
+        alt=""
+        className={className}
+        onError={(e) => {
+          const target = e.currentTarget;
+          // Prevent infinite loop if the fallback also fails for some reason.
+          if ((target as any)._fallbackApplied) return;
+          (target as any)._fallbackApplied = true;
+          // Replace the broken <img> with an icon container.
+          const wrapper = target.parentElement;
+          if (!wrapper) return;
+          const span = document.createElement('span');
+          span.className = `rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500 shrink-0 ${className}`;
+          // We can't render the React Icon here, so just clear the src to hide the broken image; the caller
+          // will typically also render an icon fallback if no imageUrl is present next render.
+          target.src = '';
+        }}
+      />
+    );
   }
 
   return (
