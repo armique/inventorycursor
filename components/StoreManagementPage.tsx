@@ -637,6 +637,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
   const [uploadingMain, setUploadingMain] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState(false);
   const [galleryProgress, setGalleryProgress] = useState<string | null>(null);
+  const [pendingGalleryFiles, setPendingGalleryFiles] = useState<File[]>([]);
 
   const resizeImage = (file: File, maxSize = 1600, quality = 0.8): Promise<File> => {
     return new Promise((resolve, reject) => {
@@ -693,25 +694,31 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
     }
   };
 
-  const handleUploadGalleryImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSelectGalleryFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     e.target.value = '';
-    if (!files.length) return;
+    setPendingGalleryFiles(files);
+    setGalleryProgress(files.length ? `${files.length} selected` : null);
+  };
+
+  const handleConfirmGalleryUpload = async () => {
+    if (!pendingGalleryFiles.length) return;
     try {
       setUploadingGallery(true);
-      setGalleryProgress(`0 / ${files.length}`);
+      setGalleryProgress(`0 / ${pendingGalleryFiles.length}`);
       const urls: string[] = [];
-      for (let idx = 0; idx < files.length; idx++) {
-        const file = files[idx];
+      for (let idx = 0; idx < pendingGalleryFiles.length; idx++) {
+        const file = pendingGalleryFiles[idx];
         const resized = await resizeImage(file);
         const url = await uploadItemImage(resized, item.id);
         urls.push(url);
-        setGalleryProgress(`${idx + 1} / ${files.length}`);
+        setGalleryProgress(`${idx + 1} / ${pendingGalleryFiles.length}`);
       }
       setGalleryUrlsText((prev) => {
         const existing = prev ? prev.split(/\r?\n/).map((s) => s.trim()).filter(Boolean) : [];
         return [...existing, ...urls].join('\n');
       });
+      setPendingGalleryFiles([]);
     } catch (err: any) {
       console.error(err);
       alert(err?.message || 'Upload failed. Please try again.');
@@ -798,11 +805,12 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
             <label className="block text-xs font-medium text-slate-500 mb-1">{texts.galleryUrls}</label>
             <div className="flex items-start gap-2">
               <div className="flex-1 space-y-2">
+                {/* Hidden textarea keeps string representation but UI focuses on thumbnails/buttons for simplicity */}
                 <textarea
                   value={galleryUrlsText}
                   onChange={(e) => setGalleryUrlsText(e.target.value)}
                   rows={3}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400 resize-none font-mono text-xs"
+                  className="hidden"
                   placeholder="https://…&#10;https://…"
                 />
                 {/* Gallery preview with delete buttons */}
@@ -857,18 +865,30 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
                   </div>
                 )}
               </div>
-              <label className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 cursor-pointer shrink-0">
-                <ImageIcon size={14} />
-                {uploadingGallery ? (galleryProgress || 'Uploading…') : 'Add images'}
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={handleUploadGalleryImage}
-                  disabled={uploadingGallery}
-                />
-              </label>
+              <div className="flex flex-col gap-1 shrink-0">
+                <label className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 cursor-pointer">
+                  <ImageIcon size={14} />
+                  Upload images
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={handleSelectGalleryFiles}
+                    disabled={uploadingGallery}
+                  />
+                </label>
+                {pendingGalleryFiles.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleConfirmGalleryUpload}
+                    disabled={uploadingGallery}
+                    className="px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 disabled:opacity-50"
+                  >
+                    {uploadingGallery ? galleryProgress || 'Uploading…' : `Start upload (${pendingGalleryFiles.length})`}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
