@@ -64,7 +64,7 @@ const LegalPage: React.FC = () => {
             onClick={() => navigate('/')}
             className="text-xl font-bold tracking-tight text-slate-900 hover:text-slate-600 transition-colors"
           >
-            Shop
+            ArmikTech
           </button>
         </div>
       </header>
@@ -81,10 +81,10 @@ const LegalPage: React.FC = () => {
 
       <footer className="mt-auto border-t border-slate-200/80 bg-slate-900 text-slate-300">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 flex flex-col items-center gap-1 text-center">
-          <p className="text-slate-400 text-sm">© {new Date().getFullYear()} · Shop</p>
+          <p className="text-slate-400 text-sm">© {new Date().getFullYear()} · ArmikTech</p>
           <div className="flex gap-4 mt-2">
             <button type="button" onClick={() => navigate('/')} className="text-slate-500 text-sm hover:text-white transition-colors">
-              Zurück zum Shop
+              Zurück zu ArmikTech
             </button>
           </div>
         </div>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Eye, EyeOff, Tag, MessageCircle, ExternalLink, Loader2, Check, Mail, Phone, Upload, CheckCircle2, Pencil, X, Image as ImageIcon, Filter, Search as SearchIcon, Sparkles } from 'lucide-react';
+import { Eye, EyeOff, Tag, MessageCircle, ExternalLink, Loader2, Check, Mail, Phone, Upload, CheckCircle2, Pencil, X, Image as ImageIcon, Filter, Search as SearchIcon, Sparkles, Copy, Download } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
-import { subscribeToStoreInquiries, markStoreInquiryRead, uploadItemImage, isCloudEnabled, getCurrentUser } from '../services/firebaseService';
+import { subscribeToStoreInquiries, markStoreInquiryRead, updateStoreInquiryStatus, uploadItemImage, isCloudEnabled, getCurrentUser, type StoreInquiryStatus } from '../services/firebaseService';
 import { generateStoreDescription } from '../services/specsAI';
 import ItemThumbnail from './ItemThumbnail';
 import { removeBackground } from '@imgly/background-removal';
@@ -21,6 +21,18 @@ const TEXTS = {
   date: 'Date',
   markRead: 'Mark read',
   openItem: 'Open item',
+  status: 'Status',
+  statusNew: 'Neu',
+  statusAnswered: 'Beantwortet',
+  statusDone: 'Erledigt',
+  copyTemplate: 'Vorlage kopieren',
+  inquiriesTotal: 'Anfragen gesamt',
+  inquiriesLast7: 'Letzte 7 Tage',
+  duplicateItem: 'Kopie erstellen',
+  exportCatalog: 'Katalog als CSV',
+  replyTemplateThanks: 'Danke für Ihre Anfrage. Wir melden uns in Kürze.',
+  replyTemplateReserved: 'Der Artikel ist für Sie reserviert. Wir kontaktieren Sie zur Abwicklung.',
+  replyTemplateSold: 'Leider ist der Artikel bereits verkauft. Gerne informieren wir Sie über ähnliche Angebote.',
   catalogNote: 'Only "In Stock" items appear below. "Show" = on storefront; "Hide" = hidden. Catalog updates ~1s after changes, or click Publish to store now. Only “In Stock” items with “Visible on store” appear on the storefront.',
   publishNow: 'Publish to store now',
   published: 'Published',
@@ -46,7 +58,7 @@ interface Props {
 const IN_STOCK = ItemStatus.IN_STOCK;
 
 const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryFields, onUpdate, onPublishCatalog }) => {
-  const [inquiries, setInquiries] = useState<({ id: string; itemId: string; itemName: string; message: string; contactEmail?: string; contactPhone?: string; contactName?: string; createdAt: string; read?: boolean })[]>([]);
+  const [inquiries, setInquiries] = useState<({ id: string; itemId: string; itemName: string; message: string; contactEmail?: string; contactPhone?: string; contactName?: string; createdAt: string; read?: boolean; status?: StoreInquiryStatus })[]>([]);
   const [publishing, setPublishing] = useState(false);
   const [publishedAt, setPublishedAt] = useState<number | null>(null);
   const handlePublish = async () => {
@@ -91,6 +103,39 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
     const next = items.map((it) => (it.id === editingItem.id ? { ...it, ...updates } : it));
     onUpdate(next);
     setEditingItem(null);
+  };
+
+  const handleDuplicateItem = (item: InventoryItem) => {
+    const copy: InventoryItem = {
+      ...item,
+      id: `item-${Date.now()}`,
+      name: `${item.name} (Kopie)`,
+    };
+    onUpdate([...items, copy]);
+    setEditingItem(copy);
+  };
+
+  const handleExportCatalog = () => {
+    const visible = storeVisibleItems.filter((i) => i.storeVisible !== false);
+    const headers = ['Name', 'Category', 'SubCategory', 'Price', 'SalePrice', 'OnSale', 'Visible', 'Description'];
+    const rows = visible.map((i) => [
+      (i.name || '').replace(/"/g, '""'),
+      i.category || '',
+      i.subCategory || '',
+      i.sellPrice ?? '',
+      i.storeSalePrice ?? '',
+      i.storeOnSale ? '1' : '0',
+      i.storeVisible !== false ? '1' : '0',
+      (i.storeDescription || '').replace(/"/g, '""').replace(/\n/g, ' '),
+    ]);
+    const csv = [headers.join(','), ...rows.map((r) => r.map((c) => `"${c}"`).join(','))].join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `armiktech-katalog-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const unreadCount = inquiries.filter((i) => !i.read).length;
@@ -181,9 +226,21 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
               {onSaleCount} On sale
             </button>
           </div>
+          <div className="flex flex-wrap gap-2 mt-2 text-[10px] font-bold text-slate-500">
+            <span>{TEXTS.inquiriesTotal}: {inquiries.length}</span>
+            <span>·</span>
+            <span>{TEXTS.inquiriesLast7}: {inquiries.filter((i) => new Date(i.createdAt) > new Date(Date.now() - 7 * 24 * 3600 * 1000)).length}</span>
+          </div>
         </div>
-        {onPublishCatalog && (
-          <div className="flex flex-col items-end gap-2">
+        <div className="flex flex-col items-end gap-2">
+          <button
+            type="button"
+            onClick={handleExportCatalog}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 transition-colors"
+          >
+            <Download size={18} /> {TEXTS.exportCatalog}
+          </button>
+          {onPublishCatalog && (
             <button
               type="button"
               onClick={handlePublish}
@@ -193,14 +250,14 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
               {publishing ? <Loader2 size={18} className="animate-spin" /> : publishedAt ? <CheckCircle2 size={18} /> : <Upload size={18} />}
               {publishing ? 'Publishing…' : publishedAt ? TEXTS.published : TEXTS.publishNow}
             </button>
-            {publishedAt && (
+          )}
+            {publishedAt && onPublishCatalog && (
               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
                 Last published {new Date(publishedAt).toLocaleString()}
               </p>
             )}
           </div>
-        )}
-      </div>
+        </div>
 
       <div className="flex flex-col lg:flex-row gap-6 items-start">
         {/* LEFT: Items & filters */}
@@ -366,20 +423,13 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
                           </td>
                           <td className="px-3 py-3 align-top">
                             <div className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => { setEditingItem(item); setGenerateDescriptionWhenOpen(true); }}
-                                className="p-2 rounded-lg hover:bg-violet-100 text-violet-600"
-                                title="Generate description (AI)"
-                              >
+                              <button type="button" onClick={() => handleDuplicateItem(item)} className="p-2 rounded-lg hover:bg-blue-50 text-blue-600" title={TEXTS.duplicateItem}>
+                                <Copy size={16} />
+                              </button>
+                              <button type="button" onClick={() => { setEditingItem(item); setGenerateDescriptionWhenOpen(true); }} className="p-2 rounded-lg hover:bg-violet-100 text-violet-600" title="Generate description (AI)">
                                 <Sparkles size={16} />
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => setEditingItem(item)}
-                                className="p-2 rounded-lg hover:bg-slate-200 text-slate-600"
-                                title={TEXTS.editStoreItem}
-                              >
+                              <button type="button" onClick={() => setEditingItem(item)} className="p-2 rounded-lg hover:bg-slate-200 text-slate-600" title={TEXTS.editStoreItem}>
                                 <Pencil size={16} />
                               </button>
                             </div>
@@ -431,22 +481,15 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
                           </div>
                         </div>
                       </div>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => { setEditingItem(item); setGenerateDescriptionWhenOpen(true); }}
-                          className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-violet-300 bg-violet-50 text-violet-800 text-xs font-semibold hover:bg-violet-100"
-                        >
-                          <Sparkles size={14} />
-                          Generate description (AI)
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={() => handleDuplicateItem(item)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-xs font-semibold hover:bg-blue-100">
+                          <Copy size={14} /> {TEXTS.duplicateItem}
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => setEditingItem(item)}
-                          className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200"
-                        >
-                          <Pencil size={14} />
-                          Edit
+                        <button type="button" onClick={() => { setEditingItem(item); setGenerateDescriptionWhenOpen(true); }} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-violet-300 bg-violet-50 text-violet-800 text-xs font-semibold hover:bg-violet-100">
+                          <Sparkles size={14} /> AI
+                        </button>
+                        <button type="button" onClick={() => setEditingItem(item)} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200">
+                          <Pencil size={14} /> Edit
                         </button>
                       </div>
                     </div>
@@ -470,7 +513,7 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
               {inquiries.length === 0 ? (
                 <p className="px-4 py-8 text-slate-500 text-center text-sm">{TEXTS.noInquiries}</p>
               ) : (
-                <ul className="max-h-[260px] overflow-y-auto divide-y divide-slate-100">
+                <ul className="max-h-[320px] overflow-y-auto divide-y divide-slate-100">
                   {inquiries.map((inq) => (
                     <li key={inq.id} className={`px-4 py-3 ${inq.read ? 'bg-white' : 'bg-amber-50/60'}`}>
                       <div className="flex items-start justify-between gap-3">
@@ -491,21 +534,27 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
                             )}
                             <span>{new Date(inq.createdAt).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' })}</span>
                           </div>
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            <select
+                              value={inq.status || 'new'}
+                              onChange={(e) => updateStoreInquiryStatus(inq.id, e.target.value as StoreInquiryStatus)}
+                              className="text-[10px] rounded-lg border border-slate-200 bg-white px-2 py-1 text-slate-700"
+                            >
+                              <option value="new">{TEXTS.statusNew}</option>
+                              <option value="answered">{TEXTS.statusAnswered}</option>
+                              <option value="done">{TEXTS.statusDone}</option>
+                            </select>
+                            <button type="button" onClick={() => navigator.clipboard.writeText(TEXTS.replyTemplateThanks)} className="text-[10px] px-2 py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200" title={TEXTS.copyTemplate}>Danke</button>
+                            <button type="button" onClick={() => navigator.clipboard.writeText(TEXTS.replyTemplateReserved)} className="text-[10px] px-2 py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200" title={TEXTS.copyTemplate}>Reserviert</button>
+                            <button type="button" onClick={() => navigator.clipboard.writeText(TEXTS.replyTemplateSold)} className="text-[10px] px-2 py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200" title={TEXTS.copyTemplate}>Verkauft</button>
+                          </div>
                         </div>
                         <div className="flex flex-col items-end gap-2 shrink-0">
-                          <a
-                            href={`/panel/inventory?highlight=${inq.itemId}`}
-                            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-600"
-                            title={TEXTS.openItem}
-                          >
+                          <a href={`/panel/inventory?highlight=${inq.itemId}`} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-600" title={TEXTS.openItem}>
                             <ExternalLink size={14} />
                           </a>
                           {!inq.read && (
-                            <button
-                              type="button"
-                              onClick={() => markStoreInquiryRead(inq.id, true)}
-                              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-medium bg-slate-200 text-slate-700 hover:bg-slate-300"
-                            >
+                            <button type="button" onClick={() => markStoreInquiryRead(inq.id, true)} className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-medium bg-slate-200 text-slate-700 hover:bg-slate-300">
                               <Check size={10} /> {TEXTS.markRead}
                             </button>
                           )}

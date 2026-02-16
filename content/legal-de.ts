@@ -98,6 +98,8 @@ export const IMPRESSUM_CONTENT = `
 [Straße und Hausnummer]
 [PLZ und Ort]
 
+**Website:** https://armiktech.com
+
 **Kontakt**
 E-Mail: [Ihre E-Mail]
 Telefon: [Ihre Telefonnummer] (optional)

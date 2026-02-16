@@ -455,6 +455,8 @@ export async function writeStoreCatalog(payload: StoreCatalogPayload): Promise<v
 
 const STORE_INQUIRIES_COLLECTION = "storeInquiries";
 
+export type StoreInquiryStatus = 'new' | 'answered' | 'done';
+
 export interface StoreInquiryPayload {
   itemId: string;
   itemName: string;
@@ -464,6 +466,7 @@ export interface StoreInquiryPayload {
   contactName?: string;
   createdAt: string;
   read?: boolean;
+  status?: StoreInquiryStatus;
 }
 
 /**
@@ -477,6 +480,7 @@ export async function createStoreInquiry(inquiry: Omit<StoreInquiryPayload, "cre
     ...inquiry,
     createdAt: new Date().toISOString(),
     read: false,
+    status: 'new',
   });
   return docRef.id;
 }
@@ -514,4 +518,12 @@ export async function markStoreInquiryRead(inquiryId: string, read: boolean): Pr
   if (!ctx?.db || !user) throw new Error("Not signed in");
   const docRef = doc(ctx.db, STORE_INQUIRIES_COLLECTION, inquiryId);
   await updateDoc(docRef, { read });
+}
+
+export async function updateStoreInquiryStatus(inquiryId: string, status: StoreInquiryStatus): Promise<void> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) throw new Error("Not signed in");
+  const docRef = doc(ctx.db, STORE_INQUIRIES_COLLECTION, inquiryId);
+  await updateDoc(docRef, { status });
 }

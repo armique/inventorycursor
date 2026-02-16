@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { MessageCircle, ChevronLeft, ChevronRight, Tag, X, Send, Loader2, Package, Sparkles, LayoutGrid, List, ArrowUp, FileText } from 'lucide-react';
+import { MessageCircle, ChevronLeft, ChevronRight, Tag, X, Send, Loader2, Package, Sparkles, LayoutGrid, List, ArrowUp, FileText, Share2, Heart, Moon, Sun } from 'lucide-react';
 import { subscribeToStoreCatalog, createStoreInquiry, type StoreCatalogPayload } from '../services/firebaseService';
 import { useNavigate } from 'react-router-dom';
 import LegalModal, { type LegalModalType } from './LegalModal';
+import AboutContactModal from './AboutContactModal';
+import CookieConsent, { getCookieConsentAccepted } from './CookieConsent';
+import { getWishlistIds, setWishlistIds, toggleWishlistId, getRecentlyViewedIds, addRecentlyViewedId } from '../utils/storefrontStorage';
 
 const TEXTS = {
   title: 'ArmikTech',
@@ -47,6 +50,12 @@ const TEXTS = {
   privacy: 'Datenschutz',
   terms: 'AGB',
   legal: 'Alle Rechte vorbehalten. Alle genannten Marken gehören den jeweiligen Rechteinhabern.',
+  wishlist: 'Merkliste',
+  addToWishlist: 'Zur Merkliste',
+  removeFromWishlist: 'Aus Merkliste',
+  share: 'Teilen',
+  similarItems: 'Ähnliche Artikel',
+  recentlyViewed: 'Zuletzt angesehen',
 };
 
 /** Preferred order for PC/build-style specs so CPU, GPU, RAM etc. show first. */
@@ -95,6 +104,13 @@ const StorefrontPage: React.FC = () => {
   const [galleryIndex, setGalleryIndex] = useState(0);
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [legalModal, setLegalModal] = useState<LegalModalType | null>(null);
+  const [aboutContactModal, setAboutContactModal] = useState<'about' | 'contact' | null>(null);
+  const [cookieConsent, setCookieConsent] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => {
+    try { return localStorage.getItem('armiktech_dark') === '1'; } catch { return false; }
+  });
+  const [wishlistIds, setWishlistIdsState] = useState<string[]>(() => getWishlistIds());
+  const [recentKey, setRecentKey] = useState(0);
 
   useEffect(() => {
     const unsub = subscribeToStoreCatalog((data) => {
@@ -136,8 +152,37 @@ const StorefrontPage: React.FC = () => {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', darkMode);
+    try { localStorage.setItem('armiktech_dark', darkMode ? '1' : '0'); } catch {}
+  }, [darkMode]);
+
+  const handleToggleWishlist = (itemId: string) => {
+    const added = toggleWishlistId(itemId);
+    setWishlistIdsState(getWishlistIds());
+  };
+
+  const handleOpenDetails = (item: StoreItem) => {
+    addRecentlyViewedId(item.id);
+    setRecentKey((k) => k + 1);
+    setGalleryItem(item);
+    setGalleryIndex(0);
+  };
+
   const items = useMemo(() => catalog?.items ?? [], [catalog]);
   const categories = useMemo(() => Array.from(new Set(items.map((i) => i.category).filter(Boolean))).sort(), [items]);
+
+  const similarItems = useMemo(() => {
+    if (!galleryItem || !items.length) return [];
+    return items
+      .filter((i) => i.id !== galleryItem.id && (i.category === galleryItem.category || i.subCategory === galleryItem.subCategory))
+      .slice(0, 3);
+  }, [galleryItem, items]);
+
+  const recentlyViewedItems = useMemo(() => {
+    const ids = getRecentlyViewedIds();
+    return ids.map((id) => items.find((i) => i.id === id)).filter(Boolean) as StoreItem[];
+  }, [items, recentKey]);
 
   const filtered = useMemo(() => {
     let list = items;
@@ -201,7 +246,7 @@ const StorefrontPage: React.FC = () => {
   const showNoResults = catalogLoaded && items.length > 0 && filtered.length === 0;
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-b from-slate-50 via-white to-slate-50/80 text-slate-900 antialiased storefront-page" style={{ fontFamily: "'Outfit', system-ui, sans-serif" }}>
+    <div className={`min-h-screen flex flex-col antialiased storefront-page ${darkMode ? 'bg-slate-900 text-slate-200' : 'bg-gradient-to-b from-slate-50 via-white to-slate-50/80 text-slate-900'}`} style={{ fontFamily: "'Outfit', system-ui, sans-serif" }}>
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: scale(0.98); }
@@ -209,12 +254,15 @@ const StorefrontPage: React.FC = () => {
         }
       `}</style>
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-xl border-b border-slate-200/80 shadow-sm">
+      <header className={`sticky top-0 z-50 backdrop-blur-xl border-b shadow-sm ${darkMode ? 'bg-slate-800/90 border-slate-700' : 'bg-white/90 border-slate-200/80'}`}>
         <div className="mx-auto max-w-6xl px-4 sm:px-6 py-4 flex items-center justify-between">
-          <button type="button" onClick={() => navigate('/')} className="text-xl font-bold tracking-tight text-slate-900 hover:text-slate-600 transition-colors">
+          <button type="button" onClick={() => navigate('/')} className={`text-xl font-bold tracking-tight transition-colors ${darkMode ? 'text-white hover:text-slate-300' : 'text-slate-900 hover:text-slate-600'}`}>
             {TEXTS.title}
           </button>
           <nav className="flex items-center gap-1 sm:gap-2">
+            <button type="button" onClick={() => setDarkMode((d) => !d)} className="p-2 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300" aria-label={darkMode ? 'Hell' : 'Dunkel'}>
+              {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+            </button>
             <button
               type="button"
               onClick={() => setTab('all')}
@@ -280,11 +328,26 @@ const StorefrontPage: React.FC = () => {
       {/* Content */}
       <main className="flex-1 mx-auto max-w-6xl px-4 sm:px-6 py-10 sm:py-14 w-full">
         {showLoading && (
-          <div className="flex flex-col items-center justify-center py-28 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-slate-900/10 flex items-center justify-center mb-5">
-              <Loader2 size={28} className="animate-spin text-slate-600" />
+          <div className="space-y-8">
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-slate-900/10 dark:bg-white/10 flex items-center justify-center mb-5">
+                <Loader2 size={28} className="animate-spin text-slate-600 dark:text-slate-300" />
+              </div>
+              <p className="text-slate-600 dark:text-slate-400 font-medium">{TEXTS.loading}</p>
             </div>
-            <p className="text-slate-600 font-medium">{TEXTS.loading}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 overflow-hidden animate-pulse">
+                  <div className="aspect-[4/3] max-h-[220px] bg-slate-200 dark:bg-slate-700" />
+                  <div className="p-5 space-y-3">
+                    <div className="h-3 bg-slate-200 dark:bg-slate-700 rounded w-1/3" />
+                    <div className="h-5 bg-slate-200 dark:bg-slate-700 rounded w-full" />
+                    <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-2/3" />
+                    <div className="h-10 bg-slate-200 dark:bg-slate-700 rounded w-full mt-4" />
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -339,15 +402,25 @@ const StorefrontPage: React.FC = () => {
             {viewMode === 'grid' ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
                 {sortedFiltered.map((item) => (
-                  <StoreItemCard key={item.id} item={item} priceDisplay={priceDisplay(item)} texts={TEXTS} onContact={() => openContact(item)} onDetailsClick={() => { setGalleryItem(item); setGalleryIndex(0); }} layout="grid" />
+                  <StoreItemCard key={item.id} item={item} priceDisplay={priceDisplay(item)} texts={TEXTS} onContact={() => openContact(item)} onDetailsClick={() => handleOpenDetails(item)} layout="grid" isInWishlist={wishlistIds.includes(item.id)} onToggleWishlist={() => handleToggleWishlist(item.id)} onShare={() => { const u = `${window.location.origin}/#item-${item.id}`; if (navigator.share) navigator.share({ title: item.name, url: u }); else navigator.clipboard.writeText(u); }} />
                 ))}
               </div>
             ) : (
               <div className="space-y-4">
                 {sortedFiltered.map((item) => (
-                  <StoreItemCard key={item.id} item={item} priceDisplay={priceDisplay(item)} texts={TEXTS} onContact={() => openContact(item)} onDetailsClick={() => { setGalleryItem(item); setGalleryIndex(0); }} layout="list" />
+                  <StoreItemCard key={item.id} item={item} priceDisplay={priceDisplay(item)} texts={TEXTS} onContact={() => openContact(item)} onDetailsClick={() => handleOpenDetails(item)} layout="list" isInWishlist={wishlistIds.includes(item.id)} onToggleWishlist={() => handleToggleWishlist(item.id)} onShare={() => { const u = `${window.location.origin}/#item-${item.id}`; if (navigator.share) navigator.share({ title: item.name, url: u }); else navigator.clipboard.writeText(u); }} />
                 ))}
               </div>
+            )}
+            {recentlyViewedItems.length > 0 && (
+              <section className="mt-12">
+                <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-4">{TEXTS.recentlyViewed}</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {recentlyViewedItems.slice(0, 6).map((item) => (
+                    <StoreItemCard key={item.id} item={item} priceDisplay={priceDisplay(item)} texts={TEXTS} onContact={() => openContact(item)} onDetailsClick={() => handleOpenDetails(item)} layout="grid" isInWishlist={wishlistIds.includes(item.id)} onToggleWishlist={() => handleToggleWishlist(item.id)} onShare={() => {}} />
+                  ))}
+                </div>
+              </section>
             )}
           </>
         )}
@@ -358,8 +431,8 @@ const StorefrontPage: React.FC = () => {
         <div className="mx-auto max-w-6xl px-4 sm:px-6 py-10 sm:py-12">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6 sm:gap-8">
             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-x-6 gap-y-1">
-              <a href="/#about" className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.aboutUs}</a>
-              <a href="/#contact" className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.contactLink}</a>
+              <button type="button" onClick={() => setAboutContactModal('about')} className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.aboutUs}</button>
+              <button type="button" onClick={() => setAboutContactModal('contact')} className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.contactLink}</button>
               <button type="button" onClick={() => setLegalModal('impressum')} className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.imprint}</button>
               <button type="button" onClick={() => setLegalModal('datenschutz')} className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.privacy}</button>
               <button type="button" onClick={() => setLegalModal('agb')} className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.terms}</button>
@@ -452,14 +525,19 @@ const StorefrontPage: React.FC = () => {
                     </p>
                   )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setGalleryItem(null)}
-                  className="ml-4 p-2 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors shrink-0"
-                  aria-label="Close gallery"
-                >
-                  <X size={22} />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); const u = `${window.location.origin}/#item-${galleryItem.id}`; if (navigator.share) navigator.share({ title: galleryItem.name, url: u }); else navigator.clipboard.writeText(u); }}
+                    className="p-2 rounded-xl hover:bg-slate-100 text-slate-600"
+                    aria-label={TEXTS.share}
+                  >
+                    <Share2 size={20} />
+                  </button>
+                  <button type="button" onClick={() => setGalleryItem(null)} className="ml-2 p-2 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors shrink-0" aria-label="Close gallery">
+                    <X size={22} />
+                  </button>
+                </div>
               </div>
 
               {/* Main: carousel (left) | details + specs + description + CTA (right) – no overlay */}
@@ -552,36 +630,78 @@ const StorefrontPage: React.FC = () => {
                     </div>
                   )}
                   <div className="p-4 sm:p-5 border-t border-slate-200 flex flex-wrap gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setGalleryItem(null);
-                        openContact(galleryItem);
-                      }}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition-colors flex-1 min-w-[140px]"
-                    >
+                    <button type="button" onClick={(e) => { e.stopPropagation(); setGalleryItem(null); openContact(galleryItem); }} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition-colors flex-1 min-w-[140px]">
                       <MessageCircle size={18} /> {TEXTS.contact}
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setGalleryItem(null)}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition-colors"
-                    >
+                    <button type="button" onClick={() => setGalleryItem(null)} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition-colors">
                       {TEXTS.close}
                     </button>
                   </div>
+                  {similarItems.length > 0 && (
+                    <div className="p-4 sm:p-5 border-t border-slate-200 shrink-0">
+                      <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3">{TEXTS.similarItems}</h4>
+                      <div className="flex gap-2 overflow-x-auto">
+                        {similarItems.map((sim) => (
+                          <button key={sim.id} type="button" onClick={(e) => { e.stopPropagation(); setGalleryItem(sim); setGalleryIndex(0); setRecentKey((k) => k + 1); addRecentlyViewedId(sim.id); }} className="shrink-0 w-24 rounded-xl border border-slate-200 overflow-hidden hover:border-slate-400 transition-colors text-left">
+                            {sim.imageUrl ? <img src={sim.imageUrl} alt="" className="w-full aspect-square object-cover" loading="lazy" /> : <div className="w-full aspect-square bg-slate-100 flex items-center justify-center text-slate-400 text-[10px] px-1 text-center">{sim.name}</div>}
+                            <p className="p-2 text-[10px] font-medium text-slate-700 truncate">{sim.name}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
+            </div>
+            {/* Sticky CTA on mobile when modal open */}
+            <div className="fixed bottom-0 left-0 right-0 z-[115] p-3 bg-white border-t border-slate-200 lg:hidden">
+              <button type="button" onClick={(e) => { e.stopPropagation(); setGalleryItem(null); openContact(galleryItem); }} className="w-full py-3 rounded-xl bg-slate-900 text-white text-sm font-semibold flex items-center justify-center gap-2">
+                <MessageCircle size={18} /> {TEXTS.contact}
+              </button>
             </div>
           </div>
         );
       })()}
+      {aboutContactModal && <AboutContactModal type={aboutContactModal} onClose={() => setAboutContactModal(null)} onOpenPrivacy={() => { setAboutContactModal(null); setLegalModal('datenschutz'); }} />}
+      {!getCookieConsentAccepted() && <CookieConsent onAccept={() => { try { localStorage.setItem('armiktech_cookie_consent', '1'); } catch {} setCookieConsent(true); }} onPrivacyClick={() => setLegalModal('datenschutz')} />}
+      {catalogLoaded && items.length > 0 && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              '@context': 'https://schema.org',
+              '@type': 'ItemList',
+              itemListElement: items.slice(0, 20).map((item, idx) => ({
+                '@type': 'ListItem',
+                position: idx + 1,
+                item: {
+                  '@type': 'Product',
+                  name: item.name,
+                  description: item.storeDescription || item.name,
+                  image: item.imageUrl,
+                  category: item.category,
+                  offers: item.sellPrice != null ? { '@type': 'Offer', price: item.sellPrice, priceCurrency: 'EUR' } : undefined,
+                },
+              })),
+            }),
+          }}
+        />
+      )}
     </div>
   );
 };
 
-const StoreItemCard: React.FC<{ item: StoreItem; priceDisplay: { value: number; sale: boolean; hasPrice: boolean }; texts: typeof TEXTS; onContact: () => void; onDetailsClick: () => void; layout?: 'grid' | 'list' }> = ({ item, priceDisplay, texts, onContact, onDetailsClick, layout = 'grid' }) => {
+const StoreItemCard: React.FC<{
+  item: StoreItem;
+  priceDisplay: { value: number; sale: boolean; hasPrice: boolean };
+  texts: typeof TEXTS;
+  onContact: () => void;
+  onDetailsClick: () => void;
+  layout?: 'grid' | 'list';
+  isInWishlist?: boolean;
+  onToggleWishlist?: () => void;
+  onShare?: () => void;
+}> = ({ item, priceDisplay, texts, onContact, onDetailsClick, layout = 'grid', isInWishlist = false, onToggleWishlist, onShare }) => {
   const [galleryIndex, setGalleryIndex] = useState(0);
   const images = useMemo(() => {
     const list: string[] = [];
@@ -646,7 +766,7 @@ const StoreItemCard: React.FC<{ item: StoreItem; priceDisplay: { value: number; 
       >
         <div className="w-32 sm:w-40 shrink-0 aspect-square bg-slate-100 overflow-hidden min-h-0">
           {images.length > 0 ? (
-            <img src={images[galleryIndex]} alt={item.name} className="w-full h-full object-contain object-center" />
+            <img src={images[galleryIndex]} alt={item.name} loading="lazy" className="w-full h-full object-contain object-center" />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs px-2 text-center">{item.name}</div>
           )}
@@ -667,7 +787,7 @@ const StoreItemCard: React.FC<{ item: StoreItem; priceDisplay: { value: number; 
       <div className="relative w-full flex-shrink-0 bg-slate-100 overflow-hidden min-h-0 aspect-[4/3] max-h-[220px] sm:max-h-[260px] lg:max-h-[280px]">
         {images.length > 0 ? (
           <>
-            <img src={images[galleryIndex]} alt={item.name} className="w-full h-full object-contain object-center transition-transform duration-300 group-hover:scale-[1.03]" />
+            <img src={images[galleryIndex]} alt={item.name} loading="lazy" className="w-full h-full object-contain object-center transition-transform duration-300 group-hover:scale-[1.03]" />
             {images.length > 1 && (
               <>
                 <button 
@@ -704,6 +824,18 @@ const StoreItemCard: React.FC<{ item: StoreItem; priceDisplay: { value: number; 
                 {texts.onSale}
               </span>
             )}
+            <div className="absolute top-3 left-3 flex gap-2 z-10">
+              {onToggleWishlist && (
+                <button type="button" onClick={(e) => { e.stopPropagation(); onToggleWishlist(); }} className="p-2 rounded-full bg-white/90 shadow hover:bg-white text-slate-700" title={isInWishlist ? texts.removeFromWishlist : texts.addToWishlist}>
+                  <Heart size={18} className={isInWishlist ? 'fill-rose-500 text-rose-500' : ''} />
+                </button>
+              )}
+              {onShare && (
+                <button type="button" onClick={(e) => { e.stopPropagation(); onShare(); }} className="p-2 rounded-full bg-white/90 shadow hover:bg-white text-slate-700" title={texts.share}>
+                  <Share2 size={18} />
+                </button>
+              )}
+            </div>
           </>
         ) : (
           <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm px-4 text-center min-h-[140px]">{item.name}</div>
