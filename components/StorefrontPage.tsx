@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { MessageCircle, ChevronLeft, ChevronRight, Tag, X, Send, Loader2, Package, Sparkles, LayoutGrid, List, ArrowUp, FileText, Share2, Heart, Moon, Sun } from 'lucide-react';
+import { MessageCircle, ChevronLeft, ChevronRight, Tag, X, Send, Loader2, Package, Sparkles, LayoutGrid, List, ArrowUp, FileText, Share2, Heart, Moon, Sun, Search as SearchIcon, SlidersHorizontal } from 'lucide-react';
 import { subscribeToStoreCatalog, createStoreInquiry, type StoreCatalogPayload } from '../services/firebaseService';
 import { useNavigate } from 'react-router-dom';
 import LegalModal, { type LegalModalType } from './LegalModal';
@@ -91,6 +91,7 @@ const StorefrontPage: React.FC = () => {
   const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [tab, setTab] = useState<'all' | 'sale'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('');
+  const [subCategoryFilter, setSubCategoryFilter] = useState<string>('');
   const [minPrice, setMinPrice] = useState<string>('');
   const [maxPrice, setMaxPrice] = useState<string>('');
   const [search, setSearch] = useState<string>('');
@@ -171,6 +172,10 @@ const StorefrontPage: React.FC = () => {
 
   const items = useMemo(() => catalog?.items ?? [], [catalog]);
   const categories = useMemo(() => Array.from(new Set(items.map((i) => i.category).filter(Boolean))).sort(), [items]);
+  const subCategories = useMemo(() => {
+    if (!categoryFilter) return [];
+    return Array.from(new Set(items.filter((i) => i.category === categoryFilter).map((i) => i.subCategory).filter(Boolean))).sort() as string[];
+  }, [items, categoryFilter]);
 
   const similarItems = useMemo(() => {
     if (!galleryItem || !items.length) return [];
@@ -188,6 +193,7 @@ const StorefrontPage: React.FC = () => {
     let list = items;
     if (tab === 'sale') list = list.filter((i) => i.storeOnSale);
     if (categoryFilter) list = list.filter((i) => i.category === categoryFilter);
+    if (subCategoryFilter) list = list.filter((i) => i.subCategory === subCategoryFilter);
     const min = minPrice ? parseFloat(minPrice) : NaN;
     const max = maxPrice ? parseFloat(maxPrice) : NaN;
     if (!Number.isNaN(min)) list = list.filter((i) => (i.storeOnSale ? i.storeSalePrice : i.sellPrice) != null && (i.storeOnSale ? i.storeSalePrice! : i.sellPrice!) >= min);
@@ -197,7 +203,7 @@ const StorefrontPage: React.FC = () => {
       list = list.filter((i) => i.name.toLowerCase().includes(q) || (i.category || '').toLowerCase().includes(q) || (i.subCategory || '').toLowerCase().includes(q));
     }
     return list;
-  }, [items, tab, categoryFilter, minPrice, maxPrice, search]);
+  }, [items, tab, categoryFilter, subCategoryFilter, minPrice, maxPrice, search]);
 
   const sortedFiltered = useMemo(() => {
     const list = [...filtered];
@@ -281,49 +287,116 @@ const StorefrontPage: React.FC = () => {
         </div>
       </header>
 
-      {/* Filters */}
-      <section className="border-b border-slate-200/60 bg-white/70 backdrop-blur-sm">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-4">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="text-slate-500 text-xs font-semibold uppercase tracking-wider hidden sm:inline">{TEXTS.category}</span>
-              <div className="flex gap-2 overflow-x-auto pb-0.5 scrollbar-thin">
-                <button
-                  type="button"
-                  onClick={() => setCategoryFilter('')}
-                  className={`shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-all ${!categoryFilter ? 'bg-slate-900 text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+      {/* Compact filters bar */}
+      {(() => {
+        const hasActiveFilters = tab === 'sale' || categoryFilter || subCategoryFilter || minPrice !== '' || maxPrice !== '' || search.trim() !== '';
+        const clearAll = () => {
+          setTab('all');
+          setCategoryFilter('');
+          setSubCategoryFilter('');
+          setMinPrice('');
+          setMaxPrice('');
+          setSearch('');
+        };
+        return (
+          <section className={`sticky top-[57px] z-40 border-b ${darkMode ? 'bg-slate-800/95 border-slate-700' : 'bg-white/95 border-slate-200/80'} backdrop-blur-sm`}>
+            <div className="mx-auto max-w-6xl px-3 sm:px-6 py-2">
+              {/* Single row: search, category, subcategory, price, sort, view */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className={`relative flex-1 min-w-0 max-w-[180px] sm:max-w-[240px]`}>
+                  <SearchIcon size={16} className={`absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none ${darkMode ? 'text-slate-400' : 'text-slate-400'}`} />
+                  <input
+                    type="search"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder={TEXTS.search}
+                    className={`w-full pl-8 pr-3 py-1.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-white/20 ${darkMode ? 'bg-slate-700 border-slate-600 text-slate-100 placeholder:text-slate-500' : 'bg-slate-50 border border-slate-200 text-slate-900 placeholder:text-slate-400'}`}
+                  />
+                </div>
+                <select
+                  value={categoryFilter}
+                  onChange={(e) => { setCategoryFilter(e.target.value); setSubCategoryFilter(''); }}
+                  className={`py-1.5 pl-2.5 pr-7 rounded-lg text-sm outline-none focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-white/20 appearance-none bg-no-repeat bg-right ${darkMode ? 'bg-slate-700 border-slate-600 text-slate-100' : 'bg-slate-50 border border-slate-200 text-slate-900'}`}
+                  style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.4rem center' }}
                 >
-                  {TEXTS.all}
-                </button>
-                {categories.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setCategoryFilter(c)}
-                    className={`shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-all ${categoryFilter === c ? 'bg-slate-900 text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                  <option value="">{TEXTS.category}</option>
+                  {categories.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+                {subCategories.length > 0 && (
+                  <select
+                    value={subCategoryFilter}
+                    onChange={(e) => setSubCategoryFilter(e.target.value)}
+                    className={`py-1.5 pl-2.5 pr-7 rounded-lg text-sm outline-none focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-white/20 appearance-none bg-no-repeat bg-right ${darkMode ? 'bg-slate-700 border-slate-600 text-slate-100' : 'bg-slate-50 border border-slate-200 text-slate-900'}`}
+                    style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.4rem center' }}
                   >
-                    {c}
+                    <option value="">Unterkategorie</option>
+                    {subCategories.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                )}
+                <div className="flex items-center gap-1">
+                  <input type="number" min={0} step={1} value={minPrice} onChange={(e) => setMinPrice(e.target.value)} placeholder={TEXTS.minPrice} className={`w-14 sm:w-16 py-1.5 px-2 rounded-lg text-xs outline-none focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-white/20 ${darkMode ? 'bg-slate-700 border-slate-600 text-slate-100 placeholder:text-slate-500' : 'bg-slate-50 border border-slate-200 text-slate-900 placeholder:text-slate-400'}`} />
+                  <span className={`text-xs ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>–</span>
+                  <input type="number" min={0} step={1} value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} placeholder={TEXTS.maxPrice} className={`w-14 sm:w-16 py-1.5 px-2 rounded-lg text-xs outline-none focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-white/20 ${darkMode ? 'bg-slate-700 border-slate-600 text-slate-100 placeholder:text-slate-500' : 'bg-slate-50 border border-slate-200 text-slate-900 placeholder:text-slate-400'}`} />
+                </div>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                  className={`py-1.5 pl-2.5 pr-7 rounded-lg text-sm outline-none focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-white/20 appearance-none bg-no-repeat bg-right ${darkMode ? 'bg-slate-700 border-slate-600 text-slate-100' : 'bg-slate-50 border border-slate-200 text-slate-900'}`}
+                  style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.4rem center' }}
+                >
+                  <option value="default">{TEXTS.sort}</option>
+                  <option value="priceAsc">{TEXTS.priceLow}</option>
+                  <option value="priceDesc">{TEXTS.priceHigh}</option>
+                  <option value="nameAsc">{TEXTS.nameAz}</option>
+                </select>
+                <div className={`flex rounded-lg overflow-hidden border ${darkMode ? 'border-slate-600' : 'border-slate-200'}`}>
+                  <button type="button" onClick={() => setViewMode('grid')} className={`p-1.5 ${viewMode === 'grid' ? (darkMode ? 'bg-slate-600 text-white' : 'bg-slate-900 text-white') : darkMode ? 'bg-slate-700 text-slate-400 hover:bg-slate-600' : 'bg-white text-slate-600 hover:bg-slate-100'}`} title="Grid"><LayoutGrid size={16} /></button>
+                  <button type="button" onClick={() => setViewMode('list')} className={`p-1.5 ${viewMode === 'list' ? (darkMode ? 'bg-slate-600 text-white' : 'bg-slate-900 text-white') : darkMode ? 'bg-slate-700 text-slate-400 hover:bg-slate-600' : 'bg-white text-slate-600 hover:bg-slate-100'}`} title="Liste"><List size={16} /></button>
+                </div>
+                {hasActiveFilters && (
+                  <button type="button" onClick={clearAll} className={`inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium ${darkMode ? 'text-slate-400 hover:bg-slate-700 hover:text-slate-200' : 'text-slate-500 hover:bg-slate-200 hover:text-slate-800'}`}>
+                    <SlidersHorizontal size={14} /> Zurücksetzen
                   </button>
-                ))}
+                )}
               </div>
+              {/* Active filter chips */}
+              {hasActiveFilters && (
+                <div className="flex flex-wrap items-center gap-1.5 mt-2 pt-2 border-t border-slate-200/60 dark:border-slate-600/60">
+                  {tab === 'sale' && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-100 dark:bg-rose-900/40 text-rose-800 dark:text-rose-200 text-xs font-medium">
+                      {TEXTS.sale} <button type="button" onClick={() => setTab('all')} className="hover:opacity-80" aria-label="Remove">×</button>
+                    </span>
+                  )}
+                  {categoryFilter && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-medium">
+                      {categoryFilter} <button type="button" onClick={() => { setCategoryFilter(''); setSubCategoryFilter(''); }} className="hover:opacity-80" aria-label="Remove">×</button>
+                    </span>
+                  )}
+                  {subCategoryFilter && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-medium">
+                      {subCategoryFilter} <button type="button" onClick={() => setSubCategoryFilter('')} className="hover:opacity-80" aria-label="Remove">×</button>
+                    </span>
+                  )}
+                  {(minPrice !== '' || maxPrice !== '') && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-medium">
+                      €{minPrice || '0'}–{maxPrice !== '' ? `€${maxPrice}` : '…'} <button type="button" onClick={() => { setMinPrice(''); setMaxPrice(''); }} className="hover:opacity-80" aria-label="Remove">×</button>
+                    </span>
+                  )}
+                  {search.trim() !== '' && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-medium max-w-[120px] truncate" title={search}>
+                      „{search.trim()}“ <button type="button" onClick={() => setSearch('')} className="hover:opacity-80 shrink-0" aria-label="Remove">×</button>
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-              <input
-                type="search"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={TEXTS.search}
-                className="flex-1 min-w-0 max-w-[200px] sm:max-w-none rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-slate-900/20 focus:bg-white placeholder:text-slate-400"
-              />
-              <div className="flex items-center gap-1.5">
-                <input type="number" min={0} step={1} value={minPrice} onChange={(e) => setMinPrice(e.target.value)} placeholder={TEXTS.minPrice} className="w-20 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs outline-none focus:ring-2 focus:ring-slate-900/20" />
-                <span className="text-slate-400 text-xs">–</span>
-                <input type="number" min={0} step={1} value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} placeholder={TEXTS.maxPrice} className="w-20 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs outline-none focus:ring-2 focus:ring-slate-900/20" />
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+          </section>
+        );
+      })()}
 
       {/* Content */}
       <main className="flex-1 mx-auto max-w-6xl px-4 sm:px-6 py-10 sm:py-14 w-full">
@@ -369,35 +442,19 @@ const StorefrontPage: React.FC = () => {
         )}
 
         {showNoResults && (
-          <div className="flex flex-col items-center justify-center py-28 text-center rounded-2xl bg-white/80 border border-slate-200/80 p-8">
-            <p className="text-slate-600 font-medium">{TEXTS.noItems}</p>
-            <p className="text-slate-400 text-sm mt-1">Filter anpassen oder Alle / Sale wechseln.</p>
+          <div className={`flex flex-col items-center justify-center py-28 text-center rounded-2xl p-8 ${darkMode ? 'bg-slate-800/80 border border-slate-600/80' : 'bg-white/80 border border-slate-200/80'}`}>
+            <p className={darkMode ? 'text-slate-300 font-medium' : 'text-slate-600 font-medium'}>{TEXTS.noItems}</p>
+            <p className={darkMode ? 'text-slate-500 text-sm mt-1' : 'text-slate-400 text-sm mt-1'}>Filter anpassen oder Alle / Sale wechseln.</p>
           </div>
         )}
 
         {catalogLoaded && sortedFiltered.length > 0 && (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-8">
-              <p className="text-sm font-medium text-slate-600">
-                <span className="inline-flex items-center px-3 py-1 rounded-full bg-slate-900 text-white text-xs font-bold">{sortedFiltered.length}</span>
+            <div className="flex flex-wrap items-center gap-3 mb-6">
+              <p className={`text-sm font-medium ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${darkMode ? 'bg-slate-600 text-white' : 'bg-slate-900 text-white'}`}>{sortedFiltered.length}</span>
                 <span className="ml-2">{TEXTS.results}</span>
               </p>
-              <div className="flex items-center gap-2">
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-slate-900/20 shadow-sm"
-                >
-                  <option value="default">{TEXTS.sort}</option>
-                  <option value="priceAsc">{TEXTS.priceLow}</option>
-                  <option value="priceDesc">{TEXTS.priceHigh}</option>
-                  <option value="nameAz">{TEXTS.nameAz}</option>
-                </select>
-                <div className="flex rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-                  <button type="button" onClick={() => setViewMode('grid')} className={`p-2.5 ${viewMode === 'grid' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`} title="Grid"><LayoutGrid size={18} /></button>
-                  <button type="button" onClick={() => setViewMode('list')} className={`p-2.5 ${viewMode === 'list' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`} title="List"><List size={18} /></button>
-                </div>
-              </div>
             </div>
             {viewMode === 'grid' ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
