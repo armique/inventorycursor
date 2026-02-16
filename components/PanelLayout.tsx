@@ -183,7 +183,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
           <button
             onClick={() => onForcePush?.()}
             disabled={syncState.status === 'syncing'}
-            className={`md:hidden fixed bottom-20 right-6 z-[200] px-4 py-2.5 rounded-full shadow-2xl flex items-center gap-2.5 text-xs font-black uppercase tracking-widest border ${
+            className={`md:hidden fixed bottom-20 left-4 z-[200] px-4 py-2.5 rounded-full shadow-2xl flex items-center gap-2.5 text-xs font-black uppercase tracking-widest border ${
               syncState.status === 'error' ? 'bg-red-600 text-white border-red-500' :
               syncState.status === 'success' ? 'bg-emerald-600 text-white border-emerald-500' :
               'bg-slate-900 text-white border-slate-800'

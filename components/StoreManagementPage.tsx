@@ -627,7 +627,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end" aria-modal="true">
+    <div className="fixed inset-0 z-[250] flex justify-end" aria-modal="true">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative w-full max-w-md bg-white shadow-xl flex flex-col max-h-full overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
@@ -754,11 +754,11 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
             </div>
           </div>
         </div>
-        <div className="flex gap-2 px-4 py-3 border-t border-slate-200 bg-slate-50">
-          <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-sm font-medium hover:bg-slate-100">
+        <div className="flex gap-2 px-4 py-3 pb-6 md:pb-3 border-t border-slate-200 bg-slate-50 shrink-0">
+          <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-sm font-medium hover:bg-slate-100 active:bg-slate-200">
             {texts.cancel}
           </button>
-          <button type="button" onClick={handleSave} className="flex-1 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800">
+          <button type="button" onClick={handleSave} className="flex-1 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 active:bg-slate-700">
             {texts.save}
           </button>
         </div>
