@@ -77,19 +77,9 @@ function GitHubOAuthCallback() {
 
 export { DEFAULT_CATEGORIES, HIERARCHY_CATEGORIES } from './services/constants';
 
-/** Category/subcategory visibility for store: true = all subcats, string[] = only these subcats. Missing = show all. */
-export type StoreCategoryFilter = Record<string, true | string[]>;
-
-function buildStoreCatalog(items: InventoryItem[], categoryFields: Record<string, string[]>, storeCategoryFilter?: StoreCategoryFilter | null): { items: { id: string; name: string; category: string; subCategory?: string; sellPrice?: number; storeSalePrice?: number; storeOnSale?: boolean; imageUrl?: string; storeGalleryUrls?: string[]; storeDescription?: string; specs?: Record<string, string | number>; categoryFields?: string[] }[] } {
-  let list = items.filter((i) => i.status === ItemStatus.IN_STOCK && i.storeVisible !== false);
-  if (storeCategoryFilter && Object.keys(storeCategoryFilter).length > 0) {
-    list = list.filter((i) => {
-      const rule = storeCategoryFilter[i.category];
-      if (rule === undefined) return false; // only show categories that are explicitly in the filter
-      if (rule === true) return true;
-      return rule.includes(i.subCategory || '');
-    });
-  }
+function buildStoreCatalog(items: InventoryItem[], categoryFields: Record<string, string[]>): { items: { id: string; name: string; category: string; subCategory?: string; sellPrice?: number; storeSalePrice?: number; storeOnSale?: boolean; imageUrl?: string; storeGalleryUrls?: string[]; storeDescription?: string; specs?: Record<string, string | number>; categoryFields?: string[] }[] } {
+  // Only show items that are IN_STOCK and have storeVisible !== false (simple hide/show toggle)
+  const list = items.filter((i) => i.status === ItemStatus.IN_STOCK && i.storeVisible !== false);
   return {
     items: list.map((i) => ({
       id: i.id,
@@ -133,18 +123,6 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : {};
   });
 
-  const [storeCategoryFilter, setStoreCategoryFilter] = useState<StoreCategoryFilter>(() => {
-    try {
-      const saved = localStorage.getItem('store_category_filter');
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
-
-  useEffect(() => {
-    localStorage.setItem('store_category_filter', JSON.stringify(storeCategoryFilter));
-  }, [storeCategoryFilter]);
 
   const handleAddCategory = (category: string, subcategory?: string) => {
     setCategories(prev => {
@@ -332,7 +310,7 @@ const App: React.FC = () => {
           applyRemoteData(remote as any);
           setSyncState({ status: 'success', lastSynced: new Date(), message: 'Live' });
           // Ensure storefront catalog is up to date with remote data.
-          await writeStoreCatalog(buildStoreCatalog((remote.inventory || []) as InventoryItem[], remote.categoryFields || {}, storeCategoryFilter)).catch((e) =>
+          await writeStoreCatalog(buildStoreCatalog((remote.inventory || []) as InventoryItem[], remote.categoryFields || {})).catch((e) =>
             console.warn('Store catalog update failed', e)
           );
           return;
@@ -351,7 +329,7 @@ const App: React.FC = () => {
         await writeToCloud(payload);
         saveToLocalStorage(items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields);
         setSyncState({ status: 'success', lastSynced: new Date(), message: 'Live' });
-        await writeStoreCatalog(buildStoreCatalog(items, categoryFields, storeCategoryFilter)).catch((e) =>
+        await writeStoreCatalog(buildStoreCatalog(items, categoryFields)).catch((e) =>
           console.warn('Store catalog update failed', e)
         );
       } catch (err) {
@@ -359,17 +337,17 @@ const App: React.FC = () => {
         setSyncState((prev) => ({ ...prev, status: 'error', message: getSyncErrorMessage(err) }));
       }
     })();
-  }, [authUser, items, trash, expenses, categories, categoryFields, businessSettings, monthlyGoal, storeCategoryFilter, applyRemoteData]);
+  }, [authUser, items, trash, expenses, categories, categoryFields, businessSettings, monthlyGoal, applyRemoteData]);
 
   // Publish store catalog once when panel has items and auth (ensures storefront gets data)
   useEffect(() => {
     if (!isCloudEnabled() || !authUser || items.length === 0 || storeCatalogPublishDoneRef.current) return;
     storeCatalogPublishDoneRef.current = true;
     const t = setTimeout(() => {
-      writeStoreCatalog(buildStoreCatalog(items, categoryFields, storeCategoryFilter)).catch(() => {});
+      writeStoreCatalog(buildStoreCatalog(items, categoryFields)).catch(() => {});
     }, 1500);
     return () => clearTimeout(t);
-  }, [authUser, items.length, isCloudEnabled(), items, categoryFields, storeCategoryFilter]);
+  }, [authUser, items.length, isCloudEnabled(), items, categoryFields]);
 
   // Publish store catalog soon after items change (so visibility toggles show on store within ~1s)
   useEffect(() => {
@@ -377,12 +355,12 @@ const App: React.FC = () => {
     if (catalogPublishDebounceRef.current) clearTimeout(catalogPublishDebounceRef.current);
     catalogPublishDebounceRef.current = setTimeout(() => {
       catalogPublishDebounceRef.current = null;
-      writeStoreCatalog(buildStoreCatalog(items, categoryFields, storeCategoryFilter)).catch((e) => console.warn('Store catalog update failed', e));
+      writeStoreCatalog(buildStoreCatalog(items, categoryFields)).catch((e) => console.warn('Store catalog update failed', e));
     }, 1000);
     return () => {
       if (catalogPublishDebounceRef.current) clearTimeout(catalogPublishDebounceRef.current);
     };
-  }, [items, categoryFields, storeCategoryFilter, authUser]);
+  }, [items, categoryFields, authUser]);
 
   // 2. Local persistence + debounced Firestore write
   useEffect(() => {
@@ -403,7 +381,7 @@ const App: React.FC = () => {
         .then(() => {
           saveToLocalStorage(items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields);
           setSyncState({ status: 'success', lastSynced: new Date(), message: 'Live' });
-          const catalog = buildStoreCatalog(items, categoryFields, storeCategoryFilter);
+          const catalog = buildStoreCatalog(items, categoryFields);
           return writeStoreCatalog(catalog).catch((e) => console.warn('Store catalog update failed', e));
         })
         .then(() => setSyncState({ status: 'success', lastSynced: new Date(), message: 'Live' }))
@@ -421,7 +399,7 @@ const App: React.FC = () => {
     try {
       await writeToCloud(payload);
       saveToLocalStorage(items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields);
-      await writeStoreCatalog(buildStoreCatalog(items, categoryFields, storeCategoryFilter)).catch((e) => console.warn('Store catalog update failed', e));
+        await writeStoreCatalog(buildStoreCatalog(items, categoryFields)).catch((e) => console.warn('Store catalog update failed', e));
       setSyncState({ status: 'success', lastSynced: new Date(), message: 'Saved' });
       return true;
     } catch (err) {
@@ -501,7 +479,7 @@ const App: React.FC = () => {
           categories,
           categoryFields,
         });
-        await writeStoreCatalog(buildStoreCatalog(emptyInventory, categoryFields, storeCategoryFilter)).catch(() => {});
+        await writeStoreCatalog(buildStoreCatalog(emptyInventory, categoryFields)).catch(() => {});
       } catch (_) {}
     }
 
@@ -535,7 +513,7 @@ const App: React.FC = () => {
     if (isCloudEnabled() && authUser) {
       try {
         await writeToCloud({ inventory: inv, trash: tr, expenses: exp, settings: sets, goals: { monthly: goal }, categories: cats, categoryFields: fields });
-        await writeStoreCatalog(buildStoreCatalog(inv, fields, storeCategoryFilter)).catch(() => {});
+        await writeStoreCatalog(buildStoreCatalog(inv, fields)).catch(() => {});
       } catch (_) {}
     }
     setRefreshKey((k) => k + 1);
@@ -638,7 +616,7 @@ const App: React.FC = () => {
           <Route path="expenses" element={<ExpenseManager expenses={expenses} onAddExpense={handleAddExpense} onDeleteExpense={handleDeleteExpense} />} />
           <Route path="import" element={<SheetsImport onImport={handleImportBatch} onClearData={handleWipeData} />} />
           <Route path="trash" element={<TrashPage items={trash} onRestore={handleRestoreFromTrash} onPermanentDelete={handlePermanentDelete} />} />
-          <Route path="store-management" element={<StoreManagementPage items={items} categories={categories} categoryFields={categoryFields} storeCategoryFilter={storeCategoryFilter} onStoreCategoryFilterChange={setStoreCategoryFilter} onUpdate={handleUpdate} onPublishCatalog={async () => { await writeStoreCatalog(buildStoreCatalog(items, categoryFields, storeCategoryFilter)); }} />} />
+          <Route path="store-management" element={<StoreManagementPage items={items} categories={categories} categoryFields={categoryFields} onUpdate={handleUpdate} onPublishCatalog={async () => { await writeStoreCatalog(buildStoreCatalog(items, categoryFields)); }} />} />
           <Route path="settings" element={<SettingsPage items={items} trash={trash} expenses={expenses} monthlyGoal={monthlyGoal} onForcePush={handleForcePush} onRestoreItems={setItems} onRestoreBackup={handleRestoreBackup} onFixEncoding={handleFixEncoding} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} onUpdateCategoryStructure={handleUpdateCategoryStructure} onUpdateCategoryFields={handleUpdateCategoryFields} onRenameCategory={() => {}} onRenameSubCategory={() => {}} />} />
         </Route>
         <Route path="/auth/github/callback" element={<GitHubOAuthCallback />} />
