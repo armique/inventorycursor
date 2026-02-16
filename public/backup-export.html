@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeInventory – backup now</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 2rem auto; padding: 1rem; }
+    h1 { font-size: 1.25rem; }
+    button { padding: 0.75rem 1.25rem; font-weight: bold; cursor: pointer; background: #0f172a; color: #fff; border: none; border-radius: 8px; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .out { margin-top: 1rem; font-size: 0.875rem; color: #475569; }
+    .err { color: #b91c1c; }
+    .ok { color: #15803d; }
+  </style>
+</head>
+<body>
+  <h1>Backup localStorage now</h1>
+  <p>This page runs on the same origin as the app, so it can read the same localStorage. Click to download a JSON backup.</p>
+  <button id="btn">Download backup now</button>
+  <p id="out" class="out"></p>
+
+  <script>
+    function out(msg, isErr) {
+      var el = document.getElementById('out');
+      el.textContent = msg;
+      el.className = 'out ' + (isErr ? 'err' : 'ok');
+    }
+    document.getElementById('btn').onclick = function() {
+      var btn = this;
+      btn.disabled = true;
+      out('Reading localStorage…');
+      try {
+        var rawItems = localStorage.getItem('inventory_items');
+        var rawTrash = localStorage.getItem('inventory_trash');
+        var rawExpenses = localStorage.getItem('inventory_expenses');
+        var rawSettings = localStorage.getItem('business_settings');
+        var rawGoal = localStorage.getItem('monthly_profit_goal');
+        var rawCategories = localStorage.getItem('custom_categories');
+        var rawFields = localStorage.getItem('custom_category_fields');
+        var inventory = rawItems ? JSON.parse(rawItems) : [];
+        var trash = rawTrash ? JSON.parse(rawTrash) : [];
+        var expenses = rawExpenses ? JSON.parse(rawExpenses) : [];
+        var settings = rawSettings ? JSON.parse(rawSettings) : {};
+        var goal = rawGoal ? parseInt(rawGoal, 10) : 1000;
+        var categories = rawCategories ? JSON.parse(rawCategories) : {};
+        var categoryFields = rawFields ? JSON.parse(rawFields) : {};
+        var backup = {
+          inventory: inventory,
+          trash: trash,
+          expenses: expenses,
+          settings: settings,
+          goals: { monthly: goal },
+          categories: categories,
+          categoryFields: categoryFields,
+          exportedAt: new Date().toISOString()
+        };
+        var blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'deinventory-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+        a.click();
+        URL.revokeObjectURL(url);
+        out('Downloaded. Items: ' + inventory.length + ', trash: ' + trash.length + ', expenses: ' + expenses.length);
+      } catch (e) {
+        out('Error: ' + (e && e.message ? e.message : String(e)), true);
+      }
+      btn.disabled = false;
+    };
+  </script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+{
+  "name": "Inventory Pro",
+  "description": "Professional inventory management for eBay.de and Kleinanzeigen sellers in Germany with AI market analysis.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
