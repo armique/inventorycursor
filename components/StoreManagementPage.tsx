@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Eye, EyeOff, Tag, MessageCircle, ExternalLink, Loader2, Check, Mail, Phone, Upload, CheckCircle2, FolderOpen, Pencil, X, Image as ImageIcon, Filter, Search as SearchIcon } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
 import { subscribeToStoreInquiries, markStoreInquiryRead, uploadItemImage } from '../services/firebaseService';
@@ -123,7 +123,16 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
 
   const unreadCount = inquiries.filter((i) => !i.read).length;
 
-  const categoryEntries = Object.entries(categories || {}).filter(([cat]) => cat && cat !== 'Unknown');
+  // Categories used in the UI: merge configured categories with actual in-stock item categories
+  const categoryEntries = useMemo(() => {
+    const merged: Record<string, string[]> = { ...(categories || {}) };
+    inStockItems.forEach((item) => {
+      if (item.category && !merged[item.category]) {
+        merged[item.category] = [];
+      }
+    });
+    return Object.entries(merged).filter(([cat]) => cat && cat !== 'Unknown');
+  }, [categories, inStockItems]);
   const toggleCategorySubcategory = (category: string, subcategory: string, show: boolean) => {
     const subs = categories[category] || [];
     let next: true | string[];
