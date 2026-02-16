@@ -2,9 +2,10 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { MessageCircle, ChevronLeft, ChevronRight, Tag, X, Send, Loader2, Package, Sparkles, LayoutGrid, List, ArrowUp, FileText } from 'lucide-react';
 import { subscribeToStoreCatalog, createStoreInquiry, type StoreCatalogPayload } from '../services/firebaseService';
 import { useNavigate } from 'react-router-dom';
+import LegalModal, { type LegalModalType } from './LegalModal';
 
 const TEXTS = {
-  title: 'Shop',
+  title: 'ArmikTech',
   sale: 'Sale',
   all: 'Alle',
   category: 'Kategorie',
@@ -15,7 +16,7 @@ const TEXTS = {
   noItems: 'Keine Artikel gefunden.',
   priceOnRequest: 'Preis auf Anfrage',
   loading: 'Katalog wird geladen…',
-  noCatalog: 'Noch keine Artikel im Shop.',
+  noCatalog: 'Noch keine Artikel bei ArmikTech.',
   contact: 'Anfrage senden',
   aboutItem: 'Anfrage zu diesem Artikel',
   yourName: 'Ihr Name',
@@ -93,6 +94,7 @@ const StorefrontPage: React.FC = () => {
   const [galleryItem, setGalleryItem] = useState<StoreItem | null>(null);
   const [galleryIndex, setGalleryIndex] = useState(0);
   const [showBackToTop, setShowBackToTop] = useState(false);
+  const [legalModal, setLegalModal] = useState<LegalModalType | null>(null);
 
   useEffect(() => {
     const unsub = subscribeToStoreCatalog((data) => {
@@ -358,9 +360,9 @@ const StorefrontPage: React.FC = () => {
             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-x-6 gap-y-1">
               <a href="/#about" className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.aboutUs}</a>
               <a href="/#contact" className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.contactLink}</a>
-              <a href="/impressum" className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.imprint}</a>
-              <a href="/datenschutz" className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.privacy}</a>
-              <a href="/agb" className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.terms}</a>
+              <button type="button" onClick={() => setLegalModal('impressum')} className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.imprint}</button>
+              <button type="button" onClick={() => setLegalModal('datenschutz')} className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.privacy}</button>
+              <button type="button" onClick={() => setLegalModal('agb')} className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.terms}</button>
             </div>
             <p className="text-slate-500 text-xs text-center sm:text-right order-last sm:order-none">
               © {new Date().getFullYear()} · {TEXTS.title}
@@ -382,6 +384,11 @@ const StorefrontPage: React.FC = () => {
         >
           <ArrowUp size={20} />
         </button>
+      )}
+
+      {/* Legal modals (AGB, Datenschutz, Impressum) – user stays on page */}
+      {legalModal && (
+        <LegalModal type={legalModal} onClose={() => setLegalModal(null)} closeLabel={TEXTS.close} />
       )}
 
       {/* Contact modal */}

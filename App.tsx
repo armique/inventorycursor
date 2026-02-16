@@ -25,6 +25,7 @@ import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStore
 import { DEFAULT_CATEGORIES } from './services/constants';
 import { appendPriceHistoryIfChanged } from './services/priceHistory';
 import { saveOAuthResult } from './services/githubBackupService';
+import { Analytics } from '@vercel/analytics/react';
 
 const WRITE_DEBOUNCE_MS = 3500;
 
@@ -601,6 +602,7 @@ const App: React.FC = () => {
 
   return (
     <Router>
+      <Analytics />
       <Routes>
         <Route path="/" element={<StorefrontPage />} />
         <Route path="/impressum" element={<LegalPage />} />
