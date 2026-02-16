@@ -139,10 +139,21 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
     onStoreCategoryFilterChange({ ...storeCategoryFilter, [category]: next });
   };
   const setCategoryAll = (category: string, show: boolean) => {
-    onStoreCategoryFilterChange({
+    // Update category visibility filter
+    const nextFilter: StoreCategoryFilter = {
       ...storeCategoryFilter,
       [category]: show ? true : [],
-    });
+    };
+    onStoreCategoryFilterChange(nextFilter);
+
+    // Also update storeVisible flag for all in-stock items in this category so that
+    // "Show all" / "Hide all" has an immediate effect on what is considered visible.
+    const nextItems = items.map((it) =>
+      it.status === IN_STOCK && it.category === category
+        ? { ...it, storeVisible: show }
+        : it
+    );
+    onUpdate(nextItems);
   };
 
   const totalInStock = inStockItems.length;
