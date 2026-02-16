@@ -20,7 +20,7 @@ import QuotaMonitor from './components/QuotaMonitor';
 import StoreManagementPage from './components/StoreManagementPage';
 
 import { InventoryItem, Expense, ItemStatus, BusinessSettings } from './types';
-import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER } from './services/firebaseService';
+import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchFromCloud } from './services/firebaseService';
 import { DEFAULT_CATEGORIES } from './services/constants';
 import { appendPriceHistoryIfChanged } from './services/priceHistory';
 import { saveOAuthResult } from './services/githubBackupService';
@@ -317,23 +317,49 @@ const App: React.FC = () => {
     localStorage.setItem(OPTICAL_DRIVES_MIGRATION_KEY, '1');
   }, [appState, items, categories, categoryFields, trash, expenses, businessSettings, monthlyGoal]);
 
-  // Initial write when user signs in so Firestore document is created immediately (visible in Console)
+  // Initial cloud sync when user signs in:
+  // - FIRST try to pull existing data from Firestore so a new device never overwrites cloud with an empty local state.
+  // - ONLY if there is no remote document yet do we push the local snapshot once.
   useEffect(() => {
     if (!authUser || !isCloudEnabled() || initialWriteDoneRef.current) return;
     initialWriteDoneRef.current = true;
-    const payload = { inventory: items, trash, expenses, categories, categoryFields, settings: businessSettings, goals: { monthly: monthlyGoal } };
-    writeToCloud(payload)
-      .then(() => {
+
+    (async () => {
+      try {
+        // 1) Try to read existing cloud data for this user.
+        const remote = await fetchFromCloud();
+        if (remote) {
+          applyRemoteData(remote as any);
+          setSyncState({ status: 'success', lastSynced: new Date(), message: 'Live' });
+          // Ensure storefront catalog is up to date with remote data.
+          await writeStoreCatalog(buildStoreCatalog((remote.inventory || []) as InventoryItem[], remote.categoryFields || {}, storeCategoryFilter)).catch((e) =>
+            console.warn('Store catalog update failed', e)
+          );
+          return;
+        }
+
+        // 2) No remote doc yet: push current local state once to initialize cloud.
+        const payload = {
+          inventory: items,
+          trash,
+          expenses,
+          categories,
+          categoryFields,
+          settings: businessSettings,
+          goals: { monthly: monthlyGoal },
+        };
+        await writeToCloud(payload);
         saveToLocalStorage(items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields);
         setSyncState({ status: 'success', lastSynced: new Date(), message: 'Live' });
-        return writeStoreCatalog(buildStoreCatalog(items, categoryFields, storeCategoryFilter)).catch((e) => console.warn('Store catalog update failed', e));
-      })
-      .then(() => setSyncState({ status: 'success', lastSynced: new Date(), message: 'Live' }))
-      .catch((err) => {
+        await writeStoreCatalog(buildStoreCatalog(items, categoryFields, storeCategoryFilter)).catch((e) =>
+          console.warn('Store catalog update failed', e)
+        );
+      } catch (err) {
         initialWriteDoneRef.current = false;
-        setSyncState(prev => ({ ...prev, status: 'error', message: getSyncErrorMessage(err) }));
-      });
-  }, [authUser]);
+        setSyncState((prev) => ({ ...prev, status: 'error', message: getSyncErrorMessage(err) }));
+      }
+    })();
+  }, [authUser, items, trash, expenses, categories, categoryFields, businessSettings, monthlyGoal, storeCategoryFilter, applyRemoteData]);
 
   // Publish store catalog once when panel has items and auth (ensures storefront gets data)
   useEffect(() => {
