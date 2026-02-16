@@ -15,7 +15,7 @@ const TEXTS = {
   noItems: 'Keine Artikel gefunden.',
   priceOnRequest: 'Preis auf Anfrage',
   loading: 'Katalog wird geladen…',
-  noCatalog: 'Noch keine Artikel im Shop. Der Händler kann im Admin-Bereich Artikel freischalten.',
+  noCatalog: 'Noch keine Artikel im Shop.',
   contact: 'Anfrage senden',
   aboutItem: 'Anfrage zu diesem Artikel',
   yourName: 'Ihr Name',
@@ -28,8 +28,8 @@ const TEXTS = {
   close: 'Schließen',
   specs: 'Technische Daten',
   onSale: 'Angebot',
-  adminLink: 'Admin',
   sort: 'Sortieren',
+  toHome: 'Zur Startseite',
   priceLow: 'Preis aufsteigend',
   priceHigh: 'Preis absteigend',
   nameAz: 'Name A–Z',
@@ -220,13 +220,6 @@ const StorefrontPage: React.FC = () => {
             >
               <Tag size={14} strokeWidth={2.2} /> {TEXTS.sale}
             </button>
-            <button
-              type="button"
-              onClick={() => navigate('/panel')}
-              className="ml-2 px-3 py-2 rounded-xl text-sm text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
-            >
-              {TEXTS.adminLink}
-            </button>
           </nav>
         </div>
       </header>
@@ -295,10 +288,10 @@ const StorefrontPage: React.FC = () => {
             <p className="text-slate-600 text-sm leading-relaxed mb-8">{TEXTS.noCatalog}</p>
             <button
               type="button"
-              onClick={() => navigate('/panel')}
+              onClick={() => navigate('/')}
               className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 shadow-lg transition-colors"
             >
-              <Sparkles size={16} /> Admin öffnen
+              {TEXTS.toHome}
             </button>
           </div>
         )}
@@ -352,16 +345,9 @@ const StorefrontPage: React.FC = () => {
       </main>
 
       {/* Footer */}
-      <footer className="mt-auto border-t border-slate-200 bg-slate-900 text-slate-300">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-10 text-center">
+      <footer className="mt-auto border-t border-slate-200/80 bg-slate-900 text-slate-300">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 flex flex-col items-center justify-center gap-1 text-center">
           <p className="text-slate-400 text-sm">© {new Date().getFullYear()} · {TEXTS.title}</p>
-          <button
-            type="button"
-            onClick={() => navigate('/panel')}
-            className="text-slate-500 text-sm hover:text-white mt-2 inline-block transition-colors"
-          >
-            {TEXTS.adminLink}
-          </button>
         </div>
       </footer>
 
@@ -409,13 +395,15 @@ const StorefrontPage: React.FC = () => {
         </div>
       )}
 
-      {/* Gallery carousel modal */}
+      {/* Gallery carousel modal – image + floating "Was ist drin?" */}
       {galleryItem && (() => {
         const galleryImages: string[] = [];
         if (galleryItem.imageUrl) galleryImages.push(galleryItem.imageUrl);
         if (galleryItem.storeGalleryUrls?.length) galleryImages.push(...galleryItem.storeGalleryUrls);
         const hasImages = galleryImages.length > 0;
         const currentIndex = Math.min(galleryIndex, hasImages ? galleryImages.length - 1 : 0);
+        const hasSpecs = galleryItem.specs && Object.keys(galleryItem.specs).length > 0;
+        const specsTitle = /pc|computer|desktop|build/i.test(galleryItem.category || '') || /pc|computer|desktop|build/i.test(galleryItem.subCategory || '') ? TEXTS.keyFeatures : TEXTS.specs;
         
         return (
           <div 
@@ -423,15 +411,15 @@ const StorefrontPage: React.FC = () => {
             onClick={() => setGalleryItem(null)}
           >
             <div 
-              className="relative bg-white rounded-3xl shadow-2xl max-w-5xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200" 
+              className="relative bg-white rounded-3xl shadow-2xl max-w-6xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200" 
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white">
+              <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-200 bg-white shrink-0">
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-bold text-slate-900 text-lg truncate">{galleryItem.name}</h3>
+                  <h3 className="font-bold text-slate-900 text-base sm:text-lg truncate">{galleryItem.name}</h3>
                   {galleryImages.length > 1 && (
-                    <p className="text-sm text-slate-500 mt-0.5">
+                    <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
                       {currentIndex + 1} von {galleryImages.length}
                     </p>
                   )}
@@ -446,126 +434,119 @@ const StorefrontPage: React.FC = () => {
                 </button>
               </div>
 
-              {/* Image container */}
-              <div className="relative flex-1 flex items-center justify-center bg-slate-50 min-h-0 p-6 sm:p-8">
-                {hasImages ? (
-                  <>
-                    <div className="relative w-full h-full flex items-center justify-center">
-                      <img 
-                        key={currentIndex}
-                        src={galleryImages[currentIndex]} 
-                        alt={`${galleryItem.name} - Bild ${currentIndex + 1}`}
-                        className="max-w-full max-h-[calc(90vh-200px)] object-contain rounded-xl shadow-lg transition-opacity duration-300"
-                        style={{ animation: 'fadeIn 0.3s ease-in-out' }}
-                      />
-                    </div>
-                    
-                    {/* Navigation arrows */}
-                    {galleryImages.length > 1 && (
+              {/* Main: carousel + floating Was ist drin? (side-by-side on lg) */}
+              <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden">
+                {/* Left: image + thumbnails */}
+                <div className="flex-1 min-w-0 flex flex-col bg-slate-50">
+                  <div className="relative flex-1 flex items-center justify-center min-h-[240px] sm:min-h-[280px] p-4 sm:p-6">
+                    {hasImages ? (
                       <>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setGalleryIndex((i) => (i - 1 + galleryImages.length) % galleryImages.length);
-                          }}
-                          className="absolute left-4 sm:left-6 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white shadow-lg hover:shadow-xl border border-slate-200 flex items-center justify-center text-slate-900 hover:bg-slate-50 transition-all hover:scale-110"
-                          aria-label="Previous image"
-                        >
-                          <ChevronLeft size={24} strokeWidth={2} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setGalleryIndex((i) => (i + 1) % galleryImages.length);
-                          }}
-                          className="absolute right-4 sm:right-6 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white shadow-lg hover:shadow-xl border border-slate-200 flex items-center justify-center text-slate-900 hover:bg-slate-50 transition-all hover:scale-110"
-                          aria-label="Next image"
-                        >
-                          <ChevronRight size={24} strokeWidth={2} />
-                        </button>
-                      </>
-                    )}
-                  </>
-                ) : (
-                  <div className="text-slate-400 text-lg py-12">Keine Bilder verfügbar</div>
-                )}
-              </div>
-
-              {/* Thumbnail strip */}
-              {galleryImages.length > 1 && (
-                <div className="px-6 py-4 border-t border-slate-200 bg-white">
-                  <div className="flex gap-2 overflow-x-auto scrollbar-thin pb-2">
-                    {galleryImages.map((img, i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setGalleryIndex(i);
-                        }}
-                        className={`shrink-0 w-20 h-20 rounded-xl overflow-hidden border-2 transition-all ${
-                          i === currentIndex 
-                            ? 'border-slate-900 ring-2 ring-slate-900/20 shadow-md' 
-                            : 'border-slate-200 hover:border-slate-300 opacity-70 hover:opacity-100'
-                        }`}
-                        aria-label={`Go to image ${i + 1}`}
-                      >
                         <img 
-                          src={img} 
-                          alt={`Thumbnail ${i + 1}`}
-                          className="w-full h-full object-cover"
+                          key={currentIndex}
+                          src={galleryImages[currentIndex]} 
+                          alt={`${galleryItem.name} - Bild ${currentIndex + 1}`}
+                          className="max-w-full max-h-[50vh] sm:max-h-[55vh] lg:max-h-[calc(90vh-220px)] object-contain rounded-xl shadow-lg transition-opacity duration-300"
+                          style={{ animation: 'fadeIn 0.3s ease-in-out' }}
                         />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Key features / Was ist drin? – specs block (PC components or item features) */}
-              {galleryItem.specs && Object.keys(galleryItem.specs).length > 0 && (
-                <div className="px-6 py-4 border-t border-slate-200 bg-white">
-                  <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-3">
-                    {/pc|computer|desktop|build/i.test(galleryItem.category || '') || /pc|computer|desktop|build/i.test(galleryItem.subCategory || '') ? TEXTS.keyFeatures : TEXTS.specs}
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
-                    {orderedSpecKeys(galleryItem.specs, galleryItem.categoryFields).map((key) => (
-                      <div key={key} className="flex justify-between gap-3 py-1.5 border-b border-slate-100 last:border-b-0">
-                        <span className="text-sm text-slate-500 font-medium shrink-0">{key}</span>
-                        <span className="text-sm text-slate-900 font-semibold text-right">{String(galleryItem.specs[key])}</span>
+                        {galleryImages.length > 1 && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setGalleryIndex((i) => (i - 1 + galleryImages.length) % galleryImages.length);
+                              }}
+                              className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-white shadow-lg border border-slate-200 flex items-center justify-center text-slate-900 hover:bg-slate-50 transition-all z-10"
+                              aria-label="Previous image"
+                            >
+                              <ChevronLeft size={22} strokeWidth={2} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setGalleryIndex((i) => (i + 1) % galleryImages.length);
+                              }}
+                              className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-white shadow-lg border border-slate-200 flex items-center justify-center text-slate-900 hover:bg-slate-50 transition-all z-10"
+                              aria-label="Next image"
+                            >
+                              <ChevronRight size={22} strokeWidth={2} />
+                            </button>
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      <div className="text-slate-400 text-lg py-12">Keine Bilder verfügbar</div>
+                    )}
+                    {/* Floating "Was ist drin?" card – overlay on image area on mobile/tablet; sidebar on lg */}
+                    {hasSpecs && (
+                      <div className="absolute bottom-4 left-4 right-4 lg:left-auto lg:right-4 lg:top-4 lg:bottom-4 lg:w-[280px] xl:w-[320px] z-20">
+                        <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200/80 p-4 sm:p-5 max-h-[200px] sm:max-h-[240px] lg:max-h-none lg:sticky lg:top-4 overflow-y-auto">
+                          <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 flex items-center gap-2">
+                            <span className="w-6 h-6 rounded-lg bg-slate-900 text-white flex items-center justify-center text-[10px]">✓</span>
+                            {specsTitle}
+                          </h4>
+                          <div className="space-y-2">
+                            {orderedSpecKeys(galleryItem.specs!, galleryItem.categoryFields).slice(0, 8).map((key) => (
+                              <div key={key} className="flex justify-between gap-2 text-xs sm:text-sm py-1 border-b border-slate-100 last:border-b-0">
+                                <span className="text-slate-500 font-medium shrink-0">{key}</span>
+                                <span className="text-slate-900 font-semibold text-right truncate" title={String(galleryItem.specs![key])}>{String(galleryItem.specs![key])}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       </div>
-                    ))}
+                    )}
+                  </div>
+                  {galleryImages.length > 1 && (
+                    <div className="px-4 sm:px-6 py-3 border-t border-slate-200/80 bg-white shrink-0">
+                      <div className="flex gap-2 overflow-x-auto scrollbar-thin">
+                        {galleryImages.map((img, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setGalleryIndex(i); }}
+                            className={`shrink-0 w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden border-2 transition-all ${
+                              i === currentIndex ? 'border-slate-900 ring-2 ring-slate-900/20' : 'border-slate-200 hover:border-slate-300 opacity-70 hover:opacity-100'
+                            }`}
+                            aria-label={`Bild ${i + 1}`}
+                          >
+                            <img src={img} alt="" className="w-full h-full object-cover" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Right column on lg: description + CTA (when no specs, or below specs in floating card) */}
+                <div className="lg:w-[320px] xl:w-[360px] shrink-0 flex flex-col border-t lg:border-t-0 lg:border-l border-slate-200 bg-white overflow-y-auto">
+                  {galleryItem.storeDescription && (
+                    <div className="p-4 sm:p-5 flex-1 min-h-0">
+                      <p className="text-sm text-slate-700 whitespace-pre-line leading-relaxed">{galleryItem.storeDescription}</p>
+                    </div>
+                  )}
+                  <div className="p-4 sm:p-5 border-t border-slate-200 flex flex-wrap gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setGalleryItem(null);
+                        openContact(galleryItem);
+                      }}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition-colors flex-1 min-w-[140px]"
+                    >
+                      <MessageCircle size={18} /> {TEXTS.contact}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGalleryItem(null)}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition-colors"
+                    >
+                      {TEXTS.close}
+                    </button>
                   </div>
                 </div>
-              )}
-
-              {/* Full description (structured with emojis / sections) */}
-              {galleryItem.storeDescription && (
-                <div className="px-6 py-4 border-t border-slate-200 bg-slate-50/80 max-h-80 overflow-y-auto">
-                  <p className="text-sm text-slate-700 whitespace-pre-line leading-relaxed">{galleryItem.storeDescription}</p>
-                </div>
-              )}
-              {/* CTA in modal */}
-              <div className="px-6 py-4 border-t border-slate-200 bg-white flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setGalleryItem(null);
-                    openContact(galleryItem);
-                  }}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition-colors"
-                >
-                  <MessageCircle size={18} /> {TEXTS.contact}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setGalleryItem(null)}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition-colors"
-                >
-                  {TEXTS.close}
-                </button>
               </div>
             </div>
           </div>
@@ -638,14 +619,14 @@ const StoreItemCard: React.FC<{ item: StoreItem; priceDisplay: { value: number; 
         onClick={onDetailsClick}
         className="group rounded-2xl bg-white border border-slate-200 overflow-hidden shadow-md hover:shadow-xl hover:border-slate-300 transition-all duration-300 flex flex-row cursor-pointer"
       >
-        <div className="w-40 sm:w-48 shrink-0 aspect-square bg-slate-100 overflow-hidden">
+        <div className="w-32 sm:w-40 shrink-0 aspect-square bg-slate-100 overflow-hidden min-h-0">
           {images.length > 0 ? (
-            <img src={images[galleryIndex]} alt={item.name} className="w-full h-full object-contain" />
+            <img src={images[galleryIndex]} alt={item.name} className="w-full h-full object-contain object-center" />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs px-2 text-center">{item.name}</div>
           )}
         </div>
-        <div className="p-4 sm:p-5 flex-1 min-w-0 flex flex-col">
+        <div className="p-4 sm:p-5 flex-1 min-w-0 flex flex-col min-h-0">
           {contentBlock}
         </div>
       </article>
@@ -655,13 +636,13 @@ const StoreItemCard: React.FC<{ item: StoreItem; priceDisplay: { value: number; 
   return (
     <article
       onClick={onDetailsClick}
-      className="group rounded-2xl bg-white border border-slate-200 overflow-hidden shadow-md hover:shadow-xl hover:border-slate-300 hover:-translate-y-1 transition-all duration-300 flex flex-col cursor-pointer"
+      className="group rounded-2xl bg-white border border-slate-200 overflow-hidden shadow-md hover:shadow-xl hover:border-slate-300 hover:-translate-y-1 transition-all duration-300 flex flex-col cursor-pointer h-full"
     >
-      {/* Image */}
-      <div className="relative aspect-[4/3] bg-slate-100 overflow-hidden">
+      {/* Image: fixed aspect + max-height so it never overlaps description */}
+      <div className="relative w-full flex-shrink-0 bg-slate-100 overflow-hidden min-h-0 aspect-[4/3] max-h-[220px] sm:max-h-[260px] lg:max-h-[280px]">
         {images.length > 0 ? (
           <>
-            <img src={images[galleryIndex]} alt={item.name} className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-[1.03]" />
+            <img src={images[galleryIndex]} alt={item.name} className="w-full h-full object-contain object-center transition-transform duration-300 group-hover:scale-[1.03]" />
             {images.length > 1 && (
               <>
                 <button 
@@ -700,10 +681,10 @@ const StoreItemCard: React.FC<{ item: StoreItem; priceDisplay: { value: number; 
             )}
           </>
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm px-4 text-center">{item.name}</div>
+          <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm px-4 text-center min-h-[140px]">{item.name}</div>
         )}
       </div>
-      <div className="p-5 flex-1 flex flex-col">
+      <div className="p-4 sm:p-5 flex-1 flex flex-col min-h-0 min-w-0">
         {contentBlock}
       </div>
     </article>
