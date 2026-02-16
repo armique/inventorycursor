@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { MessageCircle, ChevronLeft, ChevronRight, Tag, X, Send, Loader2, Package, Sparkles, LayoutGrid, List } from 'lucide-react';
+import { MessageCircle, ChevronLeft, ChevronRight, Tag, X, Send, Loader2, Package, Sparkles, LayoutGrid, List, ArrowUp, FileText } from 'lucide-react';
 import { subscribeToStoreCatalog, createStoreInquiry, type StoreCatalogPayload } from '../services/firebaseService';
 import { useNavigate } from 'react-router-dom';
 
@@ -34,6 +34,9 @@ const TEXTS = {
   priceHigh: 'Preis absteigend',
   nameAz: 'Name A–Z',
   results: 'Ergebnisse',
+  viewDetails: 'Details anzeigen',
+  readDescription: 'Beschreibung lesen',
+  backToTop: 'Nach oben',
 };
 
 type StoreItem = NonNullable<StoreCatalogPayload['items']>[number];
@@ -55,6 +58,7 @@ const StorefrontPage: React.FC = () => {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [galleryItem, setGalleryItem] = useState<StoreItem | null>(null);
   const [galleryIndex, setGalleryIndex] = useState(0);
+  const [showBackToTop, setShowBackToTop] = useState(false);
 
   useEffect(() => {
     const unsub = subscribeToStoreCatalog((data) => {
@@ -89,6 +93,12 @@ const StorefrontPage: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [galleryItem, galleryIndex]);
+
+  useEffect(() => {
+    const onScroll = () => setShowBackToTop(window.scrollY > 400);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   const items = useMemo(() => catalog?.items ?? [], [catalog]);
   const categories = useMemo(() => Array.from(new Set(items.map((i) => i.category).filter(Boolean))).sort(), [items]);
@@ -155,7 +165,7 @@ const StorefrontPage: React.FC = () => {
   const showNoResults = catalogLoaded && items.length > 0 && filtered.length === 0;
 
   return (
-    <div className="min-h-screen bg-[#fafafa] text-[#1a1a1a] antialiased storefront-page" style={{ fontFamily: "'Outfit', system-ui, sans-serif" }}>
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50/80 text-slate-900 antialiased storefront-page" style={{ fontFamily: "'Outfit', system-ui, sans-serif" }}>
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: scale(0.98); }
@@ -163,30 +173,30 @@ const StorefrontPage: React.FC = () => {
         }
       `}</style>
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-[#eee]">
+      <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-xl border-b border-slate-200/80 shadow-sm">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 py-4 flex items-center justify-between">
-          <button type="button" onClick={() => navigate('/')} className="text-xl font-semibold tracking-tight text-[#1a1a1a] hover:opacity-80 transition-opacity">
+          <button type="button" onClick={() => navigate('/')} className="text-xl font-bold tracking-tight text-slate-900 hover:text-slate-600 transition-colors">
             {TEXTS.title}
           </button>
           <nav className="flex items-center gap-1 sm:gap-2">
             <button
               type="button"
               onClick={() => setTab('all')}
-              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${tab === 'all' ? 'bg-[#1a1a1a] text-white' : 'text-[#666] hover:bg-[#f0f0f0] hover:text-[#1a1a1a]'}`}
+              className={`px-3 py-2 rounded-xl text-sm font-semibold transition-all ${tab === 'all' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
             >
               {TEXTS.all}
             </button>
             <button
               type="button"
               onClick={() => setTab('sale')}
-              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${tab === 'sale' ? 'bg-[#c41e3a] text-white' : 'text-[#666] hover:bg-[#fef2f2] hover:text-[#c41e3a]'}`}
+              className={`px-3 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-1.5 ${tab === 'sale' ? 'bg-rose-600 text-white shadow-md' : 'text-slate-600 hover:bg-rose-50 hover:text-rose-700'}`}
             >
               <Tag size={14} strokeWidth={2.2} /> {TEXTS.sale}
             </button>
             <button
               type="button"
               onClick={() => navigate('/panel')}
-              className="ml-2 px-3 py-2 rounded-lg text-sm text-[#888] hover:text-[#1a1a1a] hover:bg-[#f0f0f0] transition-colors"
+              className="ml-2 px-3 py-2 rounded-xl text-sm text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors"
             >
               {TEXTS.adminLink}
             </button>
@@ -194,17 +204,17 @@ const StorefrontPage: React.FC = () => {
         </div>
       </header>
 
-      {/* Filters — compact: category pills + inline search & price */}
-      <section className="bg-white border-b border-[#eee]">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-3">
+      {/* Filters */}
+      <section className="border-b border-slate-200/60 bg-white/70 backdrop-blur-sm">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-4">
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="flex items-center gap-2 shrink-0">
-              <span className="text-[#666] text-xs font-medium uppercase tracking-wider hidden sm:inline">{TEXTS.category}</span>
-              <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-thin scrollbar-thumb-[#ddd] scrollbar-track-transparent">
+              <span className="text-slate-500 text-xs font-semibold uppercase tracking-wider hidden sm:inline">{TEXTS.category}</span>
+              <div className="flex gap-2 overflow-x-auto pb-0.5 scrollbar-thin">
                 <button
                   type="button"
                   onClick={() => setCategoryFilter('')}
-                  className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${!categoryFilter ? 'bg-[#1a1a1a] text-white' : 'bg-[#f0f0f0] text-[#666] hover:bg-[#e5e5e5]'}`}
+                  className={`shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-all ${!categoryFilter ? 'bg-slate-900 text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                 >
                   {TEXTS.all}
                 </button>
@@ -213,7 +223,7 @@ const StorefrontPage: React.FC = () => {
                     key={c}
                     type="button"
                     onClick={() => setCategoryFilter(c)}
-                    className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${categoryFilter === c ? 'bg-[#1a1a1a] text-white' : 'bg-[#f0f0f0] text-[#666] hover:bg-[#e5e5e5]'}`}
+                    className={`shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-all ${categoryFilter === c ? 'bg-slate-900 text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                   >
                     {c}
                   </button>
@@ -226,12 +236,12 @@ const StorefrontPage: React.FC = () => {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={TEXTS.search}
-                className="flex-1 min-w-0 max-w-[200px] sm:max-w-none rounded-lg border border-[#e5e5e5] bg-[#fafafa] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#1a1a1a]/20 focus:bg-white placeholder:text-[#999]"
+                className="flex-1 min-w-0 max-w-[200px] sm:max-w-none rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-slate-900/20 focus:bg-white placeholder:text-slate-400"
               />
-              <div className="flex items-center gap-1">
-                <input type="number" min={0} step={1} value={minPrice} onChange={(e) => setMinPrice(e.target.value)} placeholder={TEXTS.minPrice} className="w-16 rounded-lg border border-[#e5e5e5] bg-white px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-[#1a1a1a]/20" />
-                <span className="text-[#999] text-xs">–</span>
-                <input type="number" min={0} step={1} value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} placeholder={TEXTS.maxPrice} className="w-16 rounded-lg border border-[#e5e5e5] bg-white px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-[#1a1a1a]/20" />
+              <div className="flex items-center gap-1.5">
+                <input type="number" min={0} step={1} value={minPrice} onChange={(e) => setMinPrice(e.target.value)} placeholder={TEXTS.minPrice} className="w-20 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs outline-none focus:ring-2 focus:ring-slate-900/20" />
+                <span className="text-slate-400 text-xs">–</span>
+                <input type="number" min={0} step={1} value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} placeholder={TEXTS.maxPrice} className="w-20 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs outline-none focus:ring-2 focus:ring-slate-900/20" />
               </div>
             </div>
           </div>
@@ -239,27 +249,27 @@ const StorefrontPage: React.FC = () => {
       </section>
 
       {/* Content */}
-      <main className="mx-auto max-w-6xl px-4 sm:px-6 py-10 sm:py-12">
+      <main className="mx-auto max-w-6xl px-4 sm:px-6 py-10 sm:py-14">
         {showLoading && (
-          <div className="flex flex-col items-center justify-center py-24 text-center">
-            <div className="w-12 h-12 rounded-2xl bg-[#1a1a1a]/5 flex items-center justify-center mb-4">
-              <Loader2 size={24} className="animate-spin text-[#1a1a1a]/60" />
+          <div className="flex flex-col items-center justify-center py-28 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-slate-900/10 flex items-center justify-center mb-5">
+              <Loader2 size={28} className="animate-spin text-slate-600" />
             </div>
-            <p className="text-[#666] font-medium">{TEXTS.loading}</p>
+            <p className="text-slate-600 font-medium">{TEXTS.loading}</p>
           </div>
         )}
 
         {showEmptyCatalog && (
-          <div className="flex flex-col items-center justify-center py-24 px-4 text-center max-w-md mx-auto">
-            <div className="w-16 h-16 rounded-2xl bg-[#f0f0f0] flex items-center justify-center mb-5">
-              <Package size={28} className="text-[#999]" />
+          <div className="flex flex-col items-center justify-center py-28 px-4 text-center max-w-md mx-auto">
+            <div className="w-20 h-20 rounded-2xl bg-slate-100 flex items-center justify-center mb-6">
+              <Package size={36} className="text-slate-400" />
             </div>
-            <h2 className="text-lg font-semibold text-[#1a1a1a] mb-2">Noch keine Artikel</h2>
-            <p className="text-[#666] text-sm leading-relaxed mb-6">{TEXTS.noCatalog}</p>
+            <h2 className="text-xl font-bold text-slate-900 mb-2">Noch keine Artikel</h2>
+            <p className="text-slate-600 text-sm leading-relaxed mb-8">{TEXTS.noCatalog}</p>
             <button
               type="button"
               onClick={() => navigate('/panel')}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#1a1a1a] text-white text-sm font-medium hover:bg-[#333] transition-colors"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 shadow-lg transition-colors"
             >
               <Sparkles size={16} /> Admin öffnen
             </button>
@@ -267,43 +277,46 @@ const StorefrontPage: React.FC = () => {
         )}
 
         {showNoResults && (
-          <div className="flex flex-col items-center justify-center py-24 text-center">
-            <p className="text-[#666] font-medium">{TEXTS.noItems}</p>
-            <p className="text-[#999] text-sm mt-1">Filter anpassen oder Alle / Sale wechseln.</p>
+          <div className="flex flex-col items-center justify-center py-28 text-center rounded-2xl bg-white/80 border border-slate-200/80 p-8">
+            <p className="text-slate-600 font-medium">{TEXTS.noItems}</p>
+            <p className="text-slate-400 text-sm mt-1">Filter anpassen oder Alle / Sale wechseln.</p>
           </div>
         )}
 
         {catalogLoaded && sortedFiltered.length > 0 && (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-              <p className="text-sm text-[#666]">{sortedFiltered.length} {TEXTS.results}</p>
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-8">
+              <p className="text-sm font-medium text-slate-600">
+                <span className="inline-flex items-center px-3 py-1 rounded-full bg-slate-900 text-white text-xs font-bold">{sortedFiltered.length}</span>
+                <span className="ml-2">{TEXTS.results}</span>
+              </p>
               <div className="flex items-center gap-2">
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-                  className="rounded-lg border border-[#e5e5e5] bg-white px-3 py-2 text-sm text-[#1a1a1a] outline-none focus:ring-2 focus:ring-[#1a1a1a]/20"
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-slate-900/20 shadow-sm"
                 >
                   <option value="default">{TEXTS.sort}</option>
                   <option value="priceAsc">{TEXTS.priceLow}</option>
                   <option value="priceDesc">{TEXTS.priceHigh}</option>
-                  <option value="nameAsc">{TEXTS.nameAz}</option>
+                  <option value="nameAz">{TEXTS.nameAz}</option>
                 </select>
-                <div className="flex rounded-lg border border-[#e5e5e5] overflow-hidden">
-                  <button type="button" onClick={() => setViewMode('grid')} className={`p-2 ${viewMode === 'grid' ? 'bg-[#1a1a1a] text-white' : 'bg-white text-[#666] hover:bg-[#f5f5f5]'}`} title="Grid"><LayoutGrid size={18} /></button>
-                  <button type="button" onClick={() => setViewMode('list')} className={`p-2 ${viewMode === 'list' ? 'bg-[#1a1a1a] text-white' : 'bg-white text-[#666] hover:bg-[#f5f5f5]'}`} title="List"><List size={18} /></button>
+                <div className="flex rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                  <button type="button" onClick={() => setViewMode('grid')} className={`p-2.5 ${viewMode === 'grid' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`} title="Grid"><LayoutGrid size={18} /></button>
+                  <button type="button" onClick={() => setViewMode('list')} className={`p-2.5 ${viewMode === 'list' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`} title="List"><List size={18} /></button>
                 </div>
               </div>
             </div>
             {viewMode === 'grid' ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
                 {sortedFiltered.map((item) => (
-                  <StoreItemCard key={item.id} item={item} priceDisplay={priceDisplay(item)} texts={TEXTS} onContact={() => openContact(item)} onImageClick={() => { setGalleryItem(item); setGalleryIndex(0); }} layout="grid" />
+                  <StoreItemCard key={item.id} item={item} priceDisplay={priceDisplay(item)} texts={TEXTS} onContact={() => openContact(item)} onDetailsClick={() => { setGalleryItem(item); setGalleryIndex(0); }} layout="grid" />
                 ))}
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {sortedFiltered.map((item) => (
-                  <StoreItemCard key={item.id} item={item} priceDisplay={priceDisplay(item)} texts={TEXTS} onContact={() => openContact(item)} onImageClick={() => { setGalleryItem(item); setGalleryIndex(0); }} layout="list" />
+                  <StoreItemCard key={item.id} item={item} priceDisplay={priceDisplay(item)} texts={TEXTS} onContact={() => openContact(item)} onDetailsClick={() => { setGalleryItem(item); setGalleryIndex(0); }} layout="list" />
                 ))}
               </div>
             )}
@@ -312,42 +325,54 @@ const StorefrontPage: React.FC = () => {
       </main>
 
       {/* Footer */}
-      <footer className="mt-auto border-t border-[#eee] bg-white">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 text-center">
-          <p className="text-[#888] text-sm">© {new Date().getFullYear()} · {TEXTS.title}</p>
+      <footer className="mt-auto border-t border-slate-200 bg-slate-900 text-slate-300">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-10 text-center">
+          <p className="text-slate-400 text-sm">© {new Date().getFullYear()} · {TEXTS.title}</p>
           <button
             type="button"
             onClick={() => navigate('/panel')}
-            className="text-[#999] text-sm hover:text-[#1a1a1a] mt-1 inline-block transition-colors"
+            className="text-slate-500 text-sm hover:text-white mt-2 inline-block transition-colors"
           >
             {TEXTS.adminLink}
           </button>
         </div>
       </footer>
 
+      {/* Back to top */}
+      {showBackToTop && (
+        <button
+          type="button"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="fixed bottom-6 right-6 z-40 w-12 h-12 rounded-full bg-slate-900 text-white shadow-lg hover:bg-slate-800 hover:scale-105 transition-all flex items-center justify-center"
+          aria-label={TEXTS.backToTop}
+        >
+          <ArrowUp size={20} />
+        </button>
+      )}
+
       {/* Contact modal */}
       {modalItem && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => !sending && setModalItem(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 sm:p-8 border border-[#eee]" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" onClick={() => !sending && setModalItem(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 sm:p-8 border border-slate-200" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-[#1a1a1a] text-lg">{TEXTS.aboutItem}</h3>
-              <button type="button" onClick={() => !sending && setModalItem(null)} className="p-2 rounded-xl hover:bg-[#f5f5f5] text-[#666] transition-colors">
+              <h3 className="font-bold text-slate-900 text-lg">{TEXTS.aboutItem}</h3>
+              <button type="button" onClick={() => !sending && setModalItem(null)} className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 transition-colors">
                 <X size={20} />
               </button>
             </div>
-            <p className="text-sm text-[#666] mb-5 font-medium">«{modalItem.name}»</p>
+            <p className="text-sm text-slate-600 mb-5 font-medium">«{modalItem.name}»</p>
             {sent ? (
               <div className="text-center py-6">
-                <p className="text-[#16a34a] font-semibold">{TEXTS.sent}</p>
-                <button type="button" onClick={() => setModalItem(null)} className="mt-4 text-sm text-[#666] hover:text-[#1a1a1a] underline">{TEXTS.close}</button>
+                <p className="text-emerald-600 font-semibold">{TEXTS.sent}</p>
+                <button type="button" onClick={() => setModalItem(null)} className="mt-4 text-sm text-slate-500 hover:text-slate-900 underline">{TEXTS.close}</button>
               </div>
             ) : (
               <>
-                <input type="text" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder={TEXTS.yourName} className="w-full mb-3 rounded-xl border border-[#e5e5e5] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#1a1a1a]/20" />
-                <input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder={TEXTS.yourEmail} className="w-full mb-3 rounded-xl border border-[#e5e5e5] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#1a1a1a]/20" />
-                <input type="tel" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder={TEXTS.yourPhone} className="w-full mb-3 rounded-xl border border-[#e5e5e5] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#1a1a1a]/20" />
-                <textarea value={form.message} onChange={(e) => setForm((f) => ({ ...f, message: e.target.value }))} placeholder={TEXTS.yourMessage} rows={3} className="w-full mb-5 rounded-xl border border-[#e5e5e5] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#1a1a1a]/20 resize-none" />
-                <button type="button" onClick={handleSend} disabled={sending} className="w-full py-3.5 rounded-xl bg-[#1a1a1a] text-white text-sm font-semibold flex items-center justify-center gap-2 hover:bg-[#333] disabled:opacity-60 transition-all">
+                <input type="text" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder={TEXTS.yourName} className="w-full mb-3 rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-slate-900/20" />
+                <input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder={TEXTS.yourEmail} className="w-full mb-3 rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-slate-900/20" />
+                <input type="tel" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder={TEXTS.yourPhone} className="w-full mb-3 rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-slate-900/20" />
+                <textarea value={form.message} onChange={(e) => setForm((f) => ({ ...f, message: e.target.value }))} placeholder={TEXTS.yourMessage} rows={3} className="w-full mb-5 rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-slate-900/20 resize-none" />
+                <button type="button" onClick={handleSend} disabled={sending} className="w-full py-3.5 rounded-xl bg-slate-900 text-white text-sm font-semibold flex items-center justify-center gap-2 hover:bg-slate-800 disabled:opacity-60 transition-all">
                   {sending ? <Loader2 size={18} className="animate-spin" /> : <Send size={16} />}
                   {TEXTS.send}
                 </button>
@@ -367,19 +392,19 @@ const StorefrontPage: React.FC = () => {
         
         return (
           <div 
-            className="fixed inset-0 z-[110] flex items-center justify-center p-4 sm:p-8 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" 
+            className="fixed inset-0 z-[110] flex items-center justify-center p-4 sm:p-8 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200" 
             onClick={() => setGalleryItem(null)}
           >
             <div 
-              className="relative bg-white rounded-3xl shadow-2xl max-w-5xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200" 
+              className="relative bg-white rounded-3xl shadow-2xl max-w-5xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200" 
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-[#eee] bg-white/95 backdrop-blur-sm">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white">
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-[#1a1a1a] text-lg truncate">{galleryItem.name}</h3>
+                  <h3 className="font-bold text-slate-900 text-lg truncate">{galleryItem.name}</h3>
                   {galleryImages.length > 1 && (
-                    <p className="text-sm text-[#666] mt-0.5">
+                    <p className="text-sm text-slate-500 mt-0.5">
                       {currentIndex + 1} von {galleryImages.length}
                     </p>
                   )}
@@ -387,7 +412,7 @@ const StorefrontPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setGalleryItem(null)}
-                  className="ml-4 p-2 rounded-xl hover:bg-[#f5f5f5] text-[#666] hover:text-[#1a1a1a] transition-colors shrink-0"
+                  className="ml-4 p-2 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors shrink-0"
                   aria-label="Close gallery"
                 >
                   <X size={22} />
@@ -395,7 +420,7 @@ const StorefrontPage: React.FC = () => {
               </div>
 
               {/* Image container */}
-              <div className="relative flex-1 flex items-center justify-center bg-[#fafafa] min-h-0 p-6 sm:p-8">
+              <div className="relative flex-1 flex items-center justify-center bg-slate-50 min-h-0 p-6 sm:p-8">
                 {hasImages ? (
                   <>
                     <div className="relative w-full h-full flex items-center justify-center">
@@ -403,7 +428,7 @@ const StorefrontPage: React.FC = () => {
                         key={currentIndex}
                         src={galleryImages[currentIndex]} 
                         alt={`${galleryItem.name} - Bild ${currentIndex + 1}`}
-                        className="max-w-full max-h-[calc(90vh-200px)] object-contain rounded-lg shadow-lg transition-opacity duration-300"
+                        className="max-w-full max-h-[calc(90vh-200px)] object-contain rounded-xl shadow-lg transition-opacity duration-300"
                         style={{ animation: 'fadeIn 0.3s ease-in-out' }}
                       />
                     </div>
@@ -417,7 +442,7 @@ const StorefrontPage: React.FC = () => {
                             e.stopPropagation();
                             setGalleryIndex((i) => (i - 1 + galleryImages.length) % galleryImages.length);
                           }}
-                          className="absolute left-4 sm:left-6 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white shadow-lg hover:shadow-xl border border-[#eee] flex items-center justify-center text-[#1a1a1a] hover:bg-[#fafafa] transition-all hover:scale-110"
+                          className="absolute left-4 sm:left-6 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white shadow-lg hover:shadow-xl border border-slate-200 flex items-center justify-center text-slate-900 hover:bg-slate-50 transition-all hover:scale-110"
                           aria-label="Previous image"
                         >
                           <ChevronLeft size={24} strokeWidth={2} />
@@ -428,7 +453,7 @@ const StorefrontPage: React.FC = () => {
                             e.stopPropagation();
                             setGalleryIndex((i) => (i + 1) % galleryImages.length);
                           }}
-                          className="absolute right-4 sm:right-6 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white shadow-lg hover:shadow-xl border border-[#eee] flex items-center justify-center text-[#1a1a1a] hover:bg-[#fafafa] transition-all hover:scale-110"
+                          className="absolute right-4 sm:right-6 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white shadow-lg hover:shadow-xl border border-slate-200 flex items-center justify-center text-slate-900 hover:bg-slate-50 transition-all hover:scale-110"
                           aria-label="Next image"
                         >
                           <ChevronRight size={24} strokeWidth={2} />
@@ -437,14 +462,14 @@ const StorefrontPage: React.FC = () => {
                     )}
                   </>
                 ) : (
-                  <div className="text-[#999] text-lg py-12">Keine Bilder verfügbar</div>
+                  <div className="text-slate-400 text-lg py-12">Keine Bilder verfügbar</div>
                 )}
               </div>
 
               {/* Thumbnail strip */}
               {galleryImages.length > 1 && (
-                <div className="px-6 py-4 border-t border-[#eee] bg-white/95 backdrop-blur-sm">
-                  <div className="flex gap-2 overflow-x-auto scrollbar-thin scrollbar-thumb-[#ddd] scrollbar-track-transparent pb-2">
+                <div className="px-6 py-4 border-t border-slate-200 bg-white">
+                  <div className="flex gap-2 overflow-x-auto scrollbar-thin pb-2">
                     {galleryImages.map((img, i) => (
                       <button
                         key={i}
@@ -453,10 +478,10 @@ const StorefrontPage: React.FC = () => {
                           e.stopPropagation();
                           setGalleryIndex(i);
                         }}
-                        className={`shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 transition-all ${
+                        className={`shrink-0 w-20 h-20 rounded-xl overflow-hidden border-2 transition-all ${
                           i === currentIndex 
-                            ? 'border-[#1a1a1a] ring-2 ring-[#1a1a1a]/20 shadow-md' 
-                            : 'border-[#e5e5e5] hover:border-[#ccc] opacity-60 hover:opacity-100'
+                            ? 'border-slate-900 ring-2 ring-slate-900/20 shadow-md' 
+                            : 'border-slate-200 hover:border-slate-300 opacity-70 hover:opacity-100'
                         }`}
                         aria-label={`Go to image ${i + 1}`}
                       >
@@ -473,10 +498,31 @@ const StorefrontPage: React.FC = () => {
 
               {/* Full description (structured with emojis / sections) */}
               {galleryItem.storeDescription && (
-                <div className="px-6 py-4 border-t border-[#eee] bg-[#fafafa] max-h-64 overflow-y-auto">
-                  <p className="text-sm text-[#444] whitespace-pre-line leading-relaxed">{galleryItem.storeDescription}</p>
+                <div className="px-6 py-4 border-t border-slate-200 bg-slate-50/80 max-h-80 overflow-y-auto">
+                  <p className="text-sm text-slate-700 whitespace-pre-line leading-relaxed">{galleryItem.storeDescription}</p>
                 </div>
               )}
+              {/* CTA in modal */}
+              <div className="px-6 py-4 border-t border-slate-200 bg-white flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setGalleryItem(null);
+                    openContact(galleryItem);
+                  }}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition-colors"
+                >
+                  <MessageCircle size={18} /> {TEXTS.contact}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGalleryItem(null)}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition-colors"
+                >
+                  {TEXTS.close}
+                </button>
+              </div>
             </div>
           </div>
         );
@@ -485,7 +531,7 @@ const StorefrontPage: React.FC = () => {
   );
 };
 
-const StoreItemCard: React.FC<{ item: StoreItem; priceDisplay: { value: number; sale: boolean; hasPrice: boolean }; texts: typeof TEXTS; onContact: () => void; onImageClick: () => void; layout?: 'grid' | 'list' }> = ({ item, priceDisplay, texts, onContact, onImageClick, layout = 'grid' }) => {
+const StoreItemCard: React.FC<{ item: StoreItem; priceDisplay: { value: number; sale: boolean; hasPrice: boolean }; texts: typeof TEXTS; onContact: () => void; onDetailsClick: () => void; layout?: 'grid' | 'list' }> = ({ item, priceDisplay, texts, onContact, onDetailsClick, layout = 'grid' }) => {
   const [galleryIndex, setGalleryIndex] = useState(0);
   const images = useMemo(() => {
     const list: string[] = [];
@@ -500,32 +546,43 @@ const StoreItemCard: React.FC<{ item: StoreItem; priceDisplay: { value: number; 
 
   const contentBlock = (
     <>
-      <p className="text-xs text-[#888] uppercase tracking-wider font-medium">{item.category}{item.subCategory ? ` / ${item.subCategory}` : ''}</p>
-      <h2 className="font-semibold text-[#1a1a1a] mt-1 line-clamp-2 text-base leading-snug">{item.name}</h2>
+      <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">{item.category}{item.subCategory ? ` / ${item.subCategory}` : ''}</p>
+      <h2 className="font-semibold text-slate-900 mt-1 line-clamp-2 text-base leading-snug">{item.name}</h2>
       {item.storeDescription && (
-        <p className="text-sm text-[#666] mt-2 whitespace-pre-line line-clamp-6">{item.storeDescription}</p>
+        <p className="text-sm text-slate-600 mt-2 whitespace-pre-line line-clamp-4">{item.storeDescription}</p>
       )}
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onDetailsClick(); }}
+        className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 hover:text-slate-900 hover:underline"
+      >
+        <FileText size={14} /> {texts.viewDetails}
+      </button>
       <div className="mt-3 flex items-baseline gap-2 flex-wrap">
         {priceDisplay.hasPrice ? (
           <>
-            <span className="text-xl font-bold text-[#1a1a1a]">{priceDisplay.value.toFixed(2)} €</span>
+            <span className="text-xl font-bold text-slate-900">{priceDisplay.value.toFixed(2)} €</span>
             {priceDisplay.sale && item.sellPrice != null && item.sellPrice > priceDisplay.value && (
-              <span className="text-sm text-[#999] line-through">{item.sellPrice.toFixed(2)} €</span>
+              <span className="text-sm text-slate-400 line-through">{item.sellPrice.toFixed(2)} €</span>
             )}
           </>
         ) : (
-          <span className="text-base font-medium text-[#888]">{texts.priceOnRequest}</span>
+          <span className="text-base font-medium text-slate-500">{texts.priceOnRequest}</span>
         )}
       </div>
       {hasSpecs && specKeys.length > 0 && !isList && (
-        <dl className="mt-4 pt-4 border-t border-[#f0f0f0] text-xs text-[#666] space-y-1.5">
-          <dt className="font-medium text-[#888]">{texts.specs}</dt>
+        <dl className="mt-4 pt-4 border-t border-slate-100 text-xs text-slate-600 space-y-1.5">
+          <dt className="font-medium text-slate-500">{texts.specs}</dt>
           {specKeys.slice(0, 5).map((k) => (
-            <dd key={k} className="flex justify-between gap-2"><span>{k}</span><span className="text-[#1a1a1a] font-medium">{String(item.specs![k])}</span></dd>
+            <dd key={k} className="flex justify-between gap-2"><span>{k}</span><span className="text-slate-900 font-medium">{String(item.specs![k])}</span></dd>
           ))}
         </dl>
       )}
-      <button type="button" onClick={onContact} className={`w-full py-3 rounded-xl border-2 border-[#1a1a1a] text-[#1a1a1a] text-sm font-semibold flex items-center justify-center gap-2 hover:bg-[#1a1a1a] hover:text-white transition-colors ${isList ? 'mt-3 max-w-[200px]' : 'mt-5'}`}>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onContact(); }}
+        className={`w-full py-3 rounded-xl border-2 border-slate-900 text-slate-900 text-sm font-semibold flex items-center justify-center gap-2 hover:bg-slate-900 hover:text-white transition-colors mt-4 ${isList ? 'max-w-[200px]' : ''}`}
+      >
         <MessageCircle size={18} /> {texts.contact}
       </button>
     </>
@@ -533,12 +590,15 @@ const StoreItemCard: React.FC<{ item: StoreItem; priceDisplay: { value: number; 
 
   if (isList) {
     return (
-      <article className="group rounded-2xl bg-white border border-[#eee] overflow-hidden shadow-sm hover:shadow-md hover:border-[#e0e0e0] transition-all flex flex-row">
-        <div className="w-40 sm:w-48 shrink-0 aspect-square bg-[#f5f5f5] overflow-hidden cursor-pointer" onClick={onImageClick}>
+      <article
+        onClick={onDetailsClick}
+        className="group rounded-2xl bg-white border border-slate-200 overflow-hidden shadow-md hover:shadow-xl hover:border-slate-300 transition-all duration-300 flex flex-row cursor-pointer"
+      >
+        <div className="w-40 sm:w-48 shrink-0 aspect-square bg-slate-100 overflow-hidden">
           {images.length > 0 ? (
             <img src={images[galleryIndex]} alt={item.name} className="w-full h-full object-contain" />
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-[#bbb] text-xs px-2 text-center">{item.name}</div>
+            <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs px-2 text-center">{item.name}</div>
           )}
         </div>
         <div className="p-4 sm:p-5 flex-1 min-w-0 flex flex-col">
@@ -549,12 +609,15 @@ const StoreItemCard: React.FC<{ item: StoreItem; priceDisplay: { value: number; 
   }
 
   return (
-    <article className="group rounded-2xl bg-white border border-[#eee] overflow-hidden shadow-sm hover:shadow-lg hover:border-[#e0e0e0] hover:-translate-y-0.5 transition-all duration-300 flex flex-col">
-      {/* Gallery */}
-      <div className="relative aspect-[4/3] bg-[#f5f5f5] overflow-hidden cursor-pointer" onClick={onImageClick}>
+    <article
+      onClick={onDetailsClick}
+      className="group rounded-2xl bg-white border border-slate-200 overflow-hidden shadow-md hover:shadow-xl hover:border-slate-300 hover:-translate-y-1 transition-all duration-300 flex flex-col cursor-pointer"
+    >
+      {/* Image */}
+      <div className="relative aspect-[4/3] bg-slate-100 overflow-hidden">
         {images.length > 0 ? (
           <>
-            <img src={images[galleryIndex]} alt={item.name} className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-[1.02]" />
+            <img src={images[galleryIndex]} alt={item.name} className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-[1.03]" />
             {images.length > 1 && (
               <>
                 <button 
@@ -563,7 +626,7 @@ const StoreItemCard: React.FC<{ item: StoreItem; priceDisplay: { value: number; 
                     e.stopPropagation();
                     setGalleryIndex((i) => (i - 1 + images.length) % images.length);
                   }} 
-                  className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/95 shadow-md flex items-center justify-center text-[#1a1a1a] hover:bg-white transition-colors z-10" 
+                  className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/95 shadow-md flex items-center justify-center text-slate-900 hover:bg-white transition-colors z-10" 
                   aria-label="Vorheriges Bild"
                 >
                   <ChevronLeft size={20} />
@@ -574,26 +637,26 @@ const StoreItemCard: React.FC<{ item: StoreItem; priceDisplay: { value: number; 
                     e.stopPropagation();
                     setGalleryIndex((i) => (i + 1) % images.length);
                   }} 
-                  className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/95 shadow-md flex items-center justify-center text-[#1a1a1a] hover:bg-white transition-colors z-10" 
+                  className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/95 shadow-md flex items-center justify-center text-slate-900 hover:bg-white transition-colors z-10" 
                   aria-label="Nächstes Bild"
                 >
                   <ChevronRight size={20} />
                 </button>
                 <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-10 pointer-events-none">
                   {images.map((_, i) => (
-                    <span key={i} className={`w-2 h-2 rounded-full transition-colors ${i === galleryIndex ? 'bg-[#1a1a1a]' : 'bg-white/80'}`} />
+                    <span key={i} className={`w-2 h-2 rounded-full transition-colors ${i === galleryIndex ? 'bg-slate-900' : 'bg-white/80'}`} />
                   ))}
                 </div>
               </>
             )}
             {priceDisplay.sale && (
-              <span className="absolute top-3 right-3 px-2.5 py-1 rounded-lg bg-[#c41e3a] text-white text-xs font-bold uppercase tracking-wide shadow z-10 pointer-events-none">
+              <span className="absolute top-3 right-3 px-2.5 py-1 rounded-lg bg-rose-600 text-white text-xs font-bold uppercase tracking-wide shadow z-10 pointer-events-none">
                 {texts.onSale}
               </span>
             )}
           </>
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-[#bbb] text-sm px-4 text-center">{item.name}</div>
+          <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm px-4 text-center">{item.name}</div>
         )}
       </div>
       <div className="p-5 flex-1 flex flex-col">
