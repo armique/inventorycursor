@@ -50,7 +50,8 @@ const DEFAULT_FIREBASE_CONFIG: FirebaseConfig = {
   apiKey: "AIzaSyA1KbcJ1oI0g7WBqplaiRoLttr4TkgR9XY",
   authDomain: "inventorycursor-e9000.firebaseapp.com",
   projectId: "inventorycursor-e9000",
-  storageBucket: "inventorycursor-e9000.firebasestorage.app",
+  // Use the standard appspot.com bucket name so Storage works reliably
+  storageBucket: "inventorycursor-e9000.appspot.com",
   messagingSenderId: "844355746831",
   appId: "1:844355746831:web:41b3829c7de55eeadd777a",
 };

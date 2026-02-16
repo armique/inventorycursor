@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Eye, EyeOff, Tag, MessageCircle, ExternalLink, Loader2, Check, Mail, Phone, Upload, CheckCircle2, FolderOpen, Pencil, X, Image as ImageIcon, Filter, Search as SearchIcon, Wand2 } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
-import { subscribeToStoreInquiries, markStoreInquiryRead, uploadItemImage } from '../services/firebaseService';
+import { subscribeToStoreInquiries, markStoreInquiryRead, uploadItemImage, isCloudEnabled, getCurrentUser } from '../services/firebaseService';
 import type { StoreCategoryFilter } from '../App';
 import ItemThumbnail from './ItemThumbnail';
 
@@ -632,13 +632,13 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
   const [sellPrice, setSellPriceState] = useState<string>(item.sellPrice != null ? String(item.sellPrice) : '');
   const [storeOnSale, setStoreOnSale] = useState(!!item.storeOnSale);
   const [storeSalePrice, setStoreSalePriceState] = useState<string>(item.storeSalePrice != null ? String(item.storeSalePrice) : '');
-  const [storeVisible, setStoreVisible] = useState<boolean>(item.storeVisible !== false);
   const [imageUrl, setImageUrl] = useState(item.imageUrl ?? '');
   const [galleryUrlsText, setGalleryUrlsText] = useState((item.storeGalleryUrls ?? []).join('\n'));
   const [uploadingMain, setUploadingMain] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState(false);
   const [galleryProgress, setGalleryProgress] = useState<string | null>(null);
   const [pendingGalleryFiles, setPendingGalleryFiles] = useState<File[]>([]);
+  const cloudReady = typeof window !== 'undefined' && isCloudEnabled() && !!getCurrentUser();
 
   const resizeImage = (file: File, maxSize = 1600, quality = 0.8): Promise<File> => {
     return new Promise((resolve, reject) => {
@@ -682,6 +682,10 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+    if (!cloudReady) {
+      alert('To upload images, first enable Cloud sync and sign in with Google in Settings (top-right).');
+      return;
+    }
     try {
       setUploadingMain(true);
       const resized = await resizeImage(file);
@@ -704,6 +708,10 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
 
   const handleConfirmGalleryUpload = async () => {
     if (!pendingGalleryFiles.length) return;
+    if (!cloudReady) {
+      alert('To upload gallery images, first enable Cloud sync and sign in with Google in Settings (top-right).');
+      return;
+    }
     try {
       setUploadingGallery(true);
       setGalleryProgress(`0 / ${pendingGalleryFiles.length}`);
@@ -735,7 +743,6 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
       name: name.trim() || item.name,
       storeDescription: storeDescription.trim() || undefined,
       sellPrice: sellPrice === '' ? undefined : parseFloat(sellPrice) || undefined,
-      storeVisible,
       storeOnSale,
       storeSalePrice: storeSalePrice === '' ? undefined : parseFloat(storeSalePrice) || undefined,
       imageUrl: imageUrl.trim() || undefined,
@@ -745,10 +752,8 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" aria-modal="true">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/40 z-0" onClick={onClose} />
-      {/* Slide-over panel */}
-      <div className="relative z-10 w-full max-w-md bg-white shadow-xl flex flex-col max-h-full overflow-hidden">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative w-full max-w-md bg-white shadow-xl flex flex-col max-h-full overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
           <h3 className="font-semibold text-slate-900">{texts.editStoreItem}</h3>
           <button type="button" onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 text-slate-600">
@@ -756,26 +761,6 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
           </button>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Visibility</p>
-              <p className="text-[11px] text-slate-500">
-                {storeVisible ? 'This item is visible on the storefront.' : 'This item is hidden from the storefront.'}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setStoreVisible((v) => !v)}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold ${
-                storeVisible
-                  ? 'bg-emerald-100 text-emerald-800'
-                  : 'bg-slate-100 text-slate-600'
-              }`}
-            >
-              {storeVisible ? <Eye size={12} /> : <EyeOff size={12} />}
-              {storeVisible ? texts.visible : texts.hidden}
-            </button>
-          </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Name</label>
             <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400" />
