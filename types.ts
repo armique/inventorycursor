@@ -155,6 +155,8 @@ export interface InventoryItem {
   storeMetaDescription?: string;
   /** Optional English store description (when multi-language is used). */
   storeDescriptionEn?: string;
+  /** Stock quantity for store (undefined = 1). When 0, show "Out of stock" on store. */
+  quantity?: number;
 }
 
 /** Inquiry from a visitor about a store item (stored in Firebase). */
@@ -189,6 +191,8 @@ export interface StoreCatalogItem {
   storeMetaTitle?: string;
   storeMetaDescription?: string;
   storeDescriptionEn?: string;
+  /** Quantity on hand (undefined = 1). Sent to store for "Only 1 left" / "Out of stock". */
+  quantity?: number;
 }
 
 export interface Competitor {

@@ -603,6 +603,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
   const [storeMetaTitle, setStoreMetaTitle] = useState(item.storeMetaTitle ?? '');
   const [storeMetaDescription, setStoreMetaDescription] = useState(item.storeMetaDescription ?? '');
   const [storeDescriptionEn, setStoreDescriptionEn] = useState(item.storeDescriptionEn ?? '');
+  const [quantity, setQuantity] = useState<number>(item.quantity ?? 1);
   /** Ordered list: [0] = main image (carousel #1), rest = gallery. */
   const [storeImageUrls, setStoreImageUrls] = useState<string[]>(() => {
     const main = item.imageUrl?.trim();
@@ -776,6 +777,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
       storeMetaTitle: storeMetaTitle.trim() || undefined,
       storeMetaDescription: storeMetaDescription.trim() || undefined,
       storeDescriptionEn: storeDescriptionEn.trim() || undefined,
+      quantity: quantity < 0 ? undefined : quantity,
       imageUrl: main || undefined,
       storeGalleryUrls: rest?.length ? rest : undefined,
     });
@@ -906,6 +908,11 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Store description (English)</label>
             <textarea value={storeDescriptionEn} onChange={(e) => setStoreDescriptionEn(e.target.value)} rows={4} placeholder="Optional English description when store language is EN" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400 resize-y" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Quantity (store stock)</label>
+            <input type="number" min={0} value={quantity} onChange={(e) => setQuantity(Math.max(0, parseInt(e.target.value, 10) || 0))} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400" />
+            <p className="mt-1 text-[11px] text-slate-500">Shows &quot;Only 1 left&quot; when 1, &quot;Out of stock&quot; when 0. Default 1.</p>
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">{texts.galleryUrls}</label>

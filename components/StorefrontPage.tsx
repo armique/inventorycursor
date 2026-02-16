@@ -58,6 +58,8 @@ const TEXTS_DE = {
   home: 'Start',
   badgeNew: 'Neu',
   badgePriceReduced: 'Preis reduziert',
+  onlyOneLeft: 'Nur noch 1',
+  outOfStock: 'Ausverkauft',
   langDe: 'DE',
   langEn: 'EN',
 };
@@ -118,6 +120,8 @@ const TEXTS_EN = {
   home: 'Home',
   badgeNew: 'New',
   badgePriceReduced: 'Price reduced',
+  onlyOneLeft: 'Only 1 left',
+  outOfStock: 'Out of stock',
   langDe: 'DE',
   langEn: 'EN',
 };
@@ -964,6 +968,12 @@ const StoreItemCard: React.FC<{
             {item.badge === 'New' ? texts.badgeNew : texts.badgePriceReduced}
           </span>
         )}
+        {'quantity' in item && item.quantity === 0 && (
+          <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-200 text-slate-700">{texts.outOfStock}</span>
+        )}
+        {'quantity' in item && item.quantity === 1 && (
+          <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-100 text-amber-800">{texts.onlyOneLeft}</span>
+        )}
       </div>
       <h2 className="font-semibold text-slate-900 mt-1 line-clamp-2 text-base leading-snug">{item.name}</h2>
       {getItemDescription(item, lang) && (
@@ -1070,6 +1080,16 @@ const StoreItemCard: React.FC<{
             {priceDisplay.sale && (
               <span className="absolute top-3 right-3 px-2.5 py-1 rounded-lg bg-rose-600 text-white text-xs font-bold uppercase tracking-wide shadow z-10 pointer-events-none">
                 {texts.onSale}
+              </span>
+            )}
+            {!priceDisplay.sale && 'quantity' in item && item.quantity === 0 && (
+              <span className="absolute top-3 right-3 px-2.5 py-1 rounded-lg bg-slate-600 text-white text-xs font-bold uppercase tracking-wide shadow z-10 pointer-events-none">
+                {texts.outOfStock}
+              </span>
+            )}
+            {!priceDisplay.sale && 'quantity' in item && item.quantity === 1 && (
+              <span className="absolute top-3 right-3 px-2.5 py-1 rounded-lg bg-amber-500 text-white text-xs font-bold uppercase tracking-wide shadow z-10 pointer-events-none">
+                {texts.onlyOneLeft}
               </span>
             )}
             {item.badge && (
