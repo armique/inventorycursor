@@ -1351,6 +1351,12 @@ const InventoryList: React.FC<Props> = ({
                  <Layers size={16}/> Set category
                </button>
                <button 
+                 onClick={() => handleBulkStoreVisible(true)} 
+                 className="bg-emerald-600 text-white px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-emerald-700 transition-all"
+               >
+                 <Globe size={16}/> Publish to store
+               </button>
+               <button 
                  onClick={() => setShowBulkStoreVisible(true)} 
                  className="bg-white text-slate-900 px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-slate-100 transition-all"
                >
