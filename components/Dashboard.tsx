@@ -196,7 +196,8 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
     });
     const deathPileValue = deathPileItems.reduce((acc: number, i) => acc + Number(i.buyPrice), 0);
 
-    return { totalTurnover, grossProfit, totalExpenses, netProfit, inventoryValue, deathPileCount: deathPileItems.length, deathPileValue };
+    const totalInventoryValue = items.filter(i => i.status === ItemStatus.IN_STOCK).reduce((acc, i) => acc + Number(i.buyPrice || 0), 0);
+    return { totalTurnover, grossProfit, totalExpenses, netProfit, inventoryValue, totalInventoryValue, deathPileCount: deathPileItems.length, deathPileValue };
   }, [filteredItems, filteredExpenses, items, taxMode]);
 
   const gameStats = useMemo(() => {
@@ -473,8 +474,9 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
       </div>
 
       {/* STAT CARDS */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard title="Total Sales" value={`€${stats.totalTurnover.toLocaleString(undefined, {maximumFractionDigits: 0})}`} icon={<Wallet className="text-blue-600" />} subtitle="Revenue" />
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+        <StatCard title="Inventory value" value={`€${stats.totalInventoryValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} icon={<Package className="text-slate-600" />} subtitle="All in-stock (cost)" />
+        <StatCard title="Total Sales" value={`€${stats.totalTurnover.toLocaleString(undefined, {maximumFractionDigits: 0})}`} icon={<Wallet className="text-blue-600" />} subtitle="Revenue (period)" />
         <StatCard title="Net Profit" value={`€${stats.netProfit.toLocaleString(undefined, {maximumFractionDigits: 0})}`} icon={<TrendingUp className="text-emerald-600" />} subtitle={taxMode === 'RegularVAT' ? "After Tax & Exp" : "After Expenses"} />
         <StatCard title="Overhead" value={`€${stats.totalExpenses.toLocaleString(undefined, {maximumFractionDigits: 0})}`} icon={<TrendingDown className="text-red-500" />} subtitle="Expenses" />
         <div className={`bg-white p-6 rounded-3xl shadow-sm border ${stats.deathPileCount > 0 ? 'border-amber-200 bg-amber-50/30' : 'border-slate-100'}`}>
