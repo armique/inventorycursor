@@ -180,6 +180,9 @@ const InventoryList: React.FC<Props> = ({
 
   const [showBulkSalesEdit, setShowBulkSalesEdit] = useState(false);
   const [showBulkCategoryEdit, setShowBulkCategoryEdit] = useState(false);
+  const [showBulkStoreVisible, setShowBulkStoreVisible] = useState(false);
+  const [showBulkSalePct, setShowBulkSalePct] = useState(false);
+  const [showBulkTag, setShowBulkTag] = useState(false);
   const [showRetroBundle, setShowRetroBundle] = useState(false);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
@@ -706,6 +709,31 @@ const InventoryList: React.FC<Props> = ({
      }));
      onUpdate(updates);
      setShowBulkCategoryEdit(false);
+     setSelectedIds([]);
+  };
+
+  const handleBulkStoreVisible = (visible: boolean) => {
+     const updates = items.filter(i => selectedIds.includes(i.id)).map(i => ({ ...i, storeVisible: visible }));
+     onUpdate(updates);
+     setShowBulkStoreVisible(false);
+     setSelectedIds([]);
+  };
+
+  const handleBulkSalePct = (pct: number) => {
+     const updates = items.filter(i => selectedIds.includes(i.id)).map(i => {
+        const sell = Number(i.sellPrice) ?? 0;
+        const salePrice = sell > 0 ? Math.round(sell * (1 - pct / 100) * 100) / 100 : undefined;
+        return { ...i, storeOnSale: true, storeSalePrice: salePrice };
+     });
+     onUpdate(updates);
+     setShowBulkSalePct(false);
+     setSelectedIds([]);
+  };
+
+  const handleBulkTag = (tag: string) => {
+     const updates = items.filter(i => selectedIds.includes(i.id)).map(i => ({ ...i, comment1: tag.trim() || i.comment1 }));
+     onUpdate(updates);
+     setShowBulkTag(false);
      setSelectedIds([]);
   };
 
@@ -1320,7 +1348,25 @@ const InventoryList: React.FC<Props> = ({
                  onClick={() => setShowBulkCategoryEdit(true)} 
                  className="bg-white text-slate-900 px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-slate-100 transition-all"
                >
-                 <Layers size={16}/> Reclassify
+                 <Layers size={16}/> Set category
+               </button>
+               <button 
+                 onClick={() => setShowBulkStoreVisible(true)} 
+                 className="bg-white text-slate-900 px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-slate-100 transition-all"
+               >
+                 <Eye size={16}/> Store visible
+               </button>
+               <button 
+                 onClick={() => setShowBulkSalePct(true)} 
+                 className="bg-white text-slate-900 px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-slate-100 transition-all"
+               >
+                 <Percent size={16}/> Sale %
+               </button>
+               <button 
+                 onClick={() => setShowBulkTag(true)} 
+                 className="bg-white text-slate-900 px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-slate-100 transition-all"
+               >
+                 <Tag size={16}/> Add tag
                </button>
 
                {/* Show Edit Sales Button if any selected item is sold/traded */}
@@ -1393,10 +1439,39 @@ const InventoryList: React.FC<Props> = ({
       {showBulkCategoryEdit && (
          <CategoryPickerModal 
             categories={categories}
-            // If single item selected, default to its category, otherwise default to first available
             initialCategory={selectedIds.length === 1 ? items.find(i => i.id === selectedIds[0])?.category : undefined}
             onSave={handleBulkCategorySave}
             onClose={() => setShowBulkCategoryEdit(false)}
+         />
+      )}
+
+      {showBulkStoreVisible && (
+         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
+            <div className="bg-white p-6 rounded-2xl shadow-2xl max-w-sm w-full">
+               <h3 className="text-lg font-black text-slate-900 mb-3">Store visible ({selectedIds.length} items)</h3>
+               <p className="text-sm text-slate-500 mb-4">Show or hide selected items on the storefront.</p>
+               <div className="flex gap-2">
+                  <button onClick={() => handleBulkStoreVisible(true)} className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700">Show on store</button>
+                  <button onClick={() => handleBulkStoreVisible(false)} className="flex-1 py-3 bg-slate-200 text-slate-700 rounded-xl font-bold hover:bg-slate-300">Hide</button>
+               </div>
+               <button onClick={() => setShowBulkStoreVisible(false)} className="w-full mt-3 py-2 text-slate-500 text-sm font-medium hover:text-slate-700">Cancel</button>
+            </div>
+         </div>
+      )}
+
+      {showBulkSalePct && (
+         <BulkSalePctModal
+            count={selectedIds.length}
+            onApply={handleBulkSalePct}
+            onClose={() => setShowBulkSalePct(false)}
+         />
+      )}
+
+      {showBulkTag && (
+         <BulkTagModal
+            count={selectedIds.length}
+            onApply={handleBulkTag}
+            onClose={() => setShowBulkTag(false)}
          />
       )}
 
@@ -1572,6 +1647,42 @@ const CategoryPickerModal: React.FC<{
                 ))}
              </div>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const BulkSalePctModal: React.FC<{ count: number; onApply: (pct: number) => void; onClose: () => void }> = ({ count, onApply, onClose }) => {
+  const [pct, setPct] = useState<string>('10');
+  const num = parseFloat(pct);
+  const valid = !Number.isNaN(num) && num >= 0 && num <= 100;
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
+      <div className="bg-white p-6 rounded-2xl shadow-2xl max-w-sm w-full">
+        <h3 className="text-lg font-black text-slate-900 mb-2">Apply sale % ({count} items)</h3>
+        <p className="text-sm text-slate-500 mb-4">Set store sale price to (sell price × (1 − pct/100)). E.g. 10 = 10% off.</p>
+        <input type="number" min={0} max={100} step={1} value={pct} onChange={(e) => setPct(e.target.value)} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium mb-4 outline-none focus:ring-2 focus:ring-blue-400" placeholder="10" />
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200">Cancel</button>
+          <button onClick={() => valid && onApply(num)} disabled={!valid} className="flex-1 py-3 bg-rose-600 text-white rounded-xl font-bold hover:bg-rose-700 disabled:opacity-50">Apply</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const BulkTagModal: React.FC<{ count: number; onApply: (tag: string) => void; onClose: () => void }> = ({ count, onApply, onClose }) => {
+  const [tag, setTag] = useState('');
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
+      <div className="bg-white p-6 rounded-2xl shadow-2xl max-w-sm w-full">
+        <h3 className="text-lg font-black text-slate-900 mb-2">Add tag ({count} items)</h3>
+        <p className="text-sm text-slate-500 mb-4">Set comment/tag (comment1) for all selected items.</p>
+        <input type="text" value={tag} onChange={(e) => setTag(e.target.value)} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium mb-4 outline-none focus:ring-2 focus:ring-blue-400" placeholder="e.g. Black Friday" />
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200">Cancel</button>
+          <button onClick={() => onApply(tag)} className="flex-1 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800">Apply</button>
         </div>
       </div>
     </div>
