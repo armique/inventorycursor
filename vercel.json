@@ -1,14 +1,5 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "framework": "vite",
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "has": [
-        { "type": "header", "key": "accept", "value": "text/html" }
-      ],
-      "destination": "/index.html"
-    }
-  ]
+  "framework": "vite"
 }
