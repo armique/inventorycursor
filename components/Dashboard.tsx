@@ -285,7 +285,35 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
       .sort((a, b) => b.value - a.value);
   }, [items]);
 
-  // NEW: Recent Activity Data
+  // Profit by category (sold items in period)
+  const profitByCategory = useMemo(() => {
+    const sold = filteredItems.filter(i => i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED);
+    const byCat: Record<string, number> = {};
+    sold.forEach(i => {
+      const cat = i.category || 'Other';
+      byCat[cat] = (byCat[cat] || 0) + calculateItemProfit(i);
+    });
+    return Object.entries(byCat)
+      .map(([name, profit]) => ({ name, profit }))
+      .sort((a, b) => b.profit - a.profit);
+  }, [filteredItems, taxMode]);
+
+  // Profit by month (sold items in period)
+  const profitByMonth = useMemo(() => {
+    const sold = filteredItems.filter(i => i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED);
+    const byMonth: Record<string, number> = {};
+    sold.forEach(i => {
+      if (!i.sellDate) return;
+      const d = new Date(i.sellDate);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      byMonth[key] = (byMonth[key] || 0) + calculateItemProfit(i);
+    });
+    return Object.entries(byMonth)
+      .map(([name, profit]) => ({ name, profit }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [filteredItems, taxMode]);
+
+  // Recent Activity Data
   const activityFeed = useMemo(() => {
     const actions: { type: string, date: string, item: string, amount: number }[] = [];
     items.forEach(i => {
@@ -383,9 +411,11 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                      <button onClick={handleSaveGoal} className="bg-blue-600 p-2 rounded-lg text-white"><Check size={16}/></button>
                   </div>
                ) : (
-                  <h3 className="text-4xl font-black tracking-tight mb-1">€{gameStats.monthProfit.toFixed(0)} <span className="text-slate-500 text-lg font-bold">/ {monthlyGoal}</span></h3>
+                  <>
+                     <h3 className="text-4xl font-black tracking-tight mb-1">€{gameStats.monthProfit.toFixed(0)} <span className="text-slate-500 text-lg font-bold">/ €{monthlyGoal}</span></h3>
+                     <p className="text-xs font-medium text-slate-400">Net profit vs goal · {gameStats.monthProfit >= monthlyGoal ? 'Goal reached!' : `€${(monthlyGoal - gameStats.monthProfit).toFixed(0)} to go`}</p>
+                  </>
                )}
-               <p className="text-xs font-medium text-slate-400">Net Profit Goal</p>
             </div>
             <div className="relative z-10 mt-6 space-y-2">
                <div className="flex justify-between text-[10px] font-black uppercase text-slate-400 tracking-widest">
@@ -523,6 +553,40 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                   </div>
                ))}
             </div>
+         </div>
+      </div>
+
+      {/* Profit by category & by month */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+         <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
+            <h3 className="text-lg font-bold mb-4">Profit by category (period)</h3>
+            {profitByCategory.length === 0 ? (
+               <p className="text-slate-400 text-sm">No sales in this period.</p>
+            ) : (
+               <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {profitByCategory.map((row, idx) => (
+                     <div key={row.name} className="flex justify-between items-center py-2 border-b border-slate-50 last:border-0">
+                        <span className="font-medium text-slate-700 truncate">{row.name}</span>
+                        <span className={`font-bold shrink-0 ${row.profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>€{row.profit.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                     </div>
+                  ))}
+               </div>
+            )}
+         </div>
+         <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
+            <h3 className="text-lg font-bold mb-4">Profit by month (period)</h3>
+            {profitByMonth.length === 0 ? (
+               <p className="text-slate-400 text-sm">No sales in this period.</p>
+            ) : (
+               <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {profitByMonth.map((row) => (
+                     <div key={row.name} className="flex justify-between items-center py-2 border-b border-slate-50 last:border-0">
+                        <span className="font-medium text-slate-700">{row.name}</span>
+                        <span className={`font-bold ${row.profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>€{row.profit.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                     </div>
+                  ))}
+               </div>
+            )}
          </div>
       </div>
 
