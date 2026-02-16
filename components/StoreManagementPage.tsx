@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Eye, EyeOff, Tag, MessageCircle, ExternalLink, Loader2, Check, Mail, Phone, Upload, CheckCircle2, FolderOpen, Pencil, X, Image as ImageIcon, Filter, Search as SearchIcon } from 'lucide-react';
+import { Eye, EyeOff, Tag, MessageCircle, ExternalLink, Loader2, Check, Mail, Phone, Upload, CheckCircle2, FolderOpen, Pencil, X, Image as ImageIcon, Filter, Search as SearchIcon, Wand2 } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
 import { subscribeToStoreInquiries, markStoreInquiryRead, uploadItemImage } from '../services/firebaseService';
 import type { StoreCategoryFilter } from '../App';
@@ -638,52 +638,6 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
   const [uploadingGallery, setUploadingGallery] = useState(false);
   const [galleryProgress, setGalleryProgress] = useState<string | null>(null);
 
-  const fileToDataUrl = (file: File): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => reject(new Error('Failed to read image'));
-      reader.readAsDataURL(file);
-    });
-
-  const dataUrlToFile = async (dataUrl: string, fallbackName: string): Promise<File> => {
-    const match = dataUrl.match(/^data:(.+);base64,(.*)$/);
-    if (!match) {
-      throw new Error('Invalid enhanced image data');
-    }
-    const mime = match[1];
-    const base64 = match[2];
-    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-    return new File([bytes], fallbackName, { type: mime });
-  };
-
-  const enhanceWithAI = async (file: File): Promise<File> => {
-    try {
-      const dataUrl = await fileToDataUrl(file);
-      const kind =
-        item.isPC || item.category === 'PC' || item.subCategory === 'Custom Built PC' || item.subCategory === 'Pre-Built PC'
-          ? 'pc'
-          : 'part';
-      const resp = await fetch('/api/enhance-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imageDataUrl: dataUrl,
-          kind,
-          name: item.name,
-          category: item.category,
-          subCategory: item.subCategory,
-        }),
-      });
-      if (!resp.ok) return file;
-      const json = await resp.json().catch(() => null);
-      if (!json?.dataUrl || typeof json.dataUrl !== 'string') return file;
-      return await dataUrlToFile(json.dataUrl, `enhanced-${file.name || 'image.png'}`);
-    } catch {
-      return file;
-    }
-  };
-
   const resizeImage = (file: File, maxSize = 1600, quality = 0.8): Promise<File> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -729,8 +683,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
     try {
       setUploadingMain(true);
       const resized = await resizeImage(file);
-      const enhanced = await enhanceWithAI(resized);
-      const url = await uploadItemImage(enhanced, item.id);
+      const url = await uploadItemImage(resized, item.id);
       setImageUrl(url);
     } catch (err: any) {
       console.error(err);
@@ -751,8 +704,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
       for (let idx = 0; idx < files.length; idx++) {
         const file = files[idx];
         const resized = await resizeImage(file);
-        const enhanced = await enhanceWithAI(resized);
-        const url = await uploadItemImage(enhanced, item.id);
+        const url = await uploadItemImage(resized, item.id);
         urls.push(url);
         setGalleryProgress(`${idx + 1} / ${files.length}`);
       }
@@ -864,21 +816,42 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
                       .map((url, idx) => (
                         <div key={`${url}-${idx}`} className="relative w-16 h-16 rounded-lg border border-slate-200 overflow-hidden bg-slate-50 flex items-center justify-center">
                           <img src={url} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const urls = galleryUrlsText
-                                .split(/\r?\n/)
-                                .map((s) => s.trim())
-                                .filter(Boolean);
-                              urls.splice(idx, 1);
-                              setGalleryUrlsText(urls.join('\n'));
-                            }}
-                            className="absolute top-0 right-0 m-0.5 rounded-full bg-black/60 text-white p-0.5"
-                            aria-label="Remove image"
-                          >
-                            <X size={10} />
-                          </button>
+                          <div className="absolute top-0 right-0 flex flex-col items-end gap-0.5 m-0.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const urls = galleryUrlsText
+                                  .split(/\r?\n/)
+                                  .map((s) => s.trim())
+                                  .filter(Boolean);
+                                urls.splice(idx, 1);
+                                setGalleryUrlsText(urls.join('\n'));
+                              }}
+                              className="rounded-full bg-black/70 text-white p-0.5"
+                              aria-label="Remove image"
+                            >
+                              <X size={10} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  // Optional per-image AI enhancement: download existing image and replace URL
+                                  const resp = await fetch(url);
+                                  const blob = await resp.blob();
+                                  const file = new File([blob], 'enhance.png', { type: blob.type || 'image/png' });
+                                  alert('AI enhancement is currently disabled by default for reliability. You can still edit or replace this image manually.');
+                                  // In future, we can re-enable calling /api/enhance-image here if desired.
+                                } catch {
+                                  alert('Could not enhance this image.');
+                                }
+                              }}
+                              className="rounded-full bg-white/80 text-slate-800 p-0.5"
+                              aria-label="Enhance image"
+                            >
+                              <Wand2 size={10} />
+                            </button>
+                          </div>
                         </div>
                       ))}
                   </div>
