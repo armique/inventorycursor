@@ -3,6 +3,7 @@ import { Eye, EyeOff, Tag, MessageCircle, ExternalLink, Loader2, Check, Mail, Ph
 import { InventoryItem, ItemStatus } from '../types';
 import { subscribeToStoreInquiries, markStoreInquiryRead, uploadItemImage, isCloudEnabled, getCurrentUser } from '../services/firebaseService';
 import ItemThumbnail from './ItemThumbnail';
+import { removeBackground } from '@imgly/background-removal';
 
 const TEXTS = {
   title: 'Store management',
@@ -575,24 +576,18 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
       setGalleryProgress(`0 / ${pendingGalleryFiles.length}`);
       const urls: string[] = [];
       
-      // Dynamically import background removal if needed
-      let removeBg: ((image: Blob | File) => Promise<Blob>) | null = null;
-      if (removeBackgroundOnUpload) {
-        const bgRemovalModule = await import('@imgly/background-removal');
-        removeBg = bgRemovalModule.removeBackground;
-      }
-      
       for (let idx = 0; idx < pendingGalleryFiles.length; idx++) {
         let file = pendingGalleryFiles[idx];
         
         // Remove background if enabled (process BEFORE upload to avoid CORS)
-        if (removeBg) {
+        if (removeBackgroundOnUpload) {
           try {
             setGalleryProgress(`Removing background ${idx + 1} / ${pendingGalleryFiles.length}...`);
-            const processedBlob = await removeBg(file);
+            const processedBlob = await removeBackground(file);
             file = new File([processedBlob], `bg-removed-${Date.now()}-${file.name}`, { type: 'image/png' });
           } catch (bgErr: any) {
             console.warn('Background removal failed for one image, continuing with original:', bgErr);
+            alert(`Background removal failed for image ${idx + 1}. Uploading original image instead.`);
             // Continue with original file if background removal fails
           }
         }
