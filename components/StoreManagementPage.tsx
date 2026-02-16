@@ -135,7 +135,30 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
         <div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">{TEXTS.title}</h1>
           <p className="text-slate-600 mt-1 text-sm">{TEXTS.subtitle}</p>
-          <div className="flex flex-wrap gap-3 mt-4 text-xs">
+          <div className="flex flex-wrap gap-2 mt-4">
+            <button
+              type="button"
+              onClick={() => { setStatusFilter('all'); setSaleFilter('all'); }}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${statusFilter === 'all' && saleFilter === 'all' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+            >
+              Show all
+            </button>
+            <button
+              type="button"
+              onClick={() => { setStatusFilter('visible'); setSaleFilter('all'); }}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${statusFilter === 'visible' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'}`}
+            >
+              Show visible
+            </button>
+            <button
+              type="button"
+              onClick={() => { setStatusFilter('all'); setSaleFilter('sale'); }}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${saleFilter === 'sale' ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-800 hover:bg-rose-100'}`}
+            >
+              Show on sale
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-3 mt-3 text-xs">
             <button
               type="button"
               onClick={() => { setStatusFilter('all'); setSaleFilter('all'); }}
