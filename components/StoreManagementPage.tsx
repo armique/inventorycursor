@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Eye, EyeOff, Tag, MessageCircle, ExternalLink, Loader2, Check, Mail, Phone, Upload, CheckCircle2, FolderOpen, Pencil, X } from 'lucide-react';
+import { Eye, EyeOff, Tag, MessageCircle, ExternalLink, Loader2, Check, Mail, Phone, Upload, CheckCircle2, FolderOpen, Pencil, X, Image as ImageIcon } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
-import { subscribeToStoreInquiries, markStoreInquiryRead } from '../services/firebaseService';
+import { subscribeToStoreInquiries, markStoreInquiryRead, uploadItemImage } from '../services/firebaseService';
 import type { StoreCategoryFilter } from '../App';
 
 const TEXTS = {
@@ -366,6 +366,80 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
   const [storeSalePrice, setStoreSalePriceState] = useState<string>(item.storeSalePrice != null ? String(item.storeSalePrice) : '');
   const [imageUrl, setImageUrl] = useState(item.imageUrl ?? '');
   const [galleryUrlsText, setGalleryUrlsText] = useState((item.storeGalleryUrls ?? []).join('\n'));
+  const [uploadingMain, setUploadingMain] = useState(false);
+  const [uploadingGallery, setUploadingGallery] = useState(false);
+
+  const resizeImage = (file: File, maxSize = 1600, quality = 0.8): Promise<File> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        if (!e.target?.result) return reject(new Error("Failed to read image"));
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          let { width, height } = img;
+          const scale = Math.min(1, maxSize / Math.max(width, height));
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return reject(new Error("Canvas not supported"));
+          ctx.drawImage(img, 0, 0, width, height);
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) return reject(new Error("Failed to compress image"));
+              const ext = file.type.includes("png") ? "png" : "jpeg";
+              const resizedFile = new File([blob], file.name.replace(/\.[^.]+$/, "") + "." + ext, {
+                type: blob.type,
+              });
+              resolve(resizedFile);
+            },
+            file.type.startsWith("image/") ? file.type : "image/jpeg",
+            quality
+          );
+        };
+        img.onerror = () => reject(new Error("Invalid image"));
+        img.src = e.target.result as string;
+      };
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleUploadMainImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      setUploadingMain(true);
+      const resized = await resizeImage(file);
+      const url = await uploadItemImage(resized, item.id);
+      setImageUrl(url);
+    } catch (err: any) {
+      console.error(err);
+      alert(err?.message || 'Upload failed. Please try again.');
+    } finally {
+      setUploadingMain(false);
+    }
+  };
+
+  const handleUploadGalleryImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      setUploadingGallery(true);
+      const resized = await resizeImage(file);
+      const url = await uploadItemImage(resized, item.id);
+      setGalleryUrlsText((prev) => (prev ? `${prev}\n${url}` : url));
+    } catch (err: any) {
+      console.error(err);
+      alert(err?.message || 'Upload failed. Please try again.');
+    } finally {
+      setUploadingGallery(false);
+    }
+  };
 
   const handleSave = () => {
     const galleryUrls = galleryUrlsText.trim() ? galleryUrlsText.trim().split(/\r?\n/).map((s) => s.trim()).filter(Boolean) : undefined;
@@ -420,7 +494,20 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
           )}
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">{texts.mainImageUrl}</label>
-            <input type="url" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://…" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400" />
+            <div className="flex items-center gap-2 mb-2">
+              <input
+                type="url"
+                value={imageUrl}
+                onChange={(e) => setImageUrl(e.target.value)}
+                placeholder="https://…"
+                className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400"
+              />
+              <label className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 cursor-pointer">
+                <Upload size={14} />
+                {uploadingMain ? 'Uploading…' : 'Upload'}
+                <input type="file" accept="image/*" className="hidden" onChange={handleUploadMainImage} disabled={uploadingMain} />
+              </label>
+            </div>
             {imageUrl && (
               <div className="mt-2 rounded-lg border border-slate-200 overflow-hidden bg-slate-50 aspect-video flex items-center justify-center">
                 <img src={imageUrl} alt="" className="max-w-full max-h-full object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
@@ -429,7 +516,20 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">{texts.galleryUrls}</label>
-            <textarea value={galleryUrlsText} onChange={(e) => setGalleryUrlsText(e.target.value)} rows={3} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400 resize-none font-mono text-xs" placeholder="https://…&#10;https://…" />
+            <div className="flex items-start gap-2">
+              <textarea
+                value={galleryUrlsText}
+                onChange={(e) => setGalleryUrlsText(e.target.value)}
+                rows={3}
+                className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400 resize-none font-mono text-xs"
+                placeholder="https://…&#10;https://…"
+              />
+              <label className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 cursor-pointer shrink-0">
+                <ImageIcon size={14} />
+                {uploadingGallery ? 'Uploading…' : 'Add image'}
+                <input type="file" accept="image/*" className="hidden" onChange={handleUploadGalleryImage} disabled={uploadingGallery} />
+              </label>
+            </div>
           </div>
         </div>
         <div className="flex gap-2 px-4 py-3 border-t border-slate-200 bg-slate-50">

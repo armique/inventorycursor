@@ -35,6 +35,13 @@ import {
   User,
   Auth,
 } from "firebase/auth";
+import {
+  getStorage,
+  ref as storageRef,
+  uploadBytes,
+  getDownloadURL,
+  type FirebaseStorage,
+} from "firebase/storage";
 
 // --- CONFIG ---
 
@@ -89,9 +96,10 @@ export function setCloudEnabled(enabled: boolean): void {
 let app: FirebaseApp | null = null;
 let db: Firestore | null = null;
 let auth: Auth | null = null;
+let storage: FirebaseStorage | null = null;
 
-function init(): { db: Firestore; auth: Auth } | null {
-  if (db && auth) return { db, auth };
+function init(): { db: Firestore; auth: Auth; storage: FirebaseStorage } | null {
+  if (db && auth && storage) return { db, auth, storage };
 
   const config = getFirebaseConfig();
   if (!config?.apiKey || !config?.projectId) return null;
@@ -100,7 +108,8 @@ function init(): { db: Firestore; auth: Auth } | null {
     app = getApps().length ? getApp() : initializeApp(config);
     db = getFirestore(app);
     auth = getAuth(app);
-    return db && auth ? { db, auth } : null;
+    storage = getStorage(app);
+    return db && auth && storage ? { db, auth, storage } : null;
   } catch (err) {
     console.error("Firebase init error:", err);
     return null;
@@ -138,6 +147,27 @@ export function onAuthChange(callback: (user: User | null) => void): () => void 
 export function getCurrentUser(): User | null {
   const ctx = init();
   return ctx?.auth?.currentUser ?? null;
+}
+
+// --- STORAGE HELPERS (item images) ---
+
+/**
+ * Upload a (already resized/compressed) image file for an inventory item to Firebase Storage
+ * and return its public download URL.
+ *
+ * Path convention: items/{uid}/{itemId}/{timestamp}-{filename}
+ */
+export async function uploadItemImage(file: File, itemId: string): Promise<string> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.storage || !user) {
+    throw new Error("Not signed in or Firebase Storage not configured.");
+  }
+  const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+  const path = `items/${user.uid}/${itemId || "unknown"}/${Date.now()}-${safeName}`;
+  const ref = storageRef(ctx.storage, path);
+  const snapshot = await uploadBytes(ref, file);
+  return await getDownloadURL(snapshot.ref);
 }
 
 // --- DATA SHAPE (same as app payload) ---
