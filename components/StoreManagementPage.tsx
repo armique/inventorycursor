@@ -710,8 +710,8 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">{texts.galleryUrls}</label>
-            <div className="flex items-start gap-2">
-              <div className="flex-1 space-y-2">
+            <div className="flex flex-col sm:flex-row items-start gap-3">
+              <div className="flex-1 w-full space-y-2">
                 {/* Hidden textarea keeps string representation but UI focuses on thumbnails/buttons for simplicity */}
                 <textarea
                   value={galleryUrlsText}
@@ -753,10 +753,10 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
                   </div>
                 )}
               </div>
-              <div className="flex flex-col gap-1 shrink-0">
-                <label className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 cursor-pointer">
-                  <ImageIcon size={14} />
-                  Upload images
+              <div className="flex flex-col gap-2 w-full sm:w-auto shrink-0">
+                <label className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border-2 border-slate-300 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 active:bg-slate-100 cursor-pointer transition-colors">
+                  <ImageIcon size={16} />
+                  <span>Select Images</span>
                   <input
                     type="file"
                     accept="image/*"
@@ -767,27 +767,37 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
                   />
                 </label>
                 {pendingGalleryFiles.length > 0 && (
-                  <>
-                    <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 cursor-pointer">
+                  <div className="space-y-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-xs font-semibold text-blue-900 text-center">
+                      {pendingGalleryFiles.length} image{pendingGalleryFiles.length > 1 ? 's' : ''} selected
+                    </p>
+                    <label className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-blue-300 bg-white text-xs font-medium text-blue-700 hover:bg-blue-50 active:bg-blue-100 cursor-pointer transition-colors">
                       <input
                         type="checkbox"
                         checked={removeBackgroundOnUpload}
                         onChange={(e) => setRemoveBackgroundOnUpload(e.target.checked)}
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
                         disabled={uploadingGallery}
                       />
-                      <Sparkles size={12} />
-                      <span>Remove background</span>
+                      <Sparkles size={14} />
+                      <span className="font-semibold">Remove background</span>
                     </label>
                     <button
                       type="button"
                       onClick={handleConfirmGalleryUpload}
                       disabled={uploadingGallery}
-                      className="px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 disabled:opacity-50"
+                      className="w-full px-4 py-2.5 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 active:bg-slate-700 disabled:opacity-50 transition-colors"
                     >
-                      {uploadingGallery ? galleryProgress || 'Uploading…' : `Start upload (${pendingGalleryFiles.length})`}
+                      {uploadingGallery ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <Loader2 size={14} className="animate-spin" />
+                          {galleryProgress || 'Uploading…'}
+                        </span>
+                      ) : (
+                        `Upload ${pendingGalleryFiles.length} image${pendingGalleryFiles.length > 1 ? 's' : ''}`
+                      )}
                     </button>
-                  </>
+                  </div>
                 )}
               </div>
             </div>
