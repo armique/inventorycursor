@@ -18,17 +18,51 @@ interface PanelLayoutProps {
   authUser: any;
   /** True once Firebase auth has completed initial check (so we don't flash login before session restore). */
   authReady?: boolean;
+  /** Whether the current user is allowed to access the admin panel. */
+  isAdmin?: boolean;
   syncState?: SyncState;
   onForcePush?: () => void;
   backupBannerDismissed?: boolean;
   onDismissBackupBanner?: () => void;
 }
 
-const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, authReady = false, syncState = { status: 'idle', lastSynced: null }, onForcePush, backupBannerDismissed = true, onDismissBackupBanner }) => {
+const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, authReady = false, isAdmin = false, syncState = { status: 'idle', lastSynced: null }, onForcePush, backupBannerDismissed = true, onDismissBackupBanner }) => {
   const location = useLocation();
   const [signingIn, setSigningIn] = React.useState(false);
 
   const requireAuth = isCloudEnabled && authReady && !authUser;
+
+  if (isCloudEnabled && authReady && authUser && !isAdmin) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="max-w-sm w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
+          <h2 className="text-xl font-bold text-slate-900 mb-2">Access denied</h2>
+          <p className="text-slate-600 text-sm mb-4">This admin panel is only available to the owner.</p>
+          <p className="text-xs text-slate-400 mb-6 break-all">{authUser.email}</p>
+          <div className="flex gap-3">
+            <a href="/" className="flex-1 py-3 px-4 rounded-xl bg-slate-100 text-slate-700 font-semibold text-sm hover:bg-slate-200">
+              Back to store
+            </a>
+            <button
+              type="button"
+              onClick={async () => {
+                setSigningIn(true);
+                try {
+                  // simple redirect to Google account chooser flow by clearing session
+                  window.location.reload();
+                } finally {
+                  setSigningIn(false);
+                }
+              }}
+              className="flex-1 py-3 px-4 rounded-xl bg-slate-900 text-white font-semibold text-sm hover:bg-slate-800 disabled:opacity-50"
+            >
+              {signingIn ? 'Reloading…' : 'Switch account'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (requireAuth) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">

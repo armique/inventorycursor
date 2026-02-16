@@ -526,6 +526,7 @@ const App: React.FC = () => {
   }, [expenses, businessSettings, monthlyGoal, categories, categoryFields, authUser]);
 
   const isConfigured = isCloudEnabled();
+  const isAdminUser = authUser?.email === 'abelyanarmen@gmail.com';
 
   if (appState === 'BOOTING') {
      return (
@@ -580,7 +581,24 @@ const App: React.FC = () => {
     <Router>
       <Routes>
         <Route path="/" element={<StorefrontPage />} />
-        <Route path="/panel" element={<PanelLayout isCloudEnabled={isConfigured} authUser={authUser} authReady={authReady} syncState={syncState} onForcePush={handleForcePush} backupBannerDismissed={backupBannerDismissed} onDismissBackupBanner={() => { localStorage.setItem('cloud_backup_banner_dismissed', '1'); setBackupBannerDismissed(true); }} />}>
+        <Route
+          path="/panel"
+          element={
+            <PanelLayout
+              isCloudEnabled={isConfigured}
+              authUser={authUser}
+              authReady={authReady}
+              isAdmin={isAdminUser}
+              syncState={syncState}
+              onForcePush={handleForcePush}
+              backupBannerDismissed={backupBannerDismissed}
+              onDismissBackupBanner={() => {
+                localStorage.setItem('cloud_backup_banner_dismissed', '1');
+                setBackupBannerDismissed(true);
+              }}
+            />
+          }
+        >
           <Route index element={<Navigate to="/panel/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard items={items} expenses={expenses} monthlyGoal={monthlyGoal} onGoalChange={setMonthlyGoal} businessSettings={businessSettings} />} />
           <Route path="analytics" element={<CategoryAnalytics items={items} businessSettings={businessSettings} />} />
