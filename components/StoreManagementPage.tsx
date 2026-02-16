@@ -802,7 +802,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
                 </>
               )}
             </button>
-            <textarea value={storeDescription} onChange={(e) => setStoreDescription(e.target.value)} rows={3} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400 resize-none" placeholder="Short description for the store (German). Use the button above to generate with AI." />
+            <textarea value={storeDescription} onChange={(e) => setStoreDescription(e.target.value)} rows={12} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400 resize-y font-mono whitespace-pre-line" placeholder="Structured description (German, with emojis and sections). Use the button above to generate with AI." />
             <p className="mt-1 text-[11px] text-slate-500">Generated text is kept until you click “Generate description” again or edit it. Save to store permanently.</p>
           </div>
           <div className="grid grid-cols-2 gap-3">

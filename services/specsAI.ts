@@ -434,7 +434,10 @@ export async function requestAIJson<T = unknown>(prompt: string): Promise<T> {
 
 // --- Plain-text generation (e.g. store descriptions) ---
 
-async function getRawTextFromProvider(provider: Provider, prompt: string): Promise<string> {
+const DEFAULT_TEXT_MAX_TOKENS = 512;
+const STORE_DESCRIPTION_MAX_TOKENS = 1536;
+
+async function getRawTextFromProvider(provider: Provider, prompt: string, maxTokens: number = DEFAULT_TEXT_MAX_TOKENS): Promise<string> {
   const apiKeyG = getEnv('VITE_GROQ_API_KEY')?.trim();
   const apiKeyO = getEnv('VITE_OPENAI_API_KEY')?.trim();
   const apiKeyA = getEnv('VITE_ANTHROPIC_API_KEY')?.trim();
@@ -451,7 +454,7 @@ async function getRawTextFromProvider(provider: Provider, prompt: string): Promi
       body: JSON.stringify({
         model: 'llama-3.3-70b-versatile',
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 512,
+        max_tokens: maxTokens,
       }),
     });
     if (!res.ok) throw new Error(`Groq: ${res.status} ${await res.text()}`);
@@ -476,7 +479,7 @@ async function getRawTextFromProvider(provider: Provider, prompt: string): Promi
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.4, maxOutputTokens: 512 },
+          generationConfig: { temperature: 0.4, maxOutputTokens: maxTokens },
         }),
       }
     );
@@ -491,7 +494,7 @@ async function getRawTextFromProvider(provider: Provider, prompt: string): Promi
       body: JSON.stringify({
         model: 'meta-llama/Llama-3.2-3B-Instruct-Turbo',
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 512,
+        max_tokens: maxTokens,
       }),
     });
     if (!res.ok) throw new Error(`Together: ${res.status} ${await res.text()}`);
@@ -505,7 +508,7 @@ async function getRawTextFromProvider(provider: Provider, prompt: string): Promi
       body: JSON.stringify({
         model: 'mistral-small-latest',
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 512,
+        max_tokens: maxTokens,
       }),
     });
     if (!res.ok) throw new Error(`Mistral: ${res.status} ${await res.text()}`);
@@ -519,7 +522,7 @@ async function getRawTextFromProvider(provider: Provider, prompt: string): Promi
       body: JSON.stringify({
         model: 'gpt-4o-mini',
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 512,
+        max_tokens: maxTokens,
       }),
     });
     if (!res.ok) throw new Error(`OpenAI: ${res.status}`);
@@ -532,7 +535,7 @@ async function getRawTextFromProvider(provider: Provider, prompt: string): Promi
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKeyA, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
         model: 'claude-3-5-haiku-20241022',
-        max_tokens: 512,
+        max_tokens: maxTokens,
         messages: [{ role: 'user', content: prompt }],
       }),
     });
@@ -544,13 +547,13 @@ async function getRawTextFromProvider(provider: Provider, prompt: string): Promi
   throw new Error(`Provider ${provider} not configured`);
 }
 
-async function getRawTextFromAI(prompt: string): Promise<string> {
+async function getRawTextFromAI(prompt: string, maxTokens: number = DEFAULT_TEXT_MAX_TOKENS): Promise<string> {
   const providers = getAvailableProviders();
   if (providers.length === 0) throw new Error('No AI configured. Add at least one key to .env.');
   let lastError: Error | null = null;
   for (const provider of providers) {
     try {
-      return await getRawTextFromProvider(provider, prompt);
+      return await getRawTextFromProvider(provider, prompt, maxTokens);
     } catch (e) {
       lastError = e instanceof Error ? e : new Error(String(e));
       console.warn(`AI text [${provider}] failed, trying next:`, lastError.message);
@@ -560,15 +563,25 @@ async function getRawTextFromAI(prompt: string): Promise<string> {
 }
 
 /**
- * Generate a short, styled store item description in German. Used for the storefront.
+ * Generate a structured, styled store item description in German (emoji sections, bullets, Lieferumfang, Zustand).
  * Once set, it stays until the user clicks "Generate description" again or edits manually.
  */
 export async function generateStoreDescription(itemName: string, existingContext?: string): Promise<string> {
-  const context = existingContext?.trim() ? `\nExisting description or notes (you may use as inspiration): ${existingContext}` : '';
-  const prompt = `Write a short, appealing product description in German for an online store. It should be 2–4 sentences, professional and inviting. Do not use bullet points or markdown. Output only the German text, nothing else.
+  const context = existingContext?.trim() ? `\nExisting description or notes (you may use as inspiration):\n${existingContext}` : '';
+  const prompt = `Write a product description in German for an online store listing. Use this exact structure and style (plain text, no markdown):
+
+1) First line: one emoji (e.g. 💻 🔧 🖥) followed by a short catchy title including the product name (e.g. "Starkes Budget-Gaming Aufrüstkit – AMD FX-8350 (8-Kern CPU)").
+
+2) Empty line, then 1–2 short intro paragraphs (e.g. "Zum Verkauf steht ein komplettes AM3+ Aufrüst-Bundle. Der AMD FX-8350 war...").
+
+3) Section "🔧 Technische Daten" with subsections like "🧠 CPU:", "🖥 Mainboard:", "🧩 RAM:" and under each a few short lines or bullet-style lines (no markdown, just newlines). Use relevant emojis per component.
+
+4) Optional: "📥 Support & Downloads" with links if relevant, or "📦 Lieferumfang" listing what is included, "❌ Ohne OVP & Zubehör", "🧪 Zustand" (e.g. Gebraucht, Voll funktionsfähig). Adapt sections to the product.
+
+Use only plain text and newlines. No markdown (no ** or #). Use emojis for section headers. Output only the German text.
 
 Product name: "${itemName}"${context}`;
-  const text = await getRawTextFromAI(prompt);
+  const text = await getRawTextFromAI(prompt, STORE_DESCRIPTION_MAX_TOKENS);
   return text.replace(/^["']|["']$/g, '').trim();
 }
 

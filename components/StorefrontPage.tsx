@@ -470,6 +470,13 @@ const StorefrontPage: React.FC = () => {
                   </div>
                 </div>
               )}
+
+              {/* Full description (structured with emojis / sections) */}
+              {galleryItem.storeDescription && (
+                <div className="px-6 py-4 border-t border-[#eee] bg-[#fafafa] max-h-64 overflow-y-auto">
+                  <p className="text-sm text-[#444] whitespace-pre-line leading-relaxed">{galleryItem.storeDescription}</p>
+                </div>
+              )}
             </div>
           </div>
         );
@@ -496,7 +503,7 @@ const StoreItemCard: React.FC<{ item: StoreItem; priceDisplay: { value: number; 
       <p className="text-xs text-[#888] uppercase tracking-wider font-medium">{item.category}{item.subCategory ? ` / ${item.subCategory}` : ''}</p>
       <h2 className="font-semibold text-[#1a1a1a] mt-1 line-clamp-2 text-base leading-snug">{item.name}</h2>
       {item.storeDescription && (
-        <p className="text-sm text-[#666] mt-2 line-clamp-2">{item.storeDescription}</p>
+        <p className="text-sm text-[#666] mt-2 whitespace-pre-line line-clamp-6">{item.storeDescription}</p>
       )}
       <div className="mt-3 flex items-baseline gap-2 flex-wrap">
         {priceDisplay.hasPrice ? (
