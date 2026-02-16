@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Eye, EyeOff, Tag, MessageCircle, ExternalLink, Loader2, Check, Mail, Phone, Upload, CheckCircle2, Pencil, X, Image as ImageIcon, Filter, Search as SearchIcon, Sparkles } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
 import { subscribeToStoreInquiries, markStoreInquiryRead, uploadItemImage, isCloudEnabled, getCurrentUser } from '../services/firebaseService';
@@ -488,6 +488,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
   const [galleryProgress, setGalleryProgress] = useState<string | null>(null);
   const [pendingGalleryFiles, setPendingGalleryFiles] = useState<File[]>([]);
   const [removeBackgroundOnUpload, setRemoveBackgroundOnUpload] = useState(false);
+  const uploadOptionsRef = useRef<HTMLDivElement>(null);
   const cloudReady = typeof window !== 'undefined' && isCloudEnabled() && !!getCurrentUser();
 
   const resizeImage = (file: File, maxSize = 1600, quality = 0.8): Promise<File> => {
@@ -554,6 +555,13 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
     e.target.value = '';
     setPendingGalleryFiles(files);
     setGalleryProgress(files.length ? `${files.length} selected` : null);
+    
+    // Scroll to upload options on mobile after a short delay to ensure UI is rendered
+    if (files.length > 0 && uploadOptionsRef.current) {
+      setTimeout(() => {
+        uploadOptionsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }, 100);
+    }
   };
 
   const handleConfirmGalleryUpload = async () => {
@@ -753,7 +761,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
                   </div>
                 )}
               </div>
-              <div className="flex flex-col gap-2 w-full sm:w-auto shrink-0">
+              <div ref={uploadOptionsRef} className="flex flex-col gap-2 w-full sm:w-auto shrink-0">
                 <label className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border-2 border-slate-300 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 active:bg-slate-100 cursor-pointer transition-colors">
                   <ImageIcon size={16} />
                   <span>Select Images</span>
@@ -767,7 +775,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
                   />
                 </label>
                 {pendingGalleryFiles.length > 0 && (
-                  <div className="space-y-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="space-y-2 p-3 bg-blue-50 border-2 border-blue-300 rounded-lg shadow-sm">
                     <p className="text-xs font-semibold text-blue-900 text-center">
                       {pendingGalleryFiles.length} image{pendingGalleryFiles.length > 1 ? 's' : ''} selected
                     </p>
