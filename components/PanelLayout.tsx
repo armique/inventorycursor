@@ -114,6 +114,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
 
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 font-sans">
+      {/* DESKTOP SIDEBAR */}
       <aside className="w-64 bg-slate-900 text-white flex flex-col hidden md:flex">
         <div className="p-6">
           <Link to="/panel/dashboard" className="text-xl font-black tracking-tighter flex items-center gap-2">
@@ -139,7 +140,8 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
           <QuotaMonitor />
         </div>
       </aside>
-      <main className="flex-1 overflow-auto p-4 md:p-8 relative">
+      {/* MAIN AREA */}
+      <main className="flex-1 overflow-auto p-4 pb-20 md:p-8 md:pb-8 relative">
         {isCloudEnabled && authUser && syncState.status !== 'idle' && (
           <div className="fixed bottom-4 left-4 z-[100]">
             <button
@@ -194,6 +196,45 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
           </button>
         )}
       </main>
+
+      {/* MOBILE BOTTOM NAVIGATION */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-[120] border-t border-slate-200 bg-white/95 backdrop-blur-sm">
+        <div className="flex justify-around items-stretch py-1">
+          {nav
+            .filter((item) =>
+              ['/panel/dashboard', '/panel/inventory', '/panel/builder', '/panel/store-management', '/panel/settings'].includes(
+                item.to
+              )
+            )
+            .map(({ to, icon, label }) => {
+              const isActive = location.pathname === to;
+              const short =
+                label === 'Category analytics'
+                  ? 'Analytics'
+                  : label === 'Store management'
+                  ? 'Store'
+                  : label;
+              return (
+                <Link
+                  key={to}
+                  to={to}
+                  className={`flex flex-col items-center justify-center flex-1 px-1 py-1.5 text-[11px] font-semibold transition-colors ${
+                    isActive ? 'text-slate-900' : 'text-slate-400'
+                  }`}
+                >
+                  <span
+                    className={`mb-0.5 inline-flex items-center justify-center rounded-full p-1.5 ${
+                      isActive ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'
+                    }`}
+                  >
+                    {icon}
+                  </span>
+                  <span className="truncate">{short}</span>
+                </Link>
+              );
+            })}
+        </div>
+      </nav>
     </div>
   );
 };
