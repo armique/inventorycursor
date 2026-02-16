@@ -256,13 +256,17 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
      });
   }, [items, selectedSlot, searchQuery, editId]);
 
-  // Mark which of the available items are compatible with current build (e.g. CPU socket vs motherboard)
+  // Only show items compatible with current build (e.g. Intel CPU → only Intel motherboards)
   const availableWithCompatibility = useMemo(() => {
     if (!selectedSlot) return [];
-    return availableItems.map(item => ({
-      item,
-      ...isCompatibleWithBuild(item, selectedSlot, parts),
-    }));
+    return availableItems
+      .map(item => ({ item, ...isCompatibleWithBuild(item, selectedSlot, parts) }))
+      .filter(x => x.compatible)
+      .map(x => ({ item: x.item, compatible: true as const }));
+  }, [availableItems, selectedSlot, parts]);
+  const hiddenIncompatibleCount = useMemo(() => {
+    if (!selectedSlot) return 0;
+    return availableItems.filter(item => !isCompatibleWithBuild(item, selectedSlot, parts).compatible).length;
   }, [availableItems, selectedSlot, parts]);
 
   const togglePart = (item: InventoryItem) => {
@@ -398,31 +402,32 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
                             <p className="text-xs text-slate-400">Add items to inventory first</p>
                          </div>
                       ) : (
-                         availableWithCompatibility.map(({ item, compatible, reason }) => {
-                            const isSelected = parts[selectedSlot!]?.some(p => p.id === item.id);
-                            return (
-                               <div 
-                                  key={item.id}
-                                  onClick={() => compatible && togglePart(item)}
-                                  title={!compatible ? reason : undefined}
-                                  className={`flex items-center gap-4 p-4 rounded-2xl border-2 transition-all ${
-                                    !compatible
-                                      ? 'bg-slate-50 border-slate-100 opacity-60 cursor-not-allowed'
-                                      : isSelected
-                                        ? 'bg-blue-50 border-blue-500 shadow-md cursor-pointer hover:scale-[1.01]'
-                                        : 'bg-white border-slate-100 hover:border-blue-200 cursor-pointer hover:scale-[1.01]'
-                                  }`}
-                               >
-                                  <ItemThumbnail item={item} className="w-12 h-12 rounded-xl object-cover bg-slate-100" size={48} useCategoryImage />
-                                  <div className="flex-1 min-w-0">
-                                     <p className={`font-black text-sm truncate ${!compatible ? 'text-slate-500' : 'text-slate-900'}`}>{item.name}</p>
-                                     <p className="text-[10px] text-slate-400 font-bold uppercase">{item.category} • €{item.buyPrice}</p>
-                                     {!compatible && reason && <p className="text-[10px] text-amber-600 font-bold mt-1 truncate" title={reason}>{reason}</p>}
+                         <>
+                            {hiddenIncompatibleCount > 0 && (
+                               <p className="text-[10px] text-slate-500 font-bold mb-2 px-1">{hiddenIncompatibleCount} incompatible item{hiddenIncompatibleCount === 1 ? '' : 's'} hidden</p>
+                            )}
+                            {availableWithCompatibility.map(({ item }) => {
+                               const isSelected = parts[selectedSlot!]?.some(p => p.id === item.id);
+                               return (
+                                  <div
+                                     key={item.id}
+                                     onClick={() => togglePart(item)}
+                                     className={`flex items-center gap-4 p-4 rounded-2xl border-2 transition-all ${
+                                       isSelected
+                                         ? 'bg-blue-50 border-blue-500 shadow-md cursor-pointer hover:scale-[1.01]'
+                                         : 'bg-white border-slate-100 hover:border-blue-200 cursor-pointer hover:scale-[1.01]'
+                                     }`}
+                                  >
+                                     <ItemThumbnail item={item} className="w-12 h-12 rounded-xl object-cover bg-slate-100" size={48} useCategoryImage />
+                                     <div className="flex-1 min-w-0">
+                                        <p className="font-black text-sm truncate text-slate-900">{item.name}</p>
+                                        <p className="text-[10px] text-slate-400 font-bold uppercase">{item.category} • €{item.buyPrice}</p>
+                                     </div>
+                                     {isSelected ? <CheckCircle2 size={24} className="text-blue-600"/> : <div className="w-6 h-6 rounded-full border-2 border-slate-200"/>}
                                   </div>
-                                  {isSelected ? <CheckCircle2 size={24} className="text-blue-600"/> : !compatible ? <AlertTriangle size={20} className="text-amber-500 shrink-0"/> : <div className="w-6 h-6 rounded-full border-2 border-slate-200"/>}
-                               </div>
-                            );
-                         })
+                               );
+                            })}
+                         </>
                       )}
                    </div>
                 </div>

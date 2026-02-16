@@ -74,11 +74,21 @@ export function isCompatibleWithBuild(
       if (!cpu) return { compatible: true };
       const cpuSocket = norm(get(cpu, 'Socket'));
       const moboSocket = norm(get(item, 'Socket'));
-      if (!cpuSocket) return { compatible: true };
-      if (!moboSocket) return { compatible: true };
-      if (moboSocket !== cpuSocket) {
+      if (cpuSocket && moboSocket && moboSocket !== cpuSocket) {
         return { compatible: false, reason: `CPU is ${cpuSocket}; this board is ${moboSocket}` };
       }
+      // Intel vs AMD: if CPU has socket or brand, only show matching boards
+      const cpuVendor = cpuSocket ? socketVendor(cpuSocket) : null;
+      const cpuBrand = norm(get(cpu, 'Brand') || get(cpu, 'Vendor') || '');
+      const cpuIsAMD = cpuBrand.includes('AMD') || cpuBrand.includes('RYZEN') || cpuBrand.includes('THREADRIPPER');
+      const cpuIsIntel = cpuBrand.includes('INTEL') || cpuBrand.includes('CORE');
+      const moboBrand = norm(get(item, 'Brand') || get(item, 'Chipset') || get(item, 'Vendor') || '');
+      const moboIsAMD = moboBrand.includes('AMD') || moboBrand.includes('B550') || moboBrand.includes('B650') || moboBrand.includes('X570') || moboBrand.includes('X670');
+      const moboIsIntel = moboBrand.includes('INTEL') || moboBrand.includes('B660') || moboBrand.includes('Z690') || moboBrand.includes('B760') || moboBrand.includes('Z790');
+      if (cpuVendor === 'amd' && moboIsIntel) return { compatible: false, reason: 'CPU is AMD; this is an Intel motherboard' };
+      if (cpuVendor === 'intel' && moboIsAMD) return { compatible: false, reason: 'CPU is Intel; this is an AMD motherboard' };
+      if (cpuIsAMD && moboIsIntel) return { compatible: false, reason: 'CPU is AMD; this is an Intel motherboard' };
+      if (cpuIsIntel && moboIsAMD) return { compatible: false, reason: 'CPU is Intel; this is an AMD motherboard' };
       return { compatible: true };
     }
 

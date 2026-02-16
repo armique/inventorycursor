@@ -1156,6 +1156,35 @@ const InventoryList: React.FC<Props> = ({
                ))}
             </div>
          )}
+
+         {/* Quick spec filters: dropdowns for top spec keys when category has specs */}
+         {specOptions.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200/60 mt-2">
+               <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Specs</span>
+               {specOptions.slice(0, 8).filter(o => !o.isNumeric || (o.values.length <= 20)).map(({ key, values }) => (
+                  <select
+                     key={key}
+                     value={specFilters[key]?.[0] ?? ''}
+                     onChange={(e) => {
+                        const v = e.target.value;
+                        setSpecFilters(prev => {
+                           const n = { ...prev };
+                           if (v === '') { delete n[key]; return n; }
+                           n[key] = [v];
+                           return n;
+                        });
+                     }}
+                     className="py-1.5 pl-2 pr-7 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-slate-900/20 appearance-none bg-no-repeat bg-right min-w-[90px]"
+                     style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.35rem center' }}
+                  >
+                     <option value="">{key}: All</option>
+                     {values.map((val) => (
+                        <option key={String(val)} value={String(val)}>{String(val)}</option>
+                     ))}
+                  </select>
+               ))}
+            </div>
+         )}
       </header>
 
       <InventoryAISpecsPanel
