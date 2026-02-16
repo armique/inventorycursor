@@ -432,6 +432,146 @@ export async function requestAIJson<T = unknown>(prompt: string): Promise<T> {
   return JSON.parse(raw) as T;
 }
 
+// --- Plain-text generation (e.g. store descriptions) ---
+
+async function getRawTextFromProvider(provider: Provider, prompt: string): Promise<string> {
+  const apiKeyG = getEnv('VITE_GROQ_API_KEY')?.trim();
+  const apiKeyO = getEnv('VITE_OPENAI_API_KEY')?.trim();
+  const apiKeyA = getEnv('VITE_ANTHROPIC_API_KEY')?.trim();
+  const apiKeyGe = getEnv('VITE_GEMINI_API_KEY')?.trim() || getEnv('VITE_API_KEY')?.trim();
+  const apiKeyT = getEnv('VITE_TOGETHER_API_KEY')?.trim();
+  const apiKeyM = getEnv('VITE_MISTRAL_API_KEY')?.trim();
+  const baseUrlOllama = (getEnv('VITE_OLLAMA_URL') || 'http://localhost:11434').replace(/\/$/, '');
+  const modelOllama = getEnv('VITE_OLLAMA_MODEL') || 'llama3.2';
+
+  if (provider === 'groq' && apiKeyG) {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKeyG}` },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 512,
+      }),
+    });
+    if (!res.ok) throw new Error(`Groq: ${res.status} ${await res.text()}`);
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content?.trim() || '';
+  }
+  if (provider === 'ollama' && baseUrlOllama) {
+    const res = await fetch(`${baseUrlOllama}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: modelOllama, messages: [{ role: 'user', content: prompt }], stream: false }),
+    });
+    if (!res.ok) throw new Error(`Ollama: ${res.status}`);
+    const data = await res.json();
+    return data.message?.content?.trim() || '';
+  }
+  if (provider === 'gemini' && apiKeyGe) {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKeyGe)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.4, maxOutputTokens: 512 },
+        }),
+      }
+    );
+    if (!res.ok) throw new Error(`Gemini: ${res.status}`);
+    const data = await res.json();
+    return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+  }
+  if (provider === 'together' && apiKeyT) {
+    const res = await fetch('https://api.together.xyz/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKeyT}` },
+      body: JSON.stringify({
+        model: 'meta-llama/Llama-3.2-3B-Instruct-Turbo',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 512,
+      }),
+    });
+    if (!res.ok) throw new Error(`Together: ${res.status} ${await res.text()}`);
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content?.trim() || '';
+  }
+  if (provider === 'mistral' && apiKeyM) {
+    const res = await fetch('https://api.mistral.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKeyM}` },
+      body: JSON.stringify({
+        model: 'mistral-small-latest',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 512,
+      }),
+    });
+    if (!res.ok) throw new Error(`Mistral: ${res.status} ${await res.text()}`);
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content?.trim() || '';
+  }
+  if (provider === 'openai' && apiKeyO) {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKeyO}` },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 512,
+      }),
+    });
+    if (!res.ok) throw new Error(`OpenAI: ${res.status}`);
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content?.trim() || '';
+  }
+  if (provider === 'anthropic' && apiKeyA) {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKeyA, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model: 'claude-3-5-haiku-20241022',
+        max_tokens: 512,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+    if (!res.ok) throw new Error(`Anthropic: ${res.status}`);
+    const data = await res.json();
+    const block = data.content?.find((c: { type: string }) => c.type === 'text');
+    return block?.text?.trim() || '';
+  }
+  throw new Error(`Provider ${provider} not configured`);
+}
+
+async function getRawTextFromAI(prompt: string): Promise<string> {
+  const providers = getAvailableProviders();
+  if (providers.length === 0) throw new Error('No AI configured. Add at least one key to .env.');
+  let lastError: Error | null = null;
+  for (const provider of providers) {
+    try {
+      return await getRawTextFromProvider(provider, prompt);
+    } catch (e) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+      console.warn(`AI text [${provider}] failed, trying next:`, lastError.message);
+    }
+  }
+  throw lastError ?? new Error('All AI providers failed.');
+}
+
+/**
+ * Generate a short, styled store item description in German. Used for the storefront.
+ * Once set, it stays until the user clicks "Generate description" again or edits manually.
+ */
+export async function generateStoreDescription(itemName: string, existingContext?: string): Promise<string> {
+  const context = existingContext?.trim() ? `\nExisting description or notes (you may use as inspiration): ${existingContext}` : '';
+  const prompt = `Write a short, appealing product description in German for an online store. It should be 2–4 sentences, professional and inviting. Do not use bullet points or markdown. Output only the German text, nothing else.
+
+Product name: "${itemName}"${context}`;
+  const text = await getRawTextFromAI(prompt);
+  return text.replace(/^["']|["']$/g, '').trim();
+}
+
 const PROVIDER_LABELS: Record<Provider, string> = {
   groq: 'Groq',
   ollama: 'Ollama',

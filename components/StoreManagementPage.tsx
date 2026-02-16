@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Eye, EyeOff, Tag, MessageCircle, ExternalLink, Loader2, Check, Mail, Phone, Upload, CheckCircle2, Pencil, X, Image as ImageIcon, Filter, Search as SearchIcon, Sparkles } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
 import { subscribeToStoreInquiries, markStoreInquiryRead, uploadItemImage, isCloudEnabled, getCurrentUser } from '../services/firebaseService';
+import { generateStoreDescription } from '../services/specsAI';
 import ItemThumbnail from './ItemThumbnail';
 import { removeBackground } from '@imgly/background-removal';
 
@@ -28,8 +29,8 @@ const TEXTS = {
   priceEur: 'Price €',
   editStoreItem: 'Edit store listing',
   storeDescription: 'Store description',
-  mainImageUrl: 'Main image URL',
-  galleryUrls: 'Gallery image URLs (one per line)',
+  galleryUrls: 'Store images',
+  galleryNote: 'First image = main (carousel #1). Reorder or set as main as needed.',
   save: 'Save',
   cancel: 'Cancel',
 };
@@ -84,6 +85,7 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
   };
 
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
+  const [generateDescriptionWhenOpen, setGenerateDescriptionWhenOpen] = useState(false);
   const applyEdit = (updates: Partial<InventoryItem>) => {
     if (!editingItem) return;
     const next = items.map((it) => (it.id === editingItem.id ? { ...it, ...updates } : it));
@@ -134,15 +136,27 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">{TEXTS.title}</h1>
           <p className="text-slate-600 mt-1 text-sm">{TEXTS.subtitle}</p>
           <div className="flex flex-wrap gap-3 mt-4 text-xs">
-            <span className="px-3 py-1.5 rounded-full bg-slate-100 text-slate-700 font-bold uppercase tracking-widest">
+            <button
+              type="button"
+              onClick={() => { setStatusFilter('all'); setSaleFilter('all'); }}
+              className={`px-3 py-1.5 rounded-full font-bold uppercase tracking-widest transition-colors ${statusFilter === 'all' && saleFilter === 'all' ? 'bg-slate-800 text-white ring-2 ring-slate-400' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+            >
               {totalInStock} In-stock
-            </span>
-            <span className="px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-800 font-bold uppercase tracking-widest">
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('visible')}
+              className={`px-3 py-1.5 rounded-full font-bold uppercase tracking-widest transition-colors ${statusFilter === 'visible' ? 'bg-emerald-700 text-white ring-2 ring-emerald-400' : 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'}`}
+            >
               {visibleCount} Visible
-            </span>
-            <span className="px-3 py-1.5 rounded-full bg-rose-100 text-rose-700 font-bold uppercase tracking-widest">
+            </button>
+            <button
+              type="button"
+              onClick={() => setSaleFilter('sale')}
+              className={`px-3 py-1.5 rounded-full font-bold uppercase tracking-widest transition-colors ${saleFilter === 'sale' ? 'bg-rose-700 text-white ring-2 ring-rose-400' : 'bg-rose-100 text-rose-700 hover:bg-rose-200'}`}
+            >
               {onSaleCount} On sale
-            </span>
+            </button>
           </div>
         </div>
         {onPublishCatalog && (
@@ -240,7 +254,7 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
                       <th className="px-2 py-3 w-28">Store</th>
                       <th className="px-2 py-3 w-24">Sale</th>
                       <th className="px-2 py-3 w-32">Sale price €</th>
-                      <th className="px-3 py-3 w-10"></th>
+                      <th className="px-3 py-3 w-24">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -328,14 +342,24 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
                             )}
                           </td>
                           <td className="px-3 py-3 align-top">
-                            <button
-                              type="button"
-                              onClick={() => setEditingItem(item)}
-                              className="p-2 rounded-lg hover:bg-slate-200 text-slate-600"
-                              title={TEXTS.editStoreItem}
-                            >
-                              <Pencil size={16} />
-                            </button>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => { setEditingItem(item); setGenerateDescriptionWhenOpen(true); }}
+                                className="p-2 rounded-lg hover:bg-violet-100 text-violet-600"
+                                title="Generate description (AI)"
+                              >
+                                <Sparkles size={16} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingItem(item)}
+                                className="p-2 rounded-lg hover:bg-slate-200 text-slate-600"
+                                title={TEXTS.editStoreItem}
+                              >
+                                <Pencil size={16} />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -350,42 +374,59 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
                   <p className="px-4 py-6 text-slate-500 text-center text-sm">No items match the current filters.</p>
                 ) : (
                   filteredItems.map((item) => (
-                    <button
+                    <div
                       key={item.id}
-                      type="button"
-                      onClick={() => setEditingItem(item)}
-                      className="w-full text-left px-4 py-3 flex gap-3 bg-white hover:bg-slate-50 active:bg-slate-100"
+                      className="w-full text-left px-4 py-3 flex flex-col gap-3 bg-white border-b border-slate-100 last:border-b-0"
                     >
-                      <ItemThumbnail
-                        item={item}
-                        className="w-14 h-14 rounded-xl object-cover border border-slate-200 bg-slate-50 shrink-0"
-                        size={56}
-                        useCategoryImage
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="font-semibold text-slate-900 text-sm truncate">{item.name}</p>
-                          <span className="text-[11px] text-slate-400">{(item.sellPrice ?? 0).toFixed(2)} €</span>
+                      <div className="flex gap-3">
+                        <ItemThumbnail
+                          item={item}
+                          className="w-14 h-14 rounded-xl object-cover border border-slate-200 bg-slate-50 shrink-0"
+                          size={56}
+                          useCategoryImage
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-semibold text-slate-900 text-sm truncate">{item.name}</p>
+                            <span className="text-[11px] text-slate-400">{(item.sellPrice ?? 0).toFixed(2)} €</span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 truncate">
+                            {item.category}{item.subCategory ? ` • ${item.subCategory}` : ''}
+                          </p>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {item.storeVisible === false ? (
+                              <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold uppercase tracking-widest">Hidden</span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-widest">Visible</span>
+                            )}
+                            {item.storeOnSale && (
+                              <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-bold uppercase tracking-widest">Sale</span>
+                            )}
+                            {!item.imageUrl && (
+                              <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold uppercase tracking-widest">No image</span>
+                            )}
+                          </div>
                         </div>
-                        <p className="text-[11px] text-slate-500 truncate">
-                          {item.category}{item.subCategory ? ` • ${item.subCategory}` : ''}
-                        </p>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {item.storeVisible === false ? (
-                            <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold uppercase tracking-widest">Hidden</span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-widest">Visible</span>
-                          )}
-                          {item.storeOnSale && (
-                            <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-bold uppercase tracking-widest">Sale</span>
-                          )}
-                          {!item.imageUrl && (
-                            <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold uppercase tracking-widest">No image</span>
-                          )}
-                        </div>
-                        <p className="mt-1 text-[10px] text-slate-400">Tap to edit price, visibility, gallery & description.</p>
                       </div>
-                    </button>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => { setEditingItem(item); setGenerateDescriptionWhenOpen(true); }}
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-violet-300 bg-violet-50 text-violet-800 text-xs font-semibold hover:bg-violet-100"
+                        >
+                          <Sparkles size={14} />
+                          Generate description (AI)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingItem(item)}
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200"
+                        >
+                          <Pencil size={14} />
+                          Edit
+                        </button>
+                      </div>
+                    </div>
                   ))
                 )}
               </div>
@@ -460,7 +501,9 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
         <StoreItemEditPanel
           item={editingItem}
           onSave={applyEdit}
-          onClose={() => setEditingItem(null)}
+          onClose={() => { setEditingItem(null); setGenerateDescriptionWhenOpen(false); }}
+          runGenerateDescriptionOnce={generateDescriptionWhenOpen}
+          onClearGenerateFlag={() => setGenerateDescriptionWhenOpen(false)}
           texts={TEXTS}
         />
       )}
@@ -472,25 +515,54 @@ interface EditPanelProps {
   item: InventoryItem;
   onSave: (updates: Partial<InventoryItem>) => void;
   onClose: () => void;
+  runGenerateDescriptionOnce?: boolean;
+  onClearGenerateFlag?: () => void;
   texts: typeof TEXTS;
 }
 
-const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, texts }) => {
+const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, runGenerateDescriptionOnce, onClearGenerateFlag, texts }) => {
   const [name, setName] = useState(item.name);
   const [storeDescription, setStoreDescription] = useState(item.storeDescription ?? '');
   const [sellPrice, setSellPriceState] = useState<string>(item.sellPrice != null ? String(item.sellPrice) : '');
   const [storeOnSale, setStoreOnSale] = useState(!!item.storeOnSale);
   const [storeSalePrice, setStoreSalePriceState] = useState<string>(item.storeSalePrice != null ? String(item.storeSalePrice) : '');
   const [storeVisible, setStoreVisible] = useState<boolean>(item.storeVisible !== false);
-  const [imageUrl, setImageUrl] = useState(item.imageUrl ?? '');
-  const [galleryUrlsText, setGalleryUrlsText] = useState((item.storeGalleryUrls ?? []).join('\n'));
-  const [uploadingMain, setUploadingMain] = useState(false);
+  /** Ordered list: [0] = main image (carousel #1), rest = gallery. */
+  const [storeImageUrls, setStoreImageUrls] = useState<string[]>(() => {
+    const main = item.imageUrl?.trim();
+    const gallery = item.storeGalleryUrls ?? [];
+    if (main) return [main, ...gallery];
+    return [...gallery];
+  });
   const [uploadingGallery, setUploadingGallery] = useState(false);
   const [galleryProgress, setGalleryProgress] = useState<string | null>(null);
   const [pendingGalleryFiles, setPendingGalleryFiles] = useState<File[]>([]);
-  const [removeBackgroundOnUpload, setRemoveBackgroundOnUpload] = useState(false);
+  /** Indices of pending files to remove background from (optional per image) */
+  const [removeBackgroundForIndices, setRemoveBackgroundForIndices] = useState<Set<number>>(new Set());
+  const [pendingPreviewUrls, setPendingPreviewUrls] = useState<string[]>([]);
+  const [generatingDescription, setGeneratingDescription] = useState(false);
   const uploadOptionsRef = useRef<HTMLDivElement>(null);
   const cloudReady = typeof window !== 'undefined' && isCloudEnabled() && !!getCurrentUser();
+
+  const handleGenerateDescription = async () => {
+    setGeneratingDescription(true);
+    try {
+      const text = await generateStoreDescription(name.trim() || item.name, storeDescription || undefined);
+      setStoreDescription(text);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'AI description failed.';
+      alert(msg);
+    } finally {
+      setGeneratingDescription(false);
+      onClearGenerateFlag?.();
+    }
+  };
+
+  useEffect(() => {
+    if (runGenerateDescriptionOnce) {
+      handleGenerateDescription();
+    }
+  }, [runGenerateDescriptionOnce]);
 
   const resizeImage = (file: File, maxSize = 1600, quality = 0.8): Promise<File> => {
     return new Promise((resolve, reject) => {
@@ -530,39 +602,37 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
     });
   };
 
-  const handleUploadMainImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    if (!cloudReady) {
-      alert('To upload images, first enable Cloud sync and sign in with Google in Settings (top-right).');
-      return;
-    }
-    try {
-      setUploadingMain(true);
-      const resized = await resizeImage(file);
-      const url = await uploadItemImage(resized, item.id);
-      setImageUrl(url);
-    } catch (err: any) {
-      console.error(err);
-      alert(err?.message || 'Upload failed. Please try again.');
-    } finally {
-      setUploadingMain(false);
-    }
-  };
+  // Revoke preview object URLs on unmount or when pending files are replaced
+  useEffect(() => {
+    const urls = pendingPreviewUrls;
+    return () => {
+      urls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [pendingPreviewUrls]);
 
   const handleSelectGalleryFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     e.target.value = '';
+    pendingPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+    setPendingPreviewUrls([]);
+    setRemoveBackgroundForIndices(new Set());
     setPendingGalleryFiles(files);
     setGalleryProgress(files.length ? `${files.length} selected` : null);
-    
-    // Scroll to upload options on mobile after a short delay to ensure UI is rendered
-    if (files.length > 0 && uploadOptionsRef.current) {
-      setTimeout(() => {
-        uploadOptionsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }, 100);
+    if (files.length > 0) {
+      setPendingPreviewUrls(files.map((f) => URL.createObjectURL(f)));
     }
+    if (files.length > 0 && uploadOptionsRef.current) {
+      setTimeout(() => uploadOptionsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
+    }
+  };
+
+  const toggleRemoveBackgroundForIndex = (idx: number) => {
+    setRemoveBackgroundForIndices((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
   };
 
   const handleConfirmGalleryUpload = async () => {
@@ -578,9 +648,9 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
       
       for (let idx = 0; idx < pendingGalleryFiles.length; idx++) {
         let file = pendingGalleryFiles[idx];
-        
-        // Remove background if enabled (process BEFORE upload to avoid CORS)
-        if (removeBackgroundOnUpload) {
+        const removeBg = removeBackgroundForIndices.has(idx);
+
+        if (removeBg) {
           try {
             setGalleryProgress(`Removing background ${idx + 1} / ${pendingGalleryFiles.length}...`);
             const processedBlob = await removeBackground(file);
@@ -588,10 +658,9 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
           } catch (bgErr: any) {
             console.warn('Background removal failed for one image, continuing with original:', bgErr);
             alert(`Background removal failed for image ${idx + 1}. Uploading original image instead.`);
-            // Continue with original file if background removal fails
           }
         }
-        
+
         // Resize and upload
         setGalleryProgress(`Uploading ${idx + 1} / ${pendingGalleryFiles.length}...`);
         const resized = await resizeImage(file, 1600, 0.9);
@@ -600,12 +669,11 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
         setGalleryProgress(`${idx + 1} / ${pendingGalleryFiles.length}`);
       }
       
-      setGalleryUrlsText((prev) => {
-        const existing = prev ? prev.split(/\r?\n/).map((s) => s.trim()).filter(Boolean) : [];
-        return [...existing, ...urls].join('\n');
-      });
+      setStoreImageUrls((prev) => [...prev, ...urls]);
+      pendingPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+      setPendingPreviewUrls([]);
       setPendingGalleryFiles([]);
-      setRemoveBackgroundOnUpload(false); // Reset after upload
+      setRemoveBackgroundForIndices(new Set());
     } catch (err: any) {
       console.error(err);
       alert(err?.message || 'Upload failed. Please try again.');
@@ -616,7 +684,8 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
   };
 
   const handleSave = () => {
-    const galleryUrls = galleryUrlsText.trim() ? galleryUrlsText.trim().split(/\r?\n/).map((s) => s.trim()).filter(Boolean) : undefined;
+    const main = storeImageUrls[0]?.trim();
+    const rest = storeImageUrls.length > 1 ? storeImageUrls.slice(1) : undefined;
     onSave({
       name: name.trim() || item.name,
       storeDescription: storeDescription.trim() || undefined,
@@ -624,8 +693,32 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
       storeVisible,
       storeOnSale,
       storeSalePrice: storeSalePrice === '' ? undefined : parseFloat(storeSalePrice) || undefined,
-      imageUrl: imageUrl.trim() || undefined,
-      storeGalleryUrls: galleryUrls?.length ? galleryUrls : undefined,
+      imageUrl: main || undefined,
+      storeGalleryUrls: rest?.length ? rest : undefined,
+    });
+  };
+
+  const setStoreImageAsMain = (index: number) => {
+    if (index <= 0) return;
+    setStoreImageUrls((prev) => {
+      const next = [...prev];
+      const [url] = next.splice(index, 1);
+      next.unshift(url);
+      return next;
+    });
+  };
+
+  const removeStoreImage = (index: number) => {
+    setStoreImageUrls((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const moveStoreImage = (index: number, delta: -1 | 1) => {
+    const newIndex = index + delta;
+    if (newIndex < 0 || newIndex >= storeImageUrls.length) return;
+    setStoreImageUrls((prev) => {
+      const next = [...prev];
+      [next[index], next[newIndex]] = [next[newIndex], next[index]];
+      return next;
     });
   };
 
@@ -668,7 +761,26 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">{texts.storeDescription}</label>
-            <textarea value={storeDescription} onChange={(e) => setStoreDescription(e.target.value)} rows={3} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400 resize-none" placeholder="Short description for the store" />
+            <button
+              type="button"
+              onClick={handleGenerateDescription}
+              disabled={generatingDescription}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-violet-400 bg-violet-50 text-violet-800 text-sm font-semibold hover:bg-violet-100 disabled:opacity-50 disabled:cursor-not-allowed mb-2"
+            >
+              {generatingDescription ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Generating…
+                </>
+              ) : (
+                <>
+                  <Sparkles size={16} />
+                  Generate description (AI)
+                </>
+              )}
+            </button>
+            <textarea value={storeDescription} onChange={(e) => setStoreDescription(e.target.value)} rows={3} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400 resize-none" placeholder="Short description for the store (German). Use the button above to generate with AI." />
+            <p className="mt-1 text-[11px] text-slate-500">Generated text is kept until you click “Generate description” again or edit it. Save to store permanently.</p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -690,71 +802,63 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
             </div>
           )}
           <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">{texts.mainImageUrl}</label>
-            <div className="flex items-center gap-2 mb-2">
-              <input
-                type="url"
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                placeholder="https://…"
-                className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400"
-              />
-              <label className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 cursor-pointer">
-                <Upload size={14} />
-                {uploadingMain ? 'Uploading…' : 'Upload'}
-                <input type="file" accept="image/*" className="hidden" onChange={handleUploadMainImage} disabled={uploadingMain} />
-              </label>
-            </div>
-            {imageUrl && (
-              <div className="mt-2 rounded-lg border border-slate-200 overflow-hidden bg-slate-50 aspect-video flex items-center justify-center">
-                <img src={imageUrl} alt="" className="max-w-full max-h-full object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-              </div>
-            )}
-          </div>
-          <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">{texts.galleryUrls}</label>
+            <p className="text-[11px] text-slate-500 mb-2">{texts.galleryNote}</p>
             <div className="flex flex-col sm:flex-row items-start gap-3">
               <div className="flex-1 w-full space-y-2">
-                {/* Hidden textarea keeps string representation but UI focuses on thumbnails/buttons for simplicity */}
-                <textarea
-                  value={galleryUrlsText}
-                  onChange={(e) => setGalleryUrlsText(e.target.value)}
-                  rows={3}
-                  className="hidden"
-                  placeholder="https://…&#10;https://…"
-                />
-                {/* Gallery preview with delete buttons */}
-                {galleryUrlsText.trim() && (
-                  <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
-                    {galleryUrlsText
-                      .trim()
-                      .split(/\r?\n/)
-                      .map((u) => u.trim())
-                      .filter(Boolean)
-                      .map((url, idx) => (
-                        <div key={`${url}-${idx}`} className="relative w-16 h-16 rounded-lg border border-slate-200 overflow-hidden bg-slate-50 flex items-center justify-center">
+                {storeImageUrls.length > 0 ? (
+                  <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
+                    {storeImageUrls.map((url, idx) => (
+                      <div key={`${url}-${idx}`} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                        <span className="text-[11px] font-bold text-slate-400 w-5 shrink-0">{idx + 1}</span>
+                        <div className="w-14 h-14 rounded-lg overflow-hidden bg-white shrink-0">
                           <img src={url} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                          <div className="absolute top-0 right-0 flex flex-col items-end gap-0.5 m-0.5">
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          {idx === 0 ? (
+                            <span className="text-xs font-semibold text-emerald-700">Main (carousel #1)</span>
+                          ) : (
                             <button
                               type="button"
-                              onClick={() => {
-                                const urls = galleryUrlsText
-                                  .split(/\r?\n/)
-                                  .map((s) => s.trim())
-                                  .filter(Boolean);
-                                urls.splice(idx, 1);
-                                setGalleryUrlsText(urls.join('\n'));
-                              }}
-                              className="rounded-full bg-black/70 text-white p-0.5"
-                              aria-label="Remove image"
+                              onClick={() => setStoreImageAsMain(idx)}
+                              className="text-xs font-medium text-violet-600 hover:text-violet-800"
                             >
-                              <X size={10} />
+                              Set as main
                             </button>
-                          </div>
+                          )}
                         </div>
-                      ))}
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => moveStoreImage(idx, -1)}
+                            disabled={idx === 0}
+                            className="p-1 rounded hover:bg-slate-200 disabled:opacity-40 text-slate-600"
+                            aria-label="Move left"
+                          >
+                            <span className="text-xs font-bold">←</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveStoreImage(idx, 1)}
+                            disabled={idx === storeImageUrls.length - 1}
+                            className="p-1 rounded hover:bg-slate-200 disabled:opacity-40 text-slate-600"
+                            aria-label="Move right"
+                          >
+                            <span className="text-xs font-bold">→</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeStoreImage(idx)}
+                            className="p-1 rounded-full hover:bg-red-100 text-slate-600 hover:text-red-700"
+                            aria-label="Remove image"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                )}
+                ) : null}
               </div>
               <div ref={uploadOptionsRef} className="flex flex-col gap-2 w-full sm:w-auto shrink-0">
                 <label className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border-2 border-slate-300 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 active:bg-slate-100 cursor-pointer transition-colors">
@@ -774,17 +878,31 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
                     <p className="text-xs font-semibold text-blue-900 text-center">
                       {pendingGalleryFiles.length} image{pendingGalleryFiles.length > 1 ? 's' : ''} selected
                     </p>
-                    <label className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-blue-300 bg-white text-xs font-medium text-blue-700 hover:bg-blue-50 active:bg-blue-100 cursor-pointer transition-colors">
-                      <input
-                        type="checkbox"
-                        checked={removeBackgroundOnUpload}
-                        onChange={(e) => setRemoveBackgroundOnUpload(e.target.checked)}
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
-                        disabled={uploadingGallery}
-                      />
-                      <Sparkles size={14} />
-                      <span className="font-semibold">Remove background</span>
-                    </label>
+                    <div className="max-h-40 overflow-y-auto space-y-2">
+                      {pendingGalleryFiles.map((file, idx) => (
+                        <div key={idx} className="flex items-center gap-2 rounded-lg border border-blue-200 bg-white p-2">
+                          <div className="w-12 h-12 rounded border border-slate-200 overflow-hidden bg-slate-50 shrink-0">
+                            {pendingPreviewUrls[idx] && (
+                              <img src={pendingPreviewUrls[idx]} alt="" className="w-full h-full object-cover" />
+                            )}
+                          </div>
+                          <span className="flex-1 min-w-0 truncate text-xs text-slate-700" title={file.name}>
+                            {file.name}
+                          </span>
+                          <label className="flex items-center gap-1 shrink-0 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={removeBackgroundForIndices.has(idx)}
+                              onChange={() => toggleRemoveBackgroundForIndex(idx)}
+                              disabled={uploadingGallery}
+                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                            />
+                            <Sparkles size={12} className="text-blue-600" />
+                            <span className="text-[11px] font-medium text-blue-800">Remove BG</span>
+                          </label>
+                        </div>
+                      ))}
+                    </div>
                     <button
                       type="button"
                       onClick={handleConfirmGalleryUpload}
@@ -806,7 +924,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
             </div>
           </div>
         </div>
-        <div className="flex gap-2 px-4 py-3 border-t border-slate-200 bg-slate-50">
+        <div className="flex shrink-0 gap-2 px-4 py-3 border-t border-slate-200 bg-slate-50">
           <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-sm font-medium hover:bg-slate-100">
             {texts.cancel}
           </button>
