@@ -540,10 +540,51 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
     try {
       setRemovingBackground(imageIndex);
       
-      // Fetch the image
-      const response = await fetch(imageUrl);
-      if (!response.ok) throw new Error('Failed to fetch image');
-      const blob = await response.blob();
+      // Fetch the image with better error handling and CORS support
+      let blob: Blob;
+      try {
+        const response = await fetch(imageUrl, {
+          mode: 'cors',
+          credentials: 'omit',
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        blob = await response.blob();
+      } catch (fetchError: any) {
+        // Fallback: use image element to load and convert to blob
+        console.warn('Direct fetch failed, trying image element method:', fetchError);
+        blob = await new Promise<Blob>((resolve, reject) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              reject(new Error('Canvas context not available'));
+              return;
+            }
+            ctx.drawImage(img, 0, 0);
+            canvas.toBlob((blob) => {
+              if (blob) {
+                resolve(blob);
+              } else {
+                reject(new Error('Failed to convert image to blob'));
+              }
+            }, 'image/png');
+          };
+          img.onerror = () => {
+            reject(new Error(`Failed to load image from ${imageUrl}. This might be a CORS issue or the image URL is invalid.`));
+          };
+          img.src = imageUrl;
+        });
+      }
+      
+      if (!blob || blob.size === 0) {
+        throw new Error('Image blob is empty or invalid');
+      }
       
       // Dynamically import and remove background using @imgly/background-removal
       const { removeBackground: removeBg } = await import('@imgly/background-removal');
@@ -568,7 +609,8 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
       
     } catch (err: any) {
       console.error('Background removal failed:', err);
-      alert(err?.message || 'Failed to remove background. Please try again.');
+      const errorMsg = err?.message || 'Failed to remove background';
+      alert(`${errorMsg}\n\nIf this persists, try:\n1. Check your internet connection\n2. Verify the image URL is accessible\n3. Try uploading the image again`);
     } finally {
       setRemovingBackground(null);
     }
