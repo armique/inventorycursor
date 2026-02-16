@@ -24224,16 +24224,16 @@
   "trash": [],
   "expenses": [],
   "settings": {
-    "iban": "",
-    "phone": "+4916092489413",
-    "taxMode": "DifferentialVAT",
     "companyName": "Armen Abelian",
-    "vatId": "",
-    "taxId": "",
-    "address": "Lindwenweg 9, 89367 Waldstetten, Deutschland",
-    "bankName": "",
     "ownerName": "Armen Abelian",
+    "address": "Lindwenweg 9, 89367 Waldstetten, Deutschland",
+    "phone": "+4916092489413",
+    "taxId": "",
+    "vatId": "",
+    "iban": "",
     "bic": "",
+    "bankName": "",
+    "taxMode": "DifferentialVAT",
     "ebayPostalCode": "89367",
     "ebayPaypalEmail": "armikonipad@gmail.com",
     "ebayDispatchTime": 1
@@ -25002,5 +25002,5 @@
       "Related Item"
     ]
   },
-  "exportedAt": "2026-02-16T10:27:40.138Z"
+  "exportedAt": "2026-02-16T10:34:49.635Z"
 }
