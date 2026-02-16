@@ -15,18 +15,71 @@ function norm(s: string | number | undefined): string {
   return String(s).trim().toUpperCase();
 }
 
+/** Normalize socket for equality (e.g. "LGA 1155" and "LGA1155" match). */
+function normSocket(s: string): string {
+  return norm(s).replace(/\s+/g, '').replace(/-/g, '');
+}
+
 /** AMD sockets (CPU must be AMD). */
 const AMD_SOCKETS = new Set(['AM4', 'AM5', 'TR4', 'STRX4', 'STR5']);
 /** Intel sockets (CPU must be Intel). */
-const INTEL_SOCKETS = new Set(['LGA1151', 'LGA1200', 'LGA1700', 'LGA1851', 'LGA2066', 'LGA2011-3']);
+const INTEL_SOCKETS = new Set(['LGA1155', 'LGA1150', 'LGA1151', 'LGA1200', 'LGA1700', 'LGA1851', 'LGA2066', 'LGA2011', 'LGA20113']);
+
+/** Socket → supported RAM types. AM4/AM5 fixed; Intel LGA1700 supports both DDR4 and DDR5 (board-dependent). */
+const SOCKET_RAM_TYPES: Record<string, string[]> = {
+  AM4: ['DDR4'],
+  AM5: ['DDR5'],
+  TR4: ['DDR4'],
+  STRX4: ['DDR4'],
+  STR5: ['DDR5'],
+  LGA1155: ['DDR3'],
+  LGA1150: ['DDR3'],
+  LGA2011: ['DDR3'],
+  LGA1151: ['DDR4'],
+  LGA20113: ['DDR4'],
+  LGA1200: ['DDR4'],
+  LGA1700: ['DDR4', 'DDR5'],
+  LGA1851: ['DDR5'],
+  LGA2066: ['DDR4'],
+};
 
 function socketVendor(socket: string): 'amd' | 'intel' | null {
-  const u = socket.toUpperCase();
+  const u = normSocket(socket);
   if (AMD_SOCKETS.has(u)) return 'amd';
   if (INTEL_SOCKETS.has(u)) return 'intel';
   if (u.startsWith('AM')) return 'amd';
   if (u.startsWith('LGA') || u.startsWith('S')) return 'intel';
   return null;
+}
+
+/** Get supported RAM types for a socket (e.g. AM4 → [DDR4]). */
+function ramTypesForSocket(socket: string): string[] {
+  const u = normSocket(socket);
+  return SOCKET_RAM_TYPES[u] ?? [];
+}
+
+/** Extract DDR generation from spec value (e.g. "DDR4 3200" → "DDR4", "DDR3L" → "DDR3"). */
+function normRamType(s: string | number | undefined): string {
+  const raw = norm(s);
+  if (!raw) return '';
+  if (raw.includes('DDR5')) return 'DDR5';
+  if (raw.includes('DDR4')) return 'DDR4';
+  if (raw.includes('DDR3')) return 'DDR3';
+  return raw;
+}
+
+/** Parse "DDR4", "DDR4, DDR5" etc. into list of normalized types. */
+function allowedRamTypesFromSpec(spec: string | number | undefined): string[] {
+  const raw = norm(spec);
+  if (!raw) return [];
+  return raw.split(/[,/]/).map((s) => normRamType(s)).filter(Boolean);
+}
+
+/** True if RAM spec value matches one of the allowed types (e.g. "DDR4 3200" matches allowed "DDR4"). */
+function ramMatches(ramSpecValue: string | number | undefined, allowedTypes: string[]): boolean {
+  const r = normRamType(ramSpecValue);
+  if (!r || allowedTypes.length === 0) return true;
+  return allowedTypes.some((a) => r === a || r.includes(a) || a.includes(r));
 }
 
 export interface CompatibilityResult {
@@ -55,9 +108,13 @@ export function isCompatibleWithBuild(
       const moboSocket = norm(get(mobo, 'Socket'));
       const cpuSocket = norm(get(item, 'Socket'));
       if (!moboSocket) return { compatible: true };
-      if (!cpuSocket) return { compatible: true }; // no spec – allow
-      if (moboSocket !== cpuSocket) {
-        return { compatible: false, reason: `Motherboard is ${moboSocket}; this CPU is ${cpuSocket}` };
+      // When motherboard has socket (e.g. AM4), only show CPUs with matching socket
+      if (cpuSocket) {
+        if (normSocket(moboSocket) !== normSocket(cpuSocket)) {
+          return { compatible: false, reason: `Motherboard is ${moboSocket}; this CPU is ${cpuSocket}` };
+        }
+      } else {
+        return { compatible: false, reason: 'Motherboard has socket; this CPU has no Socket spec' };
       }
       const vendor = socketVendor(moboSocket);
       if (vendor) {
@@ -74,8 +131,12 @@ export function isCompatibleWithBuild(
       if (!cpu) return { compatible: true };
       const cpuSocket = norm(get(cpu, 'Socket'));
       const moboSocket = norm(get(item, 'Socket'));
-      if (cpuSocket && moboSocket && moboSocket !== cpuSocket) {
-        return { compatible: false, reason: `CPU is ${cpuSocket}; this board is ${moboSocket}` };
+      // When CPU has socket, only show motherboards with matching socket (e.g. i7-2600 LGA1155 → only LGA1155 boards)
+      if (cpuSocket) {
+        if (!moboSocket) return { compatible: false, reason: 'CPU has socket; this board has no Socket spec' };
+        if (normSocket(cpuSocket) !== normSocket(moboSocket)) {
+          return { compatible: false, reason: `CPU is ${cpuSocket}; this board is ${moboSocket}` };
+        }
       }
       // Intel vs AMD: if CPU has socket or brand, only show matching boards
       const cpuVendor = cpuSocket ? socketVendor(cpuSocket) : null;
@@ -93,15 +154,31 @@ export function isCompatibleWithBuild(
     }
 
     case 'RAM': {
-      if (!mobo) return { compatible: true };
-      const moboMem = norm(get(mobo, 'Memory Type') || get(mobo, 'RAM Type') || '');
-      const ramType = norm(get(item, 'Memory Type') || get(item, 'Type') || get(item, 'DDR') || '');
-      if (!moboMem) return { compatible: true };
-      if (!ramType) return { compatible: true };
-      // Allow if one contains the other (e.g. "DDR4" vs "DDR4 3200")
-      if (moboMem.includes(ramType) || ramType.includes(moboMem)) return { compatible: true };
-      if (moboMem !== ramType) {
-        return { compatible: false, reason: `Motherboard supports ${moboMem}; this is ${ramType}` };
+      const ramTypeRaw = get(item, 'Memory Type') ?? get(item, 'Type') ?? get(item, 'DDR');
+      const ramType = normRamType(ramTypeRaw);
+      if (!ramType) return { compatible: true }; // no RAM spec – allow
+
+      // Primary: motherboard defines supported RAM (DDR3/DDR4/DDR5; may list multiple e.g. "DDR4, DDR5")
+      if (mobo) {
+        const moboMem = get(mobo, 'Memory Type') ?? get(mobo, 'RAM Type');
+        const allowedByMobo = allowedRamTypesFromSpec(moboMem);
+        if (allowedByMobo.length > 0) {
+          if (!ramMatches(ramTypeRaw, allowedByMobo)) {
+            return { compatible: false, reason: `Motherboard supports ${norm(moboMem)}; this is ${ramType}` };
+          }
+          return { compatible: true };
+        }
+      }
+
+      // No MOBO or MOBO has no memory spec: when CPU is selected, filter by CPU socket's supported RAM (AM4→DDR4, AM5→DDR5, LGA1155→DDR3, LGA1700→DDR4/DDR5, etc.)
+      if (cpu) {
+        const cpuSocket = norm(get(cpu, 'Socket'));
+        if (cpuSocket) {
+          const allowed = ramTypesForSocket(cpuSocket);
+          if (allowed.length > 0 && !ramMatches(ramTypeRaw, allowed)) {
+            return { compatible: false, reason: `CPU socket ${cpuSocket} supports ${allowed.join('/')}; this is ${ramType}` };
+          }
+        }
       }
       return { compatible: true };
     }
