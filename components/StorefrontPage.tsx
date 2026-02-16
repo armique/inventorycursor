@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { MessageCircle, ChevronLeft, ChevronRight, Tag, X, Send, Loader2, Package, Sparkles, LayoutGrid, List } from 'lucide-react';
 import { subscribeToStoreCatalog, createStoreInquiry, type StoreCatalogPayload } from '../services/firebaseService';
+import { useNavigate } from 'react-router-dom';
 
 const TEXTS = {
   title: 'Shop',
@@ -38,6 +39,7 @@ const TEXTS = {
 type StoreItem = NonNullable<StoreCatalogPayload['items']>[number];
 
 const StorefrontPage: React.FC = () => {
+  const navigate = useNavigate();
   const [catalog, setCatalog] = useState<StoreCatalogPayload | null>(null);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [tab, setTab] = useState<'all' | 'sale'>('all');
@@ -129,9 +131,9 @@ const StorefrontPage: React.FC = () => {
       {/* Header */}
       <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-[#eee]">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 py-4 flex items-center justify-between">
-          <a href="/" className="text-xl font-semibold tracking-tight text-[#1a1a1a] hover:opacity-80 transition-opacity">
+          <button type="button" onClick={() => navigate('/')} className="text-xl font-semibold tracking-tight text-[#1a1a1a] hover:opacity-80 transition-opacity">
             {TEXTS.title}
-          </a>
+          </button>
           <nav className="flex items-center gap-1 sm:gap-2">
             <button
               type="button"
@@ -147,9 +149,13 @@ const StorefrontPage: React.FC = () => {
             >
               <Tag size={14} strokeWidth={2.2} /> {TEXTS.sale}
             </button>
-            <a href="/panel" className="ml-2 px-3 py-2 rounded-lg text-sm text-[#888] hover:text-[#1a1a1a] hover:bg-[#f0f0f0] transition-colors">
+            <button
+              type="button"
+              onClick={() => navigate('/panel')}
+              className="ml-2 px-3 py-2 rounded-lg text-sm text-[#888] hover:text-[#1a1a1a] hover:bg-[#f0f0f0] transition-colors"
+            >
               {TEXTS.adminLink}
-            </a>
+            </button>
           </nav>
         </div>
       </header>
@@ -216,9 +222,13 @@ const StorefrontPage: React.FC = () => {
             </div>
             <h2 className="text-lg font-semibold text-[#1a1a1a] mb-2">Noch keine Artikel</h2>
             <p className="text-[#666] text-sm leading-relaxed mb-6">{TEXTS.noCatalog}</p>
-            <a href="/panel" className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#1a1a1a] text-white text-sm font-medium hover:bg-[#333] transition-colors">
+            <button
+              type="button"
+              onClick={() => navigate('/panel')}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#1a1a1a] text-white text-sm font-medium hover:bg-[#333] transition-colors"
+            >
               <Sparkles size={16} /> Admin öffnen
-            </a>
+            </button>
           </div>
         )}
 
@@ -271,7 +281,13 @@ const StorefrontPage: React.FC = () => {
       <footer className="mt-auto border-t border-[#eee] bg-white">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 text-center">
           <p className="text-[#888] text-sm">© {new Date().getFullYear()} · {TEXTS.title}</p>
-          <a href="/panel" className="text-[#999] text-sm hover:text-[#1a1a1a] mt-1 inline-block transition-colors">{TEXTS.adminLink}</a>
+          <button
+            type="button"
+            onClick={() => navigate('/panel')}
+            className="text-[#999] text-sm hover:text-[#1a1a1a] mt-1 inline-block transition-colors"
+          >
+            {TEXTS.adminLink}
+          </button>
         </div>
       </footer>
 
