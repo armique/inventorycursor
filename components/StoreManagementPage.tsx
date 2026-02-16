@@ -32,7 +32,6 @@ const TEXTS = {
   priceEur: 'Price €',
   editStoreItem: 'Edit store listing',
   storeDescription: 'Store description',
-  mainImageUrl: 'Main image URL',
   galleryUrls: 'Gallery image URLs (one per line)',
   save: 'Save',
   cancel: 'Cancel',
@@ -632,9 +631,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
   const [sellPrice, setSellPriceState] = useState<string>(item.sellPrice != null ? String(item.sellPrice) : '');
   const [storeOnSale, setStoreOnSale] = useState(!!item.storeOnSale);
   const [storeSalePrice, setStoreSalePriceState] = useState<string>(item.storeSalePrice != null ? String(item.storeSalePrice) : '');
-  const [imageUrl, setImageUrl] = useState(item.imageUrl ?? '');
   const [galleryUrlsText, setGalleryUrlsText] = useState((item.storeGalleryUrls ?? []).join('\n'));
-  const [uploadingMain, setUploadingMain] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState(false);
   const [galleryProgress, setGalleryProgress] = useState<string | null>(null);
   const [pendingGalleryFiles, setPendingGalleryFiles] = useState<File[]>([]);
@@ -678,27 +675,6 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
     });
   };
 
-  const handleUploadMainImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    if (!cloudReady) {
-      alert('To upload images, first enable Cloud sync and sign in with Google in Settings (top-right).');
-      return;
-    }
-    try {
-      setUploadingMain(true);
-      const resized = await resizeImage(file);
-      const url = await uploadItemImage(resized, item.id);
-      setImageUrl(url);
-    } catch (err: any) {
-      console.error(err);
-      alert(err?.message || 'Upload failed. Please try again.');
-    } finally {
-      setUploadingMain(false);
-    }
-  };
-
   const handleSelectGalleryFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     e.target.value = '';
@@ -738,14 +714,22 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
   };
 
   const handleSave = () => {
-    const galleryUrls = galleryUrlsText.trim() ? galleryUrlsText.trim().split(/\r?\n/).map((s) => s.trim()).filter(Boolean) : undefined;
+    const galleryUrls = galleryUrlsText.trim()
+      ? galleryUrlsText
+          .trim()
+          .split(/\r?\n/)
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : undefined;
+
     onSave({
       name: name.trim() || item.name,
       storeDescription: storeDescription.trim() || undefined,
       sellPrice: sellPrice === '' ? undefined : parseFloat(sellPrice) || undefined,
       storeOnSale,
       storeSalePrice: storeSalePrice === '' ? undefined : parseFloat(storeSalePrice) || undefined,
-      imageUrl: imageUrl.trim() || undefined,
+      // Use first gallery image as the main image for item cards
+      imageUrl: galleryUrls && galleryUrls.length > 0 ? galleryUrls[0] : undefined,
       storeGalleryUrls: galleryUrls?.length ? galleryUrls : undefined,
     });
   };
@@ -788,28 +772,6 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
               <input type="number" min={0} step={0.01} value={storeSalePrice} onChange={(e) => setStoreSalePriceState(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400" />
             </div>
           )}
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">{texts.mainImageUrl}</label>
-            <div className="flex items-center gap-2 mb-2">
-              <input
-                type="url"
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                placeholder="https://…"
-                className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400"
-              />
-              <label className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 cursor-pointer">
-                <Upload size={14} />
-                {uploadingMain ? 'Uploading…' : 'Upload'}
-                <input type="file" accept="image/*" className="hidden" onChange={handleUploadMainImage} disabled={uploadingMain} />
-              </label>
-            </div>
-            {imageUrl && (
-              <div className="mt-2 rounded-lg border border-slate-200 overflow-hidden bg-slate-50 aspect-video flex items-center justify-center">
-                <img src={imageUrl} alt="" className="max-w-full max-h-full object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-              </div>
-            )}
-          </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">{texts.galleryUrls}</label>
             <div className="flex items-start gap-2">
