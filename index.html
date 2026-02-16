@@ -6,8 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>DeInventory Pro</title>
     
-    <!-- PWA Meta Tags -->
-    <link rel="manifest" href="manifest.json">
+    <!-- Basic Meta Tags (PWA removed for Vercel SPA stability) -->
     <meta name="theme-color" content="#0f172a">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -61,18 +60,6 @@
 </head>
 <body class="bg-slate-50 text-slate-900">
     <div id="root"></div>
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js')
-            .then(reg => {
-                reg.update();
-                console.log('SW registered');
-            })
-            .catch(err => console.log('SW registration failed: ', err));
-        });
-      }
-    </script>
 <script type="module" src="/index.tsx"></script>
 </body>
 </html>
