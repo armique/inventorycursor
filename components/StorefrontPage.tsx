@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { MessageCircle, ChevronLeft, ChevronRight, Tag, X, Send, Loader2, Package, Sparkles, LayoutGrid, List, ArrowUp, FileText, Share2, Heart, Moon, Sun, Search as SearchIcon, SlidersHorizontal, Home } from 'lucide-react';
 import { subscribeToStoreCatalog, createStoreInquiry, type StoreCatalogPayload } from '../services/firebaseService';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import LegalModal, { type LegalModalType } from './LegalModal';
 import AboutContactModal from './AboutContactModal';
 import CookieConsent, { getCookieConsentAccepted } from './CookieConsent';
@@ -90,6 +90,7 @@ type StoreItem = NonNullable<StoreCatalogPayload['items']>[number];
 
 const StorefrontPage: React.FC = () => {
   const navigate = useNavigate();
+  const { id: itemIdFromUrl } = useParams<{ id: string }>();
   const [catalog, setCatalog] = useState<StoreCatalogPayload | null>(null);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [tab, setTab] = useState<'all' | 'sale'>('all');
@@ -124,12 +125,17 @@ const StorefrontPage: React.FC = () => {
     return () => unsub();
   }, []);
 
+  const closeGallery = useCallback(() => {
+    setGalleryItem(null);
+    if (itemIdFromUrl) navigate('/');
+  }, [itemIdFromUrl, navigate]);
+
   // Keyboard navigation for gallery
   useEffect(() => {
     if (!galleryItem) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setGalleryItem(null);
+        closeGallery();
       } else if (e.key === 'ArrowLeft') {
         const galleryImages: string[] = [];
         if (galleryItem.imageUrl) galleryImages.push(galleryItem.imageUrl);
@@ -148,7 +154,7 @@ const StorefrontPage: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [galleryItem, galleryIndex]);
+  }, [galleryItem, galleryIndex, closeGallery]);
 
   useEffect(() => {
     const onScroll = () => setShowBackToTop(window.scrollY > 400);
@@ -210,11 +216,20 @@ const StorefrontPage: React.FC = () => {
   const handleOpenDetails = (item: StoreItem) => {
     addRecentlyViewedId(item.id);
     setRecentKey((k) => k + 1);
-    setGalleryItem(item);
     setGalleryIndex(0);
+    setGalleryItem(item);
+    navigate(`/item/${item.id}`);
   };
 
   const items = useMemo(() => catalog?.items ?? [], [catalog]);
+
+  // Open item detail when URL is /item/:id and catalog is loaded
+  useEffect(() => {
+    if (!catalogLoaded || !itemIdFromUrl || items.length === 0) return;
+    const item = items.find((i) => i.id === itemIdFromUrl);
+    if (item) setGalleryItem(item);
+  }, [catalogLoaded, itemIdFromUrl, items]);
+
   const categories = useMemo(() => Array.from(new Set(items.map((i) => i.category).filter(Boolean))).sort(), [items]);
   const subCategories = useMemo(() => {
     if (!categoryFilter) return [];
@@ -547,13 +562,13 @@ const StorefrontPage: React.FC = () => {
             {viewMode === 'grid' ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
                 {sortedFiltered.map((item) => (
-                  <StoreItemCard key={item.id} item={item} priceDisplay={priceDisplay(item)} texts={TEXTS} onContact={() => openContact(item)} onDetailsClick={() => handleOpenDetails(item)} layout="grid" isInWishlist={wishlistIds.includes(item.id)} onToggleWishlist={() => handleToggleWishlist(item.id)} onShare={() => { const u = `${window.location.origin}/#item-${item.id}`; if (navigator.share) navigator.share({ title: item.name, url: u }); else navigator.clipboard.writeText(u); }} />
+                  <StoreItemCard key={item.id} item={item} priceDisplay={priceDisplay(item)} texts={TEXTS} onContact={() => openContact(item)} onDetailsClick={() => handleOpenDetails(item)} layout="grid" isInWishlist={wishlistIds.includes(item.id)} onToggleWishlist={() => handleToggleWishlist(item.id)} onShare={() => { const u = `${window.location.origin}/item/${item.id}`; if (navigator.share) navigator.share({ title: item.name, url: u }); else navigator.clipboard.writeText(u); }} />
                 ))}
               </div>
             ) : (
               <div className="space-y-4">
                 {sortedFiltered.map((item) => (
-                  <StoreItemCard key={item.id} item={item} priceDisplay={priceDisplay(item)} texts={TEXTS} onContact={() => openContact(item)} onDetailsClick={() => handleOpenDetails(item)} layout="list" isInWishlist={wishlistIds.includes(item.id)} onToggleWishlist={() => handleToggleWishlist(item.id)} onShare={() => { const u = `${window.location.origin}/#item-${item.id}`; if (navigator.share) navigator.share({ title: item.name, url: u }); else navigator.clipboard.writeText(u); }} />
+                  <StoreItemCard key={item.id} item={item} priceDisplay={priceDisplay(item)} texts={TEXTS} onContact={() => openContact(item)} onDetailsClick={() => handleOpenDetails(item)} layout="list" isInWishlist={wishlistIds.includes(item.id)} onToggleWishlist={() => handleToggleWishlist(item.id)} onShare={() => { const u = `${window.location.origin}/item/${item.id}`; if (navigator.share) navigator.share({ title: item.name, url: u }); else navigator.clipboard.writeText(u); }} />
                 ))}
               </div>
             )}
@@ -654,7 +669,7 @@ const StorefrontPage: React.FC = () => {
         return (
           <div 
             className="fixed inset-0 z-[110] flex items-center justify-center p-4 sm:p-8 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200" 
-            onClick={() => setGalleryItem(null)}
+            onClick={closeGallery}
           >
             <div 
               className="relative bg-white rounded-3xl shadow-2xl max-w-6xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200" 
@@ -680,13 +695,13 @@ const StorefrontPage: React.FC = () => {
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
-                    onClick={(e) => { e.stopPropagation(); const u = `${window.location.origin}/#item-${galleryItem.id}`; if (navigator.share) navigator.share({ title: galleryItem.name, url: u }); else navigator.clipboard.writeText(u); }}
+                    onClick={(e) => { e.stopPropagation(); const u = `${window.location.origin}/item/${galleryItem.id}`; if (navigator.share) navigator.share({ title: galleryItem.name, url: u }); else navigator.clipboard.writeText(u); }}
                     className="p-2 rounded-xl hover:bg-slate-100 text-slate-600"
                     aria-label={TEXTS.share}
                   >
                     <Share2 size={20} />
                   </button>
-                  <button type="button" onClick={() => setGalleryItem(null)} className="ml-2 p-2 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors shrink-0" aria-label="Close gallery">
+                  <button type="button" onClick={closeGallery} className="ml-2 p-2 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors shrink-0" aria-label="Close gallery">
                     <X size={22} />
                   </button>
                 </div>
@@ -782,10 +797,10 @@ const StorefrontPage: React.FC = () => {
                     </div>
                   )}
                   <div className="p-4 sm:p-5 border-t border-slate-200 flex flex-wrap gap-2 shrink-0">
-                    <button type="button" onClick={(e) => { e.stopPropagation(); setGalleryItem(null); openContact(galleryItem); }} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition-colors flex-1 min-w-[140px]">
+                    <button type="button" onClick={(e) => { e.stopPropagation(); closeGallery(); openContact(galleryItem); }} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition-colors flex-1 min-w-[140px]">
                       <MessageCircle size={18} /> {TEXTS.contact}
                     </button>
-                    <button type="button" onClick={() => setGalleryItem(null)} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition-colors">
+                    <button type="button" onClick={closeGallery} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition-colors">
                       {TEXTS.close}
                     </button>
                   </div>
@@ -794,7 +809,7 @@ const StorefrontPage: React.FC = () => {
                       <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3">{TEXTS.similarItems}</h4>
                       <div className="flex gap-2 overflow-x-auto">
                         {similarItems.map((sim) => (
-                          <button key={sim.id} type="button" onClick={(e) => { e.stopPropagation(); setGalleryItem(sim); setGalleryIndex(0); setRecentKey((k) => k + 1); addRecentlyViewedId(sim.id); }} className="shrink-0 w-24 rounded-xl border border-slate-200 overflow-hidden hover:border-slate-400 transition-colors text-left">
+                          <button key={sim.id} type="button" onClick={(e) => { e.stopPropagation(); addRecentlyViewedId(sim.id); setRecentKey((k) => k + 1); setGalleryIndex(0); setGalleryItem(sim); navigate(`/item/${sim.id}`); }} className="shrink-0 w-24 rounded-xl border border-slate-200 overflow-hidden hover:border-slate-400 transition-colors text-left">
                             {sim.imageUrl ? <img src={sim.imageUrl} alt="" className="w-full aspect-square object-cover" loading="lazy" /> : <div className="w-full aspect-square bg-slate-100 flex items-center justify-center text-slate-400 text-[10px] px-1 text-center">{sim.name}</div>}
                             <p className="p-2 text-[10px] font-medium text-slate-700 truncate">{sim.name}</p>
                           </button>
@@ -807,7 +822,7 @@ const StorefrontPage: React.FC = () => {
             </div>
             {/* Sticky CTA on mobile when modal open */}
             <div className="fixed bottom-0 left-0 right-0 z-[115] p-3 bg-white border-t border-slate-200 lg:hidden">
-              <button type="button" onClick={(e) => { e.stopPropagation(); setGalleryItem(null); openContact(galleryItem); }} className="w-full py-3 rounded-xl bg-slate-900 text-white text-sm font-semibold flex items-center justify-center gap-2">
+              <button type="button" onClick={(e) => { e.stopPropagation(); closeGallery(); openContact(galleryItem); }} className="w-full py-3 rounded-xl bg-slate-900 text-white text-sm font-semibold flex items-center justify-center gap-2">
                 <MessageCircle size={18} /> {TEXTS.contact}
               </button>
             </div>

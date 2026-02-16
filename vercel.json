@@ -3,19 +3,8 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "rewrites": [
-    {
-      "source": "/(.*)",
-      "has": [
-        { "type": "header", "key": "accept", "value": ".*text/html.*" }
-      ],
-      "destination": "/index.html"
-    }
+    { "source": "/sitemap.xml", "destination": "/api/sitemap.xml" },
+    { "source": "/(.*)", "has": [{ "type": "header", "key": "accept", "value": ".*text/html.*" }], "destination": "/index.html" }
   ],
-  "redirects": [
-    {
-      "source": "/panel",
-      "destination": "/",
-      "permanent": true
-    }
-  ]
+  "redirects": [{ "source": "/panel", "destination": "/", "permanent": true }]
 }

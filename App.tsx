@@ -637,6 +637,7 @@ const App: React.FC = () => {
       <Analytics />
       <Routes>
         <Route path="/" element={<StorefrontPage />} />
+        <Route path="/item/:id" element={<StorefrontPage />} />
         <Route path="/impressum" element={<LegalPage />} />
         <Route path="/datenschutz" element={<LegalPage />} />
         <Route path="/agb" element={<LegalPage />} />
