@@ -4,7 +4,7 @@ import {
   Package, PlusCircle, Settings, RefreshCw, Briefcase, Trash2, CloudUpload, LayoutDashboard, BarChart3, Sparkles,
   Tag, Layers, Store, Loader2, Cloud, CheckCircle2, X,
 } from 'lucide-react';
-import { signInWithGooglePopup } from '../services/firebaseService';
+import { signInWithGooglePopup, logOut } from '../services/firebaseService';
 import QuotaMonitor from './QuotaMonitor';
 
 interface SyncState {
@@ -48,15 +48,17 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
               onClick={async () => {
                 setSigningIn(true);
                 try {
-                  // simple redirect to Google account chooser flow by clearing session
-                  window.location.reload();
+                  await logOut();
+                } catch {
+                  // ignore
                 } finally {
                   setSigningIn(false);
+                  window.location.reload();
                 }
               }}
               className="flex-1 py-3 px-4 rounded-xl bg-slate-900 text-white font-semibold text-sm hover:bg-slate-800 disabled:opacity-50"
             >
-              {signingIn ? 'Reloading…' : 'Switch account'}
+              {signingIn ? 'Signing out…' : 'Switch account'}
             </button>
           </div>
         </div>
