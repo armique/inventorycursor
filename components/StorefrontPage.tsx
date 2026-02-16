@@ -37,7 +37,34 @@ const TEXTS = {
   viewDetails: 'Details anzeigen',
   readDescription: 'Beschreibung lesen',
   backToTop: 'Nach oben',
+  keyFeatures: 'Was ist drin?',
+  keySpecs: 'Eigenschaften',
 };
+
+/** Preferred order for PC/build-style specs so CPU, GPU, RAM etc. show first. */
+const PREFERRED_SPEC_ORDER = [
+  'CPU', 'Prozessor', 'Processor', 'GPU', 'Grafikkarte', 'Graphics', 'RAM', 'Memory', 'Speicher',
+  'Motherboard', 'Mainboard', 'Board', 'Storage', 'SSD', 'HDD', 'Festplatte', 'PSU', 'Netzteil', 'Power',
+  'Case', 'Gehäuse', 'Cooler', 'Kühler', 'CPU Cooler', 'Cores', 'Threads', 'Socket', 'Chipset',
+  'VRAM', 'TDP', 'Base Clock', 'Boost Clock', 'Form Factor', 'Capacity', 'Speed', 'Type',
+];
+
+function orderedSpecKeys(specs: Record<string, string | number>, categoryFields?: string[]): string[] {
+  const keys = Object.keys(specs);
+  if (categoryFields?.length) {
+    const ordered = categoryFields.filter((k) => specs[k] != null);
+    const rest = keys.filter((k) => !ordered.includes(k));
+    return [...ordered, ...rest.sort()];
+  }
+  return keys.sort((a, b) => {
+    const ia = PREFERRED_SPEC_ORDER.findIndex((p) => a.toLowerCase().includes(p.toLowerCase()) || p.toLowerCase().includes(a.toLowerCase()));
+    const ib = PREFERRED_SPEC_ORDER.findIndex((p) => b.toLowerCase().includes(p.toLowerCase()) || p.toLowerCase().includes(b.toLowerCase()));
+    if (ia !== -1 && ib !== -1) return ia - ib;
+    if (ia !== -1) return -1;
+    if (ib !== -1) return 1;
+    return a.localeCompare(b);
+  });
+}
 
 type StoreItem = NonNullable<StoreCatalogPayload['items']>[number];
 
@@ -491,6 +518,23 @@ const StorefrontPage: React.FC = () => {
                           className="w-full h-full object-cover"
                         />
                       </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Key features / Was ist drin? – specs block (PC components or item features) */}
+              {galleryItem.specs && Object.keys(galleryItem.specs).length > 0 && (
+                <div className="px-6 py-4 border-t border-slate-200 bg-white">
+                  <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-3">
+                    {/pc|computer|desktop|build/i.test(galleryItem.category || '') || /pc|computer|desktop|build/i.test(galleryItem.subCategory || '') ? TEXTS.keyFeatures : TEXTS.specs}
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+                    {orderedSpecKeys(galleryItem.specs, galleryItem.categoryFields).map((key) => (
+                      <div key={key} className="flex justify-between gap-3 py-1.5 border-b border-slate-100 last:border-b-0">
+                        <span className="text-sm text-slate-500 font-medium shrink-0">{key}</span>
+                        <span className="text-sm text-slate-900 font-semibold text-right">{String(galleryItem.specs[key])}</span>
+                      </div>
                     ))}
                   </div>
                 </div>
