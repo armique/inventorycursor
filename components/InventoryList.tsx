@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Handbag, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal,   Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Handbag, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal,   Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType } from '../types';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
@@ -261,8 +261,11 @@ const InventoryList: React.FC<Props> = ({
       else if (statusFilter === 'DRAFTS') matchesStatus = item.isDraft === true;
       else matchesStatus = true;
       if (!matchesStatus) return false;
-      if (categoryFilter !== 'ALL' && item.category !== categoryFilter) return false;
-      if (subCategoryFilter && item.subCategory !== subCategoryFilter) return false;
+      if (categoryFilter !== 'ALL' || subCategoryFilter) {
+        const matchParentAndSub = categoryFilter !== 'ALL' && item.category === categoryFilter && (!subCategoryFilter || item.subCategory === subCategoryFilter);
+        const matchSubAsTopLevel = subCategoryFilter && item.category === subCategoryFilter;
+        if (!matchParentAndSub && !matchSubAsTopLevel) return false;
+      }
       const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) || item.category.toLowerCase().includes(searchTerm.toLowerCase()) || item.vendor?.toLowerCase().includes(searchTerm.toLowerCase());
       if (!matchesSearch) return false;
       if (timeFilter !== 'ALL') {
@@ -330,11 +333,12 @@ const InventoryList: React.FC<Props> = ({
       
       if (!matchesStatus) return false;
 
-      // 2. Category Filter
-      if (categoryFilter !== 'ALL') {
-         if (item.category !== categoryFilter) return false;
+      // 2. Category Filter (align with PC Builder: e.g. "Processors" shows both category=Components+subCategory=Processors AND category=Processors)
+      if (categoryFilter !== 'ALL' || subCategoryFilter) {
+         const matchParentAndSub = categoryFilter !== 'ALL' && item.category === categoryFilter && (!subCategoryFilter || item.subCategory === subCategoryFilter);
+         const matchSubAsTopLevel = subCategoryFilter && item.category === subCategoryFilter; // items stored with Processors as category
+         if (!matchParentAndSub && !matchSubAsTopLevel) return false;
       }
-      if (subCategoryFilter && item.subCategory !== subCategoryFilter) return false;
 
       // 3. Search Filter
       const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -693,6 +697,12 @@ const InventoryList: React.FC<Props> = ({
                 <div className="flex-1 min-w-0">
                    <p className="text-sm font-black text-slate-900 truncate group-hover/cell:text-blue-600 transition-colors">{item.name}</p>
                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      {item.specs && Object.keys(item.specs).length > 0 && (
+                         <span className="inline-flex items-center gap-1 text-emerald-600" title="Tech specs filled — open to edit or re-parse">
+                            <ListChecks size={12} className="shrink-0" />
+                            <span className="text-[9px] font-bold uppercase text-emerald-600">Specs</span>
+                         </span>
+                      )}
                       {item.isDraft && <span className="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-black uppercase flex items-center gap-1"><StickyNote size={8}/> Draft</span>}
                       {item.isBundle && <span className="text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-black uppercase">Bundle</span>}
                       {item.isPC && <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-black uppercase">PC Build</span>}
