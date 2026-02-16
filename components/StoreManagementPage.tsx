@@ -636,6 +636,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
   const [galleryUrlsText, setGalleryUrlsText] = useState((item.storeGalleryUrls ?? []).join('\n'));
   const [uploadingMain, setUploadingMain] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState(false);
+  const [galleryProgress, setGalleryProgress] = useState<string | null>(null);
 
   const fileToDataUrl = (file: File): Promise<string> =>
     new Promise((resolve, reject) => {
@@ -745,12 +746,15 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
     if (!files.length) return;
     try {
       setUploadingGallery(true);
+      setGalleryProgress(`0 / ${files.length}`);
       const urls: string[] = [];
-      for (const file of files) {
+      for (let idx = 0; idx < files.length; idx++) {
+        const file = files[idx];
         const resized = await resizeImage(file);
         const enhanced = await enhanceWithAI(resized);
         const url = await uploadItemImage(enhanced, item.id);
         urls.push(url);
+        setGalleryProgress(`${idx + 1} / ${files.length}`);
       }
       setGalleryUrlsText((prev) => {
         const existing = prev ? prev.split(/\r?\n/).map((s) => s.trim()).filter(Boolean) : [];
@@ -761,6 +765,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
       alert(err?.message || 'Upload failed. Please try again.');
     } finally {
       setUploadingGallery(false);
+      setGalleryProgress(null);
     }
   };
 
@@ -840,16 +845,48 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">{texts.galleryUrls}</label>
             <div className="flex items-start gap-2">
-              <textarea
-                value={galleryUrlsText}
-                onChange={(e) => setGalleryUrlsText(e.target.value)}
-                rows={3}
-                className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400 resize-none font-mono text-xs"
-                placeholder="https://…&#10;https://…"
-              />
+              <div className="flex-1 space-y-2">
+                <textarea
+                  value={galleryUrlsText}
+                  onChange={(e) => setGalleryUrlsText(e.target.value)}
+                  rows={3}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400 resize-none font-mono text-xs"
+                  placeholder="https://…&#10;https://…"
+                />
+                {/* Gallery preview with delete buttons */}
+                {galleryUrlsText.trim() && (
+                  <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                    {galleryUrlsText
+                      .trim()
+                      .split(/\r?\n/)
+                      .map((u) => u.trim())
+                      .filter(Boolean)
+                      .map((url, idx) => (
+                        <div key={`${url}-${idx}`} className="relative w-16 h-16 rounded-lg border border-slate-200 overflow-hidden bg-slate-50 flex items-center justify-center">
+                          <img src={url} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const urls = galleryUrlsText
+                                .split(/\r?\n/)
+                                .map((s) => s.trim())
+                                .filter(Boolean);
+                              urls.splice(idx, 1);
+                              setGalleryUrlsText(urls.join('\n'));
+                            }}
+                            className="absolute top-0 right-0 m-0.5 rounded-full bg-black/60 text-white p-0.5"
+                            aria-label="Remove image"
+                          >
+                            <X size={10} />
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
               <label className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 cursor-pointer shrink-0">
                 <ImageIcon size={14} />
-                {uploadingGallery ? 'Uploading…' : 'Add images'}
+                {uploadingGallery ? (galleryProgress || 'Uploading…') : 'Add images'}
                 <input
                   type="file"
                   accept="image/*"
