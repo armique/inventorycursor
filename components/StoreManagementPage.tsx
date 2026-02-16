@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Eye, EyeOff, Tag, MessageCircle, ExternalLink, Loader2, Check, Mail, Phone, Upload, CheckCircle2, FolderOpen, Pencil, X, Image as ImageIcon } from 'lucide-react';
+import { Eye, EyeOff, Tag, MessageCircle, ExternalLink, Loader2, Check, Mail, Phone, Upload, CheckCircle2, FolderOpen, Pencil, X, Image as ImageIcon, Filter, Search as SearchIcon } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
 import { subscribeToStoreInquiries, markStoreInquiryRead, uploadItemImage } from '../services/firebaseService';
 import type { StoreCategoryFilter } from '../App';
+import ItemThumbnail from './ItemThumbnail';
 
 const TEXTS = {
   title: 'Store management',
@@ -51,7 +52,9 @@ const IN_STOCK = ItemStatus.IN_STOCK;
 
 function isSubcategoryShown(filter: StoreCategoryFilter, category: string, subcategory: string): boolean {
   const rule = filter[category];
-  if (rule === undefined) return true;
+  // Align with storefront: if a category is not configured in the filter at all,
+  // treat it as HIDDEN (only explicitly selected categories/subcategories are shown).
+  if (rule === undefined) return false;
   if (rule === true) return true;
   return rule.includes(subcategory);
 }
@@ -76,7 +79,23 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
     return () => unsub();
   }, []);
 
-  const storeVisibleItems = items.filter((i) => i.status === IN_STOCK);
+  // Base set: all in-stock items
+  const inStockItems = items.filter((i) => i.status === IN_STOCK);
+
+  // Items whose category/subcategory is enabled in "Categories on store"
+  const enabledByCategory = inStockItems.filter((i) => {
+    if (i.status !== IN_STOCK) return false;
+    const cat = i.category;
+    if (!cat) return false;
+    const sub = i.subCategory || '';
+    const subs = categories[cat] || [];
+    // If category has no configured subcategories, treat as visible by default.
+    if (subs.length === 0) return true;
+    return isSubcategoryShown(storeCategoryFilter, cat, sub);
+  });
+
+  // Items actually shown in the main table (respecting category visibility)
+  const storeVisibleItems = enabledByCategory;
   const setVisibility = (item: InventoryItem, visible: boolean) => {
     const next = items.map((it) => (it.id === item.id ? { ...it, storeVisible: visible } : it));
     onUpdate(next);
@@ -126,218 +145,398 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
     });
   };
 
+  const totalInStock = inStockItems.length;
+  const visibleCount = storeVisibleItems.filter((i) => i.storeVisible !== false).length;
+  const onSaleCount = storeVisibleItems.filter((i) => i.storeVisible !== false && i.storeOnSale).length;
+
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'visible' | 'hidden'>('all');
+  const [saleFilter, setSaleFilter] = useState<'all' | 'sale' | 'regular'>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'recent' | 'priceAsc' | 'priceDesc' | 'nameAsc'>('recent');
+
+  const hideAllCategories = () => {
+    const nextFilter: StoreCategoryFilter = {};
+    Object.keys(categories || {}).forEach((cat) => {
+      if (!cat || cat === 'Unknown') return;
+      nextFilter[cat] = [];
+    });
+    onStoreCategoryFilterChange(nextFilter);
+
+    // Also mark all currently in-stock items as not visible on store for clarity.
+    const nextItems = items.map((it) =>
+      it.status === IN_STOCK ? { ...it, storeVisible: false } : it
+    );
+    onUpdate(nextItems);
+  };
+
+  const filteredItems = storeVisibleItems
+    .filter((item) => {
+      if (categoryFilter !== 'all' && item.category !== categoryFilter) return false;
+      if (statusFilter === 'visible' && item.storeVisible === false) return false;
+      if (statusFilter === 'hidden' && item.storeVisible !== false) return false;
+      if (saleFilter === 'sale' && !item.storeOnSale) return false;
+      if (saleFilter === 'regular' && item.storeOnSale) return false;
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        const hay = `${item.name} ${item.category} ${item.subCategory || ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      const priceA = a.storeOnSale ? (a.storeSalePrice ?? a.sellPrice ?? 0) : (a.sellPrice ?? 0);
+      const priceB = b.storeOnSale ? (b.storeSalePrice ?? b.sellPrice ?? 0) : (b.sellPrice ?? 0);
+      if (sortBy === 'priceAsc') return priceA - priceB;
+      if (sortBy === 'priceDesc') return priceB - priceA;
+      if (sortBy === 'nameAsc') return a.name.localeCompare(b.name);
+      return 0;
+    });
+
   return (
     <div className="space-y-8">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      {/* Header + stats + publish */}
+      <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col lg:flex-row gap-6 items-start lg:items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">{TEXTS.title}</h1>
-          <p className="text-slate-600 mt-1">{TEXTS.subtitle}</p>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight">{TEXTS.title}</h1>
+          <p className="text-slate-600 mt-1 text-sm">{TEXTS.subtitle}</p>
+          <div className="flex flex-wrap gap-3 mt-4 text-xs">
+            <span className="px-3 py-1.5 rounded-full bg-slate-100 text-slate-700 font-bold uppercase tracking-widest">
+              {totalInStock} In-stock
+            </span>
+            <span className="px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-800 font-bold uppercase tracking-widest">
+              {visibleCount} Visible
+            </span>
+            <span className="px-3 py-1.5 rounded-full bg-rose-100 text-rose-700 font-bold uppercase tracking-widest">
+              {onSaleCount} On sale
+            </span>
+          </div>
         </div>
         {onPublishCatalog && (
-          <button
-            type="button"
-            onClick={handlePublish}
-            disabled={publishing}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-60 transition-colors"
-          >
-            {publishing ? <Loader2 size={18} className="animate-spin" /> : publishedAt ? <CheckCircle2 size={18} /> : <Upload size={18} />}
-            {publishing ? 'Publishing…' : publishedAt ? TEXTS.published : TEXTS.publishNow}
-          </button>
+          <div className="flex flex-col items-end gap-2">
+            <button
+              type="button"
+              onClick={handlePublish}
+              disabled={publishing}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-60 transition-colors"
+            >
+              {publishing ? <Loader2 size={18} className="animate-spin" /> : publishedAt ? <CheckCircle2 size={18} /> : <Upload size={18} />}
+              {publishing ? 'Publishing…' : publishedAt ? TEXTS.published : TEXTS.publishNow}
+            </button>
+            {publishedAt && (
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                Last published {new Date(publishedAt).toLocaleString()}
+              </p>
+            )}
+          </div>
         )}
       </div>
 
-      <section>
-        <h2 className="text-lg font-semibold text-slate-800 mb-2 flex items-center gap-2">
-          <FolderOpen size={20} /> {TEXTS.categoriesOnStore}
-        </h2>
-        <p className="text-sm text-slate-500 mb-4">{TEXTS.categoriesOnStoreNote}</p>
-        <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-          {categoryEntries.length === 0 ? (
-            <p className="px-4 py-6 text-slate-500 text-sm">No categories defined. Add categories in Settings or when adding items.</p>
-          ) : (
-            <ul className="divide-y divide-slate-100">
-              {categoryEntries.map(([category, subcategories]) => {
-                return (
-                  <li key={category} className="bg-white">
-                    <div className="px-4 py-3 flex items-center justify-between gap-4 border-b border-slate-100 bg-slate-50/50">
-                      <span className="font-semibold text-slate-800">{category}</span>
-                      <div className="flex gap-2">
-                        <button type="button" onClick={() => setCategoryAll(category, true)} className="text-xs font-medium text-emerald-600 hover:text-emerald-800 px-2 py-1 rounded hover:bg-emerald-50">
+      <div className="flex flex-col lg:flex-row gap-6 items-start">
+        {/* LEFT: Items & filters */}
+        <div className="flex-1 w-full space-y-4">
+          <div className="bg-white border border-slate-200 rounded-3xl shadow-sm p-5 space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Filter size={16} className="text-slate-400" />
+                <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Store items</p>
+              </div>
+              <div className="flex flex-wrap gap-2 md:justify-end">
+                <div className="relative">
+                  <SearchIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="search"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search name, category…"
+                    className="pl-8 pr-3 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-700 bg-slate-50 focus:bg-white outline-none focus:ring-2 focus:ring-slate-900/10"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={hideAllCategories}
+                  className="px-3 py-2 rounded-xl border border-slate-200 text-[11px] font-bold text-slate-600 bg-white hover:bg-slate-50"
+                  title="Hide all categories from store"
+                >
+                  Hide all
+                </button>
+                <select
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value)}
+                  className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-700 bg-slate-50 focus:bg-white outline-none"
+                >
+                  <option value="all">All categories</option>
+                  {Array.from(new Set(storeVisibleItems.map((i) => i.category))).map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value as any)}
+                  className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-700 bg-slate-50 focus:bg-white outline-none"
+                >
+                  <option value="all">All visibility</option>
+                  <option value="visible">Visible only</option>
+                  <option value="hidden">Hidden only</option>
+                </select>
+                <select
+                  value={saleFilter}
+                  onChange={(e) => setSaleFilter(e.target.value as any)}
+                  className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-700 bg-slate-50 focus:bg-white outline-none"
+                >
+                  <option value="all">All pricing</option>
+                  <option value="sale">On sale</option>
+                  <option value="regular">Regular price</option>
+                </select>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as any)}
+                  className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-700 bg-slate-50 focus:bg-white outline-none"
+                >
+                  <option value="recent">Sort: default</option>
+                  <option value="priceAsc">Price ↑</option>
+                  <option value="priceDesc">Price ↓</option>
+                  <option value="nameAsc">Name A–Z</option>
+                </select>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-500">{TEXTS.catalogNote}</p>
+
+            <div className="rounded-2xl border border-slate-100 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-black uppercase tracking-widest text-slate-500">
+                    <th className="px-4 py-3 w-16">Item</th>
+                    <th className="px-2 py-3">Name</th>
+                    <th className="px-2 py-3 w-28">{TEXTS.priceEur}</th>
+                    <th className="px-2 py-3 w-28">Store</th>
+                    <th className="px-2 py-3 w-24">Sale</th>
+                    <th className="px-2 py-3 w-32">Sale price €</th>
+                    <th className="px-3 py-3 w-10"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredItems.length === 0 ? (
+                    <tr><td colSpan={7} className="px-4 py-8 text-slate-500 text-center text-sm">No items match the current filters.</td></tr>
+                  ) : (
+                    filteredItems.map((item) => (
+                      <tr key={item.id} className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
+                        <td className="px-4 py-3 align-top">
+                          <ItemThumbnail item={item} className="w-12 h-12 rounded-xl object-cover border border-slate-200 bg-slate-50" size={48} useCategoryImage />
+                        </td>
+                        <td className="px-2 py-3 align-top">
+                          <div className="font-semibold text-slate-900 truncate">{item.name}</div>
+                          <div className="text-[11px] text-slate-500 truncate">
+                            {item.category}{item.subCategory ? ` • ${item.subCategory}` : ''}
+                          </div>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {item.storeVisible === false ? (
+                              <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold uppercase tracking-widest">Hidden</span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-widest">Visible</span>
+                            )}
+                            {item.storeOnSale && (
+                              <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-bold uppercase tracking-widest">Sale</span>
+                            )}
+                            {!item.imageUrl && (
+                              <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold uppercase tracking-widest">No image</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-2 py-3 align-top">
+                          <input
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            value={item.sellPrice ?? ''}
+                            onChange={(e) => setSellPrice(item, e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
+                            placeholder="0"
+                            className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-400"
+                          />
+                        </td>
+                        <td className="px-2 py-3 align-top">
+                          {item.storeVisible !== false ? (
+                            <button
+                              type="button"
+                              onClick={() => setVisibility(item, false)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                              title="Click to hide from store"
+                            >
+                              <Eye size={12} /> {TEXTS.hideFromStore}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setVisibility(item, true)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-slate-200 text-slate-600 hover:bg-slate-300"
+                              title="Click to show on store"
+                            >
+                              <EyeOff size={12} /> {TEXTS.showOnStore}
+                            </button>
+                          )}
+                        </td>
+                        <td className="px-2 py-3 align-top">
+                          <button
+                            type="button"
+                            onClick={() => toggleSale(item)}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${item.storeOnSale ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-600'}`}
+                          >
+                            <Tag size={12} />
+                            {item.storeOnSale ? 'Sale' : 'No'}
+                          </button>
+                        </td>
+                        <td className="px-2 py-3 align-top">
+                          {item.storeOnSale ? (
+                            <input
+                              type="number"
+                              min={0}
+                              step={0.01}
+                              value={item.storeSalePrice ?? ''}
+                              onChange={(e) => setSalePrice(item, e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
+                              className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-400"
+                            />
+                          ) : (
+                            <span className="text-slate-400 text-xs">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 align-top">
+                          <button
+                            type="button"
+                            onClick={() => setEditingItem(item)}
+                            className="p-2 rounded-lg hover:bg-slate-200 text-slate-600"
+                            title={TEXTS.editStoreItem}
+                          >
+                            <Pencil size={16} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT: Categories + Inquiries */}
+        <div className="w-full lg:w-96 space-y-4">
+          <section className="bg-white border border-slate-200 rounded-3xl shadow-sm p-5">
+            <h2 className="text-sm font-black text-slate-900 mb-1 flex items-center gap-2 uppercase tracking-widest">
+              <FolderOpen size={16} /> {TEXTS.categoriesOnStore}
+            </h2>
+            <p className="text-xs text-slate-500 mb-4">{TEXTS.categoriesOnStoreNote}</p>
+            <div className="space-y-3 max-h-[260px] overflow-y-auto pr-1">
+              {categoryEntries.length === 0 ? (
+                <p className="text-xs text-slate-500">No categories defined. Add categories in Settings or when adding items.</p>
+              ) : (
+                categoryEntries.map(([category, subcategories]) => (
+                  <div key={category} className="border border-slate-200 rounded-2xl overflow-hidden">
+                    <div className="px-3 py-2 flex items-center justify-between bg-slate-50">
+                      <span className="text-xs font-semibold text-slate-800">{category}</span>
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setCategoryAll(category, true)}
+                          className="text-[10px] font-bold text-emerald-600 hover:text-emerald-800 px-2 py-1 rounded-lg hover:bg-emerald-50"
+                        >
                           {TEXTS.showAll}
                         </button>
-                        <button type="button" onClick={() => setCategoryAll(category, false)} className="text-xs font-medium text-slate-500 hover:text-slate-700 px-2 py-1 rounded hover:bg-slate-100">
+                        <button
+                          type="button"
+                          onClick={() => setCategoryAll(category, false)}
+                          className="text-[10px] font-bold text-slate-500 hover:text-slate-700 px-2 py-1 rounded-lg hover:bg-slate-100"
+                        >
                           {TEXTS.hideAll}
                         </button>
                       </div>
                     </div>
-                    <ul className="divide-y divide-slate-50">
+                    <div className="px-3 py-2 space-y-1">
                       {subcategories.length === 0 ? (
-                        <li className="px-4 py-2 text-slate-500 text-sm">No subcategories</li>
+                        <p className="text-[11px] text-slate-500">No subcategories</p>
                       ) : (
                         subcategories.map((sub) => {
                           const shown = isSubcategoryShown(storeCategoryFilter, category, sub);
                           return (
-                            <li key={`${category}:${sub}`} className="px-6 py-2.5 flex items-center gap-3">
-                              <label className="flex items-center gap-2 cursor-pointer flex-1">
-                                <input
-                                  type="checkbox"
-                                  checked={shown}
-                                  onChange={() => toggleCategorySubcategory(category, sub, !shown)}
-                                  className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                                />
-                                <span className="text-sm text-slate-700">{sub}</span>
-                              </label>
-                            </li>
+                            <label key={`${category}:${sub}`} className="flex items-center gap-2 text-[11px] text-slate-700 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={shown}
+                                onChange={() => toggleCategorySubcategory(category, sub, !shown)}
+                                className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                              />
+                              <span>{sub}</span>
+                            </label>
                           );
                         })
                       )}
-                    </ul>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-      </section>
-
-      <section>
-        <h2 className="text-lg font-semibold text-slate-800 mb-3">Visibility & sale</h2>
-        <p className="text-sm text-slate-500 mb-4">{TEXTS.catalogNote}</p>
-        <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-left">
-                <th className="px-4 py-3 font-medium text-slate-600">Item</th>
-                <th className="px-4 py-3 font-medium text-slate-600 w-24">{TEXTS.priceEur}</th>
-                <th className="px-4 py-3 font-medium text-slate-600 w-24">Store</th>
-                <th className="px-4 py-3 font-medium text-slate-600 w-24">Sale</th>
-                <th className="px-4 py-3 font-medium text-slate-600 w-28">Sale price €</th>
-                <th className="px-4 py-3 font-medium text-slate-600 w-20"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {storeVisibleItems.length === 0 ? (
-                <tr><td colSpan={6} className="px-4 py-6 text-slate-500 text-center">No in-stock items.</td></tr>
-              ) : (
-                storeVisibleItems.map((item) => (
-                  <tr key={item.id} className="border-b border-slate-100 hover:bg-slate-50/50">
-                    <td className="px-4 py-3">
-                      <span className="font-medium text-slate-900">{item.name}</span>
-                      <span className="text-slate-500 ml-2">{item.category}{item.subCategory ? ` / ${item.subCategory}` : ''}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        value={item.sellPrice ?? ''}
-                        onChange={(e) => setSellPrice(item, e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
-                        placeholder="0"
-                        className="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-400"
-                      />
-                    </td>
-                    <td className="px-4 py-3">
-                      {item.storeVisible !== false ? (
-                        <button type="button" onClick={() => setVisibility(item, false)} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-100 text-emerald-800 hover:bg-emerald-200" title="Click to hide from store">
-                          <Eye size={14} /> {TEXTS.hideFromStore}
-                        </button>
-                      ) : (
-                        <button type="button" onClick={() => setVisibility(item, true)} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-200 text-slate-600 hover:bg-slate-300" title="Click to show on store">
-                          <EyeOff size={14} /> {TEXTS.showOnStore}
-                        </button>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={() => toggleSale(item)}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${item.storeOnSale ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-600'}`}
-                      >
-                        <Tag size={14} />
-                        {item.storeOnSale ? 'Sale' : 'No'}
-                      </button>
-                    </td>
-                    <td className="px-4 py-3">
-                      {item.storeOnSale ? (
-                        <input
-                          type="number"
-                          min={0}
-                          step={0.01}
-                          value={item.storeSalePrice ?? ''}
-                          onChange={(e) => setSalePrice(item, e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
-                          className="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-400"
-                        />
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <button type="button" onClick={() => setEditingItem(item)} className="p-2 rounded-lg hover:bg-slate-200 text-slate-600" title={TEXTS.editStoreItem}>
-                        <Pencil size={16} />
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section>
-        <h2 className="text-lg font-semibold text-slate-800 mb-3 flex items-center gap-2">
-          <MessageCircle size={20} /> {TEXTS.inquiries}
-          {unreadCount > 0 && (
-            <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-xs font-bold">{unreadCount}</span>
-          )}
-        </h2>
-        <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-          {inquiries.length === 0 ? (
-            <p className="px-4 py-8 text-slate-500 text-center">{TEXTS.noInquiries}</p>
-          ) : (
-            <ul className="divide-y divide-slate-100">
-              {inquiries.map((inq) => (
-                <li key={inq.id} className={`px-4 py-4 ${inq.read ? 'bg-slate-50/50' : 'bg-white'}`}>
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium text-slate-900">{inq.itemName}</p>
-                      <p className="text-sm text-slate-600 mt-1">{inq.message}</p>
-                      <div className="flex flex-wrap gap-3 mt-2 text-xs text-slate-500">
-                        {inq.contactName && <span className="flex items-center gap-1">{inq.contactName}</span>}
-                        {inq.contactEmail && (
-                          <a href={`mailto:${inq.contactEmail}`} className="flex items-center gap-1 text-blue-600 hover:underline">
-                            <Mail size={12} /> {inq.contactEmail}
-                          </a>
-                        )}
-                        {inq.contactPhone && (
-                          <a href={`tel:${inq.contactPhone}`} className="flex items-center gap-1 text-blue-600 hover:underline">
-                            <Phone size={12} /> {inq.contactPhone}
-                          </a>
-                        )}
-                        <span>{new Date(inq.createdAt).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' })}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <a href={`/panel/inventory?highlight=${inq.itemId}`} className="p-2 rounded-lg hover:bg-slate-200 text-slate-600" title={TEXTS.openItem}>
-                        <ExternalLink size={16} />
-                      </a>
-                      {!inq.read && (
-                        <button
-                          type="button"
-                          onClick={() => markStoreInquiryRead(inq.id, true)}
-                          className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium bg-slate-200 text-slate-700 hover:bg-slate-300"
-                        >
-                          <Check size={12} /> {TEXTS.markRead}
-                        </button>
-                      )}
                     </div>
                   </div>
-                </li>
-              ))}
-            </ul>
-          )}
+                ))
+              )}
+            </div>
+          </section>
+
+          <section className="bg-white border border-slate-200 rounded-3xl shadow-sm p-5">
+            <h2 className="text-sm font-black text-slate-900 mb-1 flex items-center gap-2 uppercase tracking-widest">
+              <MessageCircle size={16} /> {TEXTS.inquiries}
+              {unreadCount > 0 && (
+                <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-black">{unreadCount}</span>
+              )}
+            </h2>
+            <div className="rounded-2xl border border-slate-100 bg-slate-50/40 overflow-hidden mt-3">
+              {inquiries.length === 0 ? (
+                <p className="px-4 py-8 text-slate-500 text-center text-sm">{TEXTS.noInquiries}</p>
+              ) : (
+                <ul className="max-h-[260px] overflow-y-auto divide-y divide-slate-100">
+                  {inquiries.map((inq) => (
+                    <li key={inq.id} className={`px-4 py-3 ${inq.read ? 'bg-white' : 'bg-amber-50/60'}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-slate-900 text-sm truncate">{inq.itemName}</p>
+                          <p className="text-xs text-slate-600 mt-1 line-clamp-2">{inq.message}</p>
+                          <div className="flex flex-wrap gap-2 mt-2 text-[10px] text-slate-500">
+                            {inq.contactName && <span>{inq.contactName}</span>}
+                            {inq.contactEmail && (
+                              <a href={`mailto:${inq.contactEmail}`} className="flex items-center gap-1 text-blue-600 hover:underline">
+                                <Mail size={10} /> {inq.contactEmail}
+                              </a>
+                            )}
+                            {inq.contactPhone && (
+                              <a href={`tel:${inq.contactPhone}`} className="flex items-center gap-1 text-blue-600 hover:underline">
+                                <Phone size={10} /> {inq.contactPhone}
+                              </a>
+                            )}
+                            <span>{new Date(inq.createdAt).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-2 shrink-0">
+                          <a
+                            href={`/panel/inventory?highlight=${inq.itemId}`}
+                            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-600"
+                            title={TEXTS.openItem}
+                          >
+                            <ExternalLink size={14} />
+                          </a>
+                          {!inq.read && (
+                            <button
+                              type="button"
+                              onClick={() => markStoreInquiryRead(inq.id, true)}
+                              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-medium bg-slate-200 text-slate-700 hover:bg-slate-300"
+                            >
+                              <Check size={10} /> {TEXTS.markRead}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
         </div>
-      </section>
+      </div>
 
       {editingItem && (
         <StoreItemEditPanel
