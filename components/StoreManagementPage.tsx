@@ -324,117 +324,166 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
             <p className="text-[11px] text-slate-500">{TEXTS.catalogNote}</p>
 
             <div className="rounded-2xl border border-slate-100 overflow-hidden">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-black uppercase tracking-widest text-slate-500">
-                    <th className="px-4 py-3 w-16">Item</th>
-                    <th className="px-2 py-3">Name</th>
-                    <th className="px-2 py-3 w-28">{TEXTS.priceEur}</th>
-                    <th className="px-2 py-3 w-28">Store</th>
-                    <th className="px-2 py-3 w-24">Sale</th>
-                    <th className="px-2 py-3 w-32">Sale price €</th>
-                    <th className="px-3 py-3 w-10"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredItems.length === 0 ? (
-                    <tr><td colSpan={7} className="px-4 py-8 text-slate-500 text-center text-sm">No items match the current filters.</td></tr>
-                  ) : (
-                    filteredItems.map((item) => (
-                      <tr key={item.id} className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
-                        <td className="px-4 py-3 align-top">
-                          <ItemThumbnail item={item} className="w-12 h-12 rounded-xl object-cover border border-slate-200 bg-slate-50" size={48} useCategoryImage />
-                        </td>
-                        <td className="px-2 py-3 align-top">
-                          <div className="font-semibold text-slate-900 truncate">{item.name}</div>
-                          <div className="text-[11px] text-slate-500 truncate">
-                            {item.category}{item.subCategory ? ` • ${item.subCategory}` : ''}
-                          </div>
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {item.storeVisible === false ? (
-                              <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold uppercase tracking-widest">Hidden</span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-widest">Visible</span>
-                            )}
-                            {item.storeOnSale && (
-                              <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-bold uppercase tracking-widest">Sale</span>
-                            )}
-                            {!item.imageUrl && (
-                              <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold uppercase tracking-widest">No image</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-2 py-3 align-top">
-                          <input
-                            type="number"
-                            min={0}
-                            step={0.01}
-                            value={item.sellPrice ?? ''}
-                            onChange={(e) => setSellPrice(item, e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
-                            placeholder="0"
-                            className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-400"
-                          />
-                        </td>
-                        <td className="px-2 py-3 align-top">
-                          {item.storeVisible !== false ? (
-                            <button
-                              type="button"
-                              onClick={() => setVisibility(item, false)}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
-                              title="Click to hide from store"
-                            >
-                              <Eye size={12} /> {TEXTS.hideFromStore}
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setVisibility(item, true)}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-slate-200 text-slate-600 hover:bg-slate-300"
-                              title="Click to show on store"
-                            >
-                              <EyeOff size={12} /> {TEXTS.showOnStore}
-                            </button>
-                          )}
-                        </td>
-                        <td className="px-2 py-3 align-top">
-                          <button
-                            type="button"
-                            onClick={() => toggleSale(item)}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${item.storeOnSale ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-600'}`}
-                          >
-                            <Tag size={12} />
-                            {item.storeOnSale ? 'Sale' : 'No'}
-                          </button>
-                        </td>
-                        <td className="px-2 py-3 align-top">
-                          {item.storeOnSale ? (
+              {/* Desktop table */}
+              <div className="hidden md:block">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-black uppercase tracking-widest text-slate-500">
+                      <th className="px-4 py-3 w-16">Item</th>
+                      <th className="px-2 py-3">Name</th>
+                      <th className="px-2 py-3 w-28">{TEXTS.priceEur}</th>
+                      <th className="px-2 py-3 w-28">Store</th>
+                      <th className="px-2 py-3 w-24">Sale</th>
+                      <th className="px-2 py-3 w-32">Sale price €</th>
+                      <th className="px-3 py-3 w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredItems.length === 0 ? (
+                      <tr><td colSpan={7} className="px-4 py-8 text-slate-500 text-center text-sm">No items match the current filters.</td></tr>
+                    ) : (
+                      filteredItems.map((item) => (
+                        <tr key={item.id} className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
+                          <td className="px-4 py-3 align-top">
+                            <ItemThumbnail item={item} className="w-12 h-12 rounded-xl object-cover border border-slate-200 bg-slate-50" size={48} useCategoryImage />
+                          </td>
+                          <td className="px-2 py-3 align-top">
+                            <div className="font-semibold text-slate-900 truncate">{item.name}</div>
+                            <div className="text-[11px] text-slate-500 truncate">
+                              {item.category}{item.subCategory ? ` • ${item.subCategory}` : ''}
+                            </div>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {item.storeVisible === false ? (
+                                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold uppercase tracking-widest">Hidden</span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-widest">Visible</span>
+                              )}
+                              {item.storeOnSale && (
+                                <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-bold uppercase tracking-widest">Sale</span>
+                              )}
+                              {!item.imageUrl && (
+                                <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold uppercase tracking-widest">No image</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-2 py-3 align-top">
                             <input
                               type="number"
                               min={0}
                               step={0.01}
-                              value={item.storeSalePrice ?? ''}
-                              onChange={(e) => setSalePrice(item, e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
+                              value={item.sellPrice ?? ''}
+                              onChange={(e) => setSellPrice(item, e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
+                              placeholder="0"
                               className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-400"
                             />
+                          </td>
+                          <td className="px-2 py-3 align-top">
+                            {item.storeVisible !== false ? (
+                              <button
+                                type="button"
+                                onClick={() => setVisibility(item, false)}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                                title="Click to hide from store"
+                              >
+                                <Eye size={12} /> {TEXTS.hideFromStore}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setVisibility(item, true)}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-slate-200 text-slate-600 hover:bg-slate-300"
+                                title="Click to show on store"
+                              >
+                                <EyeOff size={12} /> {TEXTS.showOnStore}
+                              </button>
+                            )}
+                          </td>
+                          <td className="px-2 py-3 align-top">
+                            <button
+                              type="button"
+                              onClick={() => toggleSale(item)}
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${item.storeOnSale ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-600'}`}
+                            >
+                              <Tag size={12} />
+                              {item.storeOnSale ? 'Sale' : 'No'}
+                            </button>
+                          </td>
+                          <td className="px-2 py-3 align-top">
+                            {item.storeOnSale ? (
+                              <input
+                                type="number"
+                                min={0}
+                                step={0.01}
+                                value={item.storeSalePrice ?? ''}
+                                onChange={(e) => setSalePrice(item, e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
+                                className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-400"
+                              />
+                            ) : (
+                              <span className="text-slate-400 text-xs">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 align-top">
+                            <button
+                              type="button"
+                              onClick={() => setEditingItem(item)}
+                              className="p-2 rounded-lg hover:bg-slate-200 text-slate-600"
+                              title={TEXTS.editStoreItem}
+                            >
+                              <Pencil size={16} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile card list */}
+              <div className="md:hidden divide-y divide-slate-100">
+                {filteredItems.length === 0 ? (
+                  <p className="px-4 py-6 text-slate-500 text-center text-sm">No items match the current filters.</p>
+                ) : (
+                  filteredItems.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setEditingItem(item)}
+                      className="w-full text-left px-4 py-3 flex gap-3 bg-white hover:bg-slate-50 active:bg-slate-100"
+                    >
+                      <ItemThumbnail
+                        item={item}
+                        className="w-14 h-14 rounded-xl object-cover border border-slate-200 bg-slate-50 shrink-0"
+                        size={56}
+                        useCategoryImage
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-semibold text-slate-900 text-sm truncate">{item.name}</p>
+                          <span className="text-[11px] text-slate-400">{(item.sellPrice ?? 0).toFixed(2)} €</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 truncate">
+                          {item.category}{item.subCategory ? ` • ${item.subCategory}` : ''}
+                        </p>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {item.storeVisible === false ? (
+                            <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold uppercase tracking-widest">Hidden</span>
                           ) : (
-                            <span className="text-slate-400 text-xs">—</span>
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-widest">Visible</span>
                           )}
-                        </td>
-                        <td className="px-3 py-3 align-top">
-                          <button
-                            type="button"
-                            onClick={() => setEditingItem(item)}
-                            className="p-2 rounded-lg hover:bg-slate-200 text-slate-600"
-                            title={TEXTS.editStoreItem}
-                          >
-                            <Pencil size={16} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                          {item.storeOnSale && (
+                            <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-bold uppercase tracking-widest">Sale</span>
+                          )}
+                          {!item.imageUrl && (
+                            <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold uppercase tracking-widest">No image</span>
+                          )}
+                        </div>
+                        <p className="mt-1 text-[10px] text-slate-400">Tap to edit price, visibility, gallery & description.</p>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </div>
