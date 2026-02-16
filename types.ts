@@ -153,6 +153,8 @@ export interface InventoryItem {
   storeMetaTitle?: string;
   /** Optional SEO/sharing: meta description for this item. */
   storeMetaDescription?: string;
+  /** Optional English store description (when multi-language is used). */
+  storeDescriptionEn?: string;
 }
 
 /** Inquiry from a visitor about a store item (stored in Firebase). */
@@ -186,6 +188,7 @@ export interface StoreCatalogItem {
   badge?: 'New' | 'Price reduced';
   storeMetaTitle?: string;
   storeMetaDescription?: string;
+  storeDescriptionEn?: string;
 }
 
 export interface Competitor {

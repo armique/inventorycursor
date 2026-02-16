@@ -602,6 +602,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
   const [storeBadge, setStoreBadge] = useState<'auto' | 'New' | 'Price reduced' | 'none'>(item.storeBadge ?? 'auto');
   const [storeMetaTitle, setStoreMetaTitle] = useState(item.storeMetaTitle ?? '');
   const [storeMetaDescription, setStoreMetaDescription] = useState(item.storeMetaDescription ?? '');
+  const [storeDescriptionEn, setStoreDescriptionEn] = useState(item.storeDescriptionEn ?? '');
   /** Ordered list: [0] = main image (carousel #1), rest = gallery. */
   const [storeImageUrls, setStoreImageUrls] = useState<string[]>(() => {
     const main = item.imageUrl?.trim();
@@ -774,6 +775,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
       storeBadge: storeBadge === 'auto' ? undefined : storeBadge,
       storeMetaTitle: storeMetaTitle.trim() || undefined,
       storeMetaDescription: storeMetaDescription.trim() || undefined,
+      storeDescriptionEn: storeDescriptionEn.trim() || undefined,
       imageUrl: main || undefined,
       storeGalleryUrls: rest?.length ? rest : undefined,
     });
@@ -900,6 +902,10 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">SEO meta description</label>
             <textarea value={storeMetaDescription} onChange={(e) => setStoreMetaDescription(e.target.value)} rows={2} placeholder="Short description for search and social sharing" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400 resize-y" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Store description (English)</label>
+            <textarea value={storeDescriptionEn} onChange={(e) => setStoreDescriptionEn(e.target.value)} rows={4} placeholder="Optional English description when store language is EN" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400 resize-y" />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">{texts.galleryUrls}</label>

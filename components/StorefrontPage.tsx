@@ -7,7 +7,7 @@ import AboutContactModal from './AboutContactModal';
 import CookieConsent, { getCookieConsentAccepted } from './CookieConsent';
 import { getWishlistIds, setWishlistIds, toggleWishlistId, getRecentlyViewedIds, addRecentlyViewedId } from '../utils/storefrontStorage';
 
-const TEXTS = {
+const TEXTS_DE = {
   title: 'ArmikTech',
   sale: 'Sale',
   all: 'Alle',
@@ -43,7 +43,6 @@ const TEXTS = {
   backToTop: 'Nach oben',
   keyFeatures: 'Was ist drin?',
   keySpecs: 'Eigenschaften',
-  // Footer
   aboutUs: 'Über uns',
   contactLink: 'Kontakt',
   imprint: 'Impressum',
@@ -59,6 +58,68 @@ const TEXTS = {
   home: 'Start',
   badgeNew: 'Neu',
   badgePriceReduced: 'Preis reduziert',
+  langDe: 'DE',
+  langEn: 'EN',
+};
+
+function getItemDescription(item: { storeDescription?: string; storeDescriptionEn?: string }, lang: 'de' | 'en'): string | undefined {
+  if (lang === 'en' && item.storeDescriptionEn) return item.storeDescriptionEn;
+  return item.storeDescription;
+}
+
+const TEXTS_EN = {
+  title: 'ArmikTech',
+  sale: 'Sale',
+  all: 'All',
+  category: 'Category',
+  price: 'Price',
+  minPrice: 'Min €',
+  maxPrice: 'Max €',
+  search: 'Search…',
+  noItems: 'No items found.',
+  priceOnRequest: 'Price on request',
+  loading: 'Loading catalog…',
+  noCatalog: 'No items at ArmikTech yet.',
+  contact: 'Contact',
+  aboutItem: 'Inquiry about this item',
+  yourName: 'Your name',
+  yourEmail: 'Email',
+  yourPhone: 'Phone',
+  yourMessage: 'Message',
+  send: 'Send',
+  sent: 'Message sent.',
+  sendError: 'Error sending.',
+  close: 'Close',
+  specs: 'Specifications',
+  onSale: 'Sale',
+  sort: 'Sort',
+  toHome: 'Home',
+  priceLow: 'Price ascending',
+  priceHigh: 'Price descending',
+  nameAz: 'Name A–Z',
+  results: 'Results',
+  viewDetails: 'View details',
+  readDescription: 'Read description',
+  backToTop: 'Back to top',
+  keyFeatures: 'What\'s inside?',
+  keySpecs: 'Features',
+  aboutUs: 'About us',
+  contactLink: 'Contact',
+  imprint: 'Imprint',
+  privacy: 'Privacy',
+  terms: 'Terms',
+  legal: 'All rights reserved. All trademarks belong to their respective owners.',
+  wishlist: 'Wishlist',
+  addToWishlist: 'Add to wishlist',
+  removeFromWishlist: 'Remove from wishlist',
+  share: 'Share',
+  similarItems: 'Similar items',
+  recentlyViewed: 'Recently viewed',
+  home: 'Home',
+  badgeNew: 'New',
+  badgePriceReduced: 'Price reduced',
+  langDe: 'DE',
+  langEn: 'EN',
 };
 
 /** Preferred order for PC/build-style specs so CPU, GPU, RAM etc. show first. */
@@ -116,6 +177,10 @@ const StorefrontPage: React.FC = () => {
   });
   const [wishlistIds, setWishlistIdsState] = useState<string[]>(() => getWishlistIds());
   const [recentKey, setRecentKey] = useState(0);
+  const [lang, setLang] = useState<'de' | 'en'>(() => {
+    try { return (localStorage.getItem('armiktech_lang') as 'de' | 'en') || 'de'; } catch { return 'de'; }
+  });
+  const TEXTS = lang === 'en' ? TEXTS_EN : TEXTS_DE;
 
   useEffect(() => {
     const unsub = subscribeToStoreCatalog((data) => {
@@ -167,6 +232,10 @@ const StorefrontPage: React.FC = () => {
     try { localStorage.setItem('armiktech_dark', darkMode ? '1' : '0'); } catch {}
   }, [darkMode]);
 
+  useEffect(() => {
+    try { localStorage.setItem('armiktech_lang', lang); } catch {}
+  }, [lang]);
+
   // Per-item meta title/description for SEO and sharing when item detail is open
   const DEFAULT_TITLE = 'ArmikTech – armiktech.com';
   const DEFAULT_DESCRIPTION = 'ArmikTech – Technik und mehr. Durchstöbern Sie unseren Shop.';
@@ -184,7 +253,7 @@ const StorefrontPage: React.FC = () => {
       return;
     }
     const title = (galleryItem.storeMetaTitle || galleryItem.name).trim() + ' | ArmikTech';
-    const description = (galleryItem.storeMetaDescription || galleryItem.storeDescription || '').trim().slice(0, 160) || DEFAULT_DESCRIPTION;
+    const description = (galleryItem.storeMetaDescription || getItemDescription(galleryItem, lang) || '').trim().slice(0, 160) || DEFAULT_DESCRIPTION;
     document.title = title;
     let desc = document.querySelector('meta[name="description"]');
     if (!desc) { desc = document.createElement('meta'); desc.setAttribute('name', 'description'); document.head.appendChild(desc); }
@@ -206,7 +275,7 @@ const StorefrontPage: React.FC = () => {
       const d = document.querySelector('meta[name="description"]');
       if (d) d.setAttribute('content', DEFAULT_DESCRIPTION);
     };
-  }, [galleryItem]);
+  }, [galleryItem, lang]);
 
   const handleToggleWishlist = (itemId: string) => {
     const added = toggleWishlistId(itemId);
@@ -335,6 +404,10 @@ const StorefrontPage: React.FC = () => {
             {TEXTS.title}
           </button>
           <nav className="flex items-center gap-1 sm:gap-2">
+            <div className="flex items-center gap-0.5 rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden">
+              <button type="button" onClick={() => setLang('de')} className={`px-2.5 py-1.5 text-xs font-semibold ${lang === 'de' ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'}`} aria-label="Deutsch">DE</button>
+              <button type="button" onClick={() => setLang('en')} className={`px-2.5 py-1.5 text-xs font-semibold ${lang === 'en' ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'}`} aria-label="English">EN</button>
+            </div>
             <button type="button" onClick={() => setDarkMode((d) => !d)} className="p-2 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300" aria-label={darkMode ? 'Hell' : 'Dunkel'}>
               {darkMode ? <Sun size={20} /> : <Moon size={20} />}
             </button>
@@ -562,13 +635,13 @@ const StorefrontPage: React.FC = () => {
             {viewMode === 'grid' ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
                 {sortedFiltered.map((item) => (
-                  <StoreItemCard key={item.id} item={item} priceDisplay={priceDisplay(item)} texts={TEXTS} onContact={() => openContact(item)} onDetailsClick={() => handleOpenDetails(item)} layout="grid" isInWishlist={wishlistIds.includes(item.id)} onToggleWishlist={() => handleToggleWishlist(item.id)} onShare={() => { const u = `${window.location.origin}/item/${item.id}`; if (navigator.share) navigator.share({ title: item.name, url: u }); else navigator.clipboard.writeText(u); }} />
+                  <StoreItemCard key={item.id} item={item} priceDisplay={priceDisplay(item)} texts={TEXTS} lang={lang} onContact={() => openContact(item)} onDetailsClick={() => handleOpenDetails(item)} layout="grid" isInWishlist={wishlistIds.includes(item.id)} onToggleWishlist={() => handleToggleWishlist(item.id)} onShare={() => { const u = `${window.location.origin}/item/${item.id}`; if (navigator.share) navigator.share({ title: item.name, url: u }); else navigator.clipboard.writeText(u); }} />
                 ))}
               </div>
             ) : (
               <div className="space-y-4">
                 {sortedFiltered.map((item) => (
-                  <StoreItemCard key={item.id} item={item} priceDisplay={priceDisplay(item)} texts={TEXTS} onContact={() => openContact(item)} onDetailsClick={() => handleOpenDetails(item)} layout="list" isInWishlist={wishlistIds.includes(item.id)} onToggleWishlist={() => handleToggleWishlist(item.id)} onShare={() => { const u = `${window.location.origin}/item/${item.id}`; if (navigator.share) navigator.share({ title: item.name, url: u }); else navigator.clipboard.writeText(u); }} />
+                  <StoreItemCard key={item.id} item={item} priceDisplay={priceDisplay(item)} texts={TEXTS} lang={lang} onContact={() => openContact(item)} onDetailsClick={() => handleOpenDetails(item)} layout="list" isInWishlist={wishlistIds.includes(item.id)} onToggleWishlist={() => handleToggleWishlist(item.id)} onShare={() => { const u = `${window.location.origin}/item/${item.id}`; if (navigator.share) navigator.share({ title: item.name, url: u }); else navigator.clipboard.writeText(u); }} />
                 ))}
               </div>
             )}
@@ -577,7 +650,7 @@ const StorefrontPage: React.FC = () => {
                 <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-4">{TEXTS.recentlyViewed}</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {recentlyViewedItems.slice(0, 6).map((item) => (
-                    <StoreItemCard key={item.id} item={item} priceDisplay={priceDisplay(item)} texts={TEXTS} onContact={() => openContact(item)} onDetailsClick={() => handleOpenDetails(item)} layout="grid" isInWishlist={wishlistIds.includes(item.id)} onToggleWishlist={() => handleToggleWishlist(item.id)} onShare={() => {}} />
+                    <StoreItemCard key={item.id} item={item} priceDisplay={priceDisplay(item)} texts={TEXTS} lang={lang} onContact={() => openContact(item)} onDetailsClick={() => handleOpenDetails(item)} layout="grid" isInWishlist={wishlistIds.includes(item.id)} onToggleWishlist={() => handleToggleWishlist(item.id)} onShare={() => {}} />
                   ))}
                 </div>
               </section>
@@ -791,9 +864,9 @@ const StorefrontPage: React.FC = () => {
                       </div>
                     </div>
                   )}
-                  {galleryItem.storeDescription && (
+                  {getItemDescription(galleryItem, lang) && (
                     <div className="p-4 sm:p-5 flex-1 min-h-0 overflow-y-auto">
-                      <p className="text-sm text-slate-700 whitespace-pre-line leading-relaxed">{galleryItem.storeDescription}</p>
+                      <p className="text-sm text-slate-700 whitespace-pre-line leading-relaxed">{getItemDescription(galleryItem, lang)}</p>
                     </div>
                   )}
                   <div className="p-4 sm:p-5 border-t border-slate-200 flex flex-wrap gap-2 shrink-0">
@@ -844,7 +917,7 @@ const StorefrontPage: React.FC = () => {
                 item: {
                   '@type': 'Product',
                   name: item.name,
-                  description: item.storeDescription || item.name,
+                  description: getItemDescription(item, lang) || item.name,
                   image: item.imageUrl,
                   category: item.category,
                   offers: item.sellPrice != null ? { '@type': 'Offer', price: item.sellPrice, priceCurrency: 'EUR' } : undefined,
@@ -861,14 +934,15 @@ const StorefrontPage: React.FC = () => {
 const StoreItemCard: React.FC<{
   item: StoreItem;
   priceDisplay: { value: number; sale: boolean; hasPrice: boolean };
-  texts: typeof TEXTS;
+  texts: typeof TEXTS_DE;
+  lang: 'de' | 'en';
   onContact: () => void;
   onDetailsClick: () => void;
   layout?: 'grid' | 'list';
   isInWishlist?: boolean;
   onToggleWishlist?: () => void;
   onShare?: () => void;
-}> = ({ item, priceDisplay, texts, onContact, onDetailsClick, layout = 'grid', isInWishlist = false, onToggleWishlist, onShare }) => {
+}> = ({ item, priceDisplay, texts, lang, onContact, onDetailsClick, layout = 'grid', isInWishlist = false, onToggleWishlist, onShare }) => {
   const [galleryIndex, setGalleryIndex] = useState(0);
   const images = useMemo(() => {
     const list: string[] = [];
@@ -892,8 +966,8 @@ const StoreItemCard: React.FC<{
         )}
       </div>
       <h2 className="font-semibold text-slate-900 mt-1 line-clamp-2 text-base leading-snug">{item.name}</h2>
-      {item.storeDescription && (
-        <p className="text-sm text-slate-600 mt-2 whitespace-pre-line line-clamp-4">{item.storeDescription}</p>
+      {getItemDescription(item, lang) && (
+        <p className="text-sm text-slate-600 mt-2 whitespace-pre-line line-clamp-4">{getItemDescription(item, lang)}</p>
       )}
       <button
         type="button"
