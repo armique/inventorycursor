@@ -58,3 +58,21 @@ export const generateEbayCSV = (items: InventoryItem[], settings: BusinessSettin
 
   return [headers.join(';'), ...rows].join('\n');
 };
+
+/**
+ * Generates a CSV for use with Kleinanzeigen (manual or tools).
+ * Columns: Title, Description, Price, Category, SubCategory, ImageURL, ItemID
+ */
+export const generateKleinanzeigenCSV = (items: InventoryItem[]): string => {
+  const headers = ['Title', 'Description', 'Price', 'Category', 'SubCategory', 'ImageURL', 'ItemID'];
+  const rows = items.map(item => {
+    const title = (item.name || '').substring(0, 80).replace(/"/g, '""');
+    const desc = (item.storeDescription || item.comment2 || item.comment1 || item.name || '').replace(/"/g, '""').replace(/\n/g, ' ');
+    const price = (item.sellPrice ?? item.buyPrice ?? 0).toFixed(2);
+    const cat = (item.category || '').replace(/"/g, '""');
+    const sub = (item.subCategory || '').replace(/"/g, '""');
+    const img = (item.imageUrl || '').replace(/"/g, '""');
+    return [`"${title}"`, `"${desc}"`, price, `"${cat}"`, `"${sub}"`, `"${img}"`, item.id];
+  });
+  return [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
+};

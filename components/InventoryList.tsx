@@ -6,6 +6,7 @@ import {
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType } from '../types';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { getCompatibleItemsForItem } from '../services/compatibility';
+import { generateKleinanzeigenCSV } from '../services/ebayCsvService';
 import SaleModal from './SaleModal';
 import ReturnModal from './ReturnModal';
 import TradeModal from './TradeModal';
@@ -1373,6 +1374,21 @@ const InventoryList: React.FC<Props> = ({
                  className="bg-white text-slate-900 px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-slate-100 transition-all"
                >
                  <Tag size={16}/> Add tag
+               </button>
+               <button 
+                 onClick={() => {
+                   const selected = items.filter(i => selectedIds.includes(i.id));
+                   const csv = generateKleinanzeigenCSV(selected);
+                   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+                   const a = document.createElement('a');
+                   a.href = URL.createObjectURL(blob);
+                   a.download = `kleinanzeigen-export-${new Date().toISOString().slice(0,10)}.csv`;
+                   a.click();
+                   URL.revokeObjectURL(a.href);
+                 }}
+                 className="bg-white text-slate-900 px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-slate-100 transition-all"
+               >
+                 <Download size={16}/> Export Kleinanzeigen CSV
                </button>
 
                {/* Show Edit Sales Button if any selected item is sold/traded */}
