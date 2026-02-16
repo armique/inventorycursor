@@ -600,6 +600,8 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
   const [storeSalePrice, setStoreSalePriceState] = useState<string>(item.storeSalePrice != null ? String(item.storeSalePrice) : '');
   const [storeVisible, setStoreVisible] = useState<boolean>(item.storeVisible !== false);
   const [storeBadge, setStoreBadge] = useState<'auto' | 'New' | 'Price reduced' | 'none'>(item.storeBadge ?? 'auto');
+  const [storeMetaTitle, setStoreMetaTitle] = useState(item.storeMetaTitle ?? '');
+  const [storeMetaDescription, setStoreMetaDescription] = useState(item.storeMetaDescription ?? '');
   /** Ordered list: [0] = main image (carousel #1), rest = gallery. */
   const [storeImageUrls, setStoreImageUrls] = useState<string[]>(() => {
     const main = item.imageUrl?.trim();
@@ -770,6 +772,8 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
       storeOnSale,
       storeSalePrice: storeSalePrice === '' ? undefined : parseFloat(storeSalePrice) || undefined,
       storeBadge: storeBadge === 'auto' ? undefined : storeBadge,
+      storeMetaTitle: storeMetaTitle.trim() || undefined,
+      storeMetaDescription: storeMetaDescription.trim() || undefined,
       imageUrl: main || undefined,
       storeGalleryUrls: rest?.length ? rest : undefined,
     });
@@ -887,6 +891,15 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
               <option value="none">No badge</option>
             </select>
             <p className="mt-1 text-[11px] text-slate-500">Auto: “New” if added in last 7 days; “Price reduced” if sell price was lowered (from price history).</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">SEO meta title</label>
+            <input type="text" value={storeMetaTitle} onChange={(e) => setStoreMetaTitle(e.target.value)} placeholder={item.name} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400" />
+            <p className="mt-1 text-[11px] text-slate-500">Used in &lt;title&gt; and sharing when this item is open. Defaults to item name.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">SEO meta description</label>
+            <textarea value={storeMetaDescription} onChange={(e) => setStoreMetaDescription(e.target.value)} rows={2} placeholder="Short description for search and social sharing" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400 resize-y" />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">{texts.galleryUrls}</label>

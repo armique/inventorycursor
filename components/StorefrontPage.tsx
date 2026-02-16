@@ -161,6 +161,47 @@ const StorefrontPage: React.FC = () => {
     try { localStorage.setItem('armiktech_dark', darkMode ? '1' : '0'); } catch {}
   }, [darkMode]);
 
+  // Per-item meta title/description for SEO and sharing when item detail is open
+  const DEFAULT_TITLE = 'ArmikTech – armiktech.com';
+  const DEFAULT_DESCRIPTION = 'ArmikTech – Technik und mehr. Durchstöbern Sie unseren Shop.';
+  useEffect(() => {
+    if (!galleryItem) {
+      document.title = DEFAULT_TITLE;
+      const desc = document.querySelector('meta[name="description"]');
+      if (desc) desc.setAttribute('content', DEFAULT_DESCRIPTION);
+      const ogTitle = document.querySelector('meta[property="og:title"]');
+      if (ogTitle) ogTitle.setAttribute('content', DEFAULT_TITLE);
+      const ogDesc = document.querySelector('meta[property="og:description"]');
+      if (ogDesc) ogDesc.setAttribute('content', DEFAULT_DESCRIPTION);
+      const ogImage = document.querySelector('meta[property="og:image"]');
+      if (ogImage) ogImage.removeAttribute('content');
+      return;
+    }
+    const title = (galleryItem.storeMetaTitle || galleryItem.name).trim() + ' | ArmikTech';
+    const description = (galleryItem.storeMetaDescription || galleryItem.storeDescription || '').trim().slice(0, 160) || DEFAULT_DESCRIPTION;
+    document.title = title;
+    let desc = document.querySelector('meta[name="description"]');
+    if (!desc) { desc = document.createElement('meta'); desc.setAttribute('name', 'description'); document.head.appendChild(desc); }
+    desc.setAttribute('content', description);
+    let ogTitle = document.querySelector('meta[property="og:title"]');
+    if (!ogTitle) { ogTitle = document.createElement('meta'); ogTitle.setAttribute('property', 'og:title'); document.head.appendChild(ogTitle); }
+    ogTitle.setAttribute('content', title);
+    let ogDesc = document.querySelector('meta[property="og:description"]');
+    if (!ogDesc) { ogDesc = document.createElement('meta'); ogDesc.setAttribute('property', 'og:description'); document.head.appendChild(ogDesc); }
+    ogDesc.setAttribute('content', description);
+    const img = galleryItem.imageUrl || (galleryItem.storeGalleryUrls && galleryItem.storeGalleryUrls[0]);
+    if (img) {
+      let ogImage = document.querySelector('meta[property="og:image"]');
+      if (!ogImage) { ogImage = document.createElement('meta'); ogImage.setAttribute('property', 'og:image'); document.head.appendChild(ogImage); }
+      ogImage.setAttribute('content', img);
+    }
+    return () => {
+      document.title = DEFAULT_TITLE;
+      const d = document.querySelector('meta[name="description"]');
+      if (d) d.setAttribute('content', DEFAULT_DESCRIPTION);
+    };
+  }, [galleryItem]);
+
   const handleToggleWishlist = (itemId: string) => {
     const added = toggleWishlistId(itemId);
     setWishlistIdsState(getWishlistIds());

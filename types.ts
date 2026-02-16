@@ -149,6 +149,10 @@ export interface InventoryItem {
   storeDescription?: string;
   /** Store badge: 'auto' = derive from data, 'New' | 'Price reduced' = show this, 'none' = never show. */
   storeBadge?: 'auto' | 'New' | 'Price reduced' | 'none';
+  /** Optional SEO/sharing: meta title for this item (defaults to name). */
+  storeMetaTitle?: string;
+  /** Optional SEO/sharing: meta description for this item. */
+  storeMetaDescription?: string;
 }
 
 /** Inquiry from a visitor about a store item (stored in Firebase). */
@@ -180,6 +184,8 @@ export interface StoreCatalogItem {
   categoryFields?: string[]; // field names for this category for display order
   /** Badge shown on store: 'New' (e.g. new this week), 'Price reduced' (from price history). */
   badge?: 'New' | 'Price reduced';
+  storeMetaTitle?: string;
+  storeMetaDescription?: string;
 }
 
 export interface Competitor {
