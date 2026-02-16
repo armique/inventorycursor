@@ -50,8 +50,7 @@ const DEFAULT_FIREBASE_CONFIG: FirebaseConfig = {
   apiKey: "AIzaSyA1KbcJ1oI0g7WBqplaiRoLttr4TkgR9XY",
   authDomain: "inventorycursor-e9000.firebaseapp.com",
   projectId: "inventorycursor-e9000",
-  // Use the standard appspot.com bucket name so Storage works reliably
-  storageBucket: "inventorycursor-e9000.appspot.com",
+  storageBucket: "inventorycursor-e9000.firebasestorage.app",
   messagingSenderId: "844355746831",
   appId: "1:844355746831:web:41b3829c7de55eeadd777a",
 };
@@ -162,13 +161,37 @@ export async function uploadItemImage(file: File, itemId: string): Promise<strin
   const ctx = init();
   const user = ctx?.auth?.currentUser;
   if (!ctx?.storage || !user) {
-    throw new Error("Not signed in or Firebase Storage not configured.");
+    throw new Error("Not signed in or Firebase Storage not configured. Please sign in with Google first.");
   }
+
   const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
   const path = `items/${user.uid}/${itemId || "unknown"}/${Date.now()}-${safeName}`;
   const ref = storageRef(ctx.storage, path);
-  const snapshot = await uploadBytes(ref, file);
-  return await getDownloadURL(snapshot.ref);
+
+  const timeoutMs = 30_000;
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(
+      "Upload timed out after 30s. Check Firebase Storage rules: they must allow writes for authenticated users. " +
+      "In Firebase Console → Storage → Rules, set:\n" +
+      "  allow read, write: if request.auth != null;"
+    )), timeoutMs)
+  );
+
+  try {
+    const snapshot = await Promise.race([uploadBytes(ref, file), timeoutPromise]);
+    const url = await Promise.race([getDownloadURL(snapshot.ref), timeoutPromise]);
+    return url;
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    if (msg.includes("storage/unauthorized") || msg.includes("403") || msg.includes("does not have permission")) {
+      throw new Error(
+        "Firebase Storage permission denied. Go to Firebase Console → Storage → Rules and set:\n" +
+        "  allow read, write: if request.auth != null;\n" +
+        "Then try uploading again."
+      );
+    }
+    throw err;
+  }
 }
 
 // --- DATA SHAPE (same as app payload) ---
