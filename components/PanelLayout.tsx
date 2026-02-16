@@ -2,7 +2,7 @@ import React from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
   Package, PlusCircle, Settings, RefreshCw, Briefcase, Trash2, CloudUpload, LayoutDashboard, BarChart3, Sparkles,
-  Tag, Layers, Store, Loader2, Cloud, CheckCircle2, X,
+  Tag, Layers, Store, Loader2, Cloud, CheckCircle2, X, FileText,
 } from 'lucide-react';
 import { signInWithGooglePopup, logOut } from '../services/firebaseService';
 import QuotaMonitor from './QuotaMonitor';
@@ -109,6 +109,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     { to: '/panel/import', icon: <CloudUpload size={20} />, label: 'Import CSV' },
     { to: '/panel/trash', icon: <Trash2 size={20} />, label: 'Trash' },
     { to: '/panel/store-management', icon: <Store size={20} />, label: 'Store management' },
+    { to: '/panel/missing-specs', icon: <FileText size={20} />, label: 'Missing specs' },
     { to: '/panel/settings', icon: <Settings size={20} />, label: 'Settings', alert: !isCloudEnabled },
   ];
 

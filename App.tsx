@@ -19,6 +19,7 @@ import PriceCheck from './components/PriceCheck';
 import QuotaMonitor from './components/QuotaMonitor';
 import StoreManagementPage from './components/StoreManagementPage';
 import LegalPage from './components/LegalPage';
+import MissingSpecsReport from './components/MissingSpecsReport';
 
 import { InventoryItem, Expense, ItemStatus, BusinessSettings } from './types';
 import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchFromCloud } from './services/firebaseService';
@@ -662,7 +663,7 @@ const App: React.FC = () => {
           }
         >
           <Route index element={<Navigate to="/panel/dashboard" replace />} />
-          <Route path="dashboard" element={<Dashboard items={items} expenses={expenses} monthlyGoal={monthlyGoal} onGoalChange={setMonthlyGoal} businessSettings={businessSettings} />} />
+          <Route path="dashboard" element={<Dashboard items={items} expenses={expenses} monthlyGoal={monthlyGoal} onGoalChange={setMonthlyGoal} businessSettings={businessSettings} categoryFields={categoryFields} />} />
           <Route path="analytics" element={<CategoryAnalytics items={items} businessSettings={businessSettings} />} />
           <Route path="category-suggestions" element={<CategorySuggestionsPage items={items} categories={categories} categoryFields={categoryFields} onUpdate={handleUpdate} onUpdateCategoryStructure={handleUpdateCategoryStructure} onUpdateCategoryFields={handleUpdateCategoryFields} onAddCategory={handleAddCategory} />} />
           <Route path="inventory" element={<InventoryList key="inventory-main" items={items} totalCount={items.length} onUpdate={handleUpdate} onDelete={handleDelete} onUndo={handleUndo} onRedo={handleRedo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} pageTitle="Inventory" allowedStatuses={ALL_STATUSES} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} persistenceKey="inventory_main"/>} />
@@ -674,6 +675,7 @@ const App: React.FC = () => {
           <Route path="expenses" element={<ExpenseManager expenses={expenses} onAddExpense={handleAddExpense} onDeleteExpense={handleDeleteExpense} />} />
           <Route path="import" element={<SheetsImport onImport={handleImportBatch} onClearData={handleWipeData} />} />
           <Route path="trash" element={<TrashPage items={trash} onRestore={handleRestoreFromTrash} onPermanentDelete={handlePermanentDelete} />} />
+          <Route path="missing-specs" element={<MissingSpecsReport items={items} categoryFields={categoryFields} />} />
           <Route path="store-management" element={<StoreManagementPage items={items} categories={categories} categoryFields={categoryFields} onUpdate={handleUpdate} onPublishCatalog={async () => { await writeStoreCatalog(buildStoreCatalog(items, categoryFields)); }} />} />
           <Route path="settings" element={<SettingsPage items={items} trash={trash} expenses={expenses} monthlyGoal={monthlyGoal} onForcePush={handleForcePush} onRestoreItems={setItems} onRestoreBackup={handleRestoreBackup} onFixEncoding={handleFixEncoding} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} onUpdateCategoryStructure={handleUpdateCategoryStructure} onUpdateCategoryFields={handleUpdateCategoryFields} onRenameCategory={() => {}} onRenameSubCategory={() => {}} />} />
         </Route>

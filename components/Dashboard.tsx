@@ -12,6 +12,7 @@ interface Props {
   monthlyGoal: number;
   onGoalChange: (newGoal: number) => void;
   businessSettings?: BusinessSettings;
+  categoryFields?: Record<string, string[]>;
 }
 
 const LEVELS = [
@@ -30,7 +31,7 @@ interface Task {
   completed: boolean;
 }
 
-const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalChange, businessSettings }) => {
+const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalChange, businessSettings, categoryFields = {} }) => {
   const [timeFilter, setTimeFilter] = useState<string>('ALL');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
@@ -330,12 +331,22 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
     const inStock = items.filter(i => i.status === ItemStatus.IN_STOCK);
     const noImage = inStock.filter(i => !i.imageUrl || (typeof i.imageUrl === 'string' && !i.imageUrl.trim()));
     const hiddenFromStore = inStock.filter(i => i.storeVisible === false);
-    const unansweredInquiries = 0; // Could be passed as prop from parent if needed
+    let missingSpecsCount = 0;
+    items.forEach((item) => {
+      const key = `${item.category}:${item.subCategory || ''}`;
+      const fields = categoryFields[key] || categoryFields[item.category || ''] || [];
+      const missing = fields.filter((f) => {
+        const val = item.specs?.[f];
+        return val === undefined || val === null || String(val).trim() === '';
+      });
+      if (missing.length > 0) missingSpecsCount++;
+    });
     return [
       { id: 'no-image', label: 'Items without image', count: noImage.length, href: '/panel/inventory' },
       { id: 'hidden-store', label: 'Items hidden from store', count: hiddenFromStore.length, href: '/panel/store-management' },
+      { id: 'missing-specs', label: 'Items missing key specs', count: missingSpecsCount, href: '/panel/missing-specs' },
     ].filter(t => t.count > 0);
-  }, [items]);
+  }, [items, categoryFields]);
 
   // Recent Activity Data
   const activityFeed = useMemo(() => {
