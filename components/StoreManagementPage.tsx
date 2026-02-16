@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Eye, EyeOff, Tag, MessageCircle, ExternalLink, Loader2, Check, Mail, Phone, Upload, CheckCircle2, Pencil, X, Image as ImageIcon, Filter, Search as SearchIcon, Wand2 } from 'lucide-react';
+import { Eye, EyeOff, Tag, MessageCircle, ExternalLink, Loader2, Check, Mail, Phone, Upload, CheckCircle2, Pencil, X, Image as ImageIcon, Filter, Search as SearchIcon, Wand2, Sparkles } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
 import { subscribeToStoreInquiries, markStoreInquiryRead, uploadItemImage, isCloudEnabled, getCurrentUser } from '../services/firebaseService';
 import ItemThumbnail from './ItemThumbnail';
@@ -483,6 +483,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
   const [uploadingGallery, setUploadingGallery] = useState(false);
   const [galleryProgress, setGalleryProgress] = useState<string | null>(null);
   const [pendingGalleryFiles, setPendingGalleryFiles] = useState<File[]>([]);
+  const [removingBackground, setRemovingBackground] = useState<number | null>(null);
   const cloudReady = typeof window !== 'undefined' && isCloudEnabled() && !!getCurrentUser();
 
   const resizeImage = (file: File, maxSize = 1600, quality = 0.8): Promise<File> => {
@@ -528,6 +529,49 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
     e.target.value = '';
     setPendingGalleryFiles(files);
     setGalleryProgress(files.length ? `${files.length} selected` : null);
+  };
+
+  const handleRemoveBackground = async (imageUrl: string, imageIndex: number) => {
+    if (!cloudReady) {
+      alert('To remove backgrounds, first enable Cloud sync and sign in with Google in Settings (top-right).');
+      return;
+    }
+    
+    try {
+      setRemovingBackground(imageIndex);
+      
+      // Fetch the image
+      const response = await fetch(imageUrl);
+      if (!response.ok) throw new Error('Failed to fetch image');
+      const blob = await response.blob();
+      
+      // Dynamically import and remove background using @imgly/background-removal
+      const { removeBackground: removeBg } = await import('@imgly/background-removal');
+      const processedBlob = await removeBg(blob);
+      
+      // Convert blob to File
+      const file = new File([processedBlob], `bg-removed-${Date.now()}.png`, { type: 'image/png' });
+      
+      // Resize if needed
+      const resized = await resizeImage(file, 1600, 0.9);
+      
+      // Upload to Firebase Storage
+      const newUrl = await uploadItemImage(resized, item.id);
+      
+      // Replace the URL in the gallery
+      const urls = galleryUrlsText
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      urls[imageIndex] = newUrl;
+      setGalleryUrlsText(urls.join('\n'));
+      
+    } catch (err: any) {
+      console.error('Background removal failed:', err);
+      alert(err?.message || 'Failed to remove background. Please try again.');
+    } finally {
+      setRemovingBackground(null);
+    }
   };
 
   const handleConfirmGalleryUpload = async () => {
@@ -661,22 +705,21 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
                             </button>
                             <button
                               type="button"
-                              onClick={async () => {
-                                try {
-                                  // Optional per-image AI enhancement: download existing image and replace URL
-                                  const resp = await fetch(url);
-                                  const blob = await resp.blob();
-                                  const file = new File([blob], 'enhance.png', { type: blob.type || 'image/png' });
-                                  alert('AI enhancement is currently disabled by default for reliability. You can still edit or replace this image manually.');
-                                  // In future, we can re-enable calling /api/enhance-image here if desired.
-                                } catch {
-                                  alert('Could not enhance this image.');
-                                }
-                              }}
-                              className="rounded-full bg-white/80 text-slate-800 p-0.5"
-                              aria-label="Enhance image"
+                              onClick={() => handleRemoveBackground(url, idx)}
+                              disabled={removingBackground === idx}
+                              className={`rounded-full p-0.5 transition-all ${
+                                removingBackground === idx
+                                  ? 'bg-blue-500/80 text-white'
+                                  : 'bg-white/80 text-slate-800 hover:bg-blue-50 hover:text-blue-600'
+                              }`}
+                              aria-label="Remove background"
+                              title="Remove background"
                             >
-                              <Wand2 size={10} />
+                              {removingBackground === idx ? (
+                                <Loader2 size={10} className="animate-spin" />
+                              ) : (
+                                <Sparkles size={10} />
+                              )}
                             </button>
                           </div>
                         </div>
