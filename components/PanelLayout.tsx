@@ -16,17 +16,19 @@ interface SyncState {
 interface PanelLayoutProps {
   isCloudEnabled: boolean;
   authUser: any;
+  /** True once Firebase auth has completed initial check (so we don't flash login before session restore). */
+  authReady?: boolean;
   syncState?: SyncState;
   onForcePush?: () => void;
   backupBannerDismissed?: boolean;
   onDismissBackupBanner?: () => void;
 }
 
-const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, syncState = { status: 'idle', lastSynced: null }, onForcePush, backupBannerDismissed = true, onDismissBackupBanner }) => {
+const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, authReady = false, syncState = { status: 'idle', lastSynced: null }, onForcePush, backupBannerDismissed = true, onDismissBackupBanner }) => {
   const location = useLocation();
   const [signingIn, setSigningIn] = React.useState(false);
 
-  const requireAuth = isCloudEnabled && !authUser;
+  const requireAuth = isCloudEnabled && authReady && !authUser;
   if (requireAuth) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">

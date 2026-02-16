@@ -176,6 +176,8 @@ const App: React.FC = () => {
   const [backupBannerDismissed, setBackupBannerDismissed] = useState(() => localStorage.getItem('cloud_backup_banner_dismissed') === '1');
   
   const [authUser, setAuthUser] = useState<any>(null);
+  // Tracks when Firebase auth has completed its initial check (so we don't flash the login screen before session restore).
+  const [authReady, setAuthReady] = useState<boolean>(!isCloudEnabled());
   const isRemoteUpdate = useRef(false);
   const writeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialWriteDoneRef = useRef(false);
@@ -252,6 +254,7 @@ const App: React.FC = () => {
     let unsubSnapshot: (() => void) | null = null;
     const unsubAuth = onAuthChange((user) => {
       setAuthUser(user);
+      setAuthReady(true);
       if (unsubSnapshot) {
         unsubSnapshot();
         unsubSnapshot = null;
@@ -577,7 +580,7 @@ const App: React.FC = () => {
     <Router>
       <Routes>
         <Route path="/" element={<StorefrontPage />} />
-        <Route path="/panel" element={<PanelLayout isCloudEnabled={isConfigured} authUser={authUser} syncState={syncState} onForcePush={handleForcePush} backupBannerDismissed={backupBannerDismissed} onDismissBackupBanner={() => { localStorage.setItem('cloud_backup_banner_dismissed', '1'); setBackupBannerDismissed(true); }} />}>
+        <Route path="/panel" element={<PanelLayout isCloudEnabled={isConfigured} authUser={authUser} authReady={authReady} syncState={syncState} onForcePush={handleForcePush} backupBannerDismissed={backupBannerDismissed} onDismissBackupBanner={() => { localStorage.setItem('cloud_backup_banner_dismissed', '1'); setBackupBannerDismissed(true); }} />}>
           <Route index element={<Navigate to="/panel/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard items={items} expenses={expenses} monthlyGoal={monthlyGoal} onGoalChange={setMonthlyGoal} businessSettings={businessSettings} />} />
           <Route path="analytics" element={<CategoryAnalytics items={items} businessSettings={businessSettings} />} />
