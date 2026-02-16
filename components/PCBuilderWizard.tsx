@@ -211,6 +211,9 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
      if (!slotDef) return [];
 
      return items.filter(i => {
+        // PC Bundle items are full builds/bundles, not single parts — exclude from part selection
+        if ((i.category === 'Bundle' && i.subCategory === 'PC Bundle') || i.category === 'PC Bundle') return false;
+
         // Must be in stock or (if editing) potentially the item itself if already selected
         if (i.status !== ItemStatus.IN_STOCK) {
            // Allow if it belongs to this build

@@ -120,6 +120,8 @@ const InventoryList: React.FC<Props> = ({
   const [specFilters, setSpecFilters] = useState<Record<string, (string | number)[]>>(() => loadState('spec_filters', {}));
   const [specRangeFilters, setSpecRangeFilters] = useState<Record<string, { min?: number; max?: number }>>(() => loadState('spec_range_filters', {}));
   const [showSpecFiltersPanel, setShowSpecFiltersPanel] = useState(false);
+  const filtersPanelRef = useRef<HTMLDivElement>(null);
+  const filtersButtonRef = useRef<HTMLButtonElement>(null);
 
   // Sort State
   const [sortConfig, setSortConfig] = useState<SortConfig>(() => {
@@ -145,6 +147,18 @@ const InventoryList: React.FC<Props> = ({
   useEffect(() => localStorage.setItem(`${persistenceKey}_sale_payment`, JSON.stringify(salePaymentFilter)), [salePaymentFilter, persistenceKey]);
   useEffect(() => localStorage.setItem(`${persistenceKey}_spec_filters`, JSON.stringify(specFilters)), [specFilters, persistenceKey]);
   useEffect(() => localStorage.setItem(`${persistenceKey}_spec_range_filters`, JSON.stringify(specRangeFilters)), [specRangeFilters, persistenceKey]);
+
+  // Close spec filters panel when clicking outside
+  useEffect(() => {
+    if (!showSpecFiltersPanel) return;
+    const handle = (e: MouseEvent) => {
+      const el = e.target as Node;
+      if (filtersPanelRef.current?.contains(el) || filtersButtonRef.current?.contains(el)) return;
+      setShowSpecFiltersPanel(false);
+    };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [showSpecFiltersPanel]);
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   
@@ -884,310 +898,207 @@ const InventoryList: React.FC<Props> = ({
      setSelectedIds([]);
   };
 
+  const hasActiveFilters = statusFilter !== 'ACTIVE' || categoryFilter !== 'ALL' || subCategoryFilter || timeFilter !== 'ALL' || salePlatformFilter !== 'ALL' || salePaymentFilter !== 'ALL' || activeSpecFilterCount > 0;
+  const clearAllFilters = () => {
+    setStatusFilter('ACTIVE');
+    setCategoryFilter('ALL');
+    setSubCategoryFilter('');
+    setTimeFilter('ALL');
+    setSalePlatformFilter('ALL');
+    setSalePaymentFilter('ALL');
+    setSpecFilters({});
+    setSpecRangeFilters({});
+  };
+
   return (
-    <div className="space-y-6 animate-in fade-in pb-4 relative h-full flex flex-col">
-      <header className="flex flex-col gap-6 shrink-0">
-         <div className="flex flex-col lg:flex-row justify-between lg:items-center gap-4">
-            <div>
-               <h1 className="text-3xl font-black text-slate-900 tracking-tight">{pageTitle}</h1>
-               <p className="text-slate-500 font-medium">{sortedItems.length} items {timeFilter !== 'ALL' ? 'in selected period' : ''}</p>
+    <div className="space-y-4 animate-in fade-in pb-4 relative h-full flex flex-col">
+      <header className="shrink-0 space-y-2">
+         {/* Compact bar: title + count + search + status + category + time + sales + filters + undo/redo */}
+         <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl font-black text-slate-900 tracking-tight mr-2">{pageTitle}</h1>
+            <span className="text-slate-500 text-sm font-medium py-1">{sortedItems.length} items{timeFilter !== 'ALL' ? ' · period' : ''}</span>
+            <div className="flex-1 min-w-0 max-w-[200px] sm:max-w-[220px] relative">
+               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+               <input
+                  type="text"
+                  className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-slate-900/20"
+                  placeholder="Search..."
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+               />
             </div>
-            <div className="flex flex-col sm:flex-row gap-4">
-               {/* Status Filter Buttons */}
-               <div className="flex bg-white p-1 rounded-2xl shadow-sm border border-slate-200">
-                  <button 
-                    onClick={() => setStatusFilter('ACTIVE')}
-                    className={`px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-wide transition-all ${statusFilter === 'ACTIVE' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
-                  >
-                    Active
-                  </button>
-                  <button 
-                    onClick={() => setStatusFilter('SOLD')}
-                    className={`px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-wide transition-all ${statusFilter === 'SOLD' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
-                  >
-                    Sold
-                  </button>
-                  <button 
-                    onClick={() => setStatusFilter('DRAFTS')}
-                    className={`px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-wide transition-all ${statusFilter === 'DRAFTS' ? 'bg-amber-100 text-amber-700 shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
-                  >
-                    Drafts
-                  </button>
-                  <button 
-                    onClick={() => setStatusFilter('ALL')}
-                    className={`px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-wide transition-all ${statusFilter === 'ALL' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
-                  >
-                    All
-                  </button>
-               </div>
-
-               <div className="flex gap-2">
-                  <div className="relative">
-                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
-                     <input 
-                        type="text" 
-                        className="pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:ring-4 focus:ring-slate-100 transition-all w-full sm:w-64"
-                        placeholder="Filter items..."
-                        value={searchTerm}
-                        onChange={e => setSearchTerm(e.target.value)}
-                     />
-                  </div>
-               </div>
-            </div>
-         </div>
-
-         {/* Category Pills */}
-         <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4 md:mx-0 md:px-0">
-            <button 
-               onClick={() => { setCategoryFilter('ALL'); setSubCategoryFilter(''); }} 
-               className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-xs font-black uppercase tracking-widest whitespace-nowrap transition-all ${categoryFilter === 'ALL' ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}
+            <select
+               value={statusFilter}
+               onChange={e => setStatusFilter(e.target.value as StatusFilter)}
+               className="py-1.5 pl-2.5 pr-7 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-slate-900/20 appearance-none bg-no-repeat bg-right"
+               style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.35rem center' }}
             >
-               <Layers size={14}/> All Categories
-            </button>
-            {Object.keys(categories).map(cat => (
-               <button 
-                  key={cat} 
-                  onClick={() => { setCategoryFilter(cat); setSubCategoryFilter(''); }}
-                  className={`px-4 py-2 rounded-xl border text-xs font-bold uppercase tracking-wide whitespace-nowrap transition-all ${categoryFilter === cat ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-slate-500 border-slate-200 hover:border-blue-300 hover:text-blue-600'}`}
+               <option value="ACTIVE">Active</option>
+               <option value="SOLD">Sold</option>
+               <option value="DRAFTS">Drafts</option>
+               <option value="ALL">All</option>
+            </select>
+            <select
+               value={categoryFilter}
+               onChange={e => { setCategoryFilter(e.target.value); setSubCategoryFilter(''); }}
+               className="py-1.5 pl-2.5 pr-7 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-slate-900/20 appearance-none bg-no-repeat bg-right min-w-[100px]"
+               style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.35rem center' }}
+            >
+               <option value="ALL">All categories</option>
+               {Object.keys(categories).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+            </select>
+            {categoryFilter !== 'ALL' && (categories[categoryFilter]?.length ?? 0) > 0 && (
+               <select
+                  value={subCategoryFilter}
+                  onChange={e => setSubCategoryFilter(e.target.value)}
+                  className="py-1.5 pl-2.5 pr-7 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-slate-900/20 appearance-none bg-no-repeat bg-right min-w-[90px]"
+                  style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.35rem center' }}
                >
-                  {cat}
+                  <option value="">All sub</option>
+                  {(categories[categoryFilter] || []).map(sub => <option key={sub} value={sub}>{sub}</option>)}
+               </select>
+            )}
+            <select
+               value={timeFilter}
+               onChange={e => setTimeFilter(e.target.value as TimeFilter)}
+               className="py-1.5 pl-2.5 pr-7 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-slate-900/20 appearance-none bg-no-repeat bg-right"
+               style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.35rem center' }}
+            >
+               <option value="ALL">All time</option>
+               <option value="THIS_WEEK">This week</option>
+               <option value="LAST_WEEK">Last week</option>
+               <option value="THIS_MONTH">This month</option>
+               <option value="LAST_MONTH">Last month</option>
+               <option value="LAST_30">Last 30d</option>
+               <option value="LAST_90">Last 90d</option>
+               <option value="THIS_YEAR">This year</option>
+               <option value="LAST_YEAR">Last year</option>
+            </select>
+            {statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS' && (
+               <>
+                  <select value={salePlatformFilter} onChange={e => setSalePlatformFilter(e.target.value)} className="py-1.5 pl-2.5 pr-7 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-slate-900/20 appearance-none bg-no-repeat bg-right min-w-[100px]" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.35rem center' }}>
+                      <option value="ALL">Platform</option>
+                      <option value="kleinanzeigen.de">Kleinanzeigen</option>
+                      <option value="ebay.de">eBay</option>
+                      <option value="Other">Other</option>
+                  </select>
+                  <select value={salePaymentFilter} onChange={e => setSalePaymentFilter(e.target.value)} className="py-1.5 pl-2.5 pr-7 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-slate-900/20 appearance-none bg-no-repeat bg-right min-w-[100px]" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.35rem center' }}>
+                      <option value="ALL">Payment</option>
+                      {PAYMENT_METHODS.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+               </>
+            )}
+            <div className="relative flex items-center" ref={filtersPanelRef}>
+               <button
+                  type="button"
+                  ref={filtersButtonRef}
+                  onClick={() => setShowSpecFiltersPanel(prev => !prev)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold uppercase tracking-wide transition-all ${showSpecFiltersPanel || activeSpecFilterCount > 0 ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300 hover:text-blue-600'}`}
+               >
+                  <Sliders size={12} /> Filters
+                  {activeSpecFilterCount > 0 && <span className="bg-white/20 text-[10px] min-w-[16px] h-4 rounded flex items-center justify-center px-0.5">{activeSpecFilterCount}</span>}
+                  <ChevronDown size={12} className={`transition-transform ${showSpecFiltersPanel ? 'rotate-180' : ''}`} />
                </button>
-            ))}
-         </div>
-
-         {/* Filters & Sorting Toolbar + inline Spec Filters panel */}
-         <div className="flex flex-col gap-0 rounded-2xl border border-slate-200/50 bg-slate-100/50 overflow-hidden">
-            <div className="flex flex-col sm:flex-row gap-3 items-center justify-between p-2">
-               <div className="flex gap-2 w-full sm:w-auto overflow-x-auto scrollbar-hide">
-                  {/* Filters button — toggles wide panel below */}
-                  <button
-                     type="button"
-                     onClick={() => setShowSpecFiltersPanel(prev => !prev)}
-                     className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-bold uppercase tracking-wide transition-all shadow-sm shrink-0 ${showSpecFiltersPanel || activeSpecFilterCount > 0 ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300 hover:text-blue-600'}`}
-                  >
-                     <Sliders size={14} />
-                     Filters
-                     {activeSpecFilterCount > 0 && (
-                        <span className="bg-white/20 text-[10px] font-black min-w-[18px] h-[18px] rounded-full flex items-center justify-center px-1">
-                           {activeSpecFilterCount}
-                        </span>
-                     )}
-                     <ChevronDown size={14} className={`transition-transform ${showSpecFiltersPanel ? 'rotate-180' : ''}`} />
-                  </button>
-
-               {/* Time Filter */}
-               <div className="flex bg-white p-1 rounded-xl shadow-sm border border-slate-200 shrink-0">
-                  <div className="relative flex items-center">
-                     <div className="absolute left-3 text-slate-400 pointer-events-none"><CalendarDays size={14} /></div>
-                     <select 
-                       className="bg-transparent border-none outline-none font-bold text-slate-700 pl-9 pr-8 py-2 cursor-pointer appearance-none text-[10px] uppercase tracking-wide min-w-[120px]"
-                       value={timeFilter}
-                       onChange={(e) => setTimeFilter(e.target.value as TimeFilter)}
-                     >
-                       <option value="ALL">All Time</option>
-                       <option disabled>──────────</option>
-                       <option value="THIS_WEEK">This Week</option>
-                       <option value="LAST_WEEK">Last Week</option>
-                       <option disabled>──────────</option>
-                       <option value="THIS_MONTH">This Month</option>
-                       <option value="LAST_MONTH">Last Month</option>
-                       <option value="LAST_30">Last 30 Days</option>
-                       <option value="LAST_90">Last 90 Days</option>
-                       <option disabled>──────────</option>
-                       <option value="THIS_YEAR">This Year</option>
-                       <option value="LAST_YEAR">Last Year</option>
-                     </select>
-                  </div>
-               </div>
-
-               {/* Sales Filters (Only visible if not ACTIVE stock) */}
-               {statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS' && (
-                  <>
-                     <div className="flex bg-white p-1 rounded-xl shadow-sm border border-slate-200 shrink-0">
-                        <div className="relative flex items-center">
-                           <div className="absolute left-3 text-slate-400 pointer-events-none"><Globe size={14} /></div>
-                           <select 
-                             className="bg-transparent border-none outline-none font-bold text-slate-700 pl-9 pr-8 py-2 cursor-pointer appearance-none text-[10px] uppercase tracking-wide min-w-[140px]"
-                             value={salePlatformFilter}
-                             onChange={(e) => setSalePlatformFilter(e.target.value)}
-                           >
-                             <option value="ALL">All Platforms</option>
-                             <option value="kleinanzeigen.de">Kleinanzeigen</option>
-                             <option value="ebay.de">eBay</option>
-                             <option value="Other">Other</option>
-                           </select>
+               {showSpecFiltersPanel && (
+                  <div className="absolute left-0 top-full mt-1 z-50 w-[min(90vw,420px)] max-h-[min(70vh,420px)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl animate-in fade-in zoom-in-95 duration-150">
+                     <div className="p-3 border-b border-slate-100 flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-600">Category &amp; specs</span>
+                        {activeSpecFilterCount > 0 && (
+                           <button type="button" onClick={() => { setCategoryFilter('ALL'); setSubCategoryFilter(''); setSpecFilters({}); setSpecRangeFilters({}); }} className="text-[10px] font-bold text-slate-500 hover:text-red-600 flex items-center gap-1"><FilterX size={10} /> Clear</button>
+                        )}
+                     </div>
+                     <div className="p-3 space-y-3 max-h-[min(65vh,380px)] overflow-y-auto">
+                        <div className="flex flex-wrap gap-1.5">
+                           <button type="button" onClick={() => { setCategoryFilter('ALL'); setSubCategoryFilter(''); }} className={`px-2 py-1 rounded-lg text-xs font-bold ${categoryFilter === 'ALL' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>All</button>
+                           {Object.keys(categories).map(cat => (
+                              <button key={cat} type="button" onClick={() => { setCategoryFilter(cat); setSubCategoryFilter(''); }} className={`px-2 py-1 rounded-lg text-xs font-bold ${categoryFilter === cat && !subCategoryFilter ? 'bg-blue-600 text-white' : categoryFilter === cat ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{cat}</button>
+                           ))}
                         </div>
-                     </div>
-                     <div className="flex bg-white p-1 rounded-xl shadow-sm border border-slate-200 shrink-0">
-                        <div className="relative flex items-center">
-                           <div className="absolute left-3 text-slate-400 pointer-events-none"><CreditCard size={14} /></div>
-                           <select 
-                             className="bg-transparent border-none outline-none font-bold text-slate-700 pl-9 pr-8 py-2 cursor-pointer appearance-none text-[10px] uppercase tracking-wide min-w-[140px]"
-                             value={salePaymentFilter}
-                             onChange={(e) => setSalePaymentFilter(e.target.value)}
-                           >
-                             <option value="ALL">All Payments</option>
-                             {PAYMENT_METHODS.map(p => <option key={p} value={p}>{p}</option>)}
-                           </select>
-                        </div>
-                     </div>
-                  </>
-               )}
-            </div>
-
-            <div className="flex gap-2 ml-auto">
-               <button onClick={onUndo} disabled={!canUndo} className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-500 hover:text-slate-900 disabled:opacity-50 transition-colors shadow-sm"><RotateCcw size={16}/></button>
-               <button onClick={onRedo} disabled={!canRedo} className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-500 hover:text-slate-900 disabled:opacity-50 transition-colors shadow-sm"><RotateCw size={16}/></button>
-            </div>
-            </div>
-
-            {/* Inline Spec Filters panel — wide selection below the Filters button */}
-            {showSpecFiltersPanel && (
-               <div className="border-t border-slate-200/80 bg-white px-4 py-4 animate-in fade-in slide-in-from-top-1 duration-200">
-                  <div className="flex items-center justify-between mb-3">
-                     <h3 className="text-xs font-black uppercase tracking-widest text-slate-700 flex items-center gap-2">
-                        <Filter size={14} /> Filters
-                     </h3>
-                     {activeSpecFilterCount > 0 && (
-                        <button
-                           type="button"
-                           onClick={() => { setCategoryFilter('ALL'); setSubCategoryFilter(''); setSpecFilters({}); setSpecRangeFilters({}); }}
-                           className="text-[10px] font-bold uppercase text-slate-500 hover:text-red-600 flex items-center gap-1"
-                        >
-                           <FilterX size={12} /> Clear all
-                        </button>
-                     )}
-                  </div>
-
-                  {/* Parent filter: PC part category */}
-                  <div className="mb-4 pb-4 border-b border-slate-200">
-                     <div className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-2">Part category</div>
-                     <div className="flex flex-wrap gap-2">
-                        <button
-                           type="button"
-                           onClick={() => { setCategoryFilter('ALL'); setSubCategoryFilter(''); }}
-                           className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${categoryFilter === 'ALL' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                        >
-                           All categories
-                        </button>
-                        {Object.keys(categories).map(cat => (
-                           <button
-                              key={cat}
-                              type="button"
-                              onClick={() => { setCategoryFilter(cat); setSubCategoryFilter(''); }}
-                              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${categoryFilter === cat && !subCategoryFilter ? 'bg-blue-600 text-white' : categoryFilter === cat ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                           >
-                              {cat}
-                           </button>
-                        ))}
-                     </div>
-                     {categoryFilter !== 'ALL' && (categories[categoryFilter]?.length ?? 0) > 0 && (
-                        <>
-                           <div className="text-[10px] font-black uppercase tracking-wider text-slate-400 mt-3 mb-1.5">{categoryFilter} → subcategory</div>
-                           <div className="flex flex-wrap gap-1.5">
-                              <button
-                                 type="button"
-                                 onClick={() => setSubCategoryFilter('')}
-                                 className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${!subCategoryFilter ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                              >
-                                 All
-                              </button>
-                              {(categories[categoryFilter] || []).map(sub => (
-                                 <button
-                                    key={sub}
-                                    type="button"
-                                    onClick={() => setSubCategoryFilter(sub)}
-                                    className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${subCategoryFilter === sub ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                                 >
-                                    {sub}
-                                 </button>
-                              ))}
+                        {categoryFilter !== 'ALL' && (categories[categoryFilter]?.length ?? 0) > 0 && (
+                           <div className="flex flex-wrap gap-1">
+                              <button type="button" onClick={() => setSubCategoryFilter('')} className={`px-2 py-1 rounded text-xs font-medium ${!subCategoryFilter ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>All</button>
+                              {(categories[categoryFilter] || []).map(sub => <button key={sub} type="button" onClick={() => setSubCategoryFilter(sub)} className={`px-2 py-1 rounded text-xs font-medium ${subCategoryFilter === sub ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>{sub}</button>)}
                            </div>
-                        </>
-                     )}
-                  </div>
-
-                  {/* Spec filters — only shown when a category (or subcategory) is selected, or show message */}
-                  <div className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-2">Specs</div>
-                  {specOptions.length === 0 ? (
-                     <p className="text-slate-400 text-sm py-4">Select a part category above (e.g. Motherboards) to see spec filters for that category.</p>
-                  ) : (
-                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 max-h-[50vh] overflow-y-auto pr-1">
-                        {specOptions.map(({ key, values, isNumeric, min: optMin, max: optMax }) => {
-                           const selected = specFilters[key] ?? [];
-                           const range = specRangeFilters[key];
-                           const hasRange = range && (range.min !== undefined || range.max !== undefined);
-                           return (
-                              <div key={key} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-                                 <div className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-2">{key}</div>
-                                 <div className="flex flex-wrap gap-1.5">
-                                    {values.map(val => {
-                                       const isSelected = selected.some(s => (typeof val === 'number' && typeof s === 'number' && val === s) || String(val).toLowerCase() === String(s).toLowerCase());
-                                       return (
-                                          <button
-                                             key={String(val)}
-                                             type="button"
-                                             onClick={() => {
-                                                setSpecFilters(prev => {
-                                                   const arr = [...(prev[key] ?? [])];
-                                                   if (isSelected) {
-                                                      const idx = arr.findIndex(a => (typeof a === 'number' && typeof val === 'number' && a === val) || String(a).toLowerCase() === String(val).toLowerCase());
-                                                      if (idx !== -1) arr.splice(idx, 1);
-                                                   } else arr.push(val);
-                                                   const next = { ...prev };
-                                                   if (arr.length) next[key] = arr; else delete next[key];
-                                                   return next;
-                                                });
-                                             }}
-                                             className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${isSelected ? 'bg-blue-600 text-white shadow' : 'bg-white text-slate-600 border border-slate-200 hover:border-blue-300 hover:text-blue-600'}`}
-                                          >
-                                             {String(val)}
-                                          </button>
-                                       );
-                                    })}
-                                 </div>
-                                 {isNumeric && (optMin !== undefined || optMax !== undefined) && (
-                                    <div className="flex items-center gap-2 flex-wrap mt-2 pt-2 border-t border-slate-200/50">
-                                       <input
-                                          type="number"
-                                          placeholder={`Min ${optMin ?? ''}`}
-                                          value={range?.min ?? ''}
-                                          onChange={e => {
-                                             const v = e.target.value === '' ? undefined : Number(e.target.value);
-                                             setSpecRangeFilters(prev => ({ ...prev, [key]: { ...prev[key], min: v, max: prev[key]?.max } }));
-                                          }}
-                                          className="w-16 px-2 py-1 rounded-lg border border-slate-200 text-xs font-medium"
-                                       />
-                                       <span className="text-slate-400 text-xs">–</span>
-                                       <input
-                                          type="number"
-                                          placeholder={`Max ${optMax ?? ''}`}
-                                          value={range?.max ?? ''}
-                                          onChange={e => {
-                                             const v = e.target.value === '' ? undefined : Number(e.target.value);
-                                             setSpecRangeFilters(prev => ({ ...prev, [key]: { ...prev[key], min: prev[key]?.min, max: v } }));
-                                          }}
-                                          className="w-16 px-2 py-1 rounded-lg border border-slate-200 text-xs font-medium"
-                                       />
-                                       {hasRange && (
-                                          <button
-                                             type="button"
-                                             onClick={() => setSpecRangeFilters(prev => { const n = { ...prev }; delete n[key]; return n; })}
-                                             className="text-[10px] font-bold text-slate-400 hover:text-red-600"
-                                          >
-                                             Clear
-                                          </button>
+                        )}
+                        {specOptions.length === 0 ? <p className="text-slate-400 text-xs py-2">Select a category to see spec filters.</p> : (
+                           <div className="grid grid-cols-2 gap-2">
+                              {specOptions.map(({ key, values, isNumeric, min: optMin, max: optMax }) => {
+                                 const selected = specFilters[key] ?? [];
+                                 const range = specRangeFilters[key];
+                                 const hasRange = range && (range.min !== undefined || range.max !== undefined);
+                                 return (
+                                    <div key={key} className="bg-slate-50 rounded-lg p-2 border border-slate-100">
+                                       <div className="text-[10px] font-bold text-slate-500 mb-1">{key}</div>
+                                       <div className="flex flex-wrap gap-1">
+                                          {values.map(val => {
+                                             const isSelected = selected.some(s => (typeof val === 'number' && typeof s === 'number' && val === s) || String(val).toLowerCase() === String(s).toLowerCase());
+                                             return (
+                                                <button key={String(val)} type="button" onClick={() => { setSpecFilters(prev => { const arr = [...(prev[key] ?? [])]; const isSel = arr.some(a => (typeof a === 'number' && typeof val === 'number' && a === val) || String(a).toLowerCase() === String(val).toLowerCase()); if (isSel) { const idx = arr.findIndex(a => (typeof a === 'number' && typeof val === 'number' && a === val) || String(a).toLowerCase() === String(val).toLowerCase()); if (idx !== -1) arr.splice(idx, 1); } else arr.push(val); const next = { ...prev }; if (arr.length) next[key] = arr; else delete next[key]; return next; }); }} className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${isSelected ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:border-blue-300'}`}>{String(val)}</button>
+                                             );
+                                          })}
+                                       </div>
+                                       {isNumeric && (optMin !== undefined || optMax !== undefined) && (
+                                          <div className="flex items-center gap-1 mt-1.5 pt-1.5 border-t border-slate-200/50">
+                                             <input type="number" placeholder={`Min ${optMin ?? ''}`} value={range?.min ?? ''} onChange={e => setSpecRangeFilters(prev => ({ ...prev, [key]: { ...prev[key], min: e.target.value === '' ? undefined : Number(e.target.value), max: prev[key]?.max } }))} className="w-12 px-1.5 py-0.5 rounded border border-slate-200 text-[10px]" />
+                                             <span className="text-slate-400 text-[10px]">–</span>
+                                             <input type="number" placeholder={`Max ${optMax ?? ''}`} value={range?.max ?? ''} onChange={e => setSpecRangeFilters(prev => ({ ...prev, [key]: { ...prev[key], min: prev[key]?.min, max: e.target.value === '' ? undefined : Number(e.target.value) } }))} className="w-12 px-1.5 py-0.5 rounded border border-slate-200 text-[10px]" />
+                                             {hasRange && <button type="button" onClick={() => setSpecRangeFilters(prev => { const n = { ...prev }; delete n[key]; return n; })} className="text-[10px] font-bold text-slate-400 hover:text-red-600">×</button>}
+                                          </div>
                                        )}
                                     </div>
-                                 )}
-                              </div>
-                           );
-                        })}
+                                 );
+                              })}
+                           </div>
+                        )}
                      </div>
-                  )}
-               </div>
+                  </div>
+               )}
+            </div>
+            <div className="flex gap-1">
+               <button onClick={onUndo} disabled={!canUndo} className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-900 disabled:opacity-50" title="Undo"><RotateCcw size={14} /></button>
+               <button onClick={onRedo} disabled={!canRedo} className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-900 disabled:opacity-50" title="Redo"><RotateCw size={14} /></button>
+            </div>
+            {hasActiveFilters && (
+               <button type="button" onClick={clearAllFilters} className="text-[10px] font-bold uppercase text-slate-500 hover:text-red-600">Reset all</button>
             )}
          </div>
+
+         {/* Active filter chips */}
+         {hasActiveFilters && (
+            <div className="flex flex-wrap items-center gap-1.5">
+               {statusFilter !== 'ACTIVE' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 text-xs font-medium">
+                     {statusFilter} <button type="button" onClick={() => setStatusFilter('ACTIVE')} className="hover:opacity-80">×</button>
+                  </span>
+               )}
+               {categoryFilter !== 'ALL' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 text-xs font-medium">
+                     {categoryFilter}{subCategoryFilter ? ` / ${subCategoryFilter}` : ''} <button type="button" onClick={() => { setCategoryFilter('ALL'); setSubCategoryFilter(''); }} className="hover:opacity-80">×</button>
+                  </span>
+               )}
+               {timeFilter !== 'ALL' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 text-xs font-medium">
+                     {timeFilter} <button type="button" onClick={() => setTimeFilter('ALL')} className="hover:opacity-80">×</button>
+                  </span>
+               )}
+               {statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS' && (salePlatformFilter !== 'ALL' || salePaymentFilter !== 'ALL') && (
+                  <>
+                     {salePlatformFilter !== 'ALL' && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 text-xs font-medium">{salePlatformFilter} <button type="button" onClick={() => setSalePlatformFilter('ALL')} className="hover:opacity-80">×</button></span>}
+                     {salePaymentFilter !== 'ALL' && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 text-xs font-medium truncate max-w-[120px]" title={salePaymentFilter}>{salePaymentFilter} <button type="button" onClick={() => setSalePaymentFilter('ALL')} className="hover:opacity-80">×</button></span>}
+                  </>
+               )}
+               {Object.entries(specFilters).filter(([, v]) => v?.length).map(([k, v]) => (
+                  <span key={k} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-xs font-medium">
+                     {k}: {v?.slice(0, 2).join(', ')}{(v?.length ?? 0) > 2 ? '…' : ''} <button type="button" onClick={() => setSpecFilters(prev => { const n = { ...prev }; delete n[k]; return n; })} className="hover:opacity-80">×</button>
+                  </span>
+               ))}
+               {Object.entries(specRangeFilters).filter(([, r]) => r && (r.min !== undefined || r.max !== undefined)).map(([k, r]) => (
+                  <span key={k} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-xs font-medium">
+                     {k}: {r?.min ?? '?'}–{r?.max ?? '?'} <button type="button" onClick={() => setSpecRangeFilters(prev => { const n = { ...prev }; delete n[k]; return n; })} className="hover:opacity-80">×</button>
+                  </span>
+               ))}
+            </div>
+         )}
       </header>
 
       {/* FINANCIAL STATS DASHBOARD - Only visible in Sold/All View */}
