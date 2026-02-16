@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Handbag, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal,   Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Handbag, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal,   Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType } from '../types';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
@@ -13,6 +13,8 @@ import CrossPostingModal from './CrossPostingModal';
 import RetroBundleModal from './RetroBundleModal';
 import EditItemModal from './EditItemModal';
 import ItemThumbnail from './ItemThumbnail';
+import InventoryAISpecsPanel from './InventoryAISpecsPanel';
+import { generateItemSpecs } from '../services/specsAI';
 
 interface Props {
   items: InventoryItem[];
@@ -32,7 +34,7 @@ interface Props {
   persistenceKey?: string; 
 }
 
-type ColumnId = 'select' | 'item' | 'category' | 'status' | 'buyPrice' | 'sellPrice' | 'profit' | 'buyDate' | 'sellDate' | 'actions';
+type ColumnId = 'select' | 'item' | 'parseSpecs' | 'category' | 'status' | 'buyPrice' | 'sellPrice' | 'profit' | 'buyDate' | 'sellDate' | 'actions';
 type TimeFilter = 'ALL' | 'THIS_WEEK' | 'LAST_WEEK' | 'THIS_MONTH' | 'LAST_MONTH' | 'LAST_30' | 'LAST_90' | 'THIS_YEAR' | 'LAST_YEAR';
 type StatusFilter = 'ACTIVE' | 'SOLD' | 'DRAFTS' | 'ALL';
 
@@ -44,6 +46,7 @@ interface SortConfig {
 const DEFAULT_WIDTHS: Record<string, number> = {
   select: 50,
   item: 350,
+  parseSpecs: 52,
   category: 160,
   status: 120,
   buyPrice: 120,
@@ -57,6 +60,7 @@ const DEFAULT_WIDTHS: Record<string, number> = {
 const ALL_COLUMNS: { id: ColumnId; label: string }[] = [
   { id: 'select', label: '' },
   { id: 'item', label: 'Asset Name' },
+  { id: 'parseSpecs', label: 'Parse' },
   { id: 'category', label: 'Category' },
   { id: 'status', label: 'Status' },
   { id: 'buyPrice', label: 'Buy Price' },
@@ -134,6 +138,7 @@ const InventoryList: React.FC<Props> = ({
   // -- INLINE EDITING STATE --
   const [editingCell, setEditingCell] = useState<{ itemId: string, field: ColumnId } | null>(null);
   const [editValue, setEditValue] = useState<string | number>('');
+  const [parsingSingleId, setParsingSingleId] = useState<string | null>(null);
 
   // -- STATE PERSISTENCE EFFECTS --
   useEffect(() => localStorage.setItem(`${persistenceKey}_search`, JSON.stringify(searchTerm)), [searchTerm, persistenceKey]);
@@ -197,7 +202,7 @@ const InventoryList: React.FC<Props> = ({
   };
   
   // Visible Columns
-  const visibleColumns: ColumnId[] = ['select', 'item', 'category', 'status', 'buyPrice', 'sellPrice', 'profit', 'buyDate', 'sellDate', 'actions'];
+  const visibleColumns: ColumnId[] = ['select', 'item', 'parseSpecs', 'category', 'status', 'buyPrice', 'sellPrice', 'profit', 'buyDate', 'sellDate', 'actions'];
 
   // Calculate Date Range based on filter
   const dateRange = useMemo(() => {
@@ -489,7 +494,7 @@ const InventoryList: React.FC<Props> = ({
   // -- HANDLERS --
 
   const handleHeaderSort = (columnId: ColumnId) => {
-    if (columnId === 'actions' || columnId === 'select') return;
+    if (columnId === 'actions' || columnId === 'select' || columnId === 'parseSpecs') return;
     
     setSortConfig(prev => {
       // If clicking same column, toggle direction
@@ -616,6 +621,33 @@ const InventoryList: React.FC<Props> = ({
     }
   };
 
+  const handleParseSingleItem = useCallback(async (item: InventoryItem) => {
+    setParsingSingleId(item.id);
+    try {
+      const categoryContext = `${item.category || 'Unknown'}${item.subCategory ? ' / ' + item.subCategory : ''}`;
+      const activeKey = `${item.category}:${item.subCategory}`;
+      const knownKeys = (categoryFields || {})[activeKey] || (categoryFields || {})[item.category || ''] || [];
+      const result = await generateItemSpecs(item.name, categoryContext, knownKeys);
+      const definedFields = knownKeys;
+      let newSpecs = { ...(item.specs || {}) };
+      Object.entries(result.specs || {}).forEach(([k, v]) => {
+        if (v === undefined || v === null || v === '') return;
+        const keyToUse = definedFields.length > 0 ? (definedFields.find((df) => df.toLowerCase() === k.toLowerCase()) || k) : k;
+        newSpecs[keyToUse] = v;
+      });
+      const updates: Partial<InventoryItem> = { specs: newSpecs as Record<string, string | number> };
+      if (result.standardizedName) updates.name = result.standardizedName;
+      if (result.vendor) updates.vendor = result.vendor;
+      const merged = { ...item, ...updates };
+      onUpdate(items.map((i) => (i.id === item.id ? merged : i)));
+    } catch (e: unknown) {
+      const msg = (e as Error)?.message || 'Parse failed';
+      alert(msg.includes('API key') ? `${msg}\n\nAdd the key in .env and restart.` : msg);
+    } finally {
+      setParsingSingleId(null);
+    }
+  }, [items, categoryFields, onUpdate]);
+
   const handleBuildFromSelection = (e?: React.MouseEvent) => {
     if (e) {
        e.preventDefault();
@@ -635,13 +667,14 @@ const InventoryList: React.FC<Props> = ({
     }
     
     const validItems = selectedItemsList.filter(i => 
-      i.status === ItemStatus.IN_STOCK || 
+      !i.isDefective &&
+      (i.status === ItemStatus.IN_STOCK || 
       i.status === ItemStatus.SOLD || 
-      i.status === ItemStatus.TRADED
+      i.status === ItemStatus.TRADED)
     );
     
     if (validItems.length === 0) {
-      alert("No valid items selected for composition.");
+      alert("No valid items selected for composition (defective items are excluded).");
       return;
     }
     
@@ -721,6 +754,20 @@ const InventoryList: React.FC<Props> = ({
                    )}
                 </div>
              </div>
+          </td>
+        );
+      case 'parseSpecs':
+        return (
+          <td key={id} className="p-5 text-center" style={style} onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => handleParseSingleItem(item)}
+              disabled={parsingSingleId !== null}
+              title="Parse tech specs with AI (can correct name)"
+              className={`p-2 rounded-xl transition-colors ${parsingSingleId === item.id ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600 hover:bg-amber-100 hover:text-amber-700'}`}
+            >
+              {parsingSingleId === item.id ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+            </button>
           </td>
         );
       case 'category':
@@ -1111,6 +1158,13 @@ const InventoryList: React.FC<Props> = ({
          )}
       </header>
 
+      <InventoryAISpecsPanel
+        items={items}
+        selectedIds={selectedIds}
+        categoryFields={categoryFields ?? {}}
+        onUpdate={(updated) => onUpdate(updated)}
+      />
+
       {/* FINANCIAL STATS DASHBOARD - Only visible in Sold/All View */}
       {showFinancials && financialStats && (
          <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm mb-2 flex flex-col xl:flex-row gap-6 items-center justify-between animate-in slide-in-from-top-4 shrink-0">
@@ -1172,11 +1226,13 @@ const InventoryList: React.FC<Props> = ({
                <tr className="bg-slate-50/80 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-widest backdrop-blur-sm">
                   {visibleColumns.map(colId => (
                      <th key={colId} onClick={() => handleHeaderSort(colId)} className="p-5 cursor-pointer hover:bg-slate-100 transition-colors group" style={{ width: columnWidths[colId] || DEFAULT_WIDTHS[colId] }}>
-                        <div className={`flex items-center gap-1 ${['buyPrice', 'sellPrice', 'profit', 'buyDate', 'sellDate', 'actions'].includes(colId) ? 'justify-end' : ''}`}>
+                        <div className={`flex items-center gap-1 ${['buyPrice', 'sellPrice', 'profit', 'buyDate', 'sellDate', 'actions'].includes(colId) ? 'justify-end' : colId === 'parseSpecs' ? 'justify-center' : ''}`}>
                            {colId === 'select' ? (
                               <div onClick={(e) => { e.stopPropagation(); handleSelectAll(); }} className="w-5 h-5 mx-auto border-2 border-slate-300 rounded-lg flex items-center justify-center cursor-pointer hover:border-blue-400">
                                  {selectedIds.length > 0 && (selectedIds.length === sortedItems.length ? <Check size={12} className="text-blue-500"/> : <Minus size={12} className="text-blue-500"/>)}
                               </div>
+                           ) : colId === 'parseSpecs' ? (
+                              <span className="flex items-center gap-1" title="Parse tech specs with AI"><Sparkles size={12} className="text-amber-500"/> Parse</span>
                            ) : (
                               <>
                                  {ALL_COLUMNS.find(c => c.id === colId)?.label}
