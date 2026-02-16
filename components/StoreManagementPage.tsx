@@ -684,10 +684,13 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
           }
         }
 
-        // Resize and upload
-        setGalleryProgress(`Uploading ${idx + 1} / ${pendingGalleryFiles.length}...`);
+        // Resize then upload (show each step so we see where it hangs)
+        setGalleryProgress(`Resizing ${idx + 1} / ${pendingGalleryFiles.length}...`);
         const resized = await resizeImage(file, 1600, 0.9);
-        const url = await uploadItemImage(resized, item.id);
+        setGalleryProgress(`Uploading ${idx + 1} / ${pendingGalleryFiles.length}...`);
+        const url = await uploadItemImage(resized, item.id, (pct) => {
+          setGalleryProgress(`Uploading ${idx + 1} / ${pendingGalleryFiles.length} (${Math.round(pct)}%)...`);
+        });
         urls.push(url);
         setGalleryProgress(`${idx + 1} / ${pendingGalleryFiles.length}`);
       }

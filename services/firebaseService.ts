@@ -38,7 +38,7 @@ import {
 import {
   getStorage,
   ref as storageRef,
-  uploadBytes,
+  uploadBytesResumable,
   getDownloadURL,
   type FirebaseStorage,
 } from "firebase/storage";
@@ -153,11 +153,15 @@ export function getCurrentUser(): User | null {
 
 /**
  * Upload a (already resized/compressed) image file for an inventory item to Firebase Storage
- * and return its public download URL.
+ * and return its public download URL. Optional onProgress(0-100) for UI.
  *
  * Path convention: items/{uid}/{itemId}/{timestamp}-{filename}
  */
-export async function uploadItemImage(file: File, itemId: string): Promise<string> {
+export async function uploadItemImage(
+  file: File,
+  itemId: string,
+  onProgress?: (percent: number) => void
+): Promise<string> {
   const ctx = init();
   const user = ctx?.auth?.currentUser;
   if (!ctx?.storage || !user) {
@@ -168,17 +172,30 @@ export async function uploadItemImage(file: File, itemId: string): Promise<strin
   const path = `items/${user.uid}/${itemId || "unknown"}/${Date.now()}-${safeName}`;
   const ref = storageRef(ctx.storage, path);
 
-  const timeoutMs = 90_000; // 90s per image (enough for multiple images / slow connections)
+  const timeoutMs = 90_000; // 90s per image
   const timeoutPromise = new Promise<never>((_, reject) =>
     setTimeout(() => reject(new Error(
-      "Upload timed out after 90s. If this happens often, check Firebase Storage rules (separate from Firestore): " +
-      "Firebase Console → Build → Storage → Rules. They must allow writes for signed-in users. " +
-      "Example: allow read, write: if request.auth != null;"
+      "Upload timed out after 90s. Enable Storage in Firebase Console → Build → Storage, then set Rules to allow writes for signed-in users."
     )), timeoutMs)
   );
 
   try {
-    const snapshot = await Promise.race([uploadBytes(ref, file), timeoutPromise]);
+    const task = uploadBytesResumable(ref, file);
+    const snapshot = await Promise.race([
+      new Promise<typeof task.snapshot>((resolve, reject) => {
+        task.on(
+          "state_changed",
+          (snap) => {
+            if (onProgress && snap.totalBytes > 0) {
+              onProgress((100 * snap.bytesTransferred) / snap.totalBytes);
+            }
+          },
+          reject,
+          () => resolve(task.snapshot)
+        );
+      }),
+      timeoutPromise,
+    ]);
     const url = await Promise.race([getDownloadURL(snapshot.ref), timeoutPromise]);
     return url;
   } catch (err: any) {
