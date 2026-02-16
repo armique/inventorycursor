@@ -568,6 +568,52 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
   const [uploadingMain, setUploadingMain] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState(false);
 
+  const fileToDataUrl = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error('Failed to read image'));
+      reader.readAsDataURL(file);
+    });
+
+  const dataUrlToFile = async (dataUrl: string, fallbackName: string): Promise<File> => {
+    const match = dataUrl.match(/^data:(.+);base64,(.*)$/);
+    if (!match) {
+      throw new Error('Invalid enhanced image data');
+    }
+    const mime = match[1];
+    const base64 = match[2];
+    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+    return new File([bytes], fallbackName, { type: mime });
+  };
+
+  const enhanceWithAI = async (file: File): Promise<File> => {
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      const kind =
+        item.isPC || item.category === 'PC' || item.subCategory === 'Custom Built PC' || item.subCategory === 'Pre-Built PC'
+          ? 'pc'
+          : 'part';
+      const resp = await fetch('/api/enhance-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageDataUrl: dataUrl,
+          kind,
+          name: item.name,
+          category: item.category,
+          subCategory: item.subCategory,
+        }),
+      });
+      if (!resp.ok) return file;
+      const json = await resp.json().catch(() => null);
+      if (!json?.dataUrl || typeof json.dataUrl !== 'string') return file;
+      return await dataUrlToFile(json.dataUrl, `enhanced-${file.name || 'image.png'}`);
+    } catch {
+      return file;
+    }
+  };
+
   const resizeImage = (file: File, maxSize = 1600, quality = 0.8): Promise<File> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -613,7 +659,8 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
     try {
       setUploadingMain(true);
       const resized = await resizeImage(file);
-      const url = await uploadItemImage(resized, item.id);
+      const enhanced = await enhanceWithAI(resized);
+      const url = await uploadItemImage(enhanced, item.id);
       setImageUrl(url);
     } catch (err: any) {
       console.error(err);
@@ -630,7 +677,8 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
     try {
       setUploadingGallery(true);
       const resized = await resizeImage(file);
-      const url = await uploadItemImage(resized, item.id);
+      const enhanced = await enhanceWithAI(resized);
+      const url = await uploadItemImage(enhanced, item.id);
       setGalleryUrlsText((prev) => (prev ? `${prev}\n${url}` : url));
     } catch (err: any) {
       console.error(err);
