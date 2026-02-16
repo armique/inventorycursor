@@ -18,6 +18,7 @@ import PCBuilderWizard from './components/PCBuilderWizard';
 import PriceCheck from './components/PriceCheck';
 import QuotaMonitor from './components/QuotaMonitor';
 import StoreManagementPage from './components/StoreManagementPage';
+import LegalPage from './components/LegalPage';
 
 import { InventoryItem, Expense, ItemStatus, BusinessSettings } from './types';
 import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchFromCloud } from './services/firebaseService';
@@ -602,6 +603,9 @@ const App: React.FC = () => {
     <Router>
       <Routes>
         <Route path="/" element={<StorefrontPage />} />
+        <Route path="/impressum" element={<LegalPage />} />
+        <Route path="/datenschutz" element={<LegalPage />} />
+        <Route path="/agb" element={<LegalPage />} />
         <Route
           path="/panel"
           element={

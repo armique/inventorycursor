@@ -356,11 +356,11 @@ const StorefrontPage: React.FC = () => {
         <div className="mx-auto max-w-6xl px-4 sm:px-6 py-10 sm:py-12">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6 sm:gap-8">
             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-x-6 gap-y-1">
-              <a href="#about" className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.aboutUs}</a>
-              <a href="#contact" className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.contactLink}</a>
-              <a href="#imprint" className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.imprint}</a>
-              <a href="#privacy" className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.privacy}</a>
-              <a href="#terms" className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.terms}</a>
+              <a href="/#about" className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.aboutUs}</a>
+              <a href="/#contact" className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.contactLink}</a>
+              <a href="/impressum" className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.imprint}</a>
+              <a href="/datenschutz" className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.privacy}</a>
+              <a href="/agb" className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.terms}</a>
             </div>
             <p className="text-slate-500 text-xs text-center sm:text-right order-last sm:order-none">
               © {new Date().getFullYear()} · {TEXTS.title}
