@@ -4,6 +4,7 @@ import {
 } from 'recharts';
 import { TrendingUp, Wallet, Target, Package, Calendar, TrendingDown, Hourglass, Skull, Trophy, Star, Crown, Zap, Edit3, Check, CalendarDays, ArrowRight, CheckCircle2, Circle, Plus, X, Activity, Clock } from 'lucide-react';
 import { InventoryItem, ItemStatus, Expense, BusinessSettings, TaxMode } from '../types';
+import { calculateTaxSummary, generateTaxReportCSV } from '../services/taxService';
 
 interface Props {
   items: InventoryItem[];
@@ -314,6 +315,16 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [filteredItems, taxMode]);
 
+  // Tax report summary (by year)
+  const [taxReportYear, setTaxReportYear] = useState(() => new Date().getFullYear());
+  const taxSummary = useMemo(() => calculateTaxSummary(items, expenses, taxReportYear, taxMode), [items, expenses, taxReportYear, taxMode]);
+  const taxYears = useMemo(() => {
+    const years = new Set<number>();
+    items.forEach(i => { if (i.buyDate) years.add(new Date(i.buyDate).getFullYear()); if (i.sellDate) years.add(new Date(i.sellDate).getFullYear()); });
+    expenses.forEach(e => years.add(new Date(e.date).getFullYear()));
+    return Array.from(years).sort((a, b) => b - a);
+  }, [items, expenses]);
+
   // Todo from data: items needing attention
   const todoFromData = useMemo(() => {
     const inStock = items.filter(i => i.status === ItemStatus.IN_STOCK);
@@ -602,6 +613,57 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                </div>
             )}
          </div>
+      </div>
+
+      {/* Tax report (period summary for accountant / export) */}
+      <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
+        <h3 className="text-lg font-bold mb-3">Tax report (period summary)</h3>
+        <p className="text-sm text-slate-500 mb-4">Summary by calendar year for export or accountant. VAT figures when applicable.</p>
+        <div className="flex flex-wrap items-center gap-4 mb-4">
+          <label className="text-sm font-medium text-slate-600">Year</label>
+          <select value={taxReportYear} onChange={(e) => setTaxReportYear(Number(e.target.value))} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-400">
+            {taxYears.length ? taxYears.map(y => <option key={y} value={y}>{y}</option>) : <option value={taxReportYear}>{taxReportYear}</option>}
+          </select>
+          <button
+            type="button"
+            onClick={() => {
+              const csv = generateTaxReportCSV(items, expenses, taxReportYear);
+              const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+              const a = document.createElement('a');
+              a.href = URL.createObjectURL(blob);
+              a.download = `tax-report-${taxReportYear}.csv`;
+              a.click();
+              URL.revokeObjectURL(a.href);
+            }}
+            className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-slate-800"
+          >
+            Export CSV
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-left text-slate-500 font-bold uppercase tracking-wider">
+                <th className="py-2 pr-4">Revenue (net)</th>
+                <th className="py-2 pr-4">COGS</th>
+                <th className="py-2 pr-4">Expenses</th>
+                <th className="py-2 pr-4">Fees</th>
+                {taxMode === 'RegularVAT' && <th className="py-2 pr-4">VAT (est.)</th>}
+                <th className="py-2">Net profit</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-slate-100">
+                <td className="py-3 font-semibold text-slate-900">€{taxSummary.revenue.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                <td className="py-3 text-slate-600">€{taxSummary.cogs.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                <td className="py-3 text-slate-600">€{taxSummary.expenses.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                <td className="py-3 text-slate-600">€{taxSummary.fees.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                {taxMode === 'RegularVAT' && <td className="py-3 text-amber-600 font-semibold">€{(taxSummary.vatPayable ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>}
+                <td className="py-3 font-bold text-emerald-600">€{taxSummary.netProfit.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Todo from data */}
