@@ -39,6 +39,13 @@ const TEXTS = {
   backToTop: 'Nach oben',
   keyFeatures: 'Was ist drin?',
   keySpecs: 'Eigenschaften',
+  // Footer
+  aboutUs: 'Über uns',
+  contactLink: 'Kontakt',
+  imprint: 'Impressum',
+  privacy: 'Datenschutz',
+  terms: 'AGB',
+  legal: 'Alle Rechte vorbehalten. Alle genannten Marken gehören den jeweiligen Rechteinhabern.',
 };
 
 /** Preferred order for PC/build-style specs so CPU, GPU, RAM etc. show first. */
@@ -192,7 +199,7 @@ const StorefrontPage: React.FC = () => {
   const showNoResults = catalogLoaded && items.length > 0 && filtered.length === 0;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50/80 text-slate-900 antialiased storefront-page" style={{ fontFamily: "'Outfit', system-ui, sans-serif" }}>
+    <div className="min-h-screen flex flex-col bg-gradient-to-b from-slate-50 via-white to-slate-50/80 text-slate-900 antialiased storefront-page" style={{ fontFamily: "'Outfit', system-ui, sans-serif" }}>
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: scale(0.98); }
@@ -269,7 +276,7 @@ const StorefrontPage: React.FC = () => {
       </section>
 
       {/* Content */}
-      <main className="mx-auto max-w-6xl px-4 sm:px-6 py-10 sm:py-14">
+      <main className="flex-1 mx-auto max-w-6xl px-4 sm:px-6 py-10 sm:py-14 w-full">
         {showLoading && (
           <div className="flex flex-col items-center justify-center py-28 text-center">
             <div className="w-14 h-14 rounded-2xl bg-slate-900/10 flex items-center justify-center mb-5">
@@ -344,10 +351,24 @@ const StorefrontPage: React.FC = () => {
         )}
       </main>
 
-      {/* Footer */}
+      {/* Footer – at bottom with links and legal */}
       <footer className="mt-auto border-t border-slate-200/80 bg-slate-900 text-slate-300">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 flex flex-col items-center justify-center gap-1 text-center">
-          <p className="text-slate-400 text-sm">© {new Date().getFullYear()} · {TEXTS.title}</p>
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-10 sm:py-12">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6 sm:gap-8">
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-x-6 gap-y-1">
+              <a href="#about" className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.aboutUs}</a>
+              <a href="#contact" className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.contactLink}</a>
+              <a href="#imprint" className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.imprint}</a>
+              <a href="#privacy" className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.privacy}</a>
+              <a href="#terms" className="text-sm text-slate-400 hover:text-white transition-colors">{TEXTS.terms}</a>
+            </div>
+            <p className="text-slate-500 text-xs text-center sm:text-right order-last sm:order-none">
+              © {new Date().getFullYear()} · {TEXTS.title}
+            </p>
+          </div>
+          <p className="mt-6 pt-6 border-t border-slate-700/50 text-slate-500 text-xs text-center">
+            {TEXTS.legal}
+          </p>
         </div>
       </footer>
 
