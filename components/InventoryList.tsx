@@ -7,6 +7,7 @@ import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType } fr
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { getCompatibleItemsForItem } from '../services/compatibility';
 import { generateKleinanzeigenCSV } from '../services/ebayCsvService';
+import { generateStoreDescription } from '../services/specsAI';
 import SaleModal from './SaleModal';
 import ReturnModal from './ReturnModal';
 import TradeModal from './TradeModal';
@@ -184,6 +185,8 @@ const InventoryList: React.FC<Props> = ({
   const [showBulkStoreVisible, setShowBulkStoreVisible] = useState(false);
   const [showBulkSalePct, setShowBulkSalePct] = useState(false);
   const [showBulkTag, setShowBulkTag] = useState(false);
+  const [bulkGenerateDescriptions, setBulkGenerateDescriptions] = useState(false);
+  const [bulkGenerateProgress, setBulkGenerateProgress] = useState<string | null>(null);
   const [showRetroBundle, setShowRetroBundle] = useState(false);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
@@ -735,6 +738,27 @@ const InventoryList: React.FC<Props> = ({
      const updates = items.filter(i => selectedIds.includes(i.id)).map(i => ({ ...i, comment1: tag.trim() || i.comment1 }));
      onUpdate(updates);
      setShowBulkTag(false);
+     setSelectedIds([]);
+  };
+
+  const handleBulkGenerateDescriptions = async () => {
+     const selected = items.filter(i => selectedIds.includes(i.id));
+     if (selected.length === 0) return;
+     setBulkGenerateDescriptions(true);
+     setBulkGenerateProgress(`0 / ${selected.length}`);
+     const updates: InventoryItem[] = [];
+     for (let i = 0; i < selected.length; i++) {
+        setBulkGenerateProgress(`${i + 1} / ${selected.length}`);
+        try {
+           const text = await generateStoreDescription(selected[i].name, selected[i].storeDescription || undefined);
+           updates.push({ ...selected[i], storeDescription: text });
+        } catch (err) {
+           console.warn('AI description failed for', selected[i].name, err);
+        }
+     }
+     if (updates.length > 0) onUpdate(updates);
+     setBulkGenerateProgress(null);
+     setBulkGenerateDescriptions(false);
      setSelectedIds([]);
   };
 
@@ -1389,6 +1413,14 @@ const InventoryList: React.FC<Props> = ({
                  className="bg-white text-slate-900 px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-slate-100 transition-all"
                >
                  <Download size={16}/> Export Kleinanzeigen CSV
+               </button>
+               <button 
+                 onClick={() => handleBulkGenerateDescriptions()}
+                 disabled={bulkGenerateDescriptions}
+                 className="bg-violet-600 text-white px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-violet-700 disabled:opacity-60 transition-all"
+               >
+                 {bulkGenerateDescriptions ? <Loader2 size={16} className="animate-spin"/> : <Sparkles size={16}/>}
+                 {bulkGenerateDescriptions ? bulkGenerateProgress || 'Generating…' : 'Generate descriptions (AI)'}
                </button>
 
                {/* Show Edit Sales Button if any selected item is sold/traded */}
