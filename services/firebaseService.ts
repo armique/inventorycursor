@@ -38,7 +38,7 @@ import {
 import {
   getStorage,
   ref as storageRef,
-  uploadBytesResumable,
+  uploadBytes,
   getDownloadURL,
   type FirebaseStorage,
 } from "firebase/storage";
@@ -50,7 +50,7 @@ const DEFAULT_FIREBASE_CONFIG: FirebaseConfig = {
   apiKey: "AIzaSyA1KbcJ1oI0g7WBqplaiRoLttr4TkgR9XY",
   authDomain: "inventorycursor-e9000.firebaseapp.com",
   projectId: "inventorycursor-e9000",
-  storageBucket: "inventorycursor-e9000.appspot.com",
+  storageBucket: "inventorycursor-e9000.firebasestorage.app",
   messagingSenderId: "844355746831",
   appId: "1:844355746831:web:41b3829c7de55eeadd777a",
 };
@@ -108,7 +108,11 @@ function init(): { db: Firestore; auth: Auth; storage: FirebaseStorage } | null 
     app = getApps().length ? getApp() : initializeApp(config);
     db = getFirestore(app);
     auth = getAuth(app);
-    storage = getStorage(app);
+    // Force correct bucket (Firebase default is now .firebasestorage.app, not .appspot.com)
+    const bucket = config.projectId === "inventorycursor-e9000"
+      ? "inventorycursor-e9000.firebasestorage.app"
+      : config.storageBucket;
+    storage = bucket ? getStorage(app, bucket) : getStorage(app);
     return db && auth && storage ? { db, auth, storage } : null;
   } catch (err) {
     console.error("Firebase init error:", err);
@@ -180,23 +184,12 @@ export async function uploadItemImage(
   );
 
   try {
-    const task = uploadBytesResumable(ref, file);
-    const snapshot = await Promise.race([
-      new Promise<typeof task.snapshot>((resolve, reject) => {
-        task.on(
-          "state_changed",
-          (snap) => {
-            if (onProgress && snap.totalBytes > 0) {
-              onProgress((100 * snap.bytesTransferred) / snap.totalBytes);
-            }
-          },
-          reject,
-          () => resolve(task.snapshot)
-        );
-      }),
-      timeoutPromise,
-    ]);
+    // Simple upload (single PUT) to avoid resumable-upload CORS issues; progress not available
+    if (onProgress) onProgress(10); // show we started
+    const snapshot = await Promise.race([uploadBytes(ref, file), timeoutPromise]);
+    if (onProgress) onProgress(90);
     const url = await Promise.race([getDownloadURL(snapshot.ref), timeoutPromise]);
+    if (onProgress) onProgress(100);
     return url;
   } catch (err: any) {
     const msg = err?.message || String(err);
