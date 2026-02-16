@@ -27,6 +27,12 @@ import { saveOAuthResult } from './services/githubBackupService';
 
 const WRITE_DEBOUNCE_MS = 3500;
 
+/** When merging an update into an existing item, preserve these from the old item if the update doesn't provide them (so renames/edits from inventory don't wipe store data). */
+const PRESERVE_FROM_OLD_IF_UPDATE_MISSING: (keyof InventoryItem)[] = [
+  'imageUrl', 'storeGalleryUrls', 'storeDescription', 'storeVisible', 'storeOnSale', 'storeSalePrice',
+  'specs', 'componentIds', 'comment1', 'comment2', 'vendor', 'sellPrice',
+];
+
 function GitHubOAuthCallback() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -419,8 +425,19 @@ const App: React.FC = () => {
           const idx = nextItems.findIndex(i => i.id === u.id);
           const oldItem = idx >= 0 ? nextItems[idx] : undefined;
           const merged = appendPriceHistoryIfChanged(oldItem, u);
-          if (idx >= 0) nextItems[idx] = merged;
-          else nextItems.push(merged);
+          // Preserve store and other fields from old item when update doesn't provide them (e.g. rename in inventory form)
+          let final = merged;
+          if (oldItem && idx >= 0) {
+            final = { ...merged } as InventoryItem;
+            for (const k of PRESERVE_FROM_OLD_IF_UPDATE_MISSING) {
+              const oldVal = (oldItem as Record<string, unknown>)[k as string];
+              const newVal = (merged as Record<string, unknown>)[k as string];
+              if (oldVal !== undefined && oldVal !== null && (newVal === undefined || newVal === null))
+                (final as Record<string, unknown>)[k as string] = oldVal;
+            }
+          }
+          if (idx >= 0) nextItems[idx] = final;
+          else nextItems.push(final);
         });
         
         if (deleteIds && deleteIds.length > 0) {

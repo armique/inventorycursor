@@ -455,9 +455,9 @@ const StorefrontPage: React.FC = () => {
                 </button>
               </div>
 
-              {/* Main: carousel + floating Was ist drin? (side-by-side on lg) */}
+              {/* Main: carousel (left) | details + specs + description + CTA (right) – no overlay */}
               <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden">
-                {/* Left: image + thumbnails */}
+                {/* Left: image carousel + thumbnails only */}
                 <div className="flex-1 min-w-0 flex flex-col bg-slate-50">
                   <div className="relative flex-1 flex items-center justify-center min-h-[240px] sm:min-h-[280px] p-4 sm:p-6">
                     {hasImages ? (
@@ -466,7 +466,7 @@ const StorefrontPage: React.FC = () => {
                           key={currentIndex}
                           src={galleryImages[currentIndex]} 
                           alt={`${galleryItem.name} - Bild ${currentIndex + 1}`}
-                          className="max-w-full max-h-[50vh] sm:max-h-[55vh] lg:max-h-[calc(90vh-220px)] object-contain rounded-xl shadow-lg transition-opacity duration-300"
+                          className="max-w-full max-h-[50vh] sm:max-h-[55vh] lg:max-h-[calc(90vh-200px)] object-contain rounded-xl shadow-lg transition-opacity duration-300"
                           style={{ animation: 'fadeIn 0.3s ease-in-out' }}
                         />
                         {galleryImages.length > 1 && (
@@ -499,25 +499,6 @@ const StorefrontPage: React.FC = () => {
                     ) : (
                       <div className="text-slate-400 text-lg py-12">Keine Bilder verfügbar</div>
                     )}
-                    {/* Floating "Was ist drin?" card – overlay on image area on mobile/tablet; sidebar on lg */}
-                    {hasSpecs && (
-                      <div className="absolute bottom-4 left-4 right-4 lg:left-auto lg:right-4 lg:top-4 lg:bottom-4 lg:w-[280px] xl:w-[320px] z-20">
-                        <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200/80 p-4 sm:p-5 max-h-[200px] sm:max-h-[240px] lg:max-h-none lg:sticky lg:top-4 overflow-y-auto">
-                          <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 flex items-center gap-2">
-                            <span className="w-6 h-6 rounded-lg bg-slate-900 text-white flex items-center justify-center text-[10px]">✓</span>
-                            {specsTitle}
-                          </h4>
-                          <div className="space-y-2">
-                            {orderedSpecKeys(galleryItem.specs!, galleryItem.categoryFields).slice(0, 8).map((key) => (
-                              <div key={key} className="flex justify-between gap-2 text-xs sm:text-sm py-1 border-b border-slate-100 last:border-b-0">
-                                <span className="text-slate-500 font-medium shrink-0">{key}</span>
-                                <span className="text-slate-900 font-semibold text-right truncate" title={String(galleryItem.specs![key])}>{String(galleryItem.specs![key])}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    )}
                   </div>
                   {galleryImages.length > 1 && (
                     <div className="px-4 sm:px-6 py-3 border-t border-slate-200/80 bg-white shrink-0">
@@ -540,10 +521,26 @@ const StorefrontPage: React.FC = () => {
                   )}
                 </div>
 
-                {/* Right column on lg: description + CTA (when no specs, or below specs in floating card) */}
+                {/* Right: Technische Daten / Was ist drin? then description then CTA – no overlap with photos */}
                 <div className="lg:w-[320px] xl:w-[360px] shrink-0 flex flex-col border-t lg:border-t-0 lg:border-l border-slate-200 bg-white overflow-y-auto">
+                  {hasSpecs && (
+                    <div className="p-4 sm:p-5 border-b border-slate-200 shrink-0">
+                      <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-lg bg-slate-900 text-white flex items-center justify-center text-[10px]">✓</span>
+                        {specsTitle}
+                      </h4>
+                      <div className="space-y-2">
+                        {orderedSpecKeys(galleryItem.specs!, galleryItem.categoryFields).slice(0, 10).map((key) => (
+                          <div key={key} className="flex justify-between gap-2 text-xs sm:text-sm py-1 border-b border-slate-100 last:border-b-0">
+                            <span className="text-slate-500 font-medium shrink-0">{key}</span>
+                            <span className="text-slate-900 font-semibold text-right truncate" title={String(galleryItem.specs![key])}>{String(galleryItem.specs![key])}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {galleryItem.storeDescription && (
-                    <div className="p-4 sm:p-5 flex-1 min-h-0">
+                    <div className="p-4 sm:p-5 flex-1 min-h-0 overflow-y-auto">
                       <p className="text-sm text-slate-700 whitespace-pre-line leading-relaxed">{galleryItem.storeDescription}</p>
                     </div>
                   )}
