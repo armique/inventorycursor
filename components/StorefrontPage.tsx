@@ -53,6 +53,8 @@ const StorefrontPage: React.FC = () => {
   const [sent, setSent] = useState(false);
   const [sortBy, setSortBy] = useState<'default' | 'priceAsc' | 'priceDesc' | 'nameAsc'>('default');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [galleryItem, setGalleryItem] = useState<StoreItem | null>(null);
+  const [galleryIndex, setGalleryIndex] = useState(0);
 
   useEffect(() => {
     const unsub = subscribeToStoreCatalog((data) => {
@@ -61,6 +63,32 @@ const StorefrontPage: React.FC = () => {
     });
     return () => unsub();
   }, []);
+
+  // Keyboard navigation for gallery
+  useEffect(() => {
+    if (!galleryItem) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setGalleryItem(null);
+      } else if (e.key === 'ArrowLeft') {
+        const galleryImages: string[] = [];
+        if (galleryItem.imageUrl) galleryImages.push(galleryItem.imageUrl);
+        if (galleryItem.storeGalleryUrls?.length) galleryImages.push(...galleryItem.storeGalleryUrls);
+        if (galleryImages.length > 1) {
+          setGalleryIndex((i) => (i - 1 + galleryImages.length) % galleryImages.length);
+        }
+      } else if (e.key === 'ArrowRight') {
+        const galleryImages: string[] = [];
+        if (galleryItem.imageUrl) galleryImages.push(galleryItem.imageUrl);
+        if (galleryItem.storeGalleryUrls?.length) galleryImages.push(...galleryItem.storeGalleryUrls);
+        if (galleryImages.length > 1) {
+          setGalleryIndex((i) => (i + 1) % galleryImages.length);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [galleryItem, galleryIndex]);
 
   const items = useMemo(() => catalog?.items ?? [], [catalog]);
   const categories = useMemo(() => Array.from(new Set(items.map((i) => i.category).filter(Boolean))).sort(), [items]);
@@ -263,13 +291,13 @@ const StorefrontPage: React.FC = () => {
             {viewMode === 'grid' ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
                 {sortedFiltered.map((item) => (
-                  <StoreItemCard key={item.id} item={item} priceDisplay={priceDisplay(item)} texts={TEXTS} onContact={() => openContact(item)} layout="grid" />
+                  <StoreItemCard key={item.id} item={item} priceDisplay={priceDisplay(item)} texts={TEXTS} onContact={() => openContact(item)} onImageClick={() => { setGalleryItem(item); setGalleryIndex(0); }} layout="grid" />
                 ))}
               </div>
             ) : (
               <div className="space-y-3">
                 {sortedFiltered.map((item) => (
-                  <StoreItemCard key={item.id} item={item} priceDisplay={priceDisplay(item)} texts={TEXTS} onContact={() => openContact(item)} layout="list" />
+                  <StoreItemCard key={item.id} item={item} priceDisplay={priceDisplay(item)} texts={TEXTS} onContact={() => openContact(item)} onImageClick={() => { setGalleryItem(item); setGalleryIndex(0); }} layout="list" />
                 ))}
               </div>
             )}
@@ -322,11 +350,103 @@ const StorefrontPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Gallery carousel modal */}
+      {galleryItem && (() => {
+        const galleryImages: string[] = [];
+        if (galleryItem.imageUrl) galleryImages.push(galleryItem.imageUrl);
+        if (galleryItem.storeGalleryUrls?.length) galleryImages.push(...galleryItem.storeGalleryUrls);
+        const hasImages = galleryImages.length > 0;
+        const currentIndex = Math.min(galleryIndex, hasImages ? galleryImages.length - 1 : 0);
+        
+        return (
+          <div 
+            className="fixed inset-0 z-[110] flex items-center justify-center bg-black/90 backdrop-blur-sm" 
+            onClick={() => setGalleryItem(null)}
+          >
+            <div className="relative w-full h-full flex items-center justify-center p-4" onClick={(e) => e.stopPropagation()}>
+              {/* Close button */}
+              <button
+                type="button"
+                onClick={() => setGalleryItem(null)}
+                className="absolute top-4 right-4 z-10 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
+                aria-label="Close gallery"
+              >
+                <X size={24} />
+              </button>
+
+              {/* Image */}
+              {hasImages ? (
+                <>
+                  <img 
+                    src={galleryImages[currentIndex]} 
+                    alt={galleryItem.name} 
+                    className="max-w-full max-h-[90vh] object-contain"
+                  />
+                  
+                  {/* Navigation arrows */}
+                  {galleryImages.length > 1 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setGalleryIndex((i) => (i - 1 + galleryImages.length) % galleryImages.length);
+                        }}
+                        className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
+                        aria-label="Previous image"
+                      >
+                        <ChevronLeft size={24} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setGalleryIndex((i) => (i + 1) % galleryImages.length);
+                        }}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
+                        aria-label="Next image"
+                      >
+                        <ChevronRight size={24} />
+                      </button>
+                      
+                      {/* Dots indicator */}
+                      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
+                        {galleryImages.map((_, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setGalleryIndex(i);
+                            }}
+                            className={`w-2.5 h-2.5 rounded-full transition-colors ${
+                              i === currentIndex ? 'bg-white' : 'bg-white/40 hover:bg-white/60'
+                            }`}
+                            aria-label={`Go to image ${i + 1}`}
+                          />
+                        ))}
+                      </div>
+                      
+                      {/* Image counter */}
+                      <div className="absolute top-4 left-4 px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-sm text-white text-sm font-medium">
+                        {currentIndex + 1} / {galleryImages.length}
+                      </div>
+                    </>
+                  )}
+                </>
+              ) : (
+                <div className="text-white text-lg">No images available</div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
 
-const StoreItemCard: React.FC<{ item: StoreItem; priceDisplay: { value: number; sale: boolean; hasPrice: boolean }; texts: typeof TEXTS; onContact: () => void; layout?: 'grid' | 'list' }> = ({ item, priceDisplay, texts, onContact, layout = 'grid' }) => {
+const StoreItemCard: React.FC<{ item: StoreItem; priceDisplay: { value: number; sale: boolean; hasPrice: boolean }; texts: typeof TEXTS; onContact: () => void; onImageClick: () => void; layout?: 'grid' | 'list' }> = ({ item, priceDisplay, texts, onContact, onImageClick, layout = 'grid' }) => {
   const [galleryIndex, setGalleryIndex] = useState(0);
   const images = useMemo(() => {
     const list: string[] = [];
@@ -375,7 +495,7 @@ const StoreItemCard: React.FC<{ item: StoreItem; priceDisplay: { value: number; 
   if (isList) {
     return (
       <article className="group rounded-2xl bg-white border border-[#eee] overflow-hidden shadow-sm hover:shadow-md hover:border-[#e0e0e0] transition-all flex flex-row">
-        <div className="w-40 sm:w-48 shrink-0 aspect-square bg-[#f5f5f5] overflow-hidden">
+        <div className="w-40 sm:w-48 shrink-0 aspect-square bg-[#f5f5f5] overflow-hidden cursor-pointer" onClick={onImageClick}>
           {images.length > 0 ? (
             <img src={images[galleryIndex]} alt={item.name} className="w-full h-full object-contain" />
           ) : (
@@ -392,19 +512,35 @@ const StoreItemCard: React.FC<{ item: StoreItem; priceDisplay: { value: number; 
   return (
     <article className="group rounded-2xl bg-white border border-[#eee] overflow-hidden shadow-sm hover:shadow-lg hover:border-[#e0e0e0] hover:-translate-y-0.5 transition-all duration-300 flex flex-col">
       {/* Gallery */}
-      <div className="relative aspect-[4/3] bg-[#f5f5f5] overflow-hidden">
+      <div className="relative aspect-[4/3] bg-[#f5f5f5] overflow-hidden cursor-pointer" onClick={onImageClick}>
         {images.length > 0 ? (
           <>
             <img src={images[galleryIndex]} alt={item.name} className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-[1.02]" />
             {images.length > 1 && (
               <>
-                <button type="button" onClick={() => setGalleryIndex((i) => (i - 1 + images.length) % images.length)} className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/95 shadow-md flex items-center justify-center text-[#1a1a1a] hover:bg-white transition-colors" aria-label="Vorheriges Bild">
+                <button 
+                  type="button" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setGalleryIndex((i) => (i - 1 + images.length) % images.length);
+                  }} 
+                  className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/95 shadow-md flex items-center justify-center text-[#1a1a1a] hover:bg-white transition-colors z-10" 
+                  aria-label="Vorheriges Bild"
+                >
                   <ChevronLeft size={20} />
                 </button>
-                <button type="button" onClick={() => setGalleryIndex((i) => (i + 1) % images.length)} className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/95 shadow-md flex items-center justify-center text-[#1a1a1a] hover:bg-white transition-colors" aria-label="Nächstes Bild">
+                <button 
+                  type="button" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setGalleryIndex((i) => (i + 1) % images.length);
+                  }} 
+                  className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/95 shadow-md flex items-center justify-center text-[#1a1a1a] hover:bg-white transition-colors z-10" 
+                  aria-label="Nächstes Bild"
+                >
                   <ChevronRight size={20} />
                 </button>
-                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-10 pointer-events-none">
                   {images.map((_, i) => (
                     <span key={i} className={`w-2 h-2 rounded-full transition-colors ${i === galleryIndex ? 'bg-[#1a1a1a]' : 'bg-white/80'}`} />
                   ))}
@@ -412,7 +548,7 @@ const StoreItemCard: React.FC<{ item: StoreItem; priceDisplay: { value: number; 
               </>
             )}
             {priceDisplay.sale && (
-              <span className="absolute top-3 right-3 px-2.5 py-1 rounded-lg bg-[#c41e3a] text-white text-xs font-bold uppercase tracking-wide shadow">
+              <span className="absolute top-3 right-3 px-2.5 py-1 rounded-lg bg-[#c41e3a] text-white text-xs font-bold uppercase tracking-wide shadow z-10 pointer-events-none">
                 {texts.onSale}
               </span>
             )}
