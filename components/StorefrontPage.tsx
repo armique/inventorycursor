@@ -156,6 +156,12 @@ const StorefrontPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#fafafa] text-[#1a1a1a] antialiased storefront-page" style={{ fontFamily: "'Outfit', system-ui, sans-serif" }}>
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: scale(0.98); }
+          to { opacity: 1; transform: scale(1); }
+        }
+      `}</style>
       {/* Header */}
       <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-[#eee]">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 py-4 flex items-center justify-between">
@@ -361,82 +367,108 @@ const StorefrontPage: React.FC = () => {
         
         return (
           <div 
-            className="fixed inset-0 z-[110] flex items-center justify-center bg-black/90 backdrop-blur-sm" 
+            className="fixed inset-0 z-[110] flex items-center justify-center p-4 sm:p-8 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" 
             onClick={() => setGalleryItem(null)}
           >
-            <div className="relative w-full h-full flex items-center justify-center p-4" onClick={(e) => e.stopPropagation()}>
-              {/* Close button */}
-              <button
-                type="button"
-                onClick={() => setGalleryItem(null)}
-                className="absolute top-4 right-4 z-10 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
-                aria-label="Close gallery"
-              >
-                <X size={24} />
-              </button>
-
-              {/* Image */}
-              {hasImages ? (
-                <>
-                  <img 
-                    src={galleryImages[currentIndex]} 
-                    alt={galleryItem.name} 
-                    className="max-w-full max-h-[90vh] object-contain"
-                  />
-                  
-                  {/* Navigation arrows */}
+            <div 
+              className="relative bg-white rounded-3xl shadow-2xl max-w-5xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200" 
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-[#eee] bg-white/95 backdrop-blur-sm">
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-[#1a1a1a] text-lg truncate">{galleryItem.name}</h3>
                   {galleryImages.length > 1 && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setGalleryIndex((i) => (i - 1 + galleryImages.length) % galleryImages.length);
-                        }}
-                        className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
-                        aria-label="Previous image"
-                      >
-                        <ChevronLeft size={24} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setGalleryIndex((i) => (i + 1) % galleryImages.length);
-                        }}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
-                        aria-label="Next image"
-                      >
-                        <ChevronRight size={24} />
-                      </button>
-                      
-                      {/* Dots indicator */}
-                      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
-                        {galleryImages.map((_, i) => (
-                          <button
-                            key={i}
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setGalleryIndex(i);
-                            }}
-                            className={`w-2.5 h-2.5 rounded-full transition-colors ${
-                              i === currentIndex ? 'bg-white' : 'bg-white/40 hover:bg-white/60'
-                            }`}
-                            aria-label={`Go to image ${i + 1}`}
-                          />
-                        ))}
-                      </div>
-                      
-                      {/* Image counter */}
-                      <div className="absolute top-4 left-4 px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-sm text-white text-sm font-medium">
-                        {currentIndex + 1} / {galleryImages.length}
-                      </div>
-                    </>
+                    <p className="text-sm text-[#666] mt-0.5">
+                      {currentIndex + 1} von {galleryImages.length}
+                    </p>
                   )}
-                </>
-              ) : (
-                <div className="text-white text-lg">No images available</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setGalleryItem(null)}
+                  className="ml-4 p-2 rounded-xl hover:bg-[#f5f5f5] text-[#666] hover:text-[#1a1a1a] transition-colors shrink-0"
+                  aria-label="Close gallery"
+                >
+                  <X size={22} />
+                </button>
+              </div>
+
+              {/* Image container */}
+              <div className="relative flex-1 flex items-center justify-center bg-[#fafafa] min-h-0 p-6 sm:p-8">
+                {hasImages ? (
+                  <>
+                    <div className="relative w-full h-full flex items-center justify-center">
+                      <img 
+                        key={currentIndex}
+                        src={galleryImages[currentIndex]} 
+                        alt={`${galleryItem.name} - Bild ${currentIndex + 1}`}
+                        className="max-w-full max-h-[calc(90vh-200px)] object-contain rounded-lg shadow-lg transition-opacity duration-300"
+                        style={{ animation: 'fadeIn 0.3s ease-in-out' }}
+                      />
+                    </div>
+                    
+                    {/* Navigation arrows */}
+                    {galleryImages.length > 1 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setGalleryIndex((i) => (i - 1 + galleryImages.length) % galleryImages.length);
+                          }}
+                          className="absolute left-4 sm:left-6 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white shadow-lg hover:shadow-xl border border-[#eee] flex items-center justify-center text-[#1a1a1a] hover:bg-[#fafafa] transition-all hover:scale-110"
+                          aria-label="Previous image"
+                        >
+                          <ChevronLeft size={24} strokeWidth={2} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setGalleryIndex((i) => (i + 1) % galleryImages.length);
+                          }}
+                          className="absolute right-4 sm:right-6 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white shadow-lg hover:shadow-xl border border-[#eee] flex items-center justify-center text-[#1a1a1a] hover:bg-[#fafafa] transition-all hover:scale-110"
+                          aria-label="Next image"
+                        >
+                          <ChevronRight size={24} strokeWidth={2} />
+                        </button>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-[#999] text-lg py-12">Keine Bilder verfügbar</div>
+                )}
+              </div>
+
+              {/* Thumbnail strip */}
+              {galleryImages.length > 1 && (
+                <div className="px-6 py-4 border-t border-[#eee] bg-white/95 backdrop-blur-sm">
+                  <div className="flex gap-2 overflow-x-auto scrollbar-thin scrollbar-thumb-[#ddd] scrollbar-track-transparent pb-2">
+                    {galleryImages.map((img, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setGalleryIndex(i);
+                        }}
+                        className={`shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 transition-all ${
+                          i === currentIndex 
+                            ? 'border-[#1a1a1a] ring-2 ring-[#1a1a1a]/20 shadow-md' 
+                            : 'border-[#e5e5e5] hover:border-[#ccc] opacity-60 hover:opacity-100'
+                        }`}
+                        aria-label={`Go to image ${i + 1}`}
+                      >
+                        <img 
+                          src={img} 
+                          alt={`Thumbnail ${i + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           </div>
