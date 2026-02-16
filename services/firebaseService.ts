@@ -168,12 +168,12 @@ export async function uploadItemImage(file: File, itemId: string): Promise<strin
   const path = `items/${user.uid}/${itemId || "unknown"}/${Date.now()}-${safeName}`;
   const ref = storageRef(ctx.storage, path);
 
-  const timeoutMs = 30_000;
+  const timeoutMs = 90_000; // 90s per image (enough for multiple images / slow connections)
   const timeoutPromise = new Promise<never>((_, reject) =>
     setTimeout(() => reject(new Error(
-      "Upload timed out after 30s. Check Firebase Storage rules: they must allow writes for authenticated users. " +
-      "In Firebase Console → Storage → Rules, set:\n" +
-      "  allow read, write: if request.auth != null;"
+      "Upload timed out after 90s. If this happens often, check Firebase Storage rules (separate from Firestore): " +
+      "Firebase Console → Build → Storage → Rules. They must allow writes for signed-in users. " +
+      "Example: allow read, write: if request.auth != null;"
     )), timeoutMs)
   );
 
@@ -185,9 +185,9 @@ export async function uploadItemImage(file: File, itemId: string): Promise<strin
     const msg = err?.message || String(err);
     if (msg.includes("storage/unauthorized") || msg.includes("403") || msg.includes("does not have permission")) {
       throw new Error(
-        "Firebase Storage permission denied. Go to Firebase Console → Storage → Rules and set:\n" +
+        "Firebase Storage permission denied. In Firebase Console go to Build → Storage → Rules (not Firestore) and set:\n" +
         "  allow read, write: if request.auth != null;\n" +
-        "Then try uploading again."
+        "Then deploy rules and try uploading again."
       );
     }
     throw err;
