@@ -740,15 +740,22 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
   };
 
   const handleUploadGalleryImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files || []);
     e.target.value = '';
-    if (!file) return;
+    if (!files.length) return;
     try {
       setUploadingGallery(true);
-      const resized = await resizeImage(file);
-      const enhanced = await enhanceWithAI(resized);
-      const url = await uploadItemImage(enhanced, item.id);
-      setGalleryUrlsText((prev) => (prev ? `${prev}\n${url}` : url));
+      const urls: string[] = [];
+      for (const file of files) {
+        const resized = await resizeImage(file);
+        const enhanced = await enhanceWithAI(resized);
+        const url = await uploadItemImage(enhanced, item.id);
+        urls.push(url);
+      }
+      setGalleryUrlsText((prev) => {
+        const existing = prev ? prev.split(/\r?\n/).map((s) => s.trim()).filter(Boolean) : [];
+        return [...existing, ...urls].join('\n');
+      });
     } catch (err: any) {
       console.error(err);
       alert(err?.message || 'Upload failed. Please try again.');
@@ -842,8 +849,15 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
               />
               <label className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 cursor-pointer shrink-0">
                 <ImageIcon size={14} />
-                {uploadingGallery ? 'Uploading…' : 'Add image'}
-                <input type="file" accept="image/*" className="hidden" onChange={handleUploadGalleryImage} disabled={uploadingGallery} />
+                {uploadingGallery ? 'Uploading…' : 'Add images'}
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={handleUploadGalleryImage}
+                  disabled={uploadingGallery}
+                />
               </label>
             </div>
           </div>
