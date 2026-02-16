@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Eye, EyeOff, Tag, MessageCircle, ExternalLink, Loader2, Check, Mail, Phone, Upload, CheckCircle2, Pencil, X, Image as ImageIcon, Filter, Search as SearchIcon, Wand2, Sparkles } from 'lucide-react';
+import { Eye, EyeOff, Tag, MessageCircle, ExternalLink, Loader2, Check, Mail, Phone, Upload, CheckCircle2, FolderOpen, Pencil, X, Image as ImageIcon, Filter, Search as SearchIcon, Wand2, Sparkles } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
 import { subscribeToStoreInquiries, markStoreInquiryRead, uploadItemImage, isCloudEnabled, getCurrentUser } from '../services/firebaseService';
 import ItemThumbnail from './ItemThumbnail';
@@ -24,9 +24,14 @@ const TEXTS = {
   published: 'Published',
   showOnStore: 'Show',
   hideFromStore: 'Hide',
+  categoriesOnStore: 'Categories on store',
+  categoriesOnStoreNote: 'Choose which categories and subcategories appear on the storefront. Leave all checked to show everything.',
+  showAll: 'Show all',
+  hideAll: 'Hide all',
   priceEur: 'Price €',
   editStoreItem: 'Edit store listing',
   storeDescription: 'Store description',
+  mainImageUrl: 'Main image URL',
   galleryUrls: 'Gallery image URLs (one per line)',
   save: 'Save',
   cancel: 'Cancel',
@@ -36,13 +41,24 @@ interface Props {
   items: InventoryItem[];
   categories: Record<string, string[]>;
   categoryFields: Record<string, string[]>;
+  storeCategoryFilter: StoreCategoryFilter;
+  onStoreCategoryFilterChange: (filter: StoreCategoryFilter) => void;
   onUpdate: (items: InventoryItem[]) => void;
   onPublishCatalog?: () => Promise<void>;
 }
 
 const IN_STOCK = ItemStatus.IN_STOCK;
 
-const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryFields, onUpdate, onPublishCatalog }) => {
+function isSubcategoryShown(filter: StoreCategoryFilter, category: string, subcategory: string): boolean {
+  const rule = filter[category];
+  // Align with storefront: if a category is not configured in the filter at all,
+  // treat it as HIDDEN (only explicitly selected categories/subcategories are shown).
+  if (rule === undefined) return false;
+  if (rule === true) return true;
+  return rule.includes(subcategory);
+}
+
+const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryFields, storeCategoryFilter, onStoreCategoryFilterChange, onUpdate, onPublishCatalog }) => {
   const [inquiries, setInquiries] = useState<({ id: string; itemId: string; itemName: string; message: string; contactEmail?: string; contactPhone?: string; contactName?: string; createdAt: string; read?: boolean })[]>([]);
   const [publishing, setPublishing] = useState(false);
   const [publishedAt, setPublishedAt] = useState<number | null>(null);
@@ -62,8 +78,23 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
     return () => unsub();
   }, []);
 
-  // Show all in-stock items (simple: no category filtering)
-  const storeVisibleItems = items.filter((i) => i.status === IN_STOCK);
+  // Base set: all in-stock items
+  const inStockItems = items.filter((i) => i.status === IN_STOCK);
+
+  // Items whose category/subcategory is enabled in "Categories on store"
+  const enabledByCategory = inStockItems.filter((i) => {
+    if (i.status !== IN_STOCK) return false;
+    const cat = i.category;
+    if (!cat) return false;
+    const sub = i.subCategory || '';
+    const subs = categories[cat] || [];
+    // If category has no configured subcategories, treat as visible by default.
+    if (subs.length === 0) return true;
+    return isSubcategoryShown(storeCategoryFilter, cat, sub);
+  });
+
+  // Items actually shown in the main table (respecting category visibility)
+  const storeVisibleItems = enabledByCategory;
   const setVisibility = (item: InventoryItem, visible: boolean) => {
     const next = items.map((it) => (it.id === item.id ? { ...it, storeVisible: visible } : it));
     onUpdate(next);
@@ -91,7 +122,49 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
 
   const unreadCount = inquiries.filter((i) => !i.read).length;
 
-  const totalInStock = storeVisibleItems.length;
+  // Categories used in the UI: merge configured categories with actual in-stock item categories
+  const categoryEntries = useMemo(() => {
+    const merged: Record<string, string[]> = { ...(categories || {}) };
+    inStockItems.forEach((item) => {
+      if (item.category && !merged[item.category]) {
+        merged[item.category] = [];
+      }
+    });
+    return Object.entries(merged).filter(([cat]) => cat && cat !== 'Unknown');
+  }, [categories, inStockItems]);
+  const toggleCategorySubcategory = (category: string, subcategory: string, show: boolean) => {
+    const subs = categories[category] || [];
+    let next: true | string[];
+    if (show) {
+      const arr = Array.from(new Set([...(Array.isArray(storeCategoryFilter[category]) ? storeCategoryFilter[category] : []), subcategory]));
+      next = arr.length === subs.length ? true : arr;
+    } else {
+      const arr = storeCategoryFilter[category] === true
+        ? subs.filter((s) => s !== subcategory)
+        : (Array.isArray(storeCategoryFilter[category]) ? storeCategoryFilter[category].filter((s) => s !== subcategory) : []);
+      next = arr;
+    }
+    onStoreCategoryFilterChange({ ...storeCategoryFilter, [category]: next });
+  };
+  const setCategoryAll = (category: string, show: boolean) => {
+    // Update category visibility filter
+    const nextFilter: StoreCategoryFilter = {
+      ...storeCategoryFilter,
+      [category]: show ? true : [],
+    };
+    onStoreCategoryFilterChange(nextFilter);
+
+    // Also update storeVisible flag for all in-stock items in this category so that
+    // "Show all" / "Hide all" has an immediate effect on what is considered visible.
+    const nextItems = items.map((it) =>
+      it.status === IN_STOCK && it.category === category
+        ? { ...it, storeVisible: show }
+        : it
+    );
+    onUpdate(nextItems);
+  };
+
+  const totalInStock = inStockItems.length;
   const visibleCount = storeVisibleItems.filter((i) => i.storeVisible !== false).length;
   const onSaleCount = storeVisibleItems.filter((i) => i.storeVisible !== false && i.storeOnSale).length;
 
@@ -100,6 +173,21 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
   const [saleFilter, setSaleFilter] = useState<'all' | 'sale' | 'regular'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'recent' | 'priceAsc' | 'priceDesc' | 'nameAsc'>('recent');
+
+  const hideAllCategories = () => {
+    const nextFilter: StoreCategoryFilter = {};
+    Object.keys(categories || {}).forEach((cat) => {
+      if (!cat || cat === 'Unknown') return;
+      nextFilter[cat] = [];
+    });
+    onStoreCategoryFilterChange(nextFilter);
+
+    // Also mark all currently in-stock items as not visible on store for clarity.
+    const nextItems = items.map((it) =>
+      it.status === IN_STOCK ? { ...it, storeVisible: false } : it
+    );
+    onUpdate(nextItems);
+  };
 
   const filteredItems = storeVisibleItems
     .filter((item) => {
@@ -183,6 +271,14 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
                     className="pl-8 pr-3 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-700 bg-slate-50 focus:bg-white outline-none focus:ring-2 focus:ring-slate-900/10"
                   />
                 </div>
+                <button
+                  type="button"
+                  onClick={hideAllCategories}
+                  className="px-3 py-2 rounded-xl border border-slate-200 text-[11px] font-bold text-slate-600 bg-white hover:bg-slate-50"
+                  title="Hide all categories from store"
+                >
+                  Hide all
+                </button>
                 <select
                   value={categoryFilter}
                   onChange={(e) => setCategoryFilter(e.target.value)}
@@ -391,8 +487,64 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
           </div>
         </div>
 
-        {/* RIGHT: Inquiries */}
+        {/* RIGHT: Categories + Inquiries */}
         <div className="w-full lg:w-96 space-y-4">
+          <section className="bg-white border border-slate-200 rounded-3xl shadow-sm p-5">
+            <h2 className="text-sm font-black text-slate-900 mb-1 flex items-center gap-2 uppercase tracking-widest">
+              <FolderOpen size={16} /> {TEXTS.categoriesOnStore}
+            </h2>
+            <p className="text-xs text-slate-500 mb-4">{TEXTS.categoriesOnStoreNote}</p>
+            <div className="space-y-3 max-h-[260px] overflow-y-auto pr-1">
+              {categoryEntries.length === 0 ? (
+                <p className="text-xs text-slate-500">No categories defined. Add categories in Settings or when adding items.</p>
+              ) : (
+                categoryEntries.map(([category, subcategories]) => (
+                  <div key={category} className="border border-slate-200 rounded-2xl overflow-hidden">
+                    <div className="px-3 py-2 flex items-center justify-between bg-slate-50">
+                      <span className="text-xs font-semibold text-slate-800">{category}</span>
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setCategoryAll(category, true)}
+                          className="text-[10px] font-bold text-emerald-600 hover:text-emerald-800 px-2 py-1 rounded-lg hover:bg-emerald-50"
+                        >
+                          {TEXTS.showAll}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCategoryAll(category, false)}
+                          className="text-[10px] font-bold text-slate-500 hover:text-slate-700 px-2 py-1 rounded-lg hover:bg-slate-100"
+                        >
+                          {TEXTS.hideAll}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="px-3 py-2 space-y-1">
+                      {subcategories.length === 0 ? (
+                        <p className="text-[11px] text-slate-500">No subcategories</p>
+                      ) : (
+                        subcategories.map((sub) => {
+                          const shown = isSubcategoryShown(storeCategoryFilter, category, sub);
+                          return (
+                            <label key={`${category}:${sub}`} className="flex items-center gap-2 text-[11px] text-slate-700 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={shown}
+                                onChange={() => toggleCategorySubcategory(category, sub, !shown)}
+                                className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                              />
+                              <span>{sub}</span>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+
           <section className="bg-white border border-slate-200 rounded-3xl shadow-sm p-5">
             <h2 className="text-sm font-black text-slate-900 mb-1 flex items-center gap-2 uppercase tracking-widest">
               <MessageCircle size={16} /> {TEXTS.inquiries}
@@ -479,11 +631,14 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
   const [sellPrice, setSellPriceState] = useState<string>(item.sellPrice != null ? String(item.sellPrice) : '');
   const [storeOnSale, setStoreOnSale] = useState(!!item.storeOnSale);
   const [storeSalePrice, setStoreSalePriceState] = useState<string>(item.storeSalePrice != null ? String(item.storeSalePrice) : '');
+  const [storeVisible, setStoreVisible] = useState<boolean>(item.storeVisible !== false);
+  const [imageUrl, setImageUrl] = useState(item.imageUrl ?? '');
   const [galleryUrlsText, setGalleryUrlsText] = useState((item.storeGalleryUrls ?? []).join('\n'));
+  const [uploadingMain, setUploadingMain] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState(false);
   const [galleryProgress, setGalleryProgress] = useState<string | null>(null);
   const [pendingGalleryFiles, setPendingGalleryFiles] = useState<File[]>([]);
-  const [removingBackground, setRemovingBackground] = useState<number | null>(null);
+  const [removeBackgroundOnUpload, setRemoveBackgroundOnUpload] = useState(false);
   const cloudReady = typeof window !== 'undefined' && isCloudEnabled() && !!getCurrentUser();
 
   const resizeImage = (file: File, maxSize = 1600, quality = 0.8): Promise<File> => {
@@ -524,103 +679,32 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
     });
   };
 
+  const handleUploadMainImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!cloudReady) {
+      alert('To upload images, first enable Cloud sync and sign in with Google in Settings (top-right).');
+      return;
+    }
+    try {
+      setUploadingMain(true);
+      const resized = await resizeImage(file);
+      const url = await uploadItemImage(resized, item.id);
+      setImageUrl(url);
+    } catch (err: any) {
+      console.error(err);
+      alert(err?.message || 'Upload failed. Please try again.');
+    } finally {
+      setUploadingMain(false);
+    }
+  };
+
   const handleSelectGalleryFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     e.target.value = '';
     setPendingGalleryFiles(files);
     setGalleryProgress(files.length ? `${files.length} selected` : null);
-  };
-
-  const handleRemoveBackground = async (imageUrl: string, imageIndex: number) => {
-    if (!cloudReady) {
-      alert('To remove backgrounds, first enable Cloud sync and sign in with Google in Settings (top-right).');
-      return;
-    }
-    
-    try {
-      setRemovingBackground(imageIndex);
-      
-      // Fetch the image with better error handling and CORS support
-      let blob: Blob;
-      
-      // Handle data URLs (base64 images)
-      if (imageUrl.startsWith('data:')) {
-        const response = await fetch(imageUrl);
-        blob = await response.blob();
-      } else {
-        try {
-          const response = await fetch(imageUrl, {
-            mode: 'cors',
-            credentials: 'omit',
-          });
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-          }
-          blob = await response.blob();
-        } catch (fetchError: any) {
-          // Fallback: use image element to load and convert to blob
-          console.warn('Direct fetch failed, trying image element method:', fetchError);
-          blob = await new Promise<Blob>((resolve, reject) => {
-            const img = new Image();
-            img.crossOrigin = 'anonymous';
-            img.onload = () => {
-              const canvas = document.createElement('canvas');
-              canvas.width = img.width;
-              canvas.height = img.height;
-              const ctx = canvas.getContext('2d');
-              if (!ctx) {
-                reject(new Error('Canvas context not available'));
-                return;
-              }
-              ctx.drawImage(img, 0, 0);
-              canvas.toBlob((blob) => {
-                if (blob) {
-                  resolve(blob);
-                } else {
-                  reject(new Error('Failed to convert image to blob'));
-                }
-              }, 'image/png');
-            };
-            img.onerror = () => {
-              reject(new Error(`Failed to load image from ${imageUrl}. This might be a CORS issue or the image URL is invalid.`));
-            };
-            img.src = imageUrl;
-          });
-        }
-      }
-      
-      if (!blob || blob.size === 0) {
-        throw new Error('Image blob is empty or invalid');
-      }
-      
-      // Dynamically import and remove background using @imgly/background-removal
-      const { removeBackground: removeBg } = await import('@imgly/background-removal');
-      const processedBlob = await removeBg(blob);
-      
-      // Convert blob to File
-      const file = new File([processedBlob], `bg-removed-${Date.now()}.png`, { type: 'image/png' });
-      
-      // Resize if needed
-      const resized = await resizeImage(file, 1600, 0.9);
-      
-      // Upload to Firebase Storage
-      const newUrl = await uploadItemImage(resized, item.id);
-      
-      // Replace the URL in the gallery
-      const urls = galleryUrlsText
-        .split(/\r?\n/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-      urls[imageIndex] = newUrl;
-      setGalleryUrlsText(urls.join('\n'));
-      
-    } catch (err: any) {
-      console.error('Background removal failed:', err);
-      const errorMsg = err?.message || 'Failed to remove background';
-      alert(`${errorMsg}\n\nIf this persists, try:\n1. Check your internet connection\n2. Verify the image URL is accessible\n3. Try uploading the image again`);
-    } finally {
-      setRemovingBackground(null);
-    }
   };
 
   const handleConfirmGalleryUpload = async () => {
@@ -633,18 +717,43 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
       setUploadingGallery(true);
       setGalleryProgress(`0 / ${pendingGalleryFiles.length}`);
       const urls: string[] = [];
+      
+      // Dynamically import background removal if needed
+      let removeBg: ((image: Blob | File) => Promise<Blob>) | null = null;
+      if (removeBackgroundOnUpload) {
+        const bgRemovalModule = await import('@imgly/background-removal');
+        removeBg = bgRemovalModule.removeBackground;
+      }
+      
       for (let idx = 0; idx < pendingGalleryFiles.length; idx++) {
-        const file = pendingGalleryFiles[idx];
-        const resized = await resizeImage(file);
+        let file = pendingGalleryFiles[idx];
+        
+        // Remove background if enabled (process BEFORE upload to avoid CORS)
+        if (removeBg) {
+          try {
+            setGalleryProgress(`Removing background ${idx + 1} / ${pendingGalleryFiles.length}...`);
+            const processedBlob = await removeBg(file);
+            file = new File([processedBlob], `bg-removed-${Date.now()}-${file.name}`, { type: 'image/png' });
+          } catch (bgErr: any) {
+            console.warn('Background removal failed for one image, continuing with original:', bgErr);
+            // Continue with original file if background removal fails
+          }
+        }
+        
+        // Resize and upload
+        setGalleryProgress(`Uploading ${idx + 1} / ${pendingGalleryFiles.length}...`);
+        const resized = await resizeImage(file, 1600, 0.9);
         const url = await uploadItemImage(resized, item.id);
         urls.push(url);
         setGalleryProgress(`${idx + 1} / ${pendingGalleryFiles.length}`);
       }
+      
       setGalleryUrlsText((prev) => {
         const existing = prev ? prev.split(/\r?\n/).map((s) => s.trim()).filter(Boolean) : [];
         return [...existing, ...urls].join('\n');
       });
       setPendingGalleryFiles([]);
+      setRemoveBackgroundOnUpload(false); // Reset after upload
     } catch (err: any) {
       console.error(err);
       alert(err?.message || 'Upload failed. Please try again.');
@@ -655,30 +764,25 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
   };
 
   const handleSave = () => {
-    const galleryUrls = galleryUrlsText.trim()
-      ? galleryUrlsText
-          .trim()
-          .split(/\r?\n/)
-          .map((s) => s.trim())
-          .filter(Boolean)
-      : undefined;
-
+    const galleryUrls = galleryUrlsText.trim() ? galleryUrlsText.trim().split(/\r?\n/).map((s) => s.trim()).filter(Boolean) : undefined;
     onSave({
       name: name.trim() || item.name,
       storeDescription: storeDescription.trim() || undefined,
       sellPrice: sellPrice === '' ? undefined : parseFloat(sellPrice) || undefined,
+      storeVisible,
       storeOnSale,
       storeSalePrice: storeSalePrice === '' ? undefined : parseFloat(storeSalePrice) || undefined,
-      // Use first gallery image as the main image for item cards
-      imageUrl: galleryUrls && galleryUrls.length > 0 ? galleryUrls[0] : undefined,
+      imageUrl: imageUrl.trim() || undefined,
       storeGalleryUrls: galleryUrls?.length ? galleryUrls : undefined,
     });
   };
 
   return (
-    <div className="fixed inset-0 z-[250] flex justify-end" aria-modal="true">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative w-full max-w-md bg-white shadow-xl flex flex-col max-h-full overflow-hidden">
+    <div className="fixed inset-0 z-50 flex justify-end" aria-modal="true">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/40 z-0" onClick={onClose} />
+      {/* Slide-over panel */}
+      <div className="relative z-10 w-full max-w-md bg-white shadow-xl flex flex-col max-h-full overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
           <h3 className="font-semibold text-slate-900">{texts.editStoreItem}</h3>
           <button type="button" onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 text-slate-600">
@@ -686,6 +790,26 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
           </button>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Visibility</p>
+              <p className="text-[11px] text-slate-500">
+                {storeVisible ? 'This item is visible on the storefront.' : 'This item is hidden from the storefront.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setStoreVisible((v) => !v)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold ${
+                storeVisible
+                  ? 'bg-emerald-100 text-emerald-800'
+                  : 'bg-slate-100 text-slate-600'
+              }`}
+            >
+              {storeVisible ? <Eye size={12} /> : <EyeOff size={12} />}
+              {storeVisible ? texts.visible : texts.hidden}
+            </button>
+          </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">Name</label>
             <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400" />
@@ -713,6 +837,28 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
               <input type="number" min={0} step={0.01} value={storeSalePrice} onChange={(e) => setStoreSalePriceState(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400" />
             </div>
           )}
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{texts.mainImageUrl}</label>
+            <div className="flex items-center gap-2 mb-2">
+              <input
+                type="url"
+                value={imageUrl}
+                onChange={(e) => setImageUrl(e.target.value)}
+                placeholder="https://…"
+                className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400"
+              />
+              <label className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 cursor-pointer">
+                <Upload size={14} />
+                {uploadingMain ? 'Uploading…' : 'Upload'}
+                <input type="file" accept="image/*" className="hidden" onChange={handleUploadMainImage} disabled={uploadingMain} />
+              </label>
+            </div>
+            {imageUrl && (
+              <div className="mt-2 rounded-lg border border-slate-200 overflow-hidden bg-slate-50 aspect-video flex items-center justify-center">
+                <img src={imageUrl} alt="" className="max-w-full max-h-full object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+              </div>
+            )}
+          </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">{texts.galleryUrls}</label>
             <div className="flex items-start gap-2">
@@ -752,24 +898,6 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
                             >
                               <X size={10} />
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveBackground(url, idx)}
-                              disabled={removingBackground === idx}
-                              className={`rounded-full p-0.5 transition-all ${
-                                removingBackground === idx
-                                  ? 'bg-blue-500/80 text-white'
-                                  : 'bg-white/80 text-slate-800 hover:bg-blue-50 hover:text-blue-600'
-                              }`}
-                              aria-label="Remove background"
-                              title="Remove background"
-                            >
-                              {removingBackground === idx ? (
-                                <Loader2 size={10} className="animate-spin" />
-                              ) : (
-                                <Sparkles size={10} />
-                              )}
-                            </button>
                           </div>
                         </div>
                       ))}
@@ -790,24 +918,37 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, t
                   />
                 </label>
                 {pendingGalleryFiles.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleConfirmGalleryUpload}
-                    disabled={uploadingGallery}
-                    className="px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 disabled:opacity-50"
-                  >
-                    {uploadingGallery ? galleryProgress || 'Uploading…' : `Start upload (${pendingGalleryFiles.length})`}
-                  </button>
+                  <>
+                    <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={removeBackgroundOnUpload}
+                        onChange={(e) => setRemoveBackgroundOnUpload(e.target.checked)}
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        disabled={uploadingGallery}
+                      />
+                      <Sparkles size={12} />
+                      <span>Remove background</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleConfirmGalleryUpload}
+                      disabled={uploadingGallery}
+                      className="px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 disabled:opacity-50"
+                    >
+                      {uploadingGallery ? galleryProgress || 'Uploading…' : `Start upload (${pendingGalleryFiles.length})`}
+                    </button>
+                  </>
                 )}
               </div>
             </div>
           </div>
         </div>
-        <div className="flex gap-2 px-4 py-3 pb-6 md:pb-3 border-t border-slate-200 bg-slate-50 shrink-0">
-          <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-sm font-medium hover:bg-slate-100 active:bg-slate-200">
+        <div className="flex gap-2 px-4 py-3 border-t border-slate-200 bg-slate-50">
+          <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-sm font-medium hover:bg-slate-100">
             {texts.cancel}
           </button>
-          <button type="button" onClick={handleSave} className="flex-1 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 active:bg-slate-700">
+          <button type="button" onClick={handleSave} className="flex-1 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800">
             {texts.save}
           </button>
         </div>
