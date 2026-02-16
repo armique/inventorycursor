@@ -563,22 +563,37 @@ async function getRawTextFromAI(prompt: string, maxTokens: number = DEFAULT_TEXT
 }
 
 /**
- * Generate a structured, styled store item description in German (emoji sections, bullets, Lieferumfang, Zustand).
+ * Generate a structured, eye-catching store item description in German with emojis throughout.
  * Once set, it stays until the user clicks "Generate description" again or edits manually.
  */
 export async function generateStoreDescription(itemName: string, existingContext?: string): Promise<string> {
   const context = existingContext?.trim() ? `\nExisting description or notes (you may use as inspiration):\n${existingContext}` : '';
-  const prompt = `Write a product description in German for an online store listing. Use this exact structure and style (plain text, no markdown):
+  const prompt = `You MUST write a product description in German for an online store. It MUST be eye-catching by using EMOJIS throughout – every section header and key line should start with or include an emoji. No plain text without emojis for headers.
 
-1) First line: one emoji (e.g. 💻 🔧 🖥) followed by a short catchy title including the product name (e.g. "Starkes Budget-Gaming Aufrüstkit – AMD FX-8350 (8-Kern CPU)").
+RULES:
+- Use ONLY plain text and newlines. No markdown (no ** or # or bullets).
+- Every section title MUST begin with an emoji. Be generous with emojis so the listing stands out.
 
-2) Empty line, then 1–2 short intro paragraphs (e.g. "Zum Verkauf steht ein komplettes AM3+ Aufrüst-Bundle. Der AMD FX-8350 war...").
+STRUCTURE (follow this closely):
 
-3) Section "🔧 Technische Daten" with subsections like "🧠 CPU:", "🖥 Mainboard:", "🧩 RAM:" and under each a few short lines or bullet-style lines (no markdown, just newlines). Use relevant emojis per component.
+1) First line: EMOJI + catchy title with product name.
+   Example: "💻 Starkes Budget-Gaming Aufrüstkit – AMD FX-8350 (8-Kern CPU)"
 
-4) Optional: "📥 Support & Downloads" with links if relevant, or "📦 Lieferumfang" listing what is included, "❌ Ohne OVP & Zubehör", "🧪 Zustand" (e.g. Gebraucht, Voll funktionsfähig). Adapt sections to the product.
+2) Empty line, then 1–2 short intro paragraphs (can add a small emoji at the start if it fits).
 
-Use only plain text and newlines. No markdown (no ** or #). Use emojis for section headers. Output only the German text.
+3) Section with emoji: "🔧 Technische Daten"
+   Then subsections each with an emoji, e.g.:
+   "🧠 CPU: AMD FX-8350"
+   "   8 Kerne / 8 Threads"
+   "   4,0 GHz Basistakt / bis 4,2 GHz Turbo"
+   "🖥 Mainboard: ASUS M5A78L-M LE (Sockel AM3+)"
+   "🧩 RAM: 8GB (2×4GB) G.Skill DDR3 1600MHz"
+
+4) More sections with emojis: "📦 Lieferumfang", "❌ Ohne OVP & Zubehör", "🧪 Zustand" (e.g. Gebraucht, Voll funktionsfähig). Use 📥 for Support/Downloads if relevant.
+
+Suggested emojis: 💻🖥🔧🧠🧩📦❌🧪📥⚡🎮🛒✔️
+
+Output ONLY the German text with emojis. No explanation.
 
 Product name: "${itemName}"${context}`;
   const text = await getRawTextFromAI(prompt, STORE_DESCRIPTION_MAX_TOKENS);
