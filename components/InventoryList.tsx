@@ -50,7 +50,7 @@ interface SortConfig {
 const DEFAULT_WIDTHS: Record<string, number> = {
   select: 50,
   item: 260,
-  presence: 70,
+  presence: 80,
   parseSpecs: 120,
   category: 160,
   status: 120,
@@ -946,7 +946,7 @@ const InventoryList: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => togglePresence(item)}
-                className={`h-7 w-7 flex items-center justify-center rounded-xl border transition-colors ${
+                className={`h-8 w-8 flex items-center justify-center rounded-xl border transition-colors ${
                   item.presence === 'present'
                     ? 'border-emerald-300 bg-emerald-50'
                   : item.presence === 'lost'
@@ -962,7 +962,7 @@ const InventoryList: React.FC<Props> = ({
                 }
               >
                 <span
-                  className={`w-2.5 h-2.5 rounded-full ${
+                  className={`w-3 h-3 rounded-full ${
                     item.presence === 'present'
                       ? 'bg-emerald-500'
                       : item.presence === 'lost'
@@ -976,7 +976,7 @@ const InventoryList: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => toggleDefective(item)}
-                className={`h-7 w-7 flex items-center justify-center rounded-xl text-[10px] font-bold transition-colors ${
+                className={`h-8 w-8 flex items-center justify-center rounded-xl text-[11px] font-bold transition-colors ${
                   item.isDefective
                     ? 'bg-red-100 text-red-700'
                     : 'bg-slate-100 text-slate-500 hover:bg-amber-50 hover:text-amber-700'
@@ -994,7 +994,7 @@ const InventoryList: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => toggleListedKleinanzeigen(item)}
-                className={`h-7 w-7 flex items-center justify-center rounded-xl border text-emerald-700 ${
+                className={`h-8 w-8 flex items-center justify-center rounded-xl border text-emerald-700 ${
                   item.listedOnKleinanzeigen
                     ? 'border-emerald-200 bg-emerald-50'
                     : 'border-emerald-200 bg-white'
@@ -1006,7 +1006,7 @@ const InventoryList: React.FC<Props> = ({
                 }
               >
                 <span
-                  className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black ${
+                  className={`w-4.5 h-4.5 rounded-full flex items-center justify-center text-[9px] font-black ${
                     item.listedOnKleinanzeigen ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-emerald-700'
                   }`}
                 >
@@ -1018,7 +1018,7 @@ const InventoryList: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => toggleListedEbay(item)}
-                className={`h-7 w-7 flex items-center justify-center rounded-xl border text-blue-700 ${
+                className={`h-8 w-8 flex items-center justify-center rounded-xl border text-blue-700 ${
                   item.listedOnEbay
                     ? 'border-blue-200 bg-blue-50'
                     : 'border-blue-200 bg-white'
