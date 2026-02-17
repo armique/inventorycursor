@@ -15,6 +15,7 @@ import TradeModal from './TradeModal';
 import CrossPostingModal from './CrossPostingModal';
 import RetroBundleModal from './RetroBundleModal';
 import EditItemModal from './EditItemModal';
+import ItemForm from './ItemForm';
 import ItemThumbnail from './ItemThumbnail';
 import InventoryAISpecsPanel from './InventoryAISpecsPanel';
 import { generateItemSpecs } from '../services/specsAI';
@@ -197,6 +198,7 @@ const InventoryList: React.FC<Props> = ({
   const [bulkGenerateProgress, setBulkGenerateProgress] = useState<string | null>(null);
   const [showRetroBundle, setShowRetroBundle] = useState(false);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [showNewItemModal, setShowNewItemModal] = useState(false);
 
   // --- INVENTORY PRESENCE (PRESENT / LOST) ---
   const togglePresence = (item: InventoryItem) => {
@@ -1452,9 +1454,20 @@ const InventoryList: React.FC<Props> = ({
                   </div>
                )}
             </div>
-            <div className="flex gap-1">
-               <button onClick={onUndo} disabled={!canUndo} className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-900 disabled:opacity-50" title="Undo"><RotateCcw size={14} /></button>
-               <button onClick={onRedo} disabled={!canRedo} className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-900 disabled:opacity-50" title="Redo"><RotateCw size={14} /></button>
+            <div className="flex items-center gap-2">
+               <div className="flex gap-1">
+                 <button onClick={onUndo} disabled={!canUndo} className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-900 disabled:opacity-50" title="Undo"><RotateCcw size={14} /></button>
+                 <button onClick={onRedo} disabled={!canRedo} className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-900 disabled:opacity-50" title="Redo"><RotateCw size={14} /></button>
+               </div>
+               <button
+                 type="button"
+                 onClick={() => setShowNewItemModal(true)}
+                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-emerald-700 transition-colors"
+                 title="Add new inventory item (opens modal)"
+               >
+                 <Plus size={14} />
+                 <span>Add Item</span>
+               </button>
             </div>
             {hasActiveFilters && (
                <button type="button" onClick={clearAllFilters} className="text-[10px] font-bold uppercase text-slate-500 hover:text-red-600">Reset all</button>
@@ -1748,6 +1761,32 @@ const InventoryList: React.FC<Props> = ({
             categoryFields={categoryFields} // Pass prop
             onAddCategory={() => {}} 
          />
+      )}
+
+      {showNewItemModal && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in">
+          <div className="bg-slate-50 w-full max-w-6xl rounded-[3rem] shadow-2xl border border-white/20 overflow-hidden flex flex-col h-[90vh] relative">
+            <button
+              onClick={() => setShowNewItemModal(false)}
+              className="absolute top-6 right-6 z-50 p-2 bg-white rounded-full shadow-lg text-slate-400 hover:text-slate-900 hover:scale-110 transition-all"
+            >
+              <X size={20} />
+            </button>
+            <div className="flex-1 overflow-hidden p-8">
+              <ItemForm
+                items={items}
+                onSave={(created) => {
+                  onUpdate(created);
+                  setShowNewItemModal(false);
+                }}
+                categories={categories}
+                categoryFields={categoryFields}
+                onAddCategory={() => {}}
+                isModal={true}
+              />
+            </div>
+          </div>
+        </div>
       )}
 
       {showRetroBundle && (
