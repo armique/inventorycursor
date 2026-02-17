@@ -195,6 +195,26 @@ const InventoryList: React.FC<Props> = ({
   const [showRetroBundle, setShowRetroBundle] = useState(false);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
+  // --- INVENTORY PRESENCE (PRESENT / LOST) ---
+  const togglePresence = (item: InventoryItem) => {
+    let next: 'present' | 'lost' | undefined;
+    if (!item.presence) {
+      next = 'present';
+    } else if (item.presence === 'present') {
+      next = 'lost';
+    } else {
+      // 'lost' -> back to unknown (unset)
+      next = undefined;
+    }
+    const updated: InventoryItem = { ...item };
+    if (next) {
+      updated.presence = next;
+    } else {
+      delete (updated as any).presence;
+    }
+    onUpdate([updated]);
+  };
+
   // -- VIRTUALIZATION / PERFORMANCE --
   const [visibleCount, setVisibleCount] = useState(50);
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -836,6 +856,36 @@ const InventoryList: React.FC<Props> = ({
                       {(item.isPC || item.isBundle) && childItems.length > 0 && (
                          <span className="text-[9px] text-slate-500 font-medium">({childItems.length} items)</span>
                       )}
+                      {/* Inventory presence (Present / Lost / Unknown) */}
+                      <button
+                         type="button"
+                         onClick={(e) => { e.stopPropagation(); togglePresence(item); }}
+                         className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold uppercase tracking-wide ${
+                           item.presence === 'present'
+                             ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                             : item.presence === 'lost'
+                             ? 'border-red-300 bg-red-50 text-red-700'
+                             : 'border-slate-200 bg-slate-50 text-slate-500'
+                         }`}
+                         title={
+                           item.presence === 'present'
+                             ? 'Marked as present. Click to mark as lost.'
+                             : item.presence === 'lost'
+                             ? 'Marked as lost. Click to clear / unknown.'
+                             : 'Not checked. Click to mark as present.'
+                         }
+                      >
+                         {item.presence === 'present' && <CheckCircle2 size={9} />}
+                         {item.presence === 'lost' && <XCircle size={9} />}
+                         {!item.presence && <Clock size={9} />}
+                         <span>
+                           {item.presence === 'present'
+                             ? 'Present'
+                             : item.presence === 'lost'
+                             ? 'Lost'
+                             : 'Not checked'}
+                         </span>
+                      </button>
                    </div>
                    {item.specs && Object.keys(item.specs).length > 0 && (
                       <p className="text-[10px] text-slate-500 font-medium mt-1 truncate" title={Object.entries(item.specs).map(([k, v]) => `${k}: ${v}`).join(' • ')}>

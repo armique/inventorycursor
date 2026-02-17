@@ -133,6 +133,14 @@ export interface InventoryItem {
   // Workflow Pipeline
   workflowStage?: WorkflowStage;
 
+  /**
+   * Physical inventory check status.
+   * - undefined = not checked / unknown
+   * - 'present' = physically confirmed in stock
+   * - 'lost' = currently missing / not found
+   */
+  presence?: 'present' | 'lost';
+
   /** Price and sale history: changes to buy/sell price over time. */
   priceHistory?: PriceHistoryEntry[];
 
