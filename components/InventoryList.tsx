@@ -941,17 +941,17 @@ const InventoryList: React.FC<Props> = ({
       case 'presence':
         return (
           <td key={id} className="p-5 text-center" style={style} onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-center gap-1">
+            <div className="flex items-center justify-center gap-1.5">
               {/* Physical presence: present / lost / unknown */}
               <button
                 type="button"
                 onClick={() => togglePresence(item)}
-                className={`h-7 w-7 flex items-center justify-center rounded-xl border text-[10px] font-bold ${
+                className={`h-7 w-7 flex items-center justify-center rounded-xl text-[10px] font-bold transition-colors ${
                   item.presence === 'present'
-                    ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
+                    ? 'bg-emerald-100 text-emerald-700'
                     : item.presence === 'lost'
-                    ? 'border-red-400 bg-red-50 text-red-700'
-                    : 'border-slate-200 bg-slate-50 text-slate-500'
+                    ? 'bg-red-100 text-red-700'
+                    : 'bg-slate-100 text-slate-500'
                 }`}
                 title={
                   item.presence === 'present'
@@ -961,17 +961,23 @@ const InventoryList: React.FC<Props> = ({
                     : 'Not checked (click to mark as present)'
                 }
               >
-                {item.presence === 'present' ? '+' : item.presence === 'lost' ? '−' : '·'}
+                {item.presence === 'present' ? (
+                  <Check size={13} />
+                ) : item.presence === 'lost' ? (
+                  <X size={13} />
+                ) : (
+                  '·'
+                )}
               </button>
 
               {/* Condition: working / defective */}
               <button
                 type="button"
                 onClick={() => toggleDefective(item)}
-                className={`h-7 w-7 flex items-center justify-center rounded-xl border text-[10px] font-bold ${
+                className={`h-7 w-7 flex items-center justify-center rounded-xl text-[10px] font-bold transition-colors ${
                   item.isDefective
-                    ? 'border-red-400 bg-red-50 text-red-700'
-                    : 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                    ? 'bg-red-100 text-red-700'
+                    : 'bg-slate-100 text-slate-500 hover:bg-amber-50 hover:text-amber-700'
                 }`}
                 title={
                   item.isDefective
@@ -979,7 +985,7 @@ const InventoryList: React.FC<Props> = ({
                     : 'Working / OK (click to mark as defective)'
                 }
               >
-                {item.isDefective ? '!' : '✓'}
+                {item.isDefective ? <AlertCircle size={13} /> : <Wrench size={13} />}
               </button>
 
               {/* Listed on Kleinanzeigen (same style as Parse K icon) */}
