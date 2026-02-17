@@ -600,6 +600,69 @@ Product name: "${itemName}"${context}`;
   return text.replace(/^["']|["']$/g, '').trim();
 }
 
+// --- Price suggestion from eBay sold listings ---
+
+export interface SoldPriceSuggestion {
+  priceLow: number;
+  priceHigh: number;
+  priceAverage: number;
+  reasoning: string;
+  soldExamples: { title: string; price: number }[];
+}
+
+/**
+ * Ask AI to estimate a sell price based on eBay.de "Verkaufte Artikel" (sold items filter).
+ * Uses the same multi-provider AI as specs/descriptions so it works with Groq, Gemini, OpenAI, etc.
+ */
+export async function suggestPriceFromSoldListings(itemName: string): Promise<SoldPriceSuggestion> {
+  const prompt = `You are a pricing expert for used electronics on eBay.de (Germany).
+
+I need a realistic sell price for: "${itemName}" (condition: used / gebraucht).
+
+IMPORTANT RULES:
+1. Base your estimate ONLY on eBay.de sold/completed listings ("Verkaufte Artikel" filter).
+   On eBay, when you search for an item you can filter by "Verkaufte Artikel" to see items that actually sold (not active listings).
+2. Ignore active/unsold listings. Only consider prices where a buyer actually paid.
+3. Use your knowledge of recent eBay.de sold prices for this exact product or very similar models.
+4. If the exact model is rare, use the closest comparable sold items from the same product line.
+5. Prices must be in EUR.
+6. You MUST always provide a price range and average, never return zeros.
+
+Return a valid JSON object (no markdown, no code fence):
+{
+  "priceLow": <lowest typical sold price in EUR>,
+  "priceHigh": <highest typical sold price in EUR>,
+  "priceAverage": <average sold price in EUR>,
+  "reasoning": "<1-2 sentences explaining your estimate, mention eBay sold data>",
+  "soldExamples": [
+    { "title": "<example sold listing title>", "price": <sold price> },
+    { "title": "<example sold listing title>", "price": <sold price> },
+    { "title": "<example sold listing title>", "price": <sold price> }
+  ]
+}`;
+
+  const raw = await getRawJsonFromAI(prompt);
+  const parsed = JSON.parse(raw) as SoldPriceSuggestion;
+
+  if (!parsed.priceAverage && !parsed.priceLow && !parsed.priceHigh) {
+    throw new Error('AI returned no pricing data.');
+  }
+
+  let avg = Number(parsed.priceAverage) || 0;
+  const low = Number(parsed.priceLow) || 0;
+  const high = Number(parsed.priceHigh) || 0;
+  if (!avg && low && high) avg = (low + high) / 2;
+  if (!avg) avg = low || high;
+
+  return {
+    priceLow: low,
+    priceHigh: high,
+    priceAverage: Math.round(avg * 100) / 100,
+    reasoning: parsed.reasoning || '',
+    soldExamples: Array.isArray(parsed.soldExamples) ? parsed.soldExamples : [],
+  };
+}
+
 const PROVIDER_LABELS: Record<Provider, string> = {
   groq: 'Groq',
   ollama: 'Ollama',

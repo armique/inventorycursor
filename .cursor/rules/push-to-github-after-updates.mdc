@@ -1,0 +1,22 @@
+---
+description: Push all code changes to GitHub after every update
+alwaysApply: true
+---
+
+# Push to GitHub After Every Update
+
+After making any code changes in this project, **always** push the updates to GitHub.
+
+## Steps
+
+1. **Stage changes**: `git add` (e.g. `git add .` or specific files).
+2. **Commit** with a short, descriptive message:  
+   `git commit -m "Brief description of what changed"`.
+3. **Push** to the default branch:  
+   `git push origin main` (or the project’s main branch name).
+
+## Notes
+
+- Use `;` instead of `&&` when chaining commands in PowerShell (e.g. `git add .; git commit -m "message"; git push origin main`).
+- Do this at the end of the session when you’ve finished the requested changes, unless the user asks not to push.
+- If the user has not configured a remote or branch, only add and commit locally and tell them to set up the remote/push manually if needed.

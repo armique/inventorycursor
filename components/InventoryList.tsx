@@ -1,14 +1,14 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Handbag, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal,   Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType } from '../types';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { getCompatibleItemsForItem } from '../services/compatibility';
 import { generateKleinanzeigenCSV } from '../services/ebayCsvService';
 import { generateStoreDescription } from '../services/specsAI';
-import { estimateMarketValue } from '../services/geminiService';
+import { suggestPriceFromSoldListings } from '../services/specsAI';
 import SaleModal from './SaleModal';
 import ReturnModal from './ReturnModal';
 import TradeModal from './TradeModal';
@@ -263,31 +263,22 @@ const InventoryList: React.FC<Props> = ({
     }
     setPriceSuggestId(item.id);
     try {
-      const estimate = await estimateMarketValue(item.name, 'Used');
-      if (!estimate) {
-        alert('Kein Preissignal aus verkauften Angeboten gefunden.');
-        return;
-      }
-      const low = Number(estimate.priceLow) || 0;
-      const high = Number(estimate.priceHigh) || 0;
-      let avg = Number(estimate.priceAverage) || 0;
-      if (!avg && low && high) avg = (low + high) / 2;
-      if (!avg && (low || high)) avg = low || high;
-      if (!avg) {
-        alert('Kein sinnvoller Preisbereich aus verkauften Angeboten ermittelbar.');
-        return;
-      }
-      const suggested = Math.round(avg * 100) / 100;
-      const rangeLow = low ? Math.round(low * 100) / 100 : undefined;
-      const rangeHigh = high ? Math.round(high * 100) / 100 : undefined;
-      const rangeText =
-        rangeLow && rangeHigh
-          ? `Range ca. €${rangeLow.toFixed(2)}–€${rangeHigh.toFixed(2)}`
-          : rangeLow || rangeHigh
-          ? `Ca. €${(rangeLow || rangeHigh)!.toFixed(2)}`
-          : '';
+      const result = await suggestPriceFromSoldListings(item.name);
+      const suggested = result.priceAverage;
 
-      const note = `AI-Preistipp (nur verkaufte Angebote): ~€${suggested.toFixed(2)}${rangeText ? ` (${rangeText})` : ''}`;
+      if (!suggested) {
+        alert('Kein sinnvoller Preisbereich aus verkauften eBay-Angeboten ermittelbar.');
+        return;
+      }
+
+      const rangeText =
+        result.priceLow && result.priceHigh
+          ? `€${result.priceLow.toFixed(2)}–€${result.priceHigh.toFixed(2)}`
+          : '';
+      const examplesText = result.soldExamples.length > 0
+        ? '\nBeispiele: ' + result.soldExamples.map(e => `${e.title} (€${e.price})`).join(', ')
+        : '';
+      const note = `AI-Preistipp (eBay verkaufte Artikel): ~€${suggested.toFixed(2)}${rangeText ? ` (${rangeText})` : ''}${examplesText}`;
 
       const updated: InventoryItem = {
         ...item,
@@ -297,8 +288,8 @@ const InventoryList: React.FC<Props> = ({
       onUpdate([updated]);
     } catch (e: any) {
       console.error('Price suggestion failed', e);
-      const msg = e?.message || 'Failed to suggest price.';
-      alert(msg.includes('API key') ? `${msg}\n\nConfigure AI pricing in .env and restart the app.` : msg);
+      const msg = e?.message || 'Preisermittlung fehlgeschlagen.';
+      alert(msg.includes('No AI configured') ? 'Kein AI Provider konfiguriert. Bitte .env Datei prüfen.' : msg);
     } finally {
       setPriceSuggestId(null);
     }
