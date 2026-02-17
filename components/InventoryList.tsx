@@ -1167,28 +1167,40 @@ const InventoryList: React.FC<Props> = ({
                          {childItems.map(child => {
                             const childMargin = child.profit != null ? child.profit : (child.sellPrice && child.buyPrice ? child.sellPrice - child.buyPrice - (child.feeAmount || 0) : null);
                             return (
-                               <div key={child.id} className="flex items-center justify-between gap-2 text-xs bg-slate-50 p-2 rounded-lg">
-                                  <span className="font-medium text-slate-700 truncate flex-1">{child.name}</span>
-                                  <div className="flex items-center gap-3 text-[10px] shrink-0">
-                                     {childMargin != null && (
-                                        <span className={`font-bold px-1.5 py-0.5 rounded ${childMargin >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                                           {childMargin >= 0 ? '+' : ''}€{childMargin.toFixed(2)}
-                                        </span>
-                                     )}
-                                     {child.buyDate && (
-                                        <span className="flex items-center gap-1 text-slate-500">
-                                           <Calendar size={10} />
-                                           Buy: {new Date(child.buyDate).toLocaleDateString()}
-                                        </span>
-                                     )}
-                                     {child.sellDate && (
-                                        <span className="flex items-center gap-1 text-emerald-600">
-                                           <Calendar size={10} />
-                                           Sold: {new Date(child.sellDate).toLocaleDateString()}
-                                        </span>
-                                     )}
-                                  </div>
-                               </div>
+                               <button
+                                 key={child.id}
+                                 type="button"
+                                 onClick={(e) => {
+                                   e.stopPropagation();
+                                   handleEditClick(child);
+                                 }}
+                                 className="w-full text-left"
+                               >
+                                 <div className="flex items-center justify-between gap-2 text-xs bg-slate-50 hover:bg-slate-100 p-2 rounded-lg transition-colors">
+                                   <span className="font-medium text-slate-700 truncate flex-1">
+                                     {child.name}
+                                   </span>
+                                   <div className="flex items-center gap-3 text-[10px] shrink-0">
+                                      {childMargin != null && (
+                                         <span className={`font-bold px-1.5 py-0.5 rounded ${childMargin >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                            {childMargin >= 0 ? '+' : ''}€{childMargin.toFixed(2)}
+                                         </span>
+                                      )}
+                                      {child.buyDate && (
+                                         <span className="flex items-center gap-1 text-slate-500">
+                                            <Calendar size={10} />
+                                            Buy: {new Date(child.buyDate).toLocaleDateString()}
+                                         </span>
+                                      )}
+                                      {child.sellDate && (
+                                         <span className="flex items-center gap-1 text-emerald-600">
+                                            <Calendar size={10} />
+                                            Sold: {new Date(child.sellDate).toLocaleDateString()}
+                                         </span>
+                                      )}
+                                   </div>
+                                 </div>
+                               </button>
                             );
                          })}
                          {/* Total margin summary */}
