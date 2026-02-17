@@ -162,6 +162,8 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     e.preventDefault();
     if (!formData.name) return;
 
+    const isEditingExisting = Boolean(initialData || id);
+
     const base: InventoryItem = {
       ...formData as InventoryItem,
       id: formData.id || `item-${Date.now()}`,
@@ -169,8 +171,8 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     };
 
     let itemsToSave: InventoryItem[] = [];
-    // If editing an existing item (has id) or quantity is 1, just save one
-    if (base.id && (initialData || id) || quantityToCreate <= 1) {
+    // If editing an existing item, or quantity is 1, just save one
+    if (isEditingExisting || quantityToCreate <= 1) {
       itemsToSave = [base];
     } else {
       // Creating multiple new identical items
@@ -183,6 +185,13 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
 
     onSave(itemsToSave);
     
+    // When creating multiple new items, stay on the form so the user can keep adding
+    if (!isEditingExisting && quantityToCreate > 1) {
+      // Keep the form open. Optionally, clear the quantity back to 1.
+      setQuantityToCreate(1);
+      return;
+    }
+
     if (onClose) {
       onClose();
     } else {
