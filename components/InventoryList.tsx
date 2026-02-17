@@ -229,6 +229,23 @@ const InventoryList: React.FC<Props> = ({
     onUpdate([updated]);
   };
 
+  // --- MARKETPLACE LISTING FLAGS (Kleinanzeigen / eBay) ---
+  const toggleListedKleinanzeigen = (item: InventoryItem) => {
+    const updated: InventoryItem = {
+      ...item,
+      listedOnKleinanzeigen: !item.listedOnKleinanzeigen,
+    };
+    onUpdate([updated]);
+  };
+
+  const toggleListedEbay = (item: InventoryItem) => {
+    const updated: InventoryItem = {
+      ...item,
+      listedOnEbay: !item.listedOnEbay,
+    };
+    onUpdate([updated]);
+  };
+
   // --- AI LISTING DESCRIPTION (Kleinanzeigen / eBay style, same as store description style) ---
   const [listingGenId, setListingGenId] = useState<string | null>(null);
   const [priceSuggestId, setPriceSuggestId] = useState<string | null>(null);
@@ -912,12 +929,12 @@ const InventoryList: React.FC<Props> = ({
       case 'presence':
         return (
           <td key={id} className="p-5 text-center" style={style} onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-center gap-1.5">
+            <div className="flex items-center justify-center gap-1">
               {/* Physical presence: present / lost / unknown */}
               <button
                 type="button"
                 onClick={() => togglePresence(item)}
-                className={`inline-flex items-center justify-center w-9 px-2 py-1 rounded-full border text-[10px] font-bold ${
+                className={`inline-flex items-center justify-center w-8 h-7 rounded-full border text-[10px] font-bold ${
                   item.presence === 'present'
                     ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
                     : item.presence === 'lost'
@@ -939,7 +956,7 @@ const InventoryList: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => toggleDefective(item)}
-                className={`inline-flex items-center justify-center w-9 h-7 rounded-full border text-[10px] font-bold ${
+                className={`inline-flex items-center justify-center w-8 h-7 rounded-full border text-[10px] font-bold ${
                   item.isDefective
                     ? 'border-red-400 bg-red-50 text-red-700'
                     : 'border-emerald-300 bg-emerald-50 text-emerald-700'
@@ -951,6 +968,42 @@ const InventoryList: React.FC<Props> = ({
                 }
               >
                 {item.isDefective ? '!' : '✓'}
+              </button>
+
+              {/* Listed on Kleinanzeigen */}
+              <button
+                type="button"
+                onClick={() => toggleListedKleinanzeigen(item)}
+                className={`inline-flex items-center justify-center w-7 h-7 rounded-full border text-[9px] font-black ${
+                  item.listedOnKleinanzeigen
+                    ? 'border-emerald-400 bg-emerald-500 text-white'
+                    : 'border-emerald-200 bg-white text-emerald-500'
+                }`}
+                title={
+                  item.listedOnKleinanzeigen
+                    ? 'Listed on Kleinanzeigen (click to mark as not listed)'
+                    : 'Not listed on Kleinanzeigen (click to mark as listed)'
+                }
+              >
+                K
+              </button>
+
+              {/* Listed on eBay */}
+              <button
+                type="button"
+                onClick={() => toggleListedEbay(item)}
+                className={`inline-flex items-center justify-center w-7 h-7 rounded-full border text-[9px] font-black ${
+                  item.listedOnEbay
+                    ? 'border-blue-400 bg-blue-500 text-white'
+                    : 'border-blue-200 bg-white text-blue-600'
+                }`}
+                title={
+                  item.listedOnEbay
+                    ? 'Listed on eBay (click to mark as not listed)'
+                    : 'Not listed on eBay (click to mark as listed)'
+                }
+              >
+                e
               </button>
             </div>
           </td>

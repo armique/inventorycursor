@@ -121,6 +121,10 @@ export interface InventoryItem {
   componentIds?: string[];
   parentContainerId?: string;
 
+  // Listing status on external marketplaces
+  listedOnKleinanzeigen?: boolean;
+  listedOnEbay?: boolean;
+
   // Trade related
   tradedForIds?: string[]; // IDs of items received in exchange
   tradedFromId?: string;   // ID of the item this was traded from
