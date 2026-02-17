@@ -189,7 +189,8 @@ export const estimateMarketValue = async (itemName: string, condition: string = 
       const prompt = `
         Act as a professional German pricing expert for electronics.
         Real-time market search for: "${itemName}" (${condition}).
-        Sources: eBay.de, Kleinanzeigen.de.
+        Focus primarily on SOLD / COMPLETED listings on eBay.de (nur "verkaufte Artikel") and, secondarily, achieved prices on Kleinanzeigen.de.
+        When sold data is available, ignore unrealistic asking prices and base the range on actually paid prices.
         
         Output JSON:
         {

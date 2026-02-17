@@ -8,6 +8,7 @@ import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { getCompatibleItemsForItem } from '../services/compatibility';
 import { generateKleinanzeigenCSV } from '../services/ebayCsvService';
 import { generateStoreDescription } from '../services/specsAI';
+import { estimateMarketValue } from '../services/geminiService';
 import SaleModal from './SaleModal';
 import ReturnModal from './ReturnModal';
 import TradeModal from './TradeModal';
@@ -36,7 +37,7 @@ interface Props {
   persistenceKey?: string; 
 }
 
-type ColumnId = 'select' | 'item' | 'presence' | 'listing' | 'parseSpecs' | 'category' | 'status' | 'buyPrice' | 'sellPrice' | 'profit' | 'buyDate' | 'sellDate' | 'actions';
+type ColumnId = 'select' | 'item' | 'presence' | 'parseSpecs' | 'category' | 'status' | 'buyPrice' | 'sellPrice' | 'profit' | 'buyDate' | 'sellDate' | 'actions';
 type TimeFilter = 'ALL' | 'THIS_WEEK' | 'LAST_WEEK' | 'THIS_MONTH' | 'LAST_MONTH' | 'LAST_30' | 'LAST_90' | 'THIS_YEAR' | 'LAST_YEAR';
 type StatusFilter = 'ACTIVE' | 'SOLD' | 'DRAFTS' | 'ALL';
 
@@ -47,10 +48,9 @@ interface SortConfig {
 
 const DEFAULT_WIDTHS: Record<string, number> = {
   select: 50,
-  item: 230,
+  item: 260,
   presence: 70,
-  listing: 190,
-  parseSpecs: 52,
+  parseSpecs: 120,
   category: 160,
   status: 120,
   buyPrice: 120,
@@ -65,7 +65,6 @@ const ALL_COLUMNS: { id: ColumnId; label: string }[] = [
   { id: 'select', label: '' },
   { id: 'item', label: 'Asset Name' },
   { id: 'presence', label: 'Inv' },
-  { id: 'listing', label: 'Listing Text' },
   { id: 'parseSpecs', label: 'Parse' },
   { id: 'category', label: 'Category' },
   { id: 'status', label: 'Status' },
@@ -221,6 +220,7 @@ const InventoryList: React.FC<Props> = ({
 
   // --- AI LISTING DESCRIPTION (Kleinanzeigen / eBay style, same as store description style) ---
   const [listingGenId, setListingGenId] = useState<string | null>(null);
+  const [priceSuggestId, setPriceSuggestId] = useState<string | null>(null);
 
   const handleGenerateListingDescription = async (item: InventoryItem) => {
     if (!item.name) {
@@ -256,6 +256,34 @@ const InventoryList: React.FC<Props> = ({
     }
   };
 
+  const handleSuggestPrice = async (item: InventoryItem) => {
+    if (!item.name) {
+      alert('Enter a name first.');
+      return;
+    }
+    setPriceSuggestId(item.id);
+    try {
+      const estimate = await estimateMarketValue(item.name, 'Used');
+      if (!estimate || !estimate.priceAverage) {
+        alert('No price suggestion could be found from sold listings.');
+        return;
+      }
+      const suggested = Math.round(estimate.priceAverage * 100) / 100;
+      const updated: InventoryItem = {
+        ...item,
+        sellPrice: suggested,
+        comment2: item.comment2 || `AI price suggestion: ~€${suggested.toFixed(2)} (range €${estimate.priceLow.toFixed?.(2) ?? estimate.priceLow}–€${estimate.priceHigh.toFixed?.(2) ?? estimate.priceHigh})`,
+      };
+      onUpdate([updated]);
+    } catch (e: any) {
+      console.error('Price suggestion failed', e);
+      const msg = e?.message || 'Failed to suggest price.';
+      alert(msg.includes('API key') ? `${msg}\n\nConfigure AI pricing in .env and restart the app.` : msg);
+    } finally {
+      setPriceSuggestId(null);
+    }
+  };
+
   // -- VIRTUALIZATION / PERFORMANCE --
   const [visibleCount, setVisibleCount] = useState(50);
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -275,7 +303,7 @@ const InventoryList: React.FC<Props> = ({
   };
   
   // Visible Columns
-  const visibleColumns: ColumnId[] = ['select', 'item', 'presence', 'listing', 'parseSpecs', 'category', 'status', 'buyPrice', 'sellPrice', 'profit', 'buyDate', 'sellDate', 'actions'];
+  const visibleColumns: ColumnId[] = ['select', 'item', 'presence', 'parseSpecs', 'category', 'status', 'buyPrice', 'sellPrice', 'profit', 'buyDate', 'sellDate', 'actions'];
 
   // Calculate Date Range based on filter
   const dateRange = useMemo(() => {
@@ -872,45 +900,6 @@ const InventoryList: React.FC<Props> = ({
             </button>
           </td>
         );
-      case 'listing':
-        return (
-          <td key={id} className="p-5 text-center" style={style} onClick={(e) => e.stopPropagation()}>
-            <div className="flex flex-col gap-1 items-stretch">
-              <button
-                type="button"
-                onClick={() => handleGenerateListingDescription(item)}
-                disabled={listingGenId === item.id}
-                className={`inline-flex items-center justify-center gap-1 px-2 py-1 rounded-lg border text-[10px] font-semibold uppercase tracking-wide ${
-                  item.marketDescription
-                    ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
-                    : 'border-slate-200 bg-slate-50 text-slate-600'
-                } ${listingGenId === item.id ? 'opacity-70 cursor-wait' : 'hover:bg-indigo-100 hover:border-indigo-300'}`}
-                title={
-                  item.marketDescription
-                    ? 'Regenerate Kleinanzeigen/eBay style description with AI'
-                    : 'Generate Kleinanzeigen/eBay style description with AI'
-                }
-              >
-                {listingGenId === item.id ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                <span>{item.marketDescription ? 'Re-gen' : 'Gen'}</span>
-              </button>
-              {item.marketDescription && (
-                <button
-                  type="button"
-                  onClick={() => handleCopyListingDescription(item)}
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 hover:bg-slate-50"
-                  title="Copy generated listing text to clipboard"
-                >
-                  <Copy size={11} />
-                  <span className="truncate max-w-[140px]">
-                    {item.marketDescription.replace(/\s+/g, ' ').slice(0, 60)}
-                    {item.marketDescription.length > 60 ? '…' : ''}
-                  </span>
-                </button>
-              )}
-            </div>
-          </td>
-        );
       case 'item':
         const isExpanded = expandedBundles.has(item.id);
         const childItems = (item.isPC || item.isBundle) && (item.componentIds || []) 
@@ -1003,15 +992,90 @@ const InventoryList: React.FC<Props> = ({
       case 'parseSpecs':
         return (
           <td key={id} className="p-5 text-center" style={style} onClick={(e) => e.stopPropagation()}>
-            <button
-              type="button"
-              onClick={() => handleParseSingleItem(item)}
-              disabled={parsingSingleId !== null}
-              title="Parse tech specs with AI (can correct name)"
-              className={`p-2 rounded-xl transition-colors ${parsingSingleId === item.id ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600 hover:bg-amber-100 hover:text-amber-700'}`}
-            >
-              {parsingSingleId === item.id ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-            </button>
+            <div className="flex flex-col gap-1 items-stretch">
+              {/* Tech specs parse (same as before) */}
+              <button
+                type="button"
+                onClick={() => handleParseSingleItem(item)}
+                disabled={parsingSingleId !== null}
+                title="Parse tech specs with AI (can correct name)"
+                className={`px-2 py-1 rounded-xl text-[10px] font-semibold transition-colors ${
+                  parsingSingleId === item.id
+                    ? 'bg-amber-100 text-amber-700'
+                    : 'bg-slate-100 text-slate-600 hover:bg-amber-100 hover:text-amber-700'
+                }`}
+              >
+                {parsingSingleId === item.id ? (
+                  <span className="inline-flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> Specs…</span>
+                ) : (
+                  <span className="inline-flex items-center gap-1"><Sparkles size={12} /> Specs</span>
+                )}
+              </button>
+
+              {/* Suggested price from sold history (eBay/Kleinanzeigen) */}
+              <button
+                type="button"
+                onClick={() => handleSuggestPrice(item)}
+                disabled={priceSuggestId === item.id}
+                className={`inline-flex items-center justify-center gap-1 px-2 py-1 rounded-xl border text-[10px] font-semibold uppercase tracking-wide ${
+                  item.sellPrice
+                    ? 'border-amber-200 bg-amber-50 text-amber-700'
+                    : 'border-amber-200 bg-white text-amber-700'
+                } ${priceSuggestId === item.id ? 'opacity-70 cursor-wait' : 'hover:bg-amber-100'}`}
+                title="AI: Preisvorschlag auf Basis verkaufter Angebote (eBay.de, Kleinanzeigen)"
+              >
+                <Tag size={11} />
+                <span>{priceSuggestId === item.id ? 'Preis…' : 'Suggest €'}</span>
+              </button>
+
+              {/* Kleinanzeigen listing (green K) */}
+              <button
+                type="button"
+                onClick={() => handleGenerateListingDescription(item)}
+                disabled={listingGenId === item.id}
+                className={`inline-flex items-center justify-center gap-1 px-2 py-1 rounded-xl border text-[10px] font-semibold uppercase tracking-wide ${
+                  item.marketDescription
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    : 'border-emerald-200 bg-white text-emerald-700'
+                } ${listingGenId === item.id ? 'opacity-70 cursor-wait' : 'hover:bg-emerald-100'}`}
+                title="AI: Kleinanzeigen Beschreibung auf Deutsch generieren"
+              >
+                <span className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[9px]">K</span>
+                <span>{listingGenId === item.id ? 'Gen…' : 'Kleinanz.'}</span>
+              </button>
+
+              {/* eBay listing (blue E – same style, German text) */}
+              <button
+                type="button"
+                onClick={() => handleGenerateListingDescription(item)}
+                disabled={listingGenId === item.id}
+                className={`inline-flex items-center justify-center gap-1 px-2 py-1 rounded-xl border text-[10px] font-semibold uppercase tracking-wide ${
+                  item.marketDescription
+                    ? 'border-blue-200 bg-blue-50 text-blue-700'
+                    : 'border-blue-200 bg-white text-blue-700'
+                } ${listingGenId === item.id ? 'opacity-70 cursor-wait' : 'hover:bg-blue-100'}`}
+                title="AI: eBay Beschreibung auf Deutsch generieren"
+              >
+                <span className="w-4 h-4 rounded-full bg-blue-600 text-white flex items-center justify-center text-[9px]">E</span>
+                <span>{listingGenId === item.id ? 'Gen…' : 'eBay'}</span>
+              </button>
+
+              {/* Copy generated listing text */}
+              {item.marketDescription && (
+                <button
+                  type="button"
+                  onClick={() => handleCopyListingDescription(item)}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-xl border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 hover:bg-slate-50"
+                  title="Copy generated listing text (German) to clipboard"
+                >
+                  <Copy size={11} />
+                  <span className="truncate max-w-[110px]">
+                    {item.marketDescription.replace(/\s+/g, ' ').slice(0, 50)}
+                    {item.marketDescription.length > 50 ? '…' : ''}
+                  </span>
+                </button>
+              )}
+            </div>
           </td>
         );
       case 'category':
