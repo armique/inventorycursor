@@ -424,6 +424,15 @@ const InventoryList: React.FC<Props> = ({
     return result;
   }, [baseFilteredForSpecs]);
 
+  // Convenience: socket filter options (e.g. for processors / motherboards)
+  const socketSpec = useMemo(() => {
+    const lowerMatch = (k: string) => {
+      const lk = k.toLowerCase();
+      return lk === 'socket' || lk === 'sockel' || lk.includes('socket');
+    };
+    return specOptions.find((o) => lowerMatch(o.key));
+  }, [specOptions]);
+
   // Filtering & Sorting
   const sortedItems = useMemo(() => {
     let filtered = items.filter(item => {
