@@ -934,7 +934,7 @@ const InventoryList: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => togglePresence(item)}
-                className={`inline-flex items-center justify-center w-8 h-7 rounded-full border text-[10px] font-bold ${
+                className={`h-7 w-7 flex items-center justify-center rounded-xl border text-[10px] font-bold ${
                   item.presence === 'present'
                     ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
                     : item.presence === 'lost'
@@ -956,7 +956,7 @@ const InventoryList: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => toggleDefective(item)}
-                className={`inline-flex items-center justify-center w-8 h-7 rounded-full border text-[10px] font-bold ${
+                className={`h-7 w-7 flex items-center justify-center rounded-xl border text-[10px] font-bold ${
                   item.isDefective
                     ? 'border-red-400 bg-red-50 text-red-700'
                     : 'border-emerald-300 bg-emerald-50 text-emerald-700'
@@ -974,7 +974,7 @@ const InventoryList: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => toggleListedKleinanzeigen(item)}
-                className={`inline-flex items-center justify-center w-7 h-7 rounded-full border text-[9px] font-black ${
+                className={`h-7 w-7 flex items-center justify-center rounded-xl border text-[9px] font-black ${
                   item.listedOnKleinanzeigen
                     ? 'border-emerald-400 bg-emerald-500 text-white'
                     : 'border-emerald-200 bg-white text-emerald-500'
@@ -992,7 +992,7 @@ const InventoryList: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => toggleListedEbay(item)}
-                className={`inline-flex items-center justify-center w-7 h-7 rounded-full border text-[9px] font-black ${
+                className={`h-7 w-7 flex items-center justify-center rounded-xl border text-[9px] font-black ${
                   item.listedOnEbay
                     ? 'border-blue-400 bg-blue-500 text-white'
                     : 'border-blue-200 bg-white text-blue-600'
