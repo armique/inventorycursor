@@ -282,8 +282,10 @@ const InventoryList: React.FC<Props> = ({
 
       const updated: InventoryItem = {
         ...item,
-        sellPrice: suggested,
-        comment2: item.comment2 ? item.comment2 : note,
+        // Do NOT touch sellPrice – just store suggestion as a note
+        comment2: item.comment2
+          ? `${item.comment2}\n${note}`
+          : note,
       };
       onUpdate([updated]);
     } catch (e: any) {
