@@ -129,6 +129,9 @@ const InventoryList: React.FC<Props> = ({
   const filtersPanelRef = useRef<HTMLDivElement>(null);
   const filtersButtonRef = useRef<HTMLButtonElement>(null);
 
+  // Visibility toggle for items that are part of a PC / bundle composition
+  const [showInComposition, setShowInComposition] = useState<boolean>(() => loadState<boolean>('show_in_composition', true));
+
   // Sort State
   const [sortConfig, setSortConfig] = useState<SortConfig>(() => {
      const saved = localStorage.getItem(`${persistenceKey}_sort_config`);
@@ -154,6 +157,7 @@ const InventoryList: React.FC<Props> = ({
   useEffect(() => localStorage.setItem(`${persistenceKey}_sale_payment`, JSON.stringify(salePaymentFilter)), [salePaymentFilter, persistenceKey]);
   useEffect(() => localStorage.setItem(`${persistenceKey}_spec_filters`, JSON.stringify(specFilters)), [specFilters, persistenceKey]);
   useEffect(() => localStorage.setItem(`${persistenceKey}_spec_range_filters`, JSON.stringify(specRangeFilters)), [specRangeFilters, persistenceKey]);
+  useEffect(() => localStorage.setItem(`${persistenceKey}_show_in_composition`, JSON.stringify(showInComposition)), [showInComposition, persistenceKey]);
 
   // Close spec filters panel when clicking outside
   useEffect(() => {
@@ -274,6 +278,9 @@ const InventoryList: React.FC<Props> = ({
       else if (statusFilter === 'DRAFTS') matchesStatus = item.isDraft === true;
       else matchesStatus = true;
       if (!matchesStatus) return false;
+
+      // Optional visibility toggle for "In Composition" items
+      if (!showInComposition && item.status === ItemStatus.IN_COMPOSITION) return false;
       if (categoryFilter !== 'ALL' || subCategoryFilter) {
         const matchParentAndSub = categoryFilter !== 'ALL' && item.category === categoryFilter && (!subCategoryFilter || item.subCategory === subCategoryFilter);
         const matchSubAsTopLevel = subCategoryFilter && item.category === subCategoryFilter;
@@ -294,7 +301,7 @@ const InventoryList: React.FC<Props> = ({
       }
       return true;
     });
-  }, [items, searchTerm, statusFilter, categoryFilter, subCategoryFilter, timeFilter, dateRange, salePlatformFilter, salePaymentFilter]);
+  }, [items, searchTerm, statusFilter, categoryFilter, subCategoryFilter, timeFilter, dateRange, salePlatformFilter, salePaymentFilter, showInComposition]);
 
   // Available spec keys and unique values (from base-filtered items) for the Filters panel
   const specOptions = useMemo(() => {
@@ -345,6 +352,9 @@ const InventoryList: React.FC<Props> = ({
       }
       
       if (!matchesStatus) return false;
+
+      // Optional visibility toggle for "In Composition" items
+      if (!showInComposition && item.status === ItemStatus.IN_COMPOSITION) return false;
 
       // 2. Category Filter (align with PC Builder: e.g. "Processors" shows both category=Components+subCategory=Processors AND category=Processors)
       if (categoryFilter !== 'ALL' || subCategoryFilter) {
@@ -435,7 +445,7 @@ const InventoryList: React.FC<Props> = ({
     });
 
     return filtered;
-  }, [items, searchTerm, statusFilter, categoryFilter, subCategoryFilter, sortConfig, timeFilter, dateRange, salePlatformFilter, salePaymentFilter, specFilters, specRangeFilters]);
+  }, [items, searchTerm, statusFilter, categoryFilter, subCategoryFilter, sortConfig, timeFilter, dateRange, salePlatformFilter, salePaymentFilter, specFilters, specRangeFilters, showInComposition]);
 
   const visibleItems = useMemo(() => sortedItems.slice(0, visibleCount), [sortedItems, visibleCount]);
   const showFinancials = statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS';
@@ -1072,7 +1082,7 @@ const InventoryList: React.FC<Props> = ({
      setSelectedIds([]);
   };
 
-  const hasActiveFilters = statusFilter !== 'ACTIVE' || categoryFilter !== 'ALL' || subCategoryFilter || timeFilter !== 'ALL' || salePlatformFilter !== 'ALL' || salePaymentFilter !== 'ALL' || activeSpecFilterCount > 0;
+  const hasActiveFilters = statusFilter !== 'ACTIVE' || categoryFilter !== 'ALL' || subCategoryFilter || timeFilter !== 'ALL' || salePlatformFilter !== 'ALL' || salePaymentFilter !== 'ALL' || activeSpecFilterCount > 0 || !showInComposition;
   const clearAllFilters = () => {
     setStatusFilter('ACTIVE');
     setCategoryFilter('ALL');
@@ -1082,6 +1092,7 @@ const InventoryList: React.FC<Props> = ({
     setSalePaymentFilter('ALL');
     setSpecFilters({});
     setSpecRangeFilters({});
+    setShowInComposition(true);
   };
 
   return (
@@ -1148,6 +1159,19 @@ const InventoryList: React.FC<Props> = ({
                <option value="THIS_YEAR">This year</option>
                <option value="LAST_YEAR">Last year</option>
             </select>
+            <button
+               type="button"
+               onClick={() => setShowInComposition(prev => !prev)}
+               className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[10px] font-semibold uppercase tracking-wide ${
+                 showInComposition
+                   ? 'border-slate-200 text-slate-600 bg-white hover:bg-slate-50'
+                   : 'border-blue-500 text-blue-600 bg-blue-50'
+               }`}
+               title={showInComposition ? 'Hide items that are in a PC/bundle composition' : 'Show items that are in a PC/bundle composition'}
+            >
+               <Hourglass size={11} />
+               {showInComposition ? 'In composition: shown' : 'In composition: hidden'}
+            </button>
             {statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS' && (
                <>
                   <select value={salePlatformFilter} onChange={e => setSalePlatformFilter(e.target.value)} className="py-1.5 pl-2.5 pr-7 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-slate-900/20 appearance-none bg-no-repeat bg-right min-w-[100px]" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.35rem center' }}>
