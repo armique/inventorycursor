@@ -946,7 +946,7 @@ const InventoryList: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => togglePresence(item)}
-                className={`h-8 w-8 flex items-center justify-center rounded-xl border transition-colors ${
+                className={`h-8 w-12 flex items-center justify-center rounded-xl border transition-colors ${
                   item.presence === 'present'
                     ? 'border-emerald-300 bg-emerald-50'
                   : item.presence === 'lost'
@@ -976,7 +976,7 @@ const InventoryList: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => toggleDefective(item)}
-                className={`h-8 w-8 flex items-center justify-center rounded-xl text-[11px] font-bold transition-colors ${
+                className={`h-8 w-12 flex items-center justify-center rounded-xl text-[11px] font-bold transition-colors ${
                   item.isDefective
                     ? 'bg-red-100 text-red-700'
                     : 'bg-slate-100 text-slate-500 hover:bg-amber-50 hover:text-amber-700'
@@ -994,7 +994,7 @@ const InventoryList: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => toggleListedKleinanzeigen(item)}
-                className={`h-8 w-8 flex items-center justify-center rounded-xl border text-emerald-700 ${
+                className={`h-8 w-12 flex items-center justify-center rounded-xl border text-emerald-700 ${
                   item.listedOnKleinanzeigen
                     ? 'border-emerald-200 bg-emerald-50'
                     : 'border-emerald-200 bg-white'
@@ -1018,7 +1018,7 @@ const InventoryList: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => toggleListedEbay(item)}
-                className={`h-8 w-8 flex items-center justify-center rounded-xl border text-blue-700 ${
+                className={`h-8 w-12 flex items-center justify-center rounded-xl border text-blue-700 ${
                   item.listedOnEbay
                     ? 'border-blue-200 bg-blue-50'
                     : 'border-blue-200 bg-white'
