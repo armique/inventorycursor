@@ -50,7 +50,7 @@ interface SortConfig {
 const DEFAULT_WIDTHS: Record<string, number> = {
   select: 50,
   item: 260,
-  presence: 80,
+  presence: 88,
   parseSpecs: 120,
   category: 160,
   status: 120,
