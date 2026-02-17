@@ -25,7 +25,7 @@ export const InventoryAISpecsPanel: React.FC<Props> = ({
   const [rateLimitWaiting, setRateLimitWaiting] = useState(false);
   const [waitSecondsLeft, setWaitSecondsLeft] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
 
   const provider = getSpecsAIProvider();
   const selectedItems = items.filter((i) => selectedIds.includes(i.id));
