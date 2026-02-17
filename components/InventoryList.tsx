@@ -36,7 +36,7 @@ interface Props {
   persistenceKey?: string; 
 }
 
-type ColumnId = 'select' | 'item' | 'presence' | 'parseSpecs' | 'category' | 'status' | 'buyPrice' | 'sellPrice' | 'profit' | 'buyDate' | 'sellDate' | 'actions';
+type ColumnId = 'select' | 'item' | 'presence' | 'listing' | 'parseSpecs' | 'category' | 'status' | 'buyPrice' | 'sellPrice' | 'profit' | 'buyDate' | 'sellDate' | 'actions';
 type TimeFilter = 'ALL' | 'THIS_WEEK' | 'LAST_WEEK' | 'THIS_MONTH' | 'LAST_MONTH' | 'LAST_30' | 'LAST_90' | 'THIS_YEAR' | 'LAST_YEAR';
 type StatusFilter = 'ACTIVE' | 'SOLD' | 'DRAFTS' | 'ALL';
 
@@ -47,8 +47,9 @@ interface SortConfig {
 
 const DEFAULT_WIDTHS: Record<string, number> = {
   select: 50,
-  item: 260,
-  presence: 80,
+  item: 230,
+  presence: 70,
+  listing: 190,
   parseSpecs: 52,
   category: 160,
   status: 120,
@@ -64,6 +65,7 @@ const ALL_COLUMNS: { id: ColumnId; label: string }[] = [
   { id: 'select', label: '' },
   { id: 'item', label: 'Asset Name' },
   { id: 'presence', label: 'Inv' },
+  { id: 'listing', label: 'Listing Text' },
   { id: 'parseSpecs', label: 'Parse' },
   { id: 'category', label: 'Category' },
   { id: 'status', label: 'Status' },
@@ -217,6 +219,43 @@ const InventoryList: React.FC<Props> = ({
     onUpdate([updated]);
   };
 
+  // --- AI LISTING DESCRIPTION (Kleinanzeigen / eBay style, same as store description style) ---
+  const [listingGenId, setListingGenId] = useState<string | null>(null);
+
+  const handleGenerateListingDescription = async (item: InventoryItem) => {
+    if (!item.name) {
+      alert('Enter an item name first.');
+      return;
+    }
+    setListingGenId(item.id);
+    try {
+      const context =
+        item.marketDescription ||
+        item.storeDescription ||
+        item.comment1 ||
+        '';
+      const text = await generateStoreDescription(item.name, context || undefined);
+      const updated: InventoryItem = { ...item, marketDescription: text };
+      onUpdate([updated]);
+    } catch (e: any) {
+      console.error('Listing description generation failed', e);
+      const msg = e?.message || 'Failed to generate listing description.';
+      alert(msg.includes('API key') ? `${msg}\n\nAdd an AI key in .env and restart the app.` : msg);
+    } finally {
+      setListingGenId(null);
+    }
+  };
+
+  const handleCopyListingDescription = async (item: InventoryItem) => {
+    if (!item.marketDescription) return;
+    try {
+      await navigator.clipboard.writeText(item.marketDescription);
+    } catch (e) {
+      console.error('Copy to clipboard failed', e);
+      alert('Could not copy text to clipboard.');
+    }
+  };
+
   // -- VIRTUALIZATION / PERFORMANCE --
   const [visibleCount, setVisibleCount] = useState(50);
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -236,7 +275,7 @@ const InventoryList: React.FC<Props> = ({
   };
   
   // Visible Columns
-  const visibleColumns: ColumnId[] = ['select', 'item', 'presence', 'parseSpecs', 'category', 'status', 'buyPrice', 'sellPrice', 'profit', 'buyDate', 'sellDate', 'actions'];
+  const visibleColumns: ColumnId[] = ['select', 'item', 'presence', 'listing', 'parseSpecs', 'category', 'status', 'buyPrice', 'sellPrice', 'profit', 'buyDate', 'sellDate', 'actions'];
 
   // Calculate Date Range based on filter
   const dateRange = useMemo(() => {
@@ -831,6 +870,45 @@ const InventoryList: React.FC<Props> = ({
             >
               {item.presence === 'present' ? '+' : item.presence === 'lost' ? '−' : '·'}
             </button>
+          </td>
+        );
+      case 'listing':
+        return (
+          <td key={id} className="p-5 text-center" style={style} onClick={(e) => e.stopPropagation()}>
+            <div className="flex flex-col gap-1 items-stretch">
+              <button
+                type="button"
+                onClick={() => handleGenerateListingDescription(item)}
+                disabled={listingGenId === item.id}
+                className={`inline-flex items-center justify-center gap-1 px-2 py-1 rounded-lg border text-[10px] font-semibold uppercase tracking-wide ${
+                  item.marketDescription
+                    ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                    : 'border-slate-200 bg-slate-50 text-slate-600'
+                } ${listingGenId === item.id ? 'opacity-70 cursor-wait' : 'hover:bg-indigo-100 hover:border-indigo-300'}`}
+                title={
+                  item.marketDescription
+                    ? 'Regenerate Kleinanzeigen/eBay style description with AI'
+                    : 'Generate Kleinanzeigen/eBay style description with AI'
+                }
+              >
+                {listingGenId === item.id ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                <span>{item.marketDescription ? 'Re-gen' : 'Gen'}</span>
+              </button>
+              {item.marketDescription && (
+                <button
+                  type="button"
+                  onClick={() => handleCopyListingDescription(item)}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 hover:bg-slate-50"
+                  title="Copy generated listing text to clipboard"
+                >
+                  <Copy size={11} />
+                  <span className="truncate max-w-[140px]">
+                    {item.marketDescription.replace(/\s+/g, ' ').slice(0, 60)}
+                    {item.marketDescription.length > 60 ? '…' : ''}
+                  </span>
+                </button>
+              )}
+            </div>
           </td>
         );
       case 'item':

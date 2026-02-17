@@ -290,41 +290,56 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
               <div className="lg:col-span-8 space-y-6">
                  <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 space-y-6">
                     {/* Basic Info */}
-                    <div className="space-y-4">
-                       <div className="space-y-2 relative">
+                   <div className="space-y-4">
+                      <div className="space-y-2">
                           <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Item Name</label>
-                          <input 
-                             autoFocus={!id && !initialData}
-                             className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-lg outline-none focus:border-blue-500 focus:bg-white transition-all"
-                             placeholder="e.g. MSI GeForce RTX 3060 Gaming X — type to suggest from history"
-                             value={formData.name}
-                             onChange={e => setFormData({ ...formData, name: e.target.value })}
-                             onFocus={() => setNameSuggestionsOpen(true)}
-                             onBlur={() => setTimeout(() => setNameSuggestionsOpen(false), 180)}
-                          />
-                          {nameSuggestionsOpen && nameSuggestions.length > 0 && (
-                            <ul className="absolute z-20 left-0 right-0 mt-1 py-2 bg-white border border-slate-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto">
-                              <li className="px-4 py-2 text-[10px] font-black uppercase text-slate-400 border-b border-slate-100">
-                                Pick from history to copy category, specs & more
-                              </li>
-                              {nameSuggestions.map((item) => (
-                                <li
-                                  key={item.id}
-                                  className="px-4 py-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0"
-                                  onMouseDown={(e) => {
-                                    e.preventDefault();
-                                    applyItemFromHistory(item);
-                                  }}
-                                >
-                                  <p className="font-bold text-slate-900">{item.name}</p>
-                                  <p className="text-xs text-slate-500 mt-0.5">
-                                    {item.category} / {item.subCategory || '—'}
-                                    {item.vendor ? ` · ${item.vendor}` : ''}
-                                  </p>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
+                          <div className="flex gap-2 items-stretch">
+                            <div className="relative flex-1">
+                              <input 
+                                 autoFocus={!id && !initialData}
+                                 className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-lg outline-none focus:border-blue-500 focus:bg-white transition-all"
+                                 placeholder="e.g. MSI GeForce RTX 3060 Gaming X — type to suggest from history"
+                                 value={formData.name}
+                                 onChange={e => setFormData({ ...formData, name: e.target.value })}
+                                 onFocus={() => setNameSuggestionsOpen(true)}
+                                 onBlur={() => setTimeout(() => setNameSuggestionsOpen(false), 180)}
+                              />
+                              {nameSuggestionsOpen && nameSuggestions.length > 0 && (
+                                <ul className="absolute z-20 left-0 right-0 mt-1 py-2 bg-white border border-slate-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto">
+                                  <li className="px-4 py-2 text-[10px] font-black uppercase text-slate-400 border-b border-slate-100">
+                                    Pick from history to copy category, specs & more
+                                  </li>
+                                  {nameSuggestions.map((item) => (
+                                    <li
+                                      key={item.id}
+                                      className="px-4 py-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0"
+                                      onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        applyItemFromHistory(item);
+                                      }}
+                                    >
+                                      <p className="font-bold text-slate-900">{item.name}</p>
+                                      <p className="text-xs text-slate-500 mt-0.5">
+                                        {item.category} / {item.subCategory || '—'}
+                                        {item.vendor ? ` · ${item.vendor}` : ''}
+                                      </p>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                            {/* Quick AI specs parse from name */}
+                            <button
+                              type="button"
+                              onClick={handleAutoFillSpecs}
+                              disabled={generatingSpecs || !formData.name}
+                              title="AI: parse tech specs from item name and fill the fields below"
+                              className="shrink-0 px-4 py-3 rounded-2xl border border-blue-100 bg-white text-xs font-black uppercase tracking-widest text-blue-600 flex items-center gap-1 hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {generatingSpecs ? <Wand2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
+                              <span>AI Specs</span>
+                            </button>
+                          </div>
                        </div>
                        <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-2">
