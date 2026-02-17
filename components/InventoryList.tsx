@@ -148,6 +148,7 @@ const InventoryList: React.FC<Props> = ({
   const [editingCell, setEditingCell] = useState<{ itemId: string, field: ColumnId } | null>(null);
   const [editValue, setEditValue] = useState<string | number>('');
   const [parsingSingleId, setParsingSingleId] = useState<string | null>(null);
+  const rowClickTimeoutRef = useRef<number | null>(null);
 
   // -- STATE PERSISTENCE EFFECTS --
   useEffect(() => localStorage.setItem(`${persistenceKey}_search`, JSON.stringify(searchTerm)), [searchTerm, persistenceKey]);
@@ -732,6 +733,17 @@ const InventoryList: React.FC<Props> = ({
     onUpdate([copy]);
   };
 
+  // Delayed row click handler so double-click can enter inline rename
+  const handleRowClick = (item: InventoryItem, isEditingName: boolean) => {
+    if (isEditingName) return;
+    // If there's already a pending click, do nothing (double-click handler will take over)
+    if (rowClickTimeoutRef.current != null) return;
+    rowClickTimeoutRef.current = window.setTimeout(() => {
+      rowClickTimeoutRef.current = null;
+      handleEditClick(item);
+    }, 220);
+  };
+
   const handleConfirmDismantle = () => {
     if (!bundleToDismantle) return;
     const bundle = bundleToDismantle;
@@ -1040,7 +1052,7 @@ const InventoryList: React.FC<Props> = ({
         };
         const isEditingName = editingCell?.itemId === item.id && editingCell?.field === 'item';
         return (
-          <td key={id} className="p-5" style={style} onClick={() => !isEditingName && handleEditClick(item)}>
+          <td key={id} className="p-5" style={style} onClick={() => handleRowClick(item, isEditingName)}>
              <div className="flex items-center gap-4 cursor-pointer group/cell">
                 <ItemThumbnail item={item} className="w-12 h-12 rounded-xl object-cover shadow-sm border border-slate-100" size={48} />
                 <div className="flex-1 min-w-0">
@@ -1064,6 +1076,10 @@ const InventoryList: React.FC<Props> = ({
                           title="Double click to rename"
                           onDoubleClick={(e) => {
                             e.stopPropagation();
+                            if (rowClickTimeoutRef.current != null) {
+                              window.clearTimeout(rowClickTimeoutRef.current);
+                              rowClickTimeoutRef.current = null;
+                            }
                             startEditing(item, 'item', item.name);
                           }}
                         >
