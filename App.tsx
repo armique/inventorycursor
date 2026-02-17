@@ -243,6 +243,27 @@ const App: React.FC = () => {
     });
   }, []);
 
+  // Merge expenses from cloud with locally stored expenses.
+  // - Uses expense.id as the stable key.
+  // - Remote (cloud) wins on conflicts (same id), but any purely local
+  //   expenses that haven't been pushed yet are preserved instead of being
+  //   overwritten when the first snapshot arrives.
+  const mergeExpensesFromLocal = useCallback((remoteList: Expense[], localList: Expense[]): Expense[] => {
+    if (!localList?.length) return remoteList || [];
+    if (!remoteList?.length) return localList || [];
+
+    const byId = new Map<string, Expense>();
+    // start with local (so we keep anything only-in-local)
+    localList.forEach((e) => {
+      if (e && e.id) byId.set(e.id, e);
+    });
+    // overlay remote (server truth wins when IDs match)
+    remoteList.forEach((e) => {
+      if (e && e.id) byId.set(e.id, e);
+    });
+    return Array.from(byId.values());
+  }, []);
+
   const applyRemoteData = useCallback((data: any) => {
     if (!data) return;
     isRemoteUpdate.current = true;
@@ -252,7 +273,9 @@ const App: React.FC = () => {
     const localTrash = JSON.parse(localStorage.getItem('inventory_trash') || '[]') as InventoryItem[];
     const inv = mergeLargeFieldsFromLocal(remoteInv, localItems);
     const tr = mergeLargeFieldsFromLocal(remoteTrash, localTrash);
-    const exp = (data.expenses || []) as Expense[];
+    const localExpenses = JSON.parse(localStorage.getItem('inventory_expenses') || '[]') as Expense[];
+    const remoteExpenses = (data.expenses || []) as Expense[];
+    const exp = mergeExpensesFromLocal(remoteExpenses, localExpenses);
     const sets = data.settings || {};
     const goal = data.goals?.monthly ?? 1000;
     const cats = data.categories || {};
