@@ -258,6 +258,121 @@ const SettingsPage: React.FC<Props> = ({
     showToast(`Backfilled containerSoldDate for ${totalComponentsUpdated} components from ${soldContainers.length} sold PCs/bundles.`, 'success');
   };
 
+  const handleRetroactiveProportionalPrices = () => {
+    // Migration: Apply proportional sell prices to child items of already-sold bundles/PCs
+    const allItems = [...items, ...trash];
+    const soldContainers = allItems.filter(
+      i => (i.isPC || i.isBundle) && i.status === ItemStatus.SOLD && i.sellDate && i.sellPrice && i.sellPrice > 0
+    );
+    
+    if (soldContainers.length === 0) {
+      showToast('No sold PCs or bundles with sell prices found.', 'error');
+      return;
+    }
+
+    const updates: InventoryItem[] = [];
+    let totalComponentsUpdated = 0;
+
+    soldContainers.forEach(container => {
+      const soldAt = container.sellDate!;
+      const bundleSellPrice = container.sellPrice || 0;
+      const bundleFee = container.feeAmount || 0;
+      const componentIds = container.componentIds || [];
+      
+      // Find child components
+      const childComponents = allItems.filter(i => 
+        (componentIds.includes(i.id) || i.parentContainerId === container.id)
+      );
+
+      if (childComponents.length === 0) return;
+
+      // Calculate total buy price of all children
+      const totalChildBuyPrice = childComponents.reduce((sum, i) => sum + (i.buyPrice || 0), 0);
+      
+      // Allocate proportional sell prices
+      childComponents.forEach(child => {
+        const childBuyPrice = child.buyPrice || 0;
+        
+        // Calculate proportional sell price: (item buy price / total buy price) * bundle sell price
+        // Fallback to equal split if no buy prices
+        const proportionalSellPrice = totalChildBuyPrice > 0
+          ? (childBuyPrice / totalChildBuyPrice) * bundleSellPrice
+          : bundleSellPrice / childComponents.length;
+        
+        // Allocate fee proportionally
+        const proportionalFee = totalChildBuyPrice > 0
+          ? (childBuyPrice / totalChildBuyPrice) * bundleFee
+          : bundleFee / childComponents.length;
+        
+        // Calculate profit
+        const childProfit = proportionalSellPrice - childBuyPrice - proportionalFee;
+        
+        updates.push({
+          ...child,
+          sellDate: soldAt,
+          sellPrice: Math.round(proportionalSellPrice * 100) / 100,
+          feeAmount: Math.round(proportionalFee * 100) / 100,
+          hasFee: proportionalFee > 0,
+          profit: Math.round(childProfit * 100) / 100,
+          status: ItemStatus.SOLD,
+          containerSoldDate: soldAt,
+          platformSold: container.platformSold,
+          paymentType: container.paymentType,
+          // Keep original buyDate - don't overwrite it
+        });
+        totalComponentsUpdated++;
+      });
+    });
+
+    if (updates.length === 0) {
+      showToast('No child components found to update.', 'error');
+      return;
+    }
+
+    // Also set bundle/PC profit to 0 (profit only exists in child items)
+    soldContainers.forEach(container => {
+      const existingUpdate = updates.find(u => u.id === container.id);
+      if (!existingUpdate) {
+        // Find container in items or trash
+        const containerInItems = items.find(i => i.id === container.id) || trash.find(i => i.id === container.id);
+        if (containerInItems) {
+          updates.push({
+            ...containerInItems,
+            profit: 0, // No profit on container - only child items have profit
+          });
+        }
+      } else {
+        // Update existing update to set profit to 0
+        const idx = updates.findIndex(u => u.id === container.id);
+        if (idx >= 0) {
+          updates[idx] = {
+            ...updates[idx],
+            profit: 0,
+          };
+        }
+      }
+    });
+
+    // Merge updates with existing items
+    const updatedItems = items.map(i => {
+      const update = updates.find(u => u.id === i.id);
+      return update || i;
+    });
+    const updatedTrash = trash.map(i => {
+      const update = updates.find(u => u.id === i.id);
+      return update || i;
+    });
+
+    onRestoreItems(updatedItems);
+    if (onRestoreBackup) {
+      onRestoreBackup({
+        inventory: updatedItems,
+        trash: updatedTrash,
+      });
+    }
+    showToast(`Applied proportional sell prices to ${totalComponentsUpdated} components from ${soldContainers.length} sold bundles/PCs.`, 'success');
+  };
+
   const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !onRestoreBackup) return;
@@ -901,6 +1016,19 @@ const SettingsPage: React.FC<Props> = ({
                       className="px-5 py-2.5 bg-blue-600 text-white rounded-xl font-bold text-xs uppercase hover:bg-blue-700 transition-all flex items-center gap-2"
                    >
                       <ArchiveRestore size={16}/> Backfill historical data
+                   </button>
+                </div>
+                <div className="bg-emerald-50 border border-emerald-200 p-6 rounded-2xl">
+                   <h4 className="text-sm font-black text-emerald-900 flex items-center gap-2 mb-2"><RefreshCw size={18}/> Apply proportional sell prices to sold bundles/PCs</h4>
+                   <p className="text-sm text-emerald-800 leading-relaxed mb-4">
+                      For bundles and PC builds that were already sold before proportional price allocation was implemented, this migration calculates and applies proportional <code className="bg-emerald-100 px-1 rounded">sellPrice</code>, <code className="bg-emerald-100 px-1 rounded">feeAmount</code>, and <code className="bg-emerald-100 px-1 rounded">profit</code> to all child components based on their buy price ratios. Each component receives a share of the bundle&apos;s total sell price proportional to its buy price.
+                   </p>
+                   <button
+                      type="button"
+                      onClick={handleRetroactiveProportionalPrices}
+                      className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-xs uppercase hover:bg-emerald-700 transition-all flex items-center gap-2"
+                   >
+                      <RefreshCw size={16}/> Apply proportional prices
                    </button>
                 </div>
              </div>

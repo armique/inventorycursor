@@ -623,10 +623,16 @@ const InventoryList: React.FC<Props> = ({
     let totalNetRevenue = 0;
     let totalProfit = 0;
 
-    sortedItems.filter(i => i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED).forEach(item => {
+    const soldItems = sortedItems.filter(i => i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED);
+    // For financial stats we only want to count *real* items once.
+    // PC builds / Bundles are just containers whose economics live in their child items,
+    // so we ignore rows where isPC / isBundle is true to avoid double-counting revenue & profit.
+    const soldAtomicItems = soldItems.filter(i => !i.isPC && !i.isBundle);
+    
+    // Calculate gross revenue and tax for all sold atomic items
+    soldAtomicItems.forEach(item => {
         const sell = item.sellPrice || 0;
-        const buy = item.buyPrice || 0;
-        const fee = item.feeAmount || 0;
+        if (sell === 0) return;
         
         let tax = 0;
         let netSell = sell;
@@ -635,6 +641,7 @@ const InventoryList: React.FC<Props> = ({
             netSell = sell / 1.19;
             tax = sell - netSell;
         } else if (businessSettings.taxMode === 'DifferentialVAT') {
+            const buy = item.buyPrice || 0;
             const margin = sell - buy;
             if (margin > 0) {
                 const netMargin = margin / 1.19;
@@ -646,6 +653,27 @@ const InventoryList: React.FC<Props> = ({
         totalGross += sell;
         totalTax += tax;
         totalNetRevenue += netSell;
+    });
+
+    // Calculate profit only for the same atomic set
+    soldAtomicItems.forEach(item => {
+        const sell = item.sellPrice || 0;
+        const buy = item.buyPrice || 0;
+        const fee = item.feeAmount || 0;
+        
+        let netSell = sell;
+        if (businessSettings.taxMode === 'RegularVAT') {
+            netSell = sell / 1.19;
+        } else if (businessSettings.taxMode === 'DifferentialVAT') {
+            const margin = sell - buy;
+            if (margin > 0) {
+                const netMargin = margin / 1.19;
+                netSell = sell - (margin - netMargin);
+            } else {
+                netSell = sell;
+            }
+        }
+        
         totalProfit += (netSell - buy - fee);
     });
 
@@ -1136,25 +1164,53 @@ const InventoryList: React.FC<Props> = ({
                    {isExpanded && childItems.length > 0 && (
                       <div className="mt-3 ml-4 pl-4 border-l-2 border-slate-200 space-y-2">
                          <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Components:</p>
-                         {childItems.map(child => (
-                            <div key={child.id} className="flex items-center justify-between gap-2 text-xs bg-slate-50 p-2 rounded-lg">
-                               <span className="font-medium text-slate-700 truncate flex-1">{child.name}</span>
-                               <div className="flex items-center gap-3 text-[10px] text-slate-500 shrink-0">
-                                  {child.buyDate && (
-                                     <span className="flex items-center gap-1">
-                                        <Calendar size={10} />
-                                        Buy: {new Date(child.buyDate).toLocaleDateString()}
-                                     </span>
-                                  )}
-                                  {child.sellDate && (
-                                     <span className="flex items-center gap-1 text-emerald-600">
-                                        <Calendar size={10} />
-                                        Sold: {new Date(child.sellDate).toLocaleDateString()}
-                                     </span>
-                                  )}
+                         {childItems.map(child => {
+                            const childMargin = child.profit != null ? child.profit : (child.sellPrice && child.buyPrice ? child.sellPrice - child.buyPrice - (child.feeAmount || 0) : null);
+                            return (
+                               <div key={child.id} className="flex items-center justify-between gap-2 text-xs bg-slate-50 p-2 rounded-lg">
+                                  <span className="font-medium text-slate-700 truncate flex-1">{child.name}</span>
+                                  <div className="flex items-center gap-3 text-[10px] shrink-0">
+                                     {childMargin != null && (
+                                        <span className={`font-bold px-1.5 py-0.5 rounded ${childMargin >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                           {childMargin >= 0 ? '+' : ''}€{childMargin.toFixed(2)}
+                                        </span>
+                                     )}
+                                     {child.buyDate && (
+                                        <span className="flex items-center gap-1 text-slate-500">
+                                           <Calendar size={10} />
+                                           Buy: {new Date(child.buyDate).toLocaleDateString()}
+                                        </span>
+                                     )}
+                                     {child.sellDate && (
+                                        <span className="flex items-center gap-1 text-emerald-600">
+                                           <Calendar size={10} />
+                                           Sold: {new Date(child.sellDate).toLocaleDateString()}
+                                        </span>
+                                     )}
+                                  </div>
                                </div>
-                            </div>
-                         ))}
+                            );
+                         })}
+                         {/* Total margin summary */}
+                         {(() => {
+                            const totalMargin = childItems.reduce((sum, child) => {
+                               const childMargin = child.profit != null ? child.profit : (child.sellPrice && child.buyPrice ? child.sellPrice - child.buyPrice - (child.feeAmount || 0) : 0);
+                               return sum + childMargin;
+                            }, 0);
+                            if (totalMargin !== 0 || childItems.some(c => c.sellPrice)) {
+                               return (
+                                  <div className="mt-2 pt-2 border-t border-slate-200 bg-slate-100/50 p-2 rounded-lg">
+                                     <div className="flex items-center justify-between">
+                                        <span className="text-[9px] font-black uppercase text-slate-600 tracking-widest">Total Margin:</span>
+                                        <span className={`text-sm font-black ${totalMargin >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                           {totalMargin >= 0 ? '+' : ''}€{totalMargin.toFixed(2)}
+                                        </span>
+                                     </div>
+                                  </div>
+                               );
+                            }
+                            return null;
+                         })()}
                       </div>
                    )}
                 </div>
@@ -1369,6 +1425,14 @@ const InventoryList: React.FC<Props> = ({
           </td>
         );
       case 'profit':
+        // Bundles/PCs don't have profit - profit is only in child items
+        if (item.isPC || item.isBundle) {
+          return (
+            <td key={id} className="p-5 text-right text-xs font-bold text-slate-300" style={style} title="Bundles/PCs don't have profit. Expand to see component margins.">
+              -
+            </td>
+          );
+        }
         return (
           <td key={id} className={`p-5 text-right font-black ${item.profit && item.profit > 0 ? 'text-emerald-600' : item.profit && item.profit < 0 ? 'text-red-500' : 'text-slate-300'}`} style={style}>
              {item.profit ? `€${item.profit.toFixed(2)}` : '-'}
@@ -2087,7 +2151,13 @@ const InventoryList: React.FC<Props> = ({
                    };
                  });
                  
-                 onUpdate([updated, ...updatedChildren]);
+                 // Bundle/PC itself should have profit set to 0 (or undefined) - profit only exists in child items
+                 const updatedContainer = {
+                   ...updated,
+                   profit: 0, // No profit on container - only child items have profit
+                 };
+                 
+                 onUpdate([updatedContainer, ...updatedChildren]);
                } else {
                  onUpdate([updated]); 
                }

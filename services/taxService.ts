@@ -24,6 +24,12 @@ export const calculateTaxSummary = (items: InventoryItem[], expenses: Expense[],
 
   // Process Inventory
   items.forEach(item => {
+    // PC builds / Bundles are logical containers composed of child items.
+    // Their buy/sell prices are aggregates of components, so we skip them here
+    // to avoid double-counting COGS and revenue. All economics are attributed
+    // to the atomic components instead.
+    if (item.isPC || item.isBundle) return;
+
     const buyYear = item.buyDate ? new Date(item.buyDate).getFullYear() : 0;
     const sellYear = item.sellDate ? new Date(item.sellDate).getFullYear() : 0;
 
@@ -77,8 +83,10 @@ export const generateTaxReportCSV = (items: InventoryItem[], expenses: Expense[]
   const headers = ['Datum', 'Typ', 'Kategorie', 'Beschreibung', 'Betrag (Brutto)', 'Beleg/Ref'];
   rows.push(headers.join(';'));
 
-  // 1. Inventory Purchases (Wareneingang)
-  items.filter(i => new Date(i.buyDate).getFullYear() === year).forEach(i => {
+  // 1. Inventory Purchases (Wareneingang) – only atomic items (no PC/Bundle containers)
+  items
+    .filter(i => !i.isPC && !i.isBundle && new Date(i.buyDate).getFullYear() === year)
+    .forEach(i => {
     rows.push([
       i.buyDate,
       'Ausgabe',
@@ -89,8 +97,17 @@ export const generateTaxReportCSV = (items: InventoryItem[], expenses: Expense[]
     ].map(c => `"${c}"`).join(';'));
   });
 
-  // 2. Inventory Sales (Erlöse)
-  items.filter(i => (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) && i.sellDate && new Date(i.sellDate).getFullYear() === year).forEach(i => {
+  // 2. Inventory Sales (Erlöse) – only atomic sold items (no PC/Bundle containers)
+  items
+    .filter(
+      i =>
+        !i.isPC &&
+        !i.isBundle &&
+        (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
+        i.sellDate &&
+        new Date(i.sellDate).getFullYear() === year
+    )
+    .forEach(i => {
     rows.push([
       i.sellDate || '',
       'Einnahme',

@@ -180,16 +180,19 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
   const stats = useMemo(() => {
     const soldItems = filteredItems.filter(i => i.status === ItemStatus.SOLD);
     const inStockItems = filteredItems.filter(i => i.status === ItemStatus.IN_STOCK);
+    // Only count real, atomic items (no PC/Bundle containers) for money metrics
+    const soldAtomic = soldItems.filter(i => !i.isPC && !i.isBundle);
+    const inStockAtomic = inStockItems.filter(i => !i.isPC && !i.isBundle);
     
-    const totalTurnover = soldItems.reduce((acc: number, i) => acc + (Number(i.sellPrice) || 0), 0);
-    const grossProfit = soldItems.reduce((acc: number, i) => acc + Number(calculateItemProfit(i)), 0);
+    const totalTurnover = soldAtomic.reduce((acc: number, i) => acc + (Number(i.sellPrice) || 0), 0);
+    const grossProfit = soldAtomic.reduce((acc: number, i) => acc + Number(calculateItemProfit(i)), 0);
 
     const totalExpenses = filteredExpenses.reduce((acc: number, e) => acc + Number(e.amount), 0);
     const netProfit = grossProfit - totalExpenses;
-    const inventoryValue = inStockItems.reduce((acc: number, i) => acc + Number(i.buyPrice), 0);
+    const inventoryValue = inStockAtomic.reduce((acc: number, i) => acc + Number(i.buyPrice), 0);
 
     const today = new Date();
-    const globalInStock = items.filter(i => i.status === ItemStatus.IN_STOCK);
+    const globalInStock = items.filter(i => i.status === ItemStatus.IN_STOCK && !i.isPC && !i.isBundle);
     const deathPileItems = globalInStock.filter(i => {
         const buyDate = new Date(i.buyDate);
         const diffTime = Math.abs(today.getTime() - buyDate.getTime());
@@ -198,13 +201,15 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
     });
     const deathPileValue = deathPileItems.reduce((acc: number, i) => acc + Number(i.buyPrice), 0);
 
-    const totalInventoryValue = items.filter(i => i.status === ItemStatus.IN_STOCK).reduce((acc, i) => acc + Number(i.buyPrice || 0), 0);
+    const totalInventoryValue = items
+      .filter(i => i.status === ItemStatus.IN_STOCK && !i.isPC && !i.isBundle)
+      .reduce((acc, i) => acc + Number(i.buyPrice || 0), 0);
     return { totalTurnover, grossProfit, totalExpenses, netProfit, inventoryValue, totalInventoryValue, deathPileCount: deathPileItems.length, deathPileValue };
   }, [filteredItems, filteredExpenses, items, taxMode]);
 
   const gameStats = useMemo(() => {
-    const allTimeProfit = items
-      .filter(i => i.status === ItemStatus.SOLD)
+    const soldAtomic = items.filter(i => i.status === ItemStatus.SOLD && !i.isPC && !i.isBundle);
+    const allTimeProfit = soldAtomic
       .reduce((acc: number, i) => acc + Number(calculateItemProfit(i)), 0) 
       - expenses.reduce((acc: number, e) => acc + Number(e.amount || 0), 0);
 
@@ -213,7 +218,15 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
     const progressToNext = nextLevel ? ((allTimeProfit - currentLevel.min) / (nextLevel.min - currentLevel.min)) * 100 : 100;
 
     const now = new Date();
-    const currentMonthItems = items.filter(i => i.status === ItemStatus.SOLD && i.sellDate && new Date(i.sellDate).getMonth() === now.getMonth() && new Date(i.sellDate).getFullYear() === now.getFullYear());
+    const currentMonthItems = items.filter(
+      i =>
+        i.status === ItemStatus.SOLD &&
+        !i.isPC &&
+        !i.isBundle &&
+        i.sellDate &&
+        new Date(i.sellDate).getMonth() === now.getMonth() &&
+        new Date(i.sellDate).getFullYear() === now.getFullYear()
+    );
     const currentMonthExpenses = expenses.filter(e => new Date(e.date).getMonth() === now.getMonth() && new Date(e.date).getFullYear() === now.getFullYear());
     const monthProfit = currentMonthItems.reduce((acc: number, i) => acc + Number(calculateItemProfit(i)), 0) - currentMonthExpenses.reduce((acc: number, e) => acc + Number(e.amount || 0), 0);
     const goalProgress = Math.min((monthProfit / monthlyGoal) * 100, 100);
@@ -240,7 +253,14 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
        const sortedYears = Array.from(years).sort((a: number, b: number) => Number(a) - Number(b));
        
        sortedYears.forEach(year => {
-          const sold = filteredItems.filter(i => i.status === ItemStatus.SOLD && i.sellDate && new Date(i.sellDate).getFullYear() === year);
+          const sold = filteredItems.filter(
+            i =>
+              i.status === ItemStatus.SOLD &&
+              !i.isPC &&
+              !i.isBundle &&
+              i.sellDate &&
+              new Date(i.sellDate).getFullYear() === year
+          );
           const exps = filteredExpenses.filter(e => new Date(e.date).getFullYear() === year);
           const revenue = sold.reduce((acc: number, i) => acc + (Number(i.sellPrice) || 0), 0);
           const itemProfit = sold.reduce((acc: number, i) => acc + Number(calculateItemProfit(i)), 0);
@@ -255,7 +275,13 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
           const dayStr = curr.toISOString().split('T')[0];
           const label = diffDays > 32 ? curr.toLocaleString('default', { month: 'short' }) : curr.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit' });
           
-          const sold = filteredItems.filter(i => i.status === ItemStatus.SOLD && i.sellDate === dayStr);
+          const sold = filteredItems.filter(
+            i =>
+              i.status === ItemStatus.SOLD &&
+              !i.isPC &&
+              !i.isBundle &&
+              i.sellDate === dayStr
+          );
           const exps = filteredExpenses.filter(e => e.date === dayStr);
           const revenue = sold.reduce((acc: number, i) => acc + (Number(i.sellPrice) || 0), 0);
           const itemProfit: number = sold.reduce((acc: number, i) => acc + Number(calculateItemProfit(i)), 0);
@@ -290,7 +316,12 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
 
   // Profit by category (sold items in period)
   const profitByCategory = useMemo(() => {
-    const sold = filteredItems.filter(i => i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED);
+    const sold = filteredItems.filter(
+      i =>
+        (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
+        !i.isPC &&
+        !i.isBundle
+    );
     const byCat: Record<string, number> = {};
     sold.forEach(i => {
       const cat = i.category || 'Other';
@@ -303,7 +334,12 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
 
   // Profit by month (sold items in period)
   const profitByMonth = useMemo(() => {
-    const sold = filteredItems.filter(i => i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED);
+    const sold = filteredItems.filter(
+      i =>
+        (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
+        !i.isPC &&
+        !i.isBundle
+    );
     const byMonth: Record<string, number> = {};
     sold.forEach(i => {
       if (!i.sellDate) return;

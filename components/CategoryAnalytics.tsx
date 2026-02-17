@@ -51,8 +51,13 @@ const CategoryAnalytics: React.FC<Props> = ({ items, businessSettings }) => {
   const [sortBy, setSortBy] = useState<'profit' | 'count' | 'margin' | 'days'>('profit');
 
   const soldItems = useMemo(() => {
+    // Only count atomic items. PC builds / Bundles are containers and their economics
+    // live in the child components, so skip rows with isPC / isBundle to avoid double-counting.
     return items.filter(
-      (i) => i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED
+      (i) =>
+        (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
+        !i.isPC &&
+        !i.isBundle
     );
   }, [items]);
 
@@ -105,10 +110,20 @@ const CategoryAnalytics: React.FC<Props> = ({ items, businessSettings }) => {
       const totalRevenue = list.reduce((a, i) => a + (Number(i.sellPrice) || 0), 0);
       const totalCost = list.reduce((a, i) => a + Number(i.buyPrice), 0);
       const totalProfit = list.reduce((a, i) => a + calculateItemProfit(i, taxMode), 0);
-      const withDates = list.filter((i) => i.buyDate && i.sellDate);
+      // For days to sell: use buyDate and either containerSoldDate (if sold as part of bundle/PC) or sellDate
+      // This ensures child items within bundles/PCs are measured correctly
+      const withDates = list.filter((i) => {
+        const buyDate = i.buyDate;
+        const sellDate = i.containerSoldDate || i.sellDate; // Prefer containerSoldDate for bundle components
+        return buyDate && sellDate;
+      });
       const avgDays =
         withDates.length > 0
-          ? withDates.reduce((a, i) => a + daysBetween(i.buyDate!, i.sellDate!), 0) / withDates.length
+          ? withDates.reduce((a, i) => {
+              const buyDate = i.buyDate!;
+              const sellDate = i.containerSoldDate || i.sellDate!; // Use containerSoldDate if available
+              return a + daysBetween(buyDate, sellDate);
+            }, 0) / withDates.length
           : 0;
       const avgMarginPct = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0;
       result.push({
@@ -138,10 +153,20 @@ const CategoryAnalytics: React.FC<Props> = ({ items, businessSettings }) => {
         const totalRevenue = list.reduce((a, i) => a + (Number(i.sellPrice) || 0), 0);
         const totalCost = list.reduce((a, i) => a + Number(i.buyPrice), 0);
         const totalProfit = list.reduce((a, i) => a + calculateItemProfit(i, taxMode), 0);
-        const withDates = list.filter((i) => i.buyDate && i.sellDate);
+        // For days to sell: use buyDate and either containerSoldDate (if sold as part of bundle/PC) or sellDate
+        // This ensures child items within bundles/PCs are measured correctly
+        const withDates = list.filter((i) => {
+          const buyDate = i.buyDate;
+          const sellDate = i.containerSoldDate || i.sellDate; // Prefer containerSoldDate for bundle components
+          return buyDate && sellDate;
+        });
         const avgDays =
           withDates.length > 0
-            ? withDates.reduce((a, i) => a + daysBetween(i.buyDate!, i.sellDate!), 0) / withDates.length
+            ? withDates.reduce((a, i) => {
+                const buyDate = i.buyDate!;
+                const sellDate = i.containerSoldDate || i.sellDate!; // Use containerSoldDate if available
+                return a + daysBetween(buyDate, sellDate);
+              }, 0) / withDates.length
             : 0;
         const avgMarginPct = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0;
         rows.push({
