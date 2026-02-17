@@ -47,7 +47,7 @@ const SmartBundleSuggester: React.FC<Props> = ({ items, onCreateBundle }) => {
       id: bundleId,
       name: suggestion.title,
       buyPrice: totalCost,
-      buyDate: new Date().toISOString().split('T')[0],
+      // No buyDate - bundles don't have buy dates, only their components do
       category: 'Bundle',
       subCategory: 'Smart Bundle',
       status: ItemStatus.IN_STOCK,

@@ -168,6 +168,7 @@ const InventoryList: React.FC<Props> = ({
   }, [showSpecFiltersPanel]);
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [expandedBundles, setExpandedBundles] = useState<Set<string>>(new Set());
   
   // Modals
   const [itemToSell, setItemToSell] = useState<InventoryItem | null>(null);
@@ -776,12 +777,40 @@ const InventoryList: React.FC<Props> = ({
           </td>
         );
       case 'item':
+        const isExpanded = expandedBundles.has(item.id);
+        const childItems = (item.isPC || item.isBundle) && (item.componentIds || []) 
+          ? items.filter(i => 
+              (item.componentIds && item.componentIds.includes(i.id)) || 
+              i.parentContainerId === item.id
+            )
+          : [];
+        const toggleExpand = (e: React.MouseEvent) => {
+          e.stopPropagation();
+          const newExpanded = new Set(expandedBundles);
+          if (isExpanded) {
+            newExpanded.delete(item.id);
+          } else {
+            newExpanded.add(item.id);
+          }
+          setExpandedBundles(newExpanded);
+        };
         return (
           <td key={id} className="p-5" style={style} onClick={() => handleEditClick(item)}>
              <div className="flex items-center gap-4 cursor-pointer group/cell">
                 <ItemThumbnail item={item} className="w-12 h-12 rounded-xl object-cover shadow-sm border border-slate-100" size={48} />
                 <div className="flex-1 min-w-0">
-                   <p className="text-sm font-black text-slate-900 truncate group-hover/cell:text-blue-600 transition-colors">{item.name}</p>
+                   <div className="flex items-center gap-2">
+                      <p className="text-sm font-black text-slate-900 truncate group-hover/cell:text-blue-600 transition-colors flex-1">{item.name}</p>
+                      {(item.isPC || item.isBundle) && childItems.length > 0 && (
+                         <button
+                            onClick={toggleExpand}
+                            className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                            title={isExpanded ? "Collapse components" : "Expand to show components"}
+                         >
+                            {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                         </button>
+                      )}
+                   </div>
                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                       {item.specs && Object.keys(item.specs).length > 0 && (
                          <span className="inline-flex items-center gap-1 text-emerald-600" title="Tech specs filled — open to edit or re-parse">
@@ -794,6 +823,9 @@ const InventoryList: React.FC<Props> = ({
                       {item.isPC && <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-black uppercase">PC Build</span>}
                       {item.isDefective && <span className="text-[9px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-black uppercase">Defective</span>}
                       <span className="text-[10px] text-slate-400 font-bold uppercase truncate">{item.vendor}</span>
+                      {(item.isPC || item.isBundle) && childItems.length > 0 && (
+                         <span className="text-[9px] text-slate-500 font-medium">({childItems.length} items)</span>
+                      )}
                    </div>
                    {item.specs && Object.keys(item.specs).length > 0 && (
                       <p className="text-[10px] text-slate-500 font-medium mt-1 truncate" title={Object.entries(item.specs).map(([k, v]) => `${k}: ${v}`).join(' • ')}>
@@ -804,6 +836,30 @@ const InventoryList: React.FC<Props> = ({
                       <p className="text-[9px] text-blue-600 font-bold mt-1 flex items-center gap-1" title="Compatible parts in inventory — open item to see list">
                          <Layers size={10} /> Works with {compatibleCountByItemId.get(item.id)} item{compatibleCountByItemId.get(item.id) === 1 ? '' : 's'}
                       </p>
+                   )}
+                   {isExpanded && childItems.length > 0 && (
+                      <div className="mt-3 ml-4 pl-4 border-l-2 border-slate-200 space-y-2">
+                         <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Components:</p>
+                         {childItems.map(child => (
+                            <div key={child.id} className="flex items-center justify-between gap-2 text-xs bg-slate-50 p-2 rounded-lg">
+                               <span className="font-medium text-slate-700 truncate flex-1">{child.name}</span>
+                               <div className="flex items-center gap-3 text-[10px] text-slate-500 shrink-0">
+                                  {child.buyDate && (
+                                     <span className="flex items-center gap-1">
+                                        <Calendar size={10} />
+                                        Buy: {new Date(child.buyDate).toLocaleDateString()}
+                                     </span>
+                                  )}
+                                  {child.sellDate && (
+                                     <span className="flex items-center gap-1 text-emerald-600">
+                                        <Calendar size={10} />
+                                        Sold: {new Date(child.sellDate).toLocaleDateString()}
+                                     </span>
+                                  )}
+                               </div>
+                            </div>
+                         ))}
+                      </div>
                    )}
                 </div>
              </div>
@@ -940,6 +996,14 @@ const InventoryList: React.FC<Props> = ({
         );
       case 'buyDate':
       case 'sellDate':
+        // Bundles/PCs don't have buyDate - show "-" and tooltip
+        if ((item.isPC || item.isBundle) && id === 'buyDate') {
+          return (
+            <td key={id} className="p-5 text-right text-xs font-bold text-slate-300" style={style} title="Bundles/PCs don't have buy dates. Expand to see component buy dates.">
+              -
+            </td>
+          );
+        }
         const isEditingDate = editingCell?.itemId === item.id && editingCell?.field === id;
         return (
            <td 
@@ -1535,8 +1599,7 @@ const InventoryList: React.FC<Props> = ({
             taxMode={businessSettings.taxMode}
             onSave={(updated) => { 
                // When selling a PC or bundle, also stamp all child components
-               // with the container's sale date so we can measure per-component
-               // time-in-stock even though they were sold as a build.
+               // with the container's sale date. Child items keep their original buyDate.
                if ((updated.isPC || updated.isBundle) && updated.componentIds && updated.componentIds.length > 0) {
                  const soldAt = updated.sellDate || new Date().toISOString().split('T')[0];
                  const childComponents = items
@@ -1546,7 +1609,10 @@ const InventoryList: React.FC<Props> = ({
                    )
                    .map(i => ({
                      ...i,
+                     sellDate: soldAt, // Set sellDate to match bundle/PC sellDate
+                     status: ItemStatus.SOLD, // Mark as sold
                      containerSoldDate: soldAt,
+                     // Keep original buyDate - don't overwrite it
                    }));
                  onUpdate([updated, ...childComponents]);
                } else {

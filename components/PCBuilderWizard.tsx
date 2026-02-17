@@ -171,7 +171,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
         subCategory: 'Custom Built PC',
         status: ItemStatus.IN_STOCK,
         buyPrice: totalCost,
-        buyDate: new Date().toISOString().split('T')[0],
+        // No buyDate - bundles/PCs don't have buy dates, only their components do
         isPC: true,
         componentIds: allParts.map(i => i.id),
         comment1: `Custom Build Specs:\n${allParts.map(i => `- ${i.name}`).join('\n')}`,

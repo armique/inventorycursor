@@ -59,15 +59,10 @@ const RetroBundleModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
   const uniqueSellDates = Array.from(new Set(items.map(i => i.sellDate).filter(Boolean)));
   const initialSellDate = uniqueSellDates.length === 1 ? (uniqueSellDates[0] as string) : new Date().toISOString().split('T')[0];
 
-  const buyDates = items.map(i => i.buyDate).filter(Boolean).sort();
-  const initialBuyDate = buyDates[0] || new Date().toISOString().split('T')[0];
-
   const [sellDate, setSellDate] = useState(initialSellDate);
-  const [buyDate, setBuyDate] = useState(initialBuyDate);
 
   // Edit Modes
   const [isEditingSellDate, setIsEditingSellDate] = useState(false);
-  const [isEditingBuyDate, setIsEditingBuyDate] = useState(false);
 
   const handleConfirm = () => {
     const bundleId = `bundle-${Date.now()}`;
@@ -84,7 +79,7 @@ const RetroBundleModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
       feeAmount: totalFees,
       hasFee: hasFees,
       sellDate: sellDate,
-      buyDate: buyDate,
+      // No buyDate - bundles don't have buy dates, only their components do
       platformSold: platform,
       paymentType: payment,
       isBundle: true,
@@ -132,37 +127,7 @@ const RetroBundleModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
              />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-             {/* BUY DATE */}
-             <div 
-                className="bg-slate-50 p-4 rounded-2xl border border-slate-100 cursor-pointer hover:border-indigo-200 transition-colors group"
-                onDoubleClick={() => setIsEditingBuyDate(true)}
-             >
-                <div className="flex justify-between items-center mb-1">
-                   <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Acquired Date</p>
-                   {!isEditingBuyDate && <Edit2 size={10} className="text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"/>}
-                </div>
-                {isEditingBuyDate ? (
-                   <div className="flex items-center gap-2">
-                      <input 
-                         type="date" 
-                         autoFocus
-                         className="w-full bg-white border border-indigo-300 rounded-lg px-2 py-1 text-xs font-bold outline-none"
-                         value={buyDate}
-                         onChange={e => setBuyDate(e.target.value)}
-                         onBlur={() => setIsEditingBuyDate(false)}
-                         onKeyDown={e => e.key === 'Enter' && setIsEditingBuyDate(false)}
-                      />
-                      <button onClick={() => setIsEditingBuyDate(false)} className="text-emerald-500"><Check size={14}/></button>
-                   </div>
-                ) : (
-                   <div className="flex items-center gap-2 text-slate-700 font-bold text-sm">
-                      <Calendar size={14} className="text-slate-400"/>
-                      {new Date(buyDate).toLocaleDateString()}
-                   </div>
-                )}
-             </div>
-
+          <div className="grid grid-cols-1 gap-4">
              {/* SELL DATE */}
              <div 
                 className="bg-slate-50 p-4 rounded-2xl border border-slate-100 cursor-pointer hover:border-indigo-200 transition-colors group"
