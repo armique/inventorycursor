@@ -423,6 +423,41 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                           onChange={e => setFormData({ ...formData, comment1: e.target.value })}
                        />
                     </div>
+
+                    {/* AI Listing Text (Kleinanzeigen / eBay, DE) */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">
+                          AI Listing Text (DE)
+                        </label>
+                        {formData.marketDescription && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!formData.marketDescription) return;
+                              try {
+                                await navigator.clipboard.writeText(formData.marketDescription);
+                              } catch (e) {
+                                console.error('Copy AI listing text failed', e);
+                                alert('Could not copy AI listing text.');
+                              }
+                            }}
+                            className="mr-2 text-[10px] font-bold uppercase tracking-widest text-blue-600 hover:text-blue-800"
+                          >
+                            Copy
+                          </button>
+                        )}
+                      </div>
+                      <textarea
+                        className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-medium text-sm outline-none focus:border-blue-500 focus:bg-white transition-all h-32 resize-y"
+                        placeholder="AI generated Kleinanzeigen / eBay Beschreibung erscheint hier, nachdem du im Inventar auf die K/E-Icons geklickt hast..."
+                        value={formData.marketDescription || ''}
+                        onChange={e => setFormData({ ...formData, marketDescription: e.target.value })}
+                      />
+                      <p className="text-[10px] text-slate-400 ml-2">
+                        Wird im Inventar über die grünen/blauen KI-Buttons (K / E) generiert. Du kannst den Text hier manuell anpassen.
+                      </p>
+                    </div>
                  </div>
               </div>
 
