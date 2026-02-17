@@ -2042,6 +2042,7 @@ const InventoryList: React.FC<Props> = ({
                // When selling a PC or bundle, also stamp all child components
                // with the container's sale date. Child items keep their original buyDate.
                if ((updated.isPC || updated.isBundle) && updated.componentIds && updated.componentIds.length > 0) {
+                 // Use the bundle/PC's sell date value for all child items
                  const soldAt = updated.sellDate || new Date().toISOString().split('T')[0];
                  const bundleSellPrice = updated.sellPrice || 0;
                  const bundleFee = updated.feeAmount || 0;
