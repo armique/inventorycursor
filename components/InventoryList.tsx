@@ -220,6 +220,15 @@ const InventoryList: React.FC<Props> = ({
     onUpdate([updated]);
   };
 
+  // --- INVENTORY CONDITION (WORKING / DEFECTIVE) ---
+  const toggleDefective = (item: InventoryItem) => {
+    const updated: InventoryItem = {
+      ...item,
+      isDefective: !item.isDefective,
+    };
+    onUpdate([updated]);
+  };
+
   // --- AI LISTING DESCRIPTION (Kleinanzeigen / eBay style, same as store description style) ---
   const [listingGenId, setListingGenId] = useState<string | null>(null);
   const [priceSuggestId, setPriceSuggestId] = useState<string | null>(null);
@@ -902,26 +911,47 @@ const InventoryList: React.FC<Props> = ({
       case 'presence':
         return (
           <td key={id} className="p-5 text-center" style={style} onClick={(e) => e.stopPropagation()}>
-            <button
-              type="button"
-              onClick={() => togglePresence(item)}
-              className={`inline-flex items-center justify-center w-10 px-2 py-1 rounded-full border text-[11px] font-bold ${
-                item.presence === 'present'
-                  ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
-                  : item.presence === 'lost'
-                  ? 'border-red-400 bg-red-50 text-red-700'
-                  : 'border-slate-200 bg-slate-50 text-slate-500'
-              }`}
-              title={
-                item.presence === 'present'
-                  ? 'Present (click to mark as lost)'
-                  : item.presence === 'lost'
-                  ? 'Lost (click to clear)'
-                  : 'Not checked (click to mark as present)'
-              }
-            >
-              {item.presence === 'present' ? '+' : item.presence === 'lost' ? '−' : '·'}
-            </button>
+            <div className="flex items-center justify-center gap-1.5">
+              {/* Physical presence: present / lost / unknown */}
+              <button
+                type="button"
+                onClick={() => togglePresence(item)}
+                className={`inline-flex items-center justify-center w-9 px-2 py-1 rounded-full border text-[10px] font-bold ${
+                  item.presence === 'present'
+                    ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
+                    : item.presence === 'lost'
+                    ? 'border-red-400 bg-red-50 text-red-700'
+                    : 'border-slate-200 bg-slate-50 text-slate-500'
+                }`}
+                title={
+                  item.presence === 'present'
+                    ? 'Present (click to mark as lost)'
+                    : item.presence === 'lost'
+                    ? 'Lost (click to clear)'
+                    : 'Not checked (click to mark as present)'
+                }
+              >
+                {item.presence === 'present' ? '+' : item.presence === 'lost' ? '−' : '·'}
+              </button>
+
+              {/* Condition: working / defective */}
+              <button
+                type="button"
+                onClick={() => toggleDefective(item)}
+                className={`inline-flex items-center justify-center w-9 h-7 rounded-full border text-[10px] font-bold ${
+                  item.isDefective
+                    ? 'border-red-400 bg-red-50 text-red-700'
+                    : 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                }`}
+                title={
+                  item.isDefective
+                    ? 'Defective / not working (click to mark as working)'
+                    : 'Working / OK (click to mark as defective)'
+                }
+              >
+                {item.isDefective ? '!' : '✓'}
+              </button>
+            </div>
           </td>
         );
       case 'item':
