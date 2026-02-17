@@ -60,6 +60,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
 
   const [configStep, setConfigStep] = useState<'CATEGORY' | 'DETAILS' | 'DONE'>('CATEGORY');
   const [generatingSpecs, setGeneratingSpecs] = useState(false);
+  const [showSpecs, setShowSpecs] = useState(true);
   const [nameSuggestionsOpen, setNameSuggestionsOpen] = useState(false);
 
   useEffect(() => {
@@ -366,20 +367,35 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
 
                     {/* Specs & AI */}
                     <div className="p-6 bg-slate-50 rounded-[2rem] border border-slate-200 space-y-4">
-                       <div className="flex justify-between items-center">
-                          <h3 className="text-sm font-black text-slate-900 flex items-center gap-2"><Sliders size={16}/> Tech Specs</h3>
-                          <button 
-                             type="button"
-                             onClick={handleAutoFillSpecs}
-                             disabled={generatingSpecs}
-                             title="Look up this product (e.g. i7-12700K) and fill in specs from the web — cores, threads, clock, TDP, etc. Adds new spec fields if needed."
-                             className="text-[10px] font-black uppercase bg-white border border-blue-100 text-blue-600 px-3 py-1.5 rounded-lg flex items-center gap-1 hover:bg-blue-50 transition-all disabled:opacity-50"
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowSpecs((v) => !v)}
+                            className="w-7 h-7 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100"
+                            title={showSpecs ? 'Hide specs' : 'Show specs'}
                           >
-                             {generatingSpecs ? <Wand2 size={12} className="animate-spin"/> : <Wand2 size={12}/>}
-                             {generatingSpecs ? 'Looking up specs…' : `Parse specs from web${getSpecsAIProvider() ? ` (${getSpecsAIProvider()})` : ''}`}
+                            <ChevronDown
+                              size={14}
+                              className={`transition-transform ${showSpecs ? '' : '-rotate-90'}`}
+                            />
                           </button>
-                       </div>
-                       {renderSpecsEditor()}
+                          <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                            <Sliders size={16} /> Tech Specs
+                          </h3>
+                        </div>
+                         <button 
+                            type="button"
+                            onClick={handleAutoFillSpecs}
+                            disabled={generatingSpecs}
+                            title="Look up this product (e.g. i7-12700K) and fill in specs from the web — cores, threads, clock, TDP, etc. Adds new spec fields if needed."
+                            className="text-[10px] font-black uppercase bg-white border border-blue-100 text-blue-600 px-3 py-1.5 rounded-lg flex items-center gap-1 hover:bg-blue-50 transition-all disabled:opacity-50"
+                         >
+                            {generatingSpecs ? <Wand2 size={12} className="animate-spin"/> : <Wand2 size={12}/>}
+                            {generatingSpecs ? 'Looking up specs…' : `Parse specs from web${getSpecsAIProvider() ? ` (${getSpecsAIProvider()})` : ''}`}
+                         </button>
+                      </div>
+                      {showSpecs && renderSpecsEditor()}
                     </div>
 
                     {/* Compatible with (CPU / Motherboard / RAM) — beyond PC Builder */}
