@@ -970,14 +970,14 @@ const InventoryList: React.FC<Props> = ({
                 {item.isDefective ? '!' : '✓'}
               </button>
 
-              {/* Listed on Kleinanzeigen */}
+              {/* Listed on Kleinanzeigen (same style as Parse K icon) */}
               <button
                 type="button"
                 onClick={() => toggleListedKleinanzeigen(item)}
-                className={`h-7 w-7 flex items-center justify-center rounded-xl border text-[9px] font-black ${
+                className={`h-7 w-7 flex items-center justify-center rounded-xl border text-emerald-700 ${
                   item.listedOnKleinanzeigen
-                    ? 'border-emerald-400 bg-emerald-500 text-white'
-                    : 'border-emerald-200 bg-white text-emerald-500'
+                    ? 'border-emerald-200 bg-emerald-50'
+                    : 'border-emerald-200 bg-white'
                 }`}
                 title={
                   item.listedOnKleinanzeigen
@@ -985,17 +985,23 @@ const InventoryList: React.FC<Props> = ({
                     : 'Not listed on Kleinanzeigen (click to mark as listed)'
                 }
               >
-                K
+                <span
+                  className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black ${
+                    item.listedOnKleinanzeigen ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-emerald-700'
+                  }`}
+                >
+                  K
+                </span>
               </button>
 
-              {/* Listed on eBay */}
+              {/* Listed on eBay (same style as Parse E icon) */}
               <button
                 type="button"
                 onClick={() => toggleListedEbay(item)}
-                className={`h-7 w-7 flex items-center justify-center rounded-xl border text-[9px] font-black ${
+                className={`h-7 w-7 flex items-center justify-center rounded-xl border text-blue-700 ${
                   item.listedOnEbay
-                    ? 'border-blue-400 bg-blue-500 text-white'
-                    : 'border-blue-200 bg-white text-blue-600'
+                    ? 'border-blue-200 bg-blue-50'
+                    : 'border-blue-200 bg-white'
                 }`}
                 title={
                   item.listedOnEbay
@@ -1003,7 +1009,13 @@ const InventoryList: React.FC<Props> = ({
                     : 'Not listed on eBay (click to mark as listed)'
                 }
               >
-                e
+                <span
+                  className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black ${
+                    item.listedOnEbay ? 'bg-blue-600 text-white' : 'bg-slate-200 text-blue-700'
+                  }`}
+                >
+                  E
+                </span>
               </button>
             </div>
           </td>
