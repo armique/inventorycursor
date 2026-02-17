@@ -62,6 +62,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   const [generatingSpecs, setGeneratingSpecs] = useState(false);
   const [showSpecs, setShowSpecs] = useState(true);
   const [nameSuggestionsOpen, setNameSuggestionsOpen] = useState(false);
+  const [quantityToCreate, setQuantityToCreate] = useState<number>(1);
 
   useEffect(() => {
     // Priority: initialData (Modal/Prop) -> ID (URL) -> Default
@@ -161,13 +162,26 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     e.preventDefault();
     if (!formData.name) return;
 
-    const newItem: InventoryItem = {
+    const base: InventoryItem = {
       ...formData as InventoryItem,
       id: formData.id || `item-${Date.now()}`,
       imageUrl: formData.imageUrl || CATEGORY_IMAGES[formData.subCategory || formData.category || 'Components']
     };
 
-    onSave([newItem]);
+    let itemsToSave: InventoryItem[] = [];
+    // If editing an existing item (has id) or quantity is 1, just save one
+    if (base.id && (initialData || id) || quantityToCreate <= 1) {
+      itemsToSave = [base];
+    } else {
+      // Creating multiple new identical items
+      const count = Math.max(1, Math.floor(quantityToCreate));
+      itemsToSave = Array.from({ length: count }).map((_, index) => ({
+        ...base,
+        id: `item-${Date.now()}-${index}`,
+      }));
+    }
+
+    onSave(itemsToSave);
     
     if (onClose) {
       onClose();
@@ -342,7 +356,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                             </button>
                           </div>
                        </div>
-                       <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
                           <div className="space-y-2">
                              <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Buy Price (€)</label>
                              <input 
@@ -362,6 +376,18 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                                 onChange={e => setFormData({ ...formData, buyDate: e.target.value })}
                              />
                           </div>
+                          {!initialData && !id && (
+                            <div className="space-y-2">
+                              <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Quantity</label>
+                              <input
+                                type="number"
+                                min={1}
+                                className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm outline-none focus:border-blue-500 focus:bg-white transition-all"
+                                value={quantityToCreate}
+                                onChange={e => setQuantityToCreate(Number(e.target.value) || 1)}
+                              />
+                            </div>
+                          )}
                        </div>
                     </div>
 
