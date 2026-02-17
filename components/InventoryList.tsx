@@ -36,7 +36,7 @@ interface Props {
   persistenceKey?: string; 
 }
 
-type ColumnId = 'select' | 'item' | 'parseSpecs' | 'category' | 'status' | 'buyPrice' | 'sellPrice' | 'profit' | 'buyDate' | 'sellDate' | 'actions';
+type ColumnId = 'select' | 'item' | 'presence' | 'parseSpecs' | 'category' | 'status' | 'buyPrice' | 'sellPrice' | 'profit' | 'buyDate' | 'sellDate' | 'actions';
 type TimeFilter = 'ALL' | 'THIS_WEEK' | 'LAST_WEEK' | 'THIS_MONTH' | 'LAST_MONTH' | 'LAST_30' | 'LAST_90' | 'THIS_YEAR' | 'LAST_YEAR';
 type StatusFilter = 'ACTIVE' | 'SOLD' | 'DRAFTS' | 'ALL';
 
@@ -47,7 +47,8 @@ interface SortConfig {
 
 const DEFAULT_WIDTHS: Record<string, number> = {
   select: 50,
-  item: 350,
+  item: 260,
+  presence: 80,
   parseSpecs: 52,
   category: 160,
   status: 120,
@@ -62,6 +63,7 @@ const DEFAULT_WIDTHS: Record<string, number> = {
 const ALL_COLUMNS: { id: ColumnId; label: string }[] = [
   { id: 'select', label: '' },
   { id: 'item', label: 'Asset Name' },
+  { id: 'presence', label: 'Inv' },
   { id: 'parseSpecs', label: 'Parse' },
   { id: 'category', label: 'Category' },
   { id: 'status', label: 'Status' },
@@ -234,7 +236,7 @@ const InventoryList: React.FC<Props> = ({
   };
   
   // Visible Columns
-  const visibleColumns: ColumnId[] = ['select', 'item', 'parseSpecs', 'category', 'status', 'buyPrice', 'sellPrice', 'profit', 'buyDate', 'sellDate', 'actions'];
+  const visibleColumns: ColumnId[] = ['select', 'item', 'presence', 'parseSpecs', 'category', 'status', 'buyPrice', 'sellPrice', 'profit', 'buyDate', 'sellDate', 'actions'];
 
   // Calculate Date Range based on filter
   const dateRange = useMemo(() => {
@@ -806,6 +808,31 @@ const InventoryList: React.FC<Props> = ({
              </div>
           </td>
         );
+      case 'presence':
+        return (
+          <td key={id} className="p-5 text-center" style={style} onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => togglePresence(item)}
+              className={`inline-flex items-center justify-center w-10 px-2 py-1 rounded-full border text-[11px] font-bold ${
+                item.presence === 'present'
+                  ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
+                  : item.presence === 'lost'
+                  ? 'border-red-400 bg-red-50 text-red-700'
+                  : 'border-slate-200 bg-slate-50 text-slate-500'
+              }`}
+              title={
+                item.presence === 'present'
+                  ? 'Present (click to mark as lost)'
+                  : item.presence === 'lost'
+                  ? 'Lost (click to clear)'
+                  : 'Not checked (click to mark as present)'
+              }
+            >
+              {item.presence === 'present' ? '+' : item.presence === 'lost' ? '−' : '·'}
+            </button>
+          </td>
+        );
       case 'item':
         const isExpanded = expandedBundles.has(item.id);
         const childItems = (item.isPC || item.isBundle) && (item.componentIds || []) 
@@ -856,36 +883,6 @@ const InventoryList: React.FC<Props> = ({
                       {(item.isPC || item.isBundle) && childItems.length > 0 && (
                          <span className="text-[9px] text-slate-500 font-medium">({childItems.length} items)</span>
                       )}
-                      {/* Inventory presence (Present / Lost / Unknown) */}
-                      <button
-                         type="button"
-                         onClick={(e) => { e.stopPropagation(); togglePresence(item); }}
-                         className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[9px] font-semibold uppercase tracking-wide ${
-                           item.presence === 'present'
-                             ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
-                             : item.presence === 'lost'
-                             ? 'border-red-300 bg-red-50 text-red-700'
-                             : 'border-slate-200 bg-slate-50 text-slate-500'
-                         }`}
-                         title={
-                           item.presence === 'present'
-                             ? 'Marked as present. Click to mark as lost.'
-                             : item.presence === 'lost'
-                             ? 'Marked as lost. Click to clear / unknown.'
-                             : 'Not checked. Click to mark as present.'
-                         }
-                      >
-                         {item.presence === 'present' && <CheckCircle2 size={9} />}
-                         {item.presence === 'lost' && <XCircle size={9} />}
-                         {!item.presence && <Clock size={9} />}
-                         <span>
-                           {item.presence === 'present'
-                             ? 'Present'
-                             : item.presence === 'lost'
-                             ? 'Lost'
-                             : 'Not checked'}
-                         </span>
-                      </button>
                    </div>
                    {item.specs && Object.keys(item.specs).length > 0 && (
                       <p className="text-[10px] text-slate-500 font-medium mt-1 truncate" title={Object.entries(item.specs).map(([k, v]) => `${k}: ${v}`).join(' • ')}>
