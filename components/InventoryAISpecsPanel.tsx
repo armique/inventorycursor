@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { Sparkles, Loader2, AlertCircle, Info, AlertTriangle } from 'lucide-react';
+import { Sparkles, Loader2, AlertCircle, Info, AlertTriangle, ChevronDown } from 'lucide-react';
 import { InventoryItem } from '../types';
 import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
 
@@ -25,6 +25,7 @@ export const InventoryAISpecsPanel: React.FC<Props> = ({
   const [rateLimitWaiting, setRateLimitWaiting] = useState(false);
   const [waitSecondsLeft, setWaitSecondsLeft] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
 
   const provider = getSpecsAIProvider();
   const selectedItems = items.filter((i) => selectedIds.includes(i.id));
@@ -143,19 +144,30 @@ export const InventoryAISpecsPanel: React.FC<Props> = ({
 
   return (
     <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 shadow-sm">
-      <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
-          <Sparkles size={18} className="text-amber-500" />
-          Parse specs with AI
-        </h2>
-        {provider && (
-          <span className="text-[10px] font-bold text-slate-500 uppercase">
-            {provider}
-          </span>
-        )}
-      </div>
+      <button
+        type="button"
+        className="flex w-full flex-wrap items-center justify-between gap-3 text-left cursor-pointer"
+        onClick={() => setCollapsed((v) => !v)}
+        title={collapsed ? 'Expand AI specs panel' : 'Collapse AI specs panel'}
+      >
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+            <Sparkles size={18} className="text-amber-500" />
+            Parse specs with AI
+          </h2>
+          {provider && (
+            <span className="text-[10px] font-bold text-slate-500 uppercase">
+              {provider}
+            </span>
+          )}
+        </div>
+        <ChevronDown
+          size={16}
+          className={`text-slate-500 transition-transform ${collapsed ? '-rotate-90' : ''}`}
+        />
+      </button>
 
-      {!provider && (
+      {!collapsed && !provider && (
         <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-2">
           <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
           <div>
@@ -167,7 +179,7 @@ export const InventoryAISpecsPanel: React.FC<Props> = ({
         </div>
       )}
 
-      {provider && (
+      {!collapsed && provider && (
         <>
           <div className="mt-2 flex items-start gap-2 text-xs text-slate-600">
             <Info size={14} className="shrink-0 mt-0.5" />
@@ -215,7 +227,7 @@ export const InventoryAISpecsPanel: React.FC<Props> = ({
         </>
       )}
 
-      {error && (
+      {!collapsed && error && (
         <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-900 flex items-center gap-2">
           <AlertCircle size={18} className="shrink-0" />
           <div>
