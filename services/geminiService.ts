@@ -189,10 +189,15 @@ export const estimateMarketValue = async (itemName: string, condition: string = 
       const prompt = `
         Act as a professional German pricing expert for electronics.
         Real-time market search for: "${itemName}" (${condition}).
-        Focus primarily on SOLD / COMPLETED listings on eBay.de (nur "verkaufte Artikel") and, secondarily, achieved prices on Kleinanzeigen.de.
-        When sold data is available, ignore unrealistic asking prices and base the range on actually paid prices.
         
-        Output JSON:
+        VERY IMPORTANT RULES:
+        - Nutze bei eBay.de ausschließlich die Ansicht "Verkaufte Artikel" / "Beendete Angebote", also nur bereits verkaufte Artikel (keine aktiven Listings).
+        - Ignoriere aktive/ungekaufte Angebote und unrealistische Ausreißerpreise.
+        - Wenn möglich, nutze mindestens 5–10 verkaufte Artikel als Basis.
+        - Falls für genau dieses Modell keine Verkäufe existieren, nimm die nächstliegenden vergleichbaren verkauften Artikel (gleiche Serie / Ausstattung).
+        - Du MUSST immer einen sinnvollen Preisbereich und Durchschnitt zurückgeben, auch wenn die Datenlage dünn ist.
+        
+        Output JSON (alle Preise in EUR):
         {
           "itemName": "${itemName}",
           "condition": "${condition}",

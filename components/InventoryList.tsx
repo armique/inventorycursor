@@ -264,15 +264,35 @@ const InventoryList: React.FC<Props> = ({
     setPriceSuggestId(item.id);
     try {
       const estimate = await estimateMarketValue(item.name, 'Used');
-      if (!estimate || !estimate.priceAverage) {
-        alert('No price suggestion could be found from sold listings.');
+      if (!estimate) {
+        alert('Kein Preissignal aus verkauften Angeboten gefunden.');
         return;
       }
-      const suggested = Math.round(estimate.priceAverage * 100) / 100;
+      const low = Number(estimate.priceLow) || 0;
+      const high = Number(estimate.priceHigh) || 0;
+      let avg = Number(estimate.priceAverage) || 0;
+      if (!avg && low && high) avg = (low + high) / 2;
+      if (!avg && (low || high)) avg = low || high;
+      if (!avg) {
+        alert('Kein sinnvoller Preisbereich aus verkauften Angeboten ermittelbar.');
+        return;
+      }
+      const suggested = Math.round(avg * 100) / 100;
+      const rangeLow = low ? Math.round(low * 100) / 100 : undefined;
+      const rangeHigh = high ? Math.round(high * 100) / 100 : undefined;
+      const rangeText =
+        rangeLow && rangeHigh
+          ? `Range ca. €${rangeLow.toFixed(2)}–€${rangeHigh.toFixed(2)}`
+          : rangeLow || rangeHigh
+          ? `Ca. €${(rangeLow || rangeHigh)!.toFixed(2)}`
+          : '';
+
+      const note = `AI-Preistipp (nur verkaufte Angebote): ~€${suggested.toFixed(2)}${rangeText ? ` (${rangeText})` : ''}`;
+
       const updated: InventoryItem = {
         ...item,
         sellPrice: suggested,
-        comment2: item.comment2 || `AI price suggestion: ~€${suggested.toFixed(2)} (range €${estimate.priceLow.toFixed?.(2) ?? estimate.priceLow}–€${estimate.priceHigh.toFixed?.(2) ?? estimate.priceHigh})`,
+        comment2: item.comment2 ? item.comment2 : note,
       };
       onUpdate([updated]);
     } catch (e: any) {
@@ -1001,24 +1021,20 @@ const InventoryList: React.FC<Props> = ({
       case 'parseSpecs':
         return (
           <td key={id} className="p-5 text-center" style={style} onClick={(e) => e.stopPropagation()}>
-            <div className="flex flex-col gap-1 items-stretch">
+            <div className="flex flex-row items-center justify-center gap-1">
               {/* Tech specs parse (same as before) */}
               <button
                 type="button"
                 onClick={() => handleParseSingleItem(item)}
                 disabled={parsingSingleId !== null}
                 title="Parse tech specs with AI (can correct name)"
-                className={`px-2 py-1 rounded-xl text-[10px] font-semibold transition-colors ${
+                className={`h-7 w-7 flex items-center justify-center rounded-xl text-slate-600 transition-colors ${
                   parsingSingleId === item.id
                     ? 'bg-amber-100 text-amber-700'
-                    : 'bg-slate-100 text-slate-600 hover:bg-amber-100 hover:text-amber-700'
+                    : 'bg-slate-100 hover:bg-amber-100 hover:text-amber-700'
                 }`}
               >
-                {parsingSingleId === item.id ? (
-                  <span className="inline-flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> Specs…</span>
-                ) : (
-                  <span className="inline-flex items-center gap-1"><Sparkles size={12} /> Specs</span>
-                )}
+                {parsingSingleId === item.id ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
               </button>
 
               {/* Suggested price from sold history (eBay/Kleinanzeigen) */}
@@ -1026,15 +1042,14 @@ const InventoryList: React.FC<Props> = ({
                 type="button"
                 onClick={() => handleSuggestPrice(item)}
                 disabled={priceSuggestId === item.id}
-                className={`inline-flex items-center justify-center gap-1 px-2 py-1 rounded-xl border text-[10px] font-semibold uppercase tracking-wide ${
+                className={`h-7 w-7 flex items-center justify-center rounded-xl border text-amber-700 ${
                   item.sellPrice
-                    ? 'border-amber-200 bg-amber-50 text-amber-700'
-                    : 'border-amber-200 bg-white text-amber-700'
+                    ? 'border-amber-200 bg-amber-50'
+                    : 'border-amber-200 bg-white'
                 } ${priceSuggestId === item.id ? 'opacity-70 cursor-wait' : 'hover:bg-amber-100'}`}
                 title="AI: Preisvorschlag auf Basis verkaufter Angebote (eBay.de, Kleinanzeigen)"
               >
-                <Tag size={11} />
-                <span>{priceSuggestId === item.id ? 'Preis…' : 'Suggest €'}</span>
+                <Tag size={13} />
               </button>
 
               {/* Kleinanzeigen listing (green K) */}
@@ -1042,15 +1057,14 @@ const InventoryList: React.FC<Props> = ({
                 type="button"
                 onClick={() => handleGenerateListingDescription(item)}
                 disabled={listingGenId === item.id}
-                className={`inline-flex items-center justify-center gap-1 px-2 py-1 rounded-xl border text-[10px] font-semibold uppercase tracking-wide ${
+                className={`h-7 w-7 flex items-center justify-center rounded-xl border text-emerald-700 ${
                   item.marketDescription
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                    : 'border-emerald-200 bg-white text-emerald-700'
+                    ? 'border-emerald-200 bg-emerald-50'
+                    : 'border-emerald-200 bg-white'
                 } ${listingGenId === item.id ? 'opacity-70 cursor-wait' : 'hover:bg-emerald-100'}`}
                 title="AI: Kleinanzeigen Beschreibung auf Deutsch generieren"
               >
                 <span className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[9px]">K</span>
-                <span>{listingGenId === item.id ? 'Gen…' : 'Kleinanz.'}</span>
               </button>
 
               {/* eBay listing (blue E – same style, German text) */}
@@ -1058,15 +1072,14 @@ const InventoryList: React.FC<Props> = ({
                 type="button"
                 onClick={() => handleGenerateListingDescription(item)}
                 disabled={listingGenId === item.id}
-                className={`inline-flex items-center justify-center gap-1 px-2 py-1 rounded-xl border text-[10px] font-semibold uppercase tracking-wide ${
+                className={`h-7 w-7 flex items-center justify-center rounded-xl border text-blue-700 ${
                   item.marketDescription
-                    ? 'border-blue-200 bg-blue-50 text-blue-700'
-                    : 'border-blue-200 bg-white text-blue-700'
+                    ? 'border-blue-200 bg-blue-50'
+                    : 'border-blue-200 bg-white'
                 } ${listingGenId === item.id ? 'opacity-70 cursor-wait' : 'hover:bg-blue-100'}`}
                 title="AI: eBay Beschreibung auf Deutsch generieren"
               >
                 <span className="w-4 h-4 rounded-full bg-blue-600 text-white flex items-center justify-center text-[9px]">E</span>
-                <span>{listingGenId === item.id ? 'Gen…' : 'eBay'}</span>
               </button>
 
               {/* Copy generated listing text */}
@@ -1074,14 +1087,10 @@ const InventoryList: React.FC<Props> = ({
                 <button
                   type="button"
                   onClick={() => handleCopyListingDescription(item)}
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded-xl border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 hover:bg-slate-50"
+                  className="h-7 w-7 flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                   title="Copy generated listing text (German) to clipboard"
                 >
                   <Copy size={11} />
-                  <span className="truncate max-w-[110px]">
-                    {item.marketDescription.replace(/\s+/g, ' ').slice(0, 50)}
-                    {item.marketDescription.length > 50 ? '…' : ''}
-                  </span>
                 </button>
               )}
             </div>
