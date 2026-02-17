@@ -1155,6 +1155,10 @@ const InventoryList: React.FC<Props> = ({
         );
       case 'status':
         const isEditingStatus = editingCell?.itemId === item.id && editingCell?.field === 'status';
+        const statusLabel =
+          item.status === ItemStatus.IN_COMPOSITION
+            ? 'In\u00A0Composition' // non-breaking space to keep on one line
+            : item.status;
         return (
           <td 
              key={id} 
@@ -1178,7 +1182,7 @@ const InventoryList: React.FC<Props> = ({
                 </select>
              ) : (
                 <span 
-                   className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest cursor-pointer hover:ring-2 hover:ring-offset-1 transition-all ${
+                  className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-[0.18em] whitespace-nowrap cursor-pointer hover:ring-2 hover:ring-offset-1 transition-all ${
                       item.status === ItemStatus.SOLD ? 'bg-purple-100 text-purple-700' :
                       item.status === ItemStatus.IN_STOCK ? 'bg-emerald-100 text-emerald-700' :
                       item.status === ItemStatus.TRADED ? 'bg-indigo-100 text-indigo-700' :
@@ -1187,7 +1191,7 @@ const InventoryList: React.FC<Props> = ({
                    }`}
                    title="Double click to change status"
                 >
-                   {item.status}
+                  {statusLabel}
                 </span>
              )}
           </td>
