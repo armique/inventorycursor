@@ -654,6 +654,7 @@ const InventoryList: React.FC<Props> = ({
   const saveEdit = () => {
     if (!editingCell) return;
     const { itemId, field } = editingCell;
+    const targetField = field === 'item' ? 'name' : field;
     const item = items.find(i => i.id === itemId);
     if (!item) {
         setEditingCell(null);
@@ -662,22 +663,22 @@ const InventoryList: React.FC<Props> = ({
 
     let newValue: any = editValue;
 
-    if (field === 'buyPrice' || field === 'sellPrice') {
+    if (targetField === 'buyPrice' || targetField === 'sellPrice') {
        newValue = parseFloat(editValue.toString());
        if (isNaN(newValue)) newValue = 0;
     }
 
-    const updates: Partial<InventoryItem> = { [field]: newValue };
+    const updates: Partial<InventoryItem> = { [targetField]: newValue };
 
-    if ((field === 'buyPrice' || field === 'sellPrice') && (item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED)) {
-        const b = field === 'buyPrice' ? newValue : item.buyPrice;
-        const s = field === 'sellPrice' ? newValue : (item.sellPrice || 0);
+    if ((targetField === 'buyPrice' || targetField === 'sellPrice') && (item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED)) {
+        const b = targetField === 'buyPrice' ? newValue : item.buyPrice;
+        const s = targetField === 'sellPrice' ? newValue : (item.sellPrice || 0);
         const fee = item.feeAmount || 0;
         updates.profit = s - b - fee;
     }
 
     // Logic to release from composition if status is changed manually
-    if (field === 'status') {
+    if (targetField === 'status') {
         if (item.status === ItemStatus.IN_COMPOSITION && newValue !== ItemStatus.IN_COMPOSITION) {
             updates.parentContainerId = undefined; // Detach from parent
         }
@@ -972,13 +973,38 @@ const InventoryList: React.FC<Props> = ({
           }
           setExpandedBundles(newExpanded);
         };
+        const isEditingName = editingCell?.itemId === item.id && editingCell?.field === 'item';
         return (
-          <td key={id} className="p-5" style={style} onClick={() => handleEditClick(item)}>
+          <td key={id} className="p-5" style={style} onClick={() => !isEditingName && handleEditClick(item)}>
              <div className="flex items-center gap-4 cursor-pointer group/cell">
                 <ItemThumbnail item={item} className="w-12 h-12 rounded-xl object-cover shadow-sm border border-slate-100" size={48} />
                 <div className="flex-1 min-w-0">
                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-black text-slate-900 truncate group-hover/cell:text-blue-600 transition-colors flex-1">{item.name}</p>
+                      {isEditingName ? (
+                        <input
+                          autoFocus
+                          className="flex-1 px-2 py-1 bg-white border-2 border-blue-500 rounded-lg text-sm font-black text-slate-900 outline-none shadow-lg"
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onBlur={saveEdit}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') saveEdit();
+                            if (e.key === 'Escape') setEditingCell(null);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      ) : (
+                        <p
+                          className="text-sm font-black text-slate-900 truncate group-hover/cell:text-blue-600 transition-colors flex-1"
+                          title="Double click to rename"
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            startEditing(item, 'item', item.name);
+                          }}
+                        >
+                          {item.name}
+                        </p>
+                      )}
                       {(item.isPC || item.isBundle) && childItems.length > 0 && (
                          <button
                             onClick={toggleExpand}
