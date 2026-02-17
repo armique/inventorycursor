@@ -2043,19 +2043,50 @@ const InventoryList: React.FC<Props> = ({
                // with the container's sale date. Child items keep their original buyDate.
                if ((updated.isPC || updated.isBundle) && updated.componentIds && updated.componentIds.length > 0) {
                  const soldAt = updated.sellDate || new Date().toISOString().split('T')[0];
-                 const childComponents = items
-                   .filter(i => 
-                     (updated.componentIds && updated.componentIds.includes(i.id)) ||
-                     i.parentContainerId === updated.id
-                   )
-                   .map(i => ({
+                 const bundleSellPrice = updated.sellPrice || 0;
+                 const bundleFee = updated.feeAmount || 0;
+                 
+                 // Find all child components
+                 const childComponents = items.filter(i => 
+                   (updated.componentIds && updated.componentIds.includes(i.id)) ||
+                   i.parentContainerId === updated.id
+                 );
+                 
+                 // Calculate proportional sell prices based on buy price ratios
+                 const totalChildBuyPrice = childComponents.reduce((sum, i) => sum + (i.buyPrice || 0), 0);
+                 
+                 const updatedChildren = childComponents.map(i => {
+                   const childBuyPrice = i.buyPrice || 0;
+                   
+                   // Calculate proportional sell price: (item buy price / total buy price) * bundle sell price
+                   const proportionalSellPrice = totalChildBuyPrice > 0 
+                     ? (childBuyPrice / totalChildBuyPrice) * bundleSellPrice
+                     : bundleSellPrice / childComponents.length; // Fallback: equal split if no buy prices
+                   
+                   // Allocate fee proportionally too (optional, but makes sense)
+                   const proportionalFee = totalChildBuyPrice > 0
+                     ? (childBuyPrice / totalChildBuyPrice) * bundleFee
+                     : bundleFee / childComponents.length;
+                   
+                   // Calculate profit for this child item
+                   const childProfit = proportionalSellPrice - childBuyPrice - proportionalFee;
+                   
+                   return {
                      ...i,
-                     sellDate: soldAt, // Set sellDate to match bundle/PC sellDate
-                     status: ItemStatus.SOLD, // Mark as sold
+                     sellDate: soldAt,
+                     sellPrice: Math.round(proportionalSellPrice * 100) / 100, // Round to 2 decimals
+                     feeAmount: Math.round(proportionalFee * 100) / 100,
+                     hasFee: proportionalFee > 0,
+                     profit: Math.round(childProfit * 100) / 100,
+                     status: ItemStatus.SOLD,
                      containerSoldDate: soldAt,
+                     platformSold: updated.platformSold,
+                     paymentType: updated.paymentType,
                      // Keep original buyDate - don't overwrite it
-                   }));
-                 onUpdate([updated, ...childComponents]);
+                   };
+                 });
+                 
+                 onUpdate([updated, ...updatedChildren]);
                } else {
                  onUpdate([updated]); 
                }
