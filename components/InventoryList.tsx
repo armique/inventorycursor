@@ -250,6 +250,7 @@ const InventoryList: React.FC<Props> = ({
   // --- AI LISTING DESCRIPTION (Kleinanzeigen / eBay style, same as store description style) ---
   const [listingGenId, setListingGenId] = useState<string | null>(null);
   const [priceSuggestId, setPriceSuggestId] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   const handleGenerateListingDescription = async (item: InventoryItem) => {
     if (!item.name) {
@@ -279,6 +280,8 @@ const InventoryList: React.FC<Props> = ({
     if (!item.marketDescription) return;
     try {
       await navigator.clipboard.writeText(item.marketDescription);
+      setToast('Listing text copied');
+      setTimeout(() => setToast((prev) => (prev === 'Listing text copied' ? null : prev)), 1200);
     } catch (e) {
       console.error('Copy to clipboard failed', e);
       alert('Could not copy text to clipboard.');
@@ -1712,6 +1715,16 @@ const InventoryList: React.FC<Props> = ({
         categoryFields={categoryFields ?? {}}
         onUpdate={(updated) => onUpdate(updated)}
       />
+
+      {/* Toast notification for quick actions (e.g. copy listing text) */}
+      {toast && (
+        <div className="pointer-events-none fixed bottom-6 right-6 z-[180]">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-slate-900 text-white text-xs font-bold shadow-lg shadow-slate-900/30">
+            <Check size={14} className="text-emerald-400" />
+            <span>{toast}</span>
+          </div>
+        </div>
+      )}
 
       {/* FINANCIAL STATS DASHBOARD - Only visible in Sold/All View */}
       {showFinancials && financialStats && (

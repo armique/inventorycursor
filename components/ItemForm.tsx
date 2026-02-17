@@ -502,6 +502,15 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                               if (!formData.marketDescription) return;
                               try {
                                 await navigator.clipboard.writeText(formData.marketDescription);
+                                // lightweight inline feedback
+                                const el = document.createElement('div');
+                                el.textContent = 'Copied';
+                                el.className = 'ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200';
+                                const parent = (event?.currentTarget as HTMLElement)?.parentElement;
+                                if (parent) {
+                                  parent.appendChild(el);
+                                  setTimeout(() => parent.removeChild(el), 900);
+                                }
                               } catch (e) {
                                 console.error('Copy AI listing text failed', e);
                                 alert('Could not copy AI listing text.');
