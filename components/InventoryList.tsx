@@ -946,12 +946,12 @@ const InventoryList: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => togglePresence(item)}
-                className={`h-7 w-7 flex items-center justify-center rounded-xl text-[10px] font-bold transition-colors ${
+                className={`h-7 w-7 flex items-center justify-center rounded-xl border transition-colors ${
                   item.presence === 'present'
-                    ? 'bg-emerald-100 text-emerald-700'
-                    : item.presence === 'lost'
-                    ? 'bg-red-100 text-red-700'
-                    : 'bg-slate-100 text-slate-500'
+                    ? 'border-emerald-300 bg-emerald-50'
+                  : item.presence === 'lost'
+                    ? 'border-red-300 bg-red-50'
+                    : 'border-slate-200 bg-white hover:bg-slate-50'
                 }`}
                 title={
                   item.presence === 'present'
@@ -961,13 +961,15 @@ const InventoryList: React.FC<Props> = ({
                     : 'Not checked (click to mark as present)'
                 }
               >
-                {item.presence === 'present' ? (
-                  <Check size={13} />
-                ) : item.presence === 'lost' ? (
-                  <X size={13} />
-                ) : (
-                  '·'
-                )}
+                <span
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    item.presence === 'present'
+                      ? 'bg-emerald-500'
+                      : item.presence === 'lost'
+                      ? 'bg-red-500'
+                      : 'bg-slate-300'
+                  }`}
+                />
               </button>
 
               {/* Condition: working / defective */}
