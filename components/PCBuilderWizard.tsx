@@ -30,7 +30,7 @@ const SLOTS = [
 
 const MAX_NAME_LENGTH = 52;
 
-/** Shorten a part name for the build title. */
+/** Shorten a part name for the build/bundle title. */
 function shortPartName(name: string, slotId: string): string {
   const n = (name || '').trim();
   if (!n) return '';
@@ -51,17 +51,25 @@ function shortPartName(name: string, slotId: string): string {
     const match = n.match(/\d+\s*(TB|GB)\s*(NVMe|SSD|HDD)?/i);
     return (match ? match[0] : n.slice(0, 12)).trim();
   }
+  if (slotId === 'MOBO') {
+    // Try to keep chipset + short model, e.g. "B550 Tomahawk"
+    const match = n.match(/(B\d{3}|Z\d{3}|H\d{3}|X\d{3}|A\d{3}|B550|B450|X570|Z690|Z790)[^,]*/i);
+    if (match) return match[0].trim().slice(0, 20);
+    return n.replace(/^(MSI|ASUS|Gigabyte|ASRock|NZXT)\s+/i, '').trim().slice(0, 20);
+  }
   return n.slice(0, 14).trim();
 }
 
-/** Generate a concise build name from CPU, GPU, RAM, Storage. */
+/** Generate a concise build/bundle name from key parts. */
 function getBuildNameFromParts(parts: Record<string, InventoryItem[]>): string {
   const cpu = parts.CPU?.[0];
   const gpu = parts.GPU?.[0];
+  const mobo = parts.MOBO?.[0];
   const ram = parts.RAM?.[0];
   const storage = parts.STORAGE?.[0];
   const segments: string[] = [];
   if (cpu) segments.push(shortPartName(cpu.name, 'CPU'));
+  if (mobo) segments.push(shortPartName(mobo.name, 'MOBO'));
   if (gpu) segments.push(shortPartName(gpu.name, 'GPU'));
   if (ram) segments.push(shortPartName(ram.name, 'RAM'));
   if (storage) segments.push(shortPartName(storage.name, 'STORAGE'));
@@ -76,6 +84,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
   const [searchParams] = useSearchParams();
   const editId = searchParams.get('editId');
 
+  const [mode, setMode] = useState<'pc' | 'bundle'>('pc');
   const [buildName, setBuildName] = useState('New Gaming PC');
   const [parts, setParts] = useState<Record<string, InventoryItem[]>>({});
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
@@ -90,6 +99,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
     if (editId) {
       const pc = items.find(i => i.id === editId);
       if (pc) {
+        setMode(pc.isBundle ? 'bundle' : 'pc');
         setBuildName(pc.name);
         const existingParts: Record<string, InventoryItem[]> = {};
         
@@ -132,7 +142,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
     }
   }, [editId, location.state, items]);
 
-  // Keep build name in sync with key parts (CPU, GPU, RAM, Storage)
+  // Keep build/bundle name in sync with key parts
   useEffect(() => {
     setBuildName(getBuildNameFromParts(parts));
   }, [parts]);
@@ -159,25 +169,33 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
      const allParts = Object.values(parts).flat() as InventoryItem[];
      if (allParts.length === 0) return alert("Build is empty.");
 
+     if (mode === 'bundle' && allParts.length > 5) {
+       return alert("Bundles in this builder are limited to 5 items. Remove some parts or use a full PC build instead.");
+     }
+
      const totalCost = allParts.reduce((sum, i) => sum + i.buyPrice, 0);
      
-     const parentId = editId || `pc-${Date.now()}`;
+     const parentId = editId || (mode === 'bundle' ? `bundle-${Date.now()}` : `pc-${Date.now()}`);
      
-     // Parent Item
-     const pcItem: InventoryItem = {
+     // Parent Item (PC or Bundle)
+     const parentItem: InventoryItem = {
         id: parentId,
         name: buildName,
-        category: 'PC',
-        subCategory: 'Custom Built PC',
+        category: mode === 'bundle' ? 'Bundle' : 'PC',
+        subCategory: mode === 'bundle' ? 'Custom Bundle' : 'Custom Built PC',
         status: ItemStatus.IN_STOCK,
         buyPrice: totalCost,
-        // No buyDate - bundles/PCs don't have buy dates, only their components do
-        isPC: true,
+        // No buyDate - containers don't have buy dates, only their components do
+        isPC: mode !== 'bundle',
+        isBundle: mode === 'bundle',
         componentIds: allParts.map(i => i.id),
-        comment1: `Custom Build Specs:\n${allParts.map(i => `- ${i.name}`).join('\n')}`,
-        comment2: performance ? `AI Performance Estimate:\n${performance.summary}` : '',
-        vendor: 'Custom Build',
-        imageUrl: parts['CASE']?.[0]?.imageUrl || getCategoryImageUrl({ category: 'Cases' }) || undefined
+        comment1: `${mode === 'bundle' ? 'Bundle Contents' : 'Custom Build Specs'}:\n${allParts.map(i => `- ${i.name}`).join('\n')}`,
+        comment2: !mode && performance ? `AI Performance Estimate:\n${performance.summary}` : performance && mode !== 'bundle' ? `AI Performance Estimate:\n${performance.summary}` : '',
+        vendor: mode === 'bundle' ? 'Custom Bundle' : 'Custom Build',
+        imageUrl:
+          mode === 'bundle'
+            ? allParts[0]?.imageUrl || getCategoryImageUrl({ category: allParts[0]?.category || 'Components' }) || undefined
+            : parts['CASE']?.[0]?.imageUrl || getCategoryImageUrl({ category: 'Cases' }) || undefined
      };
 
      // Update Components
@@ -201,7 +219,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
            } as InventoryItem));
      }
 
-     onSave([pcItem, ...updatedComponents, ...removedComponents]);
+     onSave([parentItem, ...updatedComponents, ...removedComponents]);
      navigate('/panel/inventory');
   };
 
@@ -302,17 +320,53 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
           <div className="flex items-center gap-4">
              <button onClick={() => navigate(-1)} className="p-3 bg-white border border-slate-200 rounded-2xl text-slate-400 hover:text-slate-900 transition-all"><ArrowLeft size={24}/></button>
              <div>
-                <h1 className="text-3xl font-black text-slate-900 tracking-tight">{editId ? 'Edit Build' : 'PC Builder'}</h1>
-                <p className="text-sm text-slate-500 font-bold">Assemble & Track Custom PCs</p>
+                <h1 className="text-3xl font-black text-slate-900 tracking-tight">
+                  {editId
+                    ? mode === 'bundle'
+                      ? 'Edit Bundle'
+                      : 'Edit Build'
+                    : mode === 'bundle'
+                      ? 'Bundle Builder'
+                      : 'PC Builder'}
+                </h1>
+                <p className="text-sm text-slate-500 font-bold">
+                  {mode === 'bundle'
+                    ? 'Group 1–5 parts into a sellable bundle'
+                    : 'Assemble & Track Custom PCs'}
+                </p>
              </div>
           </div>
           <div className="flex items-center gap-4">
+             <div className="flex items-center bg-slate-100 rounded-2xl p-1 text-[10px] font-black uppercase tracking-widest">
+               <button
+                 type="button"
+                 onClick={() => setMode('pc')}
+                 className={`px-3 py-1.5 rounded-xl transition-colors ${
+                   mode === 'pc'
+                     ? 'bg-slate-900 text-white shadow-sm'
+                     : 'text-slate-500 hover:text-slate-800'
+                 }`}
+               >
+                 PC Build
+               </button>
+               <button
+                 type="button"
+                 onClick={() => setMode('bundle')}
+                 className={`px-3 py-1.5 rounded-xl transition-colors ${
+                   mode === 'bundle'
+                     ? 'bg-slate-900 text-white shadow-sm'
+                     : 'text-slate-500 hover:text-slate-800'
+                 }`}
+               >
+                 Bundle
+               </button>
+             </div>
              <div className="text-right px-6 py-2 bg-slate-900 text-white rounded-2xl shadow-lg">
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Cost</p>
                 <p className="text-2xl font-black">€{currentTotal.toFixed(2)}</p>
              </div>
              <button onClick={handleSave} className="flex items-center gap-2 px-8 py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl">
-                <Save size={18}/> Save Build
+                <Save size={18}/> {mode === 'bundle' ? 'Save Bundle' : 'Save Build'}
              </button>
           </div>
        </header>
