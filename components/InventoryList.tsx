@@ -1017,6 +1017,14 @@ const InventoryList: React.FC<Props> = ({
         return (
           <td key={id} className="p-5 text-center" style={style} onClick={(e) => e.stopPropagation()}>
             <div className="flex flex-row items-center justify-center gap-1">
+              {/* Visual indicator if AI listing text already exists */}
+              {item.marketDescription && (
+                <span
+                  className="w-2 h-2 rounded-full bg-emerald-500"
+                  title="AI listing text already generated – use copy button to reuse"
+                />
+              )}
+
               {/* Tech specs parse (same as before) */}
               <button
                 type="button"
@@ -1057,7 +1065,11 @@ const InventoryList: React.FC<Props> = ({
                     ? 'border-emerald-200 bg-emerald-50'
                     : 'border-emerald-200 bg-white'
                 } ${listingGenId === item.id ? 'opacity-70 cursor-wait' : 'hover:bg-emerald-100'}`}
-                title="AI: Kleinanzeigen Beschreibung auf Deutsch generieren"
+                title={
+                  item.marketDescription
+                    ? 'AI: Kleinanzeigen Beschreibung ist bereits gespeichert – Klick generiert eine neue Version'
+                    : 'AI: Kleinanzeigen Beschreibung auf Deutsch generieren'
+                }
               >
                 <span className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[9px]">K</span>
               </button>
@@ -1072,7 +1084,11 @@ const InventoryList: React.FC<Props> = ({
                     ? 'border-blue-200 bg-blue-50'
                     : 'border-blue-200 bg-white'
                 } ${listingGenId === item.id ? 'opacity-70 cursor-wait' : 'hover:bg-blue-100'}`}
-                title="AI: eBay Beschreibung auf Deutsch generieren"
+                title={
+                  item.marketDescription
+                    ? 'AI: eBay Beschreibung ist bereits gespeichert – Klick generiert eine neue Version'
+                    : 'AI: eBay Beschreibung auf Deutsch generieren'
+                }
               >
                 <span className="w-4 h-4 rounded-full bg-blue-600 text-white flex items-center justify-center text-[9px]">E</span>
               </button>
