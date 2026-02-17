@@ -289,15 +289,29 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
      </div>
   );
 
-  const containerClass = isModal ? "h-full flex flex-col" : "max-w-5xl mx-auto space-y-8 pb-32 animate-in fade-in duration-500";
+  const containerClass = isModal ? "h-full flex flex-col" : "max-w-4xl mx-auto space-y-6 pb-16 animate-in fade-in duration-400";
   const isSold = formData.status === ItemStatus.SOLD || formData.status === ItemStatus.TRADED;
 
   return (
     <div className={containerClass}>
       {!isModal && (
-        <header className="flex items-center gap-4">
-           <button onClick={() => navigate(-1)} className="p-3 bg-white border border-slate-200 rounded-2xl text-slate-400 hover:text-slate-900 transition-all"><ArrowLeft size={24}/></button>
-           <h1 className="text-3xl font-black text-slate-900 tracking-tight">{id ? 'Edit Item' : 'New Asset'}</h1>
+        <header className="flex items-center justify-between gap-4 mb-2">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => navigate(-1)}
+              className="p-2.5 bg-white border border-slate-200 rounded-2xl text-slate-400 hover:text-slate-900 transition-all"
+            >
+              <ArrowLeft size={22} />
+            </button>
+            <div>
+              <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+                {id ? 'Edit Item' : 'New Asset'}
+              </h1>
+              <p className="text-xs text-slate-500 font-bold">
+                Quick add for inventory: name, price, condition, marketplaces & specs.
+              </p>
+            </div>
+          </div>
         </header>
       )}
 
@@ -310,9 +324,9 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
 
       <div className={`flex-1 ${isModal ? 'overflow-y-auto scrollbar-hide -mx-4 px-4' : ''}`}>
         {configStep === 'CATEGORY' ? renderCategorySelection() : (
-           <form onSubmit={handleSave} className="grid grid-cols-1 lg:grid-cols-12 gap-8 h-full">
-              <div className="lg:col-span-8 space-y-6">
-                 <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 space-y-6">
+           <form onSubmit={handleSave} className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full">
+              <div className="lg:col-span-7 space-y-5">
+                 <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 space-y-5">
                     {/* Basic Info */}
                    <div className="space-y-4">
                       <div className="space-y-2">
@@ -365,7 +379,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                             </button>
                           </div>
                        </div>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-3 gap-3">
                           <div className="space-y-2">
                              <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Buy Price (€)</label>
                              <input 
@@ -401,7 +415,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                     </div>
 
                     {/* Specs & AI */}
-                    <div className="p-6 bg-slate-50 rounded-[2rem] border border-slate-200 space-y-4">
+                    <div className="p-5 bg-slate-50 rounded-[2rem] border border-slate-200 space-y-4">
                       <div className="flex justify-between items-center">
                         <div className="flex items-center gap-2">
                           <button
@@ -512,9 +526,9 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                  </div>
               </div>
 
-              <div className="lg:col-span-4 space-y-6">
+              <div className="lg:col-span-5 space-y-5">
                  {/* Context Info */}
-                 <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 space-y-4">
+                 <div className="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-100 space-y-4">
                     <h3 className="font-black text-xs uppercase tracking-widest text-slate-400">Purchase Info</h3>
                     
                     <div className="space-y-1">
