@@ -581,6 +581,8 @@ const App: React.FC = () => {
   const handleUndo = () => { if (historyIndex > 0) { const newIndex = historyIndex - 1; setHistoryIndex(newIndex); setItems(history[newIndex]); } };
   const handleRedo = () => { if (historyIndex < history.length - 1) { const newIndex = historyIndex + 1; setHistoryIndex(newIndex); setItems(history[newIndex]); } };
   const handleAddExpense = (expense: Expense) => setExpenses(prev => [...prev, expense]);
+  const handleUpdateExpense = (expense: Expense) =>
+    setExpenses(prev => prev.map(e => (e.id === expense.id ? expense : e)));
   const handleDeleteExpense = (id: string) => setExpenses(prev => prev.filter(e => e.id !== id));
   
   const handleAddRecurringExpense = (recurring: RecurringExpense) => {
@@ -767,7 +769,21 @@ const App: React.FC = () => {
           <Route path="edit/:id" element={<ItemForm onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="builder" element={<PCBuilderWizard items={items} onSave={handleUpdate} />} />
           <Route path="pricing" element={<PriceCheck />} />
-          <Route path="expenses" element={<ExpenseManager expenses={expenses} recurringExpenses={recurringExpenses} onAddExpense={handleAddExpense} onDeleteExpense={handleDeleteExpense} onAddRecurringExpense={handleAddRecurringExpense} onDeleteRecurringExpense={handleDeleteRecurringExpense} onUpdateRecurringExpense={handleUpdateRecurringExpense} />} />
+          <Route
+            path="expenses"
+            element={
+              <ExpenseManager
+                expenses={expenses}
+                recurringExpenses={recurringExpenses}
+                onAddExpense={handleAddExpense}
+                onUpdateExpense={handleUpdateExpense}
+                onDeleteExpense={handleDeleteExpense}
+                onAddRecurringExpense={handleAddRecurringExpense}
+                onDeleteRecurringExpense={handleDeleteRecurringExpense}
+                onUpdateRecurringExpense={handleUpdateRecurringExpense}
+              />
+            }
+          />
           <Route path="import" element={<SheetsImport onImport={handleImportBatch} onClearData={handleWipeData} />} />
           <Route path="trash" element={<TrashPage items={trash} onRestore={handleRestoreFromTrash} onPermanentDelete={handlePermanentDelete} />} />
           <Route path="missing-specs" element={<MissingSpecsReport items={items} categoryFields={categoryFields} />} />

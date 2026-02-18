@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { 
   Plus, Trash2, Calendar, Tag, CreditCard, Search, Wallet, 
   TrendingDown, TrendingUp, Filter, Receipt, ShoppingBag, 
-  Wrench, Truck, Percent, Briefcase, X, Repeat, Sparkles
+  Wrench, Truck, Percent, Briefcase, X, Repeat, Sparkles, Edit3, Copy
 } from 'lucide-react';
 import { Expense, ExpenseCategory, RecurringExpense } from '../types';
 
@@ -11,6 +11,7 @@ interface Props {
   expenses: Expense[];
   recurringExpenses: RecurringExpense[];
   onAddExpense: (expense: Expense) => void;
+  onUpdateExpense: (expense: Expense) => void;
   onDeleteExpense: (id: string) => void;
   onAddRecurringExpense: (recurring: RecurringExpense) => void;
   onDeleteRecurringExpense: (id: string) => void;
@@ -32,6 +33,7 @@ const ExpenseManager: React.FC<Props> = ({
   expenses, 
   recurringExpenses,
   onAddExpense, 
+  onUpdateExpense,
   onDeleteExpense,
   onAddRecurringExpense,
   onDeleteRecurringExpense,
@@ -51,6 +53,8 @@ const ExpenseManager: React.FC<Props> = ({
     description: ''
   });
 
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+
   // Recurring Expense Form State
   const [newRecurring, setNewRecurring] = useState<Partial<RecurringExpense>>({
     startDate: new Date().toISOString().split('T')[0],
@@ -58,6 +62,10 @@ const ExpenseManager: React.FC<Props> = ({
     monthlyAmount: 0,
     description: ''
   });
+
+  const [editingRecurring, setEditingRecurring] = useState<RecurringExpense | null>(null);
+  const [customCategory, setCustomCategory] = useState<string>('');
+  const [customRecurringCategory, setCustomRecurringCategory] = useState<string>('');
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter(e => {
@@ -70,16 +78,29 @@ const ExpenseManager: React.FC<Props> = ({
   const handleSubmitRecurring = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newRecurring.monthlyAmount || !newRecurring.description || !newRecurring.startDate) return;
-    
-    const recurring: RecurringExpense = {
-      id: `recurring-${Date.now()}`,
-      description: newRecurring.description,
-      monthlyAmount: Number(newRecurring.monthlyAmount),
-      startDate: newRecurring.startDate,
-      category: newRecurring.category as ExpenseCategory
-    };
-    
-    onAddRecurringExpense(recurring);
+
+    const category: ExpenseCategory = (customRecurringCategory.trim() || newRecurring.category) as ExpenseCategory;
+
+    if (editingRecurring) {
+      const updated: RecurringExpense = {
+        ...editingRecurring,
+        description: newRecurring.description!,
+        monthlyAmount: Number(newRecurring.monthlyAmount),
+        startDate: newRecurring.startDate!,
+        category,
+      };
+      onUpdateRecurringExpense(updated);
+    } else {
+      const recurring: RecurringExpense = {
+        id: `recurring-${Date.now()}`,
+        description: newRecurring.description!,
+        monthlyAmount: Number(newRecurring.monthlyAmount),
+        startDate: newRecurring.startDate!,
+        category,
+      };
+      onAddRecurringExpense(recurring);
+    }
+
     setIsRecurringModalOpen(false);
     setNewRecurring({
       startDate: new Date().toISOString().split('T')[0],
@@ -87,6 +108,8 @@ const ExpenseManager: React.FC<Props> = ({
       monthlyAmount: 0,
       description: ''
     });
+    setEditingRecurring(null);
+    setCustomRecurringCategory('');
   };
 
   const stats = useMemo(() => {
@@ -100,16 +123,29 @@ const ExpenseManager: React.FC<Props> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newExpense.amount || !newExpense.description) return;
-    
-    const expense: Expense = {
-      id: `exp-${Date.now()}`,
-      description: newExpense.description,
-      amount: Number(newExpense.amount),
-      date: newExpense.date || new Date().toISOString().split('T')[0],
-      category: newExpense.category as ExpenseCategory
-    };
-    
-    onAddExpense(expense);
+
+    const category: ExpenseCategory = (customCategory.trim() || newExpense.category) as ExpenseCategory;
+
+    if (editingExpense) {
+      const updated: Expense = {
+        ...editingExpense,
+        description: newExpense.description!,
+        amount: Number(newExpense.amount),
+        date: newExpense.date || new Date().toISOString().split('T')[0],
+        category,
+      };
+      onUpdateExpense(updated);
+    } else {
+      const expense: Expense = {
+        id: `exp-${Date.now()}`,
+        description: newExpense.description!,
+        amount: Number(newExpense.amount),
+        date: newExpense.date || new Date().toISOString().split('T')[0],
+        category,
+      };
+      onAddExpense(expense);
+    }
+
     setIsModalOpen(false);
     setNewExpense({
       date: new Date().toISOString().split('T')[0],
@@ -117,6 +153,8 @@ const ExpenseManager: React.FC<Props> = ({
       amount: 0,
       description: ''
     });
+    setEditingExpense(null);
+    setCustomCategory('');
   };
 
   const getCategoryIcon = (cat: string) => {
@@ -219,12 +257,46 @@ const ExpenseManager: React.FC<Props> = ({
                         </div>
                       </div>
                     </div>
-                    <button 
-                      onClick={() => onDeleteRecurringExpense(recurring.id)}
-                      className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
-                    >
-                      <Trash2 size={16}/>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setEditingRecurring(recurring);
+                          setNewRecurring({
+                            description: recurring.description,
+                            monthlyAmount: recurring.monthlyAmount,
+                            startDate: recurring.startDate,
+                            category: recurring.category,
+                          });
+                          setCustomRecurringCategory(typeof recurring.category === 'string' && !CATEGORIES.find(c => c.id === recurring.category) ? recurring.category : '');
+                          setIsRecurringModalOpen(true);
+                        }}
+                        className="p-2 text-slate-300 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                        title="Edit recurring expense"
+                      >
+                        <Edit3 size={16}/>
+                      </button>
+                      <button
+                        onClick={() => {
+                          const clone: RecurringExpense = {
+                            ...recurring,
+                            id: `recurring-${Date.now()}`,
+                            lastGeneratedDate: undefined,
+                          };
+                          onAddRecurringExpense(clone);
+                        }}
+                        className="p-2 text-slate-300 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                        title="Copy recurring expense"
+                      >
+                        <Copy size={16}/>
+                      </button>
+                      <button 
+                        onClick={() => onDeleteRecurringExpense(recurring.id)}
+                        className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                        title="Delete recurring expense"
+                      >
+                        <Trash2 size={16}/>
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -282,11 +354,44 @@ const ExpenseManager: React.FC<Props> = ({
                         </div>
                      </div>
                   </div>
-                  <div className="flex items-center gap-6">
-                     <span className="font-black text-slate-900">€{expense.amount.toFixed(2)}</span>
+                  <div className="flex items-center gap-3">
+                     <span className="font-black text-slate-900 mr-2">€{expense.amount.toFixed(2)}</span>
+                     <button
+                        onClick={() => {
+                          setEditingExpense(expense);
+                          setNewExpense({
+                            description: expense.description,
+                            amount: expense.amount,
+                            date: expense.date,
+                            category: expense.category,
+                          });
+                          setCustomCategory(typeof expense.category === 'string' && !CATEGORIES.find(c => c.id === expense.category) ? expense.category : '');
+                          setIsModalOpen(true);
+                        }}
+                        className="p-2 text-slate-300 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                        title="Edit expense"
+                     >
+                        <Edit3 size={16}/>
+                     </button>
+                     <button
+                        onClick={() => {
+                          const clone: Expense = {
+                            ...expense,
+                            id: `exp-${Date.now()}`,
+                            // keep date & category; treat as normal manual expense
+                            recurringExpenseId: expense.recurringExpenseId,
+                          };
+                          onAddExpense(clone);
+                        }}
+                        className="p-2 text-slate-300 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                        title="Copy expense"
+                     >
+                        <Copy size={16}/>
+                     </button>
                      <button 
                         onClick={() => onDeleteExpense(expense.id)}
                         className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                        title="Delete expense"
                      >
                         <Trash2 size={16}/>
                      </button>
@@ -305,7 +410,7 @@ const ExpenseManager: React.FC<Props> = ({
          <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
             <div className="bg-white w-full max-w-lg rounded-[3rem] shadow-2xl p-8 space-y-6">
                <div className="flex justify-between items-center">
-                  <h3 className="text-2xl font-black text-slate-900">New Expense</h3>
+                  <h3 className="text-2xl font-black text-slate-900">{editingExpense ? 'Edit Expense' : 'New Expense'}</h3>
                   <button onClick={() => setIsModalOpen(false)}><X size={24} className="text-slate-400 hover:text-slate-900"/></button>
                </div>
 
@@ -351,18 +456,37 @@ const ExpenseManager: React.FC<Props> = ({
                               <button
                                  type="button"
                                  key={cat.id}
-                                 onClick={() => setNewExpense({...newExpense, category: cat.id})}
-                                 className={`p-3 rounded-xl border text-[10px] font-black uppercase flex items-center gap-2 transition-all ${newExpense.category === cat.id ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-100 text-slate-500 hover:bg-slate-50'}`}
+                                 onClick={() => {
+                                   setNewExpense({...newExpense, category: cat.id});
+                                   setCustomCategory('');
+                                 }}
+                                 className={`p-3 rounded-xl border text-[10px] font-black uppercase flex items-center gap-2 transition-all ${newExpense.category === cat.id && !customCategory ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-100 text-slate-500 hover:bg-slate-50'}`}
                               >
                                  {cat.icon} {cat.label}
                               </button>
                            ))}
+                           <div className="col-span-2 space-y-1 mt-2">
+                             <label className="text-[9px] font-black uppercase text-slate-400 ml-2 tracking-widest">Custom Category</label>
+                             <input
+                               type="text"
+                               className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
+                               placeholder="e.g. Health, Phone, Rent..."
+                               value={customCategory}
+                               onChange={e => {
+                                 const val = e.target.value;
+                                 setCustomCategory(val);
+                                 if (val.trim()) {
+                                   setNewExpense(prev => ({ ...prev, category: val }));
+                                 }
+                               }}
+                             />
+                           </div>
                         </div>
                      </div>
                   </div>
 
                   <button type="submit" className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl hover:bg-blue-700 transition-all">
-                     Log Expense
+                     {editingExpense ? 'Save Changes' : 'Log Expense'}
                   </button>
                </form>
             </div>
@@ -374,7 +498,7 @@ const ExpenseManager: React.FC<Props> = ({
             <div className="bg-white w-full max-w-lg rounded-[3rem] shadow-2xl p-8 space-y-6">
                <div className="flex justify-between items-center">
                   <div>
-                     <h3 className="text-2xl font-black text-slate-900">New Recurring Expense</h3>
+                     <h3 className="text-2xl font-black text-slate-900">{editingRecurring ? 'Edit Recurring Expense' : 'New Recurring Expense'}</h3>
                      <p className="text-xs text-slate-500 mt-1">Monthly bills that auto-generate expenses</p>
                   </div>
                   <button onClick={() => setIsRecurringModalOpen(false)}><X size={24} className="text-slate-400 hover:text-slate-900"/></button>
@@ -422,12 +546,31 @@ const ExpenseManager: React.FC<Props> = ({
                               <button
                                  type="button"
                                  key={cat.id}
-                                 onClick={() => setNewRecurring({...newRecurring, category: cat.id})}
-                                 className={`p-3 rounded-xl border text-[10px] font-black uppercase flex items-center gap-2 transition-all ${newRecurring.category === cat.id ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-100 text-slate-500 hover:bg-slate-50'}`}
+                                 onClick={() => {
+                                   setNewRecurring({...newRecurring, category: cat.id});
+                                   setCustomRecurringCategory('');
+                                 }}
+                                 className={`p-3 rounded-xl border text-[10px] font-black uppercase flex items-center gap-2 transition-all ${newRecurring.category === cat.id && !customRecurringCategory ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-100 text-slate-500 hover:bg-slate-50'}`}
                               >
                                  {cat.icon} {cat.label}
                               </button>
                            ))}
+                           <div className="col-span-2 space-y-1 mt-2">
+                             <label className="text-[9px] font-black uppercase text-slate-400 ml-2 tracking-widest">Custom Category</label>
+                             <input
+                               type="text"
+                               className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
+                               placeholder="e.g. Health, Phone, Rent..."
+                               value={customRecurringCategory}
+                               onChange={e => {
+                                 const val = e.target.value;
+                                 setCustomRecurringCategory(val);
+                                 if (val.trim()) {
+                                   setNewRecurring(prev => ({ ...prev, category: val as ExpenseCategory }));
+                                 }
+                               }}
+                             />
+                           </div>
                         </div>
                      </div>
 
@@ -441,7 +584,7 @@ const ExpenseManager: React.FC<Props> = ({
                   </div>
 
                   <button type="submit" className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl hover:bg-blue-700 transition-all">
-                     Create Recurring Expense
+                     {editingRecurring ? 'Save Changes' : 'Create Recurring Expense'}
                   </button>
                </form>
             </div>

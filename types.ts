@@ -224,7 +224,11 @@ export interface BackupEntry {
   data: string;
 }
 
-export type ExpenseCategory = 'Shipping' | 'Packaging' | 'Fees' | 'Tools' | 'Cleaning' | 'Office' | 'Marketing' | 'Other';
+// Core built-in expense categories used in the UI.
+export type CoreExpenseCategory = 'Shipping' | 'Packaging' | 'Fees' | 'Tools' | 'Cleaning' | 'Office' | 'Marketing' | 'Other';
+
+// Allow custom categories as free text in addition to the built-in ones.
+export type ExpenseCategory = CoreExpenseCategory | string;
 
 export interface Expense {
   id: string;
