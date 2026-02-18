@@ -204,6 +204,54 @@ export async function uploadItemImage(
   }
 }
 
+/**
+ * Upload an invoice / receipt file (image or PDF) for an expense to Firebase Storage
+ * and return its public download URL. Optional onProgress(0-100) for UI.
+ *
+ * Path convention: expenses/{uid}/{expenseId}/{timestamp}-{filename}
+ */
+export async function uploadExpenseAttachment(
+  file: File,
+  expenseId: string,
+  onProgress?: (percent: number) => void
+): Promise<string> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.storage || !user) {
+    throw new Error("Not signed in or Firebase Storage not configured. Please sign in with Google first.");
+  }
+
+  const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+  const path = `expenses/${user.uid}/${expenseId || "generic"}/${Date.now()}-${safeName}`;
+  const ref = storageRef(ctx.storage, path);
+
+  const timeoutMs = 90_000; // 90s per file
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(
+      "Upload timed out after 90s. Enable Storage in Firebase Console → Build → Storage, then set Rules to allow writes for signed-in users."
+    )), timeoutMs)
+  );
+
+  try {
+    if (onProgress) onProgress(10);
+    const snapshot = await Promise.race([uploadBytes(ref, file), timeoutPromise]);
+    if (onProgress) onProgress(90);
+    const url = await Promise.race([getDownloadURL(snapshot.ref), timeoutPromise]);
+    if (onProgress) onProgress(100);
+    return url;
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    if (msg.includes("storage/unauthorized") || msg.includes("403") || msg.includes("does not have permission")) {
+      throw new Error(
+        "Firebase Storage permission denied. In Firebase Console go to Build → Storage → Rules (not Firestore) and set:\n" +
+        "  allow read, write: if request.auth != null;\n" +
+        "Then deploy rules and try uploading again."
+      );
+    }
+    throw err;
+  }
+}
+
 // --- DATA SHAPE (same as app payload) ---
 
 export interface FirestoreInventoryPayload {

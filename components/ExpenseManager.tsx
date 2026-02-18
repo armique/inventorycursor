@@ -3,9 +3,10 @@ import React, { useState, useMemo } from 'react';
 import { 
   Plus, Trash2, Calendar, Tag, CreditCard, Search, Wallet, 
   TrendingDown, TrendingUp, Filter, Receipt, ShoppingBag, 
-  Wrench, Truck, Percent, Briefcase, X, Repeat, Sparkles, Edit3, Copy
+  Wrench, Truck, Percent, Briefcase, X, Repeat, Sparkles, Edit3, Copy, Paperclip, FileText as FileTextIcon
 } from 'lucide-react';
 import { Expense, ExpenseCategory, RecurringExpense } from '../types';
+import { uploadExpenseAttachment } from '../services/firebaseService';
 
 interface Props {
   expenses: Expense[];
@@ -66,6 +67,8 @@ const ExpenseManager: React.FC<Props> = ({
   const [editingRecurring, setEditingRecurring] = useState<RecurringExpense | null>(null);
   const [customCategory, setCustomCategory] = useState<string>('');
   const [customRecurringCategory, setCustomRecurringCategory] = useState<string>('');
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter(e => {
@@ -155,6 +158,33 @@ const ExpenseManager: React.FC<Props> = ({
     });
     setEditingExpense(null);
     setCustomCategory('');
+  };
+
+  const handleAttachFile = async (file: File) => {
+    if (!file) return;
+    // Accept common image formats and PDFs
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf'];
+    if (!allowedTypes.includes(file.type)) {
+      alert('Please upload a JPG, PNG, WEBP, GIF image or a PDF file.');
+      return;
+    }
+    try {
+      setUploading(true);
+      setUploadProgress(5);
+      const provisionalId = editingExpense?.id || `new-expense-${Date.now()}`;
+      const url = await uploadExpenseAttachment(file, provisionalId, p => setUploadProgress(p));
+      setNewExpense(prev => ({
+        ...prev,
+        attachmentUrl: url,
+        attachmentName: file.name,
+      } as Partial<Expense>));
+    } catch (err: any) {
+      console.error('Upload failed', err);
+      alert(err?.message || 'Failed to upload attachment. Please check Firebase Storage configuration.');
+    } finally {
+      setUploading(false);
+      setUploadProgress(null);
+    }
   };
 
   const getCategoryIcon = (cat: string) => {
@@ -355,6 +385,18 @@ const ExpenseManager: React.FC<Props> = ({
                      </div>
                   </div>
                   <div className="flex items-center gap-3">
+                     {expense.attachmentUrl && (
+                       <a
+                         href={expense.attachmentUrl}
+                         target="_blank"
+                         rel="noopener noreferrer"
+                         className="flex items-center gap-1 text-[10px] font-bold text-blue-600 px-2 py-1 rounded-xl bg-blue-50 hover:bg-blue-100"
+                         title={expense.attachmentName || 'Open attached invoice/receipt'}
+                         onClick={e => e.stopPropagation()}
+                       >
+                         <Paperclip size={12}/> Beleg
+                       </a>
+                     )}
                      <span className="font-black text-slate-900 mr-2">€{expense.amount.toFixed(2)}</span>
                      <button
                         onClick={() => {
@@ -480,6 +522,42 @@ const ExpenseManager: React.FC<Props> = ({
                                  }
                                }}
                              />
+                           </div>
+                           <div className="col-span-2 space-y-1 mt-3">
+                             <label className="text-[9px] font-black uppercase text-slate-400 ml-2 tracking-widest">Invoice / Receipt (Image or PDF)</label>
+                             <div className="flex items-center gap-3 px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl">
+                               <label className="flex items-center gap-2 text-[11px] font-bold text-slate-600 cursor-pointer">
+                                 <Paperclip size={14}/> 
+                                 <span>{newExpense.attachmentName || 'Attach file...'}</span>
+                                 <input
+                                   type="file"
+                                   accept=".jpg,.jpeg,.png,.webp,.gif,.pdf"
+                                   className="hidden"
+                                   onChange={e => {
+                                     const file = e.target.files?.[0];
+                                     if (file) {
+                                       handleAttachFile(file);
+                                     }
+                                   }}
+                                 />
+                               </label>
+                               {uploading && (
+                                 <span className="text-[10px] font-bold text-slate-500">
+                                   Uploading… {uploadProgress != null ? `${uploadProgress}%` : ''}
+                                 </span>
+                               )}
+                               {newExpense.attachmentUrl && !uploading && (
+                                 <a
+                                   href={newExpense.attachmentUrl}
+                                   target="_blank"
+                                   rel="noopener noreferrer"
+                                   className="ml-auto text-[10px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                                   title="Open attached invoice/receipt"
+                                 >
+                                   <FileTextIcon size={12}/> Open
+                                 </a>
+                               )}
+                             </div>
                            </div>
                         </div>
                      </div>

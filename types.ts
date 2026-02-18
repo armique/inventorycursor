@@ -241,6 +241,14 @@ export interface Expense {
    * the ID of the recurring expense. Used to prevent duplicate generation.
    */
   recurringExpenseId?: string;
+  /**
+   * Optional URL to an attached invoice/receipt (image or PDF) stored in Firebase Storage.
+   */
+  attachmentUrl?: string;
+  /**
+   * Original file name of the attached invoice/receipt (for display).
+   */
+  attachmentName?: string;
 }
 
 export interface RecurringExpense {
