@@ -210,6 +210,7 @@ export interface FirestoreInventoryPayload {
   inventory: unknown[];
   trash: unknown[];
   expenses: unknown[];
+  recurringExpenses?: unknown[];
   categories?: Record<string, string[]>;
   categoryFields?: Record<string, string[]>;
   settings?: unknown;
@@ -268,6 +269,7 @@ function preparePayloadForFirestore(data: FirestoreInventoryPayload): FirestoreI
     inventory: (data.inventory || []).map(sanitizeForFirestore),
     trash: (data.trash || []).map(sanitizeForFirestore),
     expenses: (data.expenses || []).map(sanitizeForFirestore),
+    recurringExpenses: (data.recurringExpenses || []).map(sanitizeForFirestore),
     categories: data.categories,
     categoryFields: data.categoryFields,
     settings: data.settings != null ? sanitizeForFirestore(data.settings) : undefined,

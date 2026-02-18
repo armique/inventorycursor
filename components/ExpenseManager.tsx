@@ -3,14 +3,18 @@ import React, { useState, useMemo } from 'react';
 import { 
   Plus, Trash2, Calendar, Tag, CreditCard, Search, Wallet, 
   TrendingDown, TrendingUp, Filter, Receipt, ShoppingBag, 
-  Wrench, Truck, Percent, Briefcase, X
+  Wrench, Truck, Percent, Briefcase, X, Repeat, Sparkles
 } from 'lucide-react';
-import { Expense, ExpenseCategory } from '../types';
+import { Expense, ExpenseCategory, RecurringExpense } from '../types';
 
 interface Props {
   expenses: Expense[];
+  recurringExpenses: RecurringExpense[];
   onAddExpense: (expense: Expense) => void;
   onDeleteExpense: (id: string) => void;
+  onAddRecurringExpense: (recurring: RecurringExpense) => void;
+  onDeleteRecurringExpense: (id: string) => void;
+  onUpdateRecurringExpense: (recurring: RecurringExpense) => void;
 }
 
 const CATEGORIES: { id: ExpenseCategory; label: string; icon: React.ReactNode; color: string }[] = [
@@ -24,16 +28,34 @@ const CATEGORIES: { id: ExpenseCategory; label: string; icon: React.ReactNode; c
   { id: 'Other', label: 'Other', icon: <Tag size={16}/>, color: 'text-gray-500 bg-gray-50' },
 ];
 
-const ExpenseManager: React.FC<Props> = ({ expenses, onAddExpense, onDeleteExpense }) => {
+const ExpenseManager: React.FC<Props> = ({ 
+  expenses, 
+  recurringExpenses,
+  onAddExpense, 
+  onDeleteExpense,
+  onAddRecurringExpense,
+  onDeleteRecurringExpense,
+  onUpdateRecurringExpense
+}) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isRecurringModalOpen, setIsRecurringModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<ExpenseCategory | 'ALL'>('ALL');
+  const [showRecurring, setShowRecurring] = useState(false);
 
   // Form State
   const [newExpense, setNewExpense] = useState<Partial<Expense>>({
     date: new Date().toISOString().split('T')[0],
     category: 'Shipping',
     amount: 0,
+    description: ''
+  });
+
+  // Recurring Expense Form State
+  const [newRecurring, setNewRecurring] = useState<Partial<RecurringExpense>>({
+    startDate: new Date().toISOString().split('T')[0],
+    category: 'Office',
+    monthlyAmount: 0,
     description: ''
   });
 
@@ -44,6 +66,28 @@ const ExpenseManager: React.FC<Props> = ({ expenses, onAddExpense, onDeleteExpen
       return matchesSearch && matchesCat;
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [expenses, searchTerm, selectedCategory]);
+
+  const handleSubmitRecurring = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRecurring.monthlyAmount || !newRecurring.description || !newRecurring.startDate) return;
+    
+    const recurring: RecurringExpense = {
+      id: `recurring-${Date.now()}`,
+      description: newRecurring.description,
+      monthlyAmount: Number(newRecurring.monthlyAmount),
+      startDate: newRecurring.startDate,
+      category: newRecurring.category as ExpenseCategory
+    };
+    
+    onAddRecurringExpense(recurring);
+    setIsRecurringModalOpen(false);
+    setNewRecurring({
+      startDate: new Date().toISOString().split('T')[0],
+      category: 'Office',
+      monthlyAmount: 0,
+      description: ''
+    });
+  };
 
   const stats = useMemo(() => {
     const total = expenses.reduce((sum, e) => sum + e.amount, 0);
@@ -91,12 +135,20 @@ const ExpenseManager: React.FC<Props> = ({ expenses, onAddExpense, onDeleteExpen
           <h1 className="text-3xl font-black text-slate-900 tracking-tighter">Overhead & Expenses</h1>
           <p className="text-sm text-slate-500 font-medium italic">Track shipping, packaging, and operational costs</p>
         </div>
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg hover:bg-black transition-all flex items-center gap-2"
-        >
-          <Plus size={16}/> Add Expense
-        </button>
+        <div className="flex gap-3">
+          <button 
+            onClick={() => setIsRecurringModalOpen(true)}
+            className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg hover:bg-blue-700 transition-all flex items-center gap-2"
+          >
+            <Repeat size={16}/> Recurring
+          </button>
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg hover:bg-black transition-all flex items-center gap-2"
+          >
+            <Plus size={16}/> Add Expense
+          </button>
+        </div>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -118,6 +170,68 @@ const ExpenseManager: React.FC<Props> = ({ expenses, onAddExpense, onDeleteExpen
             <h4 className="text-3xl font-black text-slate-900">€{stats.thisMonth.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h4>
          </div>
       </div>
+
+      {/* Recurring Expenses Section */}
+      {recurringExpenses.length > 0 && (
+        <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
+                <Repeat size={20}/>
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-900">Recurring Expenses</h3>
+                <p className="text-xs text-slate-500">Monthly bills automatically generated</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowRecurring(!showRecurring)}
+              className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest bg-slate-50 text-slate-600 hover:bg-slate-100 transition-all"
+            >
+              {showRecurring ? 'Hide' : 'Show'} ({recurringExpenses.length})
+            </button>
+          </div>
+          {showRecurring && (
+            <div className="space-y-2 pt-4 border-t border-slate-100">
+              {recurringExpenses.map(recurring => {
+                const startDate = new Date(recurring.startDate);
+                const monthsSinceStart = Math.max(0, 
+                  (new Date().getFullYear() - startDate.getFullYear()) * 12 + 
+                  (new Date().getMonth() - startDate.getMonth()) + 1
+                );
+                return (
+                  <div key={recurring.id} className="flex items-center justify-between p-4 bg-blue-50/50 rounded-xl border border-blue-100 group">
+                    <div className="flex items-center gap-4">
+                      {getCategoryIcon(recurring.category)}
+                      <div>
+                        <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                          {recurring.description}
+                          <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded uppercase font-black">Recurring</span>
+                        </h4>
+                        <div className="flex items-center gap-3 mt-1">
+                          <span className="text-[10px] font-bold text-slate-500">€{recurring.monthlyAmount.toFixed(2)}/month</span>
+                          <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
+                            <Calendar size={10}/> Since {startDate.toLocaleDateString('de-DE', { month: 'short', year: 'numeric' })}
+                          </span>
+                          <span className="text-[10px] font-bold text-emerald-600">
+                            {monthsSinceStart} month{monthsSinceStart !== 1 ? 's' : ''} generated
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => onDeleteRecurringExpense(recurring.id)}
+                      className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                    >
+                      <Trash2 size={16}/>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm p-6 space-y-6">
          <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
@@ -160,6 +274,11 @@ const ExpenseManager: React.FC<Props> = ({ expenses, onAddExpense, onDeleteExpen
                         <div className="flex items-center gap-2 mt-1">
                            <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded uppercase">{expense.category}</span>
                            <span className="text-[10px] font-bold text-slate-300 flex items-center gap-1"><Calendar size={10}/> {expense.date}</span>
+                           {expense.recurringExpenseId && (
+                              <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded uppercase font-black flex items-center gap-1">
+                                 <Sparkles size={8}/> Auto
+                              </span>
+                           )}
                         </div>
                      </div>
                   </div>
@@ -244,6 +363,85 @@ const ExpenseManager: React.FC<Props> = ({ expenses, onAddExpense, onDeleteExpen
 
                   <button type="submit" className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl hover:bg-blue-700 transition-all">
                      Log Expense
+                  </button>
+               </form>
+            </div>
+         </div>
+      )}
+
+      {isRecurringModalOpen && (
+         <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+            <div className="bg-white w-full max-w-lg rounded-[3rem] shadow-2xl p-8 space-y-6">
+               <div className="flex justify-between items-center">
+                  <div>
+                     <h3 className="text-2xl font-black text-slate-900">New Recurring Expense</h3>
+                     <p className="text-xs text-slate-500 mt-1">Monthly bills that auto-generate expenses</p>
+                  </div>
+                  <button onClick={() => setIsRecurringModalOpen(false)}><X size={24} className="text-slate-400 hover:text-slate-900"/></button>
+               </div>
+
+               <form onSubmit={handleSubmitRecurring} className="space-y-6">
+                  <div className="space-y-4">
+                     <div>
+                        <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Description</label>
+                        <input 
+                           autoFocus
+                           className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:border-blue-500 font-bold text-sm"
+                           placeholder="e.g. Health Insurance, Phone Bill"
+                           value={newRecurring.description}
+                           onChange={e => setNewRecurring({...newRecurring, description: e.target.value})}
+                        />
+                     </div>
+                     
+                     <div className="grid grid-cols-2 gap-4">
+                        <div>
+                           <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Monthly Amount (€)</label>
+                           <input 
+                              type="number"
+                              step="0.01"
+                              className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:border-blue-500 font-black text-lg"
+                              value={newRecurring.monthlyAmount || ''}
+                              onChange={e => setNewRecurring({...newRecurring, monthlyAmount: parseFloat(e.target.value)})}
+                           />
+                        </div>
+                        <div>
+                           <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Start Date</label>
+                           <input 
+                              type="date"
+                              className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:border-blue-500 font-bold text-sm"
+                              value={newRecurring.startDate}
+                              onChange={e => setNewRecurring({...newRecurring, startDate: e.target.value})}
+                           />
+                        </div>
+                     </div>
+
+                     <div>
+                        <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Category</label>
+                        <div className="grid grid-cols-2 gap-2 mt-2">
+                           {CATEGORIES.map(cat => (
+                              <button
+                                 type="button"
+                                 key={cat.id}
+                                 onClick={() => setNewRecurring({...newRecurring, category: cat.id})}
+                                 className={`p-3 rounded-xl border text-[10px] font-black uppercase flex items-center gap-2 transition-all ${newRecurring.category === cat.id ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-100 text-slate-500 hover:bg-slate-50'}`}
+                              >
+                                 {cat.icon} {cat.label}
+                              </button>
+                           ))}
+                        </div>
+                     </div>
+
+                     <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                        <p className="text-xs font-bold text-blue-800">
+                           <Repeat size={12} className="inline mr-1"/> 
+                           Expenses will be automatically generated for each month from the start date to today, 
+                           and will continue generating monthly going forward.
+                        </p>
+                     </div>
+                  </div>
+
+                  <button type="submit" className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl hover:bg-blue-700 transition-all">
+                     Create Recurring Expense
                   </button>
                </form>
             </div>

@@ -21,11 +21,12 @@ import StoreManagementPage from './components/StoreManagementPage';
 import LegalPage from './components/LegalPage';
 import MissingSpecsReport from './components/MissingSpecsReport';
 
-import { InventoryItem, Expense, ItemStatus, BusinessSettings } from './types';
+import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense } from './types';
 import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchFromCloud } from './services/firebaseService';
 import { DEFAULT_CATEGORIES } from './services/constants';
 import { appendPriceHistoryIfChanged } from './services/priceHistory';
 import { saveOAuthResult } from './services/githubBackupService';
+import { generateExpensesFromRecurring } from './services/recurringExpenseService';
 import { Analytics } from '@vercel/analytics/react';
 
 const WRITE_DEBOUNCE_MS = 3500;
@@ -154,6 +155,7 @@ const App: React.FC = () => {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [trash, setTrash] = useState<InventoryItem[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>([]);
   
   // Dynamic Categories
   const [categories, setCategories] = useState<Record<string, string[]>>(() => {
@@ -212,7 +214,8 @@ const App: React.FC = () => {
     newSettings: BusinessSettings,
     newGoal: number,
     newCategories: Record<string, string[]>,
-    newFields: Record<string, string[]>
+    newFields: Record<string, string[]>,
+    newRecurringExpenses?: RecurringExpense[]
   ) => {
     localStorage.setItem('inventory_items', JSON.stringify(newItems));
     localStorage.setItem('inventory_trash', JSON.stringify(newTrash));
@@ -221,6 +224,9 @@ const App: React.FC = () => {
     localStorage.setItem('monthly_profit_goal', newGoal.toString());
     localStorage.setItem('custom_categories', JSON.stringify(newCategories));
     localStorage.setItem('custom_category_fields', JSON.stringify(newFields));
+    if (newRecurringExpenses !== undefined) {
+      localStorage.setItem('recurring_expenses', JSON.stringify(newRecurringExpenses));
+    }
   };
 
   const mergeLargeFieldsFromLocal = useCallback((remoteList: InventoryItem[], localList: InventoryItem[]): InventoryItem[] => {
@@ -276,6 +282,13 @@ const App: React.FC = () => {
     const localExpenses = JSON.parse(localStorage.getItem('inventory_expenses') || '[]') as Expense[];
     const remoteExpenses = (data.expenses || []) as Expense[];
     const exp = mergeExpensesFromLocal(remoteExpenses, localExpenses);
+    const remoteRecurring = (data.recurringExpenses || []) as RecurringExpense[];
+    const localRecurring = JSON.parse(localStorage.getItem('recurring_expenses') || '[]') as RecurringExpense[];
+    // Merge recurring expenses by ID (remote wins on conflicts)
+    const recurringMap = new Map<string, RecurringExpense>();
+    localRecurring.forEach(r => { if (r && r.id) recurringMap.set(r.id, r); });
+    remoteRecurring.forEach(r => { if (r && r.id) recurringMap.set(r.id, r); });
+    const recurring = Array.from(recurringMap.values());
     const sets = data.settings || {};
     const goal = data.goals?.monthly ?? 1000;
     const cats = data.categories || {};
@@ -283,11 +296,12 @@ const App: React.FC = () => {
     setItems(inv);
     setTrash(tr);
     setExpenses(exp);
+    setRecurringExpenses(recurring);
     setBusinessSettings(prev => ({ ...prev, ...sets }));
     setMonthlyGoal(goal);
     setCategories(cats);
     setCategoryFields(fields);
-    saveToLocalStorage(inv, tr, exp, { ...sets } as BusinessSettings, goal, cats, fields);
+    saveToLocalStorage(inv, tr, exp, { ...sets } as BusinessSettings, goal, cats, fields, recurring);
   }, []);
 
   // 1. BOOT: load local data and show app immediately; sync with Firestore in background
@@ -325,6 +339,7 @@ const App: React.FC = () => {
     setItems(localItems);
     setTrash(JSON.parse(localStorage.getItem('inventory_trash') || '[]'));
     setExpenses(JSON.parse(localStorage.getItem('inventory_expenses') || '[]'));
+    setRecurringExpenses(JSON.parse(localStorage.getItem('recurring_expenses') || '[]'));
   };
 
   // One-time migration: merge Peripherals > Optical Drives into Components > Optical Drives, then remove Optical Drives from Peripherals
@@ -357,9 +372,9 @@ const App: React.FC = () => {
     setItems(newItems);
     setCategories(newCategories);
     setCategoryFields(newFields);
-    saveToLocalStorage(newItems, trash, expenses, businessSettings, monthlyGoal, newCategories, newFields);
+    saveToLocalStorage(newItems, trash, expenses, businessSettings, monthlyGoal, newCategories, newFields, recurringExpenses);
     localStorage.setItem(OPTICAL_DRIVES_MIGRATION_KEY, '1');
-  }, [appState, items, categories, categoryFields, trash, expenses, businessSettings, monthlyGoal]);
+  }, [appState, items, categories, categoryFields, trash, expenses, businessSettings, monthlyGoal, recurringExpenses]);
 
   // Initial cloud sync when user signs in:
   // - FIRST try to pull existing data from Firestore so a new device never overwrites cloud with an empty local state.
@@ -387,13 +402,14 @@ const App: React.FC = () => {
           inventory: items,
           trash,
           expenses,
+          recurringExpenses,
           categories,
           categoryFields,
           settings: businessSettings,
           goals: { monthly: monthlyGoal },
         };
         await writeToCloud(payload);
-        saveToLocalStorage(items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields);
+        saveToLocalStorage(items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields, recurringExpenses);
         setSyncState({ status: 'success', lastSynced: new Date(), message: 'Live' });
         await writeStoreCatalog(buildStoreCatalog(items, categoryFields)).catch((e) =>
           console.warn('Store catalog update failed', e)
@@ -428,6 +444,47 @@ const App: React.FC = () => {
     };
   }, [items, categoryFields, authUser]);
 
+  // Generate expenses from recurring expenses
+  const recurringGenRef = useRef<string>(''); // Track last generation to avoid loops
+  useEffect(() => {
+    if (appState !== 'READY' || recurringExpenses.length === 0) return;
+    
+    // Create a signature of current recurring expenses to detect changes
+    const signature = recurringExpenses.map(r => `${r.id}:${r.startDate}:${r.lastGeneratedDate || ''}`).join('|');
+    if (signature === recurringGenRef.current) return; // Already processed this state
+    
+    let hasNewExpenses = false;
+    const newExpenses: Expense[] = [];
+    const updatedRecurring: RecurringExpense[] = [];
+    
+    // Use current expenses state to check for duplicates
+    setExpenses(currentExpenses => {
+      for (const recurring of recurringExpenses) {
+        const { expenses: generated, lastGeneratedDate } = generateExpensesFromRecurring(recurring, currentExpenses);
+        if (generated.length > 0) {
+          hasNewExpenses = true;
+          newExpenses.push(...generated);
+          updatedRecurring.push({ ...recurring, lastGeneratedDate });
+        } else {
+          updatedRecurring.push(recurring);
+        }
+      }
+      
+      if (hasNewExpenses) {
+        // Update recurring expenses with new lastGeneratedDate values
+        setRecurringExpenses(updatedRecurring);
+        recurringGenRef.current = updatedRecurring.map(r => `${r.id}:${r.startDate}:${r.lastGeneratedDate || ''}`).join('|');
+        
+        // Add new generated expenses
+        const existingIds = new Set(currentExpenses.map(e => e.id));
+        const uniqueNew = newExpenses.filter(e => !existingIds.has(e.id));
+        return [...currentExpenses, ...uniqueNew];
+      }
+      
+      return currentExpenses;
+    });
+  }, [appState, recurringExpenses]); // Only depend on recurringExpenses, use functional setState for expenses
+
   // 2. Local persistence + debounced Firestore write
   useEffect(() => {
     if (appState !== 'READY') return;
@@ -435,17 +492,17 @@ const App: React.FC = () => {
       isRemoteUpdate.current = false;
       return;
     }
-    saveToLocalStorage(items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields);
+    saveToLocalStorage(items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields, recurringExpenses);
 
     if (!isCloudEnabled() || !authUser) return;
     if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
     writeDebounceRef.current = setTimeout(() => {
       writeDebounceRef.current = null;
-      const payload = { inventory: items, trash, expenses, categories, categoryFields, settings: businessSettings, goals: { monthly: monthlyGoal } };
+      const payload = { inventory: items, trash, expenses, recurringExpenses, categories, categoryFields, settings: businessSettings, goals: { monthly: monthlyGoal } };
       setSyncState(prev => ({ ...prev, status: 'syncing', message: 'Saving…' }));
       writeToCloud(payload)
         .then(() => {
-          saveToLocalStorage(items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields);
+          saveToLocalStorage(items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields, recurringExpenses);
           setSyncState({ status: 'success', lastSynced: new Date(), message: 'Live' });
           const catalog = buildStoreCatalog(items, categoryFields);
           return writeStoreCatalog(catalog).catch((e) => console.warn('Store catalog update failed', e));
@@ -456,15 +513,15 @@ const App: React.FC = () => {
     return () => {
       if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
     };
-  }, [appState, authUser, items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields]);
+  }, [appState, authUser, items, trash, expenses, recurringExpenses, businessSettings, monthlyGoal, categories, categoryFields]);
 
   const handleForcePush = async () => {
     if (!isCloudEnabled() || !authUser) return false;
     setSyncState(prev => ({ ...prev, status: 'syncing', message: 'Saving…' }));
-    const payload = { inventory: items, trash, expenses, categories, categoryFields, settings: businessSettings, goals: { monthly: monthlyGoal } };
+    const payload = { inventory: items, trash, expenses, recurringExpenses, categories, categoryFields, settings: businessSettings, goals: { monthly: monthlyGoal } };
     try {
       await writeToCloud(payload);
-      saveToLocalStorage(items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields);
+      saveToLocalStorage(items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields, recurringExpenses);
         await writeStoreCatalog(buildStoreCatalog(items, categoryFields)).catch((e) => console.warn('Store catalog update failed', e));
       setSyncState({ status: 'success', lastSynced: new Date(), message: 'Saved' });
       return true;
@@ -526,15 +583,29 @@ const App: React.FC = () => {
   const handleAddExpense = (expense: Expense) => setExpenses(prev => [...prev, expense]);
   const handleDeleteExpense = (id: string) => setExpenses(prev => prev.filter(e => e.id !== id));
   
+  const handleAddRecurringExpense = (recurring: RecurringExpense) => {
+    setRecurringExpenses(prev => [...prev, recurring]);
+  };
+  const handleDeleteRecurringExpense = (id: string) => {
+    setRecurringExpenses(prev => prev.filter(r => r.id !== id));
+    // Also delete all generated expenses from this recurring expense
+    setExpenses(prev => prev.filter(e => e.recurringExpenseId !== id));
+  };
+  const handleUpdateRecurringExpense = (recurring: RecurringExpense) => {
+    setRecurringExpenses(prev => prev.map(r => r.id === recurring.id ? recurring : r));
+  };
+  
   const handleWipeData = async () => {
     const emptyInventory: InventoryItem[] = [];
     const emptyExpenses: Expense[] = [];
     const emptyTrash: InventoryItem[] = [];
+    const emptyRecurring: RecurringExpense[] = [];
     const defaultGoal = 1000;
 
     setItems(emptyInventory);
     setExpenses(emptyExpenses);
     setTrash(emptyTrash);
+    setRecurringExpenses(emptyRecurring);
     setHistory([]);
     setHistoryIndex(-1);
     setMonthlyGoal(defaultGoal);
@@ -543,12 +614,13 @@ const App: React.FC = () => {
     localStorage.removeItem('price_check_history');
     localStorage.removeItem('ai_sourcing_history');
 
-    saveToLocalStorage(emptyInventory, emptyTrash, emptyExpenses, businessSettings, defaultGoal, categories, categoryFields);
+    saveToLocalStorage(emptyInventory, emptyTrash, emptyExpenses, businessSettings, defaultGoal, categories, categoryFields, emptyRecurring);
 
     if (isCloudEnabled() && authUser) {
       try {
         await writeToCloud({
           inventory: emptyInventory,
+          recurringExpenses: emptyRecurring,
           trash: emptyTrash,
           expenses: emptyExpenses,
           settings: businessSettings,
@@ -695,7 +767,7 @@ const App: React.FC = () => {
           <Route path="edit/:id" element={<ItemForm onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="builder" element={<PCBuilderWizard items={items} onSave={handleUpdate} />} />
           <Route path="pricing" element={<PriceCheck />} />
-          <Route path="expenses" element={<ExpenseManager expenses={expenses} onAddExpense={handleAddExpense} onDeleteExpense={handleDeleteExpense} />} />
+          <Route path="expenses" element={<ExpenseManager expenses={expenses} recurringExpenses={recurringExpenses} onAddExpense={handleAddExpense} onDeleteExpense={handleDeleteExpense} onAddRecurringExpense={handleAddRecurringExpense} onDeleteRecurringExpense={handleDeleteRecurringExpense} onUpdateRecurringExpense={handleUpdateRecurringExpense} />} />
           <Route path="import" element={<SheetsImport onImport={handleImportBatch} onClearData={handleWipeData} />} />
           <Route path="trash" element={<TrashPage items={trash} onRestore={handleRestoreFromTrash} onPermanentDelete={handlePermanentDelete} />} />
           <Route path="missing-specs" element={<MissingSpecsReport items={items} categoryFields={categoryFields} />} />

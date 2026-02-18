@@ -232,4 +232,22 @@ export interface Expense {
   amount: number;
   date: string;
   category: ExpenseCategory;
+  /**
+   * If this expense was generated from a recurring expense, this field contains
+   * the ID of the recurring expense. Used to prevent duplicate generation.
+   */
+  recurringExpenseId?: string;
+}
+
+export interface RecurringExpense {
+  id: string;
+  description: string;
+  monthlyAmount: number;
+  startDate: string; // ISO date string (YYYY-MM-DD)
+  category: ExpenseCategory;
+  /**
+   * Last date for which expenses were generated. Used to track progress
+   * and only generate new months going forward.
+   */
+  lastGeneratedDate?: string;
 }
