@@ -496,6 +496,9 @@ const InventoryList: React.FC<Props> = ({
       
       if (!matchesStatus) return false;
 
+      // Hide child items (components of bundles/PCs) from the main list — they only appear in the parent's expanded section
+      if (item.parentContainerId) return false;
+
       // Optional visibility toggle for "In Composition" items
       if (!showInComposition && item.status === ItemStatus.IN_COMPOSITION) return false;
 
