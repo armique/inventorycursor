@@ -229,24 +229,34 @@ const App: React.FC = () => {
     }
   };
 
-  const mergeLargeFieldsFromLocal = useCallback((remoteList: InventoryItem[], localList: InventoryItem[]): InventoryItem[] => {
-    const localById = new Map(localList.map((i) => [i.id, i]));
+  /** Merge remote inventory with local. Remote wins on conflicts, but local-only items (e.g. newly added via bulk) are preserved until synced. */
+  const mergeInventoryWithLocal = useCallback((remoteList: InventoryItem[], localList: InventoryItem[]): InventoryItem[] => {
     const largeFields = ['imageUrl', 'receiptUrl', 'kleinanzeigenChatImage', 'kleinanzeigenBuyChatImage', 'marketDescription'] as const;
-    return remoteList.map((r) => {
+    const localById = new Map(localList.map((i) => [i.id, i]));
+    const byId = new Map<string, InventoryItem>();
+    // Start with local (preserves items only in local – e.g. newly added bulk items not yet in cloud)
+    localList.forEach((i) => { if (i?.id) byId.set(i.id, i); });
+    // Overlay remote (server wins when ID matches), filling large fields from local when remote has placeholder
+    remoteList.forEach((r) => {
+      if (!r?.id) return;
       const local = localById.get(r.id);
-      if (!local) return r;
-      let changed = false;
-      const out = { ...r };
-      for (const key of largeFields) {
-        const rv = (r as any)[key];
-        const lv = (local as any)[key];
-        if (rv === CLOUD_OMITTED_PLACEHOLDER && lv && typeof lv === 'string' && lv.length > 0) {
-          (out as any)[key] = lv;
-          changed = true;
+      let merged: InventoryItem = r;
+      if (local) {
+        let changed = false;
+        const out = { ...r };
+        for (const key of largeFields) {
+          const rv = (r as any)[key];
+          const lv = (local as any)[key];
+          if (rv === CLOUD_OMITTED_PLACEHOLDER && lv && typeof lv === 'string' && lv.length > 0) {
+            (out as any)[key] = lv;
+            changed = true;
+          }
         }
+        merged = changed ? out : r;
       }
-      return changed ? out : r;
+      byId.set(r.id, merged);
     });
+    return Array.from(byId.values());
   }, []);
 
   // Merge expenses from cloud with locally stored expenses.
@@ -277,8 +287,8 @@ const App: React.FC = () => {
     const remoteTrash = (data.trash || []) as InventoryItem[];
     const localItems = JSON.parse(localStorage.getItem('inventory_items') || '[]') as InventoryItem[];
     const localTrash = JSON.parse(localStorage.getItem('inventory_trash') || '[]') as InventoryItem[];
-    const inv = mergeLargeFieldsFromLocal(remoteInv, localItems);
-    const tr = mergeLargeFieldsFromLocal(remoteTrash, localTrash);
+    const inv = mergeInventoryWithLocal(remoteInv, localItems);
+    const tr = mergeInventoryWithLocal(remoteTrash, localTrash);
     const localExpenses = JSON.parse(localStorage.getItem('inventory_expenses') || '[]') as Expense[];
     const remoteExpenses = (data.expenses || []) as Expense[];
     const exp = mergeExpensesFromLocal(remoteExpenses, localExpenses);
