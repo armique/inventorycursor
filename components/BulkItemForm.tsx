@@ -7,7 +7,7 @@ import {
   MessageCircle, Link as LinkIcon, Upload, Search, Database, 
   Cpu, Monitor, HardDrive, Zap, Wind, AlertCircle, CheckCircle2, Copy,
   Fan, Lightbulb, Keyboard, Mouse, Tv, MoreHorizontal, Cable, Laptop as LaptopIcon, Wrench,
-  Sparkles, Loader2
+  Sparkles, Loader2, Package
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, Platform, PaymentType } from '../types';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
@@ -90,6 +90,8 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
   const [parseSpecsBeforeImport, setParseSpecsBeforeImport] = useState(true);
   const [parsingSpecs, setParsingSpecs] = useState(false);
   const [parseProgress, setParseProgress] = useState<string | null>(null);
+  const [addAsBundle, setAddAsBundle] = useState(false);
+  const [bundleName, setBundleName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<HardwareMetadata[]>([]);
   
@@ -253,32 +255,57 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
       }
     }
 
-    const inventoryItems: InventoryItem[] = itemsToImport.map((draft, index) => {
+    const timestamp = Date.now();
+    const childItems: InventoryItem[] = itemsToImport.map((draft, index) => {
       const finalCost = draft.manualCost !== undefined ? draft.manualCost : autoSplitValue;
       return {
-        id: `bulk-${Date.now()}-${index}`,
+        id: `bulk-${timestamp}-${index}`,
         name: draft.name,
         buyPrice: parseFloat(finalCost.toFixed(2)),
         buyDate: buyDate,
         category: draft.category,
         subCategory: draft.subCategory,
-        status: ItemStatus.IN_STOCK,
+        status: addAsBundle ? ItemStatus.IN_COMPOSITION : ItemStatus.IN_STOCK,
         comment1: draft.note,
         comment2: `Bulk Import (${itemsToImport.length} items). Source total: €${totalCost}.`,
         vendor: draft.vendor || 'Unknown',
         specs: draft.specs,
         isDefective: draft.isDefective,
-        
+        parentContainerId: addAsBundle ? `bundle-${timestamp}` : undefined,
         platformBought: platform,
         buyPaymentType: payment,
-        
-        // Add Shared Evidence
         kleinanzeigenBuyChatUrl: chatUrl,
         kleinanzeigenBuyChatImage: chatImage,
-        
         imageUrl: CATEGORY_IMAGES[draft.subCategory || draft.category] || CATEGORY_IMAGES[draft.category]
       };
     });
+
+    const inventoryItems: InventoryItem[] = addAsBundle && childItems.length > 0
+      ? (() => {
+          const bundleId = `bundle-${timestamp}`;
+          const totalBuy = childItems.reduce((sum, i) => sum + i.buyPrice, 0);
+          const nameToUse = bundleName.trim() || `Bundle: ${itemsToImport[0].name}${itemsToImport.length > 1 ? ` + ${itemsToImport.length - 1} more` : ''}`;
+          const parentBundle: InventoryItem = {
+            id: bundleId,
+            name: nameToUse,
+            category: 'Bundle',
+            subCategory: 'Component Set',
+            status: ItemStatus.IN_STOCK,
+            buyPrice: totalBuy,
+            isBundle: true,
+            componentIds: childItems.map(i => i.id),
+            comment1: `Bulk Import Bundle. Contents:\n${childItems.map(i => `- ${i.name}`).join('\n')}`,
+            comment2: `Bulk Import (${itemsToImport.length} items). Source total: €${totalCost}.`,
+            vendor: 'Combined',
+            platformBought: platform,
+            buyPaymentType: payment,
+            kleinanzeigenBuyChatUrl: chatUrl,
+            kleinanzeigenBuyChatImage: chatImage,
+            imageUrl: childItems[0]?.imageUrl || CATEGORY_IMAGES['Components']
+          };
+          return [parentBundle, ...childItems];
+        })()
+      : childItems;
 
     onSave(inventoryItems);
     navigate('/panel/inventory');
@@ -560,6 +587,30 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
             </div>
 
             <div className="p-6 bg-slate-50 border-t border-slate-200">
+               {items.length >= 2 && (
+                  <label className="flex items-center gap-3 mb-4 p-3 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 transition-colors cursor-pointer">
+                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${addAsBundle ? 'bg-purple-100 text-purple-600' : 'bg-slate-100 text-slate-400'}`}>
+                        <Package size={16}/>
+                     </div>
+                     <div className="flex-1">
+                        <span className="text-xs font-bold text-slate-700 block">Add as bundle?</span>
+                        <span className="text-[10px] text-slate-400">Creates one bundle item with child components, margin calculated from children</span>
+                     </div>
+                     <input type="checkbox" checked={addAsBundle} onChange={e => setAddAsBundle(e.target.checked)} className="hidden"/>
+                     {addAsBundle && <CheckCircle2 size={16} className="text-purple-500"/>}
+                  </label>
+               )}
+               {addAsBundle && items.length >= 2 && (
+                  <div className="mb-4">
+                     <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest block mb-1">Bundle name</label>
+                     <input 
+                        className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-purple-200"
+                        placeholder={`Bundle: ${items[0]?.name || 'Item 1'} + ${items.length - 1} more`}
+                        value={bundleName}
+                        onChange={e => setBundleName(e.target.value)}
+                     />
+                  </div>
+               )}
                {aiAvailable && (
                   <label className="flex items-center gap-3 mb-4 p-3 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 transition-colors cursor-pointer">
                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${parseSpecsBeforeImport ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-400'}`}>
@@ -588,7 +639,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
                      </>
                   ) : (
                      <>
-                        <Save size={18}/> Confirm Import ({items.length})
+                        <Save size={18}/> {addAsBundle && items.length >= 2 ? `Confirm Import as Bundle (${items.length} items)` : `Confirm Import (${items.length})`}
                      </>
                   )}
                </button>
