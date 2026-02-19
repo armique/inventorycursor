@@ -765,7 +765,7 @@ const App: React.FC = () => {
           <Route path="category-suggestions" element={<CategorySuggestionsPage items={items} categories={categories} categoryFields={categoryFields} onUpdate={handleUpdate} onUpdateCategoryStructure={handleUpdateCategoryStructure} onUpdateCategoryFields={handleUpdateCategoryFields} onAddCategory={handleAddCategory} />} />
           <Route path="inventory" element={<InventoryList key="inventory-main" items={items} totalCount={items.length} onUpdate={handleUpdate} onDelete={handleDelete} onUndo={handleUndo} onRedo={handleRedo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} pageTitle="Inventory" allowedStatuses={ALL_STATUSES} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} persistenceKey="inventory_main"/>} />
           <Route path="add" element={<ItemForm onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
-          <Route path="add-bulk" element={<BulkItemForm onSave={handleUpdate} />} />
+          <Route path="add-bulk" element={<BulkItemForm onSave={handleUpdate} categoryFields={categoryFields} />} />
           <Route path="edit/:id" element={<ItemForm onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="builder" element={<PCBuilderWizard items={items} onSave={handleUpdate} />} />
           <Route path="pricing" element={<PriceCheck />} />

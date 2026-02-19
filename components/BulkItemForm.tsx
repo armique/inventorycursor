@@ -6,14 +6,17 @@ import {
   ShoppingBag, Calculator, Layers, Box, ChevronDown, 
   MessageCircle, Link as LinkIcon, Upload, Search, Database, 
   Cpu, Monitor, HardDrive, Zap, Wind, AlertCircle, CheckCircle2, Copy,
-  Fan, Lightbulb, Keyboard, Mouse, Tv, MoreHorizontal, Cable, Laptop as LaptopIcon, Wrench
+  Fan, Lightbulb, Keyboard, Mouse, Tv, MoreHorizontal, Cable, Laptop as LaptopIcon, Wrench,
+  Sparkles, Loader2
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, Platform, PaymentType } from '../types';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { CATEGORY_IMAGES, searchAllHardware, HardwareMetadata } from '../services/hardwareDB';
+import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
 
 interface Props {
   onSave: (newItems: InventoryItem[]) => void;
+  categoryFields?: Record<string, string[]>;
 }
 
 const PAYMENT_METHODS: PaymentType[] = [
@@ -65,8 +68,9 @@ interface DraftItem {
   isDefective?: boolean;
 }
 
-const BulkItemForm: React.FC<Props> = ({ onSave }) => {
+const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
   const navigate = useNavigate();
+  const aiAvailable = !!getSpecsAIProvider();
 
   // Shared State
   const [totalCost, setTotalCost] = useState<number>(0);
@@ -83,6 +87,9 @@ const BulkItemForm: React.FC<Props> = ({ onSave }) => {
   
   // Entry Form State
   const [mode, setMode] = useState<'SEARCH' | 'MANUAL'>('MANUAL');
+  const [parseSpecsBeforeImport, setParseSpecsBeforeImport] = useState(true);
+  const [parsingSpecs, setParsingSpecs] = useState(false);
+  const [parseProgress, setParseProgress] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<HardwareMetadata[]>([]);
   
@@ -197,7 +204,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave }) => {
      setItems(prev => prev.map(i => ({ ...i, manualCost: undefined })));
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (items.length === 0) return;
 
     // Check consistency
@@ -208,7 +215,45 @@ const BulkItemForm: React.FC<Props> = ({ onSave }) => {
         }
     }
 
-    const inventoryItems: InventoryItem[] = items.map((draft, index) => {
+    let itemsToImport = [...items];
+
+    // Parse tech specs with AI for items that don't have specs yet
+    if (parseSpecsBeforeImport && aiAvailable) {
+      const needSpecs = itemsToImport.filter(
+        (d) => !d.specs || Object.keys(d.specs).length === 0
+      );
+      if (needSpecs.length > 0) {
+        setParsingSpecs(true);
+        const updated = [...itemsToImport];
+        for (let i = 0; i < needSpecs.length; i++) {
+          const draft = needSpecs[i];
+          setParseProgress(`Parsing specs… ${i + 1} / ${needSpecs.length}`);
+          try {
+            const categoryContext = `${draft.category}${draft.subCategory ? ` / ${draft.subCategory}` : ''}`;
+            const activeKey = `${draft.category}:${draft.subCategory || ''}`;
+            const knownKeys = categoryFields[activeKey] || categoryFields[draft.category] || [];
+            const result = await generateItemSpecs(draft.name, categoryContext, knownKeys);
+            const idx = updated.findIndex((x) => x.id === draft.id);
+            if (idx >= 0 && result.specs && Object.keys(result.specs).length > 0) {
+              updated[idx] = {
+                ...updated[idx],
+                specs: result.specs,
+                ...(result.standardizedName && { name: result.standardizedName }),
+                ...(result.vendor && { vendor: result.vendor }),
+              };
+            }
+          } catch (e) {
+            console.warn('AI specs parse failed for', draft.name, e);
+            // Keep original item, don't block import
+          }
+        }
+        itemsToImport = updated;
+        setParseProgress(null);
+        setParsingSpecs(false);
+      }
+    }
+
+    const inventoryItems: InventoryItem[] = itemsToImport.map((draft, index) => {
       const finalCost = draft.manualCost !== undefined ? draft.manualCost : autoSplitValue;
       return {
         id: `bulk-${Date.now()}-${index}`,
@@ -219,7 +264,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave }) => {
         subCategory: draft.subCategory,
         status: ItemStatus.IN_STOCK,
         comment1: draft.note,
-        comment2: `Bulk Import (${items.length} items). Source total: €${totalCost}.`,
+        comment2: `Bulk Import (${itemsToImport.length} items). Source total: €${totalCost}.`,
         vendor: draft.vendor || 'Unknown',
         specs: draft.specs,
         isDefective: draft.isDefective,
@@ -515,16 +560,37 @@ const BulkItemForm: React.FC<Props> = ({ onSave }) => {
             </div>
 
             <div className="p-6 bg-slate-50 border-t border-slate-200">
+               {aiAvailable && (
+                  <label className="flex items-center gap-3 mb-4 p-3 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 transition-colors cursor-pointer">
+                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${parseSpecsBeforeImport ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-400'}`}>
+                        <Sparkles size={16}/>
+                     </div>
+                     <div className="flex-1">
+                        <span className="text-xs font-bold text-slate-700 block">Parse tech specs with AI before import</span>
+                        <span className="text-[10px] text-slate-400">Fills specs from product knowledge so you don't need to edit later</span>
+                     </div>
+                     <input type="checkbox" checked={parseSpecsBeforeImport} onChange={e => setParseSpecsBeforeImport(e.target.checked)} className="hidden"/>
+                     {parseSpecsBeforeImport && <CheckCircle2 size={16} className="text-amber-500"/>}
+                  </label>
+               )}
                <div className="flex justify-between items-center mb-6 text-xs font-bold text-slate-500">
                   <span>Total Paid: <span className="text-slate-900">€{totalCost.toFixed(2)}</span></span>
                   <span>Allocated: <span className={Math.abs(allocatedSum + (itemsWithoutManualCost * autoSplitValue) - totalCost) > 0.1 ? 'text-red-500' : 'text-emerald-500'}>€{(allocatedSum + (itemsWithoutManualCost * autoSplitValue)).toFixed(2)}</span></span>
                </div>
                <button 
                   onClick={handleSubmit}
-                  disabled={items.length === 0}
+                  disabled={items.length === 0 || parsingSpecs}
                   className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-200 hover:bg-emerald-700 transition-all disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-3"
                >
-                  <Save size={18}/> Confirm Import ({items.length})
+                  {parsingSpecs ? (
+                     <>
+                        <Loader2 size={18} className="animate-spin"/> {parseProgress || 'Parsing…'}
+                     </>
+                  ) : (
+                     <>
+                        <Save size={18}/> Confirm Import ({items.length})
+                     </>
+                  )}
                </button>
             </div>
          </div>
