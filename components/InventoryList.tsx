@@ -534,7 +534,7 @@ const InventoryList: React.FC<Props> = ({
       if (timeFilter !== 'ALL') {
         const isSalesItem = item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED;
         const dateStr = isSalesItem ? item.sellDate : item.buyDate;
-        if (!dateStr) return false;
+        if (!dateStr) return true; // Include items without date (e.g. PC/bundle containers) — don't hide them
         const itemDate = new Date(dateStr);
         if (itemDate < dateRange.start || itemDate > dateRange.end) return false;
       }

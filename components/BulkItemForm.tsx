@@ -292,6 +292,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
             subCategory: 'Component Set',
             status: ItemStatus.IN_STOCK,
             buyPrice: totalBuy,
+            buyDate: buyDate,
             isBundle: true,
             componentIds: childItems.map(i => i.id),
             comment1: `Bulk Import Bundle. Contents:\n${childItems.map(i => `- ${i.name}`).join('\n')}`,
