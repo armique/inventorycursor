@@ -614,10 +614,12 @@ export interface SoldPriceSuggestion {
  * Ask AI to estimate a sell price based on eBay.de "Verkaufte Artikel" (sold items filter).
  * Uses the same multi-provider AI as specs/descriptions so it works with Groq, Gemini, OpenAI, etc.
  */
-export async function suggestPriceFromSoldListings(itemName: string): Promise<SoldPriceSuggestion> {
-  const prompt = `You are a pricing expert for used electronics on eBay.de (Germany).
+export async function suggestPriceFromSoldListings(itemName: string, condition: string = 'used'): Promise<SoldPriceSuggestion> {
+  const condLower = condition.toLowerCase();
+  const condLabel = condLower === 'new' ? 'Neu / new' : condLower === 'defective' ? 'Defekt / for parts' : 'gebraucht / used';
+  const prompt = `You are a pricing expert for electronics on eBay.de (Germany).
 
-I need a realistic sell price for: "${itemName}" (condition: used / gebraucht).
+I need a realistic sell price for: "${itemName}" (condition: ${condLabel}).
 
 IMPORTANT RULES:
 1. Base your estimate ONLY on eBay.de sold/completed listings ("Verkaufte Artikel" filter).
@@ -627,19 +629,21 @@ IMPORTANT RULES:
 4. If the exact model is rare, use the closest comparable sold items from the same product line.
 5. Prices must be in EUR.
 6. You MUST always provide a price range and average, never return zeros.
+7. Include 5-10 real sold listing examples in soldExamples with actual titles and prices from eBay.de "Verkaufte Artikel".
 
 Return a valid JSON object (no markdown, no code fence):
 {
   "priceLow": <lowest typical sold price in EUR>,
   "priceHigh": <highest typical sold price in EUR>,
   "priceAverage": <average sold price in EUR>,
-  "reasoning": "<1-2 sentences explaining your estimate, mention eBay sold data>",
+  "reasoning": "<1-2 sentences explaining your estimate, mention eBay.de Verkaufte Artikel>",
   "soldExamples": [
-    { "title": "<example sold listing title>", "price": <sold price> },
-    { "title": "<example sold listing title>", "price": <sold price> },
-    { "title": "<example sold listing title>", "price": <sold price> }
+    { "title": "<actual sold listing title from eBay.de>", "price": <sold price in EUR> },
+    { "title": "<actual sold listing title from eBay.de>", "price": <sold price in EUR> }
   ]
-}`;
+}
+
+soldExamples MUST contain 5-10 entries with realistic German eBay listing titles and actual sold prices.`;
 
   const raw = await getRawJsonFromAI(prompt);
   const parsed = JSON.parse(raw) as SoldPriceSuggestion;

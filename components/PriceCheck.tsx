@@ -1,18 +1,34 @@
-
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Tag, Search, RefreshCcw, ExternalLink, TrendingUp, BarChart3, AlertCircle, History, Trash2, ArrowRight } from 'lucide-react';
-import { estimateMarketValue, PriceEstimate } from '../services/geminiService';
+import { suggestPriceFromSoldListings, getSpecsAIProvider } from '../services/specsAI';
+
+interface PriceResult {
+  itemName: string;
+  condition: string;
+  currency: string;
+  priceLow: number;
+  priceHigh: number;
+  priceAverage: number;
+  confidenceScore: number;
+  reasoning: string;
+  references: { title: string; price: number; url: string }[];
+}
+
+const ebaySoldSearchUrl = (query: string) =>
+  `https://www.ebay.de/sch/i.html?_nkw=${encodeURIComponent(query)}&LH_Sold=1&LH_Complete=1`;
 
 const PriceCheck: React.FC = () => {
   const location = useLocation();
   const [query, setQuery] = useState('');
   const [condition, setCondition] = useState('Used');
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<PriceEstimate | null>(null);
+  const [result, setResult] = useState<PriceResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const aiAvailable = !!getSpecsAIProvider();
   
   // History State
-  const [history, setHistory] = useState<PriceEstimate[]>(() => {
+  const [history, setHistory] = useState<PriceResult[]>(() => {
     const saved = localStorage.getItem('price_check_history');
     return saved ? JSON.parse(saved) : [];
   });
@@ -34,19 +50,39 @@ const PriceCheck: React.FC = () => {
 
   const executeSearch = async (term: string, cond: string) => {
     if (!term.trim()) return;
+    if (!aiAvailable) {
+      setError('No AI configured. Add VITE_GROQ_API_KEY, VITE_GEMINI_API_KEY, or another provider in .env and restart.');
+      return;
+    }
     setLoading(true);
     setResult(null);
+    setError(null);
     try {
-      const data = await estimateMarketValue(term, cond);
-      if (data) {
-        setResult(data);
-        setHistory(prev => {
-           const next = [data, ...prev.filter(h => h.itemName !== data.itemName || h.condition !== data.condition)];
-           return next.slice(0, 20); 
-        });
-      }
+      const data = await suggestPriceFromSoldListings(term, cond);
+      const mapped: PriceResult = {
+        itemName: term,
+        condition: cond,
+        currency: 'EUR',
+        priceLow: data.priceLow,
+        priceHigh: data.priceHigh,
+        priceAverage: data.priceAverage,
+        confidenceScore: 85,
+        reasoning: data.reasoning,
+        references: (data.soldExamples || []).map(ex => ({
+          title: ex.title,
+          price: ex.price,
+          url: ebaySoldSearchUrl(term)
+        }))
+      };
+      setResult(mapped);
+      setHistory(prev => {
+         const next = [mapped, ...prev.filter(h => h.itemName !== term || h.condition !== cond)];
+         return next.slice(0, 20);
+      });
     } catch (e) {
       console.error(e);
+      const msg = (e as Error)?.message || 'Failed to fetch price data.';
+      setError(msg.includes('API key') || msg.includes('No AI') ? `${msg} Add an AI key in .env and restart.` : msg);
     } finally {
       setLoading(false);
     }
@@ -62,7 +98,7 @@ const PriceCheck: React.FC = () => {
     setHistory(prev => prev.filter((_, i) => i !== index));
   };
 
-  const loadHistoryItem = (item: PriceEstimate) => {
+  const loadHistoryItem = (item: PriceResult) => {
     setQuery(item.itemName);
     setCondition(item.condition);
     setResult(item);
@@ -82,7 +118,7 @@ const PriceCheck: React.FC = () => {
           <h1 className="text-4xl font-black text-slate-900 tracking-tight flex items-center gap-3">
             <Tag size={32} className="text-emerald-500" /> Price Check
           </h1>
-          <p className="text-slate-500 font-medium mt-1">Real-time market valuation on eBay.de & Kleinanzeigen</p>
+          <p className="text-slate-500 font-medium mt-1">eBay.de sold listings price analysis (Verkaufte Artikel)</p>
         </div>
       </header>
 
@@ -118,13 +154,18 @@ const PriceCheck: React.FC = () => {
                     </div>
                  </div>
 
+                 {!aiAvailable && (
+                    <p className="text-xs text-amber-600 bg-amber-50 p-3 rounded-xl border border-amber-200">
+                       Add VITE_GROQ_API_KEY or VITE_GEMINI_API_KEY in .env to enable price analysis.
+                    </p>
+                 )}
                  <button 
                     type="submit" 
-                    disabled={loading || !query}
+                    disabled={loading || !query || !aiAvailable}
                     className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                  >
                     {loading ? <RefreshCcw className="animate-spin" size={16}/> : <Search size={16}/>}
-                    {loading ? 'Scanning Market...' : 'Analyze Price'}
+                    {loading ? 'Searching eBay sold listings...' : 'Analyze Price (eBay sold)'}
                  </button>
               </form>
            </div>
@@ -157,6 +198,15 @@ const PriceCheck: React.FC = () => {
 
         {/* RIGHT: RESULTS */}
         <div className="lg:col-span-8">
+           {error && (
+              <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3">
+                 <AlertCircle size={20} className="text-red-500 shrink-0 mt-0.5"/>
+                 <div>
+                    <p className="font-bold text-red-800 text-sm">Price analysis failed</p>
+                    <p className="text-xs text-red-600 mt-1">{error}</p>
+                 </div>
+              </div>
+           )}
            {result ? (
               <div className="space-y-6 animate-in slide-in-from-bottom-4">
                  {/* Main Price Card */}
@@ -194,13 +244,23 @@ const PriceCheck: React.FC = () => {
                                 <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[9px] font-black px-2 py-0.5 rounded">Avg</div>
                              </div>
                           </div>
-                          <p className="text-center text-[10px] text-slate-400 mt-3 italic font-medium">Confidence Score: {result.confidenceScore}% based on consistent listing data</p>
+                          <p className="text-center text-[10px] text-slate-400 mt-3 italic font-medium">Based on eBay.de sold/completed listings (Verkaufte Artikel)</p>
                        </div>
 
                        <div className="space-y-4">
-                          <h4 className="font-black text-sm text-slate-900 uppercase tracking-widest flex items-center gap-2"><ExternalLink size={16}/> Reference Listings</h4>
+                          <div className="flex justify-between items-center">
+                             <h4 className="font-black text-sm text-slate-900 uppercase tracking-widest flex items-center gap-2"><ExternalLink size={16}/> Sold Listings (eBay.de)</h4>
+                             <a 
+                                href={ebaySoldSearchUrl(result.itemName)} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-xs font-bold text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-1"
+                             >
+                                View on eBay.de <ArrowRight size={12}/>
+                             </a>
+                          </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                             {result.references.map((ref, idx) => {
+                             {result.references.length > 0 ? result.references.map((ref, idx) => {
                                 if (!ref) return null;
                                 return (
                                   <a 
@@ -217,7 +277,9 @@ const PriceCheck: React.FC = () => {
                                      </div>
                                   </a>
                                 );
-                             })}
+                             }) : (
+                                <p className="text-sm text-slate-500 col-span-2">No examples returned. <a href={ebaySoldSearchUrl(result.itemName)} target="_blank" rel="noopener noreferrer" className="text-blue-600 font-bold hover:underline">View sold listings on eBay.de</a></p>
+                             )}
                           </div>
                        </div>
 
@@ -240,7 +302,7 @@ const PriceCheck: React.FC = () => {
                     <>
                        <Tag size={64} className="text-slate-300 mb-4"/>
                        <p className="font-black text-slate-400 text-lg">Enter an item to check prices</p>
-                       <p className="text-xs text-slate-400 mt-2">I'll scan eBay.de and Kleinanzeigen for current value</p>
+                       <p className="text-xs text-slate-400 mt-2">AI analyzes eBay.de sold listings (Verkaufte Artikel) for realistic market value</p>
                     </>
                  )}
               </div>
