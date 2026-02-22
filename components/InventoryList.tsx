@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { 
   Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight
@@ -8,7 +9,7 @@ import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { getCompatibleItemsForItem } from '../services/compatibility';
 import { generateKleinanzeigenCSV } from '../services/ebayCsvService';
 import { generateStoreDescription } from '../services/specsAI';
-import { suggestPriceFromSoldListings, SoldPriceSuggestion } from '../services/specsAI';
+import { suggestPriceFromSoldListings, SoldPriceSuggestion, getSpecsAIProvider } from '../services/specsAI';
 
 const ebaySoldSearchUrl = (query: string) =>
   `https://www.ebay.de/sch/i.html?_nkw=${encodeURIComponent(query)}&LH_Sold=1&LH_Complete=1`;
@@ -299,10 +300,16 @@ const InventoryList: React.FC<Props> = ({
       alert('Enter a name first.');
       return;
     }
+    // Open modal immediately so user sees feedback
     setPriceSuggestModalItem(item);
     setPriceSuggestResult(null);
     setPriceSuggestError(null);
     setPriceSuggestId(item.id);
+    if (!getSpecsAIProvider()) {
+      setPriceSuggestError('No AI configured. Add VITE_GROQ_API_KEY or VITE_GEMINI_API_KEY in .env and restart.');
+      setPriceSuggestId(null);
+      return;
+    }
     try {
       const result = await suggestPriceFromSoldListings(item.name, 'used');
       setPriceSuggestResult(result);
@@ -2121,10 +2128,10 @@ const InventoryList: React.FC<Props> = ({
          />
       )}
 
-      {priceSuggestModalItem && (
-         <div className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in" onClick={closePriceSuggestModal}>
+      {priceSuggestModalItem && createPortal(
+         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4" onClick={closePriceSuggestModal}>
             <div 
-               className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95"
+               className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden"
                onClick={e => e.stopPropagation()}
             >
                <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
@@ -2195,7 +2202,8 @@ const InventoryList: React.FC<Props> = ({
                   ) : null}
                </div>
             </div>
-         </div>
+         </div>,
+         document.body
       )}
 
       {itemToSell && (
