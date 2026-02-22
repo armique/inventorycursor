@@ -617,19 +617,22 @@ export interface SoldPriceSuggestion {
 export async function suggestPriceFromSoldListings(itemName: string, condition: string = 'used'): Promise<SoldPriceSuggestion> {
   const condLower = condition.toLowerCase();
   const condLabel = condLower === 'new' ? 'Neu / new' : condLower === 'defective' ? 'Defekt / for parts' : 'gebraucht / used';
-  const prompt = `You are a pricing expert for electronics on eBay.de (Germany).
+  const prompt = `You are a pricing expert for used electronics on eBay.de (Germany).
 
 I need a realistic sell price for: "${itemName}" (condition: ${condLabel}).
 
-IMPORTANT RULES:
-1. Base your estimate ONLY on eBay.de sold/completed listings ("Verkaufte Artikel" filter).
-   On eBay, when you search for an item you can filter by "Verkaufte Artikel" to see items that actually sold (not active listings).
-2. Ignore active/unsold listings. Only consider prices where a buyer actually paid.
-3. Use your knowledge of recent eBay.de sold prices for this exact product or very similar models.
-4. If the exact model is rare, use the closest comparable sold items from the same product line.
-5. Prices must be in EUR.
-6. You MUST always provide a price range and average, never return zeros.
-7. Include 5-10 real sold listing examples in soldExamples with actual titles and prices from eBay.de "Verkaufte Artikel".
+CRITICAL – AVOID OVERPRICING:
+- OLD/BUDGET components sell for very little: used CPUs from 2012–2015 (e.g. Intel i3/i5 4xxx, Celeron, Pentium, AMD FX) typically €5–20 on eBay.de.
+- Do NOT confuse with newer models or retail prices. "Intel i5-4150" or similar old budget CPUs = €5–15, NOT €50+.
+- DDR3 RAM, old HDDs, low-end mobos: often €5–15.
+- When unsure, err LOWER – used PC parts are cheap.
+
+RULES:
+1. Base estimate ONLY on eBay.de sold/completed listings ("Verkaufte Artikel").
+2. Ignore active listings. Only prices where a buyer actually paid.
+3. Use knowledge of recent eBay.de sold prices. If rare, use comparable sold items.
+4. Prices in EUR. Always provide range and average, never zeros.
+5. Include 5–10 sold listing examples with realistic German eBay titles and actual sold prices.
 
 Return a valid JSON object (no markdown, no code fence):
 {

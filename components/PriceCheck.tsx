@@ -71,7 +71,7 @@ const PriceCheck: React.FC = () => {
         references: (data.soldExamples || []).map(ex => ({
           title: ex.title,
           price: ex.price,
-          url: ebaySoldSearchUrl(term)
+          url: ebaySoldSearchUrl(ex.title || term)
         }))
       };
       setResult(mapped);
@@ -259,6 +259,7 @@ const PriceCheck: React.FC = () => {
                                 View on eBay.de <ArrowRight size={12}/>
                              </a>
                           </div>
+                          <p className="text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded border border-amber-200 mb-3">AI estimate – verify on eBay. Click a listing to search for that exact title.</p>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                              {result.references.length > 0 ? result.references.map((ref, idx) => {
                                 if (!ref) return null;

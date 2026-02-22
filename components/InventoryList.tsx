@@ -2171,12 +2171,13 @@ const InventoryList: React.FC<Props> = ({
                            />
                         </div>
                         <p className="text-[11px] text-slate-500 italic">{priceSuggestResult.reasoning}</p>
+                        <p className="text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded border border-amber-200">AI estimate – verify on eBay. Click a listing to search for that exact title.</p>
                         {priceSuggestResult.soldExamples.length > 0 && (
                            <div>
                               <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Sold Listings</p>
                               <div className="space-y-1.5 max-h-32 overflow-y-auto">
                                  {priceSuggestResult.soldExamples.map((ex, idx) => (
-                                    <a key={idx} href={ebaySoldSearchUrl(priceSuggestModalItem.name)} target="_blank" rel="noopener noreferrer" className="flex justify-between items-center py-2 px-3 bg-slate-50 rounded-lg hover:bg-amber-50 text-left group">
+                                    <a key={idx} href={ebaySoldSearchUrl(ex.title || priceSuggestModalItem.name)} target="_blank" rel="noopener noreferrer" className="flex justify-between items-center py-2 px-3 bg-slate-50 rounded-lg hover:bg-amber-50 text-left group" title="Search for this exact listing on eBay sold">
                                        <span className="text-[11px] font-medium text-slate-700 truncate flex-1 mr-2">{ex.title}</span>
                                        <span className="text-xs font-black text-slate-900 shrink-0">€{ex.price}</span>
                                     </a>
