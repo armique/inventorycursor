@@ -1,14 +1,17 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType } from '../types';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { getCompatibleItemsForItem } from '../services/compatibility';
 import { generateKleinanzeigenCSV } from '../services/ebayCsvService';
 import { generateStoreDescription } from '../services/specsAI';
-import { suggestPriceFromSoldListings } from '../services/specsAI';
+import { suggestPriceFromSoldListings, SoldPriceSuggestion } from '../services/specsAI';
+
+const ebaySoldSearchUrl = (query: string) =>
+  `https://www.ebay.de/sch/i.html?_nkw=${encodeURIComponent(query)}&LH_Sold=1&LH_Complete=1`;
 import SaleModal from './SaleModal';
 import ReturnModal from './ReturnModal';
 import TradeModal from './TradeModal';
@@ -250,6 +253,9 @@ const InventoryList: React.FC<Props> = ({
   // --- AI LISTING DESCRIPTION (Kleinanzeigen / eBay style, same as store description style) ---
   const [listingGenId, setListingGenId] = useState<string | null>(null);
   const [priceSuggestId, setPriceSuggestId] = useState<string | null>(null);
+  const [priceSuggestModalItem, setPriceSuggestModalItem] = useState<InventoryItem | null>(null);
+  const [priceSuggestResult, setPriceSuggestResult] = useState<SoldPriceSuggestion | null>(null);
+  const [priceSuggestError, setPriceSuggestError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   const handleGenerateListingDescription = async (item: InventoryItem) => {
@@ -293,40 +299,42 @@ const InventoryList: React.FC<Props> = ({
       alert('Enter a name first.');
       return;
     }
+    setPriceSuggestModalItem(item);
+    setPriceSuggestResult(null);
+    setPriceSuggestError(null);
     setPriceSuggestId(item.id);
     try {
-      const result = await suggestPriceFromSoldListings(item.name);
-      const suggested = result.priceAverage;
-
-      if (!suggested) {
-        alert('Kein sinnvoller Preisbereich aus verkauften eBay-Angeboten ermittelbar.');
-        return;
-      }
-
-      const rangeText =
-        result.priceLow && result.priceHigh
-          ? `€${result.priceLow.toFixed(2)}–€${result.priceHigh.toFixed(2)}`
-          : '';
-      const examplesText = result.soldExamples.length > 0
-        ? '\nBeispiele: ' + result.soldExamples.map(e => `${e.title} (€${e.price})`).join(', ')
-        : '';
-      const note = `AI-Preistipp (eBay verkaufte Artikel): ~€${suggested.toFixed(2)}${rangeText ? ` (${rangeText})` : ''}${examplesText}`;
-
-      const updated: InventoryItem = {
-        ...item,
-        // Do NOT touch sellPrice – just store suggestion as a note
-        comment2: item.comment2
-          ? `${item.comment2}\n${note}`
-          : note,
-      };
-      onUpdate([updated]);
+      const result = await suggestPriceFromSoldListings(item.name, 'used');
+      setPriceSuggestResult(result);
     } catch (e: any) {
       console.error('Price suggestion failed', e);
       const msg = e?.message || 'Preisermittlung fehlgeschlagen.';
-      alert(msg.includes('No AI configured') ? 'Kein AI Provider konfiguriert. Bitte .env Datei prüfen.' : msg);
+      setPriceSuggestError(msg.includes('No AI configured') ? 'Kein AI Provider konfiguriert. Bitte .env prüfen.' : msg);
     } finally {
       setPriceSuggestId(null);
     }
+  };
+
+  const closePriceSuggestModal = () => {
+    setPriceSuggestModalItem(null);
+    setPriceSuggestResult(null);
+    setPriceSuggestError(null);
+  };
+
+  const applyPriceSuggestionAsSellPrice = (item: InventoryItem, price: number) => {
+    onUpdate([{ ...item, sellPrice: price }]);
+    closePriceSuggestModal();
+  };
+
+  const savePriceSuggestionAsNote = (item: InventoryItem, result: SoldPriceSuggestion) => {
+    const suggested = result.priceAverage;
+    const rangeText = result.priceLow && result.priceHigh ? `€${result.priceLow.toFixed(2)}–€${result.priceHigh.toFixed(2)}` : '';
+    const examplesText = result.soldExamples.length > 0
+      ? '\nBeispiele: ' + result.soldExamples.map(e => `${e.title} (€${e.price})`).join(', ')
+      : '';
+    const note = `AI-Preistipp (eBay verkaufte Artikel): ~€${suggested.toFixed(2)}${rangeText ? ` (${rangeText})` : ''}${examplesText}`;
+    onUpdate([{ ...item, comment2: item.comment2 ? `${item.comment2}\n${note}` : note }]);
+    closePriceSuggestModal();
   };
 
   // -- VIRTUALIZATION / PERFORMANCE --
@@ -2111,6 +2119,83 @@ const InventoryList: React.FC<Props> = ({
             onApply={handleBulkTag}
             onClose={() => setShowBulkTag(false)}
          />
+      )}
+
+      {priceSuggestModalItem && (
+         <div className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in" onClick={closePriceSuggestModal}>
+            <div 
+               className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95"
+               onClick={e => e.stopPropagation()}
+            >
+               <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                  <div className="flex items-center gap-2">
+                     <Tag size={18} className="text-amber-500"/>
+                     <h3 className="font-black text-slate-900 text-sm">eBay Sold Price • {priceSuggestModalItem.name}</h3>
+                  </div>
+                  <button onClick={closePriceSuggestModal} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl"><X size={18}/></button>
+               </div>
+               <div className="p-4 max-h-[70vh] overflow-y-auto">
+                  {priceSuggestId === priceSuggestModalItem.id ? (
+                     <div className="py-8 flex flex-col items-center justify-center gap-3 text-slate-500">
+                        <Loader2 size={32} className="animate-spin text-amber-500"/>
+                        <p className="text-xs font-bold">Searching eBay.de sold listings...</p>
+                     </div>
+                  ) : priceSuggestError ? (
+                     <div className="py-4 flex items-start gap-3">
+                        <AlertCircle size={20} className="text-red-500 shrink-0 mt-0.5"/>
+                        <p className="text-sm text-red-700">{priceSuggestError}</p>
+                     </div>
+                  ) : priceSuggestResult ? (
+                     <div className="space-y-4">
+                        <div className="flex justify-between items-end">
+                           <div>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase">€{priceSuggestResult.priceLow} – €{priceSuggestResult.priceHigh}</p>
+                              <p className="text-2xl font-black text-emerald-600">€{priceSuggestResult.priceAverage}</p>
+                           </div>
+                           <a href={ebaySoldSearchUrl(priceSuggestModalItem.name)} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1">
+                              eBay.de <ArrowRight size={12}/>
+                           </a>
+                        </div>
+                        <div className="h-2 bg-slate-200 rounded-full relative overflow-hidden">
+                           <div className="absolute inset-0 bg-gradient-to-r from-emerald-300 to-emerald-600 opacity-30"/>
+                           <div 
+                              className="absolute top-0 bottom-0 w-1.5 bg-slate-900 rounded-full -translate-x-1/2"
+                              style={{ left: `${Math.min(100, Math.max(0, ((priceSuggestResult.priceAverage - priceSuggestResult.priceLow) / (priceSuggestResult.priceHigh - priceSuggestResult.priceLow || 1)) * 100))}%` }}
+                           />
+                        </div>
+                        <p className="text-[11px] text-slate-500 italic">{priceSuggestResult.reasoning}</p>
+                        {priceSuggestResult.soldExamples.length > 0 && (
+                           <div>
+                              <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Sold Listings</p>
+                              <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                                 {priceSuggestResult.soldExamples.map((ex, idx) => (
+                                    <a key={idx} href={ebaySoldSearchUrl(priceSuggestModalItem.name)} target="_blank" rel="noopener noreferrer" className="flex justify-between items-center py-2 px-3 bg-slate-50 rounded-lg hover:bg-amber-50 text-left group">
+                                       <span className="text-[11px] font-medium text-slate-700 truncate flex-1 mr-2">{ex.title}</span>
+                                       <span className="text-xs font-black text-slate-900 shrink-0">€{ex.price}</span>
+                                    </a>
+                                 ))}
+                              </div>
+                           </div>
+                        )}
+                        <div className="flex gap-2 pt-2">
+                           <button 
+                              onClick={() => applyPriceSuggestionAsSellPrice(priceSuggestModalItem, priceSuggestResult.priceAverage)}
+                              className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-black hover:bg-emerald-700"
+                           >
+                              Apply €{priceSuggestResult.priceAverage} as sell price
+                           </button>
+                           <button 
+                              onClick={() => savePriceSuggestionAsNote(priceSuggestModalItem, priceSuggestResult)}
+                              className="py-2.5 px-4 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-200"
+                           >
+                              Save as note
+                           </button>
+                        </div>
+                     </div>
+                  ) : null}
+               </div>
+            </div>
+         </div>
       )}
 
       {itemToSell && (
