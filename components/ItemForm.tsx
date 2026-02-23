@@ -489,30 +489,6 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                        />
                     </div>
 
-                    {/* OVP & IO Shield – used by AI description generator */}
-                    <div className="flex flex-wrap gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-200">
-                       <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                             type="checkbox"
-                             checked={!!formData.hasOVP}
-                             onChange={e => setFormData({ ...formData, hasOVP: e.target.checked })}
-                             className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                          />
-                          <span className="text-sm font-bold text-slate-700">OVP (Original Packaging)</span>
-                       </label>
-                       {(formData.isBundle || formData.subCategory === 'Motherboards' || formData.category === 'Motherboards') && (
-                          <label className="flex items-center gap-2 cursor-pointer">
-                             <input
-                                type="checkbox"
-                                checked={!!formData.hasIOShield}
-                                onChange={e => setFormData({ ...formData, hasIOShield: e.target.checked })}
-                                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                             />
-                             <span className="text-sm font-bold text-slate-700">IO Shield</span>
-                          </label>
-                       )}
-                    </div>
-
                     {/* AI Listing Text (Kleinanzeigen / eBay, DE) */}
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
@@ -631,6 +607,33 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                       )}
                     </div>
                  </div>
+
+                    {/* OVP & IO Blende – used by AI description generator */}
+                    <div className="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-100 space-y-4">
+                       <h3 className="font-black text-xs uppercase tracking-widest text-slate-400">AI Description Hints</h3>
+                       <div className="flex flex-wrap gap-4">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                             <input
+                                type="checkbox"
+                                checked={!!formData.hasOVP}
+                                onChange={e => setFormData({ ...formData, hasOVP: e.target.checked })}
+                                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                             />
+                             <span className="text-sm font-bold text-slate-700">OVP (Original Packaging)</span>
+                          </label>
+                          {(formData.isBundle || formData.subCategory === 'Motherboards' || formData.category === 'Motherboards') && (
+                             <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                   type="checkbox"
+                                   checked={!!formData.hasIOShield}
+                                   onChange={e => setFormData({ ...formData, hasIOShield: e.target.checked })}
+                                   className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span className="text-sm font-bold text-slate-700">IO Blende</span>
+                             </label>
+                          )}
+                       </div>
+                    </div>
 
                     {isSold && (
                         <div className="animate-in slide-in-from-bottom-2 fade-in space-y-4 border-t border-slate-100 pt-4 mt-2">
