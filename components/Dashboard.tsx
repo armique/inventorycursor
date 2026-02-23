@@ -2,7 +2,8 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend
 } from 'recharts';
-import { TrendingUp, Wallet, Target, Package, Calendar, TrendingDown, Hourglass, Skull, Trophy, Star, Crown, Zap, Edit3, Check, CalendarDays, ArrowRight, CheckCircle2, Circle, Plus, X, Activity, Clock, AlertCircle } from 'lucide-react';
+import { TrendingUp, Wallet, Target, Package, Calendar, TrendingDown, Hourglass, Skull, Trophy, Star, Crown, Zap, Edit3, Check, CalendarDays, ArrowRight, CheckCircle2, Circle, Plus, X, Activity, Clock, AlertCircle, Euro } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { InventoryItem, ItemStatus, Expense, BusinessSettings, TaxMode } from '../types';
 import { calculateTaxSummary, generateTaxReportCSV } from '../services/taxService';
 
@@ -35,6 +36,7 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
   const [timeFilter, setTimeFilter] = useState<string>('ALL');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
+  const [dayDetailModal, setDayDetailModal] = useState<{ dayLabel: string; dateStr: string; items: InventoryItem[] } | null>(null);
   
   // Goal State managed via props now
   const [isEditingGoal, setIsEditingGoal] = useState(false);
@@ -243,7 +245,7 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
     const diffTime: number = Math.abs(endMs - startMs);
     const diffDays: number = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     
-    const data: { name: string, revenue: number, netProfit: number, timestamp: number }[] = [];
+    const data: { name: string, revenue: number, netProfit: number, timestamp: number, soldItems: InventoryItem[], dayLabel: string, dateStr: string }[] = [];
 
     if (timeFilter === 'ALL' || diffDays > 366) {
        const years = new Set<number>();
@@ -266,7 +268,7 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
           const itemProfit = sold.reduce((acc: number, i) => acc + Number(calculateItemProfit(i)), 0);
           const expTotal = exps.reduce((acc: number, e) => acc + Number(e.amount), 0);
           
-          data.push({ name: year.toString(), revenue, netProfit: itemProfit - expTotal, timestamp: year });
+          data.push({ name: year.toString(), revenue, netProfit: itemProfit - expTotal, timestamp: year, soldItems: sold, dayLabel: year.toString(), dateStr: year.toString() });
        });
     } else {
        let curr: Date = new Date(startMs);
@@ -289,7 +291,7 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
 
           const profitVal = itemProfit - expTotal;
 
-          data.push({ name: label, revenue, netProfit: profitVal, timestamp: curr.getTime() });
+          data.push({ name: label, revenue, netProfit: profitVal, timestamp: curr.getTime(), soldItems: sold, dayLabel: label, dateStr: dayStr });
           
           const nextDay = new Date(curr);
           nextDay.setDate(curr.getDate() + 1);
@@ -421,6 +423,7 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
   }
 
   return (
+    <>
     <div className="space-y-6 animate-in fade-in pb-20">
       {/* Header & Date Filter */}
       <header className="flex flex-col xl:flex-row xl:items-center justify-between gap-6">
@@ -558,15 +561,59 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
          {/* Main Bar Chart */}
          <div className="lg:col-span-2 bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 h-[400px] flex flex-col">
             <h3 className="text-lg font-bold mb-4">Performance Analytics</h3>
-            <div className="flex-1">
+            <div className={`flex-1 [&_rect]:cursor-pointer`}>
                <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
                      <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
-                     <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px -5px rgb(0 0 0 / 0.1)' }} formatter={(v: number) => [`€${v.toLocaleString()}`, '']} />
-                     <Bar dataKey="revenue" fill="#3B82F6" radius={[6, 6, 0, 0]} name="Revenue" />
-                     <Bar dataKey="netProfit" fill="#10B981" radius={[6, 6, 0, 0]} name="Net Profit" />
+                     <Tooltip 
+                        cursor={{ fill: '#f8fafc' }} 
+                        contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px -5px rgb(0 0 0 / 0.1)' }} 
+                        formatter={(v: number) => [`€${v.toLocaleString()}`, '']}
+                        content={({ active, payload }) => {
+                          if (!active || !payload?.length) return null;
+                          const p = payload[0]?.payload;
+                          const sold = p?.soldItems ?? [];
+                          return (
+                            <div className="bg-white rounded-xl border border-slate-200 shadow-lg p-3">
+                              <p className="text-xs font-bold text-slate-500 mb-1">{p?.dayLabel ?? p?.name}</p>
+                              {payload.map((entry) => (
+                                <p key={entry.dataKey} className="text-sm font-bold text-slate-900">€{Number(entry.value).toLocaleString()} ({entry.name})</p>
+                              ))}
+                              {sold.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setDayDetailModal({ dayLabel: p?.dayLabel ?? p?.name, dateStr: p?.dateStr ?? '', items: sold })}
+                                  className="mt-2 text-xs font-bold text-blue-600 hover:underline"
+                                >
+                                  View {sold.length} item{sold.length !== 1 ? 's' : ''} sold →
+                                </button>
+                              )}
+                            </div>
+                          );
+                        }}
+                     />
+                     <Bar 
+                        dataKey="revenue" 
+                        fill="#3B82F6" 
+                        radius={[6, 6, 0, 0]} 
+                        name="Revenue" 
+                        onClick={(data: any) => {
+                          const p = data?.payload ?? data;
+                          if (p?.soldItems?.length) setDayDetailModal({ dayLabel: p.dayLabel ?? p.name, dateStr: p.dateStr ?? '', items: p.soldItems });
+                        }}
+                     />
+                     <Bar 
+                        dataKey="netProfit" 
+                        fill="#10B981" 
+                        radius={[6, 6, 0, 0]} 
+                        name="Net Profit"
+                        onClick={(data: any) => {
+                          const p = data?.payload ?? data;
+                          if (p?.soldItems?.length) setDayDetailModal({ dayLabel: p.dayLabel ?? p.name, dateStr: p.dateStr ?? '', items: p.soldItems });
+                        }}
+                     />
                   </BarChart>
                </ResponsiveContainer>
             </div>
@@ -805,6 +852,35 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
          </div>
       </div>
     </div>
+    {dayDetailModal && createPortal(
+      <div 
+        className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 animate-in fade-in" 
+        onClick={() => setDayDetailModal(null)}
+      >
+        <div 
+          className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[80vh] overflow-hidden m-4 animate-in zoom-in-95" 
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+            <h3 className="text-lg font-bold text-slate-900">Items sold on {dayDetailModal.dayLabel}</h3>
+            <button onClick={() => setDayDetailModal(null)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors"><X size={20} className="text-slate-500"/></button>
+          </div>
+          <div className="p-4 overflow-y-auto max-h-[60vh] space-y-3">
+            {dayDetailModal.items.map((item) => (
+              <div key={item.id} className="flex items-center justify-between gap-3 p-3 bg-slate-50 rounded-xl">
+                <p className="font-medium text-slate-900 truncate flex-1 min-w-0">{item.name}</p>
+                <div className="flex items-center gap-4 shrink-0">
+                  <span className="text-emerald-600 font-bold flex items-center gap-1"><Euro size={14}/>{(Number(item.sellPrice) || 0).toLocaleString()}</span>
+                  <span className="text-slate-500 text-sm">Profit: €{calculateItemProfit(item).toLocaleString()}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+  </>
   );
 };
 
