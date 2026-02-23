@@ -226,7 +226,7 @@ const ExpenseManager: React.FC<Props> = ({
                <span className="text-[10px] font-bold uppercase text-slate-400 bg-slate-50 px-2 py-1 rounded-lg">Total</span>
             </div>
             <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Total Expenses</p>
-            <h4 className="text-3xl font-black text-slate-900">€{stats.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h4>
+            <h4 className="text-3xl font-black text-slate-900">€{stats.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
          </div>
 
          <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">
@@ -235,7 +235,7 @@ const ExpenseManager: React.FC<Props> = ({
                <span className="text-[10px] font-bold uppercase text-slate-400 bg-slate-50 px-2 py-1 rounded-lg">Current Month</span>
             </div>
             <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Monthly Cost</p>
-            <h4 className="text-3xl font-black text-slate-900">€{stats.thisMonth.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h4>
+            <h4 className="text-3xl font-black text-slate-900">€{stats.thisMonth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
          </div>
       </div>
 

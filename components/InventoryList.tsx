@@ -335,9 +335,9 @@ const InventoryList: React.FC<Props> = ({
 
   const savePriceSuggestionAsNote = (item: InventoryItem, result: SoldPriceSuggestion) => {
     const suggested = result.priceAverage;
-    const rangeText = result.priceLow && result.priceHigh ? `€${result.priceLow.toFixed(2)}–€${result.priceHigh.toFixed(2)}` : '';
+    const rangeText = result.priceLow && result.priceHigh ? `€${Number(result.priceLow).toLocaleString(undefined, { maximumFractionDigits: 2 })}–€${Number(result.priceHigh).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : '';
     const examplesText = result.soldExamples.length > 0
-      ? '\nBeispiele: ' + result.soldExamples.map(e => `${e.title} (€${e.price})`).join(', ')
+      ? '\nBeispiele: ' + result.soldExamples.map(e => `${e.title} (€${Number(e.price).toLocaleString(undefined, { maximumFractionDigits: 2 })})`).join(', ')
       : '';
     const note = `AI-Preistipp (eBay verkaufte Artikel): ~€${suggested.toFixed(2)}${rangeText ? ` (${rangeText})` : ''}${examplesText}`;
     onUpdate([{ ...item, comment2: item.comment2 ? `${item.comment2}\n${note}` : note }]);
@@ -2156,8 +2156,8 @@ const InventoryList: React.FC<Props> = ({
                      <div className="space-y-4">
                         <div className="flex justify-between items-end">
                            <div>
-                              <p className="text-[10px] font-bold text-slate-400 uppercase">€{priceSuggestResult.priceLow} – €{priceSuggestResult.priceHigh}</p>
-                              <p className="text-2xl font-black text-emerald-600">€{priceSuggestResult.priceAverage}</p>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase">€{Number(priceSuggestResult.priceLow).toLocaleString(undefined, { maximumFractionDigits: 2 })} – €{Number(priceSuggestResult.priceHigh).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                              <p className="text-2xl font-black text-emerald-600">€{Number(priceSuggestResult.priceAverage).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
                            </div>
                            <a href={ebaySoldSearchUrl(priceSuggestModalItem.name)} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1">
                               eBay.de <ArrowRight size={12}/>
@@ -2179,7 +2179,7 @@ const InventoryList: React.FC<Props> = ({
                                  {priceSuggestResult.soldExamples.map((ex, idx) => (
                                     <a key={idx} href={ebaySoldSearchUrl(ex.title || priceSuggestModalItem.name)} target="_blank" rel="noopener noreferrer" className="flex justify-between items-center py-2 px-3 bg-slate-50 rounded-lg hover:bg-amber-50 text-left group" title="Search for this exact listing on eBay sold">
                                        <span className="text-[11px] font-medium text-slate-700 truncate flex-1 mr-2">{ex.title}</span>
-                                       <span className="text-xs font-black text-slate-900 shrink-0">€{ex.price}</span>
+                                       <span className="text-xs font-black text-slate-900 shrink-0">€{Number(ex.price).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                                     </a>
                                  ))}
                               </div>
@@ -2190,7 +2190,7 @@ const InventoryList: React.FC<Props> = ({
                               onClick={() => applyPriceSuggestionAsSellPrice(priceSuggestModalItem, priceSuggestResult.priceAverage)}
                               className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-black hover:bg-emerald-700"
                            >
-                              Apply €{priceSuggestResult.priceAverage} as sell price
+                              Apply €{Number(priceSuggestResult.priceAverage).toLocaleString(undefined, { maximumFractionDigits: 2 })} as sell price
                            </button>
                            <button 
                               onClick={() => savePriceSuggestionAsNote(priceSuggestModalItem, priceSuggestResult)}

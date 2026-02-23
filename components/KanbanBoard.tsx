@@ -150,7 +150,7 @@ const KanbanBoard: React.FC<Props> = ({ items, onUpdate, businessSettings }) => 
                            <p className="font-black text-xs text-slate-900 leading-tight line-clamp-2">{item.name}</p>
                            <div className="flex justify-between items-center mt-2">
                               <span className="text-[9px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded uppercase">{item.category}</span>
-                              <span className="font-black text-xs text-slate-900">€{item.buyPrice}</span>
+                              <span className="font-black text-xs text-slate-900">€{Number(item.buyPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                            </div>
                         </div>
                      </div>

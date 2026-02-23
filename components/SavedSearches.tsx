@@ -293,7 +293,7 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate }) => {
                       )}
                    </div>
                    <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest flex-wrap">
-                      {search.maxPrice > 0 ? <span>&lt; €{search.maxPrice}</span> : <span>Any Price</span>}
+                      {search.maxPrice > 0 ? <span>&lt; €{Number(search.maxPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span> : <span>Any Price</span>}
                       <span>•</span>
                       {search.customUrl ? <span className="text-blue-500 flex items-center gap-1"><LinkIcon size={8}/> URL</span> : <span>{search.includeEbay ? 'All Sites' : 'KA Only'}</span>}
                    </div>
@@ -389,7 +389,7 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate }) => {
                                 </div>
                                 
                                 <div className="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between">
-                                   <p className={`text-lg font-black ${deal.numericPrice === 0 ? 'text-amber-500' : 'text-slate-900'}`}>{deal.price}</p>
+                                   <p className={`text-lg font-black ${deal.numericPrice === 0 ? 'text-amber-500' : 'text-slate-900'}`}>€{Number(deal.numericPrice ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
                                    <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg group-hover:bg-emerald-600 group-hover:text-white transition-colors">
                                       View <ArrowRight size={10}/>
                                    </div>

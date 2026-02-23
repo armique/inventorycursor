@@ -171,7 +171,7 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose }) => {
                   </div>
                   <div>
                     <h4 className="font-black text-sm text-slate-900 leading-tight line-clamp-2">{item.name}</h4>
-                    <p className="text-[10px] text-slate-500 font-bold mt-1 bg-slate-100 inline-block px-2 py-0.5 rounded">Orig. Cost: €{item.buyPrice}</p>
+                    <p className="text-[10px] text-slate-500 font-bold mt-1 bg-slate-100 inline-block px-2 py-0.5 rounded">Orig. Cost: €{Number(item.buyPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
                   </div>
                 </div>
 

@@ -203,7 +203,7 @@ const RetroBundleModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
                    </div>
                    <div className="text-right">
                       <span className="font-bold text-slate-900">€{item.sellPrice?.toFixed(2)}</span>
-                      <span className="text-[9px] text-slate-400 block">Buy: €{item.buyPrice}</span>
+                      <span className="text-[9px] text-slate-400 block">Buy: €{Number(item.buyPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                    </div>
                 </div>
              ))}

@@ -486,8 +486,8 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                   </div>
                ) : (
                   <>
-                     <h3 className="text-4xl font-black tracking-tight mb-1">€{gameStats.monthProfit.toFixed(0)} <span className="text-slate-500 text-lg font-bold">/ €{monthlyGoal}</span></h3>
-                     <p className="text-xs font-medium text-slate-400">Net profit vs goal · {gameStats.monthProfit >= monthlyGoal ? 'Goal reached!' : `€${(monthlyGoal - gameStats.monthProfit).toFixed(0)} to go`}</p>
+                     <h3 className="text-4xl font-black tracking-tight mb-1">€{gameStats.monthProfit.toLocaleString(undefined, { maximumFractionDigits: 2 })} <span className="text-slate-500 text-lg font-bold">/ €{monthlyGoal}</span></h3>
+                     <p className="text-xs font-medium text-slate-400">Net profit vs goal · {gameStats.monthProfit >= monthlyGoal ? 'Goal reached!' : `€${(monthlyGoal - gameStats.monthProfit).toLocaleString(undefined, { maximumFractionDigits: 2 })} to go`}</p>
                   </>
                )}
             </div>
@@ -516,8 +516,8 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                </div>
                <div className="space-y-2">
                   <div className="flex justify-between text-xs font-bold text-slate-500">
-                     <span>Total Profit: €{gameStats.allTimeProfit.toFixed(0)}</span>
-                     {gameStats.nextLevel ? <span>Next: {gameStats.nextLevel.name} (€{gameStats.nextLevel.min})</span> : <span>Max Level!</span>}
+                     <span>Total Profit: €{gameStats.allTimeProfit.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                     {gameStats.nextLevel ? <span>Next: {gameStats.nextLevel.name} (€{gameStats.nextLevel.min.toLocaleString(undefined, { maximumFractionDigits: 2 })})</span> : <span>Max Level!</span>}
                   </div>
                   <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
                      <div className="h-full bg-slate-900 rounded-full transition-all duration-1000" style={{ width: `${gameStats.progressToNext}%` }} />
@@ -529,17 +529,17 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                   {React.cloneElement(gameStats.currentLevel.icon as React.ReactElement<any>, { size: 32 })}
                </div>
                <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest text-center">Lifetime Earnings</p>
-               <p className="text-lg font-black text-slate-900">€{gameStats.allTimeProfit.toLocaleString()}</p>
+               <p className="text-lg font-black text-slate-900">€{gameStats.allTimeProfit.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
             </div>
          </div>
       </div>
 
       {/* STAT CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-        <StatCard title="Inventory value" value={`€${stats.totalInventoryValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} icon={<Package className="text-slate-600" />} subtitle="All in-stock (cost)" />
-        <StatCard title="Total Sales" value={`€${stats.totalTurnover.toLocaleString(undefined, {maximumFractionDigits: 0})}`} icon={<Wallet className="text-blue-600" />} subtitle="Revenue (period)" />
-        <StatCard title="Net Profit" value={`€${stats.netProfit.toLocaleString(undefined, {maximumFractionDigits: 0})}`} icon={<TrendingUp className="text-emerald-600" />} subtitle={taxMode === 'RegularVAT' ? "After Tax & Exp" : "After Expenses"} />
-        <StatCard title="Overhead" value={`€${stats.totalExpenses.toLocaleString(undefined, {maximumFractionDigits: 0})}`} icon={<TrendingDown className="text-red-500" />} subtitle="Expenses" />
+        <StatCard title="Inventory value" value={`€${stats.totalInventoryValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`} icon={<Package className="text-slate-600" />} subtitle="All in-stock (cost)" />
+        <StatCard title="Total Sales" value={`€${stats.totalTurnover.toLocaleString(undefined, {maximumFractionDigits: 2})}`} icon={<Wallet className="text-blue-600" />} subtitle="Revenue (period)" />
+        <StatCard title="Net Profit" value={`€${stats.netProfit.toLocaleString(undefined, {maximumFractionDigits: 2})}`} icon={<TrendingUp className="text-emerald-600" />} subtitle={taxMode === 'RegularVAT' ? "After Tax & Exp" : "After Expenses"} />
+        <StatCard title="Overhead" value={`€${stats.totalExpenses.toLocaleString(undefined, {maximumFractionDigits: 2})}`} icon={<TrendingDown className="text-red-500" />} subtitle="Expenses" />
         <div className={`bg-white p-6 rounded-3xl shadow-sm border ${stats.deathPileCount > 0 ? 'border-amber-200 bg-amber-50/30' : 'border-slate-100'}`}>
            <div className="flex justify-between items-start mb-4">
               <div className={`p-3 rounded-2xl ${stats.deathPileCount > 0 ? 'bg-amber-100 text-amber-600' : 'bg-slate-50 text-slate-400'}`}>
@@ -551,7 +551,7 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
            </div>
            <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">{`Capital Trap (>60d)`}</p>
            <h4 className={`text-2xl font-black ${stats.deathPileCount > 0 ? 'text-amber-600' : 'text-slate-900'}`}>
-              €{stats.deathPileValue.toLocaleString(undefined, {maximumFractionDigits: 0})}
+              €{stats.deathPileValue.toLocaleString(undefined, {maximumFractionDigits: 2})}
            </h4>
         </div>
       </div>
@@ -570,7 +570,7 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                      <Tooltip 
                         cursor={{ fill: '#f8fafc' }} 
                         contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px -5px rgb(0 0 0 / 0.1)' }} 
-                        formatter={(v: number) => [`€${v.toLocaleString()}`, '']}
+                        formatter={(v: number) => [`€${v.toLocaleString(undefined, { maximumFractionDigits: 2 })}`, '']}
                         content={({ active, payload }) => {
                           if (!active || !payload?.length) return null;
                           const p = payload[0]?.payload;
@@ -579,7 +579,7 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                             <div className="bg-white rounded-xl border border-slate-200 shadow-lg p-3">
                               <p className="text-xs font-bold text-slate-500 mb-1">{p?.dayLabel ?? p?.name}</p>
                               {payload.map((entry) => (
-                                <p key={entry.dataKey} className="text-sm font-bold text-slate-900">€{Number(entry.value).toLocaleString()} ({entry.name})</p>
+                                <p key={entry.dataKey} className="text-sm font-bold text-slate-900">€{Number(entry.value).toLocaleString(undefined, { maximumFractionDigits: 2 })} ({entry.name})</p>
                               ))}
                               {sold.length > 0 && (
                                 <button
@@ -643,14 +643,14 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                            ))}
                         </Pie>
                         <Tooltip 
-                           formatter={(value: number) => `€${value.toLocaleString()}`} 
+                           formatter={(value: number) => `€${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`} 
                            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
                         />
                      </PieChart>
                   </ResponsiveContainer>
                   {/* Custom Legend */}
                   <div className="absolute inset-0 flex flex-col justify-center pointer-events-none items-center">
-                     <p className="text-2xl font-black text-slate-900">€{stats.inventoryValue.toLocaleString(undefined, {maximumFractionDigits:0})}</p>
+                     <p className="text-2xl font-black text-slate-900">€{stats.inventoryValue.toLocaleString(undefined, {maximumFractionDigits: 2})}</p>
                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Value</p>
                   </div>
                </div>
@@ -668,7 +668,7 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                         <div className="w-2 h-2 rounded-full" style={{ backgroundColor: PIE_COLORS[idx % PIE_COLORS.length] }}></div>
                         <span className="font-medium text-slate-600 truncate max-w-[120px]">{cat.name}</span>
                      </div>
-                     <span className="font-bold text-slate-900">€{cat.value.toLocaleString()}</span>
+                     <span className="font-bold text-slate-900">€{cat.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                   </div>
                ))}
             </div>
@@ -686,7 +686,7 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                   {profitByCategory.map((row, idx) => (
                      <div key={row.name} className="flex justify-between items-center py-2 border-b border-slate-50 last:border-0">
                         <span className="font-medium text-slate-700 truncate">{row.name}</span>
-                        <span className={`font-bold shrink-0 ${row.profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>€{row.profit.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                        <span className={`font-bold shrink-0 ${row.profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>€{row.profit.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                      </div>
                   ))}
                </div>
@@ -701,7 +701,7 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                   {profitByMonth.map((row) => (
                      <div key={row.name} className="flex justify-between items-center py-2 border-b border-slate-50 last:border-0">
                         <span className="font-medium text-slate-700">{row.name}</span>
-                        <span className={`font-bold ${row.profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>€{row.profit.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                        <span className={`font-bold ${row.profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>€{row.profit.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                      </div>
                   ))}
                </div>
@@ -844,7 +844,7 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                         </p>
                      </div>
                      <div className={`font-black text-sm ${action.amount > 0 ? 'text-emerald-600' : 'text-slate-900'}`}>
-                        {action.amount > 0 ? '+' : ''}€{Math.abs(action.amount).toLocaleString()}
+                        {action.amount > 0 ? '+' : ''}€{Math.abs(action.amount).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                      </div>
                   </div>
                ))}
@@ -870,8 +870,8 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
               <div key={item.id} className="flex items-center justify-between gap-3 p-3 bg-slate-50 rounded-xl">
                 <p className="font-medium text-slate-900 truncate flex-1 min-w-0">{item.name}</p>
                 <div className="flex items-center gap-4 shrink-0">
-                  <span className="text-emerald-600 font-bold flex items-center gap-1"><Euro size={14}/>{(Number(item.sellPrice) || 0).toLocaleString()}</span>
-                  <span className="text-slate-500 text-sm">Profit: €{calculateItemProfit(item).toLocaleString()}</span>
+                  <span className="text-emerald-600 font-bold flex items-center gap-1"><Euro size={14}/>{(Number(item.sellPrice) || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                  <span className="text-slate-500 text-sm">Profit: €{calculateItemProfit(item).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                 </div>
               </div>
             ))}

@@ -399,16 +399,16 @@ const SheetsImport: React.FC<Props> = ({ onImport, onClearData }) => {
                   <div className="space-y-6">
                      <div className="flex justify-between items-end border-b border-white/10 pb-4">
                         <p className="text-[10px] font-bold text-slate-400 uppercase">Total Buy</p>
-                        <p className="text-xl font-black text-slate-200">€{financialPreview.totalBuy.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
+                        <p className="text-xl font-black text-slate-200">€{financialPreview.totalBuy.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
                      </div>
                      <div className="flex justify-between items-end border-b border-white/10 pb-4">
                         <p className="text-[10px] font-bold text-slate-400 uppercase">Total Sold</p>
-                        <p className="text-xl font-black text-blue-400">€{financialPreview.totalSell.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
+                        <p className="text-xl font-black text-blue-400">€{financialPreview.totalSell.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
                      </div>
                      <div className="flex justify-between items-end">
                         <p className="text-[10px] font-bold text-slate-400 uppercase">Total Profit</p>
                         <p className={`text-2xl font-black ${financialPreview.totalProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                           €{financialPreview.totalProfit.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                           €{financialPreview.totalProfit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                         </p>
                      </div>
                   </div>

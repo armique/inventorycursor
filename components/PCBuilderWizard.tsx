@@ -412,7 +412,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
                                {assigned.map(item => (
                                   <div key={item.id} className="text-xs font-bold text-slate-600 truncate flex justify-between">
                                      <span>{item.name}</span>
-                                     <span>€{item.buyPrice}</span>
+                                     <span>€{Number(item.buyPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                                   </div>
                                ))}
                             </div>
@@ -475,7 +475,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
                                      <ItemThumbnail item={item} className="w-12 h-12 rounded-xl object-cover bg-slate-100" size={48} useCategoryImage />
                                      <div className="flex-1 min-w-0">
                                         <p className="font-black text-sm truncate text-slate-900">{item.name}</p>
-                                        <p className="text-[10px] text-slate-400 font-bold uppercase">{item.category} • €{item.buyPrice}</p>
+                                        <p className="text-[10px] text-slate-400 font-bold uppercase">{item.category} • €{Number(item.buyPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
                                      </div>
                                      {isSelected ? <CheckCircle2 size={24} className="text-blue-600"/> : <div className="w-6 h-6 rounded-full border-2 border-slate-200"/>}
                                   </div>

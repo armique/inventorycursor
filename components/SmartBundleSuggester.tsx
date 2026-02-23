@@ -110,7 +110,7 @@ const SmartBundleSuggester: React.FC<Props> = ({ items, onCreateBundle }) => {
             <div className="mb-4">
               <div className="flex justify-between items-start mb-2">
                  <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest">
-                    Est. Value €{suggestion.estimatedValue}
+                    Est. Value €{Number(suggestion.estimatedValue).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                  </span>
               </div>
               <h3 className="text-lg font-black text-slate-900 leading-tight">{suggestion.title}</h3>
