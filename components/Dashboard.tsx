@@ -575,7 +575,36 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
+                     <XAxis 
+                        dataKey="name" 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{ fill: '#64748b', fontSize: 12 }}
+                        tick={(props: { x: number; y: number; payload?: { value?: string }; index?: number }) => {
+                          const { x, y, payload, index } = props;
+                          const point = typeof index === 'number' ? chartData[index] : chartData.find(d => d.name === payload?.value);
+                          return (
+                            <g transform={`translate(${x},${y})`} style={{ cursor: 'pointer' }}>
+                              <text
+                                x={0}
+                                y={0}
+                                dy={8}
+                                textAnchor="middle"
+                                fill="#64748b"
+                                fontSize={12}
+                                fontWeight="bold"
+                                onClick={() => point && setDayDetailModal({ dayLabel: point.dayLabel, dateStr: point.dateStr, items: point.soldItems ?? [] })}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); point && setDayDetailModal({ dayLabel: point.dayLabel, dateStr: point.dateStr, items: point.soldItems ?? [] }); } }}
+                                role="button"
+                                tabIndex={0}
+                                style={{ cursor: 'pointer' }}
+                              >
+                                {payload.value}
+                              </text>
+                            </g>
+                          );
+                        }}
+                     />
                      <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
                      <Tooltip 
                         cursor={{ fill: '#f8fafc' }} 
@@ -609,6 +638,7 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                         fill="#3B82F6" 
                         radius={[6, 6, 0, 0]} 
                         name="Revenue" 
+                        minPointSize={8}
                         onClick={(data: any) => {
                           const p = data?.payload ?? data;
                           setDayDetailModal({ dayLabel: p?.dayLabel ?? p?.name ?? '', dateStr: p?.dateStr ?? '', items: p?.soldItems ?? [] });
@@ -619,6 +649,7 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                         fill="#10B981" 
                         radius={[6, 6, 0, 0]} 
                         name="Net Profit"
+                        minPointSize={8}
                         onClick={(data: any) => {
                           const p = data?.payload ?? data;
                           setDayDetailModal({ dayLabel: p?.dayLabel ?? p?.name ?? '', dateStr: p?.dateStr ?? '', items: p?.soldItems ?? [] });
