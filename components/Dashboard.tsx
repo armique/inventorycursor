@@ -141,6 +141,14 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
        start = new Date();
        start.setDate(end.getDate() - 89);
        start.setHours(0,0,0,0);
+    } else if (timeFilter === 'THIS_MONTH') {
+       start = new Date(end.getFullYear(), end.getMonth(), 1);
+       start.setHours(0, 0, 0, 0);
+    } else if (timeFilter === 'LAST_MONTH') {
+       start = new Date(end.getFullYear(), end.getMonth() - 1, 1);
+       start.setHours(0, 0, 0, 0);
+       const lastDay = new Date(end.getFullYear(), end.getMonth(), 0, 23, 59, 59, 999);
+       return { startDate: start, endDate: lastDay };
     } else if (timeFilter === 'CUSTOM') {
        if (customStart) start = new Date(customStart);
        if (customEnd) {
@@ -440,6 +448,8 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                onChange={(e) => setTimeFilter(e.target.value)}
              >
                <option value="ALL">All Time</option>
+               <option value="THIS_MONTH">This Month</option>
+               <option value="LAST_MONTH">Last Month</option>
                <option value="LAST_7">Last 7 Days</option>
                <option value="LAST_30">Last 30 Days</option>
                <option value="LAST_90">Last 90 Days</option>
