@@ -611,7 +611,7 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                         name="Revenue" 
                         onClick={(data: any) => {
                           const p = data?.payload ?? data;
-                          if (p?.soldItems?.length) setDayDetailModal({ dayLabel: p.dayLabel ?? p.name, dateStr: p.dateStr ?? '', items: p.soldItems });
+                          setDayDetailModal({ dayLabel: p?.dayLabel ?? p?.name ?? '', dateStr: p?.dateStr ?? '', items: p?.soldItems ?? [] });
                         }}
                      />
                      <Bar 
@@ -621,7 +621,7 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                         name="Net Profit"
                         onClick={(data: any) => {
                           const p = data?.payload ?? data;
-                          if (p?.soldItems?.length) setDayDetailModal({ dayLabel: p.dayLabel ?? p.name, dateStr: p.dateStr ?? '', items: p.soldItems });
+                          setDayDetailModal({ dayLabel: p?.dayLabel ?? p?.name ?? '', dateStr: p?.dateStr ?? '', items: p?.soldItems ?? [] });
                         }}
                      />
                   </BarChart>
@@ -876,7 +876,9 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
             <button onClick={() => setDayDetailModal(null)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors"><X size={20} className="text-slate-500"/></button>
           </div>
           <div className="p-4 overflow-y-auto max-h-[60vh] space-y-3">
-            {dayDetailModal.items.map((item) => (
+            {dayDetailModal.items.length === 0 ? (
+              <p className="text-slate-500 text-sm text-center py-8">No items sold on this day.</p>
+            ) : dayDetailModal.items.map((item) => (
               <div key={item.id} className="flex items-center justify-between gap-3 p-3 bg-slate-50 rounded-xl">
                 <p className="font-medium text-slate-900 truncate flex-1 min-w-0">{item.name}</p>
                 <div className="flex items-center gap-4 shrink-0">
