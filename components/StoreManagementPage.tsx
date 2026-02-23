@@ -630,6 +630,8 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
   const [storeMetaDescription, setStoreMetaDescription] = useState(item.storeMetaDescription ?? '');
   const [storeDescriptionEn, setStoreDescriptionEn] = useState(item.storeDescriptionEn ?? '');
   const [quantity, setQuantity] = useState<number>(item.quantity ?? 1);
+  const [hasOVP, setHasOVP] = useState(!!item.hasOVP);
+  const [hasIOShield, setHasIOShield] = useState(!!item.hasIOShield);
   /** Ordered list: [0] = main image (carousel #1), rest = gallery. */
   const [storeImageUrls, setStoreImageUrls] = useState<string[]>(() => {
     const main = item.imageUrl?.trim();
@@ -650,7 +652,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
   const handleGenerateDescription = async () => {
     setGeneratingDescription(true);
     try {
-      const text = await generateStoreDescription(name.trim() || item.name, storeDescription || undefined);
+      const text = await generateStoreDescription(name.trim() || item.name, storeDescription || undefined, { hasOVP, hasIOShield });
       setStoreDescription(text);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'AI description failed.';
@@ -806,6 +808,8 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
       quantity: quantity < 0 ? undefined : quantity,
       imageUrl: main || undefined,
       storeGalleryUrls: rest?.length ? rest : undefined,
+      hasOVP: hasOVP,
+      hasIOShield: hasIOShield,
     });
   };
 
@@ -872,6 +876,18 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">{texts.storeDescription}</label>
+            <div className="flex flex-wrap gap-4 mb-2 p-3 bg-slate-50 rounded-lg border border-slate-100">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={hasOVP} onChange={(e) => setHasOVP(e.target.checked)} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                <span className="text-sm font-medium text-slate-700">OVP (Original Packaging)</span>
+              </label>
+              {(item.isBundle || item.subCategory === 'Motherboards' || item.category === 'Motherboards') && (
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={hasIOShield} onChange={(e) => setHasIOShield(e.target.checked)} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                  <span className="text-sm font-medium text-slate-700">IO Shield</span>
+                </label>
+              )}
+            </div>
             <button
               type="button"
               onClick={handleGenerateDescription}

@@ -169,6 +169,11 @@ export interface InventoryItem {
   storeDescriptionEn?: string;
   /** Stock quantity for store (undefined = 1). When 0, show "Out of stock" on store. */
   quantity?: number;
+
+  /** Original packaging (OVP) – item comes with original box. Used by AI description generator. */
+  hasOVP?: boolean;
+  /** IO Shield included (for motherboards/bundles). Used by AI description generator. */
+  hasIOShield?: boolean;
 }
 
 /** Inquiry from a visitor about a store item (stored in Firebase). */

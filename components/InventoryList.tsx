@@ -271,7 +271,7 @@ const InventoryList: React.FC<Props> = ({
         item.storeDescription ||
         item.comment1 ||
         '';
-      const text = await generateStoreDescription(item.name, context || undefined);
+      const text = await generateStoreDescription(item.name, context || undefined, { hasOVP: item.hasOVP, hasIOShield: item.hasIOShield });
       const updated: InventoryItem = { ...item, marketDescription: text };
       onUpdate([updated]);
     } catch (e: any) {
@@ -962,7 +962,7 @@ const InventoryList: React.FC<Props> = ({
      for (let i = 0; i < selected.length; i++) {
         setBulkGenerateProgress(`${i + 1} / ${selected.length}`);
         try {
-           const text = await generateStoreDescription(selected[i].name, selected[i].storeDescription || undefined);
+           const text = await generateStoreDescription(selected[i].name, selected[i].storeDescription || undefined, { hasOVP: selected[i].hasOVP, hasIOShield: selected[i].hasIOShield });
            updates.push({ ...selected[i], storeDescription: text });
         } catch (err) {
            console.warn('AI description failed for', selected[i].name, err);

@@ -92,6 +92,9 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
   const [parseProgress, setParseProgress] = useState<string | null>(null);
   const [addAsBundle, setAddAsBundle] = useState(false);
   const [bundleName, setBundleName] = useState('');
+  const [bundleHasOVP, setBundleHasOVP] = useState(false);
+  const [bundleHasIOShield, setBundleHasIOShield] = useState(false);
+  const [allItemsHaveOVP, setAllItemsHaveOVP] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<HardwareMetadata[]>([]);
   
@@ -272,6 +275,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
         specs: draft.specs,
         isDefective: draft.isDefective,
         parentContainerId: addAsBundle ? `bundle-${timestamp}` : undefined,
+        hasOVP: !addAsBundle && allItemsHaveOVP || undefined,
         platformBought: platform,
         buyPaymentType: payment,
         kleinanzeigenBuyChatUrl: chatUrl,
@@ -298,6 +302,8 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
             comment1: `Bulk Import Bundle. Contents:\n${childItems.map(i => `- ${i.name}`).join('\n')}`,
             comment2: `Bulk Import (${itemsToImport.length} items). Source total: €${totalCost}.`,
             vendor: 'Combined',
+            hasOVP: bundleHasOVP || undefined,
+            hasIOShield: bundleHasIOShield || undefined,
             platformBought: platform,
             buyPaymentType: payment,
             kleinanzeigenBuyChatUrl: chatUrl,
@@ -602,15 +608,36 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
                   </label>
                )}
                {addAsBundle && items.length >= 2 && (
-                  <div className="mb-4">
-                     <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest block mb-1">Bundle name</label>
-                     <input 
-                        className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-purple-200"
-                        placeholder={`Bundle: ${items[0]?.name || 'Item 1'} + ${items.length - 1} more`}
-                        value={bundleName}
-                        onChange={e => setBundleName(e.target.value)}
-                     />
-                  </div>
+                  <>
+                     <div className="mb-4">
+                        <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest block mb-1">Bundle name</label>
+                        <input 
+                           className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-purple-200"
+                           placeholder={`Bundle: ${items[0]?.name || 'Item 1'} + ${items.length - 1} more`}
+                           value={bundleName}
+                           onChange={e => setBundleName(e.target.value)}
+                        />
+                     </div>
+                     <div className="flex flex-wrap gap-4 mb-4 p-3 bg-white rounded-xl border border-slate-200">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                           <input type="checkbox" checked={bundleHasOVP} onChange={(e) => setBundleHasOVP(e.target.checked)} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                           <span className="text-sm font-bold text-slate-700">OVP (Original Packaging)</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                           <input type="checkbox" checked={bundleHasIOShield} onChange={(e) => setBundleHasIOShield(e.target.checked)} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                           <span className="text-sm font-bold text-slate-700">IO Shield</span>
+                        </label>
+                     </div>
+                  </>
+               )}
+               {!addAsBundle && items.length > 0 && (
+                  <label className="flex items-center gap-3 mb-4 p-3 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 transition-colors cursor-pointer">
+                     <input type="checkbox" checked={allItemsHaveOVP} onChange={e => setAllItemsHaveOVP(e.target.checked)} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                     <div className="flex-1">
+                        <span className="text-xs font-bold text-slate-700 block">OVP (Original Packaging)</span>
+                        <span className="text-[10px] text-slate-400">All items come with original packaging</span>
+                     </div>
+                  </label>
                )}
                {aiAvailable && (
                   <label className="flex items-center gap-3 mb-4 p-3 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 transition-colors cursor-pointer">

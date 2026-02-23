@@ -562,17 +562,30 @@ async function getRawTextFromAI(prompt: string, maxTokens: number = DEFAULT_TEXT
   throw lastError ?? new Error('All AI providers failed.');
 }
 
+export interface StoreDescriptionHints {
+  /** Item comes with original packaging (OVP). */
+  hasOVP?: boolean;
+  /** Motherboard/bundle includes IO Shield. */
+  hasIOShield?: boolean;
+}
+
 /**
  * Generate a structured, eye-catching store item description in German with emojis throughout.
  * Once set, it stays until the user clicks "Generate description" again or edits manually.
  */
-export async function generateStoreDescription(itemName: string, existingContext?: string): Promise<string> {
+export async function generateStoreDescription(
+  itemName: string,
+  existingContext?: string,
+  hints?: StoreDescriptionHints
+): Promise<string> {
   const context = existingContext?.trim() ? `\nExisting description or notes (you may use as inspiration):\n${existingContext}` : '';
+  const ovpLine = hints?.hasOVP === true ? '\n- IMPORTANT: The item comes with ORIGINAL PACKAGING (OVP). In the Lieferumfang section, say "📦 Mit OVP" or similar.' : '';
+  const ioShieldLine = hints?.hasIOShield === true ? '\n- IMPORTANT: The motherboard / bundle includes the IO Shield. In the Lieferumfang section, mention "✔️ IO-Shield vorhanden" or similar.' : '';
   const prompt = `You MUST write a product description in German for an online store. It MUST be eye-catching by using EMOJIS throughout – every section header and key line should start with or include an emoji. No plain text without emojis for headers.
 
 RULES:
 - Use ONLY plain text and newlines. No markdown (no ** or # or bullets).
-- Every section title MUST begin with an emoji. Be generous with emojis so the listing stands out.
+- Every section title MUST begin with an emoji. Be generous with emojis so the listing stands out.${ovpLine}${ioShieldLine}
 
 STRUCTURE (follow this closely):
 
@@ -589,7 +602,7 @@ STRUCTURE (follow this closely):
    "🖥 Mainboard: ASUS M5A78L-M LE (Sockel AM3+)"
    "🧩 RAM: 8GB (2×4GB) G.Skill DDR3 1600MHz"
 
-4) More sections with emojis: "📦 Lieferumfang", "❌ Ohne OVP & Zubehör", "🧪 Zustand" (e.g. Gebraucht, Voll funktionsfähig). Use 📥 for Support/Downloads if relevant.
+4) More sections with emojis: "📦 Lieferumfang" (include OVP or IO-Shield here if applicable), "❌ Ohne Zubehör" (only if not OVP), "🧪 Zustand" (e.g. Gebraucht, Voll funktionsfähig). Use 📥 for Support/Downloads if relevant.
 
 Suggested emojis: 💻🖥🔧🧠🧩📦❌🧪📥⚡🎮🛒✔️
 
