@@ -66,6 +66,7 @@
 - [ ] **Tables** — Alternating row subtle bg, sticky headers
 - [x] **Column customisation** — Show/hide and reorder table columns — DONE
 - [x] **Compact/list view** — Denser list for power users — DONE
+- [x] **Recent items** — Quick access to last edited or viewed items — DONE
 - [ ] **Dark mode option** — Optional dark theme for admin
 
 ### Accessibility

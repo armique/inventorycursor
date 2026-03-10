@@ -2,13 +2,14 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, History
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType } from '../types';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { getCompatibleItemsForItem } from '../services/compatibility';
 import { generateKleinanzeigenCSV } from '../services/ebayCsvService';
 import { exportInventoryToExcel } from '../services/excelExportService';
+import { getRecentItemIds, addRecentItemId } from '../services/recentItemsService';
 import { generateStoreDescription } from '../services/specsAI';
 import { suggestPriceFromSoldListings, SoldPriceSuggestion, getSpecsAIProvider } from '../services/specsAI';
 
@@ -158,6 +159,14 @@ const InventoryList: React.FC<Props> = ({
   const [hiddenColumnIds, setHiddenColumnIds] = useState<ColumnId[]>(() => loadState<ColumnId[]>('hidden_columns', []));
   const [showColumnsPanel, setShowColumnsPanel] = useState(false);
   const columnsPanelRef = useRef<HTMLDivElement>(null);
+  const [showRecentDropdown, setShowRecentDropdown] = useState(false);
+  const recentDropdownRef = useRef<HTMLDivElement>(null);
+
+  const recentItemsResolved = useMemo(() => {
+    const ids = getRecentItemIds();
+    const itemMap = new Map(items.map((i) => [i.id, i]));
+    return ids.map((id) => itemMap.get(id)).filter(Boolean) as InventoryItem[];
+  }, [items, showRecentDropdown]);
 
   type ListDensity = 'comfortable' | 'compact';
   const [listDensity, setListDensity] = useState<ListDensity>(() => loadState<ListDensity>('list_density', 'comfortable'));
@@ -208,6 +217,17 @@ const InventoryList: React.FC<Props> = ({
     document.addEventListener('mousedown', handle);
     return () => document.removeEventListener('mousedown', handle);
   }, [showColumnsPanel]);
+
+  useEffect(() => {
+    if (!showRecentDropdown) return;
+    const handle = (e: MouseEvent) => {
+      const el = e.target as Node;
+      if (recentDropdownRef.current?.contains(el)) return;
+      setShowRecentDropdown(false);
+    };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [showRecentDropdown]);
 
   const toggleColumnVisibility = (id: ColumnId) => {
     const visible = visibleColumns.length;
@@ -902,6 +922,7 @@ const InventoryList: React.FC<Props> = ({
   };
 
   const handleEditClick = (item: InventoryItem) => {
+    addRecentItemId(item.id);
     if (item.isPC || item.isBundle) {
       navigate(`/panel/builder?editId=${item.id}`); 
     } else {
@@ -1650,10 +1671,10 @@ const InventoryList: React.FC<Props> = ({
               {(item.isPC || item.isBundle) && (
                  <button onClick={(e) => { e.stopPropagation(); setBundleToDismantle(item); }} className="p-2 text-purple-600 hover:bg-purple-50 rounded" title="Unbundle / Dismantle"><Unlink size={16}/></button>
               )}
-              {item.status === ItemStatus.IN_STOCK && <button onClick={(e) => { e.stopPropagation(); setItemToSell(item); }} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded" title="Mark Sold"><ShoppingBag size={16}/></button>}
-              {item.status === ItemStatus.IN_STOCK && <button onClick={(e) => { e.stopPropagation(); setItemToTrade(item); }} className="p-2 text-purple-600 hover:bg-purple-50 rounded" title="Trade"><ArrowRightLeft size={16}/></button>}
+              {item.status === ItemStatus.IN_STOCK && <button onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToSell(item); }} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded" title="Mark Sold"><ShoppingBag size={16}/></button>}
+              {item.status === ItemStatus.IN_STOCK && <button onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToTrade(item); }} className="p-2 text-purple-600 hover:bg-purple-50 rounded" title="Trade"><ArrowRightLeft size={16}/></button>}
               {(item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED) && (
-                <button onClick={(e) => { e.stopPropagation(); setInvoiceViewItem(item); }} className="p-2 text-blue-600 hover:bg-blue-50 rounded" title="Generate Invoice"><FileText size={16}/></button>
+                <button onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setInvoiceViewItem(item); }} className="p-2 text-blue-600 hover:bg-blue-50 rounded" title="Generate Invoice"><FileText size={16}/></button>
               )}
               {item.status === ItemStatus.SOLD && (
                 <button onClick={(e) => { e.stopPropagation(); setItemToReturn(item); }} className="p-2 text-amber-600 hover:bg-amber-50 rounded" title="Mark Unsold / Return"><RotateCcw size={16}/></button>
@@ -1722,6 +1743,36 @@ const InventoryList: React.FC<Props> = ({
                        <span className="text-[10px] text-slate-400 shrink-0">{s.type}</span>
                      </button>
                    ))}
+                 </div>
+               )}
+            </div>
+            <div className="relative" ref={recentDropdownRef}>
+               <button
+                 type="button"
+                 onClick={() => setShowRecentDropdown((p) => !p)}
+                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all ${showRecentDropdown ? 'bg-slate-900 text-white border-slate-900' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-300'}`}
+                 title="Quick access to recently edited or viewed items"
+               >
+                 <History size={14} /> Recent
+                 {recentItemsResolved.length > 0 && <span className="text-[10px] opacity-75">({recentItemsResolved.length})</span>}
+               </button>
+               {showRecentDropdown && (
+                 <div className="absolute left-0 top-full mt-1 z-50 w-72 max-h-80 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl py-1">
+                   {recentItemsResolved.length === 0 ? (
+                     <p className="px-3 py-4 text-xs text-slate-400">No recent items. Edit or view items to see them here.</p>
+                   ) : (
+                     recentItemsResolved.map((it) => (
+                       <button
+                         key={it.id}
+                         type="button"
+                         onClick={() => { handleEditClick(it); setShowRecentDropdown(false); }}
+                         className="w-full px-3 py-2 text-left text-xs hover:bg-slate-50 flex flex-col gap-0.5 truncate"
+                       >
+                         <span className="font-medium text-slate-900 truncate">{it.name}</span>
+                         <span className="text-[10px] text-slate-500">{it.category}{it.subCategory ? ` · ${it.subCategory}` : ''}</span>
+                       </button>
+                     ))
+                   )}
                  </div>
                )}
             </div>
