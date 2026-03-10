@@ -64,6 +64,7 @@
 - [x] **Sidebar** — Gradient, brand accent, improved active state — DONE
 - [ ] **Page headers** — Consistent spacing, breadcrumbs where useful
 - [ ] **Tables** — Alternating row subtle bg, sticky headers
+- [x] **Column customisation** — Show/hide and reorder table columns — DONE
 - [ ] **Dark mode option** — Optional dark theme for admin
 
 ### Accessibility

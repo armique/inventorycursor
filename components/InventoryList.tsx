@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType } from '../types';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
@@ -150,6 +150,15 @@ const InventoryList: React.FC<Props> = ({
   
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => loadState('widths', DEFAULT_WIDTHS));
 
+  const defaultColumnOrder: ColumnId[] = ['select', 'item', 'presence', 'parseSpecs', 'category', 'status', 'buyPrice', 'sellPrice', 'profit', 'buyDate', 'sellDate', 'actions'];
+  const [columnOrder, setColumnOrder] = useState<ColumnId[]>(() => {
+    const saved = loadState<ColumnId[]>('column_order', defaultColumnOrder);
+    return saved && saved.length > 0 ? saved : defaultColumnOrder;
+  });
+  const [hiddenColumnIds, setHiddenColumnIds] = useState<ColumnId[]>(() => loadState<ColumnId[]>('hidden_columns', []));
+  const [showColumnsPanel, setShowColumnsPanel] = useState(false);
+  const columnsPanelRef = useRef<HTMLDivElement>(null);
+
   // -- INLINE EDITING STATE --
   const [editingCell, setEditingCell] = useState<{ itemId: string, field: ColumnId } | null>(null);
   const [editValue, setEditValue] = useState<string | number>('');
@@ -169,6 +178,8 @@ const InventoryList: React.FC<Props> = ({
   useEffect(() => localStorage.setItem(`${persistenceKey}_spec_filters`, JSON.stringify(specFilters)), [specFilters, persistenceKey]);
   useEffect(() => localStorage.setItem(`${persistenceKey}_spec_range_filters`, JSON.stringify(specRangeFilters)), [specRangeFilters, persistenceKey]);
   useEffect(() => localStorage.setItem(`${persistenceKey}_show_in_composition`, JSON.stringify(showInComposition)), [showInComposition, persistenceKey]);
+  useEffect(() => localStorage.setItem(`${persistenceKey}_column_order`, JSON.stringify(columnOrder)), [columnOrder, persistenceKey]);
+  useEffect(() => localStorage.setItem(`${persistenceKey}_hidden_columns`, JSON.stringify(hiddenColumnIds)), [hiddenColumnIds, persistenceKey]);
 
   // Close spec filters panel when clicking outside
   useEffect(() => {
@@ -181,6 +192,35 @@ const InventoryList: React.FC<Props> = ({
     document.addEventListener('mousedown', handle);
     return () => document.removeEventListener('mousedown', handle);
   }, [showSpecFiltersPanel]);
+
+  // Close columns panel when clicking outside
+  useEffect(() => {
+    if (!showColumnsPanel) return;
+    const handle = (e: MouseEvent) => {
+      const el = e.target as Node;
+      if (columnsPanelRef.current?.contains(el)) return;
+      setShowColumnsPanel(false);
+    };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [showColumnsPanel]);
+
+  const toggleColumnVisibility = (id: ColumnId) => {
+    const visible = visibleColumns.length;
+    const wouldHide = !hiddenColumnIds.includes(id);
+    if (wouldHide && visible <= 2) return; // keep at least 2 columns
+    setHiddenColumnIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const moveColumn = (index: number, direction: 'up' | 'down') => {
+    const newOrder = [...columnOrder];
+    const target = direction === 'up' ? index - 1 : index + 1;
+    if (target < 0 || target >= newOrder.length) return;
+    [newOrder[index], newOrder[target]] = [newOrder[target], newOrder[index]];
+    setColumnOrder(newOrder);
+  };
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [expandedBundles, setExpandedBundles] = useState<Set<string>>(new Set());
@@ -387,8 +427,8 @@ const InventoryList: React.FC<Props> = ({
     }
   };
   
-  // Visible Columns
-  const visibleColumns: ColumnId[] = ['select', 'item', 'presence', 'parseSpecs', 'category', 'status', 'buyPrice', 'sellPrice', 'profit', 'buyDate', 'sellDate', 'actions'];
+  // Visible Columns (from order, excluding hidden)
+  const visibleColumns: ColumnId[] = columnOrder.filter((id) => !hiddenColumnIds.includes(id));
 
   // Calculate Date Range based on filter
   const dateRange = useMemo(() => {
@@ -1755,6 +1795,47 @@ const InventoryList: React.FC<Props> = ({
                   </select>
                </>
             )}
+            <div className="relative flex items-center" ref={columnsPanelRef}>
+               <button
+                  type="button"
+                  onClick={() => setShowColumnsPanel((p) => !p)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold uppercase tracking-wide transition-all ${showColumnsPanel ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300 hover:text-blue-600'}`}
+                  title="Show/hide and reorder columns"
+               >
+                  <Columns2 size={12} /> Columns
+                  <ChevronDown size={12} className={`transition-transform ${showColumnsPanel ? 'rotate-180' : ''}`} />
+               </button>
+               {showColumnsPanel && (
+                  <div className="absolute left-0 top-full mt-1 z-50 w-64 rounded-xl border border-slate-200 bg-white shadow-xl animate-in fade-in zoom-in-95 duration-150">
+                     <div className="p-2 border-b border-slate-100 flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-600">Columns</span>
+                        <button type="button" onClick={() => { setColumnOrder(defaultColumnOrder); setHiddenColumnIds([]); }} className="text-[10px] font-bold text-slate-500 hover:text-blue-600">Reset</button>
+                     </div>
+                     <div className="p-2 space-y-0.5 max-h-72 overflow-y-auto">
+                        {columnOrder.map((id, idx) => {
+                           const label = ALL_COLUMNS.find((c) => c.id === id)?.label || id;
+                           const isHidden = hiddenColumnIds.includes(id);
+                           return (
+                              <div key={id} className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-slate-50 group">
+                                 <input
+                                    type="checkbox"
+                                    checked={!isHidden}
+                                    onChange={() => toggleColumnVisibility(id)}
+                                    disabled={!isHidden && visibleColumns.length <= 2}
+                                    className="rounded border-slate-300"
+                                 />
+                                 <span className={`flex-1 text-xs font-medium truncate ${isHidden ? 'text-slate-400' : 'text-slate-900'}`}>{label || id}</span>
+                                 <div className="flex opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button type="button" onClick={() => moveColumn(idx, 'up')} disabled={idx === 0} className="p-0.5 rounded hover:bg-slate-200 disabled:opacity-30"><ChevronUp size={12} /></button>
+                                    <button type="button" onClick={() => moveColumn(idx, 'down')} disabled={idx === columnOrder.length - 1} className="p-0.5 rounded hover:bg-slate-200 disabled:opacity-30"><ChevronDown size={12} /></button>
+                                 </div>
+                              </div>
+                           );
+                        })}
+                     </div>
+                  </div>
+               )}
+            </div>
             <div className="relative flex items-center" ref={filtersPanelRef}>
                <button
                   type="button"
