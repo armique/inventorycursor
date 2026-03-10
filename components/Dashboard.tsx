@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend
 } from 'recharts';
-import { TrendingUp, Wallet, Target, Package, Calendar, TrendingDown, Hourglass, Skull, Trophy, Star, Crown, Zap, Edit3, Check, CalendarDays, ArrowRight, CheckCircle2, Circle, Plus, X, Activity, Clock, AlertCircle, Euro } from 'lucide-react';
+import { TrendingUp, Wallet, Target, Package, Calendar, TrendingDown, Hourglass, Skull, Trophy, Star, Crown, Zap, Edit3, Check, CalendarDays, ArrowRight, CheckCircle2, Circle, Plus, X, Activity, Clock, AlertCircle, Euro, Settings2, ChevronUp, ChevronDown } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { InventoryItem, ItemStatus, Expense, BusinessSettings, TaxMode } from '../types';
 import { calculateTaxSummary, generateTaxReportCSV } from '../services/taxService';
@@ -26,6 +26,47 @@ const LEVELS = [
 
 const PIE_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6366F1', '#64748B'];
 
+const DASHBOARD_WIDGET_IDS = [
+  'gamification',
+  'statCards',
+  'performanceChart',
+  'capitalDistribution',
+  'profitByCategory',
+  'profitByMonth',
+  'taxReport',
+  'todoFromData',
+  'tasks',
+  'recentActivity',
+] as const;
+
+type WidgetId = (typeof DASHBOARD_WIDGET_IDS)[number];
+
+const WIDGET_LABELS: Record<WidgetId, string> = {
+  gamification: 'Monthly goal & level',
+  statCards: 'Stats (inventory, sales, profit, overhead, capital trap)',
+  performanceChart: 'Performance analytics',
+  capitalDistribution: 'Capital distribution (pie)',
+  profitByCategory: 'Profit by category',
+  profitByMonth: 'Profit by month',
+  taxReport: 'Tax report',
+  todoFromData: 'Data to review',
+  tasks: 'Reseller tasks',
+  recentActivity: 'Recent activity',
+};
+
+function loadWidgetConfig(): WidgetId[] {
+  const saved = localStorage.getItem('dashboard_widgets');
+  if (!saved) return [...DASHBOARD_WIDGET_IDS];
+  try {
+    const parsed = JSON.parse(saved) as string[];
+    const valid = parsed.filter((id): id is WidgetId => DASHBOARD_WIDGET_IDS.includes(id as WidgetId));
+    const missing = DASHBOARD_WIDGET_IDS.filter((id) => !valid.includes(id));
+    return [...valid, ...missing];
+  } catch {
+    return [...DASHBOARD_WIDGET_IDS];
+  }
+}
+
 interface Task {
   id: string;
   text: string;
@@ -40,7 +81,37 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
   const [customStart, setCustomStart] = useState(() => localStorage.getItem('dashboard_custom_start') || '');
   const [customEnd, setCustomEnd] = useState(() => localStorage.getItem('dashboard_custom_end') || '');
   const [dayDetailModal, setDayDetailModal] = useState<{ dayLabel: string; dateStr: string; items: InventoryItem[] } | null>(null);
-  
+  const [showWidgetModal, setShowWidgetModal] = useState(false);
+  const [visibleWidgets, setVisibleWidgets] = useState<WidgetId[]>(loadWidgetConfig);
+
+  useEffect(() => {
+    localStorage.setItem('dashboard_widgets', JSON.stringify(visibleWidgets));
+  }, [visibleWidgets]);
+
+  const toggleWidget = (id: WidgetId) => {
+    setVisibleWidgets((prev) =>
+      prev.includes(id) ? prev.filter((w) => w !== id) : [...prev, id]
+    );
+  };
+
+  const moveWidget = (id: WidgetId, dir: 'up' | 'down') => {
+    setVisibleWidgets((prev) => {
+      const idx = prev.indexOf(id);
+      if (idx < 0) return prev;
+      const next = [...prev];
+      const swap = dir === 'up' ? idx - 1 : idx + 1;
+      if (swap < 0 || swap >= next.length) return prev;
+      [next[idx], next[swap]] = [next[swap], next[idx]];
+      return next;
+    });
+  };
+
+  const resetWidgets = () => {
+    setVisibleWidgets([...DASHBOARD_WIDGET_IDS]);
+  };
+
+  const isVisible = (id: WidgetId) => visibleWidgets.includes(id);
+
   // Goal State managed via props now
   const [isEditingGoal, setIsEditingGoal] = useState(false);
   const [tempGoal, setTempGoal] = useState(monthlyGoal.toString());
@@ -452,7 +523,16 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
           <h1 className="text-3xl font-bold text-slate-900">Dashboard</h1>
           <p className="text-slate-500">Analytics for {items.length} items & {expenses.length} expenses</p>
         </div>
-        <div className="flex flex-col sm:flex-row gap-2 bg-white p-2 rounded-2xl shadow-sm border border-slate-200">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowWidgetModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 text-sm font-bold hover:bg-slate-50 transition-colors"
+          >
+            <Settings2 size={18} />
+            Customise widgets
+          </button>
+          <div className="flex flex-col sm:flex-row gap-2 bg-white p-2 rounded-2xl shadow-sm border border-slate-200">
           <div className="relative flex items-center">
              <div className="absolute left-3 text-slate-400 pointer-events-none"><CalendarDays size={18} /></div>
              <select 
@@ -482,10 +562,12 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                 <input type="date" className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold outline-none" value={customEnd} onChange={e => setCustomEnd(e.target.value)} />
              </div>
           )}
+          </div>
         </div>
       </header>
 
-      {/* GAMIFICATION SECTION */}
+      {/* WIDGET: GAMIFICATION SECTION */}
+      {isVisible('gamification') && (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
          {/* Monthly Goal Card */}
          <div className="bg-slate-900 text-white p-6 rounded-[2.5rem] relative overflow-hidden shadow-2xl flex flex-col justify-between group">
@@ -556,8 +638,9 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
             </div>
          </div>
       </div>
+      )}
 
-      {/* STAT CARDS */}
+      {isVisible('statCards') && (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         <StatCard title="Inventory value" value={`€${stats.totalInventoryValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}`} icon={<Package className="text-slate-600" />} subtitle="All in-stock (cost)" />
         <StatCard title="Total Sales" value={`€${stats.totalTurnover.toLocaleString(undefined, {maximumFractionDigits: 2})}`} icon={<Wallet className="text-blue-600" />} subtitle="Revenue (period)" />
@@ -578,10 +661,12 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
            </h4>
         </div>
       </div>
+      )}
 
-      {/* ANALYTICS & PIE CHART ROW */}
+      {/* WIDGET: ANALYTICS & PIE CHART ROW */}
+      {(isVisible('performanceChart') || isVisible('capitalDistribution')) && (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-         {/* Main Bar Chart */}
+         {isVisible('performanceChart') && (
          <div className="lg:col-span-2 bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 h-[400px] flex flex-col">
             <h3 className="text-lg font-bold mb-4">Performance Analytics</h3>
             <div className={`flex-1 [&_rect]:cursor-pointer`}>
@@ -672,8 +757,9 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                </ResponsiveContainer>
             </div>
          </div>
+         )}
 
-         {/* Inventory Capital Distribution Pie Chart */}
+         {isVisible('capitalDistribution') && (
          <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 h-[400px] flex flex-col">
             <div className="flex justify-between items-center mb-2">
                <h3 className="text-lg font-bold">Capital Distribution</h3>
@@ -727,10 +813,13 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                ))}
             </div>
          </div>
+         )}
       </div>
+      )}
 
-      {/* Profit by category & by month */}
+      {(isVisible('profitByCategory') || isVisible('profitByMonth')) && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+         {isVisible('profitByCategory') && (
          <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
             <h3 className="text-lg font-bold mb-4">Profit by category (period)</h3>
             {profitByCategory.length === 0 ? (
@@ -746,6 +835,8 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                </div>
             )}
          </div>
+         )}
+         {isVisible('profitByMonth') && (
          <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
             <h3 className="text-lg font-bold mb-4">Profit by month (period)</h3>
             {profitByMonth.length === 0 ? (
@@ -761,9 +852,11 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                </div>
             )}
          </div>
+         )}
       </div>
+      )}
 
-      {/* Tax report (period summary for accountant / export) */}
+      {isVisible('taxReport') && (
       <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
         <h3 className="text-lg font-bold mb-3">Tax report (period summary)</h3>
         <p className="text-sm text-slate-500 mb-4">Summary by calendar year for export or accountant. VAT figures when applicable.</p>
@@ -813,9 +906,9 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
           </table>
         </div>
       </div>
+      )}
 
-      {/* Todo from data */}
-      {todoFromData.length > 0 && (
+      {isVisible('todoFromData') && todoFromData.length > 0 && (
          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 sm:p-5">
             <h3 className="text-sm font-bold text-amber-900 mb-3 flex items-center gap-2">
                <AlertCircle size={18} className="text-amber-600"/> Data to review
@@ -834,9 +927,9 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
          </div>
       )}
 
-      {/* TASKS & ACTIVITY ROW */}
+      {(isVisible('tasks') || isVisible('recentActivity')) && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-         {/* TASKS WIDGET */}
+         {isVisible('tasks') && (
          <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[300px]">
             <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
                <CheckCircle2 className="text-blue-600"/> Reseller Tasks
@@ -869,8 +962,9 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                ))}
             </div>
          </div>
+         )}
 
-         {/* RECENT ACTIVITY FEED */}
+         {isVisible('recentActivity') && (
          <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[300px]">
             <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
                <Activity className="text-indigo-600"/> Recent Activity
@@ -904,7 +998,9 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                ))}
             </div>
          </div>
+         )}
       </div>
+      )}
     </div>
     {dayDetailModal && createPortal(
       <div 
@@ -931,6 +1027,95 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+    {showWidgetModal && createPortal(
+      <div
+        className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 animate-in fade-in"
+        onClick={() => setShowWidgetModal(false)}
+      >
+        <div
+          className="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[85vh] overflow-hidden m-4 animate-in zoom-in-95"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+            <h3 className="text-lg font-bold text-slate-900">Customise widgets</h3>
+            <button
+              onClick={() => setShowWidgetModal(false)}
+              className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+            >
+              <X size={20} className="text-slate-500" />
+            </button>
+          </div>
+          <div className="p-4 overflow-y-auto max-h-[60vh] space-y-2">
+            <p className="text-sm text-slate-500 mb-4">Choose which widgets appear on your dashboard. Use arrows to reorder.</p>
+            {visibleWidgets.map((id, idx) => (
+              <div
+                key={id}
+                className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 hover:bg-slate-100 transition-colors"
+              >
+                <button
+                  type="button"
+                  onClick={() => toggleWidget(id)}
+                  className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
+                    visibleWidgets.includes(id) ? 'bg-blue-600 border-blue-600' : 'border-slate-300'
+                  }`}
+                >
+                  {visibleWidgets.includes(id) && <Check size={12} className="text-white" />}
+                </button>
+                <span className="flex-1 text-sm font-medium text-slate-700">{WIDGET_LABELS[id]}</span>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => moveWidget(id, 'up')}
+                    disabled={idx === 0}
+                    className="p-1.5 rounded-lg hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <ChevronUp size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveWidget(id, 'down')}
+                    disabled={idx === visibleWidgets.length - 1}
+                    className="p-1.5 rounded-lg hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <ChevronDown size={16} />
+                  </button>
+                </div>
+              </div>
+            ))}
+            {DASHBOARD_WIDGET_IDS.filter((id) => !visibleWidgets.includes(id)).map((id) => (
+              <div
+                key={id}
+                className="flex items-center gap-3 p-3 rounded-xl bg-slate-50/50 opacity-75"
+              >
+                <button
+                  type="button"
+                  onClick={() => toggleWidget(id)}
+                  className="w-5 h-5 rounded border-2 border-slate-300 flex items-center justify-center shrink-0 hover:border-blue-400"
+                />
+                <span className="flex-1 text-sm font-medium text-slate-400">{WIDGET_LABELS[id]}</span>
+              </div>
+            ))}
+          </div>
+          <div className="p-4 border-t border-slate-100 flex justify-between">
+            <button
+              type="button"
+              onClick={resetWidgets}
+              className="text-sm font-bold text-slate-500 hover:text-slate-700"
+            >
+              Reset to default
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowWidgetModal(false)}
+              className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-slate-800"
+            >
+              Done
+            </button>
           </div>
         </div>
       </div>,
