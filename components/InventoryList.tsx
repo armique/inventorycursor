@@ -1169,9 +1169,9 @@ const InventoryList: React.FC<Props> = ({
                          <span className="text-[9px] text-slate-500 font-medium">({childItems.length} items)</span>
                       )}
                    </div>
-                   {item.status === ItemStatus.SOLD && (item.customer?.name || item.ebayUsername || item.ebayOrderId) && (
+                   {(item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED) && (item.customer?.name || item.ebayUsername || item.ebayOrderId) && (
                       <p
-                        className="text-[9px] text-slate-500 font-medium mt-1 flex items-center gap-1"
+                        className="text-[9px] text-slate-600 font-medium mt-1.5 flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100"
                         title={[
                           item.customer?.name ? `Buyer: ${item.customer.name}` : null,
                           item.customer?.address ? `Address: ${item.customer.address}` : null,
@@ -1489,22 +1489,22 @@ const InventoryList: React.FC<Props> = ({
           </td>
         );
       case 'buyDate':
-      case 'sellDate':
-        // Bundles/PCs don't have buyDate - show "-" and tooltip
-        if ((item.isPC || item.isBundle) && id === 'buyDate') {
-          return (
-            <td key={id} className="p-5 text-right text-xs font-bold text-slate-300" style={style} title="Bundles/PCs don't have buy dates. Expand to see component buy dates.">
-              -
-            </td>
-          );
-        }
+      case 'sellDate': {
+        const isSoldOrTraded = item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED;
+        const hasBuyerData = item.customer?.name || item.ebayUsername || item.ebayOrderId;
+        const buyerTitle = hasBuyerData ? [
+          item.customer?.name ? `Buyer: ${item.customer.name}` : null,
+          item.customer?.address ? `Address: ${item.customer.address}` : null,
+          item.ebayUsername ? `eBay: ${item.ebayUsername}` : null,
+          item.ebayOrderId ? `Order ID: ${item.ebayOrderId}` : null,
+        ].filter(Boolean).join(' • ') : undefined;
         const isEditingDate = editingCell?.itemId === item.id && editingCell?.field === id;
         return (
            <td 
              key={id} 
              className="p-5 text-right text-xs font-bold text-slate-500 cursor-pointer hover:bg-blue-50/30 transition-colors" 
              style={style}
-             title="Double click to edit"
+             title={buyerTitle || "Double click to edit"}
              onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, id, (item as any)[id] || ''); }}
            >
               {isEditingDate ? (
@@ -1519,10 +1519,18 @@ const InventoryList: React.FC<Props> = ({
                    onClick={e => e.stopPropagation()}
                  />
               ) : (
-                 (item as any)[id] || '-'
+                 <div className="flex flex-col items-end gap-1">
+                   <span>{(item as any)[id] || '-'}</span>
+                   {isSoldOrTraded && hasBuyerData && (
+                     <span className="text-[9px] font-medium text-slate-600 truncate max-w-full" title={buyerTitle}>
+                       {item.customer?.name || item.ebayUsername || `#${item.ebayOrderId}`}
+                     </span>
+                   )}
+                 </div>
               )}
            </td>
         );
+      }
       case 'actions':
         return (
           <td key={id} className="p-5 text-right relative" style={style}>
