@@ -20,6 +20,7 @@ import QuotaMonitor from './components/QuotaMonitor';
 import StoreManagementPage from './components/StoreManagementPage';
 import LegalPage from './components/LegalPage';
 import MissingSpecsReport from './components/MissingSpecsReport';
+import InvoiceManager from './components/InvoiceManager';
 
 import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense } from './types';
 import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchFromCloud } from './services/firebaseService';
@@ -779,6 +780,7 @@ const App: React.FC = () => {
           <Route path="edit/:id" element={<ItemForm onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="builder" element={<PCBuilderWizard items={items} onSave={handleUpdate} />} />
           <Route path="pricing" element={<PriceCheck />} />
+          <Route path="invoices" element={<InvoiceManager items={items} businessSettings={businessSettings} />} />
           <Route
             path="expenses"
             element={
