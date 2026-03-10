@@ -8,6 +8,7 @@ import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType } fr
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { getCompatibleItemsForItem } from '../services/compatibility';
 import { generateKleinanzeigenCSV } from '../services/ebayCsvService';
+import { exportInventoryToExcel } from '../services/excelExportService';
 import { generateStoreDescription } from '../services/specsAI';
 import { suggestPriceFromSoldListings, SoldPriceSuggestion, getSpecsAIProvider } from '../services/specsAI';
 
@@ -1781,6 +1782,14 @@ const InventoryList: React.FC<Props> = ({
                )}
             </div>
             <div className="flex items-center gap-2">
+               <button
+                 type="button"
+                 onClick={() => exportInventoryToExcel(sortedItems)}
+                 className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 flex items-center gap-1"
+                 title="Export current view to Excel"
+               >
+                 <FileSpreadsheet size={14} /> <span className="text-[10px] font-bold uppercase">Excel</span>
+               </button>
                <div className="flex gap-1">
                  <button onClick={onUndo} disabled={!canUndo} className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-900 disabled:opacity-50" title="Undo"><RotateCcw size={14} /></button>
                  <button onClick={onRedo} disabled={!canRedo} className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-900 disabled:opacity-50" title="Redo"><RotateCw size={14} /></button>
@@ -2050,6 +2059,15 @@ const InventoryList: React.FC<Props> = ({
                  className="bg-white text-slate-900 px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-slate-100 transition-all"
                >
                  <Download size={16}/> Export Kleinanzeigen CSV
+               </button>
+               <button 
+                 onClick={() => {
+                   const selected = items.filter(i => selectedIds.includes(i.id));
+                   exportInventoryToExcel(selected);
+                 }}
+                 className="bg-white text-slate-900 px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-slate-100 transition-all"
+               >
+                 <FileSpreadsheet size={16}/> Export to Excel
                </button>
                <button 
                  onClick={() => handleBulkGenerateDescriptions()}
