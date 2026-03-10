@@ -207,6 +207,28 @@ const InventoryList: React.FC<Props> = ({
   const [showRetroBundle, setShowRetroBundle] = useState(false);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [showNewItemModal, setShowNewItemModal] = useState(false);
+  const [searchSuggestionsOpen, setSearchSuggestionsOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchSuggestionsRef = useRef<HTMLDivElement>(null);
+
+  const searchSuggestions = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    if (q.length < 2) return [];
+    const seen = new Set<string>();
+    const out: { text: string; type: 'name' | 'category' | 'vendor' }[] = [];
+    const add = (t: string, type: 'name' | 'category' | 'vendor') => {
+      if (!t || !t.toLowerCase().includes(q) || seen.has(t)) return;
+      seen.add(t);
+      out.push({ text: t, type });
+    };
+    items.forEach((i) => {
+      add(i.name, 'name');
+      if (i.category) add(i.category, 'category');
+      if (i.subCategory) add(`${i.category} / ${i.subCategory}`, 'category');
+      if (i.vendor) add(i.vendor, 'vendor');
+    });
+    return out.slice(0, 12);
+  }, [items, searchTerm]);
 
   // --- INVENTORY PRESENCE (PRESENT / LOST) ---
   const togglePresence = (item: InventoryItem) => {
@@ -1631,15 +1653,33 @@ const InventoryList: React.FC<Props> = ({
          <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-xl font-black text-slate-900 tracking-tight mr-2">{pageTitle}</h1>
             <span className="text-slate-500 text-sm font-medium py-1">{sortedItems.length} items{timeFilter !== 'ALL' ? ' · period' : ''}</span>
-            <div className="flex-1 min-w-0 max-w-[200px] sm:max-w-[220px] relative">
+            <div className="flex-1 min-w-0 max-w-[200px] sm:max-w-[220px] relative" ref={searchSuggestionsRef}>
                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                <input
+                  ref={searchInputRef}
                   type="text"
                   className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-slate-900/20"
                   placeholder="Search..."
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
+                  onFocus={() => setSearchSuggestionsOpen(true)}
+                  onBlur={() => setTimeout(() => setSearchSuggestionsOpen(false), 180)}
                />
+               {searchSuggestionsOpen && searchSuggestions.length > 0 && (
+                 <div className="absolute z-50 left-0 right-0 top-full mt-1 py-1.5 bg-white border border-slate-200 rounded-lg shadow-xl max-h-52 overflow-y-auto">
+                   {searchSuggestions.map((s, idx) => (
+                     <button
+                       key={`${s.type}-${s.text}-${idx}`}
+                       type="button"
+                       className="w-full px-3 py-2 text-left text-xs hover:bg-slate-50 flex items-center gap-2"
+                       onMouseDown={(e) => { e.preventDefault(); setSearchTerm(s.text); setSearchSuggestionsOpen(false); searchInputRef.current?.focus(); }}
+                     >
+                       <span className="text-slate-900 font-medium truncate">{s.text}</span>
+                       <span className="text-[10px] text-slate-400 shrink-0">{s.type}</span>
+                     </button>
+                   ))}
+                 </div>
+               )}
             </div>
             <select
                value={statusFilter}

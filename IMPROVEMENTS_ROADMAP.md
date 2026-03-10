@@ -58,6 +58,7 @@
 - [ ] **Card hover** — Lift + shadow on product cards
 - [ ] **Hero / empty state** — Refined loading skeleton, empty catalog illustration
 - [ ] **Micro-interactions** — Button press feedback, smooth filter transitions
+- [x] **Search autocomplete** — Live search suggestions as you type (inventory) — DONE
 
 ### Admin panel
 - [x] **Sidebar** — Gradient, brand accent, improved active state — DONE
