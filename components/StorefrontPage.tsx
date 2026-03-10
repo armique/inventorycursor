@@ -404,7 +404,7 @@ const StorefrontPage: React.FC = () => {
       {/* Header */}
       <header className={`sticky top-0 z-50 backdrop-blur-xl border-b shadow-sm ${darkMode ? 'bg-slate-800/90 border-slate-700' : 'bg-white/90 border-slate-200/80'}`}>
         <div className="mx-auto max-w-6xl px-4 sm:px-6 py-4 flex items-center justify-between">
-          <button type="button" onClick={() => navigate('/')} className={`text-xl font-bold tracking-tight transition-colors ${darkMode ? 'text-white hover:text-slate-300' : 'text-slate-900 hover:text-slate-600'}`}>
+          <button type="button" onClick={() => navigate('/')} className={`text-xl font-display font-bold tracking-tight transition-colors ${darkMode ? 'text-white hover:text-slate-300' : 'text-slate-900 hover:text-slate-600'}`}>
             {TEXTS.title}
           </button>
           <nav className="flex items-center gap-1 sm:gap-2">
@@ -425,7 +425,7 @@ const StorefrontPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setTab('sale')}
-              className={`px-3 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-1.5 ${tab === 'sale' ? 'bg-rose-600 text-white shadow-md' : 'text-slate-600 hover:bg-rose-50 hover:text-rose-700'}`}
+              className={`px-3 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-1.5 ${tab === 'sale' ? 'bg-brand-500 text-white shadow-md hover:bg-brand-600' : 'text-slate-600 hover:bg-brand-50 hover:text-brand-700'}`}
             >
               <Tag size={14} strokeWidth={2.2} /> {TEXTS.sale}
             </button>
@@ -689,7 +689,7 @@ const StorefrontPage: React.FC = () => {
         <button
           type="button"
           onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          className="fixed bottom-6 right-6 z-40 w-12 h-12 rounded-full bg-slate-900 text-white shadow-lg hover:bg-slate-800 hover:scale-105 transition-all flex items-center justify-center"
+          className="fixed bottom-6 right-6 z-40 w-12 h-12 rounded-full bg-brand-600 text-white shadow-lg hover:bg-brand-700 hover:scale-105 transition-all flex items-center justify-center"
           aria-label={TEXTS.backToTop}
         >
           <ArrowUp size={20} />

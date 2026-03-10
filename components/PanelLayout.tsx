@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
   Package, PlusCircle, Settings, RefreshCw, Briefcase, Trash2, CloudUpload, LayoutDashboard, BarChart3, Sparkles,
@@ -117,10 +117,10 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 font-sans">
       {/* DESKTOP SIDEBAR */}
-      <aside className="w-64 bg-slate-900 text-white flex flex-col hidden md:flex">
+      <aside className="w-64 bg-gradient-to-b from-slate-900 to-slate-800 text-white flex flex-col hidden md:flex border-r border-slate-700/50">
         <div className="p-6">
-          <Link to="/panel/dashboard" className="text-xl font-black tracking-tighter flex items-center gap-2">
-            <Package className="text-blue-500" /> DeInventory
+          <Link to="/panel/dashboard" className="text-xl font-display font-black tracking-tighter flex items-center gap-2 text-white hover:text-white">
+            <Package className="text-brand-400" /> DeInventory
           </Link>
         </div>
         <nav className="flex-1 px-4 space-y-2 overflow-y-auto scrollbar-hide">
@@ -130,7 +130,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
               <Link
                 key={to}
                 to={to}
-                className={`flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all relative ${isActive ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all relative ${isActive ? 'bg-brand-600 text-white shadow-lg ring-1 ring-brand-500/30' : 'text-slate-400 hover:bg-slate-700/80 hover:text-white'}`}
               >
                 {icon} {label}
                 {alert && <span className="absolute right-3 top-3 w-2 h-2 bg-red-500 rounded-full animate-pulse border-2 border-slate-900" />}
@@ -180,7 +180,13 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             </button>
           </div>
         )}
-        <Outlet />
+        <Suspense fallback={
+          <div className="flex items-center justify-center min-h-[300px]">
+            <Loader2 size={32} className="animate-spin text-slate-400" />
+          </div>
+        }>
+          <Outlet />
+        </Suspense>
         {syncState.status !== 'idle' && (
           <button
             onClick={() => onForcePush?.()}

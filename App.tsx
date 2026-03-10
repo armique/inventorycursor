@@ -1,26 +1,27 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useSearchParams, useNavigate } from 'react-router-dom';
 import { Cloud, CheckCircle2, Loader2, WifiOff, RefreshCw, X } from 'lucide-react';
 
 import StorefrontPage from './components/StorefrontPage';
 import PanelLayout from './components/PanelLayout';
-import Dashboard from './components/Dashboard';
-import CategoryAnalytics from './components/CategoryAnalytics';
-import CategorySuggestionsPage from './components/CategorySuggestionsPage';
-import InventoryList from './components/InventoryList';
-import ItemForm from './components/ItemForm';
-import BulkItemForm from './components/BulkItemForm';
-import SettingsPage from './components/SettingsPage';
-import SheetsImport from './components/SheetsImport';
-import ExpenseManager from './components/ExpenseManager';
-import TrashPage from './components/TrashPage';
-import PCBuilderWizard from './components/PCBuilderWizard';
-import PriceCheck from './components/PriceCheck';
 import QuotaMonitor from './components/QuotaMonitor';
-import StoreManagementPage from './components/StoreManagementPage';
-import LegalPage from './components/LegalPage';
-import MissingSpecsReport from './components/MissingSpecsReport';
-import InvoiceManager from './components/InvoiceManager';
+
+const Dashboard = lazy(() => import('./components/Dashboard'));
+const CategoryAnalytics = lazy(() => import('./components/CategoryAnalytics'));
+const CategorySuggestionsPage = lazy(() => import('./components/CategorySuggestionsPage'));
+const InventoryList = lazy(() => import('./components/InventoryList'));
+const ItemForm = lazy(() => import('./components/ItemForm'));
+const BulkItemForm = lazy(() => import('./components/BulkItemForm'));
+const SettingsPage = lazy(() => import('./components/SettingsPage'));
+const SheetsImport = lazy(() => import('./components/SheetsImport'));
+const ExpenseManager = lazy(() => import('./components/ExpenseManager'));
+const TrashPage = lazy(() => import('./components/TrashPage'));
+const PCBuilderWizard = lazy(() => import('./components/PCBuilderWizard'));
+const PriceCheck = lazy(() => import('./components/PriceCheck'));
+const StoreManagementPage = lazy(() => import('./components/StoreManagementPage'));
+const LegalPage = lazy(() => import('./components/LegalPage'));
+const MissingSpecsReport = lazy(() => import('./components/MissingSpecsReport'));
+const InvoiceManager = lazy(() => import('./components/InvoiceManager'));
 
 import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense } from './types';
 import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchFromCloud } from './services/firebaseService';
