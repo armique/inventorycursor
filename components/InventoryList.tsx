@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType } from '../types';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
@@ -158,6 +158,10 @@ const InventoryList: React.FC<Props> = ({
   const [hiddenColumnIds, setHiddenColumnIds] = useState<ColumnId[]>(() => loadState<ColumnId[]>('hidden_columns', []));
   const [showColumnsPanel, setShowColumnsPanel] = useState(false);
   const columnsPanelRef = useRef<HTMLDivElement>(null);
+
+  type ListDensity = 'comfortable' | 'compact';
+  const [listDensity, setListDensity] = useState<ListDensity>(() => loadState<ListDensity>('list_density', 'comfortable'));
+  useEffect(() => localStorage.setItem(`${persistenceKey}_list_density`, JSON.stringify(listDensity)), [listDensity, persistenceKey]);
 
   // -- INLINE EDITING STATE --
   const [editingCell, setEditingCell] = useState<{ itemId: string, field: ColumnId } | null>(null);
@@ -1905,6 +1909,14 @@ const InventoryList: React.FC<Props> = ({
             <div className="flex items-center gap-2">
                <button
                  type="button"
+                 onClick={() => setListDensity((d) => (d === 'compact' ? 'comfortable' : 'compact'))}
+                 className={`p-1.5 rounded-lg border flex items-center gap-1 ${listDensity === 'compact' ? 'bg-slate-900 text-white border-slate-900' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+                 title={listDensity === 'compact' ? 'Switch to comfortable view' : 'Compact view – denser list'}
+               >
+                 <List size={14} /> <span className="text-[10px] font-bold uppercase">Compact</span>
+               </button>
+               <button
+                 type="button"
                  onClick={() => exportInventoryToExcel(sortedItems)}
                  className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 flex items-center gap-1"
                  title="Export current view to Excel"
@@ -2070,7 +2082,12 @@ const InventoryList: React.FC<Props> = ({
         onScroll={handleScroll}
         className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-x-auto overflow-y-auto flex-1 custom-scrollbar min-h-0"
       >
-         <table className="w-full text-left border-collapse min-w-[1200px]">
+         <style>{`
+           [data-density="compact"] th, [data-density="compact"] td { padding: 0.375rem 0.5rem !important; }
+           [data-density="compact"] .text-sm { font-size: 0.7rem; }
+           [data-density="compact"] .text-xs { font-size: 0.65rem; }
+         `}</style>
+         <table className="w-full text-left border-collapse min-w-[1200px]" data-density={listDensity}>
             <thead className="sticky top-0 z-10 bg-white">
                <tr className="bg-slate-50/80 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-widest backdrop-blur-sm">
                   {visibleColumns.map(colId => (
