@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
-import { X, Euro, Calendar, CreditCard, Percent, Camera, FileText, Check, CheckCircle2, ShoppingBag, Landmark, Wallet, User, Globe, ChevronDown, Link as LinkIcon, MessageCircle, Image as ImageIcon, Hash, Upload } from 'lucide-react';
+import { X, Euro, Calendar, CreditCard, Percent, Camera, FileText, Check, CheckCircle2, ShoppingBag, Landmark, Wallet, User, Globe, ChevronDown, Link as LinkIcon, MessageCircle, Image as ImageIcon, Hash, Upload, Download } from 'lucide-react';
+import { fetchEbayOrder } from '../services/ebayService';
 import { InventoryItem, ItemStatus, PaymentType, CustomerInfo, Platform, TaxMode } from '../types';
 
 interface Props {
@@ -41,6 +42,36 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
     name: item.customer?.name || '',
     address: item.customer?.address || ''
   });
+  const [fetchEbayLoading, setFetchEbayLoading] = useState(false);
+  const [fetchEbayError, setFetchEbayError] = useState<string | null>(null);
+
+  const handleFetchFromEbay = async () => {
+    const id = ebayOrderId.trim();
+    if (!id) {
+      setFetchEbayError('Enter an order ID first');
+      return;
+    }
+    setFetchEbayError(null);
+    setFetchEbayLoading(true);
+    try {
+      const data = await fetchEbayOrder(id);
+      setEbayUsername(data.ebayUsername);
+      setEbayOrderId(data.ebayOrderId);
+      setCustomer(prev => ({
+        ...prev,
+        name: data.customer.name || prev.name,
+        address: data.customer.address || prev.address,
+        ...(data.customer.phone && { phone: data.customer.phone }),
+        ...(data.customer.email && { email: data.customer.email }),
+      }));
+      if (data.sellPrice != null) setSalePrice(String(data.sellPrice));
+      if (data.sellDate) setSaleDate(data.sellDate);
+    } catch (e: any) {
+      setFetchEbayError(e?.message || 'Failed to fetch order');
+    } finally {
+      setFetchEbayLoading(false);
+    }
+  };
 
   const handleChatImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -191,12 +222,26 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
                           <label className="text-[9px] font-black uppercase text-slate-400 ml-1 flex items-center gap-1"><Hash size={10}/> Order ID</label>
                           <input 
                              type="text" 
-                             placeholder="12-345-67"
+                             placeholder="12-34567-89012"
                              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
                              value={ebayOrderId}
-                             onChange={e => setEbayOrderId(e.target.value)}
+                             onChange={e => { setEbayOrderId(e.target.value); setFetchEbayError(null); }}
                           />
                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                       <button
+                          type="button"
+                          onClick={handleFetchFromEbay}
+                          disabled={fetchEbayLoading}
+                          className="flex items-center gap-2 px-3 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                       >
+                          <Download size={14}/>
+                          {fetchEbayLoading ? 'Importing…' : 'Import from eBay'}
+                       </button>
+                       {fetchEbayError && (
+                          <span className="text-xs text-red-600 font-medium">{fetchEbayError}</span>
+                       )}
                     </div>
                  </div>
               )}

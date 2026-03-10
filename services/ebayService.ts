@@ -99,3 +99,41 @@ export const createEbayDraft = async (item: any) => {
 
   return { sku, offerId: offerData.offerId };
 };
+
+/** Response shape from /api/ebay-order. */
+export interface EbayOrderData {
+  customer: { name: string; address: string; phone?: string; email?: string };
+  ebayUsername: string;
+  ebayOrderId: string;
+  sellPrice?: number;
+  sellDate?: string;
+}
+
+/** Fetch sold order from eBay Fulfillment API and return buyer + shipping address for SaleModal. */
+export const fetchEbayOrder = async (orderId: string): Promise<EbayOrderData> => {
+  const config = getEbayConfig();
+  if (!config?.token) {
+    throw new Error('eBay token not configured. Add your token in Settings.');
+  }
+  const res = await fetch('/api/ebay-order', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ orderId: orderId.trim(), token: config.token }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || `Failed to fetch order: ${res.status}`);
+  }
+  return {
+    customer: {
+      name: data.buyer?.fullName || '',
+      address: data.buyer?.address || '',
+      phone: data.buyer?.phone,
+      email: data.buyer?.email,
+    },
+    ebayUsername: data.buyer?.username || '',
+    ebayOrderId: data.orderId || orderId,
+    sellPrice: data.sellPrice,
+    sellDate: data.creationDate || undefined,
+  };
+};
