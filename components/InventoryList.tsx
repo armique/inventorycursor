@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
   Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List
 } from 'lucide-react';
@@ -115,6 +115,7 @@ const InventoryList: React.FC<Props> = ({
   persistenceKey = 'default_inv'
 }) => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   
   // -- PERSISTENT STATE LOADING --
   const loadState = <T,>(key: string, defaultVal: T): T => {
@@ -123,7 +124,10 @@ const InventoryList: React.FC<Props> = ({
     return defaultVal;
   };
 
-  const [searchTerm, setSearchTerm] = useState(() => loadState<string>('search', ''));
+  const [searchTerm, setSearchTerm] = useState(() => {
+    const q = searchParams.get('q');
+    return q != null ? q : loadState<string>('search', '');
+  });
   const [timeFilter, setTimeFilter] = useState<TimeFilter>(() => loadState<TimeFilter>('time', 'ALL'));
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => loadState<StatusFilter>('status_filter', 'ACTIVE'));
   const [categoryFilter, setCategoryFilter] = useState<string>(() => loadState<string>('category_filter', 'ALL'));
@@ -177,6 +181,12 @@ const InventoryList: React.FC<Props> = ({
   const [editValue, setEditValue] = useState<string | number>('');
   const [parsingSingleId, setParsingSingleId] = useState<string | null>(null);
   const rowClickTimeoutRef = useRef<number | null>(null);
+
+  // Sync search from URL ?q= (e.g. from global search)
+  useEffect(() => {
+    const q = searchParams.get('q');
+    if (q != null) setSearchTerm(q);
+  }, [searchParams]);
 
   // -- STATE PERSISTENCE EFFECTS --
   useEffect(() => localStorage.setItem(`${persistenceKey}_search`, JSON.stringify(searchTerm)), [searchTerm, persistenceKey]);

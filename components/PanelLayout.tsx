@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { signInWithGooglePopup, logOut } from '../services/firebaseService';
 import QuotaMonitor from './QuotaMonitor';
+import GlobalSearch from './GlobalSearch';
+import { InventoryItem, Expense, BusinessSettings } from '../types';
 
 interface SyncState {
   status: 'idle' | 'syncing' | 'success' | 'error';
@@ -24,9 +26,12 @@ interface PanelLayoutProps {
   onForcePush?: () => void;
   backupBannerDismissed?: boolean;
   onDismissBackupBanner?: () => void;
+  items?: InventoryItem[];
+  expenses?: Expense[];
+  businessSettings?: BusinessSettings;
 }
 
-const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, authReady = false, isAdmin = false, syncState = { status: 'idle', lastSynced: null }, onForcePush, backupBannerDismissed = true, onDismissBackupBanner }) => {
+const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, authReady = false, isAdmin = false, syncState = { status: 'idle', lastSynced: null }, onForcePush, backupBannerDismissed = true, onDismissBackupBanner, items = [], expenses = [], businessSettings = { companyName: '', ownerName: '', address: '', taxMode: 'SmallBusiness' } }) => {
   const location = useLocation();
   const [signingIn, setSigningIn] = React.useState(false);
 
@@ -118,10 +123,11 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     <div className="flex h-screen bg-slate-50 text-slate-900 font-sans">
       {/* DESKTOP SIDEBAR */}
       <aside className="w-64 bg-gradient-to-b from-slate-900 to-slate-800 text-white flex flex-col hidden md:flex border-r border-slate-700/50">
-        <div className="p-6">
+        <div className="p-6 space-y-4">
           <Link to="/panel/dashboard" className="text-xl font-display font-black tracking-tighter flex items-center gap-2 text-white hover:text-white">
             <Package className="text-brand-400" /> DeInventory
           </Link>
+          <GlobalSearch items={items} expenses={expenses} businessSettings={businessSettings} />
         </div>
         <nav className="flex-1 px-4 space-y-2 overflow-y-auto scrollbar-hide">
           {nav.map(({ to, icon, label, alert }) => {
@@ -144,6 +150,10 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
       </aside>
       {/* MAIN AREA */}
       <main className="flex-1 overflow-auto p-4 pb-20 md:p-8 md:pb-8 relative">
+        {/* Mobile global search (sidebar search hidden on mobile) */}
+        <div className="md:hidden mb-4">
+          <GlobalSearch items={items} expenses={expenses} businessSettings={businessSettings} />
+        </div>
         {isCloudEnabled && authUser && syncState.status !== 'idle' && (
           <div className="fixed bottom-4 left-4 z-[100]">
             <button

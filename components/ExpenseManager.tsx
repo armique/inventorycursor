@@ -1,10 +1,11 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Plus, Trash2, Calendar, Tag, CreditCard, Search, Wallet, 
   TrendingDown, TrendingUp, Filter, Receipt, ShoppingBag, 
   Wrench, Truck, Percent, Briefcase, X, Repeat, Sparkles, Edit3, Copy, Paperclip, FileText as FileTextIcon
 } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { Expense, ExpenseCategory, RecurringExpense } from '../types';
 import { uploadExpenseAttachment } from '../services/firebaseService';
 
@@ -42,8 +43,14 @@ const ExpenseManager: React.FC<Props> = ({
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isRecurringModalOpen, setIsRecurringModalOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchParams] = useSearchParams();
+  const [searchTerm, setSearchTerm] = useState(() => searchParams.get('q') ?? '');
   const [selectedCategory, setSelectedCategory] = useState<ExpenseCategory | 'ALL'>('ALL');
+
+  useEffect(() => {
+    const q = searchParams.get('q');
+    if (q != null) setSearchTerm(q);
+  }, [searchParams]);
   const [showRecurring, setShowRecurring] = useState(false);
 
   // Form State
@@ -72,7 +79,8 @@ const ExpenseManager: React.FC<Props> = ({
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter(e => {
-      const matchesSearch = e.description.toLowerCase().includes(searchTerm.toLowerCase());
+      const q = searchTerm.toLowerCase();
+      const matchesSearch = !q || e.description.toLowerCase().includes(q) || e.category.toLowerCase().includes(q);
       const matchesCat = selectedCategory === 'ALL' || e.category === selectedCategory;
       return matchesSearch && matchesCat;
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());

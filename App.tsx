@@ -768,6 +768,9 @@ const App: React.FC = () => {
                 localStorage.setItem('cloud_backup_banner_dismissed', '1');
                 setBackupBannerDismissed(true);
               }}
+              items={items}
+              expenses={expenses}
+              businessSettings={businessSettings}
             />
           }
         >
