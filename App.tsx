@@ -771,6 +771,7 @@ const App: React.FC = () => {
               items={items}
               expenses={expenses}
               businessSettings={businessSettings}
+              onUpdateItems={handleUpdate}
             />
           }
         >

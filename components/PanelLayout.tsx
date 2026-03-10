@@ -7,6 +7,7 @@ import {
 import { signInWithGooglePopup, logOut } from '../services/firebaseService';
 import QuotaMonitor from './QuotaMonitor';
 import GlobalSearch from './GlobalSearch';
+import EbaySyncBanner from './EbaySyncBanner';
 import { InventoryItem, Expense, BusinessSettings } from '../types';
 
 interface SyncState {
@@ -29,9 +30,10 @@ interface PanelLayoutProps {
   items?: InventoryItem[];
   expenses?: Expense[];
   businessSettings?: BusinessSettings;
+  onUpdateItems?: (items: InventoryItem[], deleteIds?: string[]) => void;
 }
 
-const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, authReady = false, isAdmin = false, syncState = { status: 'idle', lastSynced: null }, onForcePush, backupBannerDismissed = true, onDismissBackupBanner, items = [], expenses = [], businessSettings = { companyName: '', ownerName: '', address: '', taxMode: 'SmallBusiness' } }) => {
+const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, authReady = false, isAdmin = false, syncState = { status: 'idle', lastSynced: null }, onForcePush, backupBannerDismissed = true, onDismissBackupBanner, items = [], expenses = [], businessSettings = { companyName: '', ownerName: '', address: '', taxMode: 'SmallBusiness' }, onUpdateItems }) => {
   const location = useLocation();
   const [signingIn, setSigningIn] = React.useState(false);
 
@@ -150,6 +152,10 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
       </aside>
       {/* MAIN AREA */}
       <main className="flex-1 overflow-auto p-4 pb-20 md:p-8 md:pb-8 relative">
+        {/* eBay sync on load */}
+        {onUpdateItems && (
+          <EbaySyncBanner items={items} onUpdate={onUpdateItems} />
+        )}
         {/* Mobile global search (sidebar search hidden on mobile) */}
         <div className="md:hidden mb-4">
           <GlobalSearch items={items} expenses={expenses} businessSettings={businessSettings} />

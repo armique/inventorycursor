@@ -100,6 +100,32 @@ export const createEbayDraft = async (item: any) => {
   return { sku, offerId: offerData.offerId };
 };
 
+/** Single order from listEbayOrders. */
+export interface EbayOrderSummary {
+  orderId: string;
+  creationDate: string | null;
+  buyer: { username: string; fullName?: string; address?: string; email?: string; phone?: string };
+  lineItems: { sku: string | null; title: string; lineItemCost: number | null }[];
+}
+
+/** List orders from eBay Fulfillment API (last 7 days by default). */
+export const listEbayOrders = async (fromDate?: string, toDate?: string): Promise<EbayOrderSummary[]> => {
+  const config = getEbayConfig();
+  if (!config?.token) {
+    throw new Error('eBay token not configured. Add your token in Settings.');
+  }
+  const res = await fetch('/api/ebay-orders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: config.token, fromDate, toDate }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || `Failed to fetch orders: ${res.status}`);
+  }
+  return data.orders || [];
+};
+
 /** Response shape from /api/ebay-order. */
 export interface EbayOrderData {
   customer: { name: string; address: string; phone?: string; email?: string };
