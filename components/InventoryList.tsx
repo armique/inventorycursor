@@ -21,6 +21,7 @@ import RetroBundleModal from './RetroBundleModal';
 import EditItemModal from './EditItemModal';
 import ItemForm from './ItemForm';
 import ItemThumbnail from './ItemThumbnail';
+import InvoiceView from './InvoiceView';
 import InventoryAISpecsPanel from './InventoryAISpecsPanel';
 import { generateItemSpecs } from '../services/specsAI';
 
@@ -193,6 +194,7 @@ const InventoryList: React.FC<Props> = ({
   const [itemToEdit, setItemToEdit] = useState<InventoryItem | null>(null); 
   
   const [bundleToDismantle, setBundleToDismantle] = useState<InventoryItem | null>(null);
+  const [invoiceViewItem, setInvoiceViewItem] = useState<InventoryItem | null>(null);
 
   const [showBulkSalesEdit, setShowBulkSalesEdit] = useState(false);
   const [showBulkCategoryEdit, setShowBulkCategoryEdit] = useState(false);
@@ -1583,6 +1585,9 @@ const InventoryList: React.FC<Props> = ({
               )}
               {item.status === ItemStatus.IN_STOCK && <button onClick={(e) => { e.stopPropagation(); setItemToSell(item); }} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded" title="Mark Sold"><ShoppingBag size={16}/></button>}
               {item.status === ItemStatus.IN_STOCK && <button onClick={(e) => { e.stopPropagation(); setItemToTrade(item); }} className="p-2 text-purple-600 hover:bg-purple-50 rounded" title="Trade"><ArrowRightLeft size={16}/></button>}
+              {(item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED) && (
+                <button onClick={(e) => { e.stopPropagation(); setInvoiceViewItem(item); }} className="p-2 text-blue-600 hover:bg-blue-50 rounded" title="Generate Invoice"><FileText size={16}/></button>
+              )}
               {item.status === ItemStatus.SOLD && (
                 <button onClick={(e) => { e.stopPropagation(); setItemToReturn(item); }} className="p-2 text-amber-600 hover:bg-amber-50 rounded" title="Mark Unsold / Return"><RotateCcw size={16}/></button>
               )}
@@ -2343,6 +2348,13 @@ const InventoryList: React.FC<Props> = ({
                setItemToReturn(null);
             }}
             onClose={() => setItemToReturn(null)}
+         />
+      )}
+      {invoiceViewItem && (
+         <InvoiceView
+            item={invoiceViewItem}
+            business={businessSettings}
+            onClose={() => setInvoiceViewItem(null)}
          />
       )}
 

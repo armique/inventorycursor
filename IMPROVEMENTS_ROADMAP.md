@@ -7,7 +7,7 @@
 - **eBay order import** — Fetch sold orders from eBay API, auto-fill buyer + address
 - **SMS/Email notifications** — Alert when store inquiry arrives or item sells
 - **Stock alerts** — Notify when items in composition run low
-- **Quick actions from inventory** — "Generate invoice" button on sold item row
+- [x] **Quick actions from inventory** — "Generate invoice" button on sold item row — DONE
 
 ### Medium priority
 - **Export to Kleinanzeigen** — One-click export to CSV matching Kleinanzeigen template
