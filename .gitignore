@@ -15,6 +15,11 @@ dist-ssr
 .env.local
 .env.*.local
 
+# Generated reports and backups (sensitive)
+tax-report-*.csv
+backup.json
+deinventory-backup-*.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
