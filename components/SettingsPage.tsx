@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
-  Cloud, Building2, Layers, Wrench, 
+  Cloud, Building2, Layers, Wrench, ShoppingBag,
   CheckCircle2, AlertTriangle, ArrowUp, RefreshCw, Save, LogIn, LogOut, User as UserIcon, Download, Upload, FileText, Github, History, ArchiveRestore, Rocket, Copy, ExternalLink, Plus, FolderPlus
 } from 'lucide-react';
 import { fixItemsEncoding } from '../services/encodingFix';
@@ -56,11 +56,24 @@ interface Props {
 
 const SETTINGS_TABS = [
   { id: 'BUSINESS', label: 'Business', icon: <Building2 size={18}/> },
+  { id: 'EBAY', label: 'eBay API', icon: <ShoppingBag size={18}/> },
   { id: 'CLOUD', label: 'Cloud Sync', icon: <Cloud size={18}/> },
   { id: 'DEPLOY', label: 'Deploy to Vercel', icon: <Rocket size={18}/> },
   { id: 'CATEGORIES', label: 'Categories', icon: <Layers size={18}/> },
   { id: 'SYSTEM', label: 'System', icon: <Wrench size={18}/> },
 ] as const;
+
+const getEbayConfig = () => {
+  try {
+    const saved = localStorage.getItem('ebay_config');
+    if (saved) return JSON.parse(saved);
+  } catch (_) {}
+  return { token: '' };
+};
+
+const saveEbayConfig = (token: string) => {
+  localStorage.setItem('ebay_config', JSON.stringify({ token: token.trim() }));
+};
 
 const GITHUB_APP_REPO_URL = 'https://github.com/armique/inventorycursor';
 
@@ -97,6 +110,7 @@ const SettingsPage: React.FC<Props> = ({
 
   const [githubRepo, setGitHubRepo] = useState(() => getStoredConfig()?.repo || 'armique/inventorycursor');
   const [githubTokenInput, setGitHubTokenInput] = useState('');
+  const [ebayTokenInput, setEbayTokenInput] = useState('');
   const [githubSyncLoading, setGitHubSyncLoading] = useState(false);
   const [githubCommits, setGitHubCommits] = useState<BackupCommit[]>([]);
   const [githubCommitsLoading, setGitHubCommitsLoading] = useState(false);
@@ -577,6 +591,42 @@ const SettingsPage: React.FC<Props> = ({
                    <InputField label="Owner Name" value={businessSettings.ownerName} onChange={v => onBusinessSettingsChange({...businessSettings, ownerName: v})} placeholder="John Doe" />
                    <InputField label="Address" value={businessSettings.address} onChange={v => onBusinessSettingsChange({...businessSettings, address: v})} placeholder="123 Street, City" />
                    <InputField label="Phone" value={businessSettings.phone} onChange={v => onBusinessSettingsChange({...businessSettings, phone: v})} placeholder="+1 234 567" />
+                </div>
+             </div>
+          )}
+
+          {activeTab === 'EBAY' && (
+             <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
+                <h3 className="text-xl font-black text-slate-900 flex items-center gap-2"><ShoppingBag size={24}/> eBay API</h3>
+                <p className="text-sm text-slate-500">
+                   Add your eBay OAuth access token to enable order import. When you mark an item sold on ebay.de, you can fetch buyer and shipping details automatically by entering the order ID.
+                </p>
+                <div className="space-y-2">
+                   <label className="text-[10px] font-black uppercase text-slate-400 ml-1">OAuth Access Token</label>
+                   <input
+                      type="password"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm outline-none focus:border-slate-900"
+                      placeholder={getEbayConfig()?.token ? '••••••••••••••••' : 'v^1.1#... (eBay OAuth token)'}
+                      value={ebayTokenInput}
+                      onChange={e => setEbayTokenInput(e.target.value)}
+                   />
+                   <p className="text-xs text-slate-500">
+                      eBay Developer Account → Create OAuth application → User Token with <code className="bg-slate-100 px-1 rounded">sell.fulfillment</code> or <code className="bg-slate-100 px-1 rounded">sell.fulfillment.readonly</code> scope.
+                   </p>
+                </div>
+                <div className="flex items-center gap-3">
+                   <button
+                      type="button"
+                      onClick={() => { saveEbayConfig(ebayTokenInput || getEbayConfig()?.token || ''); setEbayTokenInput(''); showToast('eBay token saved', 'success'); }}
+                      className="px-5 py-2.5 bg-slate-900 text-white rounded-xl font-bold text-xs uppercase hover:bg-slate-800 flex items-center gap-2"
+                   >
+                      <Save size={16}/> Save token
+                   </button>
+                   {getEbayConfig()?.token && (
+                      <span className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-800 rounded-xl text-sm font-bold">
+                         <CheckCircle2 size={16}/> Token configured
+                      </span>
+                   )}
                 </div>
              </div>
           )}
