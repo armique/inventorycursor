@@ -1489,6 +1489,37 @@ const InventoryList: React.FC<Props> = ({
           </td>
         );
       case 'buyDate':
+        if ((item.isPC || item.isBundle)) {
+          return (
+            <td key={id} className="p-5 text-right text-xs font-bold text-slate-300" style={style} title="Bundles/PCs don't have buy dates. Expand to see component buy dates.">
+              -
+            </td>
+          );
+        }
+        return (
+           <td 
+             key={id} 
+             className="p-5 text-right text-xs font-bold text-slate-500 cursor-pointer hover:bg-blue-50/30 transition-colors" 
+             style={style}
+             title="Double click to edit"
+             onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, id, (item as any)[id] || ''); }}
+           >
+              {editingCell?.itemId === item.id && editingCell?.field === id ? (
+                 <input 
+                   autoFocus
+                   type="date"
+                   className="w-24 bg-white border-2 border-blue-500 rounded-lg px-2 py-1 text-right outline-none text-xs font-bold shadow-lg"
+                   value={editValue}
+                   onChange={e => setEditValue(e.target.value)}
+                   onBlur={saveEdit}
+                   onKeyDown={e => { if(e.key === 'Enter') saveEdit(); if(e.key === 'Escape') setEditingCell(null); }}
+                   onClick={e => e.stopPropagation()}
+                 />
+              ) : (
+                 (item as any)[id] || '-'
+              )}
+           </td>
+        );
       case 'sellDate': {
         const isSoldOrTraded = item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED;
         const hasBuyerData = item.customer?.name || item.ebayUsername || item.ebayOrderId;
