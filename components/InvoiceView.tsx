@@ -85,6 +85,13 @@ const InvoiceView: React.FC<Props> = ({ item, business, onClose }) => {
               <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 print:bg-transparent print:border-none print:p-0">
                  <p className="text-sm font-black text-slate-900">{item.customer?.name || 'Kunde'}</p>
                  <p className="text-xs text-slate-500 whitespace-pre-line mt-1">{item.customer?.address || 'Keine Adresse hinterlegt'}</p>
+                 {(item.ebayUsername || item.ebayOrderId) && (
+                   <p className="text-[10px] text-slate-500 mt-3">
+                     {[item.ebayUsername && `eBay: ${item.ebayUsername}`, item.ebayOrderId && `Bestellnr.: ${item.ebayOrderId}`]
+                       .filter(Boolean)
+                       .join(' • ')}
+                   </p>
+                 )}
               </div>
            </div>
 

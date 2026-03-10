@@ -29,6 +29,11 @@ const InvoiceGenerator: React.FC<Props> = ({ items, business, type, onClose }) =
 
   const [activeEditField, setActiveEditField] = useState<string | null>(null);
 
+  // Extract primary marketplace reference (eBay username / order ID) from selected items
+  const firstWithEbay = items.find(i => i.ebayUsername || i.ebayOrderId);
+  const ebayUsername = firstWithEbay?.ebayUsername;
+  const ebayOrderId = firstWithEbay?.ebayOrderId;
+
   // Math Logic for VAT Extraction
   // Stored price is always considered GROSS (Total)
   const totalGross = items.reduce((acc, i) => acc + (i.sellPrice || 0), 0);
@@ -165,6 +170,20 @@ const InvoiceGenerator: React.FC<Props> = ({ items, business, type, onClose }) =
                        <Phone size={10} className="text-slate-300" />
                        {renderEditable('cust-phone', customer.phone || 'Telefon hinzufügen', v => setCustomer({...customer, phone: v}))}
                     </div>
+                    {(ebayUsername || ebayOrderId) && (
+                      <div className="mt-4 text-[10px] text-slate-500 space-y-0.5">
+                        <p className="font-black uppercase tracking-widest text-slate-400 flex items-center gap-1">
+                          <Info size={10} className="text-slate-400" />
+                          Online-Bestellung
+                        </p>
+                        {ebayUsername && (
+                          <p>eBay-Benutzer: <span className="font-semibold text-slate-700">{ebayUsername}</span></p>
+                        )}
+                        {ebayOrderId && (
+                          <p>Bestellnummer: <span className="font-mono text-slate-700">{ebayOrderId}</span></p>
+                        )}
+                      </div>
+                    )}
                  </div>
               </div>
 
