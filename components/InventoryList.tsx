@@ -1169,6 +1169,26 @@ const InventoryList: React.FC<Props> = ({
                          <span className="text-[9px] text-slate-500 font-medium">({childItems.length} items)</span>
                       )}
                    </div>
+                   {item.status === ItemStatus.SOLD && (item.customer?.name || item.ebayUsername || item.ebayOrderId) && (
+                      <p
+                        className="text-[9px] text-slate-500 font-medium mt-1 flex items-center gap-1"
+                        title={[
+                          item.customer?.name ? `Buyer: ${item.customer.name}` : null,
+                          item.customer?.address ? `Address: ${item.customer.address}` : null,
+                          item.ebayUsername ? `eBay: ${item.ebayUsername}` : null,
+                          item.ebayOrderId ? `Order ID: ${item.ebayOrderId}` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(' • ')}
+                      >
+                        <Info size={10} className="text-slate-400" />
+                        <span className="truncate">
+                          {item.customer?.name || 'Buyer'}
+                          {item.ebayUsername ? ` · eBay: ${item.ebayUsername}` : ''}
+                          {item.ebayOrderId ? ` · #${item.ebayOrderId}` : ''}
+                        </span>
+                      </p>
+                   )}
                    {item.specs && Object.keys(item.specs).length > 0 && (
                       <p className="text-[10px] text-slate-500 font-medium mt-1 truncate" title={Object.entries(item.specs).map(([k, v]) => `${k}: ${v}`).join(' • ')}>
                          {Object.entries(item.specs).slice(0, 4).map(([k, v]) => `${k}: ${v}`).join(' · ')}
