@@ -1,8 +1,61 @@
-
-import React, { useState, useMemo } from 'react';
-import { FileText, Check, Search, Receipt, ShoppingCart, User, MapPin, Printer, Info, CreditCard, Square, CheckSquare, Minus, CheckCircle } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { FileText, Check, Search, Receipt, Calendar, Info, CreditCard, Square, CheckSquare, Minus, CheckCircle } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings } from '../types';
 import InvoiceGenerator from './InvoiceGenerator';
+
+type TimeFilter = 'ALL' | 'THIS_WEEK' | 'LAST_WEEK' | 'THIS_MONTH' | 'LAST_MONTH' | 'LAST_30' | 'LAST_90' | 'THIS_YEAR' | 'LAST_YEAR';
+
+function getDateRangeForFilter(timeFilter: TimeFilter): { start: Date; end: Date } {
+  const now = new Date();
+  now.setHours(23, 59, 59, 999);
+  let start = new Date(0);
+  let end = new Date(now);
+
+  switch (timeFilter) {
+    case 'THIS_WEEK':
+      const day = now.getDay() || 7;
+      const weekStart = new Date(now);
+      if (day !== 1) weekStart.setDate(now.getDate() - (day - 1));
+      weekStart.setHours(0, 0, 0, 0);
+      start = weekStart;
+      break;
+    case 'LAST_WEEK':
+      start = new Date(now);
+      start.setDate(now.getDate() - 7 - (now.getDay() || 7) + 1);
+      start.setHours(0, 0, 0, 0);
+      end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      end.setHours(23, 59, 59, 999);
+      break;
+    case 'THIS_MONTH':
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      break;
+    case 'LAST_MONTH':
+      start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      end = new Date(now.getFullYear(), now.getMonth(), 0);
+      end.setHours(23, 59, 59, 999);
+      break;
+    case 'LAST_30':
+      start = new Date(now);
+      start.setDate(now.getDate() - 30);
+      break;
+    case 'LAST_90':
+      start = new Date(now);
+      start.setDate(now.getDate() - 90);
+      break;
+    case 'THIS_YEAR':
+      start = new Date(now.getFullYear(), 0, 1);
+      break;
+    case 'LAST_YEAR':
+      start = new Date(now.getFullYear() - 1, 0, 1);
+      end = new Date(now.getFullYear() - 1, 11, 31);
+      end.setHours(23, 59, 59, 999);
+      break;
+    default:
+      break;
+  }
+  return { start, end };
+}
 
 interface Props {
   items: InventoryItem[];
@@ -11,16 +64,37 @@ interface Props {
 
 const InvoiceManager: React.FC<Props> = ({ items, businessSettings }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>(() => {
+    const saved = localStorage.getItem('invoice_manager_time_filter');
+    return (saved as TimeFilter) || 'ALL';
+  });
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showGenerator, setShowGenerator] = useState(false);
   const [invoiceType, setInvoiceType] = useState<'FINAL' | 'PAYMENT_REQUEST'>('FINAL');
 
+  useEffect(() => {
+    localStorage.setItem('invoice_manager_time_filter', timeFilter);
+  }, [timeFilter]);
+
+  const dateRange = useMemo(() => getDateRangeForFilter(timeFilter), [timeFilter]);
+
   const soldItems = useMemo(() => {
-    return items.filter(i => 
-      i.status === ItemStatus.SOLD && 
-      i.name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [items, searchTerm]);
+    return items.filter(i => {
+      if (i.status !== ItemStatus.SOLD && i.status !== ItemStatus.TRADED) return false;
+      if (!i.name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+      if (timeFilter !== 'ALL') {
+        const dateStr = i.sellDate;
+        if (!dateStr) return false;
+        const itemDate = new Date(dateStr);
+        if (itemDate < dateRange.start || itemDate > dateRange.end) return false;
+      }
+      return true;
+    }).sort((a, b) => {
+      const da = a.sellDate || '';
+      const db = b.sellDate || '';
+      return db.localeCompare(da);
+    });
+  }, [items, searchTerm, timeFilter, dateRange]);
 
   const business = businessSettings;
 
@@ -66,6 +140,24 @@ const InvoiceManager: React.FC<Props> = ({ items, businessSettings }) => {
                      value={searchTerm}
                      onChange={e => setSearchTerm(e.target.value)}
                    />
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                   <Calendar size={18} className="text-slate-400 shrink-0" />
+                   <select
+                     value={timeFilter}
+                     onChange={e => setTimeFilter(e.target.value as TimeFilter)}
+                     className="px-4 py-4 rounded-2xl bg-slate-50 border border-slate-100 font-bold text-sm text-slate-700 outline-none focus:bg-white focus:border-slate-300 min-w-[160px]"
+                   >
+                     <option value="ALL">All time</option>
+                     <option value="THIS_WEEK">This week</option>
+                     <option value="LAST_WEEK">Last week</option>
+                     <option value="THIS_MONTH">This month</option>
+                     <option value="LAST_MONTH">Last month</option>
+                     <option value="LAST_30">Last 30 days</option>
+                     <option value="LAST_90">Last 90 days</option>
+                     <option value="THIS_YEAR">This year</option>
+                     <option value="LAST_YEAR">Last year</option>
+                   </select>
                 </div>
                 <button 
                   onClick={handleSelectAll}
