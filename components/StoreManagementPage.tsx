@@ -157,11 +157,20 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
   const visibleCount = storeVisibleItems.filter((i) => i.storeVisible !== false).length;
   const onSaleCount = storeVisibleItems.filter((i) => i.storeVisible !== false && i.storeOnSale).length;
 
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'visible' | 'hidden'>('all');
-  const [saleFilter, setSaleFilter] = useState<'all' | 'sale' | 'regular'>('all');
-  const [categoryFilter, setCategoryFilter] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<'recent' | 'priceAsc' | 'priceDesc' | 'nameAsc'>('recent');
+  const [search, setSearch] = useState(() => localStorage.getItem('store_mgmt_search') || '');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'visible' | 'hidden'>(() => {
+    const s = localStorage.getItem('store_mgmt_status_filter') as 'all' | 'visible' | 'hidden' | null;
+    return s || 'all';
+  });
+  const [saleFilter, setSaleFilter] = useState<'all' | 'sale' | 'regular'>(() => {
+    const s = localStorage.getItem('store_mgmt_sale_filter') as 'all' | 'sale' | 'regular' | null;
+    return s || 'all';
+  });
+  const [categoryFilter, setCategoryFilter] = useState<string>(() => localStorage.getItem('store_mgmt_category_filter') || 'all');
+  const [sortBy, setSortBy] = useState<'recent' | 'priceAsc' | 'priceDesc' | 'nameAsc'>(() => {
+    const s = localStorage.getItem('store_mgmt_sort_by') as 'recent' | 'priceAsc' | 'priceDesc' | 'nameAsc' | null;
+    return s || 'recent';
+  });
 
   const filteredItems = storeVisibleItems
     .filter((item) => {
@@ -185,6 +194,12 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
       if (sortBy === 'nameAsc') return a.name.localeCompare(b.name);
       return 0;
     });
+
+  useEffect(() => { localStorage.setItem('store_mgmt_search', search); }, [search]);
+  useEffect(() => { localStorage.setItem('store_mgmt_status_filter', statusFilter); }, [statusFilter]);
+  useEffect(() => { localStorage.setItem('store_mgmt_sale_filter', saleFilter); }, [saleFilter]);
+  useEffect(() => { localStorage.setItem('store_mgmt_category_filter', categoryFilter); }, [categoryFilter]);
+  useEffect(() => { localStorage.setItem('store_mgmt_sort_by', sortBy); }, [sortBy]);
 
   return (
     <div className="space-y-8">

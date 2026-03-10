@@ -33,9 +33,12 @@ interface Task {
 }
 
 const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalChange, businessSettings, categoryFields = {} }) => {
-  const [timeFilter, setTimeFilter] = useState<string>('ALL');
-  const [customStart, setCustomStart] = useState('');
-  const [customEnd, setCustomEnd] = useState('');
+  const [timeFilter, setTimeFilter] = useState<string>(() => {
+    const saved = localStorage.getItem('dashboard_time_filter');
+    return saved || 'ALL';
+  });
+  const [customStart, setCustomStart] = useState(() => localStorage.getItem('dashboard_custom_start') || '');
+  const [customEnd, setCustomEnd] = useState(() => localStorage.getItem('dashboard_custom_end') || '');
   const [dayDetailModal, setDayDetailModal] = useState<{ dayLabel: string; dateStr: string; items: InventoryItem[] } | null>(null);
   
   // Goal State managed via props now
@@ -89,6 +92,16 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
   useEffect(() => {
     localStorage.setItem('dashboard_tasks', JSON.stringify(tasks));
   }, [tasks]);
+
+  useEffect(() => {
+    localStorage.setItem('dashboard_time_filter', timeFilter);
+  }, [timeFilter]);
+  useEffect(() => {
+    localStorage.setItem('dashboard_custom_start', customStart);
+  }, [customStart]);
+  useEffect(() => {
+    localStorage.setItem('dashboard_custom_end', customEnd);
+  }, [customEnd]);
 
   const handleAddTask = (e: React.FormEvent) => {
     e.preventDefault();

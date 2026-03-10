@@ -44,6 +44,7 @@
 - [ ] **Retry logic** — Exponential backoff for failed writes
 
 ### Misc
+- [x] **Filters persistence** — Keep filters when switching tabs or leaving page — DONE
 - [ ] **Extract date range logic** — Shared `getDateRangeForFilter()` used by InvoiceManager + InventoryList
 - [ ] **Shared types** — Ensure `TimeFilter` is defined once
 

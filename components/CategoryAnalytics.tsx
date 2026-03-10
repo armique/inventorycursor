@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { BarChart3, TrendingUp, Clock, Package, Euro, Percent, ChevronDown, ChevronRight } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings } from '../types';
 
@@ -46,9 +46,22 @@ export interface CategoryStat {
 
 const CategoryAnalytics: React.FC<Props> = ({ items, businessSettings }) => {
   const taxMode = businessSettings?.taxMode || 'SmallBusiness';
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>('ALL');
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>(() => {
+    const saved = localStorage.getItem('category_analytics_time_filter') as TimeFilter | null;
+    return saved || 'ALL';
+  });
   const [expandCategory, setExpandCategory] = useState<string | null>(null);
-  const [sortBy, setSortBy] = useState<'profit' | 'count' | 'margin' | 'days'>('profit');
+  const [sortBy, setSortBy] = useState<'profit' | 'count' | 'margin' | 'days'>(() => {
+    const saved = localStorage.getItem('category_analytics_sort_by') as 'profit' | 'count' | 'margin' | 'days' | null;
+    return saved || 'profit';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('category_analytics_time_filter', timeFilter);
+  }, [timeFilter]);
+  useEffect(() => {
+    localStorage.setItem('category_analytics_sort_by', sortBy);
+  }, [sortBy]);
 
   const soldItems = useMemo(() => {
     // Only count atomic items. PC builds / Bundles are containers and their economics

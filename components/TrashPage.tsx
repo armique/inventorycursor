@@ -26,7 +26,7 @@ const DEFAULT_WIDTHS: Record<string, number> = {
 const TRASH_SORT_KEY = 'trash_sort_config';
 
 const TrashPage: React.FC<Props> = ({ items, onRestore, onPermanentDelete }) => {
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(() => localStorage.getItem('trash_search') || '');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => (localStorage.getItem('trash_view_mode') as any) || 'grid');
   
@@ -55,6 +55,7 @@ const TrashPage: React.FC<Props> = ({ items, onRestore, onPermanentDelete }) => 
   const resizingRef = useRef<{ col: string; startX: number; startWidth: number } | null>(null);
 
   useEffect(() => localStorage.setItem('trash_view_mode', viewMode), [viewMode]);
+  useEffect(() => localStorage.setItem('trash_search', searchTerm), [searchTerm]);
   useEffect(() => localStorage.setItem('trash_column_widths', JSON.stringify(columnWidths)), [columnWidths]);
   
   // Save Sort Config Effect
