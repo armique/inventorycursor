@@ -1,5 +1,6 @@
 /**
  * Export eBay seller orders (from a start year, default 2026) into a new Google Sheet.
+ * (No API? Use your logged-in browser instead: `npm run ebay:browser-export`.)
  *
  * Prerequisites:
  * 1) eBay: User OAuth access token with scope sell.fulfillment or sell.fulfillment.readonly

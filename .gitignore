@@ -34,3 +34,5 @@ deinventory-backup-*.json
 # Script secrets (eBay / Google Sheets export)
 scripts/.env.ebay-sheets
 scripts/secrets/
+scripts/output/
+scripts/.env.browser-scrape
