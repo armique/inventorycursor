@@ -1050,6 +1050,59 @@ const InventoryList: React.FC<Props> = ({
     navigate('/panel/builder', { state: { initialParts: validItems } });
   };
 
+  const handleCreateLotBundleFromSelection = () => {
+    const selectedItemsList = items.filter((i) => selectedIds.includes(i.id));
+    if (selectedItemsList.length < 2) {
+      alert('Select at least 2 items to create a lot bundle.');
+      return;
+    }
+
+    const blocked = selectedItemsList.filter((i) => i.parentContainerId || i.isBundle || i.isPC);
+    if (blocked.length > 0) {
+      alert('Some selected items are already inside another bundle/PC or are containers. Please select standalone items only.');
+      return;
+    }
+
+    const invalidStatus = selectedItemsList.filter(
+      (i) => i.status !== ItemStatus.IN_STOCK && i.status !== ItemStatus.ORDERED
+    );
+    if (invalidStatus.length > 0) {
+      alert('Lot bundle can only be created from In Stock / Ordered items.');
+      return;
+    }
+
+    const suggested = `Lot Bundle (${selectedItemsList.length} items)`;
+    const bundleName = (window.prompt('Lot bundle name:', suggested) || '').trim() || suggested;
+    const ts = Date.now();
+    const bundleId = `bundle-lot-${ts}`;
+    const totalBuy = selectedItemsList.reduce((sum, i) => sum + Number(i.buyPrice || 0), 0);
+
+    const bundle: InventoryItem = {
+      id: bundleId,
+      name: bundleName,
+      category: 'Bundle',
+      subCategory: 'Lot Bundle',
+      status: ItemStatus.IN_STOCK,
+      buyPrice: Math.round(totalBuy * 100) / 100,
+      buyDate: new Date().toISOString().slice(0, 10),
+      isBundle: true,
+      componentIds: selectedItemsList.map((i) => i.id),
+      comment1: `Generic lot bundle (${selectedItemsList.length} items).`,
+      comment2: selectedItemsList.map((i) => `- ${i.name}`).join('\n').slice(0, 2000),
+      imageUrl: selectedItemsList.find((i) => i.imageUrl)?.imageUrl,
+      imageUrls: selectedItemsList.find((i) => i.imageUrls?.length)?.imageUrls,
+    };
+
+    const updates: InventoryItem[] = selectedItemsList.map((i) => ({
+      ...i,
+      status: ItemStatus.IN_COMPOSITION,
+      parentContainerId: bundleId,
+    }));
+
+    onUpdate([bundle, ...updates]);
+    setSelectedIds([]);
+  };
+
   const handleCreateRetroBundle = (bundle: InventoryItem, updatedComponents: InventoryItem[]) => {
      onUpdate([bundle, ...updatedComponents]);
      setShowRetroBundle(false);
@@ -2332,6 +2385,12 @@ const InventoryList: React.FC<Props> = ({
                  className="bg-white text-slate-900 px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-slate-100 transition-all"
                >
                  <Monitor size={16}/> Compose Bundle
+               </button>
+               <button
+                 onClick={handleCreateLotBundleFromSelection}
+                 className="bg-violet-600 text-white px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-violet-700 transition-all"
+               >
+                 <Package size={16}/> Create Lot Bundle
                </button>
                
                <button 
