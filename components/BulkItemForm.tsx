@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Save, Plus, Trash2, Calendar, Globe, CreditCard, 
@@ -69,6 +69,36 @@ interface DraftItem {
   isDefective?: boolean;
 }
 
+type CostSplitMode = 'EQUAL' | 'SMART';
+
+function estimateDraftWeight(item: DraftItem): number {
+  const sub = (item.subCategory || '').toLowerCase();
+  const name = (item.name || '').toLowerCase();
+  const bySub: Record<string, number> = {
+    'graphics cards': 6.0,
+    'processors': 4.2,
+    'motherboards': 2.6,
+    'ram': 1.8,
+    'storage (ssd/hdd)': 1.6,
+    'power supplies': 1.4,
+    'cases': 1.1,
+    'cooling': 1.0,
+    'monitors': 1.7,
+    'gaming laptop': 5.0,
+    'consoles': 3.2,
+  };
+  let w = bySub[sub] ?? 1.0;
+
+  // Lightweight "smart" bumps by model/tier hints in the title.
+  if (/(rtx|radeon|rx\s?\d{4,5}|gtx)/i.test(name)) w *= 1.35;
+  if (/(i9|i7|ryzen\s?9|ryzen\s?7)/i.test(name)) w *= 1.2;
+  if (/(4090|5090|4080|5080|7900\s?xtx)/i.test(name)) w *= 1.35;
+  if (/(64gb|48gb|32gb|2tb|4tb)/i.test(name)) w *= 1.1;
+  if (item.isDefective) w *= 0.6;
+
+  return Math.max(0.3, w);
+}
+
 const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
   const navigate = useNavigate();
   const aiAvailable = !!getSpecsAIProvider();
@@ -106,6 +136,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
   const [newNote, setNewNote] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [newDefective, setNewDefective] = useState(false);
+  const [costSplitMode, setCostSplitMode] = useState<CostSplitMode>('EQUAL');
   const [itemImageUrls, setItemImageUrls] = useState<string[]>([]);
   const [imageUrlInput, setImageUrlInput] = useState('');
 
@@ -125,13 +156,36 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
   // Calculations
   const allocatedSum = items.reduce((sum, item) => sum + (item.manualCost !== undefined ? item.manualCost : 0), 0);
   const unallocatedCost = Math.max(0, totalCost - allocatedSum);
-  const itemsWithoutManualCost = items.filter(i => i.manualCost === undefined).length;
-  
-  // The logic: 
-  // 1. Sum up all items with manualCost.
-  // 2. Subtract that from totalCost.
-  // 3. Divide remainder by count of items WITHOUT manualCost.
-  const autoSplitValue = itemsWithoutManualCost > 0 ? (unallocatedCost / itemsWithoutManualCost) : 0;
+  const autoCostsById = useMemo(() => {
+    const withoutManual = items.filter((i) => i.manualCost === undefined);
+    if (withoutManual.length === 0 || unallocatedCost <= 0) return {} as Record<string, number>;
+
+    if (costSplitMode === 'EQUAL') {
+      const each = unallocatedCost / withoutManual.length;
+      return Object.fromEntries(withoutManual.map((i) => [i.id, each]));
+    }
+
+    const weighted = withoutManual.map((i) => ({ id: i.id, weight: estimateDraftWeight(i) }));
+    const weightSum = weighted.reduce((s, x) => s + x.weight, 0) || 1;
+    const totalCents = Math.round(unallocatedCost * 100);
+    const withRaw = weighted.map((x) => {
+      const rawCents = (totalCents * x.weight) / weightSum;
+      const base = Math.floor(rawCents);
+      const frac = rawCents - base;
+      return { ...x, base, frac };
+    });
+    let used = withRaw.reduce((s, x) => s + x.base, 0);
+    let remain = totalCents - used;
+    withRaw.sort((a, b) => b.frac - a.frac);
+    for (let i = 0; i < withRaw.length && remain > 0; i++, remain--) {
+      withRaw[i].base += 1;
+    }
+    return Object.fromEntries(withRaw.map((x) => [x.id, x.base / 100]));
+  }, [items, unallocatedCost, costSplitMode]);
+  const allocatedTotal = items.reduce(
+    (sum, item) => sum + (item.manualCost !== undefined ? item.manualCost : (autoCostsById[item.id] ?? 0)),
+    0
+  );
 
   const handleAddManual = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -256,7 +310,10 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
     if (items.length === 0) return;
 
     // Check consistency
-    const totalAllocated = items.reduce((sum, item) => sum + (item.manualCost !== undefined ? item.manualCost : autoSplitValue), 0);
+    const totalAllocated = items.reduce(
+      (sum, item) => sum + (item.manualCost !== undefined ? item.manualCost : (autoCostsById[item.id] ?? 0)),
+      0
+    );
     if (Math.abs(totalAllocated - totalCost) > 0.1) {
         if (!window.confirm(`Warning: The sum of item costs (€${formatEUR(totalAllocated)}) does not match Total Paid (€${formatEUR(totalCost)}). Continue anyway?`)) {
             return;
@@ -303,7 +360,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
 
     const timestamp = Date.now();
     const childItems: InventoryItem[] = itemsToImport.map((draft, index) => {
-      const finalCost = draft.manualCost !== undefined ? draft.manualCost : autoSplitValue;
+      const finalCost = draft.manualCost !== undefined ? draft.manualCost : (autoCostsById[draft.id] ?? 0);
       return {
         id: `bulk-${timestamp}-${index}`,
         name: draft.name,
@@ -644,9 +701,21 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
                      <p className="text-xs text-slate-500 font-bold">{items.length} items added</p>
                   </div>
                </div>
-               <button onClick={distributeEvenly} className="text-[10px] font-black uppercase text-blue-500 hover:bg-blue-50 px-3 py-2 rounded-xl transition-all flex items-center gap-2">
-                  <Calculator size={14}/> Reset Split
-               </button>
+               <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCostSplitMode((m) => (m === 'EQUAL' ? 'SMART' : 'EQUAL'))}
+                    className={`text-[10px] font-black uppercase px-3 py-2 rounded-xl transition-all ${
+                      costSplitMode === 'SMART' ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                    title="Smart split prioritizes expensive component types (GPU/CPU/etc.)"
+                  >
+                    {costSplitMode === 'SMART' ? 'Smart Split: On' : 'Smart Split: Off'}
+                  </button>
+                  <button onClick={distributeEvenly} className="text-[10px] font-black uppercase text-blue-500 hover:bg-blue-50 px-3 py-2 rounded-xl transition-all flex items-center gap-2">
+                    <Calculator size={14}/> Reset Split
+                  </button>
+               </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
@@ -676,7 +745,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
                            <input 
                               type="number"
                               className="w-16 bg-transparent text-right font-black text-sm outline-none text-slate-900"
-                              placeholder={formatEUR(autoSplitValue)}
+                              placeholder={formatEUR(autoCostsById[item.id] ?? 0)}
                               value={item.manualCost !== undefined ? item.manualCost : ''}
                               onChange={e => updateItemCost(item.id, e.target.value)}
                            />
@@ -754,7 +823,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
                )}
                <div className="flex justify-between items-center mb-6 text-xs font-bold text-slate-500">
                   <span>Total Paid: <span className="text-slate-900">€{formatEUR(totalCost)}</span></span>
-                  <span>Allocated: <span className={Math.abs(allocatedSum + (itemsWithoutManualCost * autoSplitValue) - totalCost) > 0.1 ? 'text-red-500' : 'text-emerald-500'}>€{formatEUR(allocatedSum + (itemsWithoutManualCost * autoSplitValue))}</span></span>
+                  <span>Allocated: <span className={Math.abs(allocatedTotal - totalCost) > 0.1 ? 'text-red-500' : 'text-emerald-500'}>€{formatEUR(allocatedTotal)}</span></span>
                </div>
                <button 
                   onClick={handleSubmit}
