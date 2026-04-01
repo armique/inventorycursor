@@ -159,16 +159,77 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     }
   };
 
+  const normalizeImageList = (urls: (string | undefined | null)[]): string[] => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const raw of urls) {
+      const u = (raw || '').trim();
+      if (!u || seen.has(u)) continue;
+      seen.add(u);
+      out.push(u);
+    }
+    return out;
+  };
+
+  const itemImageList = useMemo(
+    () => normalizeImageList([formData.imageUrl, ...(formData.imageUrls || [])]),
+    [formData.imageUrl, formData.imageUrls]
+  );
+
+  const addImageUrls = (urls: string[]) => {
+    const merged = normalizeImageList([...itemImageList, ...urls]);
+    if (!merged.length) return;
+    setFormData((prev) => ({ ...prev, imageUrl: merged[0], imageUrls: merged }));
+  };
+
+  const setMainImage = (url: string) => {
+    const merged = normalizeImageList([url, ...itemImageList.filter((u) => u !== url)]);
+    setFormData((prev) => ({ ...prev, imageUrl: merged[0], imageUrls: merged }));
+  };
+
+  const removeImage = (url: string) => {
+    const rest = itemImageList.filter((u) => u !== url);
+    setFormData((prev) => ({
+      ...prev,
+      imageUrl: rest[0],
+      imageUrls: rest.length ? rest : undefined,
+    }));
+  };
+
+  const handleMultiImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    const toDataUrl = (file: File) =>
+      new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('Failed to read image file'));
+        reader.readAsDataURL(file);
+      });
+    try {
+      const urls = (await Promise.all(files.map(toDataUrl))).filter(Boolean);
+      addImageUrls(urls);
+    } catch {
+      alert('Could not process one or more images.');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name) return;
 
     const isEditingExisting = Boolean(initialData || id);
 
+    const normalizedImages = normalizeImageList([formData.imageUrl, ...(formData.imageUrls || [])]);
+    const fallbackImage = CATEGORY_IMAGES[formData.subCategory || formData.category || 'Components'];
+
     const base: InventoryItem = {
       ...formData as InventoryItem,
       id: formData.id || `item-${Date.now()}`,
-      imageUrl: formData.imageUrl || CATEGORY_IMAGES[formData.subCategory || formData.category || 'Components']
+      imageUrl: normalizedImages[0] || fallbackImage,
+      imageUrls: normalizedImages.length ? normalizedImages : [fallbackImage]
     };
 
     let itemsToSave: InventoryItem[] = [];
@@ -478,6 +539,57 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                         </div>
                       </div>
                     )}
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Item Photos</label>
+                        <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-600 cursor-pointer hover:bg-slate-50">
+                          <Upload size={12} /> Add images
+                          <input type="file" accept="image/*" multiple className="hidden" onChange={handleMultiImageUpload} />
+                        </label>
+                      </div>
+                      <input
+                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-xs outline-none focus:border-blue-500 focus:bg-white transition-all"
+                        placeholder="Paste image URL and press Enter"
+                        onKeyDown={(e) => {
+                          if (e.key !== 'Enter') return;
+                          e.preventDefault();
+                          const el = e.currentTarget;
+                          const value = el.value.trim();
+                          if (!value) return;
+                          addImageUrls([value]);
+                          el.value = '';
+                        }}
+                      />
+                      {itemImageList.length > 0 && (
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          {itemImageList.map((url) => {
+                            const isMain = formData.imageUrl === url;
+                            return (
+                              <div key={url} className={`p-2 rounded-xl border ${isMain ? 'border-blue-300 bg-blue-50/60' : 'border-slate-200 bg-white'}`}>
+                                <img src={url} alt="" className="w-full h-24 object-cover rounded-lg border border-slate-200 bg-slate-100" />
+                                <div className="flex items-center justify-between mt-2 gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setMainImage(url)}
+                                    className={`text-[9px] font-black uppercase px-2 py-1 rounded ${isMain ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                                  >
+                                    {isMain ? 'Main' : 'Set main'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeImage(url)}
+                                    className="text-[9px] font-black uppercase px-2 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100"
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
 
                     {/* Description / Notes */}
                     <div className="space-y-2">

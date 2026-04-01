@@ -106,6 +106,8 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
   const [newNote, setNewNote] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [newDefective, setNewDefective] = useState(false);
+  const [itemImageUrls, setItemImageUrls] = useState<string[]>([]);
+  const [imageUrlInput, setImageUrlInput] = useState('');
 
   // Search Logic
   useEffect(() => {
@@ -205,6 +207,46 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
     }
   };
 
+  const normalizeImageList = (urls: (string | undefined | null)[]): string[] => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const raw of urls) {
+      const u = (raw || '').trim();
+      if (!u || seen.has(u)) continue;
+      seen.add(u);
+      out.push(u);
+    }
+    return out;
+  };
+
+  const setMainItemImage = (url: string) => {
+    setItemImageUrls((prev) => normalizeImageList([url, ...prev.filter((u) => u !== url)]));
+  };
+
+  const removeItemImage = (url: string) => {
+    setItemImageUrls((prev) => prev.filter((u) => u !== url));
+  };
+
+  const handleItemImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    const toDataUrl = (file: File) =>
+      new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('Failed to read image file'));
+        reader.readAsDataURL(file);
+      });
+    try {
+      const urls = (await Promise.all(files.map(toDataUrl))).filter(Boolean);
+      setItemImageUrls((prev) => normalizeImageList([...prev, ...urls]));
+    } catch {
+      alert('Could not process one or more item images.');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
   const distributeEvenly = () => {
      // Remove manual costs from everything so auto-calc takes over
      setItems(prev => prev.map(i => ({ ...i, manualCost: undefined })));
@@ -281,7 +323,10 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
         buyPaymentType: payment,
         kleinanzeigenBuyChatUrl: chatUrl,
         kleinanzeigenBuyChatImage: chatImage,
-        imageUrl: CATEGORY_IMAGES[draft.subCategory || draft.category] || CATEGORY_IMAGES[draft.category]
+        imageUrl: itemImageUrls[0] || CATEGORY_IMAGES[draft.subCategory || draft.category] || CATEGORY_IMAGES[draft.category],
+        imageUrls: itemImageUrls.length
+          ? itemImageUrls
+          : [CATEGORY_IMAGES[draft.subCategory || draft.category] || CATEGORY_IMAGES[draft.category]]
       };
     });
 
@@ -309,7 +354,8 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
             buyPaymentType: payment,
             kleinanzeigenBuyChatUrl: chatUrl,
             kleinanzeigenBuyChatImage: chatImage,
-            imageUrl: childItems[0]?.imageUrl || CATEGORY_IMAGES['Components']
+            imageUrl: childItems[0]?.imageUrl || CATEGORY_IMAGES['Components'],
+            imageUrls: childItems[0]?.imageUrls || [CATEGORY_IMAGES['Components']]
           };
           return [parentBundle, ...childItems];
         })()
@@ -530,6 +576,57 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
                      )}
                   </div>
                )}
+
+               <div className="pt-2 border-t border-slate-200/50 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[9px] font-bold uppercase text-slate-400">Item photos (for all imported items)</p>
+                    <label className="inline-flex items-center gap-1 px-2 py-1 bg-white border border-slate-200 rounded-lg cursor-pointer text-[10px] font-bold text-slate-600 hover:bg-slate-50">
+                      <Upload size={12} /> Add
+                      <input type="file" accept="image/*" multiple className="hidden" onChange={handleItemImageUpload} />
+                    </label>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      className="flex-1 p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
+                      placeholder="Paste item image URL and press Enter"
+                      value={imageUrlInput}
+                      onChange={(e) => setImageUrlInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter') return;
+                        e.preventDefault();
+                        const v = imageUrlInput.trim();
+                        if (!v) return;
+                        setItemImageUrls((prev) => normalizeImageList([...prev, v]));
+                        setImageUrlInput('');
+                      }}
+                    />
+                  </div>
+                  {itemImageUrls.length > 0 && (
+                    <div className="grid grid-cols-3 gap-2">
+                      {itemImageUrls.map((url, idx) => (
+                        <div key={url} className={`p-1.5 rounded-lg border ${idx === 0 ? 'border-blue-300 bg-blue-50/60' : 'border-slate-200 bg-white'}`}>
+                          <img src={url} alt="" className="w-full h-14 object-cover rounded-md border border-slate-200 bg-slate-100" />
+                          <div className="flex justify-between mt-1 gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setMainItemImage(url)}
+                              className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${idx === 0 ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}
+                            >
+                              {idx === 0 ? 'Main' : 'Main'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeItemImage(url)}
+                              className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-red-50 text-red-600"
+                            >
+                              X
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+               </div>
             </div>
          </div>
 

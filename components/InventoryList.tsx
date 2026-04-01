@@ -363,6 +363,15 @@ const InventoryList: React.FC<Props> = ({
     onUpdate([updated]);
   };
 
+  const toggleStoreVisible = (item: InventoryItem) => {
+    const currentlyVisible = item.storeVisible !== false;
+    const updated: InventoryItem = {
+      ...item,
+      storeVisible: !currentlyVisible,
+    };
+    onUpdate([updated]);
+  };
+
   // --- AI LISTING DESCRIPTION (Kleinanzeigen / eBay style, same as store description style) ---
   const [listingGenId, setListingGenId] = useState<string | null>(null);
   const [priceSuggestId, setPriceSuggestId] = useState<string | null>(null);
@@ -1225,6 +1234,27 @@ const InventoryList: React.FC<Props> = ({
                   }`}
                 >
                   E
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => toggleStoreVisible(item)}
+                className={`h-7 w-7 flex items-center justify-center rounded-xl border text-violet-700 ${
+                  item.storeVisible !== false ? 'border-violet-200 bg-violet-50' : 'border-violet-200 bg-white'
+                }`}
+                title={
+                  item.storeVisible !== false
+                    ? 'Visible on storefront (click to hide)'
+                    : 'Hidden from storefront (click to show)'
+                }
+              >
+                <span
+                  className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black ${
+                    item.storeVisible !== false ? 'bg-violet-600 text-white' : 'bg-slate-200 text-violet-700'
+                  }`}
+                >
+                  S
                 </span>
               </button>
             </div>

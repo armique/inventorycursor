@@ -119,7 +119,7 @@ const ItemThumbnail: React.FC<ItemThumbnailProps> = ({
 }) => {
   const [imageError, setImageError] = useState(false);
   const imgSrc = !imageError
-    ? item.imageUrl || (useCategoryImage ? getCategoryImageUrl(item) : null) || undefined
+    ? item.imageUrl || item.imageUrls?.[0] || (useCategoryImage ? getCategoryImageUrl(item) : null) || undefined
     : undefined;
   const Icon = getIconForItem(item);
 

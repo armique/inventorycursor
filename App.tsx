@@ -43,7 +43,7 @@ const WRITE_DEBOUNCE_MS = 3500;
 
 /** When merging an update into an existing item, preserve these from the old item if the update doesn't provide them (so renames/edits from inventory don't wipe store data). */
 const PRESERVE_FROM_OLD_IF_UPDATE_MISSING: (keyof InventoryItem)[] = [
-  'imageUrl', 'storeGalleryUrls', 'storeDescription', 'storeVisible', 'storeOnSale', 'storeSalePrice',
+  'imageUrl', 'imageUrls', 'storeGalleryUrls', 'storeDescription', 'storeVisible', 'storeOnSale', 'storeSalePrice',
   'specs', 'componentIds', 'comment1', 'comment2', 'vendor', 'sellPrice', 'hasOVP', 'hasIOShield',
 ];
 
@@ -129,7 +129,9 @@ function buildStoreCatalog(items: InventoryItem[], categoryFields: Record<string
   return {
     items: list.map((i) => {
       const badge = computeStoreBadge(i);
-      const gallery = filterUsableImageUrls(i.storeGalleryUrls);
+      const inventoryGallery = filterUsableImageUrls(i.imageUrls);
+      const storeGallery = filterUsableImageUrls(i.storeGalleryUrls);
+      const gallery = filterUsableImageUrls([...inventoryGallery, ...storeGallery]);
       let imageUrl: string | undefined = isUsableProductImageUrl(i.imageUrl) ? i.imageUrl!.trim() : undefined;
       if (!imageUrl && gallery.length) imageUrl = gallery[0];
       const restGallery = gallery.filter((u) => u !== imageUrl);

@@ -78,6 +78,8 @@ export interface InventoryItem {
   comment1: string;
   comment2: string;
   imageUrl?: string;
+  /** Additional inventory photos; first one can be set as main imageUrl. */
+  imageUrls?: string[];
   vendor?: string;
   
   // Platform & Payment Tracking
