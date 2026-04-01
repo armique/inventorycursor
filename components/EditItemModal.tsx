@@ -24,8 +24,8 @@ const EditItemModal: React.FC<Props> = ({
   onAddCategory
 }) => {
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in">
-      <div className="bg-slate-50 w-full max-w-4xl rounded-[2.5rem] shadow-2xl border border-white/20 overflow-hidden flex flex-col h-[80vh] relative">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-3 md:p-4 animate-in fade-in">
+      <div className="bg-slate-50 w-full max-w-6xl rounded-[2.5rem] shadow-2xl border border-white/20 overflow-hidden flex flex-col h-[90vh] relative">
         
         {/* Close Button Overlay */}
         <button 
@@ -35,7 +35,7 @@ const EditItemModal: React.FC<Props> = ({
           <X size={20}/>
         </button>
 
-        <div className="flex-1 overflow-hidden p-8">
+        <div className="flex-1 overflow-hidden p-6 md:p-8">
            <ItemForm 
               initialData={item}
               items={items}

@@ -380,7 +380,12 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       {isModal && configStep === 'DONE' && (
          <div className="mb-4 shrink-0">
             <h2 className="text-xl font-black text-slate-900">Editing Asset</h2>
-            <p className="text-xs text-slate-500">{formData.name}</p>
+            <p
+              className="text-xs text-slate-500 break-words whitespace-normal max-h-20 overflow-y-auto pr-1"
+              title={formData.name}
+            >
+              {formData.name}
+            </p>
          </div>
       )}
 
