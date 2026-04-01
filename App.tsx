@@ -254,6 +254,16 @@ const App: React.FC = () => {
   const storeCatalogPublishDoneRef = useRef(false);
   const catalogPublishDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // One-time hard reset of public storefront catalog.
+  // Ensures legacy published items are cleared and storefront starts empty.
+  useEffect(() => {
+    if (!isConfigured || !authUser) return;
+    const key = 'storefront_catalog_hard_reset_v1';
+    if (localStorage.getItem(key) === '1') return;
+    writeStoreCatalog({ items: [] }).catch((e) => console.warn('Storefront hard reset failed', e));
+    localStorage.setItem(key, '1');
+  }, [isConfigured, authUser]);
+
   const saveToLocalStorage = (
     newItems: InventoryItem[],
     newTrash: InventoryItem[],
