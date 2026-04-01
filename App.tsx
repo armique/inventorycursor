@@ -6,6 +6,7 @@ import StorefrontPage from './components/StorefrontPage';
 import PanelLayout from './components/PanelLayout';
 import QuotaMonitor from './components/QuotaMonitor';
 
+const Dashboard = lazy(() => import('./components/Dashboard'));
 const CategoryAnalytics = lazy(() => import('./components/CategoryAnalytics'));
 const CategorySuggestionsPage = lazy(() => import('./components/CategorySuggestionsPage'));
 const InventoryList = lazy(() => import('./components/InventoryList'));
@@ -880,7 +881,22 @@ const App: React.FC = () => {
             />
           }
         >
-          <Route index element={<Navigate to="/panel/inventory" replace />} />
+          <Route index element={<Navigate to="/panel/dashboard" replace />} />
+          <Route
+            path="dashboard"
+            element={
+              <Dashboard
+                items={items}
+                expenses={expenses}
+                monthlyGoal={monthlyGoal}
+                onGoalChange={setMonthlyGoal}
+                businessSettings={businessSettings}
+                categoryFields={categoryFields}
+                dashboardPreferences={dashboardPrefs}
+                onDashboardPreferencesChange={setDashboardPrefs}
+              />
+            }
+          />
           <Route path="analytics" element={<CategoryAnalytics items={items} businessSettings={businessSettings} />} />
           <Route path="category-suggestions" element={<CategorySuggestionsPage items={items} categories={categories} categoryFields={categoryFields} onUpdate={handleUpdate} onUpdateCategoryStructure={handleUpdateCategoryStructure} onUpdateCategoryFields={handleUpdateCategoryFields} onAddCategory={handleAddCategory} />} />
           <Route path="inventory" element={<InventoryList key="inventory-main" items={items} totalCount={items.length} onUpdate={handleUpdate} onDelete={handleDelete} onUndo={handleUndo} onRedo={handleRedo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} pageTitle="Inventory" allowedStatuses={ALL_STATUSES} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} persistenceKey="inventory_main"/>} />
