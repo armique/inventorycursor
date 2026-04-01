@@ -13,7 +13,7 @@ import { InventoryItem, ItemStatus, Platform, PaymentType } from '../types';
 import { formatEUR, parseLocaleMoney } from '../utils/formatMoney';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { CATEGORY_IMAGES, searchAllHardware, HardwareMetadata } from '../services/hardwareDB';
-import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
+import { generateItemSpecs, getSpecsAIProvider, requestAIJson } from '../services/specsAI';
 
 interface Props {
   onSave: (newItems: InventoryItem[]) => void;
@@ -70,6 +70,20 @@ interface DraftItem {
 }
 
 type CostSplitMode = 'EQUAL' | 'SMART';
+type TextImportMode = 'AS_IS' | 'AI';
+
+interface ParsedTextItem {
+  name: string;
+  quantity?: number;
+  category?: string;
+  subCategory?: string;
+  note?: string;
+  isDefective?: boolean;
+  specs?: Record<string, string | number>;
+  vendor?: string;
+}
+
+const CATEGORY_KEYS = Object.keys(HIERARCHY_CATEGORIES);
 
 function estimateDraftWeight(item: DraftItem): number {
   const sub = (item.subCategory || '').toLowerCase();
@@ -97,6 +111,49 @@ function estimateDraftWeight(item: DraftItem): number {
   if (item.isDefective) w *= 0.6;
 
   return Math.max(0.3, w);
+}
+
+function normalizeCategory(input?: string): string {
+  const raw = (input || '').trim().toLowerCase();
+  if (!raw) return 'Components';
+  const match = CATEGORY_KEYS.find((c) => c.toLowerCase() === raw);
+  return match || 'Components';
+}
+
+function normalizeSubCategory(category: string, sub?: string): string {
+  const options = HIERARCHY_CATEGORIES[category] || [];
+  if (!options.length) return 'Spare Parts';
+  const raw = (sub || '').trim().toLowerCase();
+  const match = options.find((s) => s.toLowerCase() === raw);
+  return match || options[0];
+}
+
+function inferCategoryFromName(name: string): { category: string; subCategory: string } {
+  const n = name.toLowerCase();
+  if (/(rtx|gtx|radeon|rx\s?\d{3,5}|graphics card|grafikkarte)/i.test(n)) return { category: 'Components', subCategory: 'Graphics Cards' };
+  if (/(intel core|ryzen|threadripper|cpu|prozessor)/i.test(n)) return { category: 'Components', subCategory: 'Processors' };
+  if (/(mainboard|motherboard|b650|b760|x670|z790|socket\s?(am|lga))/i.test(n)) return { category: 'Components', subCategory: 'Motherboards' };
+  if (/(ddr4|ddr5|ram|memory|2x|4x\s?\d+gb)/i.test(n)) return { category: 'Components', subCategory: 'RAM' };
+  if (/(ssd|hdd|nvme|m\.2|tb\b|gb\b)/i.test(n)) return { category: 'Components', subCategory: 'Storage (SSD/HDD)' };
+  if (/(netzteil|power supply|psu|watt|80\+)/i.test(n)) return { category: 'Components', subCategory: 'Power Supplies' };
+  if (/(geh[aä]use|case|micro-atx|matx|atx case)/i.test(n)) return { category: 'Components', subCategory: 'Cases' };
+  if (/(aio|k[uü]hler|cooler|liquid freezer|fan|l[uü]fter|120mm|140mm)/i.test(n)) return { category: 'Components', subCategory: 'Cooling' };
+  if (/(laptop|notebook|macbook)/i.test(n)) return { category: 'Laptops', subCategory: 'Gaming Laptop' };
+  if (/(monitor|display|hz|ips|oled)/i.test(n)) return { category: 'Peripherals', subCategory: 'Monitors' };
+  return { category: 'Misc', subCategory: 'Spare Parts' };
+}
+
+function parseBulkTextLines(input: string): string[] {
+  return input
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[\s•▸\-*]+/, '').trim())
+    .filter(Boolean);
+}
+
+function parseQuantityAndName(rawLine: string): { name: string; quantity: number } {
+  const m = rawLine.match(/^(\d+)\s*[x×]\s+(.+)$/i);
+  if (!m) return { name: rawLine, quantity: 1 };
+  return { quantity: Math.max(1, parseInt(m[1], 10) || 1), name: m[2].trim() };
 }
 
 const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
@@ -139,6 +196,10 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
   const [costSplitMode, setCostSplitMode] = useState<CostSplitMode>('EQUAL');
   const [itemImageUrls, setItemImageUrls] = useState<string[]>([]);
   const [imageUrlInput, setImageUrlInput] = useState('');
+  const [bulkText, setBulkText] = useState('');
+  const [bulkTextBusy, setBulkTextBusy] = useState(false);
+  const [bulkTextStatus, setBulkTextStatus] = useState<string | null>(null);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
 
   // Search Logic
   useEffect(() => {
@@ -245,6 +306,95 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
 
   const handleRemoveItem = (id: string) => {
     setItems(prev => prev.filter(i => i.id !== id));
+    setEditingItemId((curr) => (curr === id ? null : curr));
+  };
+
+  const applyParsedItems = (parsed: ParsedTextItem[], importMode: TextImportMode) => {
+    const appended: DraftItem[] = [];
+    for (const row of parsed) {
+      const quantity = Math.max(1, Math.floor(Number(row.quantity || 1) || 1));
+      const baseName = (row.name || '').trim();
+      if (!baseName) continue;
+      const inferred = inferCategoryFromName(baseName);
+      const category = importMode === 'AS_IS' ? newCategory : normalizeCategory(row.category || inferred.category);
+      const subCategory = importMode === 'AS_IS'
+        ? normalizeSubCategory(newCategory, newSubCategory)
+        : normalizeSubCategory(category, row.subCategory || inferred.subCategory);
+      for (let i = 0; i < quantity; i++) {
+        appended.push({
+          id: `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${i}`,
+          name: baseName,
+          category,
+          subCategory,
+          note: row.note || '',
+          specs: row.specs,
+          vendor: row.vendor,
+          isDefective: !!row.isDefective,
+        });
+      }
+    }
+    if (!appended.length) return;
+    setItems((prev) => [...prev, ...appended]);
+    setBulkText('');
+    setBulkTextStatus(`Added ${appended.length} item(s) to review list. Edit if needed, then confirm import.`);
+  };
+
+  const handleAddBulkTextAsIs = () => {
+    const lines = parseBulkTextLines(bulkText);
+    if (!lines.length) return;
+    const parsed = lines.map((line) => {
+      const { name, quantity } = parseQuantityAndName(line);
+      return { name, quantity } as ParsedTextItem;
+    });
+    applyParsedItems(parsed, 'AS_IS');
+  };
+
+  const handleParseBulkTextWithAI = async () => {
+    const lines = parseBulkTextLines(bulkText);
+    if (!lines.length) return;
+    if (!aiAvailable) {
+      const parsed = lines.map((line) => {
+        const { name, quantity } = parseQuantityAndName(line);
+        const guessed = inferCategoryFromName(name);
+        return { name, quantity, category: guessed.category, subCategory: guessed.subCategory } as ParsedTextItem;
+      });
+      applyParsedItems(parsed, 'AI');
+      return;
+    }
+    setBulkTextBusy(true);
+    setBulkTextStatus(`Parsing ${lines.length} line(s) with AI…`);
+    try {
+      const prompt = `You are parsing bulk inventory item text into structured data for a PC hardware inventory app.
+Return JSON only (no markdown) with exact structure:
+{"items":[{"name":"string","quantity":1,"category":"PC|Laptops|Components|Gadgets|Peripherals|Network|Software|Bundle|Misc","subCategory":"string","note":"string","isDefective":false,"vendor":"string","specs":{"key":"value"}}]}
+
+Rules:
+- Keep categories limited to: ${CATEGORY_KEYS.join(', ')}
+- SubCategory should fit the category and be concise.
+- Parse quantity from prefixes like "2x ...". If no quantity, use 1.
+- Extract useful specs when obvious from the title (e.g. VRAM, capacity, speed, wattage, form factor).
+- If uncertain, choose best likely category/subCategory.
+
+Input lines:
+${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
+      const result = await requestAIJson<{ items?: ParsedTextItem[] }>(prompt);
+      const parsed = Array.isArray(result?.items) ? result.items : [];
+      if (!parsed.length) {
+        throw new Error('AI returned no parse results.');
+      }
+      applyParsedItems(parsed, 'AI');
+    } catch (e) {
+      console.warn('Bulk text AI parsing failed, falling back to local heuristic', e);
+      const fallback = lines.map((line) => {
+        const { name, quantity } = parseQuantityAndName(line);
+        const guessed = inferCategoryFromName(name);
+        return { name, quantity, category: guessed.category, subCategory: guessed.subCategory } as ParsedTextItem;
+      });
+      applyParsedItems(fallback, 'AI');
+      setBulkTextStatus('AI parse failed, added with local smart detection. Please review before confirm.');
+    } finally {
+      setBulkTextBusy(false);
+    }
   };
 
   const updateItemCost = (id: string, val: string) => {
@@ -473,6 +623,36 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
 
             {mode === 'MANUAL' ? (
                <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-6">
+                  <div className="space-y-2">
+                     <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Paste Text (Quick Bulk Parse)</label>
+                     <textarea
+                        className="w-full min-h-28 px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-medium text-xs outline-none focus:ring-4 focus:ring-slate-100 transition-all"
+                        placeholder={'Paste list lines here (one item per line)\nExample: ▸ ASUS TUF Gaming RTX 5070 12GB GDDR7'}
+                        value={bulkText}
+                        onChange={(e) => setBulkText(e.target.value)}
+                     />
+                     <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={handleAddBulkTextAsIs}
+                          disabled={!bulkText.trim() || bulkTextBusy}
+                          className="py-2.5 rounded-xl bg-slate-100 text-slate-700 text-[10px] font-black uppercase tracking-wide hover:bg-slate-200 disabled:opacity-50"
+                        >
+                          Add As-Is
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleParseBulkTextWithAI}
+                          disabled={!bulkText.trim() || bulkTextBusy}
+                          className="py-2.5 rounded-xl bg-violet-600 text-white text-[10px] font-black uppercase tracking-wide hover:bg-violet-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                          {bulkTextBusy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                          Parse With AI
+                        </button>
+                     </div>
+                     {bulkTextStatus && <p className="text-[10px] text-slate-500">{bulkTextStatus}</p>}
+                  </div>
+
                   <div className="space-y-2">
                      <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Category Quick Select</label>
                      <div className="flex flex-wrap gap-2">
@@ -727,36 +907,79 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
                   </div>
                ) : (
                   items.map((item, idx) => (
-                     <div key={item.id} className="flex items-center gap-4 p-3 bg-white border border-slate-100 rounded-2xl shadow-sm group hover:border-blue-200 transition-all relative">
+                     <div key={item.id} className="p-3 bg-white border border-slate-100 rounded-2xl shadow-sm group hover:border-blue-200 transition-all relative space-y-2">
                         {item.isDefective && <div className="absolute top-0 right-0 p-1 bg-red-100 text-red-600 text-[8px] font-black uppercase rounded-bl-lg rounded-tr-2xl">Defekt</div>}
-                        <div className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 border border-slate-200 flex items-center justify-center font-black text-xs shrink-0">
-                           {idx + 1}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                           <div className="flex items-center gap-2">
-                              <p className="font-black text-slate-900 text-sm truncate">{item.name}</p>
-                              <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-[9px] font-bold uppercase">{item.subCategory || item.category}</span>
+                        <div className="flex items-center gap-4">
+                          <div className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 border border-slate-200 flex items-center justify-center font-black text-xs shrink-0">
+                             {idx + 1}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                             <div className="flex items-center gap-2">
+                                <p className="font-black text-slate-900 text-sm truncate">{item.name}</p>
+                                <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-[9px] font-bold uppercase">{item.subCategory || item.category}</span>
+                             </div>
+                             {item.note && <p className="text-[10px] text-slate-400 truncate">{item.note}</p>}
                            </div>
-                           {item.note && <p className="text-[10px] text-slate-400 truncate">{item.note}</p>}
-                        </div>
-                        
-                        <div className="flex items-center gap-2 bg-slate-50 rounded-xl p-1 pr-3 border border-slate-200 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-50 transition-all">
-                           <span className="text-[10px] font-bold text-slate-400 pl-2">€</span>
-                           <input 
-                              type="number"
-                              className="w-16 bg-transparent text-right font-black text-sm outline-none text-slate-900"
-                              placeholder={formatEUR(autoCostsById[item.id] ?? 0)}
-                              value={item.manualCost !== undefined ? item.manualCost : ''}
-                              onChange={e => updateItemCost(item.id, e.target.value)}
-                           />
-                        </div>
+                          <div className="flex items-center gap-2 bg-slate-50 rounded-xl p-1 pr-3 border border-slate-200 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-50 transition-all">
+                             <span className="text-[10px] font-bold text-slate-400 pl-2">€</span>
+                             <input 
+                                type="text"
+                                inputMode="decimal"
+                                className="w-16 bg-transparent text-right font-black text-sm outline-none text-slate-900"
+                                placeholder={formatEUR(autoCostsById[item.id] ?? 0)}
+                                value={item.manualCost !== undefined ? item.manualCost : ''}
+                                onChange={e => updateItemCost(item.id, e.target.value)}
+                             />
+                          </div>
 
-                        <button 
-                           onClick={() => handleRemoveItem(item.id)}
-                           className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                        >
-                           <Trash2 size={16}/>
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingItemId((curr) => (curr === item.id ? null : item.id))}
+                            className="text-[10px] font-black uppercase text-blue-600 hover:bg-blue-50 px-2 py-1 rounded-lg"
+                          >
+                            {editingItemId === item.id ? 'Close' : 'Edit'}
+                          </button>
+                          <button 
+                             onClick={() => handleRemoveItem(item.id)}
+                             className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                          >
+                             <Trash2 size={16}/>
+                          </button>
+                        </div>
+                        {editingItemId === item.id && (
+                          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
+                            <input
+                              className="col-span-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none"
+                              value={item.name}
+                              onChange={(e) => setItems((prev) => prev.map((x) => x.id === item.id ? { ...x, name: e.target.value } : x))}
+                              placeholder="Item name"
+                            />
+                            <select
+                              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none"
+                              value={item.category}
+                              onChange={(e) => {
+                                const nextCategory = e.target.value;
+                                const nextSub = (HIERARCHY_CATEGORIES[nextCategory] || [item.subCategory || ''])[0] || '';
+                                setItems((prev) => prev.map((x) => x.id === item.id ? { ...x, category: nextCategory, subCategory: nextSub } : x));
+                              }}
+                            >
+                              {Object.keys(HIERARCHY_CATEGORIES).map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+                            </select>
+                            <select
+                              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none"
+                              value={item.subCategory || ''}
+                              onChange={(e) => setItems((prev) => prev.map((x) => x.id === item.id ? { ...x, subCategory: e.target.value } : x))}
+                            >
+                              {(HIERARCHY_CATEGORIES[item.category] || []).map((sub) => <option key={sub} value={sub}>{sub}</option>)}
+                            </select>
+                            <input
+                              className="col-span-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none"
+                              value={item.note}
+                              onChange={(e) => setItems((prev) => prev.map((x) => x.id === item.id ? { ...x, note: e.target.value } : x))}
+                              placeholder="Optional notes"
+                            />
+                          </div>
+                        )}
                      </div>
                   ))
                )}
