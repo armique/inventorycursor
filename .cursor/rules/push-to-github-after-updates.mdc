@@ -1,22 +1,40 @@
 ---
-description: Push all code changes to GitHub after every update
+description: After every project update, commit and push to GitHub; optional hook auto-pushes on commit
 alwaysApply: true
 ---
 
 # Push to GitHub After Every Update
 
-After making any code changes in this project, **always** push the updates to GitHub.
+Whenever you **change project files** (code, config, hooks, rules), you must **commit and push** to GitHub before considering the task done—unless the user explicitly says not to push.
 
-## Steps
+## Agent workflow (Cursor)
 
-1. **Stage changes**: `git add` (e.g. `git add .` or specific files).
-2. **Commit** with a short, descriptive message:  
-   `git commit -m "Brief description of what changed"`.
-3. **Push** to the default branch:  
-   `git push origin main` (or the project’s main branch name).
+1. **Stage**: `git add` for changed files (often `git add .` from the repo root).
+2. **Commit**: `git commit -m "Short, accurate summary of the change."`
+3. **Push**: `git push origin main` (use the repo’s current branch if not `main`: `git push origin HEAD`).
+
+Use **`;`** between commands in PowerShell, not `&&`:
+
+`git add .; git commit -m "message"; git push origin main`
+
+If **push fails** (auth, network, no remote), commit locally, report the error clearly, and give the exact commands for the user to run after fixing auth.
+
+## Automatic push on every commit (local Git hook)
+
+This repo includes **`.githooks/post-commit`**, which runs **`git push`** after each successful **`git commit`** on this machine.
+
+**One-time setup per clone** (run in the project root):
+
+```powershell
+git config core.hooksPath .githooks
+```
+
+After that, any **`git commit`** (from terminal, GUI, or Cursor) triggers an automatic push to **`origin`** for the current branch.
+
+- Requires Git for Windows (or another Git that runs `sh` hooks).
+- If the hook push fails, fix credentials/network and run `git push` manually.
 
 ## Notes
 
-- Use `;` instead of `&&` when chaining commands in PowerShell (e.g. `git add .; git commit -m "message"; git push origin main`).
-- Do this at the end of the session when you’ve finished the requested changes, unless the user asks not to push.
-- If the user has not configured a remote or branch, only add and commit locally and tell them to set up the remote/push manually if needed.
+- Do **not** skip push because the session was “small”—if files changed, push.
+- If the repo has no `origin` or branch isn’t set up, commit locally and tell the user how to add the remote and push.

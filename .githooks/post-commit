@@ -1,0 +1,5 @@
+#!/bin/sh
+# Auto-push to origin after each commit. Enable once per clone:
+#   git config core.hooksPath .githooks
+branch=$(git symbolic-ref --short HEAD 2>/dev/null) || exit 0
+git push origin "$branch"

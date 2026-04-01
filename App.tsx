@@ -27,6 +27,7 @@ import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense 
 import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchFromCloud } from './services/firebaseService';
 import { DEFAULT_CATEGORIES } from './services/constants';
 import { appendPriceHistoryIfChanged } from './services/priceHistory';
+import { syncContainerBuyTotalsFromComponents } from './services/containerAggregates';
 import { saveOAuthResult } from './services/githubBackupService';
 import { generateExpensesFromRecurring } from './services/recurringExpenseService';
 import { Analytics } from '@vercel/analytics/react';
@@ -576,6 +577,7 @@ const App: React.FC = () => {
            }
            nextItems = nextItems.filter(i => !deleteIds.includes(i.id));
         }
+        nextItems = syncContainerBuyTotalsFromComponents(nextItems);
         return nextItems;
     });
   }, []);
