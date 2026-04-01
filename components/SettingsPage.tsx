@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Cloud, Building2, Layers, Wrench, ShoppingBag,
-  CheckCircle2, AlertTriangle, ArrowUp, RefreshCw, Save, LogIn, LogOut, User as UserIcon, Download, Upload, FileText, Github, History, ArchiveRestore, Rocket, Copy, ExternalLink, Plus, FolderPlus
+  CheckCircle2, AlertTriangle, ArrowUp, RefreshCw, Save, LogIn, LogOut, User as UserIcon, Download, Upload, FileText, Github, History, ArchiveRestore, Rocket, Copy, ExternalLink, Plus, FolderPlus, FileSpreadsheet
 } from 'lucide-react';
 import { fixItemsEncoding } from '../services/encodingFix';
 import { InventoryItem, BusinessSettings, Expense, ItemStatus, DashboardPreferences } from '../types';
@@ -23,6 +23,7 @@ import {
   type GitHubRepoItem,
 } from '../services/githubBackupService';
 import CategoryEditor from './CategoryEditor';
+import { exportFinanzamtWorkbook } from '../services/finanzamtExportService';
 
 export interface BackupData {
   inventory: InventoryItem[];
@@ -61,6 +62,7 @@ const SETTINGS_TABS = [
   { id: 'BUSINESS', label: 'Business', icon: <Building2 size={18}/> },
   { id: 'EBAY', label: 'eBay API', icon: <ShoppingBag size={18}/> },
   { id: 'CLOUD', label: 'Cloud Sync', icon: <Cloud size={18}/> },
+  { id: 'FINANZAMT', label: 'Finanzamt', icon: <FileSpreadsheet size={18}/> },
   { id: 'DEPLOY', label: 'Deploy to Vercel', icon: <Rocket size={18}/> },
   { id: 'CATEGORIES', label: 'Categories', icon: <Layers size={18}/> },
   { id: 'SYSTEM', label: 'System', icon: <Wrench size={18}/> },
@@ -1031,6 +1033,79 @@ const SettingsPage: React.FC<Props> = ({
                          <p className="text-xs text-slate-500 mt-2">After import, add your environment variables (e.g. Firebase / API keys) in Vercel → Project → Settings → Environment Variables.</p>
                       </div>
                    </div>
+                </div>
+             </div>
+          )}
+
+          {activeTab === 'FINANZAMT' && (
+             <div className="space-y-6">
+                <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
+                   <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                      <FileSpreadsheet size={24} className="text-emerald-600" />
+                      Export für Finanzamt &amp; Steuerberater (Google Tabellen / Excel)
+                   </h3>
+                   <p className="text-sm text-slate-600 leading-relaxed max-w-3xl">
+                      Erzeugt eine <strong>.xlsx</strong>-Datei mit mehreren Blättern, die Sie direkt in{' '}
+                      <strong>Google Drive</strong> hochladen und mit <strong>Google Tabellen</strong> öffnen können — ohne OAuth oder API-Schlüssel in der App.
+                      Enthalten sind: alle aktiven Inventarpositionen (Bestand und verkauft), erklärtes Paket-/PC-Verhalten, und Ihre{' '}
+                      <strong>Betriebsausgaben</strong>.
+                   </p>
+
+                   <div className="grid gap-4 md:grid-cols-2">
+                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-3">
+                         <h4 className="text-xs font-black uppercase tracking-wider text-slate-500">Blatt „Ware_Buchungen“</h4>
+                         <ul className="text-sm text-slate-700 space-y-2 list-disc pl-5">
+                            <li>
+                               <strong>Bezeichnung</strong>, <strong>Einkaufsdatum</strong>, <strong>Verkaufsdatum</strong>,{' '}
+                               <strong>Einkaufspreis_EUR</strong>, <strong>Verkaufspreis_EUR</strong>, <strong>Gewinn_EUR</strong> (und Gebühren)
+                            </li>
+                            <li>Spalten <strong>Paket_oder_PC</strong>, <strong>Paket_ID</strong>, <strong>Rolle_im_Paket</strong> und <strong>Stückliste_Komponenten</strong> erklären Bundles und PCs</li>
+                            <li>Entwürfe (<code className="bg-slate-200 px-1 rounded text-xs">isDraft</code>) und Papierkorb sind nicht enthalten</li>
+                         </ul>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-3">
+                         <h4 className="text-xs font-black uppercase tracking-wider text-slate-500">Pakete &amp; Doppelzählung</h4>
+                         <ul className="text-sm text-slate-700 space-y-2 list-disc pl-5">
+                            <li>
+                               <strong>Verkauf über den Verkaufsdialog:</strong> Verkaufspreis und Gewinn stehen auf den <strong>Komponentenzeilen</strong> (anteilig nach Einkaufspreis). Die leere Paket-Hülle erscheint nicht — damit summieren Sie den Umsatz nicht zweimal.
+                            </li>
+                            <li>
+                               <strong>Retro-Paket / ein Paketpreis:</strong> Umsatz steht auf der <strong>Paketzeile</strong>; Komponenten nur als Stückliste.
+                            </li>
+                            <li>Blatt <strong>Pakete_Uebersicht</strong>: je Paket/PC eine Zeile mit Stückliste und Buchungshinweis</li>
+                         </ul>
+                      </div>
+                   </div>
+
+                   <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 space-y-2">
+                      <h4 className="text-sm font-black text-emerald-900">So öffnen Sie die Datei in Google Tabellen</h4>
+                      <ol className="text-sm text-emerald-900/90 list-decimal pl-5 space-y-1">
+                         <li>Export hier unten herunterladen.</li>
+                         <li>Google Drive → <strong>Neu</strong> → <strong>Datei hochladen</strong> → die .xlsx wählen.</li>
+                         <li>Rechtsklick auf die Datei → <strong>Öffnen mit</strong> → <strong>Google Tabellen</strong>.</li>
+                      </ol>
+                   </div>
+
+                   <div className="flex flex-wrap items-center gap-3">
+                      <button
+                         type="button"
+                         onClick={() => {
+                            exportFinanzamtWorkbook(items, expenses, { companyName: businessSettings.companyName });
+                            showToast('Finanzamt-Export heruntergeladen', 'success');
+                         }}
+                         className="px-6 py-3 bg-emerald-700 text-white rounded-xl font-bold text-xs uppercase hover:bg-emerald-800 transition-all flex items-center gap-2 shadow-sm"
+                      >
+                         <Download size={18} />
+                         Finanzamt-Export (.xlsx) herunterladen
+                      </button>
+                      <span className="text-xs text-slate-500">
+                         {items.filter((i) => !i.isDraft).length} Positionen · {expenses.length} Ausgaben
+                      </span>
+                   </div>
+
+                   <p className="text-xs text-slate-400 max-w-2xl leading-relaxed">
+                      Keine Rechtsberatung: Die Datei spiegelt Ihre App-Daten wider. Bewertung für Umsatzsteuer, EÜR oder Gewinnermittlung bleibt Sache von Ihnen und ggf. Ihrem Steuerberater.
+                   </p>
                 </div>
              </div>
           )}
