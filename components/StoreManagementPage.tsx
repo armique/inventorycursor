@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Eye, EyeOff, Tag, MessageCircle, ExternalLink, Loader2, Check, Mail, Phone, Upload, CheckCircle2, Pencil, X, Image as ImageIcon, Filter, Search as SearchIcon, Sparkles, Copy, Download } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Eye, EyeOff, Tag, MessageCircle, ExternalLink, Loader2, Check, Mail, Phone, Upload, CheckCircle2, Pencil, X, Filter, Search as SearchIcon, Sparkles, Copy, Download } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
 import { formatEUR } from '../utils/formatMoney';
-import { subscribeToStoreInquiries, markStoreInquiryRead, updateStoreInquiryStatus, uploadItemImage, isCloudEnabled, getCurrentUser, type StoreInquiryStatus } from '../services/firebaseService';
+import { subscribeToStoreInquiries, markStoreInquiryRead, updateStoreInquiryStatus, type StoreInquiryStatus } from '../services/firebaseService';
 import { generateStoreDescription } from '../services/specsAI';
 import ItemThumbnail from './ItemThumbnail';
-import { removeBackground } from '@imgly/background-removal';
 
 const TEXTS = {
   title: 'Store management',
@@ -42,8 +41,8 @@ const TEXTS = {
   priceEur: 'Price €',
   editStoreItem: 'Edit store listing',
   storeDescription: 'Store description',
-  galleryUrls: 'Store images',
-  galleryNote: 'First image = main (carousel #1). Reorder or set as main as needed.',
+  galleryUrls: 'Inventory images',
+  galleryNote: 'Managed from Inventory add/edit/bulk forms (main image + gallery).',
   save: 'Save',
   cancel: 'Cancel',
 };
@@ -648,22 +647,10 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
   const [quantity, setQuantity] = useState<number>(item.quantity ?? 1);
   const [hasOVP, setHasOVP] = useState(!!item.hasOVP);
   const [hasIOShield, setHasIOShield] = useState(!!item.hasIOShield);
-  /** Ordered list: [0] = main image (carousel #1), rest = gallery. */
-  const [storeImageUrls, setStoreImageUrls] = useState<string[]>(() => {
-    const main = item.imageUrl?.trim();
-    const gallery = item.storeGalleryUrls ?? [];
-    if (main) return [main, ...gallery];
-    return [...gallery];
-  });
-  const [uploadingGallery, setUploadingGallery] = useState(false);
-  const [galleryProgress, setGalleryProgress] = useState<string | null>(null);
-  const [pendingGalleryFiles, setPendingGalleryFiles] = useState<File[]>([]);
-  /** Indices of pending files to remove background from (optional per image) */
-  const [removeBackgroundForIndices, setRemoveBackgroundForIndices] = useState<Set<number>>(new Set());
-  const [pendingPreviewUrls, setPendingPreviewUrls] = useState<string[]>([]);
+  const inventoryImageUrls = Array.from(
+    new Set([item.imageUrl?.trim(), ...(item.imageUrls || []), ...(item.storeGalleryUrls || [])].filter(Boolean) as string[])
+  );
   const [generatingDescription, setGeneratingDescription] = useState(false);
-  const uploadOptionsRef = useRef<HTMLDivElement>(null);
-  const cloudReady = typeof window !== 'undefined' && isCloudEnabled() && !!getCurrentUser();
 
   const handleGenerateDescription = async () => {
     setGeneratingDescription(true);
@@ -685,131 +672,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
     }
   }, [runGenerateDescriptionOnce]);
 
-  const resizeImage = (file: File, maxSize = 1600, quality = 0.8): Promise<File> => {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        if (!e.target?.result) return reject(new Error("Failed to read image"));
-        img.onload = () => {
-          const canvas = document.createElement("canvas");
-          let { width, height } = img;
-          const scale = Math.min(1, maxSize / Math.max(width, height));
-          width = Math.round(width * scale);
-          height = Math.round(height * scale);
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext("2d");
-          if (!ctx) return reject(new Error("Canvas not supported"));
-          ctx.drawImage(img, 0, 0, width, height);
-          canvas.toBlob(
-            (blob) => {
-              if (!blob) return reject(new Error("Failed to compress image"));
-              const ext = file.type.includes("png") ? "png" : "jpeg";
-              const resizedFile = new File([blob], file.name.replace(/\.[^.]+$/, "") + "." + ext, {
-                type: blob.type,
-              });
-              resolve(resizedFile);
-            },
-            file.type.startsWith("image/") ? file.type : "image/jpeg",
-            quality
-          );
-        };
-        img.onerror = () => reject(new Error("Invalid image"));
-        img.src = e.target.result as string;
-      };
-      reader.onerror = () => reject(new Error("Failed to read file"));
-      reader.readAsDataURL(file);
-    });
-  };
-
-  // Revoke preview object URLs on unmount or when pending files are replaced
-  useEffect(() => {
-    const urls = pendingPreviewUrls;
-    return () => {
-      urls.forEach((url) => URL.revokeObjectURL(url));
-    };
-  }, [pendingPreviewUrls]);
-
-  const handleSelectGalleryFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    e.target.value = '';
-    pendingPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
-    setPendingPreviewUrls([]);
-    setRemoveBackgroundForIndices(new Set());
-    setPendingGalleryFiles(files);
-    setGalleryProgress(files.length ? `${files.length} selected` : null);
-    if (files.length > 0) {
-      setPendingPreviewUrls(files.map((f) => URL.createObjectURL(f)));
-    }
-    if (files.length > 0 && uploadOptionsRef.current) {
-      setTimeout(() => uploadOptionsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
-    }
-  };
-
-  const toggleRemoveBackgroundForIndex = (idx: number) => {
-    setRemoveBackgroundForIndices((prev) => {
-      const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx);
-      else next.add(idx);
-      return next;
-    });
-  };
-
-  const handleConfirmGalleryUpload = async () => {
-    if (!pendingGalleryFiles.length) return;
-    if (!cloudReady) {
-      alert('To upload gallery images, first enable Cloud sync and sign in with Google in Settings (top-right).');
-      return;
-    }
-    try {
-      setUploadingGallery(true);
-      setGalleryProgress(`0 / ${pendingGalleryFiles.length}`);
-      const urls: string[] = [];
-      
-      for (let idx = 0; idx < pendingGalleryFiles.length; idx++) {
-        let file = pendingGalleryFiles[idx];
-        const removeBg = removeBackgroundForIndices.has(idx);
-
-        if (removeBg) {
-          try {
-            setGalleryProgress(`Removing background ${idx + 1} / ${pendingGalleryFiles.length}...`);
-            const processedBlob = await removeBackground(file);
-            file = new File([processedBlob], `bg-removed-${Date.now()}-${file.name}`, { type: 'image/png' });
-          } catch (bgErr: any) {
-            console.warn('Background removal failed for one image, continuing with original:', bgErr);
-            alert(`Background removal failed for image ${idx + 1}. Uploading original image instead.`);
-          }
-        }
-
-        // Resize then upload (show each step so we see where it hangs)
-        setGalleryProgress(`Resizing ${idx + 1} / ${pendingGalleryFiles.length}...`);
-        const resized = await resizeImage(file, 1600, 0.9);
-        setGalleryProgress(`Uploading ${idx + 1} / ${pendingGalleryFiles.length}...`);
-        const url = await uploadItemImage(resized, item.id, (pct) => {
-          setGalleryProgress(`Uploading ${idx + 1} / ${pendingGalleryFiles.length} (${Math.round(pct)}%)...`);
-        });
-        urls.push(url);
-        setGalleryProgress(`${idx + 1} / ${pendingGalleryFiles.length}`);
-      }
-      
-      setStoreImageUrls((prev) => [...prev, ...urls]);
-      pendingPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
-      setPendingPreviewUrls([]);
-      setPendingGalleryFiles([]);
-      setRemoveBackgroundForIndices(new Set());
-    } catch (err: any) {
-      console.error(err);
-      alert(err?.message || 'Upload failed. Please try again.');
-    } finally {
-      setUploadingGallery(false);
-      setGalleryProgress(null);
-    }
-  };
-
   const handleSave = () => {
-    const main = storeImageUrls[0]?.trim();
-    const rest = storeImageUrls.length > 1 ? storeImageUrls.slice(1) : undefined;
     onSave({
       name: name.trim() || item.name,
       storeDescription: storeDescription.trim() || undefined,
@@ -822,34 +685,8 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
       storeMetaDescription: storeMetaDescription.trim() || undefined,
       storeDescriptionEn: storeDescriptionEn.trim() || undefined,
       quantity: quantity < 0 ? undefined : quantity,
-      imageUrl: main || undefined,
-      storeGalleryUrls: rest?.length ? rest : undefined,
       hasOVP: hasOVP,
       hasIOShield: hasIOShield,
-    });
-  };
-
-  const setStoreImageAsMain = (index: number) => {
-    if (index <= 0) return;
-    setStoreImageUrls((prev) => {
-      const next = [...prev];
-      const [url] = next.splice(index, 1);
-      next.unshift(url);
-      return next;
-    });
-  };
-
-  const removeStoreImage = (index: number) => {
-    setStoreImageUrls((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const moveStoreImage = (index: number, delta: -1 | 1) => {
-    const newIndex = index + delta;
-    if (newIndex < 0 || newIndex >= storeImageUrls.length) return;
-    setStoreImageUrls((prev) => {
-      const next = [...prev];
-      [next[index], next[newIndex]] = [next[newIndex], next[index]];
-      return next;
     });
   };
 
@@ -975,124 +812,22 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
           <div>
             <label className="block text-xs font-medium text-slate-500 mb-1">{texts.galleryUrls}</label>
             <p className="text-[11px] text-slate-500 mb-2">{texts.galleryNote}</p>
-            <div className="flex flex-col sm:flex-row items-start gap-3">
-              <div className="flex-1 w-full space-y-2">
-                {storeImageUrls.length > 0 ? (
-                  <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
-                    {storeImageUrls.map((url, idx) => (
-                      <div key={`${url}-${idx}`} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
-                        <span className="text-[11px] font-bold text-slate-400 w-5 shrink-0">{idx + 1}</span>
-                        <div className="w-14 h-14 rounded-lg overflow-hidden bg-white shrink-0">
-                          <img src={url} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          {idx === 0 ? (
-                            <span className="text-xs font-semibold text-emerald-700">Main (carousel #1)</span>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setStoreImageAsMain(idx)}
-                              className="text-xs font-medium text-violet-600 hover:text-violet-800"
-                            >
-                              Set as main
-                            </button>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-0.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => moveStoreImage(idx, -1)}
-                            disabled={idx === 0}
-                            className="p-1 rounded hover:bg-slate-200 disabled:opacity-40 text-slate-600"
-                            aria-label="Move left"
-                          >
-                            <span className="text-xs font-bold">←</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => moveStoreImage(idx, 1)}
-                            disabled={idx === storeImageUrls.length - 1}
-                            className="p-1 rounded hover:bg-slate-200 disabled:opacity-40 text-slate-600"
-                            aria-label="Move right"
-                          >
-                            <span className="text-xs font-bold">→</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => removeStoreImage(idx)}
-                            className="p-1 rounded-full hover:bg-red-100 text-slate-600 hover:text-red-700"
-                            aria-label="Remove image"
-                          >
-                            <X size={14} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-              <div ref={uploadOptionsRef} className="flex flex-col gap-2 w-full sm:w-auto shrink-0">
-                <label className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border-2 border-slate-300 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 active:bg-slate-100 cursor-pointer transition-colors">
-                  <ImageIcon size={16} />
-                  <span>Select Images</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    className="hidden"
-                    onChange={handleSelectGalleryFiles}
-                    disabled={uploadingGallery}
-                  />
-                </label>
-                {pendingGalleryFiles.length > 0 && (
-                  <div className="space-y-2 p-3 bg-blue-50 border-2 border-blue-300 rounded-lg shadow-sm">
-                    <p className="text-xs font-semibold text-blue-900 text-center">
-                      {pendingGalleryFiles.length} image{pendingGalleryFiles.length > 1 ? 's' : ''} selected
+            {inventoryImageUrls.length > 0 ? (
+              <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
+                {inventoryImageUrls.map((url, idx) => (
+                  <div key={`${url}-${idx}`} className="rounded-lg border border-slate-200 bg-slate-50 p-2">
+                    <img src={url} alt="" className="w-full h-20 object-cover rounded-md border border-slate-200 bg-white" />
+                    <p className={`mt-1 text-[10px] font-semibold ${idx === 0 ? 'text-emerald-700' : 'text-slate-500'}`}>
+                      {idx === 0 ? 'Main image (from inventory)' : `Gallery ${idx}`}
                     </p>
-                    <div className="max-h-40 overflow-y-auto space-y-2">
-                      {pendingGalleryFiles.map((file, idx) => (
-                        <div key={idx} className="flex items-center gap-2 rounded-lg border border-blue-200 bg-white p-2">
-                          <div className="w-12 h-12 rounded border border-slate-200 overflow-hidden bg-slate-50 shrink-0">
-                            {pendingPreviewUrls[idx] && (
-                              <img src={pendingPreviewUrls[idx]} alt="" className="w-full h-full object-cover" />
-                            )}
-                          </div>
-                          <span className="flex-1 min-w-0 truncate text-xs text-slate-700" title={file.name}>
-                            {file.name}
-                          </span>
-                          <label className="flex items-center gap-1 shrink-0 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={removeBackgroundForIndices.has(idx)}
-                              onChange={() => toggleRemoveBackgroundForIndex(idx)}
-                              disabled={uploadingGallery}
-                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
-                            />
-                            <Sparkles size={12} className="text-blue-600" />
-                            <span className="text-[11px] font-medium text-blue-800">Remove BG</span>
-                          </label>
-                        </div>
-                      ))}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleConfirmGalleryUpload}
-                      disabled={uploadingGallery}
-                      className="w-full px-4 py-2.5 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 active:bg-slate-700 disabled:opacity-50 transition-colors"
-                    >
-                      {uploadingGallery ? (
-                        <span className="flex items-center justify-center gap-2">
-                          <Loader2 size={14} className="animate-spin" />
-                          {galleryProgress || 'Uploading…'}
-                        </span>
-                      ) : (
-                        `Upload ${pendingGalleryFiles.length} image${pendingGalleryFiles.length > 1 ? 's' : ''}`
-                      )}
-                    </button>
                   </div>
-                )}
+                ))}
               </div>
-            </div>
+            ) : (
+              <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                No inventory images yet. Add photos in Inventory add/edit/bulk forms.
+              </p>
+            )}
           </div>
         </div>
         <div className="flex shrink-0 gap-2 px-4 py-3 border-t border-slate-200 bg-slate-50">
