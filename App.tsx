@@ -257,12 +257,12 @@ const App: React.FC = () => {
   // One-time hard reset of public storefront catalog.
   // Ensures legacy published items are cleared and storefront starts empty.
   useEffect(() => {
-    if (!isConfigured || !authUser) return;
+    if (!isCloudEnabled() || !authUser) return;
     const key = 'storefront_catalog_hard_reset_v1';
     if (localStorage.getItem(key) === '1') return;
     writeStoreCatalog({ items: [] }).catch((e) => console.warn('Storefront hard reset failed', e));
     localStorage.setItem(key, '1');
-  }, [isConfigured, authUser]);
+  }, [authUser]);
 
   const saveToLocalStorage = (
     newItems: InventoryItem[],
