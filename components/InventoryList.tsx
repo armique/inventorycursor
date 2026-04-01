@@ -70,6 +70,13 @@ const DEFAULT_WIDTHS: Record<string, number> = {
   actions: 140
 };
 
+function clampInventoryColumnWidth(colId: ColumnId, w: number): number {
+  const def = DEFAULT_WIDTHS[colId];
+  const min = Math.max(40, Math.floor(def * 0.35));
+  const max = Math.min(900, Math.ceil(def * 3.5));
+  return Math.round(Math.min(max, Math.max(min, w)));
+}
+
 const ALL_COLUMNS: { id: ColumnId; label: string }[] = [
   { id: 'select', label: '' },
   { id: 'item', label: 'Asset Name' },
@@ -164,6 +171,11 @@ const InventoryList: React.FC<Props> = ({
   const [hiddenColumnIds, setHiddenColumnIds] = useState<ColumnId[]>(() => loadState<ColumnId[]>('hidden_columns', []));
   const [showColumnsPanel, setShowColumnsPanel] = useState(false);
   const columnsPanelRef = useRef<HTMLDivElement>(null);
+  const columnWidthsRef = useRef(columnWidths);
+  const columnResizeRef = useRef<{ colId: ColumnId; startX: number; startW: number } | null>(null);
+  useEffect(() => {
+    columnWidthsRef.current = columnWidths;
+  }, [columnWidths]);
   const [showRecentDropdown, setShowRecentDropdown] = useState(false);
   const recentDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -812,6 +824,34 @@ const InventoryList: React.FC<Props> = ({
       return { key: columnId === 'item' ? 'name' : columnId, direction: 'asc' };
     });
   };
+
+  const handleColumnResizeStart = useCallback((e: React.MouseEvent, colId: ColumnId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startW = columnWidthsRef.current[colId] ?? DEFAULT_WIDTHS[colId];
+    columnResizeRef.current = { colId, startX: e.clientX, startW };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMove = (ev: MouseEvent) => {
+      const r = columnResizeRef.current;
+      if (!r) return;
+      const dx = ev.clientX - r.startX;
+      const next = clampInventoryColumnWidth(r.colId, r.startW + dx);
+      setColumnWidths((prev) => (prev[r.colId] === next ? prev : { ...prev, [r.colId]: next }));
+    };
+
+    const onUp = () => {
+      columnResizeRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, []);
 
   const startEditing = (item: InventoryItem, field: ColumnId, value: string | number) => {
     setEditingCell({ itemId: item.id, field });
@@ -1873,9 +1913,12 @@ const InventoryList: React.FC<Props> = ({
                </button>
                {showColumnsPanel && (
                   <div className="absolute left-0 top-full mt-1 z-50 w-64 rounded-xl border border-slate-200 bg-white shadow-xl animate-in fade-in zoom-in-95 duration-150">
-                     <div className="p-2 border-b border-slate-100 flex items-center justify-between">
+                     <div className="p-2 border-b border-slate-100 flex items-center justify-between gap-2 flex-wrap">
                         <span className="text-[10px] font-black uppercase tracking-wider text-slate-600">Columns</span>
-                        <button type="button" onClick={() => { setColumnOrder(defaultColumnOrder); setHiddenColumnIds([]); }} className="text-[10px] font-bold text-slate-500 hover:text-blue-600">Reset</button>
+                        <div className="flex items-center gap-1.5">
+                           <button type="button" title="Reset column order and visibility" onClick={() => { setColumnOrder(defaultColumnOrder); setHiddenColumnIds([]); }} className="text-[10px] font-bold text-slate-500 hover:text-blue-600">Reset</button>
+                           <button type="button" title="Reset column widths to defaults" onClick={() => setColumnWidths({ ...DEFAULT_WIDTHS })} className="text-[10px] font-bold text-slate-500 hover:text-blue-600">Widths</button>
+                        </div>
                      </div>
                      <div className="p-2 space-y-0.5 max-h-72 overflow-y-auto">
                         {columnOrder.map((id, idx) => {
@@ -2149,31 +2192,77 @@ const InventoryList: React.FC<Props> = ({
            [data-density="compact"] .text-sm { font-size: 0.7rem; }
            [data-density="compact"] .text-xs { font-size: 0.65rem; }
          `}</style>
-         <table className="w-full text-left border-collapse min-w-[1200px]" data-density={listDensity}>
+         <table className="w-full text-left border-collapse min-w-[1200px] table-fixed" data-density={listDensity}>
             <thead className="sticky top-0 z-10 bg-white">
                <tr className="bg-slate-50/80 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-widest backdrop-blur-sm">
-                  {visibleColumns.map(colId => (
-                     <th key={colId} onClick={() => handleHeaderSort(colId)} className="p-5 cursor-pointer hover:bg-slate-100 transition-colors group" style={{ width: columnWidths[colId] || DEFAULT_WIDTHS[colId] }}>
-                        <div className={`flex items-center gap-1 ${['buyPrice', 'sellPrice', 'profit', 'buyDate', 'sellDate', 'actions'].includes(colId) ? 'justify-end' : colId === 'parseSpecs' ? 'justify-center' : ''}`}>
-                           {colId === 'select' ? (
-                              <div onClick={(e) => { e.stopPropagation(); handleSelectAll(); }} className="w-5 h-5 mx-auto border-2 border-slate-300 rounded-lg flex items-center justify-center cursor-pointer hover:border-blue-400">
-                                 {selectedIds.length > 0 && (selectedIds.length === sortedItems.length ? <Check size={12} className="text-blue-500"/> : <Minus size={12} className="text-blue-500"/>)}
-                              </div>
-                           ) : colId === 'parseSpecs' ? (
-                              <span className="flex items-center gap-1" title="Parse tech specs with AI"><Sparkles size={12} className="text-amber-500"/> Parse</span>
-                           ) : (
-                              <>
-                                 {ALL_COLUMNS.find(c => c.id === colId)?.label}
-                                 {(sortConfig.key === colId || (colId === 'item' && sortConfig.key === 'name')) && (
-                                    <span className="text-blue-500">
-                                       {sortConfig.direction === 'asc' ? <ChevronUp size={12}/> : <ChevronDown size={12}/>}
-                                    </span>
-                                 )}
-                              </>
-                           )}
-                        </div>
-                     </th>
-                  ))}
+                  {visibleColumns.map((colId) => {
+                     const w = columnWidths[colId] || DEFAULT_WIDTHS[colId];
+                     const sortable = !['actions', 'select', 'parseSpecs'].includes(colId);
+                     return (
+                        <th
+                           key={colId}
+                           className="relative p-0 align-middle bg-slate-50/80"
+                           style={{ width: w, minWidth: w, maxWidth: w }}
+                        >
+                           <div
+                              role={sortable ? 'button' : undefined}
+                              tabIndex={sortable ? 0 : undefined}
+                              onClick={() => handleHeaderSort(colId)}
+                              onKeyDown={
+                                 sortable
+                                    ? (ev) => {
+                                         if (ev.key === 'Enter' || ev.key === ' ') {
+                                            ev.preventDefault();
+                                            handleHeaderSort(colId);
+                                         }
+                                      }
+                                    : undefined
+                              }
+                              className={`p-5 pr-2 flex items-center min-h-[3rem] ${sortable ? 'cursor-pointer hover:bg-slate-100/90' : ''} ${['buyPrice', 'sellPrice', 'profit', 'buyDate', 'sellDate', 'actions'].includes(colId) ? 'justify-end' : colId === 'parseSpecs' ? 'justify-center' : ''}`}
+                           >
+                              {colId === 'select' ? (
+                                 <div
+                                    onClick={(e) => {
+                                       e.stopPropagation();
+                                       handleSelectAll();
+                                    }}
+                                    onKeyDown={(e) => e.stopPropagation()}
+                                    className="w-5 h-5 mx-auto border-2 border-slate-300 rounded-lg flex items-center justify-center cursor-pointer hover:border-blue-400"
+                                 >
+                                    {selectedIds.length > 0 &&
+                                       (selectedIds.length === sortedItems.length ? (
+                                          <Check size={12} className="text-blue-500" />
+                                       ) : (
+                                          <Minus size={12} className="text-blue-500" />
+                                       ))}
+                                 </div>
+                              ) : colId === 'parseSpecs' ? (
+                                 <span className="flex items-center gap-1" title="Parse tech specs with AI">
+                                    <Sparkles size={12} className="text-amber-500" /> Parse
+                                 </span>
+                              ) : (
+                                 <>
+                                    {ALL_COLUMNS.find((c) => c.id === colId)?.label}
+                                    {(sortConfig.key === colId || (colId === 'item' && sortConfig.key === 'name')) && (
+                                       <span className="text-blue-500">
+                                          {sortConfig.direction === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                                       </span>
+                                    )}
+                                 </>
+                              )}
+                           </div>
+                           <div
+                              role="separator"
+                              aria-orientation="vertical"
+                              aria-label={`Resize ${ALL_COLUMNS.find((c) => c.id === colId)?.label || colId} column`}
+                              title="Drag to resize column"
+                              className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize z-20 shrink-0 hover:bg-blue-500/35 active:bg-blue-500/50 border-r border-transparent hover:border-blue-400/40"
+                              onMouseDown={(e) => handleColumnResizeStart(e, colId)}
+                              onClick={(e) => e.stopPropagation()}
+                           />
+                        </th>
+                     );
+                  })}
                </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
