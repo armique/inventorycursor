@@ -122,6 +122,18 @@ function computeStoreBadge(item: InventoryItem): 'New' | 'Price reduced' | null 
   return null;
 }
 
+function recomputeRealizedProfit(item: InventoryItem): InventoryItem {
+  // Keep container-style bookkeeping untouched; their profit is handled separately.
+  if (item.isBundle || item.isPC) return item;
+  if (item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED) return item;
+  const sell = item.sellPrice != null ? Number(item.sellPrice) : NaN;
+  const buy = Number(item.buyPrice);
+  const fee = Number(item.feeAmount || 0);
+  if (Number.isNaN(sell) || Number.isNaN(buy)) return { ...item, profit: undefined };
+  const profit = Math.round((sell - buy - fee) * 100) / 100;
+  return { ...item, profit };
+}
+
 function buildStoreCatalog(items: InventoryItem[], categoryFields: Record<string, string[]>): { items: { id: string; name: string; category: string; subCategory?: string; sellPrice?: number; storeSalePrice?: number; storeOnSale?: boolean; imageUrl?: string; storeGalleryUrls?: string[]; storeDescription?: string; specs?: Record<string, string | number>; categoryFields?: string[]; badge?: 'New' | 'Price reduced'; storeMetaTitle?: string; storeMetaDescription?: string; storeDescriptionEn?: string; quantity?: number }[] } {
   // Explicit opt-in visibility: only items with storeVisible === true are public.
   const list = items.filter((i) => i.status === ItemStatus.IN_STOCK && i.storeVisible === true);
@@ -607,6 +619,7 @@ const App: React.FC = () => {
                 (final as Record<string, unknown>)[k as string] = oldVal;
             }
           }
+          final = recomputeRealizedProfit(final);
           if (idx >= 0) nextItems[idx] = final;
           else nextItems.push(final);
         });
