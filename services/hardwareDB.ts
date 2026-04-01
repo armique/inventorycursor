@@ -17,10 +17,28 @@ export const HARDWARE_OPTIONS = {
     cores: [2, 4, 6, 8, 10, 12, 14, 16, 20, 24, 32, 64],
     threads: [4, 6, 8, 12, 16, 20, 24, 28, 32, 48, 64, 128],
     series: ['Core Ultra 9', 'Core Ultra 7', 'Core Ultra 5', 'Core i9', 'Core i7', 'Core i5', 'Core i3', 'Ryzen 9', 'Ryzen 7', 'Ryzen 5', 'Ryzen 3', 'Threadripper', 'Apple Silicon'],
-    vendors: ['Intel', 'AMD', 'Apple', 'Qualcomm']
+    vendors: ['Intel', 'AMD', 'Apple', 'Qualcomm'],
+    generations: [
+      'Core Ultra (200)',
+      '14th Gen Core',
+      '13th Gen Core',
+      '12th Gen Core',
+      'Ryzen 9000',
+      'Ryzen 8000',
+      'Ryzen 7000',
+      'Ryzen 5000',
+      'Ryzen 3000',
+      'Apple M4',
+      'Apple M3',
+      'Apple M2',
+      'Apple M1',
+    ],
+    ddr_support: ['DDR5 only', 'DDR5 + DDR4', 'DDR4', 'DDR3', 'LPDDR5X'],
+    tdp_typical: ['35W', '46W', '65W', '91W', '105W', '125W', '150W', '170W', '250W'],
   },
   gpu: {
     chipsets: ['NVIDIA', 'AMD', 'Intel', 'Apple'],
+    product_lines: ['GeForce RTX', 'GeForce GTX', 'GeForce GT', 'Radeon RX', 'Radeon PRO', 'Intel Arc', 'Quadro', 'RTX PRO'],
     vram_size: ['2GB', '3GB', '4GB', '6GB', '8GB', '10GB', '11GB', '12GB', '16GB', '20GB', '24GB', '48GB'],
     vram_type: ['GDDR7', 'GDDR6X', 'GDDR6', 'GDDR5X', 'GDDR5', 'HBM2', 'HBM3'],
     bus: ['128-bit', '192-bit', '256-bit', '320-bit', '384-bit', '512-bit'],
@@ -32,6 +50,7 @@ export const HARDWARE_OPTIONS = {
     speeds: ['2133 MT/s', '2400 MT/s', '2666 MT/s', '3000 MT/s', '3200 MT/s', '3600 MT/s', '4000 MT/s', '4400 MT/s', '4800 MT/s', '5200 MT/s', '5600 MT/s', '6000 MT/s', '6400 MT/s', '7200 MT/s', '8000 MT/s', '8400 MT/s'],
     modules: [1, 2, 4, 8],
     capacity_total: ['8GB', '16GB', '32GB', '48GB', '64GB', '96GB', '128GB', '192GB'],
+    capacity_per_stick: ['4GB', '8GB', '16GB', '24GB', '32GB', '48GB'],
     latency: ['CL14', 'CL16', 'CL18', 'CL28', 'CL30', 'CL32', 'CL36', 'CL40'],
     colors: ['Black', 'White', 'Silver', 'Grey', 'Red', 'RGB']
   },
@@ -62,29 +81,56 @@ export const HARDWARE_OPTIONS = {
 // Helper to provide auto-complete options based on field name
 export const getSpecOptions = (fieldName: string): (string | number)[] => {
   const lower = fieldName.toLowerCase();
-  
+
+  if (lower.includes('generation')) return HARDWARE_OPTIONS.cpu.generations;
+  if (lower.includes('ddr support') || lower.includes('memory support')) return HARDWARE_OPTIONS.cpu.ddr_support;
+
+  if (lower.includes('gpu series') || lower.includes('product line')) return HARDWARE_OPTIONS.gpu.product_lines;
+
   if (lower.includes('socket')) return HARDWARE_OPTIONS.cpu.sockets;
-  if (lower.includes('core')) return HARDWARE_OPTIONS.cpu.cores;
   if (lower.includes('thread')) return HARDWARE_OPTIONS.cpu.threads;
-  
+  if (lower === 'cores' || (lower.includes('core') && !lower.includes('score'))) return HARDWARE_OPTIONS.cpu.cores;
+
+  if (lower.includes('gb per') || lower.includes('per stick') || lower.includes('per module')) {
+    return HARDWARE_OPTIONS.ram.capacity_per_stick;
+  }
+  if (lower.includes('module')) return HARDWARE_OPTIONS.ram.modules;
+
+  if (lower.includes('kit capacity') || lower.includes('total ram') || (lower.includes('ram') && lower.includes('capacity'))) {
+    return HARDWARE_OPTIONS.ram.capacity_total;
+  }
+
   if (lower.includes('chipset')) return [...HARDWARE_OPTIONS.motherboard.chipsets, ...HARDWARE_OPTIONS.gpu.chipsets];
   if (lower.includes('form factor')) return HARDWARE_OPTIONS.motherboard.form_factors;
-  
+
   if (lower.includes('vram')) return HARDWARE_OPTIONS.gpu.vram_size;
   if (lower.includes('memory type')) return [...HARDWARE_OPTIONS.gpu.vram_type, ...HARDWARE_OPTIONS.ram.types];
-  
-  if (lower.includes('wattage') || lower.includes('power')) return HARDWARE_OPTIONS.psu.wattage;
+
+  if (lower === 'tdp' || lower.includes(' tdp')) return HARDWARE_OPTIONS.cpu.tdp_typical;
+  if (lower.includes('wattage') || (lower.includes('power') && !lower.includes('connector'))) {
+    return HARDWARE_OPTIONS.psu.wattage;
+  }
   if (lower.includes('efficiency')) return HARDWARE_OPTIONS.psu.efficiency;
-  
+
+  if (
+    lower.includes('drive type') ||
+    lower.includes('ssd type') ||
+    (lower.includes('storage') && lower.includes('type'))
+  ) {
+    return HARDWARE_OPTIONS.storage.types;
+  }
+
   if (lower.includes('capacity') || lower.includes('storage')) return HARDWARE_OPTIONS.storage.capacities;
   if (lower.includes('interface')) return HARDWARE_OPTIONS.storage.interfaces;
-  
-  if (lower.includes('speed') && lower.includes('ram')) return HARDWARE_OPTIONS.ram.speeds;
-  if (lower.includes('ddr') || lower.includes('type')) return HARDWARE_OPTIONS.ram.types;
+
+  if (lower === 'speed' || lower.includes('memory speed')) return HARDWARE_OPTIONS.ram.speeds;
+  if (lower.includes('ddr')) return HARDWARE_OPTIONS.ram.types;
   if (lower.includes('latency') || lower.includes('cl')) return HARDWARE_OPTIONS.ram.latency;
-  
+
   if (lower.includes('resolution')) return HARDWARE_OPTIONS.display.resolution;
-  if (lower.includes('refresh') || lower.includes('hz')) return HARDWARE_OPTIONS.display.refresh_rate;
+  if (lower.includes('refresh') || (lower.includes('hz') && !lower.includes('ghz'))) {
+    return HARDWARE_OPTIONS.display.refresh_rate;
+  }
   if (lower.includes('panel')) return HARDWARE_OPTIONS.display.panel_type;
 
   return [];

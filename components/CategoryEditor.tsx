@@ -12,14 +12,11 @@ import {
   GripVertical,
 } from 'lucide-react';
 import { DEFAULT_CATEGORIES } from '../services/constants';
-import { ESSENTIAL_SPEC_FIELDS, UNIVERSAL_SPEC_DEFAULTS } from '../services/essentialSpecFields';
+import { ESSENTIAL_SPEC_FIELDS } from '../services/essentialSpecFields';
 
-// Compact recommended specs (for "Load recommended") — matches asset editor essentials + resale fields
+// Compact recommended specs (for "Load recommended") — matches asset editor essentials
 const RECOMMENDED_FIELDS: Record<string, string[]> = Object.fromEntries(
-  Object.entries(ESSENTIAL_SPEC_FIELDS).map(([key, fields]) => [
-    key,
-    Array.from(new Set([...fields, ...UNIVERSAL_SPEC_DEFAULTS])),
-  ])
+  Object.entries(ESSENTIAL_SPEC_FIELDS).map(([key, fields]) => [key, [...fields]])
 );
 
 interface CategoryEditorProps {

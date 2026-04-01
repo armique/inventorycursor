@@ -111,6 +111,8 @@ export interface InventoryItem {
   
   // Structured Technical Specs
   specs?: Record<string, string | number>;
+  /** Last AI fill values per key; used to highlight preset options until the user overrides. */
+  specsAiSuggested?: Record<string, string | number>;
   
   // Invoice related
   invoiceNumber?: string;

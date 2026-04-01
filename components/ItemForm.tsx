@@ -15,7 +15,7 @@ import { formatEUR, parseLocaleMoney } from '../utils/formatMoney';
 import { CATEGORY_IMAGES, getSpecOptions } from '../services/hardwareDB';
 import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
 import { getCompatibleItemsForItem } from '../services/compatibility';
-import { getEssentialSpecFieldKeys, UNIVERSAL_SPEC_DEFAULTS } from '../services/essentialSpecFields';
+import { getEssentialSpecFieldKeys } from '../services/essentialSpecFields';
 
 interface Props {
   items: InventoryItem[];
@@ -186,6 +186,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       category: template.category,
       subCategory: template.subCategory,
       specs: template.specs ? { ...template.specs } : {},
+      specsAiSuggested: template.specsAiSuggested ? { ...template.specsAiSuggested } : undefined,
       vendor: template.vendor ?? prev.vendor,
       platformBought: template.platformBought ?? prev.platformBought,
       buyPaymentType: template.buyPaymentType ?? prev.buyPaymentType,
@@ -193,6 +194,24 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     }));
     setConfigStep('DONE');
     setNameSuggestionsOpen(false);
+  }, []);
+
+  const updateSpecField = useCallback((key: string, value: string) => {
+    setFormData((prev) => {
+      const nextSpecs = { ...(prev.specs || {}), [key]: value };
+      const prevAi = prev.specsAiSuggested || {};
+      const nextAi = { ...prevAi };
+      if (Object.keys(nextAi).length && nextAi[key] !== undefined) {
+        if (String(value).trim() !== String(nextAi[key]).trim()) {
+          delete nextAi[key];
+        }
+      }
+      return {
+        ...prev,
+        specs: nextSpecs,
+        specsAiSuggested: Object.keys(nextAi).length ? nextAi : undefined,
+      };
+    });
   }, []);
 
   const handleAutoFillSpecs = async () => {
@@ -206,27 +225,28 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     const legacyFields = categoryFields[activeKey] || categoryFields[formData.category || ''] || [];
     const essential = getEssentialSpecFieldKeys(formData.category || '', formData.subCategory);
     const definedFields =
-      essential.length > 0
-        ? Array.from(new Set([...essential, ...UNIVERSAL_SPEC_DEFAULTS]))
-        : legacyFields.slice(0, 12);
-    
+      essential.length > 0 ? [...essential] : legacyFields.slice(0, 12);
+
     try {
-      // AI returns specs from product knowledge; we merge all into the item (existing fields + new ones)
       const result = await generateItemSpecs(formData.name, categoryContext, definedFields);
-      
+
       let newSpecs = { ...(formData.specs || {}) };
       const returnedSpecs = result.specs || {};
+      const nextAi: Record<string, string | number> = { ...(formData.specsAiSuggested || {}) };
 
       Object.entries(returnedSpecs).forEach(([k, v]) => {
-         if (v === undefined || v === null || v === '') return;
-         const keyToUse = definedFields.length > 0
-            ? (definedFields.find(df => df.toLowerCase() === k.toLowerCase()) || k)
+        if (v === undefined || v === null || v === '') return;
+        const keyToUse =
+          definedFields.length > 0
+            ? definedFields.find((df) => df.toLowerCase() === k.toLowerCase()) || k
             : k;
-         newSpecs[keyToUse] = v;
+        newSpecs[keyToUse] = v;
+        nextAi[keyToUse] = v;
       });
 
       const updates: Partial<InventoryItem> = {
-         specs: newSpecs as Record<string, string|number>
+        specs: newSpecs as Record<string, string | number>,
+        specsAiSuggested: Object.keys(nextAi).length ? nextAi : undefined,
       };
 
       if (result.standardizedName) {
@@ -321,12 +341,18 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
         ? normalizeRamSpecsForSave({ ...formData.specs })
         : formData.specs;
 
+    const aiSuggested =
+      formData.specsAiSuggested && Object.keys(formData.specsAiSuggested).length > 0
+        ? formData.specsAiSuggested
+        : undefined;
+
     const base: InventoryItem = {
       ...formData as InventoryItem,
       id: formData.id || `item-${Date.now()}`,
       imageUrl: normalizedImages[0] || fallbackImage,
       imageUrls: normalizedImages.length ? normalizedImages : [fallbackImage],
-      specs: specsOut ?? {}
+      specs: specsOut ?? {},
+      specsAiSuggested: aiSuggested,
     };
 
     let itemsToSave: InventoryItem[] = [];
@@ -366,9 +392,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
 
     const essential = getEssentialSpecFieldKeys(cat, sub);
     const basePrimary =
-      essential.length > 0
-        ? [...essential, ...UNIVERSAL_SPEC_DEFAULTS]
-        : [...legacyTemplate.slice(0, 8), ...UNIVERSAL_SPEC_DEFAULTS];
+      essential.length > 0 ? [...essential] : [...legacyTemplate.slice(0, 8)];
 
     const primaryKeys = filterRamDuplicateSpecKeys(
       Array.from(new Set(basePrimary)),
@@ -387,34 +411,52 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
 
     const renderSpecInputs = (keys: string[]) =>
       keys.map((key) => {
-        const options = getSpecOptions(key);
-        const hasOptions = options.length > 0;
-        const listId = `list-${key.replace(/[^a-zA-Z0-9]/g, '-')}`;
+        const options = getSpecOptions(key).map(String);
+        const hasPresets = options.length > 0;
+        const rawVal = formData.specs?.[key];
+        const value = rawVal === undefined || rawVal === null ? '' : String(rawVal);
+        const aiRaw = formData.specsAiSuggested?.[key];
+        const aiSuggested = aiRaw === undefined || aiRaw === null ? '' : String(aiRaw);
+        const selectValue = options.includes(value) ? value : '';
+        const showAiBadge = aiSuggested !== '' && String(value) === String(aiSuggested);
 
         return (
           <div key={key} className="space-y-1">
-            <label className="text-[10px] font-bold uppercase text-slate-400">{key}</label>
-
-            <input
-              list={hasOptions ? listId : undefined}
-              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
-              value={formData.specs?.[key] || ''}
-              onChange={(e) =>
-                setFormData({
-                  ...formData,
-                  specs: { ...formData.specs, [key]: e.target.value },
-                })
-              }
-              placeholder={hasOptions ? 'Select or type...' : 'Enter value...'}
-            />
-
-            {hasOptions && (
-              <datalist id={listId}>
-                {options.map((opt, i) => (
-                  <option key={i} value={opt} />
-                ))}
-              </datalist>
+            <div className="flex items-center justify-between gap-2 min-h-[14px]">
+              <label className="text-[10px] font-bold uppercase text-slate-400">{key}</label>
+              {showAiBadge && (
+                <span className="text-[9px] font-black uppercase text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md shrink-0">
+                  AI
+                </span>
+              )}
+            </div>
+            {hasPresets && (
+              <select
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
+                value={selectValue}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (!v) return;
+                  updateSpecField(key, v);
+                }}
+              >
+                <option value="">Choose preset…</option>
+                {options.map((opt) => {
+                  const isAiPick = aiSuggested !== '' && String(aiSuggested) === String(opt);
+                  return (
+                    <option key={opt} value={opt}>
+                      {isAiPick ? `✨ ${opt} (AI)` : opt}
+                    </option>
+                  );
+                })}
+              </select>
             )}
+            <input
+              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
+              value={value}
+              onChange={(e) => updateSpecField(key, e.target.value)}
+              placeholder={hasPresets ? 'Type any value (overrides preset)' : 'Enter value…'}
+            />
           </div>
         );
       });
@@ -422,7 +464,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     return (
       <div className="space-y-3">
         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">
-          Main fields — use &quot;Extra fields&quot; for AI-only or legacy details
+          Main fields (≤10) — presets show ✨ when they match the last AI fill; edit the text field to override
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{renderSpecInputs(primaryKeys)}</div>
 
@@ -450,7 +492,10 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
             const newKey = prompt('New Spec Field Name:');
             if (newKey) {
               setShowExtraSpecs(true);
-              setFormData({ ...formData, specs: { ...formData.specs, [newKey]: '' } });
+              setFormData((prev) => ({
+                ...prev,
+                specs: { ...prev.specs, [newKey]: '' },
+              }));
             }
           }}
           className="flex items-center justify-center border-2 border-dashed border-slate-200 rounded-xl p-2 text-xs font-bold text-slate-400 hover:border-blue-300 hover:text-blue-500 transition-all w-full md:w-auto"

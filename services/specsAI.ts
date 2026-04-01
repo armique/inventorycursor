@@ -58,13 +58,13 @@ Item: "${name}"
 Category: ${rawCategory}
 ${fieldInstruction}
 
-Examples by type:
-- CPU: Cores, Threads, Base Clock, Max Turbo, Cache, TDP, Socket, Lithography, Integrated Graphics
-- GPU: VRAM, Core Clock, Boost Clock, TDP, Interface, Outputs
-- RAM: Capacity, Speed, Type, Form Factor
+Examples by type (use EXACT keys when they appear in PREFERRED KEYS):
+- CPU: Generation, Base Clock, Boost Clock, Cores, Threads, Socket, DDR Support
+- GPU: VRAM, GPU Series (e.g. GeForce RTX), Model, Base Clock, Boost Clock, Memory Type (GDDR), TDP
+- RAM: Kit Capacity (total kit), Memory Type (DDR4/DDR5), Speed, Latency, Modules (stick count), GB per Stick
 - Motherboard: Socket, Form Factor, Chipset, Memory Slots, Max Memory
 - PSU: Wattage, Efficiency, Modular, Form Factor
-- Storage: Capacity, Form Factor, Interface, Type (SSD/HDD/NVMe)
+- Storage: Drive Type, Capacity, Interface (NVMe/SATA)
 
 Return a valid JSON object with this exact structure (no markdown, no code fence):
 {"standardizedName":"...","vendor":"...","specs":{...}}
