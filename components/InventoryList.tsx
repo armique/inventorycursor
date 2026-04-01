@@ -77,6 +77,14 @@ function clampInventoryColumnWidth(colId: ColumnId, w: number): number {
   return Math.round(Math.min(max, Math.max(min, w)));
 }
 
+function parseFlexibleMoneyInput(value: string | number): number {
+  const raw = String(value ?? '').trim();
+  if (!raw) return 0;
+  const normalized = raw.replace(/\s+/g, '').replace(',', '.');
+  const num = Number(normalized);
+  return Number.isFinite(num) ? num : 0;
+}
+
 const ALL_COLUMNS: { id: ColumnId; label: string }[] = [
   { id: 'select', label: '' },
   { id: 'item', label: 'Asset Name' },
@@ -880,8 +888,7 @@ const InventoryList: React.FC<Props> = ({
     let newValue: any = editValue;
 
     if (targetField === 'buyPrice' || targetField === 'sellPrice') {
-       newValue = parseFloat(editValue.toString());
-       if (isNaN(newValue)) newValue = 0;
+       newValue = parseFlexibleMoneyInput(editValue);
     }
 
     const updates: Partial<InventoryItem> = { [targetField]: newValue };
@@ -1657,8 +1664,8 @@ const InventoryList: React.FC<Props> = ({
             {isEditingBuy ? (
                <input 
                  autoFocus
-                 type="number"
-                 step="0.01"
+                 type="text"
+                 inputMode="decimal"
                  className="w-20 bg-white border-2 border-blue-500 rounded-lg px-2 py-1 text-right outline-none text-xs font-bold shadow-lg"
                  value={editValue}
                  onChange={e => setEditValue(e.target.value)}
@@ -1684,8 +1691,8 @@ const InventoryList: React.FC<Props> = ({
             {isEditingSell ? (
                <input 
                  autoFocus
-                 type="number"
-                 step="0.01"
+                 type="text"
+                 inputMode="decimal"
                  className="w-20 bg-white border-2 border-blue-500 rounded-lg px-2 py-1 text-right outline-none text-xs font-bold shadow-lg"
                  value={editValue}
                  onChange={e => setEditValue(e.target.value)}
