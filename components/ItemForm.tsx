@@ -15,6 +15,7 @@ import { formatEUR, parseLocaleMoney } from '../utils/formatMoney';
 import { CATEGORY_IMAGES, getSpecOptions } from '../services/hardwareDB';
 import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
 import { getCompatibleItemsForItem } from '../services/compatibility';
+import { getEssentialSpecFieldKeys, UNIVERSAL_SPEC_DEFAULTS } from '../services/essentialSpecFields';
 
 interface Props {
   items: InventoryItem[];
@@ -116,6 +117,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   const [showSpecs, setShowSpecs] = useState(true);
   const [nameSuggestionsOpen, setNameSuggestionsOpen] = useState(false);
   const [quantityToCreate, setQuantityToCreate] = useState<number>(1);
+  const [showExtraSpecs, setShowExtraSpecs] = useState(false);
 
   useEffect(() => {
     // Priority: initialData (Modal/Prop) -> ID (URL) -> Default
@@ -133,6 +135,10 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
        setConfigStep('CATEGORY');
     }
   }, [id, items, initialData]);
+
+  useEffect(() => {
+    setShowExtraSpecs(false);
+  }, [id, initialData?.id]);
 
   useEffect(() => {
     if (!isRamItem(formData.category, formData.subCategory)) return;
@@ -196,9 +202,13 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     const categoryContext = formData.category || 'Unknown';
     setGeneratingSpecs(true);
     
-    // Get currently active fields to instruct AI
     const activeKey = `${formData.category}:${formData.subCategory}`;
-    const definedFields = categoryFields[activeKey] || categoryFields[formData.category || ''] || [];
+    const legacyFields = categoryFields[activeKey] || categoryFields[formData.category || ''] || [];
+    const essential = getEssentialSpecFieldKeys(formData.category || '', formData.subCategory);
+    const definedFields =
+      essential.length > 0
+        ? Array.from(new Set([...essential, ...UNIVERSAL_SPEC_DEFAULTS]))
+        : legacyFields.slice(0, 12);
     
     try {
       // AI returns specs from product knowledge; we merge all into the item (existing fields + new ones)
@@ -227,7 +237,10 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
          updates.vendor = result.vendor;
       }
 
-      setFormData(prev => ({ ...prev, ...updates }));
+      setFormData((prev) => ({ ...prev, ...updates }));
+      if (Object.keys(returnedSpecs).length > 6) {
+        setShowExtraSpecs(true);
+      }
     } catch (e: any) {
       console.error(e);
       const msg = e?.message || 'Failed to look up specs.';
@@ -346,55 +359,103 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   };
 
   const renderSpecsEditor = () => {
-    const keys = categoryFields[`${formData.category}:${formData.subCategory}`] || categoryFields[formData.category || ''] || [];
-    // Always include some default keys if not present
-    const defaultKeys = ['Condition', 'Warranty', 'Box Included'];
-    const allKeys = Array.from(new Set([...keys, ...defaultKeys, ...Object.keys(formData.specs || {})]));
-    const displayKeys = filterRamDuplicateSpecKeys(
-      allKeys,
+    const cat = formData.category || '';
+    const sub = formData.subCategory || '';
+    const legacyTemplate =
+      categoryFields[`${cat}:${sub}`] || categoryFields[cat] || [];
+
+    const essential = getEssentialSpecFieldKeys(cat, sub);
+    const basePrimary =
+      essential.length > 0
+        ? [...essential, ...UNIVERSAL_SPEC_DEFAULTS]
+        : [...legacyTemplate.slice(0, 8), ...UNIVERSAL_SPEC_DEFAULTS];
+
+    const primaryKeys = filterRamDuplicateSpecKeys(
+      Array.from(new Set(basePrimary)),
       formData.category,
       formData.subCategory,
       formData.specs
     );
 
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {displayKeys.map(key => {
-          const options = getSpecOptions(key);
-          const hasOptions = options.length > 0;
-          const listId = `list-${key.replace(/[^a-zA-Z0-9]/g, '-')}`;
+    const specObj = formData.specs || {};
+    const extraKeys = filterRamDuplicateSpecKeys(
+      Object.keys(specObj).filter((k) => !primaryKeys.includes(k)),
+      formData.category,
+      formData.subCategory,
+      formData.specs
+    );
 
-          return (
-            <div key={key} className="space-y-1">
-              <label className="text-[10px] font-bold uppercase text-slate-400">{key}</label>
-              
-              <input 
-                list={hasOptions ? listId : undefined}
-                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
-                value={formData.specs?.[key] || ''}
-                onChange={e => setFormData({ ...formData, specs: { ...formData.specs, [key]: e.target.value } })}
-                placeholder={hasOptions ? "Select or type..." : "Enter value..."}
-              />
-              
-              {hasOptions && (
-                <datalist id={listId}>
-                  {options.map((opt, i) => (
-                    <option key={i} value={opt} />
-                  ))}
-                </datalist>
-              )}
-            </div>
-          );
-        })}
-        <button 
-           type="button" 
-           onClick={() => {
-              const newKey = prompt("New Spec Field Name:");
-              if(newKey) setFormData({ ...formData, specs: { ...formData.specs, [newKey]: '' } });
-           }}
-           className="flex items-center justify-center border-2 border-dashed border-slate-200 rounded-xl p-2 text-xs font-bold text-slate-400 hover:border-blue-300 hover:text-blue-500 transition-all"
+    const renderSpecInputs = (keys: string[]) =>
+      keys.map((key) => {
+        const options = getSpecOptions(key);
+        const hasOptions = options.length > 0;
+        const listId = `list-${key.replace(/[^a-zA-Z0-9]/g, '-')}`;
+
+        return (
+          <div key={key} className="space-y-1">
+            <label className="text-[10px] font-bold uppercase text-slate-400">{key}</label>
+
+            <input
+              list={hasOptions ? listId : undefined}
+              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
+              value={formData.specs?.[key] || ''}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  specs: { ...formData.specs, [key]: e.target.value },
+                })
+              }
+              placeholder={hasOptions ? 'Select or type...' : 'Enter value...'}
+            />
+
+            {hasOptions && (
+              <datalist id={listId}>
+                {options.map((opt, i) => (
+                  <option key={i} value={opt} />
+                ))}
+              </datalist>
+            )}
+          </div>
+        );
+      });
+
+    return (
+      <div className="space-y-3">
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+          Main fields — use &quot;Extra fields&quot; for AI-only or legacy details
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{renderSpecInputs(primaryKeys)}</div>
+
+        {extraKeys.length > 0 && (
+          <>
+            <button
+              type="button"
+              onClick={() => setShowExtraSpecs((v) => !v)}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors"
+            >
+              <ChevronDown size={16} className={showExtraSpecs ? 'rotate-180 transition-transform' : 'transition-transform'} />
+              {showExtraSpecs ? 'Hide' : 'Show'} extra fields ({extraKeys.length})
+            </button>
+            {showExtraSpecs && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1 border-t border-slate-100">
+                {renderSpecInputs(extraKeys)}
+              </div>
+            )}
+          </>
+        )}
+
+        <button
+          type="button"
+          onClick={() => {
+            const newKey = prompt('New Spec Field Name:');
+            if (newKey) {
+              setShowExtraSpecs(true);
+              setFormData({ ...formData, specs: { ...formData.specs, [newKey]: '' } });
+            }
+          }}
+          className="flex items-center justify-center border-2 border-dashed border-slate-200 rounded-xl p-2 text-xs font-bold text-slate-400 hover:border-blue-300 hover:text-blue-500 transition-all w-full md:w-auto"
         >
-           <Plus size={14}/> Add Field
+          <Plus size={14} /> Add Field
         </button>
       </div>
     );

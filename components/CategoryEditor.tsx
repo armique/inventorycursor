@@ -12,24 +12,15 @@ import {
   GripVertical,
 } from 'lucide-react';
 import { DEFAULT_CATEGORIES } from '../services/constants';
+import { ESSENTIAL_SPEC_FIELDS, UNIVERSAL_SPEC_DEFAULTS } from '../services/essentialSpecFields';
 
-// Recommended spec fields for PC parts & Apple (for "Load recommended" button)
-const RECOMMENDED_FIELDS: Record<string, string[]> = {
-  'Components:Processors': ['Socket', 'Cores', 'Threads', 'Brand', 'Series', 'Base Clock', 'Boost Clock', 'TDP', 'L3 Cache', 'Condition', 'Warranty'],
-  'Components:Motherboards': ['Socket', 'Form Factor', 'Chipset', 'Memory Type', 'Max RAM', 'WiFi', 'Condition', 'Warranty'],
-  'Components:Graphics Cards': ['Chipset', 'VRAM', 'Memory Type', 'Power Connectors', 'Slot Size', 'Condition', 'Warranty'],
-  'Components:RAM': ['Memory Type', 'Speed', 'Capacity', 'Modules', 'Latency', 'Condition', 'Warranty'],
-  'Components:Storage (SSD/HDD)': ['Type', 'Interface', 'Capacity', 'Form Factor', 'Condition', 'Warranty'],
-  'Components:Power Supplies': ['Wattage', 'Efficiency', 'Modularity', 'Condition', 'Warranty'],
-  'Components:Cases': ['Form Factor', 'Color', 'Condition', 'Warranty'],
-  'Components:Cooling': ['Type', 'Socket', 'TDP', 'Condition', 'Warranty'],
-  'Laptops:Gaming Laptop': ['Screen Size', 'Resolution', 'Refresh Rate', 'CPU', 'GPU', 'RAM', 'Storage', 'Condition', 'Warranty'],
-  'Laptops:MacBook': ['Screen Size', 'Chip', 'RAM', 'Storage', 'Year', 'Condition', 'Warranty'],
-  'Laptops:Ultrabook': ['Screen Size', 'CPU', 'RAM', 'Storage', 'Condition', 'Warranty'],
-  'Gadgets:Smartphones': ['Brand', 'Model', 'Storage', 'Screen Size', 'Condition', 'Warranty'],
-  'Gadgets:Tablets': ['Brand', 'Model', 'Storage', 'Screen Size', 'Condition', 'Warranty'],
-  'Peripherals:Monitors': ['Size', 'Resolution', 'Refresh Rate', 'Panel Type', 'Condition', 'Warranty'],
-};
+// Compact recommended specs (for "Load recommended") — matches asset editor essentials + resale fields
+const RECOMMENDED_FIELDS: Record<string, string[]> = Object.fromEntries(
+  Object.entries(ESSENTIAL_SPEC_FIELDS).map(([key, fields]) => [
+    key,
+    Array.from(new Set([...fields, ...UNIVERSAL_SPEC_DEFAULTS])),
+  ])
+);
 
 interface CategoryEditorProps {
   categories: Record<string, string[]>;

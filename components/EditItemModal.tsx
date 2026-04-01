@@ -25,7 +25,7 @@ const EditItemModal: React.FC<Props> = ({
 }) => {
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-3 md:p-4 animate-in fade-in">
-      <div className="bg-slate-50 w-full max-w-6xl rounded-[2.5rem] shadow-2xl border border-white/20 overflow-hidden flex flex-col h-[90vh] relative">
+      <div className="bg-slate-50 w-full max-w-5xl rounded-[2.5rem] shadow-2xl border border-white/20 overflow-hidden flex flex-col h-[min(85vh,760px)] relative">
         
         {/* Close Button Overlay */}
         <button 
