@@ -17,6 +17,8 @@ import { generateItemSpecs, getSpecsAIProvider, requestAIJson } from '../service
 
 interface Props {
   onSave: (newItems: InventoryItem[]) => void;
+  categories?: Record<string, string[]>;
+  onAddCategory?: (category: string, subcategory?: string) => void;
   categoryFields?: Record<string, string[]>;
 }
 
@@ -156,7 +158,7 @@ function parseQuantityAndName(rawLine: string): { name: string; quantity: number
   return { quantity: Math.max(1, parseInt(m[1], 10) || 1), name: m[2].trim() };
 }
 
-const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
+const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORIES, onAddCategory, categoryFields = {} }) => {
   const navigate = useNavigate();
   const aiAvailable = !!getSpecsAIProvider();
 
@@ -347,6 +349,16 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
       return { name, quantity } as ParsedTextItem;
     });
     applyParsedItems(parsed, 'AS_IS');
+  };
+
+  const handleAddGlobalCategory = () => {
+    if (!onAddCategory) return;
+    const category = (window.prompt('New category name (global):') || '').trim();
+    if (!category) return;
+    const sub = (window.prompt('Optional default subcategory for this category:') || '').trim();
+    onAddCategory(category, sub || undefined);
+    setNewCategory(category);
+    if (sub) setNewSubCategory(sub);
   };
 
   const handleParseBulkTextWithAI = async () => {
@@ -671,6 +683,41 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                      </div>
                   </div>
 
+                  <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                     <div className="space-y-1">
+                        <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Category</label>
+                        <select
+                          className="w-full px-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none"
+                          value={newCategory}
+                          onChange={(e) => {
+                            const c = e.target.value;
+                            setNewCategory(c);
+                            setNewSubCategory((categories[c] || [])[0] || '');
+                          }}
+                        >
+                          {Object.keys(categories).map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+                        </select>
+                     </div>
+                     <div className="space-y-1">
+                        <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Subcategory</label>
+                        <select
+                          className="w-full px-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none"
+                          value={newSubCategory}
+                          onChange={(e) => setNewSubCategory(e.target.value)}
+                        >
+                          {(categories[newCategory] || []).map((sub) => <option key={sub} value={sub}>{sub}</option>)}
+                        </select>
+                     </div>
+                     <button
+                       type="button"
+                       onClick={handleAddGlobalCategory}
+                       className="h-[42px] w-[42px] rounded-xl bg-emerald-100 text-emerald-700 font-black text-xl leading-none hover:bg-emerald-200"
+                       title="Add global category"
+                     >
+                       +
+                     </button>
+                  </div>
+
                   <div className="space-y-4">
                      <div className="space-y-2">
                         <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Item Name</label>
@@ -959,18 +1006,18 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                               value={item.category}
                               onChange={(e) => {
                                 const nextCategory = e.target.value;
-                                const nextSub = (HIERARCHY_CATEGORIES[nextCategory] || [item.subCategory || ''])[0] || '';
+                                const nextSub = (categories[nextCategory] || [item.subCategory || ''])[0] || '';
                                 setItems((prev) => prev.map((x) => x.id === item.id ? { ...x, category: nextCategory, subCategory: nextSub } : x));
                               }}
                             >
-                              {Object.keys(HIERARCHY_CATEGORIES).map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+                              {Object.keys(categories).map((cat) => <option key={cat} value={cat}>{cat}</option>)}
                             </select>
                             <select
                               className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none"
                               value={item.subCategory || ''}
                               onChange={(e) => setItems((prev) => prev.map((x) => x.id === item.id ? { ...x, subCategory: e.target.value } : x))}
                             >
-                              {(HIERARCHY_CATEGORIES[item.category] || []).map((sub) => <option key={sub} value={sub}>{sub}</option>)}
+                              {(categories[item.category] || []).map((sub) => <option key={sub} value={sub}>{sub}</option>)}
                             </select>
                             <input
                               className="col-span-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none"
