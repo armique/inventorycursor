@@ -236,10 +236,16 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
 
       Object.entries(returnedSpecs).forEach(([k, v]) => {
         if (v === undefined || v === null || v === '') return;
-        const keyToUse =
+        let keyToUse =
           definedFields.length > 0
             ? definedFields.find((df) => df.toLowerCase() === k.toLowerCase()) || k
             : k;
+        if (formData.subCategory === 'RAM' && k.toLowerCase() === 'capacity' && !definedFields.some((df) => df.toLowerCase() === 'capacity')) {
+          keyToUse = 'Kit Capacity';
+        }
+        if (formData.subCategory === 'Storage (SSD/HDD)' && k.toLowerCase() === 'type' && !definedFields.some((df) => df.toLowerCase() === 'type')) {
+          keyToUse = 'Drive Type';
+        }
         newSpecs[keyToUse] = v;
         nextAi[keyToUse] = v;
       });
