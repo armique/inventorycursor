@@ -71,12 +71,11 @@ const Dashboard: React.FC<Props> = ({
   const [dayDetailModal, setDayDetailModal] = useState<{ dayLabel: string; dateStr: string; items: InventoryItem[] } | null>(null);
   const [showWidgetModal, setShowWidgetModal] = useState(false);
 
+  /** Enabled widgets only, in order (subset of DASHBOARD_WIDGET_IDS). */
   const visibleWidgets = useMemo((): WidgetId[] => {
-    const valid = dashboardPreferences.widgets.filter((id): id is WidgetId =>
+    return dashboardPreferences.widgets.filter((id): id is WidgetId =>
       DASHBOARD_WIDGET_IDS.includes(id as WidgetId)
     );
-    const missing = DASHBOARD_WIDGET_IDS.filter((id) => !valid.includes(id));
-    return [...valid, ...missing];
   }, [dashboardPreferences.widgets]);
 
   const toggleWidget = (id: WidgetId) => {

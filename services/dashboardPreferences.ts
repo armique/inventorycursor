@@ -24,8 +24,8 @@ export function normalizeDashboardPreferences(raw: unknown): DashboardPreference
 
   if (Array.isArray(o.widgets)) {
     const valid = o.widgets.filter((id): id is string => typeof id === 'string' && DEFAULT_DASHBOARD_WIDGET_IDS.includes(id as (typeof DEFAULT_DASHBOARD_WIDGET_IDS)[number]));
-    const missing = DEFAULT_DASHBOARD_WIDGET_IDS.filter((id) => !valid.includes(id));
-    d.widgets = [...valid, ...missing];
+    // Only enabled widgets, in order (do not append "missing" — that prevented hiding any widget).
+    d.widgets = valid.length > 0 ? [...valid] : [...DEFAULT_DASHBOARD_WIDGET_IDS];
   }
 
   if (Array.isArray(o.tasks)) {
@@ -60,8 +60,7 @@ export function loadDashboardPreferencesFromLocalStorage(): DashboardPreferences
         const valid = parsed.filter((id): id is string =>
           typeof id === 'string' && DEFAULT_DASHBOARD_WIDGET_IDS.includes(id as (typeof DEFAULT_DASHBOARD_WIDGET_IDS)[number])
         );
-        const missing = DEFAULT_DASHBOARD_WIDGET_IDS.filter((id) => !valid.includes(id));
-        widgets = [...valid, ...missing];
+        widgets = valid.length > 0 ? [...valid] : [...DEFAULT_DASHBOARD_WIDGET_IDS];
       }
     } catch {
       /* keep default */
