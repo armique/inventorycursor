@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Cloud, Building2, Layers, Wrench, ShoppingBag,
@@ -23,7 +22,6 @@ import {
   type GitHubRepoItem,
 } from '../services/githubBackupService';
 import CategoryEditor from './CategoryEditor';
-import { exportFinanzamtWorkbook } from '../services/finanzamtExportService';
 
 export interface BackupData {
   inventory: InventoryItem[];
@@ -1090,8 +1088,19 @@ const SettingsPage: React.FC<Props> = ({
                       <button
                          type="button"
                          onClick={() => {
-                            exportFinanzamtWorkbook(items, expenses, { companyName: businessSettings.companyName });
-                            showToast('Finanzamt-Export heruntergeladen', 'success');
+                            void (async () => {
+                               try {
+                                  const { exportFinanzamtWorkbook } = await import(
+                                     '../services/finanzamtExportService'
+                                  );
+                                  await exportFinanzamtWorkbook(items, expenses, {
+                                     companyName: businessSettings.companyName,
+                                  });
+                                  showToast('Finanzamt-Export heruntergeladen', 'success');
+                               } catch {
+                                  showToast('Export fehlgeschlagen — bitte erneut versuchen.', 'error');
+                               }
+                            })();
                          }}
                          className="px-6 py-3 bg-emerald-700 text-white rounded-xl font-bold text-xs uppercase hover:bg-emerald-800 transition-all flex items-center gap-2 shadow-sm"
                       >

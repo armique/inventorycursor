@@ -10,6 +10,7 @@ import {
   Sparkles, Loader2, Package
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, Platform, PaymentType } from '../types';
+import { formatEUR } from '../utils/formatMoney';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { CATEGORY_IMAGES, searchAllHardware, HardwareMetadata } from '../services/hardwareDB';
 import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
@@ -215,7 +216,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
     // Check consistency
     const totalAllocated = items.reduce((sum, item) => sum + (item.manualCost !== undefined ? item.manualCost : autoSplitValue), 0);
     if (Math.abs(totalAllocated - totalCost) > 0.1) {
-        if (!window.confirm(`Warning: The sum of item costs (€${totalAllocated.toFixed(2)}) does not match Total Paid (€${totalCost}). Continue anyway?`)) {
+        if (!window.confirm(`Warning: The sum of item costs (€${formatEUR(totalAllocated)}) does not match Total Paid (€${formatEUR(totalCost)}). Continue anyway?`)) {
             return;
         }
     }
@@ -576,7 +577,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
                            <input 
                               type="number"
                               className="w-16 bg-transparent text-right font-black text-sm outline-none text-slate-900"
-                              placeholder={autoSplitValue.toFixed(2)}
+                              placeholder={formatEUR(autoSplitValue)}
                               value={item.manualCost !== undefined ? item.manualCost : ''}
                               onChange={e => updateItemCost(item.id, e.target.value)}
                            />
@@ -653,8 +654,8 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
                   </label>
                )}
                <div className="flex justify-between items-center mb-6 text-xs font-bold text-slate-500">
-                  <span>Total Paid: <span className="text-slate-900">€{totalCost.toFixed(2)}</span></span>
-                  <span>Allocated: <span className={Math.abs(allocatedSum + (itemsWithoutManualCost * autoSplitValue) - totalCost) > 0.1 ? 'text-red-500' : 'text-emerald-500'}>€{(allocatedSum + (itemsWithoutManualCost * autoSplitValue)).toFixed(2)}</span></span>
+                  <span>Total Paid: <span className="text-slate-900">€{formatEUR(totalCost)}</span></span>
+                  <span>Allocated: <span className={Math.abs(allocatedSum + (itemsWithoutManualCost * autoSplitValue) - totalCost) > 0.1 ? 'text-red-500' : 'text-emerald-500'}>€{formatEUR(allocatedSum + (itemsWithoutManualCost * autoSplitValue))}</span></span>
                </div>
                <button 
                   onClick={handleSubmit}

@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { InventoryItem, BusinessSettings, CustomerInfo } from '../types';
+import { formatEUR } from '../utils/formatMoney';
 import { X, Printer, Edit2, Check, User, MapPin, Phone, Info, CreditCard, Receipt } from 'lucide-react';
 
 interface Props {
@@ -224,8 +225,8 @@ const InvoiceGenerator: React.FC<Props> = ({ items, business, type, onClose }) =
                              <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">Ref-ID: {item.id.slice(-6).toUpperCase()}</p>
                           </td>
                           <td className="py-6 text-center font-bold">1</td>
-                          <td className="py-6 text-right font-bold">€{itemNet.toFixed(2)}</td>
-                          <td className="py-6 text-right font-black">€{itemNet.toFixed(2)}</td>
+                          <td className="py-6 text-right font-bold">€{formatEUR(itemNet)}</td>
+                          <td className="py-6 text-right font-black">€{formatEUR(itemNet)}</td>
                         </tr>
                       );
                     })}
@@ -238,17 +239,17 @@ const InvoiceGenerator: React.FC<Props> = ({ items, business, type, onClose }) =
               <div className="w-80 space-y-4">
                  <div className="flex justify-between text-xs font-bold text-slate-400">
                     <span>Zwischensumme {editableBusiness.taxMode === 'RegularVAT' ? '(Netto)' : ''}:</span>
-                    <span>€{netTotal.toFixed(2)}</span>
+                    <span>€{formatEUR(netTotal)}</span>
                  </div>
                  {editableBusiness.taxMode === 'RegularVAT' && (
                     <div className="flex justify-between text-xs font-bold text-slate-400">
                        <span>Umsatzsteuer (19%):</span>
-                       <span>€{vatAmount.toFixed(2)}</span>
+                       <span>€{formatEUR(vatAmount)}</span>
                     </div>
                  )}
                  <div className="flex justify-between items-center pt-5 border-t-2 border-slate-900">
                     <span className="text-sm font-black text-slate-900">RECHNUNGSBETRAG:</span>
-                    <span className="text-3xl font-black text-slate-900">€{totalGross.toFixed(2)}</span>
+                    <span className="text-3xl font-black text-slate-900">€{formatEUR(totalGross)}</span>
                  </div>
               </div>
            </div>

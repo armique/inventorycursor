@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { formatEUR } from '../utils/formatMoney';
 import { Swords, Plus, Trash2, Globe, Search, RefreshCcw, ExternalLink, TrendingUp, AlertCircle, ShoppingCart } from 'lucide-react';
 import { Competitor, Platform } from '../types';
 import { analyzeCompetitor } from '../services/geminiService';
@@ -150,7 +151,7 @@ const CompetitorTracker: React.FC = () => {
                                     return (
                                       <div key={idx} className="flex justify-between items-center text-xs p-2 hover:bg-slate-50 rounded-lg transition-colors">
                                          <span className="font-bold text-slate-700 truncate max-w-[70%]">{item.title}</span>
-                                         <span className="font-black text-indigo-600 bg-indigo-50 px-2 py-1 rounded">{typeof item.price === 'number' ? `€${Number(item.price).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : item.price}</span>
+                                         <span className="font-black text-indigo-600 bg-indigo-50 px-2 py-1 rounded">{typeof item.price === 'number' ? `€${formatEUR(Number(item.price))}` : item.price}</span>
                                       </div>
                                     );
                                  })}

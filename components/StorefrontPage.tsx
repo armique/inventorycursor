@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { formatEUR } from '../utils/formatMoney';
 import { filterUsableImageUrls, isUsableProductImageUrl } from '../services/storefrontImageUtils';
 import { getCategoryImageUrl } from './ItemThumbnail';
 import { MessageCircle, ChevronLeft, ChevronRight, Tag, X, Send, Loader2, Package, Sparkles, LayoutGrid, List, ArrowUp, FileText, Share2, Heart, Moon, Sun, Search as SearchIcon, SlidersHorizontal, Home } from 'lucide-react';
@@ -570,7 +571,7 @@ const StorefrontPage: React.FC = () => {
                   )}
                   {(minPrice !== '' || maxPrice !== '') && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-200 text-xs font-medium">
-                      €{minPrice !== '' ? Number(minPrice).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '0'}–{maxPrice !== '' ? `€${Number(maxPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : '…'} <button type="button" onClick={() => { setMinPrice(''); setMaxPrice(''); }} className="hover:opacity-80" aria-label="Remove">×</button>
+                      €{minPrice !== '' ? formatEUR(Number(minPrice)) : formatEUR(0)}–{maxPrice !== '' ? `€${formatEUR(Number(maxPrice))}` : '…'} <button type="button" onClick={() => { setMinPrice(''); setMaxPrice(''); }} className="hover:opacity-80" aria-label="Remove">×</button>
                     </span>
                   )}
                   {search.trim() !== '' && (
@@ -1049,9 +1050,9 @@ const StoreItemCard: React.FC<{
       <div className="mt-3 flex items-baseline gap-2 flex-wrap">
         {priceDisplay.hasPrice ? (
           <>
-            <span className="text-xl font-bold text-slate-900">{Number(priceDisplay.value).toLocaleString(undefined, { maximumFractionDigits: 2 })} €</span>
+            <span className="text-xl font-bold text-slate-900">{formatEUR(Number(priceDisplay.value))} €</span>
             {priceDisplay.sale && item.sellPrice != null && item.sellPrice > priceDisplay.value && (
-              <span className="text-sm text-slate-400 line-through">{Number(item.sellPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })} €</span>
+              <span className="text-sm text-slate-400 line-through">{formatEUR(Number(item.sellPrice))} €</span>
             )}
           </>
         ) : (

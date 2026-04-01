@@ -1,5 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { formatEUR } from '../utils/formatMoney';
+
 import { 
   Search, Trash2, RotateCcw, AlertTriangle, X, Check, CheckCircle, Package, Clock,
   LayoutGrid, List as ListIcon, Calendar, GripVertical, ArrowUp, ArrowDown, ArrowUpDown, Square, CheckSquare, Minus
@@ -313,7 +315,7 @@ const TrashPage: React.FC<Props> = ({ items, onRestore, onPermanentDelete }) => 
                   <h3 className="font-black text-slate-900 text-sm line-clamp-2 leading-tight tracking-tight">{item.name}</h3>
                   <div className="flex items-center justify-between">
                     <p className="text-[10px] text-slate-400 font-bold uppercase truncate">{item.category}</p>
-                    <p className="text-[10px] font-black text-slate-900">€{Number(item.buyPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                    <p className="text-[10px] font-black text-slate-900">€{formatEUR(Number(item.buyPrice))}</p>
                   </div>
                 </div>
               </div>
@@ -376,7 +378,7 @@ const TrashPage: React.FC<Props> = ({ items, onRestore, onPermanentDelete }) => 
                                </td>
                              );
                              if (colId === 'category') return <td key={colId} className="p-5 text-[10px] font-black text-slate-500 uppercase tracking-widest truncate" style={style}>{item.category}</td>;
-                             if (colId === 'buyPrice') return <td key={colId} className="p-5 text-right font-black text-slate-900" style={style}>€{Number(item.buyPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>;
+                             if (colId === 'buyPrice') return <td key={colId} className="p-5 text-right font-black text-slate-900" style={style}>€{formatEUR(Number(item.buyPrice))}</td>;
                              if (colId === 'buyDate') return (
                                <td key={colId} className="p-5 text-right text-xs font-bold text-slate-500" style={style}>
                                  <span className="flex items-center justify-end gap-1">

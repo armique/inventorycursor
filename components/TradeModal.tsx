@@ -1,5 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
+import { formatEUR } from '../utils/formatMoney';
+
 import { X, ArrowRightLeft, Plus, Trash2, Package, Wallet, ArrowRight, Search, Database, FileText, TrendingUp, TrendingDown, RefreshCcw } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
@@ -171,7 +173,7 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose }) => {
                   </div>
                   <div>
                     <h4 className="font-black text-sm text-slate-900 leading-tight line-clamp-2">{item.name}</h4>
-                    <p className="text-[10px] text-slate-500 font-bold mt-1 bg-slate-100 inline-block px-2 py-0.5 rounded">Orig. Cost: €{Number(item.buyPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                    <p className="text-[10px] text-slate-500 font-bold mt-1 bg-slate-100 inline-block px-2 py-0.5 rounded">Orig. Cost: €{formatEUR(Number(item.buyPrice))}</p>
                   </div>
                 </div>
 
@@ -326,7 +328,7 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose }) => {
               <div className="flex flex-col">
                  <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Total Trade Value</p>
                  <div className="flex items-baseline gap-2">
-                    <span className="text-3xl font-black text-slate-900">€{totalTradeValue.toFixed(2)}</span>
+                    <span className="text-3xl font-black text-slate-900">€{formatEUR(totalTradeValue)}</span>
                     <span className="text-[10px] font-bold text-slate-400">(Items + Cash)</span>
                  </div>
               </div>
@@ -335,7 +337,7 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose }) => {
                  <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Projected Result</p>
                  <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border ${projectedProfit >= 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-red-50 text-red-700 border-red-100'}`}>
                     {projectedProfit >= 0 ? <TrendingUp size={16}/> : <TrendingDown size={16}/>}
-                    <span className="text-lg font-black">{projectedProfit >= 0 ? '+' : ''}€{projectedProfit.toFixed(2)}</span>
+                    <span className="text-lg font-black">{projectedProfit >= 0 ? '+' : ''}€{formatEUR(projectedProfit)}</span>
                  </div>
               </div>
            </div>

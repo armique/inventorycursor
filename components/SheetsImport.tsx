@@ -1,4 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { formatEUR } from '../utils/formatMoney';
+
 import { read, utils } from 'xlsx';
 import { Upload, FileSpreadsheet, CheckCircle2, Info, Loader2, AlertCircle, Eye, HelpCircle, Trash2, AlertTriangle, RefreshCcw, ArrowRight, TrendingUp, Wallet, ListX, Table, Search, Globe, ChevronDown, ChevronUp, FileText, Settings2, Columns } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
@@ -399,16 +401,16 @@ const SheetsImport: React.FC<Props> = ({ onImport, onClearData }) => {
                   <div className="space-y-6">
                      <div className="flex justify-between items-end border-b border-white/10 pb-4">
                         <p className="text-[10px] font-bold text-slate-400 uppercase">Total Buy</p>
-                        <p className="text-xl font-black text-slate-200">€{financialPreview.totalBuy.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                        <p className="text-xl font-black text-slate-200">€{formatEUR(financialPreview.totalBuy)}</p>
                      </div>
                      <div className="flex justify-between items-end border-b border-white/10 pb-4">
                         <p className="text-[10px] font-bold text-slate-400 uppercase">Total Sold</p>
-                        <p className="text-xl font-black text-blue-400">€{financialPreview.totalSell.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                        <p className="text-xl font-black text-blue-400">€{formatEUR(financialPreview.totalSell)}</p>
                      </div>
                      <div className="flex justify-between items-end">
                         <p className="text-[10px] font-bold text-slate-400 uppercase">Total Profit</p>
                         <p className={`text-2xl font-black ${financialPreview.totalProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                           €{financialPreview.totalProfit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                           €{formatEUR(financialPreview.totalProfit)}
                         </p>
                      </div>
                   </div>
@@ -578,12 +580,12 @@ const SheetsImport: React.FC<Props> = ({ onImport, onClearData }) => {
                                     <p className="truncate max-w-[200px] text-slate-900">{item.name}</p>
                                     <p className="text-[9px] text-slate-400 font-medium uppercase">{item.category}</p>
                                  </td>
-                                 <td className="p-4 text-right">€{item.buyPrice.toFixed(2)}</td>
+                                 <td className="p-4 text-right">€{formatEUR(item.buyPrice)}</td>
                                  <td className="p-4 text-right text-slate-500">
-                                    {item.sellPrice ? `€${item.sellPrice.toFixed(2)}` : '-'}
+                                    {item.sellPrice ? `€${formatEUR(item.sellPrice)}` : '-'}
                                  </td>
                                  <td className={`p-4 text-right ${item.profit && item.profit > 0 ? 'text-emerald-600' : item.profit && item.profit < 0 ? 'text-red-500' : 'text-slate-300'}`}>
-                                    {item.profit ? `€${item.profit.toFixed(2)}` : '-'}
+                                    {item.profit ? `€${formatEUR(item.profit)}` : '-'}
                                  </td>
                                  <td className="p-4 text-center">
                                     <span className={`px-2 py-1 rounded text-[9px] uppercase font-black ${item.status === ItemStatus.SOLD ? 'bg-purple-100 text-purple-600' : 'bg-emerald-100 text-emerald-600'}`}>

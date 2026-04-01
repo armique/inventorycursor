@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { FileText, Check, Search, Receipt, Calendar, Info, CreditCard, Square, CheckSquare, Minus, CheckCircle } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings } from '../types';
+import { formatEUR } from '../utils/formatMoney';
 import InvoiceGenerator from './InvoiceGenerator';
 
 type TimeFilter = 'ALL' | 'THIS_WEEK' | 'LAST_WEEK' | 'THIS_MONTH' | 'LAST_MONTH' | 'LAST_30' | 'LAST_90' | 'THIS_YEAR' | 'LAST_YEAR';
@@ -189,7 +190,7 @@ const InvoiceManager: React.FC<Props> = ({ items, businessSettings }) => {
                            <div>
                               <p className="text-sm font-black truncate max-w-xs">{item.name}</p>
                               <p className={`text-[10px] font-black uppercase tracking-widest ${isSelected ? 'text-blue-100' : 'text-slate-400'}`}>
-                                €{item.sellPrice?.toFixed(2)} • Sold on {item.sellDate}
+                                €{item.sellPrice != null ? formatEUR(item.sellPrice) : '—'} • Sold on {item.sellDate}
                               </p>
                            </div>
                         </div>
@@ -213,7 +214,7 @@ const InvoiceManager: React.FC<Props> = ({ items, businessSettings }) => {
                 <div className="space-y-4 animate-in slide-in-from-right-4">
                    <div className="p-4 bg-white/10 rounded-2xl border border-white/10 space-y-2">
                       <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Selected Total</p>
-                      <p className="text-2xl font-black text-blue-400">€{selectedItems.reduce((acc, i) => acc + (i.sellPrice || 0), 0).toFixed(2)}</p>
+                      <p className="text-2xl font-black text-blue-400">€{formatEUR(selectedItems.reduce((acc, i) => acc + (i.sellPrice || 0), 0))}</p>
                       <p className="text-xs font-bold text-slate-500">{selectedIds.length} position(s)</p>
                    </div>
 

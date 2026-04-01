@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { X, RotateCcw, AlertTriangle, Check, ArrowDown, Wallet } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
+import { formatEUR } from '../utils/formatMoney';
 
 interface Props {
   items: InventoryItem[];
@@ -23,7 +24,7 @@ const ReturnModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
       
       // Append note about return to internal comments
       const returnNote = feeAmount > 0 
-        ? ` [Returned ${new Date().toLocaleDateString()}: +€${feePerItem.toFixed(2)} cost]` 
+        ? ` [Returned ${new Date().toLocaleDateString()}: +€${formatEUR(feePerItem)} cost]` 
         : ` [Returned ${new Date().toLocaleDateString()}]`;
 
       return {
@@ -100,7 +101,7 @@ const ReturnModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
                 </div>
                 {items.length > 1 && totalFee && (
                   <p className="text-[10px] text-amber-600 font-bold mt-2 text-right flex items-center justify-end gap-1">
-                    <ArrowDown size={10}/> +€{(parseFloat(totalFee) / items.length).toFixed(2)} added to each item
+                    <ArrowDown size={10}/> +€{formatEUR(parseFloat(totalFee) / items.length)} added to each item
                   </p>
                 )}
               </div>

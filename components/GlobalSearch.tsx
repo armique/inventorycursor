@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Package, Wallet, Settings, X } from 'lucide-react';
 import { InventoryItem, Expense, BusinessSettings } from '../types';
+import { formatEUR } from '../utils/formatMoney';
 
 interface Props {
   items: InventoryItem[];
@@ -161,7 +162,7 @@ const GlobalSearch: React.FC<Props> = ({ items, expenses, businessSettings, onCl
                       <Wallet size={14} className="text-slate-500 shrink-0" />
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-white truncate">{exp.description}</p>
-                        <p className="text-[10px] text-slate-400">€{exp.amount.toFixed(2)} · {exp.category}</p>
+                        <p className="text-[10px] text-slate-400">€{formatEUR(exp.amount)} · {exp.category}</p>
                       </div>
                     </button>
                   ))}

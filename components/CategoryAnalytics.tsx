@@ -1,4 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
+import { formatEUR } from '../utils/formatMoney';
+
 import { BarChart3, TrendingUp, Clock, Package, Euro, Percent, ChevronDown, ChevronRight } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings } from '../types';
 
@@ -273,7 +275,7 @@ const CategoryAnalytics: React.FC<Props> = ({ items, businessSettings }) => {
             <Euro size={12} /> Revenue
           </p>
           <p className="text-2xl font-black text-slate-900 mt-1">
-            €{totals.totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            €{formatEUR(totals.totalRevenue)}
           </p>
         </div>
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
@@ -282,7 +284,7 @@ const CategoryAnalytics: React.FC<Props> = ({ items, businessSettings }) => {
           </p>
           <p className={`text-2xl font-black mt-1 ${totals.totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
             {totals.totalProfit >= 0 ? '+' : ''}€
-            {totals.totalProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {formatEUR(totals.totalProfit)}
           </p>
         </div>
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
@@ -332,11 +334,11 @@ const CategoryAnalytics: React.FC<Props> = ({ items, businessSettings }) => {
                     <td className="px-6 py-3 font-bold text-slate-900">{row.label}</td>
                     <td className="px-6 py-3 text-right font-medium text-slate-700">{row.count}</td>
                     <td className="px-6 py-3 text-right font-medium text-slate-700">
-                      €{row.totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      €{formatEUR(row.totalRevenue)}
                     </td>
                     <td className={`px-6 py-3 text-right font-bold ${row.totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                       {row.totalProfit >= 0 ? '+' : ''}€
-                      {row.totalProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {formatEUR(row.totalProfit)}
                     </td>
                     <td className={`px-6 py-3 text-right font-bold ${row.avgMarginPct >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                       {row.avgMarginPct >= 0 ? '+' : ''}{row.avgMarginPct.toFixed(1)}%
@@ -353,11 +355,11 @@ const CategoryAnalytics: React.FC<Props> = ({ items, businessSettings }) => {
                         <td className="px-6 py-2 pl-8 text-sm font-medium text-slate-600">{sub.label}</td>
                         <td className="px-6 py-2 text-right text-sm text-slate-600">{sub.count}</td>
                         <td className="px-6 py-2 text-right text-sm text-slate-600">
-                          €{sub.totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          €{formatEUR(sub.totalRevenue)}
                         </td>
                         <td className={`px-6 py-2 text-right text-sm font-medium ${sub.totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                           {sub.totalProfit >= 0 ? '+' : ''}€
-                          {sub.totalProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {formatEUR(sub.totalProfit)}
                         </td>
                         <td className={`px-6 py-2 text-right text-sm ${sub.avgMarginPct >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                           {sub.avgMarginPct >= 0 ? '+' : ''}{sub.avgMarginPct.toFixed(1)}%

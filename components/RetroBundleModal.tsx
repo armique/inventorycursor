@@ -1,5 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
+import { formatEUR } from '../utils/formatMoney';
+
 import { X, Package, ArrowRight, CheckCircle2, Layers, Calendar, Edit2, Check, HelpCircle } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
 
@@ -163,16 +165,16 @@ const RetroBundleModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
           <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-3">
              <div className="flex justify-between items-center">
                 <span className="text-xs font-bold text-slate-500">Total Sold Price</span>
-                <span className="font-mono text-xs font-bold text-slate-900">€{totalSell.toFixed(2)}</span>
+                <span className="font-mono text-xs font-bold text-slate-900">€{formatEUR(totalSell)}</span>
              </div>
              <div className="flex justify-between items-center">
                 <span className="text-xs font-bold text-slate-500">Total Cost (Buy)</span>
-                <span className="font-mono text-xs text-slate-900">-€{totalBuy.toFixed(2)}</span>
+                <span className="font-mono text-xs text-slate-900">-€{formatEUR(totalBuy)}</span>
              </div>
              {totalFees > 0 && (
                <div className="flex justify-between items-center text-red-500">
                   <span className="text-xs font-bold">Aggregated Fees</span>
-                  <span className="font-mono text-xs">-€{totalFees.toFixed(2)}</span>
+                  <span className="font-mono text-xs">-€{formatEUR(totalFees)}</span>
                </div>
              )}
              <div className="h-px bg-slate-200 my-1"></div>
@@ -180,7 +182,7 @@ const RetroBundleModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
                 <span className="text-sm font-black text-slate-700">Net Profit</span>
                 <div className="text-right">
                    <span className={`font-black text-xl ${margin >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                      €{margin.toFixed(2)}
+                      €{formatEUR(margin)}
                    </span>
                    <p className="text-[9px] text-slate-400 font-medium">Pre-Tax</p>
                 </div>
@@ -202,8 +204,8 @@ const RetroBundleModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
                       {item.hasFee && item.feeAmount && <span className="text-[8px] text-red-400">Fee: €{item.feeAmount}</span>}
                    </div>
                    <div className="text-right">
-                      <span className="font-bold text-slate-900">€{item.sellPrice?.toFixed(2)}</span>
-                      <span className="text-[9px] text-slate-400 block">Buy: €{Number(item.buyPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                      <span className="font-bold text-slate-900">€{item.sellPrice != null ? formatEUR(item.sellPrice) : '—'}</span>
+                      <span className="text-[9px] text-slate-400 block">Buy: €{formatEUR(Number(item.buyPrice))}</span>
                    </div>
                 </div>
              ))}

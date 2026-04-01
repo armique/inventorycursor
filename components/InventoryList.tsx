@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { formatEUR } from '../utils/formatMoney';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
@@ -434,11 +435,11 @@ const InventoryList: React.FC<Props> = ({
 
   const savePriceSuggestionAsNote = (item: InventoryItem, result: SoldPriceSuggestion) => {
     const suggested = result.priceAverage;
-    const rangeText = result.priceLow && result.priceHigh ? `€${Number(result.priceLow).toLocaleString(undefined, { maximumFractionDigits: 2 })}–€${Number(result.priceHigh).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : '';
+    const rangeText = result.priceLow && result.priceHigh ? `€${formatEUR(Number(result.priceLow))}–€${formatEUR(Number(result.priceHigh))}` : '';
     const examplesText = result.soldExamples.length > 0
-      ? '\nBeispiele: ' + result.soldExamples.map(e => `${e.title} (€${Number(e.price).toLocaleString(undefined, { maximumFractionDigits: 2 })})`).join(', ')
+      ? '\nBeispiele: ' + result.soldExamples.map(e => `${e.title} (€${formatEUR(Number(e.price))})`).join(', ')
       : '';
-    const note = `AI-Preistipp (eBay verkaufte Artikel): ~€${suggested.toFixed(2)}${rangeText ? ` (${rangeText})` : ''}${examplesText}`;
+    const note = `AI-Preistipp (eBay verkaufte Artikel): ~€${formatEUR(suggested)}${rangeText ? ` (${rangeText})` : ''}${examplesText}`;
     onUpdate([{ ...item, comment2: item.comment2 ? `${item.comment2}\n${note}` : note }]);
     closePriceSuggestModal();
   };
@@ -1321,7 +1322,7 @@ const InventoryList: React.FC<Props> = ({
                                    <div className="flex items-center gap-3 text-[10px] shrink-0">
                                       {childMargin != null && (
                                          <span className={`font-bold px-1.5 py-0.5 rounded ${childMargin >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                                            {childMargin >= 0 ? '+' : ''}€{childMargin.toFixed(2)}
+                                            {childMargin >= 0 ? '+' : ''}€{formatEUR(childMargin)}
                                          </span>
                                       )}
                                       {child.buyDate && (
@@ -1353,7 +1354,7 @@ const InventoryList: React.FC<Props> = ({
                                      <div className="flex items-center justify-between">
                                         <span className="text-[9px] font-black uppercase text-slate-600 tracking-widest">Total Margin:</span>
                                         <span className={`text-sm font-black ${totalMargin >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                                           {totalMargin >= 0 ? '+' : ''}€{totalMargin.toFixed(2)}
+                                           {totalMargin >= 0 ? '+' : ''}€{formatEUR(totalMargin)}
                                         </span>
                                      </div>
                                   </div>
@@ -1543,7 +1544,7 @@ const InventoryList: React.FC<Props> = ({
                  onClick={e => e.stopPropagation()}
                />
             ) : (
-               `€${item.buyPrice.toFixed(2)}`
+               `€${formatEUR(item.buyPrice)}`
             )}
           </td>
         );
@@ -1570,7 +1571,7 @@ const InventoryList: React.FC<Props> = ({
                  onClick={e => e.stopPropagation()}
                />
             ) : (
-               item.sellPrice ? `€${item.sellPrice.toFixed(2)}` : '-'
+               item.sellPrice ? `€${formatEUR(item.sellPrice)}` : '-'
             )}
           </td>
         );
@@ -1585,7 +1586,7 @@ const InventoryList: React.FC<Props> = ({
         }
         return (
           <td key={id} className={`p-5 text-right font-black ${item.profit && item.profit > 0 ? 'text-emerald-600' : item.profit && item.profit < 0 ? 'text-red-500' : 'text-slate-300'}`} style={style}>
-             {item.profit ? `€${item.profit.toFixed(2)}` : '-'}
+             {item.profit ? `€${formatEUR(item.profit)}` : '-'}
           </td>
         );
       case 'buyDate':
@@ -2093,23 +2094,23 @@ const InventoryList: React.FC<Props> = ({
             <div className="flex flex-wrap justify-center gap-8">
                <div className="text-center xl:text-left">
                   <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Total Sales (Gross)</p>
-                  <p className="text-2xl font-black text-slate-900">€{financialStats.totalGross.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                  <p className="text-2xl font-black text-slate-900">€{formatEUR(financialStats.totalGross)}</p>
                </div>
                <div className="w-px bg-slate-100 hidden xl:block"></div>
                <div className="text-center xl:text-left">
                   <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Taxes Paid (VAT)</p>
-                  <p className="text-2xl font-black text-red-500">-€{financialStats.totalTax.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                  <p className="text-2xl font-black text-red-500">-€{formatEUR(financialStats.totalTax)}</p>
                </div>
                <div className="w-px bg-slate-100 hidden xl:block"></div>
                <div className="text-center xl:text-left">
                   <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Sold Before Tax</p>
-                  <p className="text-2xl font-black text-blue-600">€{financialStats.totalNetRevenue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                  <p className="text-2xl font-black text-blue-600">€{formatEUR(financialStats.totalNetRevenue)}</p>
                </div>
                <div className="w-px bg-slate-100 hidden xl:block"></div>
                <div className="text-center xl:text-left">
                   <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Total Net Profit</p>
                   <p className={`text-2xl font-black ${financialStats.totalProfit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                     {financialStats.totalProfit >= 0 ? '+' : ''}€{financialStats.totalProfit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                     {financialStats.totalProfit >= 0 ? '+' : ''}€{formatEUR(financialStats.totalProfit)}
                   </p>
                </div>
             </div>
@@ -2437,8 +2438,8 @@ const InventoryList: React.FC<Props> = ({
                      <div className="space-y-4">
                         <div className="flex justify-between items-end">
                            <div>
-                              <p className="text-[10px] font-bold text-slate-400 uppercase">€{Number(priceSuggestResult.priceLow).toLocaleString(undefined, { maximumFractionDigits: 2 })} – €{Number(priceSuggestResult.priceHigh).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
-                              <p className="text-2xl font-black text-emerald-600">€{Number(priceSuggestResult.priceAverage).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase">€{formatEUR(Number(priceSuggestResult.priceLow))} – €{formatEUR(Number(priceSuggestResult.priceHigh))}</p>
+                              <p className="text-2xl font-black text-emerald-600">€{formatEUR(Number(priceSuggestResult.priceAverage))}</p>
                            </div>
                            <a href={ebaySoldSearchUrl(priceSuggestModalItem.name)} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1">
                               eBay.de <ArrowRight size={12}/>
@@ -2460,7 +2461,7 @@ const InventoryList: React.FC<Props> = ({
                                  {priceSuggestResult.soldExamples.map((ex, idx) => (
                                     <a key={idx} href={ebaySoldSearchUrl(ex.title || priceSuggestModalItem.name)} target="_blank" rel="noopener noreferrer" className="flex justify-between items-center py-2 px-3 bg-slate-50 rounded-lg hover:bg-amber-50 text-left group" title="Search for this exact listing on eBay sold">
                                        <span className="text-[11px] font-medium text-slate-700 truncate flex-1 mr-2">{ex.title}</span>
-                                       <span className="text-xs font-black text-slate-900 shrink-0">€{Number(ex.price).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                                       <span className="text-xs font-black text-slate-900 shrink-0">€{formatEUR(Number(ex.price))}</span>
                                     </a>
                                  ))}
                               </div>
@@ -2471,7 +2472,7 @@ const InventoryList: React.FC<Props> = ({
                               onClick={() => applyPriceSuggestionAsSellPrice(priceSuggestModalItem, priceSuggestResult.priceAverage)}
                               className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-black hover:bg-emerald-700"
                            >
-                              Apply €{Number(priceSuggestResult.priceAverage).toLocaleString(undefined, { maximumFractionDigits: 2 })} as sell price
+                              Apply €{formatEUR(Number(priceSuggestResult.priceAverage))} as sell price
                            </button>
                            <button 
                               onClick={() => savePriceSuggestionAsNote(priceSuggestModalItem, priceSuggestResult)}

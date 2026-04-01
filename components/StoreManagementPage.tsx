@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Eye, EyeOff, Tag, MessageCircle, ExternalLink, Loader2, Check, Mail, Phone, Upload, CheckCircle2, Pencil, X, Image as ImageIcon, Filter, Search as SearchIcon, Sparkles, Copy, Download } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
+import { formatEUR } from '../utils/formatMoney';
 import { subscribeToStoreInquiries, markStoreInquiryRead, updateStoreInquiryStatus, uploadItemImage, isCloudEnabled, getCurrentUser, type StoreInquiryStatus } from '../services/firebaseService';
 import { generateStoreDescription } from '../services/specsAI';
 import ItemThumbnail from './ItemThumbnail';
@@ -502,7 +503,7 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2">
                             <p className="font-semibold text-slate-900 text-sm truncate">{item.name}</p>
-                            <span className="text-[11px] text-slate-400">{(item.sellPrice ?? 0).toFixed(2)} €</span>
+                            <span className="text-[11px] text-slate-400">{formatEUR(item.sellPrice ?? 0)} €</span>
                           </div>
                           <p className="text-[11px] text-slate-500 truncate">
                             {item.category}{item.subCategory ? ` • ${item.subCategory}` : ''}

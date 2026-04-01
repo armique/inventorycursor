@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { formatEUR } from '../utils/formatMoney';
 import { Send, Sparkles, TrendingUp, AlertTriangle, RefreshCcw, Info, Globe, Package, Radar, ArrowRight, ExternalLink, ShoppingCart, Target, ArrowLeft, History, Clock, Trash2, ChevronRight } from 'lucide-react';
 import { analyzeMarket, getSlowSellingAdvice, analyzeSourcingStrategy, findLiveDeals, SourcingStrategy, LiveDeal } from '../services/geminiService';
 import { InventoryItem, ItemStatus } from '../types';
@@ -272,11 +273,11 @@ const AIAssistant: React.FC<Props> = ({ items, onUpdate }) => {
                              <div className="bg-slate-50 rounded-xl p-3 grid grid-cols-2 gap-2 border border-slate-100">
                                 <div>
                                    <p className="text-[8px] font-black uppercase text-slate-400">Buy Limit</p>
-                                   <p className="text-sm font-black text-slate-900">€{Number(strat.maxBuyPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                                   <p className="text-sm font-black text-slate-900">€{formatEUR(Number(strat.maxBuyPrice))}</p>
                                 </div>
                                 <div>
                                    <p className="text-[8px] font-black uppercase text-slate-400">Est. Sell</p>
-                                   <p className="text-sm font-black text-emerald-600">€{Number(strat.expectedSellPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                                   <p className="text-sm font-black text-emerald-600">€{formatEUR(Number(strat.expectedSellPrice))}</p>
                                 </div>
                              </div>
                           </button>
@@ -302,7 +303,7 @@ const AIAssistant: React.FC<Props> = ({ items, onUpdate }) => {
                              <p className="text-sm text-slate-500 max-w-2xl">{selectedStrategy.reasoning}</p>
                              <div className="flex gap-4 mt-4 text-xs font-bold text-slate-600">
                                 <span className="bg-white px-3 py-1 rounded-lg border">Target: {selectedStrategy.targetCategory}</span>
-                                <span className="bg-white px-3 py-1 rounded-lg border">Max Buy: €{Number(selectedStrategy.maxBuyPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                                <span className="bg-white px-3 py-1 rounded-lg border">Max Buy: €{formatEUR(Number(selectedStrategy.maxBuyPrice))}</span>
                              </div>
                           </div>
                           <div className="flex items-center">
@@ -342,7 +343,7 @@ const AIAssistant: React.FC<Props> = ({ items, onUpdate }) => {
                                          <h4 className="font-bold text-slate-900 text-sm line-clamp-2 leading-tight group-hover:text-emerald-700 transition-colors">{deal.title}</h4>
                                       </div>
                                       <div className="flex items-center justify-between pt-4 border-t border-slate-50">
-                                         <p className="text-lg font-black text-slate-900">{typeof deal.price === 'number' ? `€${Number(deal.price).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : deal.price}</p>
+                                         <p className="text-lg font-black text-slate-900">{typeof deal.price === 'number' ? `€${formatEUR(Number(deal.price))}` : deal.price}</p>
                                          <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">
                                             <ArrowRight size={10}/> View
                                          </div>

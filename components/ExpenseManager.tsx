@@ -1,5 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { formatEUR } from '../utils/formatMoney';
+
 import { 
   Plus, Trash2, Calendar, Tag, CreditCard, Search, Wallet, 
   TrendingDown, TrendingUp, Filter, Receipt, ShoppingBag, 
@@ -234,7 +236,7 @@ const ExpenseManager: React.FC<Props> = ({
                <span className="text-[10px] font-bold uppercase text-slate-400 bg-slate-50 px-2 py-1 rounded-lg">Total</span>
             </div>
             <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Total Expenses</p>
-            <h4 className="text-3xl font-black text-slate-900">€{stats.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
+            <h4 className="text-3xl font-black text-slate-900">€{formatEUR(stats.total)}</h4>
          </div>
 
          <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">
@@ -243,7 +245,7 @@ const ExpenseManager: React.FC<Props> = ({
                <span className="text-[10px] font-bold uppercase text-slate-400 bg-slate-50 px-2 py-1 rounded-lg">Current Month</span>
             </div>
             <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Monthly Cost</p>
-            <h4 className="text-3xl font-black text-slate-900">€{stats.thisMonth.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
+            <h4 className="text-3xl font-black text-slate-900">€{formatEUR(stats.thisMonth)}</h4>
          </div>
       </div>
 
@@ -285,7 +287,7 @@ const ExpenseManager: React.FC<Props> = ({
                           <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded uppercase font-black">Recurring</span>
                         </h4>
                         <div className="flex items-center gap-3 mt-1">
-                          <span className="text-[10px] font-bold text-slate-500">€{recurring.monthlyAmount.toFixed(2)}/month</span>
+                          <span className="text-[10px] font-bold text-slate-500">€{formatEUR(recurring.monthlyAmount)}/month</span>
                           <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
                             <Calendar size={10}/> Since {startDate.toLocaleDateString('de-DE', { month: 'short', year: 'numeric' })}
                           </span>
@@ -405,7 +407,7 @@ const ExpenseManager: React.FC<Props> = ({
                          <Paperclip size={12}/> Beleg
                        </a>
                      )}
-                     <span className="font-black text-slate-900 mr-2">€{expense.amount.toFixed(2)}</span>
+                     <span className="font-black text-slate-900 mr-2">€{formatEUR(expense.amount)}</span>
                      <button
                         onClick={() => {
                           setEditingExpense(expense);

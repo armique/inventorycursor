@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X, RefreshCw, ChevronDown, ChevronUp, Loader2, ArrowRight } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
+import { formatEUR } from '../utils/formatMoney';
 import {
   runEbaySync,
   buildSoldItem,
@@ -254,7 +255,7 @@ const EbaySyncBanner: React.FC<Props> = ({ items, onUpdate }) => {
                           {item.name}
                         </span>
                         <span className="text-xs text-slate-500 shrink-0">
-                          €{item.buyPrice?.toFixed(2)} · {item.category}
+                          €{item.buyPrice != null ? formatEUR(item.buyPrice) : '—'} · {item.category}
                         </span>
                       </button>
                     ))

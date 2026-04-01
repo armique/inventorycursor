@@ -11,6 +11,7 @@ import {
   Wand2, Sliders, X, History
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, Platform, PaymentType } from '../types';
+import { formatEUR } from '../utils/formatMoney';
 import { CATEGORY_IMAGES, getSpecOptions } from '../services/hardwareDB';
 import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
 import { getCompatibleItemsForItem } from '../services/compatibility';
@@ -582,16 +583,16 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                         <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
                         <span className="font-bold">Acquired</span>
                         <span className="text-slate-500">{formData.buyDate ? new Date(formData.buyDate).toLocaleDateString() : '—'}</span>
-                        <span className="font-black text-slate-900">€{Number(formData.buyPrice || 0).toFixed(2)}</span>
+                        <span className="font-black text-slate-900">€{formatEUR(Number(formData.buyPrice || 0))}</span>
                       </div>
                       {(formData.priceHistory || []).slice().sort((a, b) => a.date.localeCompare(b.date)).map((entry, i) => (
                         <div key={`${entry.date}-${entry.type}-${i}`} className="flex items-center gap-2 text-slate-600 pl-4 border-l-2 border-slate-200 ml-0.5">
                           <span className="font-medium">{entry.type === 'buy' ? 'Cost' : 'Sell price'} updated</span>
                           <span className="text-slate-400">{new Date(entry.date).toLocaleDateString()}</span>
                           {entry.previousPrice != null && (
-                            <span className="text-slate-400">€{entry.previousPrice.toFixed(2)} →</span>
+                            <span className="text-slate-400">€{formatEUR(entry.previousPrice)} →</span>
                           )}
-                          <span className="font-bold text-slate-800">€{entry.price.toFixed(2)}</span>
+                          <span className="font-bold text-slate-800">€{formatEUR(entry.price)}</span>
                         </div>
                       ))}
                       {(formData.status === ItemStatus.SOLD || formData.status === ItemStatus.TRADED) && formData.sellDate && (
@@ -599,7 +600,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                           <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
                           <span>Sold</span>
                           <span className="text-slate-500 font-medium">{new Date(formData.sellDate).toLocaleDateString()}</span>
-                          <span>€{(formData.sellPrice ?? 0).toFixed(2)}</span>
+                          <span>€{formatEUR(formData.sellPrice ?? 0)}</span>
                         </div>
                       )}
                       {!(formData.priceHistory && formData.priceHistory.length > 0) && formData.status !== ItemStatus.SOLD && formData.status !== ItemStatus.TRADED && (
