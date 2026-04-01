@@ -6,7 +6,6 @@ import StorefrontPage from './components/StorefrontPage';
 import PanelLayout from './components/PanelLayout';
 import QuotaMonitor from './components/QuotaMonitor';
 
-const Dashboard = lazy(() => import('./components/Dashboard'));
 const CategoryAnalytics = lazy(() => import('./components/CategoryAnalytics'));
 const CategorySuggestionsPage = lazy(() => import('./components/CategorySuggestionsPage'));
 const InventoryList = lazy(() => import('./components/InventoryList'));
@@ -124,8 +123,8 @@ function computeStoreBadge(item: InventoryItem): 'New' | 'Price reduced' | null 
 }
 
 function buildStoreCatalog(items: InventoryItem[], categoryFields: Record<string, string[]>): { items: { id: string; name: string; category: string; subCategory?: string; sellPrice?: number; storeSalePrice?: number; storeOnSale?: boolean; imageUrl?: string; storeGalleryUrls?: string[]; storeDescription?: string; specs?: Record<string, string | number>; categoryFields?: string[]; badge?: 'New' | 'Price reduced'; storeMetaTitle?: string; storeMetaDescription?: string; storeDescriptionEn?: string; quantity?: number }[] } {
-  // Only show items that are IN_STOCK and have storeVisible !== false (simple hide/show toggle)
-  const list = items.filter((i) => i.status === ItemStatus.IN_STOCK && i.storeVisible !== false);
+  // Explicit opt-in visibility: only items with storeVisible === true are public.
+  const list = items.filter((i) => i.status === ItemStatus.IN_STOCK && i.storeVisible === true);
   return {
     items: list.map((i) => {
       const badge = computeStoreBadge(i);
@@ -213,6 +212,18 @@ const App: React.FC = () => {
   useEffect(() => {
     dashboardPrefsRef.current = dashboardPrefs;
   }, [dashboardPrefs]);
+
+  // One-time storefront reset requested by user: hide all currently visible items.
+  useEffect(() => {
+    if (items.length === 0) return;
+    const resetKey = 'storefront_reset_applied_v1';
+    if (localStorage.getItem(resetKey) === '1') return;
+    if (items.some((i) => i.storeVisible === true)) {
+      setItems((prev) => prev.map((i) => (i.storeVisible === true ? { ...i, storeVisible: false } : i)));
+      hasUnsavedChanges.current = true;
+    }
+    localStorage.setItem(resetKey, '1');
+  }, [items.length]);
 
   const [appState, setAppState] = useState<AppState>('BOOTING');
   const [syncState, setSyncState] = useState<SyncState>({ status: 'idle', lastSynced: null });
@@ -812,22 +823,7 @@ const App: React.FC = () => {
             />
           }
         >
-          <Route index element={<Navigate to="/panel/dashboard" replace />} />
-          <Route
-            path="dashboard"
-            element={
-              <Dashboard
-                items={items}
-                expenses={expenses}
-                monthlyGoal={monthlyGoal}
-                onGoalChange={setMonthlyGoal}
-                businessSettings={businessSettings}
-                categoryFields={categoryFields}
-                dashboardPreferences={dashboardPrefs}
-                onDashboardPreferencesChange={setDashboardPrefs}
-              />
-            }
-          />
+          <Route index element={<Navigate to="/panel/inventory" replace />} />
           <Route path="analytics" element={<CategoryAnalytics items={items} businessSettings={businessSettings} />} />
           <Route path="category-suggestions" element={<CategorySuggestionsPage items={items} categories={categories} categoryFields={categoryFields} onUpdate={handleUpdate} onUpdateCategoryStructure={handleUpdateCategoryStructure} onUpdateCategoryFields={handleUpdateCategoryFields} onAddCategory={handleAddCategory} />} />
           <Route path="inventory" element={<InventoryList key="inventory-main" items={items} totalCount={items.length} onUpdate={handleUpdate} onDelete={handleDelete} onUndo={handleUndo} onRedo={handleRedo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} pageTitle="Inventory" allowedStatuses={ALL_STATUSES} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} persistenceKey="inventory_main"/>} />

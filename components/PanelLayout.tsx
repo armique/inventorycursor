@@ -1,7 +1,7 @@
 import React, { Suspense } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
-  Package, PlusCircle, Settings, RefreshCw, Briefcase, Trash2, CloudUpload, LayoutDashboard, BarChart3, Sparkles,
+  Package, PlusCircle, Settings, RefreshCw, Briefcase, Trash2, CloudUpload, BarChart3, Sparkles,
   Tag, Layers, Store, Loader2, Cloud, CheckCircle2, X, FileText, Receipt,
 } from 'lucide-react';
 import { signInWithGooglePopup, logOut } from '../services/firebaseService';
@@ -104,7 +104,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   }
 
   const nav = [
-    { to: '/panel/dashboard', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
     { to: '/panel/analytics', icon: <BarChart3 size={20} />, label: 'Category analytics' },
     { to: '/panel/category-suggestions', icon: <Sparkles size={20} />, label: 'Category suggestions' },
     { to: '/panel/inventory', icon: <Package size={20} />, label: 'Inventory' },
@@ -126,7 +125,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
       {/* DESKTOP SIDEBAR */}
       <aside className="w-64 bg-gradient-to-b from-slate-900 to-slate-800 text-white flex flex-col hidden md:flex border-r border-slate-700/50">
         <div className="p-6 space-y-4">
-          <Link to="/panel/dashboard" className="text-xl font-display font-black tracking-tighter flex items-center gap-2 text-white hover:text-white">
+          <Link to="/panel/inventory" className="text-xl font-display font-black tracking-tighter flex items-center gap-2 text-white hover:text-white">
             <Package className="text-brand-400" /> DeInventory
           </Link>
           <GlobalSearch items={items} expenses={expenses} businessSettings={businessSettings} />
@@ -226,7 +225,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
         <div className="flex justify-around items-stretch py-1">
           {nav
             .filter((item) =>
-              ['/panel/dashboard', '/panel/inventory', '/panel/builder', '/panel/store-management', '/panel/settings'].includes(
+              ['/panel/inventory', '/panel/builder', '/panel/store-management', '/panel/settings'].includes(
                 item.to
               )
             )

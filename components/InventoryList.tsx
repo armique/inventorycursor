@@ -364,7 +364,7 @@ const InventoryList: React.FC<Props> = ({
   };
 
   const toggleStoreVisible = (item: InventoryItem) => {
-    const currentlyVisible = item.storeVisible !== false;
+    const currentlyVisible = item.storeVisible === true;
     const updated: InventoryItem = {
       ...item,
       storeVisible: !currentlyVisible,
@@ -1294,17 +1294,17 @@ const InventoryList: React.FC<Props> = ({
                 type="button"
                 onClick={() => toggleStoreVisible(item)}
                 className={`h-7 w-7 flex items-center justify-center rounded-xl border text-violet-700 ${
-                  item.storeVisible !== false ? 'border-violet-200 bg-violet-50' : 'border-violet-200 bg-white'
+                  item.storeVisible === true ? 'border-violet-200 bg-violet-50' : 'border-violet-200 bg-white'
                 }`}
                 title={
-                  item.storeVisible !== false
+                  item.storeVisible === true
                     ? 'Visible on storefront (click to hide)'
                     : 'Hidden from storefront (click to show)'
                 }
               >
                 <span
                   className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black ${
-                    item.storeVisible !== false ? 'bg-violet-600 text-white' : 'bg-slate-200 text-violet-700'
+                    item.storeVisible === true ? 'bg-violet-600 text-white' : 'bg-slate-200 text-violet-700'
                   }`}
                 >
                   S
