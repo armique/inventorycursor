@@ -40,6 +40,58 @@ const PAYMENT_METHODS: PaymentType[] = [
   'Other'
 ];
 
+function isRamItem(category: string | undefined, subCategory: string | undefined): boolean {
+  return subCategory === 'RAM' || category === 'RAM';
+}
+
+/** True when "Memory" looks like capacity (e.g. 32 GB) rather than type (DDR4). */
+function looksLikeRamCapacityMemoryField(value: string | undefined): boolean {
+  const s = String(value ?? '').trim();
+  if (!s || /DDR/i.test(s)) return false;
+  return /^\d/.test(s) && /(GB|G|TB)\b/i.test(s);
+}
+
+/** Hide RAM Type / redundant Memory when Memory Type is the canonical field. */
+function filterRamDuplicateSpecKeys(
+  keys: string[],
+  category: string | undefined,
+  subCategory: string | undefined,
+  specs: Record<string, string | number | undefined> | undefined
+): string[] {
+  if (!isRamItem(category, subCategory)) return keys;
+  const set = new Set(keys);
+  if (!set.has('Memory Type')) return Array.from(set);
+  set.delete('RAM Type');
+  if (set.has('Memory')) {
+    const mem = String(specs?.['Memory'] ?? '').trim();
+    const mt = String(specs?.['Memory Type'] ?? '').trim();
+    if (!mem || mem.toLowerCase() === mt.toLowerCase()) {
+      set.delete('Memory');
+    } else if (!looksLikeRamCapacityMemoryField(mem)) {
+      set.delete('Memory');
+    }
+  }
+  return Array.from(set);
+}
+
+function normalizeRamSpecsForSave(specs: Record<string, string | number>): Record<string, string | number> {
+  const out: Record<string, string | number> = { ...specs };
+  const mt = String(out['Memory Type'] ?? '').trim();
+  const rt = String(out['RAM Type'] ?? '').trim();
+  if (rt && !mt) {
+    out['Memory Type'] = out['RAM Type'];
+  }
+  if (String(out['Memory Type'] ?? '').trim()) {
+    delete out['RAM Type'];
+    const mem = String(out['Memory'] ?? '').trim();
+    const mtv = String(out['Memory Type']).trim();
+    if (!mem) delete out['Memory'];
+    else if (mem.toLowerCase() === mtv.toLowerCase()) delete out['Memory'];
+    else if (!looksLikeRamCapacityMemoryField(mem)) delete out['Memory'];
+  }
+  return out;
+}
+
 const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onAddCategory, categoryFields = {}, onClose, isModal = false }) => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -81,6 +133,32 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
        setConfigStep('CATEGORY');
     }
   }, [id, items, initialData]);
+
+  useEffect(() => {
+    if (!isRamItem(formData.category, formData.subCategory)) return;
+    setFormData((prev) => {
+      const sp = { ...(prev.specs || {}) } as Record<string, string | number | undefined>;
+      let changed = false;
+      if (String(sp['RAM Type'] ?? '').trim() && !String(sp['Memory Type'] ?? '').trim()) {
+        sp['Memory Type'] = sp['RAM Type'] as string | number;
+        delete sp['RAM Type'];
+        changed = true;
+      }
+      const memStr = String(sp['Memory'] ?? '').trim();
+      if (
+        memStr &&
+        /DDR/i.test(memStr) &&
+        !String(sp['Memory Type'] ?? '').trim() &&
+        !looksLikeRamCapacityMemoryField(memStr)
+      ) {
+        sp['Memory Type'] = sp['Memory'] as string | number;
+        delete sp['Memory'];
+        changed = true;
+      }
+      if (!changed) return prev;
+      return { ...prev, specs: sp as Record<string, string | number> };
+    });
+  }, [formData.category, formData.subCategory, id, initialData?.id]);
 
   const compatibleGroups = useMemo(() => {
     const current = { ...formData, id: formData.id || 'temp' } as InventoryItem;
@@ -225,11 +303,17 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     const normalizedImages = normalizeImageList([formData.imageUrl, ...(formData.imageUrls || [])]);
     const fallbackImage = CATEGORY_IMAGES[formData.subCategory || formData.category || 'Components'];
 
+    const specsOut =
+      isRamItem(formData.category, formData.subCategory) && formData.specs
+        ? normalizeRamSpecsForSave({ ...formData.specs })
+        : formData.specs;
+
     const base: InventoryItem = {
       ...formData as InventoryItem,
       id: formData.id || `item-${Date.now()}`,
       imageUrl: normalizedImages[0] || fallbackImage,
-      imageUrls: normalizedImages.length ? normalizedImages : [fallbackImage]
+      imageUrls: normalizedImages.length ? normalizedImages : [fallbackImage],
+      specs: specsOut ?? {}
     };
 
     let itemsToSave: InventoryItem[] = [];
@@ -266,10 +350,16 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     // Always include some default keys if not present
     const defaultKeys = ['Condition', 'Warranty', 'Box Included'];
     const allKeys = Array.from(new Set([...keys, ...defaultKeys, ...Object.keys(formData.specs || {})]));
+    const displayKeys = filterRamDuplicateSpecKeys(
+      allKeys,
+      formData.category,
+      formData.subCategory,
+      formData.specs
+    );
 
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {allKeys.map(key => {
+        {displayKeys.map(key => {
           const options = getSpecOptions(key);
           const hasOptions = options.length > 0;
           const listId = `list-${key.replace(/[^a-zA-Z0-9]/g, '-')}`;
