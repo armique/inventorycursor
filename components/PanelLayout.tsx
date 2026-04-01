@@ -1,7 +1,7 @@
 import React, { Suspense } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
-  Package, PlusCircle, Settings, RefreshCw, Briefcase, Trash2, CloudUpload, LayoutDashboard, BarChart3, Sparkles,
+  Package, PlusCircle, Settings, RefreshCw, Briefcase, Trash2, CloudUpload, LayoutDashboard, BarChart3,
   Layers, Loader2, Cloud, CheckCircle2, X, Receipt,
 } from 'lucide-react';
 import { signInWithGooglePopup, logOut } from '../services/firebaseService';
@@ -106,7 +106,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   const nav = [
     { to: '/panel/dashboard', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
     { to: '/panel/analytics', icon: <BarChart3 size={20} />, label: 'Category analytics' },
-    { to: '/panel/category-suggestions', icon: <Sparkles size={20} />, label: 'Category suggestions' },
     { to: '/panel/inventory', icon: <Package size={20} />, label: 'Inventory' },
     { to: '/panel/add', icon: <PlusCircle size={20} />, label: 'Add Item' },
     { to: '/panel/add-bulk', icon: <Layers size={20} />, label: 'Bulk Entry' },
