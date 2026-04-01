@@ -1,5 +1,16 @@
-
 import { InventoryItem, Expense, ItemStatus, TaxMode } from '../types';
+import {
+  shouldSkipCompositionChild,
+  shouldSkipContainerRow,
+  shouldSkipContainerForPurchaseCogs,
+} from './financialAggregation';
+
+function itemCountsForTaxExport(item: InventoryItem, items: InventoryItem[]): boolean {
+  if (item.isDraft) return false;
+  if (shouldSkipCompositionChild(item, items)) return false;
+  if (shouldSkipContainerRow(item, items)) return false;
+  return true;
+}
 
 export interface TaxSummary {
   year: number;
@@ -22,40 +33,39 @@ export const calculateTaxSummary = (items: InventoryItem[], expenses: Expense[],
   let operatingExpenses = 0;
   let estimatedVat = 0;
 
-  // Process Inventory
-  items.forEach(item => {
-    // PC builds / Bundles are logical containers composed of child items.
-    // Their buy/sell prices are aggregates of components, so we skip them here
-    // to avoid double-counting COGS and revenue. All economics are attributed
-    // to the atomic components instead.
-    if (item.isPC || item.isBundle) return;
-
+  // Pass 1 — Wareneingang: count each purchase once (children of bundles/PCs, not duplicate container total).
+  items.forEach((item) => {
+    if (item.isDraft) return;
+    if (shouldSkipContainerForPurchaseCogs(item, items)) return;
     const buyYear = item.buyDate ? new Date(item.buyDate).getFullYear() : 0;
-    const sellYear = item.sellDate ? new Date(item.sellDate).getFullYear() : 0;
-
-    // Wareneingang (Expense when bought)
     if (buyYear === year) {
-      cogs += item.buyPrice || 0;
+      cogs += Number(item.buyPrice) || 0;
+    }
+  });
+
+  // Pass 2 — Erlöse & Gebühren: same lines as Finanzamt / Dashboard (incl. retro bundle on parent, proportional on children).
+  items.forEach((item) => {
+    if (item.isDraft) return;
+    if (shouldSkipCompositionChild(item, items)) return;
+    if (shouldSkipContainerRow(item, items)) return;
+
+    const sellYear = item.sellDate ? new Date(item.sellDate).getFullYear() : 0;
+    if (sellYear !== year) return;
+    if (item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED) return;
+
+    let itemRevenue = Number(item.sellPrice) || 0;
+
+    if (taxMode === 'RegularVAT') {
+      const netAmount = itemRevenue / 1.19;
+      const vatAmount = itemRevenue - netAmount;
+      estimatedVat += vatAmount;
+      itemRevenue = netAmount;
     }
 
-    // Revenue (Income when sold)
-    if ((item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED) && sellYear === year) {
-      let itemRevenue = item.sellPrice || 0;
-      
-      // If Regular VAT, we extract the net amount for "Clean Income"
-      if (taxMode === 'RegularVAT') {
-        const netAmount = itemRevenue / 1.19;
-        const vatAmount = itemRevenue - netAmount;
-        estimatedVat += vatAmount;
-        itemRevenue = netAmount;
-      }
+    revenue += itemRevenue;
 
-      revenue += itemRevenue;
-      
-      // Fees associated with the sale
-      if (item.hasFee && item.feeAmount) {
-        fees += item.feeAmount;
-      }
+    if (item.hasFee && item.feeAmount) {
+      fees += Number(item.feeAmount) || 0;
     }
   });
 
@@ -67,14 +77,17 @@ export const calculateTaxSummary = (items: InventoryItem[], expenses: Expense[],
     }
   });
 
+  const netProfit =
+    Math.round((revenue - cogs - operatingExpenses - fees + Number.EPSILON) * 100) / 100;
+
   return {
     year,
-    revenue,
-    cogs,
-    expenses: operatingExpenses,
-    fees,
-    netProfit: revenue - cogs - operatingExpenses - fees,
-    vatPayable: estimatedVat
+    revenue: Math.round((revenue + Number.EPSILON) * 100) / 100,
+    cogs: Math.round((cogs + Number.EPSILON) * 100) / 100,
+    expenses: Math.round((operatingExpenses + Number.EPSILON) * 100) / 100,
+    fees: Math.round((fees + Number.EPSILON) * 100) / 100,
+    netProfit,
+    vatPayable: Math.round((estimatedVat + Number.EPSILON) * 100) / 100,
   };
 };
 
@@ -83,9 +96,15 @@ export const generateTaxReportCSV = (items: InventoryItem[], expenses: Expense[]
   const headers = ['Datum', 'Typ', 'Kategorie', 'Beschreibung', 'Betrag (Brutto)', 'Beleg/Ref'];
   rows.push(headers.join(';'));
 
-  // 1. Inventory Purchases (Wareneingang) – only atomic items (no PC/Bundle containers)
+  // 1. Inventory Purchases (Wareneingang) – same rows as COGS in calculateTaxSummary
   items
-    .filter(i => !i.isPC && !i.isBundle && new Date(i.buyDate).getFullYear() === year)
+    .filter(
+      (i) =>
+        !i.isDraft &&
+        !shouldSkipContainerForPurchaseCogs(i, items) &&
+        i.buyDate &&
+        new Date(i.buyDate).getFullYear() === year
+    )
     .forEach(i => {
     rows.push([
       i.buyDate,
@@ -97,12 +116,11 @@ export const generateTaxReportCSV = (items: InventoryItem[], expenses: Expense[]
     ].map(c => `"${c}"`).join(';'));
   });
 
-  // 2. Inventory Sales (Erlöse) – only atomic sold items (no PC/Bundle containers)
+  // 2. Inventory Sales (Erlöse) – same lines as dashboard / tax revenue pass
   items
     .filter(
-      i =>
-        !i.isPC &&
-        !i.isBundle &&
+      (i) =>
+        itemCountsForTaxExport(i, items) &&
         (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
         i.sellDate &&
         new Date(i.sellDate).getFullYear() === year

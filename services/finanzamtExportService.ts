@@ -4,6 +4,16 @@
  */
 import ExcelJS from 'exceljs';
 import { Expense, InventoryItem, ItemStatus } from '../types';
+import {
+  roundMoney,
+  getChildren,
+  isSoldWithProportionalChildren,
+  shouldSkipContainerRow,
+  shouldSkipCompositionChild,
+  isBundleSoldOnParentOnly,
+} from './financialAggregation';
+
+const round2 = roundMoney;
 
 const SHEET_WARE = 'Ware_Buchungen';
 const SHEET_AUSGABEN = 'Betriebsausgaben';
@@ -47,50 +57,6 @@ function dePayment(v?: string): string {
 function dePlatform(v?: string): string {
   if (!v) return '';
   return PLATFORM_DE[v] ?? v;
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
-
-function getChildren(container: InventoryItem, items: InventoryItem[]): InventoryItem[] {
-  const byIds = (container.componentIds || [])
-    .map((id) => items.find((i) => i.id === id))
-    .filter((x): x is InventoryItem => !!x);
-  if (byIds.length > 0) return byIds;
-  return items.filter((i) => i.parentContainerId === container.id);
-}
-
-/** Sold bundle/PC where the app stores revenue on each component (proportional split). */
-function isSoldWithProportionalChildren(container: InventoryItem, items: InventoryItem[]): boolean {
-  if (!container.isBundle && !container.isPC) return false;
-  const children = getChildren(container, items);
-  if (children.length === 0) return false;
-  if (container.status !== ItemStatus.SOLD) return false;
-  return children.every((c) => c.status === ItemStatus.SOLD && !!c.sellDate);
-}
-
-/** Skip the empty "container" row when children carry all sell prices and profit. */
-function shouldSkipContainerRow(item: InventoryItem, items: InventoryItem[]): boolean {
-  return isSoldWithProportionalChildren(item, items);
-}
-
-/** Component still inside an unsold bundle/PC — shown only on the Paket row, not as separate stock lines. */
-function shouldSkipCompositionChild(item: InventoryItem, items: InventoryItem[]): boolean {
-  if (item.status !== ItemStatus.IN_COMPOSITION) return false;
-  if (!item.parentContainerId) return false;
-  const p = items.find((i) => i.id === item.parentContainerId);
-  if (!p || (!p.isBundle && !p.isPC)) return false;
-  return true;
-}
-
-/** Retro or manual bundle: parent holds sale; children stay "In Composition". */
-function isBundleSoldOnParentOnly(parent: InventoryItem, items: InventoryItem[]): boolean {
-  if (!parent.isBundle && !parent.isPC) return false;
-  if (parent.status !== ItemStatus.SOLD) return false;
-  const children = getChildren(parent, items);
-  if (children.length === 0) return false;
-  return children.some((c) => c.status === ItemStatus.IN_COMPOSITION);
 }
 
 function formatStückliste(children: InventoryItem[]): string {

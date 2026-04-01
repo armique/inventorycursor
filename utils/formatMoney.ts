@@ -1,6 +1,9 @@
 /**
  * German-style EUR display: always two decimals (e.g. 1 → "1,00", 1234.5 → "1.234,50").
- * Use for UI only — APIs and stored numbers stay as number / dot-decimal where required.
+ *
+ * Important: this returns a **string** for labels only. Dashboard, tax, and Finanzamt math
+ * all use JavaScript `number` (binary floating point). Comma/dot locale **never** flows
+ * into `parseFloat`, sums, or storage — so display format cannot skew balances.
  */
 const DE_TWO_DECIMALS: Intl.NumberFormatOptions = {
   minimumFractionDigits: 2,

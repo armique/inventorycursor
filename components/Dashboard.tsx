@@ -8,6 +8,13 @@ import { createPortal } from 'react-dom';
 import { InventoryItem, ItemStatus, Expense, BusinessSettings, TaxMode, DashboardPreferences, DashboardTask } from '../types';
 import { DEFAULT_DASHBOARD_WIDGET_IDS } from '../services/constants';
 import { calculateTaxSummary, generateTaxReportCSV } from '../services/taxService';
+import {
+  roundMoney,
+  computeItemProfitBeforeOverhead,
+  shouldSkipForAggregatedSaleLine,
+  shouldSkipForInventoryCostLine,
+  shouldSkipContainerForPurchaseCogs,
+} from '../services/financialAggregation';
 
 interface Props {
   items: InventoryItem[];
@@ -115,30 +122,8 @@ const Dashboard: React.FC<Props> = ({
 
   const taxMode = businessSettings?.taxMode || 'SmallBusiness';
 
-  // Helper to calculate Net Profit for a single item
-  const calculateItemProfit = (item: InventoryItem): number => {
-    const sell = Number(item.sellPrice) || 0;
-    const buy = Number(item.buyPrice) || 0;
-    const fee = Number(item.feeAmount) || 0;
-
-    if (taxMode === 'RegularVAT') {
-      // 19% VAT included in sell price (Gross).
-      // Net Sell = Gross Sell / 1.19
-      const netSell = sell / 1.19;
-      return netSell - buy - fee;
-    }
-    
-    if (taxMode === 'DifferentialVAT') {
-      const margin = sell - buy;
-      if (margin <= 0) return margin - fee;
-      // Tax is 19% of the margin
-      const tax = margin - (margin / 1.19);
-      return margin - tax - fee;
-    }
-
-    // SmallBusiness or default: No tax
-    return sell - buy - fee;
-  };
+  const calculateItemProfit = (item: InventoryItem): number =>
+    computeItemProfitBeforeOverhead(item, taxMode);
 
   // Sync tempGoal with props when not editing
   useEffect(() => {
@@ -245,57 +230,90 @@ const Dashboard: React.FC<Props> = ({
   }, [expenses, startDate, endDate]);
 
   const stats = useMemo(() => {
-    const soldItems = filteredItems.filter(i => i.status === ItemStatus.SOLD);
-    const inStockItems = filteredItems.filter(i => i.status === ItemStatus.IN_STOCK);
-    // Only count real, atomic items (no PC/Bundle containers) for money metrics
-    const soldAtomic = soldItems.filter(i => !i.isPC && !i.isBundle);
-    const inStockAtomic = inStockItems.filter(i => !i.isPC && !i.isBundle);
-    
-    const totalTurnover = soldAtomic.reduce((acc: number, i) => acc + (Number(i.sellPrice) || 0), 0);
-    const grossProfit = soldAtomic.reduce((acc: number, i) => acc + Number(calculateItemProfit(i)), 0);
+    const soldForStats = filteredItems.filter(
+      (i) =>
+        (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
+        !shouldSkipForAggregatedSaleLine(i, items)
+    );
+    const inStockForValue = filteredItems.filter(
+      (i) => i.status === ItemStatus.IN_STOCK && !shouldSkipForInventoryCostLine(i, items)
+    );
 
-    const totalExpenses = filteredExpenses.reduce((acc: number, e) => acc + Number(e.amount), 0);
-    const netProfit = grossProfit - totalExpenses;
-    const inventoryValue = inStockAtomic.reduce((acc: number, i) => acc + Number(i.buyPrice), 0);
+    const totalTurnover = roundMoney(
+      soldForStats.reduce((acc: number, i) => acc + (Number(i.sellPrice) || 0), 0)
+    );
+    const grossProfit = roundMoney(
+      soldForStats.reduce((acc: number, i) => acc + calculateItemProfit(i), 0)
+    );
+
+    const totalExpenses = roundMoney(filteredExpenses.reduce((acc: number, e) => acc + Number(e.amount), 0));
+    const netProfit = roundMoney(grossProfit - totalExpenses);
+    const inventoryValue = roundMoney(
+      inStockForValue.reduce((acc: number, i) => acc + Number(i.buyPrice), 0)
+    );
 
     const today = new Date();
-    const globalInStock = items.filter(i => i.status === ItemStatus.IN_STOCK && !i.isPC && !i.isBundle);
-    const deathPileItems = globalInStock.filter(i => {
-        const buyDate = new Date(i.buyDate);
-        const diffTime = Math.abs(today.getTime() - buyDate.getTime());
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        return diffDays > 60;
+    const globalInStock = items.filter(
+      (i) => i.status === ItemStatus.IN_STOCK && !shouldSkipForInventoryCostLine(i, items)
+    );
+    const deathPileItems = globalInStock.filter((i) => {
+      const buyDate = new Date(i.buyDate);
+      const diffTime = Math.abs(today.getTime() - buyDate.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      return diffDays > 60;
     });
-    const deathPileValue = deathPileItems.reduce((acc: number, i) => acc + Number(i.buyPrice), 0);
+    const deathPileValue = roundMoney(
+      deathPileItems.reduce((acc: number, i) => acc + Number(i.buyPrice), 0)
+    );
 
-    const totalInventoryValue = items
-      .filter(i => i.status === ItemStatus.IN_STOCK && !i.isPC && !i.isBundle)
-      .reduce((acc, i) => acc + Number(i.buyPrice || 0), 0);
-    return { totalTurnover, grossProfit, totalExpenses, netProfit, inventoryValue, totalInventoryValue, deathPileCount: deathPileItems.length, deathPileValue };
+    const totalInventoryValue = roundMoney(
+      items
+        .filter((i) => i.status === ItemStatus.IN_STOCK && !shouldSkipForInventoryCostLine(i, items))
+        .reduce((acc, i) => acc + Number(i.buyPrice || 0), 0)
+    );
+    return {
+      totalTurnover,
+      grossProfit,
+      totalExpenses,
+      netProfit,
+      inventoryValue,
+      totalInventoryValue,
+      deathPileCount: deathPileItems.length,
+      deathPileValue,
+    };
   }, [filteredItems, filteredExpenses, items, taxMode]);
 
   const gameStats = useMemo(() => {
-    const soldAtomic = items.filter(i => i.status === ItemStatus.SOLD && !i.isPC && !i.isBundle);
-    const allTimeProfit = soldAtomic
-      .reduce((acc: number, i) => acc + Number(calculateItemProfit(i)), 0) 
-      - expenses.reduce((acc: number, e) => acc + Number(e.amount || 0), 0);
+    const soldForRollup = items.filter(
+      (i) =>
+        (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
+        !shouldSkipForAggregatedSaleLine(i, items)
+    );
+    const allTimeProfit = roundMoney(
+      soldForRollup.reduce((acc: number, i) => acc + calculateItemProfit(i), 0) -
+        expenses.reduce((acc: number, e) => acc + Number(e.amount || 0), 0)
+    );
 
-    const currentLevel = LEVELS.slice().reverse().find(l => allTimeProfit >= l.min) || LEVELS[0];
-    const nextLevel = LEVELS.find(l => l.min > allTimeProfit);
-    const progressToNext = nextLevel ? ((allTimeProfit - currentLevel.min) / (nextLevel.min - currentLevel.min)) * 100 : 100;
+    const currentLevel = LEVELS.slice().reverse().find((l) => allTimeProfit >= l.min) || LEVELS[0];
+    const nextLevel = LEVELS.find((l) => l.min > allTimeProfit);
+    const progressToNext = nextLevel
+      ? ((allTimeProfit - currentLevel.min) / (nextLevel.min - currentLevel.min)) * 100
+      : 100;
 
     const now = new Date();
-    const currentMonthItems = items.filter(
-      i =>
-        i.status === ItemStatus.SOLD &&
-        !i.isPC &&
-        !i.isBundle &&
+    const currentMonthItems = soldForRollup.filter(
+      (i) =>
         i.sellDate &&
         new Date(i.sellDate).getMonth() === now.getMonth() &&
         new Date(i.sellDate).getFullYear() === now.getFullYear()
     );
-    const currentMonthExpenses = expenses.filter(e => new Date(e.date).getMonth() === now.getMonth() && new Date(e.date).getFullYear() === now.getFullYear());
-    const monthProfit = currentMonthItems.reduce((acc: number, i) => acc + Number(calculateItemProfit(i)), 0) - currentMonthExpenses.reduce((acc: number, e) => acc + Number(e.amount || 0), 0);
+    const currentMonthExpenses = expenses.filter(
+      (e) => new Date(e.date).getMonth() === now.getMonth() && new Date(e.date).getFullYear() === now.getFullYear()
+    );
+    const monthProfit = roundMoney(
+      currentMonthItems.reduce((acc: number, i) => acc + calculateItemProfit(i), 0) -
+        currentMonthExpenses.reduce((acc: number, e) => acc + Number(e.amount || 0), 0)
+    );
     const goalProgress = Math.min((monthProfit / monthlyGoal) * 100, 100);
 
     return { allTimeProfit, currentLevel, nextLevel, progressToNext, monthProfit, goalProgress };
@@ -321,19 +339,18 @@ const Dashboard: React.FC<Props> = ({
        
        sortedYears.forEach(year => {
           const sold = filteredItems.filter(
-            i =>
-              i.status === ItemStatus.SOLD &&
-              !i.isPC &&
-              !i.isBundle &&
+            (i) =>
+              (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
+              !shouldSkipForAggregatedSaleLine(i, items) &&
               i.sellDate &&
               new Date(i.sellDate).getFullYear() === year
           );
           const exps = filteredExpenses.filter(e => new Date(e.date).getFullYear() === year);
-          const revenue = sold.reduce((acc: number, i) => acc + (Number(i.sellPrice) || 0), 0);
-          const itemProfit = sold.reduce((acc: number, i) => acc + Number(calculateItemProfit(i)), 0);
-          const expTotal = exps.reduce((acc: number, e) => acc + Number(e.amount), 0);
+          const revenue = roundMoney(sold.reduce((acc: number, i) => acc + (Number(i.sellPrice) || 0), 0));
+          const itemProfit = roundMoney(sold.reduce((acc: number, i) => acc + calculateItemProfit(i), 0));
+          const expTotal = roundMoney(exps.reduce((acc: number, e) => acc + Number(e.amount), 0));
           
-          data.push({ name: year.toString(), revenue, netProfit: itemProfit - expTotal, timestamp: year, soldItems: sold, dayLabel: year.toString(), dateStr: year.toString() });
+          data.push({ name: year.toString(), revenue, netProfit: roundMoney(itemProfit - expTotal), timestamp: year, soldItems: sold, dayLabel: year.toString(), dateStr: year.toString() });
        });
     } else {
        let curr: Date = new Date(startMs);
@@ -343,18 +360,17 @@ const Dashboard: React.FC<Props> = ({
           const label = diffDays > 32 ? curr.toLocaleString('default', { month: 'short' }) : curr.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit' });
           
           const sold = filteredItems.filter(
-            i =>
-              i.status === ItemStatus.SOLD &&
-              !i.isPC &&
-              !i.isBundle &&
+            (i) =>
+              (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
+              !shouldSkipForAggregatedSaleLine(i, items) &&
               i.sellDate === dayStr
           );
           const exps = filteredExpenses.filter(e => e.date === dayStr);
-          const revenue = sold.reduce((acc: number, i) => acc + (Number(i.sellPrice) || 0), 0);
-          const itemProfit: number = sold.reduce((acc: number, i) => acc + Number(calculateItemProfit(i)), 0);
-          const expTotal: number = exps.reduce((acc: number, e) => acc + Number(e.amount), 0);
+          const revenue = roundMoney(sold.reduce((acc: number, i) => acc + (Number(i.sellPrice) || 0), 0));
+          const itemProfit = roundMoney(sold.reduce((acc: number, i) => acc + calculateItemProfit(i), 0));
+          const expTotal = roundMoney(exps.reduce((acc: number, e) => acc + Number(e.amount), 0));
 
-          const profitVal = itemProfit - expTotal;
+          const profitVal = roundMoney(itemProfit - expTotal);
 
           data.push({ name: label, revenue, netProfit: profitVal, timestamp: curr.getTime(), soldItems: sold, dayLabel: label, dateStr: dayStr });
           
@@ -364,11 +380,13 @@ const Dashboard: React.FC<Props> = ({
        }
     }
     return data;
-  }, [filteredItems, filteredExpenses, startDate, endDate, timeFilter, taxMode]);
+  }, [filteredItems, filteredExpenses, startDate, endDate, timeFilter, taxMode, items]);
 
   // NEW: Category Pie Chart Data
   const categoryData = useMemo(() => {
-    const inStock = items.filter(i => i.status === ItemStatus.IN_STOCK);
+    const inStock = items.filter(
+      (i) => i.status === ItemStatus.IN_STOCK && !shouldSkipForInventoryCostLine(i, items)
+    );
     const grouped = inStock.reduce((acc: Record<string, number>, item) => {
       const currentVal = Number(acc[item.category] || 0);
       const addVal = Number(item.buyPrice || 0);
@@ -377,47 +395,45 @@ const Dashboard: React.FC<Props> = ({
     }, {} as Record<string, number>);
     
     return Object.entries(grouped)
-      .map(([name, value]) => ({ name, value: Number(value) }))
+      .map(([name, value]) => ({ name, value: roundMoney(Number(value)) }))
       .sort((a, b) => b.value - a.value);
   }, [items]);
 
   // Profit by category (sold items in period)
   const profitByCategory = useMemo(() => {
     const sold = filteredItems.filter(
-      i =>
+      (i) =>
         (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
-        !i.isPC &&
-        !i.isBundle
+        !shouldSkipForAggregatedSaleLine(i, items)
     );
     const byCat: Record<string, number> = {};
-    sold.forEach(i => {
+    sold.forEach((i) => {
       const cat = i.category || 'Other';
       byCat[cat] = (byCat[cat] || 0) + calculateItemProfit(i);
     });
     return Object.entries(byCat)
-      .map(([name, profit]) => ({ name, profit }))
+      .map(([name, profit]) => ({ name, profit: roundMoney(profit) }))
       .sort((a, b) => b.profit - a.profit);
-  }, [filteredItems, taxMode]);
+  }, [filteredItems, items, taxMode]);
 
   // Profit by month (sold items in period)
   const profitByMonth = useMemo(() => {
     const sold = filteredItems.filter(
-      i =>
+      (i) =>
         (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
-        !i.isPC &&
-        !i.isBundle
+        !shouldSkipForAggregatedSaleLine(i, items)
     );
     const byMonth: Record<string, number> = {};
-    sold.forEach(i => {
+    sold.forEach((i) => {
       if (!i.sellDate) return;
       const d = new Date(i.sellDate);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       byMonth[key] = (byMonth[key] || 0) + calculateItemProfit(i);
     });
     return Object.entries(byMonth)
-      .map(([name, profit]) => ({ name, profit }))
+      .map(([name, profit]) => ({ name, profit: roundMoney(profit) }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [filteredItems, taxMode]);
+  }, [filteredItems, items, taxMode]);
 
   // Tax report summary (by year)
   const [taxReportYear, setTaxReportYear] = useState(() => new Date().getFullYear());
@@ -454,9 +470,17 @@ const Dashboard: React.FC<Props> = ({
   // Recent Activity Data
   const activityFeed = useMemo(() => {
     const actions: { type: string, date: string, item: string, amount: number }[] = [];
-    items.forEach(i => {
-      if (i.buyDate) actions.push({ type: 'BOUGHT', date: i.buyDate, item: i.name, amount: -Number(i.buyPrice) });
-      if (i.sellDate && (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED)) actions.push({ type: 'SOLD', date: i.sellDate, item: i.name, amount: Number(i.sellPrice || 0) });
+    items.forEach((i) => {
+      if (i.buyDate && !shouldSkipContainerForPurchaseCogs(i, items)) {
+        actions.push({ type: 'BOUGHT', date: i.buyDate, item: i.name, amount: -Number(i.buyPrice) });
+      }
+      if (
+        i.sellDate &&
+        (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
+        !shouldSkipForAggregatedSaleLine(i, items)
+      ) {
+        actions.push({ type: 'SOLD', date: i.sellDate, item: i.name, amount: Number(i.sellPrice || 0) });
+      }
     });
     expenses.forEach(e => {
       actions.push({ type: 'EXPENSE', date: e.date, item: e.description, amount: -Number(e.amount) });
