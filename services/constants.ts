@@ -12,3 +12,17 @@ export const DEFAULT_CATEGORIES: Record<string, string[]> = {
 };
 
 export const HIERARCHY_CATEGORIES = DEFAULT_CATEGORIES;
+
+/** Dashboard widget ids (order + visibility). Synced to Firebase with dashboard preferences. */
+export const DEFAULT_DASHBOARD_WIDGET_IDS = [
+  'gamification',
+  'statCards',
+  'performanceChart',
+  'capitalDistribution',
+  'profitByCategory',
+  'profitByMonth',
+  'taxReport',
+  'todoFromData',
+  'tasks',
+  'recentActivity',
+] as const;

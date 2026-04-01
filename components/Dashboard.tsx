@@ -4,7 +4,8 @@ import {
 } from 'recharts';
 import { TrendingUp, Wallet, Target, Package, Calendar, TrendingDown, Hourglass, Skull, Trophy, Star, Crown, Zap, Edit3, Check, CalendarDays, ArrowRight, CheckCircle2, Circle, Plus, X, Activity, Clock, AlertCircle, Euro, Settings2, ChevronUp, ChevronDown } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import { InventoryItem, ItemStatus, Expense, BusinessSettings, TaxMode } from '../types';
+import { InventoryItem, ItemStatus, Expense, BusinessSettings, TaxMode, DashboardPreferences, DashboardTask } from '../types';
+import { DEFAULT_DASHBOARD_WIDGET_IDS } from '../services/constants';
 import { calculateTaxSummary, generateTaxReportCSV } from '../services/taxService';
 
 interface Props {
@@ -14,6 +15,8 @@ interface Props {
   onGoalChange: (newGoal: number) => void;
   businessSettings?: BusinessSettings;
   categoryFields?: Record<string, string[]>;
+  dashboardPreferences: DashboardPreferences;
+  onDashboardPreferencesChange: (next: DashboardPreferences) => void;
 }
 
 const LEVELS = [
@@ -26,18 +29,7 @@ const LEVELS = [
 
 const PIE_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6366F1', '#64748B'];
 
-const DASHBOARD_WIDGET_IDS = [
-  'gamification',
-  'statCards',
-  'performanceChart',
-  'capitalDistribution',
-  'profitByCategory',
-  'profitByMonth',
-  'taxReport',
-  'todoFromData',
-  'tasks',
-  'recentActivity',
-] as const;
+const DASHBOARD_WIDGET_IDS = DEFAULT_DASHBOARD_WIDGET_IDS;
 
 type WidgetId = (typeof DASHBOARD_WIDGET_IDS)[number];
 
@@ -54,60 +46,58 @@ const WIDGET_LABELS: Record<WidgetId, string> = {
   recentActivity: 'Recent activity',
 };
 
-function loadWidgetConfig(): WidgetId[] {
-  const saved = localStorage.getItem('dashboard_widgets');
-  if (!saved) return [...DASHBOARD_WIDGET_IDS];
-  try {
-    const parsed = JSON.parse(saved) as string[];
-    const valid = parsed.filter((id): id is WidgetId => DASHBOARD_WIDGET_IDS.includes(id as WidgetId));
-    const missing = DASHBOARD_WIDGET_IDS.filter((id) => !valid.includes(id));
-    return [...valid, ...missing];
-  } catch {
-    return [...DASHBOARD_WIDGET_IDS];
-  }
-}
+const Dashboard: React.FC<Props> = ({
+  items,
+  expenses = [],
+  monthlyGoal,
+  onGoalChange,
+  businessSettings,
+  categoryFields = {},
+  dashboardPreferences,
+  onDashboardPreferencesChange,
+}) => {
+  const timeFilter = dashboardPreferences.timeFilter;
+  const customStart = dashboardPreferences.customStart;
+  const customEnd = dashboardPreferences.customEnd;
+  const tasks = dashboardPreferences.tasks;
 
-interface Task {
-  id: string;
-  text: string;
-  completed: boolean;
-}
+  const setTimeFilter = (v: string) =>
+    onDashboardPreferencesChange({ ...dashboardPreferences, timeFilter: v });
+  const setCustomStart = (v: string) =>
+    onDashboardPreferencesChange({ ...dashboardPreferences, customStart: v });
+  const setCustomEnd = (v: string) =>
+    onDashboardPreferencesChange({ ...dashboardPreferences, customEnd: v });
 
-const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalChange, businessSettings, categoryFields = {} }) => {
-  const [timeFilter, setTimeFilter] = useState<string>(() => {
-    const saved = localStorage.getItem('dashboard_time_filter');
-    return saved || 'ALL';
-  });
-  const [customStart, setCustomStart] = useState(() => localStorage.getItem('dashboard_custom_start') || '');
-  const [customEnd, setCustomEnd] = useState(() => localStorage.getItem('dashboard_custom_end') || '');
   const [dayDetailModal, setDayDetailModal] = useState<{ dayLabel: string; dateStr: string; items: InventoryItem[] } | null>(null);
   const [showWidgetModal, setShowWidgetModal] = useState(false);
-  const [visibleWidgets, setVisibleWidgets] = useState<WidgetId[]>(loadWidgetConfig);
 
-  useEffect(() => {
-    localStorage.setItem('dashboard_widgets', JSON.stringify(visibleWidgets));
-  }, [visibleWidgets]);
+  const visibleWidgets = useMemo((): WidgetId[] => {
+    const valid = dashboardPreferences.widgets.filter((id): id is WidgetId =>
+      DASHBOARD_WIDGET_IDS.includes(id as WidgetId)
+    );
+    const missing = DASHBOARD_WIDGET_IDS.filter((id) => !valid.includes(id));
+    return [...valid, ...missing];
+  }, [dashboardPreferences.widgets]);
 
   const toggleWidget = (id: WidgetId) => {
-    setVisibleWidgets((prev) =>
-      prev.includes(id) ? prev.filter((w) => w !== id) : [...prev, id]
-    );
+    const next = visibleWidgets.includes(id)
+      ? visibleWidgets.filter((w) => w !== id)
+      : [...visibleWidgets, id];
+    onDashboardPreferencesChange({ ...dashboardPreferences, widgets: next });
   };
 
   const moveWidget = (id: WidgetId, dir: 'up' | 'down') => {
-    setVisibleWidgets((prev) => {
-      const idx = prev.indexOf(id);
-      if (idx < 0) return prev;
-      const next = [...prev];
-      const swap = dir === 'up' ? idx - 1 : idx + 1;
-      if (swap < 0 || swap >= next.length) return prev;
-      [next[idx], next[swap]] = [next[swap], next[idx]];
-      return next;
-    });
+    const idx = visibleWidgets.indexOf(id);
+    if (idx < 0) return;
+    const next = [...visibleWidgets];
+    const swap = dir === 'up' ? idx - 1 : idx + 1;
+    if (swap < 0 || swap >= next.length) return;
+    [next[idx], next[swap]] = [next[swap], next[idx]];
+    onDashboardPreferencesChange({ ...dashboardPreferences, widgets: next });
   };
 
   const resetWidgets = () => {
-    setVisibleWidgets([...DASHBOARD_WIDGET_IDS]);
+    onDashboardPreferencesChange({ ...dashboardPreferences, widgets: [...DASHBOARD_WIDGET_IDS] });
   };
 
   const isVisible = (id: WidgetId) => visibleWidgets.includes(id);
@@ -116,14 +106,11 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
   const [isEditingGoal, setIsEditingGoal] = useState(false);
   const [tempGoal, setTempGoal] = useState(monthlyGoal.toString());
 
-  // Task State
-  const [tasks, setTasks] = useState<Task[]>(() => {
-    const saved = localStorage.getItem('dashboard_tasks');
-    return saved ? JSON.parse(saved) : [
-      { id: '1', text: 'Check eBay for new deals', completed: false },
-      { id: '2', text: 'Update sold listings', completed: true }
-    ];
-  });
+  const updateTasks = (next: DashboardTask[] | ((prev: DashboardTask[]) => DashboardTask[])) => {
+    const resolved = typeof next === 'function' ? next(dashboardPreferences.tasks) : next;
+    onDashboardPreferencesChange({ ...dashboardPreferences, tasks: resolved });
+  };
+
   const [newTaskText, setNewTaskText] = useState('');
 
   const taxMode = businessSettings?.taxMode || 'SmallBusiness';
@@ -160,33 +147,19 @@ const Dashboard: React.FC<Props> = ({ items, expenses = [], monthlyGoal, onGoalC
     }
   }, [monthlyGoal, isEditingGoal]);
 
-  useEffect(() => {
-    localStorage.setItem('dashboard_tasks', JSON.stringify(tasks));
-  }, [tasks]);
-
-  useEffect(() => {
-    localStorage.setItem('dashboard_time_filter', timeFilter);
-  }, [timeFilter]);
-  useEffect(() => {
-    localStorage.setItem('dashboard_custom_start', customStart);
-  }, [customStart]);
-  useEffect(() => {
-    localStorage.setItem('dashboard_custom_end', customEnd);
-  }, [customEnd]);
-
   const handleAddTask = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskText.trim()) return;
-    setTasks(prev => [{ id: Date.now().toString(), text: newTaskText, completed: false }, ...prev]);
+    updateTasks((prev) => [{ id: Date.now().toString(), text: newTaskText, completed: false }, ...prev]);
     setNewTaskText('');
   };
 
   const toggleTask = (id: string) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
+    updateTasks((prev) => prev.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t)));
   };
 
   const deleteTask = (id: string) => {
-    setTasks(prev => prev.filter(t => t.id !== id));
+    updateTasks((prev) => prev.filter((t) => t.id !== id));
   };
 
   const handleSaveGoal = () => {

@@ -268,3 +268,18 @@ export interface RecurringExpense {
    */
   lastGeneratedDate?: string;
 }
+
+/** Reseller tasks widget + widget layout (synced to Firebase). */
+export interface DashboardTask {
+  id: string;
+  text: string;
+  completed: boolean;
+}
+
+export interface DashboardPreferences {
+  widgets: string[];
+  tasks: DashboardTask[];
+  timeFilter: string;
+  customStart: string;
+  customEnd: string;
+}

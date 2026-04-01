@@ -5,7 +5,7 @@ import {
   CheckCircle2, AlertTriangle, ArrowUp, RefreshCw, Save, LogIn, LogOut, User as UserIcon, Download, Upload, FileText, Github, History, ArchiveRestore, Rocket, Copy, ExternalLink, Plus, FolderPlus
 } from 'lucide-react';
 import { fixItemsEncoding } from '../services/encodingFix';
-import { InventoryItem, BusinessSettings, Expense, ItemStatus } from '../types';
+import { InventoryItem, BusinessSettings, Expense, ItemStatus, DashboardPreferences } from '../types';
 import { isCloudEnabled, saveFirebaseConfig, getFirebaseConfig, signInWithGooglePopup, logOut, onAuthChange } from '../services/firebaseService';
 import {
   getStoredConfig,
@@ -32,6 +32,8 @@ export interface BackupData {
   goals: { monthly: number };
   categories: Record<string, string[]>;
   categoryFields: Record<string, string[]>;
+  /** Dashboard widgets, tasks, time filter (optional in older backups). */
+  dashboard?: DashboardPreferences;
   exportedAt: string;
 }
 
@@ -52,6 +54,7 @@ interface Props {
   onUpdateCategoryFields?: (newFields: Record<string, string[]>) => void;
   onRenameCategory?: (oldName: string, newName: string) => void;
   onRenameSubCategory?: (category: string, oldSubName: string, newSubName: string) => void;
+  dashboardPreferences?: DashboardPreferences;
 }
 
 const SETTINGS_TABS = [
@@ -90,6 +93,7 @@ const SettingsPage: React.FC<Props> = ({
   trash = [],
   expenses = [],
   monthlyGoal = 1000,
+  dashboardPreferences,
   onForcePush, 
   onRestoreItems, 
   onRestoreBackup,
@@ -192,6 +196,7 @@ const SettingsPage: React.FC<Props> = ({
       goals: { monthly: monthlyGoal },
       categories,
       categoryFields,
+      ...(dashboardPreferences ? { dashboard: dashboardPreferences } : {}),
       exportedAt: new Date().toISOString(),
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
@@ -422,8 +427,9 @@ const SettingsPage: React.FC<Props> = ({
     goals: { monthly: monthlyGoal },
     categories,
     categoryFields,
+    ...(dashboardPreferences ? { dashboard: dashboardPreferences } : {}),
     exportedAt: new Date().toISOString(),
-  }), [items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields]);
+  }), [items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields, dashboardPreferences]);
 
   const handleSaveGitHubConfig = () => {
     const config = getStoredConfig();

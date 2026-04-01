@@ -263,6 +263,8 @@ export interface FirestoreInventoryPayload {
   categoryFields?: Record<string, string[]>;
   settings?: unknown;
   goals?: { monthly?: number };
+  /** Dashboard widgets, tasks, time range (DeInventory panel). */
+  dashboard?: unknown;
   updatedAt?: string;
   savedBy?: string;
 }
@@ -322,6 +324,7 @@ function preparePayloadForFirestore(data: FirestoreInventoryPayload): FirestoreI
     categoryFields: data.categoryFields,
     settings: data.settings != null ? sanitizeForFirestore(data.settings) : undefined,
     goals: data.goals,
+    dashboard: data.dashboard != null ? sanitizeForFirestore(data.dashboard) : undefined,
   };
   let size = new Blob([JSON.stringify(payload)]).size;
   if (size > PAYLOAD_SIZE_THRESHOLD) {

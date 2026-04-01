@@ -23,7 +23,13 @@ const LegalPage = lazy(() => import('./components/LegalPage'));
 const MissingSpecsReport = lazy(() => import('./components/MissingSpecsReport'));
 const InvoiceManager = lazy(() => import('./components/InvoiceManager'));
 
-import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense } from './types';
+import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense, DashboardPreferences } from './types';
+import {
+  loadDashboardPreferencesFromLocalStorage,
+  persistDashboardPreferencesToLocalStorage,
+  normalizeDashboardPreferences,
+  getDefaultDashboardPreferences,
+} from './services/dashboardPreferences';
 import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchFromCloud } from './services/firebaseService';
 import { DEFAULT_CATEGORIES } from './services/constants';
 import { appendPriceHistoryIfChanged } from './services/priceHistory';
@@ -195,6 +201,12 @@ const App: React.FC = () => {
     return saved ? parseInt(saved) : 1000;
   });
 
+  const [dashboardPrefs, setDashboardPrefs] = useState<DashboardPreferences>(() => loadDashboardPreferencesFromLocalStorage());
+  const dashboardPrefsRef = useRef(dashboardPrefs);
+  useEffect(() => {
+    dashboardPrefsRef.current = dashboardPrefs;
+  }, [dashboardPrefs]);
+
   const [appState, setAppState] = useState<AppState>('BOOTING');
   const [syncState, setSyncState] = useState<SyncState>({ status: 'idle', lastSynced: null });
   const [bootError, setBootError] = useState<string>('');
@@ -211,15 +223,17 @@ const App: React.FC = () => {
   const catalogPublishDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const saveToLocalStorage = (
-    newItems: InventoryItem[], 
-    newTrash: InventoryItem[], 
+    newItems: InventoryItem[],
+    newTrash: InventoryItem[],
     newExpenses: Expense[],
     newSettings: BusinessSettings,
     newGoal: number,
     newCategories: Record<string, string[]>,
     newFields: Record<string, string[]>,
-    newRecurringExpenses?: RecurringExpense[]
+    newRecurringExpenses?: RecurringExpense[],
+    dashOverride?: DashboardPreferences
   ) => {
+    const dash = dashOverride ?? dashboardPrefsRef.current;
     localStorage.setItem('inventory_items', JSON.stringify(newItems));
     localStorage.setItem('inventory_trash', JSON.stringify(newTrash));
     localStorage.setItem('inventory_expenses', JSON.stringify(newExpenses));
@@ -230,6 +244,7 @@ const App: React.FC = () => {
     if (newRecurringExpenses !== undefined) {
       localStorage.setItem('recurring_expenses', JSON.stringify(newRecurringExpenses));
     }
+    persistDashboardPreferencesToLocalStorage(dash);
   };
 
   /** Merge remote inventory with local. Remote wins on conflicts, but local-only items (e.g. newly added via bulk) are preserved until synced. */
@@ -306,6 +321,13 @@ const App: React.FC = () => {
     const goal = data.goals?.monthly ?? 1000;
     const cats = data.categories || {};
     const fields = data.categoryFields || {};
+    let dashToSave: DashboardPreferences;
+    if (data.dashboard != null) {
+      dashToSave = normalizeDashboardPreferences(data.dashboard);
+      setDashboardPrefs(dashToSave);
+    } else {
+      dashToSave = dashboardPrefsRef.current;
+    }
     setItems(inv);
     setTrash(tr);
     setExpenses(exp);
@@ -314,7 +336,7 @@ const App: React.FC = () => {
     setMonthlyGoal(goal);
     setCategories(cats);
     setCategoryFields(fields);
-    saveToLocalStorage(inv, tr, exp, { ...sets } as BusinessSettings, goal, cats, fields, recurring);
+    saveToLocalStorage(inv, tr, exp, { ...sets } as BusinessSettings, goal, cats, fields, recurring, dashToSave);
   }, []);
 
   // 1. BOOT: load local data and show app immediately; sync with Firestore in background
@@ -420,6 +442,7 @@ const App: React.FC = () => {
           categoryFields,
           settings: businessSettings,
           goals: { monthly: monthlyGoal },
+          dashboard: dashboardPrefs,
         };
         await writeToCloud(payload);
         saveToLocalStorage(items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields, recurringExpenses);
@@ -432,7 +455,7 @@ const App: React.FC = () => {
         setSyncState((prev) => ({ ...prev, status: 'error', message: getSyncErrorMessage(err) }));
       }
     })();
-  }, [authUser, items, trash, expenses, categories, categoryFields, businessSettings, monthlyGoal, applyRemoteData]);
+  }, [authUser, items, trash, expenses, recurringExpenses, categories, categoryFields, businessSettings, monthlyGoal, dashboardPrefs, applyRemoteData]);
 
   // Publish store catalog once when panel has items and auth (ensures storefront gets data)
   useEffect(() => {
@@ -511,7 +534,7 @@ const App: React.FC = () => {
     if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
     writeDebounceRef.current = setTimeout(() => {
       writeDebounceRef.current = null;
-      const payload = { inventory: items, trash, expenses, recurringExpenses, categories, categoryFields, settings: businessSettings, goals: { monthly: monthlyGoal } };
+      const payload = { inventory: items, trash, expenses, recurringExpenses, categories, categoryFields, settings: businessSettings, goals: { monthly: monthlyGoal }, dashboard: dashboardPrefs };
       setSyncState(prev => ({ ...prev, status: 'syncing', message: 'Saving…' }));
       writeToCloud(payload)
         .then(() => {
@@ -526,12 +549,12 @@ const App: React.FC = () => {
     return () => {
       if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
     };
-  }, [appState, authUser, items, trash, expenses, recurringExpenses, businessSettings, monthlyGoal, categories, categoryFields]);
+  }, [appState, authUser, items, trash, expenses, recurringExpenses, businessSettings, monthlyGoal, categories, categoryFields, dashboardPrefs]);
 
   const handleForcePush = async () => {
     if (!isCloudEnabled() || !authUser) return false;
     setSyncState(prev => ({ ...prev, status: 'syncing', message: 'Saving…' }));
-    const payload = { inventory: items, trash, expenses, recurringExpenses, categories, categoryFields, settings: businessSettings, goals: { monthly: monthlyGoal } };
+    const payload = { inventory: items, trash, expenses, recurringExpenses, categories, categoryFields, settings: businessSettings, goals: { monthly: monthlyGoal }, dashboard: dashboardPrefs };
     try {
       await writeToCloud(payload);
       saveToLocalStorage(items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields, recurringExpenses);
@@ -625,12 +648,13 @@ const App: React.FC = () => {
     setHistory([]);
     setHistoryIndex(-1);
     setMonthlyGoal(defaultGoal);
-    
-    localStorage.removeItem('dashboard_tasks');
+    const wipedDash = getDefaultDashboardPreferences();
+    setDashboardPrefs(wipedDash);
+
     localStorage.removeItem('price_check_history');
     localStorage.removeItem('ai_sourcing_history');
 
-    saveToLocalStorage(emptyInventory, emptyTrash, emptyExpenses, businessSettings, defaultGoal, categories, categoryFields, emptyRecurring);
+    saveToLocalStorage(emptyInventory, emptyTrash, emptyExpenses, businessSettings, defaultGoal, categories, categoryFields, emptyRecurring, wipedDash);
 
     if (isCloudEnabled() && authUser) {
       try {
@@ -643,6 +667,7 @@ const App: React.FC = () => {
           goals: { monthly: defaultGoal },
           categories,
           categoryFields,
+          dashboard: wipedDash,
         });
         await writeStoreCatalog(buildStoreCatalog(emptyInventory, categoryFields)).catch(() => {});
       } catch (_) {}
@@ -658,7 +683,7 @@ const App: React.FC = () => {
   };
   const handlePermanentDelete = (ids: string[]) => { setTrash(prev => prev.filter(i => !ids.includes(i.id))); };
 
-  const handleRestoreBackup = useCallback(async (data: { inventory?: InventoryItem[]; trash?: InventoryItem[]; expenses?: Expense[]; settings?: BusinessSettings; goals?: { monthly?: number }; categories?: Record<string, string[]>; categoryFields?: Record<string, string[]> }) => {
+  const handleRestoreBackup = useCallback(async (data: { inventory?: InventoryItem[]; trash?: InventoryItem[]; expenses?: Expense[]; settings?: BusinessSettings; goals?: { monthly?: number }; categories?: Record<string, string[]>; categoryFields?: Record<string, string[]>; dashboard?: unknown }) => {
     const inv = Array.isArray(data.inventory) ? data.inventory : (Array.isArray((data as any).Inventory) ? (data as any).Inventory : []);
     const tr = Array.isArray(data.trash) ? data.trash : [];
     const exp = Array.isArray(data.expenses) ? data.expenses : [];
@@ -666,6 +691,9 @@ const App: React.FC = () => {
     const cats = data.categories && typeof data.categories === 'object' ? data.categories : categories;
     const fields = data.categoryFields && typeof data.categoryFields === 'object' ? data.categoryFields : categoryFields;
     const sets = data.settings && typeof data.settings === 'object' ? { ...businessSettings, ...data.settings } : businessSettings;
+    const restoredDash =
+      data.dashboard != null ? normalizeDashboardPreferences(data.dashboard) : dashboardPrefsRef.current;
+    if (data.dashboard != null) setDashboardPrefs(restoredDash);
     isRemoteUpdate.current = true;
     setItems(inv);
     setTrash(tr);
@@ -674,25 +702,25 @@ const App: React.FC = () => {
     setCategories(cats);
     setCategoryFields(fields);
     setBusinessSettings(sets);
-    saveToLocalStorage(inv, tr, exp, sets, goal, cats, fields);
+    saveToLocalStorage(inv, tr, exp, sets, goal, cats, fields, undefined, restoredDash);
     if (isCloudEnabled() && authUser) {
       try {
-        await writeToCloud({ inventory: inv, trash: tr, expenses: exp, settings: sets, goals: { monthly: goal }, categories: cats, categoryFields: fields });
+        await writeToCloud({ inventory: inv, trash: tr, expenses: exp, settings: sets, goals: { monthly: goal }, categories: cats, categoryFields: fields, dashboard: restoredDash });
         await writeStoreCatalog(buildStoreCatalog(inv, fields)).catch(() => {});
       } catch (_) {}
     }
     setRefreshKey((k) => k + 1);
-  }, [monthlyGoal, categories, categoryFields, businessSettings, authUser]);
+  }, [monthlyGoal, categories, categoryFields, businessSettings, authUser, dashboardPrefs]);
 
   const handleFixEncoding = useCallback((fixedItems: InventoryItem[], fixedTrash: InventoryItem[]) => {
     setItems(fixedItems);
     setTrash(fixedTrash);
     saveToLocalStorage(fixedItems, fixedTrash, expenses, businessSettings, monthlyGoal, categories, categoryFields);
     if (isCloudEnabled() && authUser) {
-      writeToCloud({ inventory: fixedItems, trash: fixedTrash, expenses, settings: businessSettings, goals: { monthly: monthlyGoal }, categories, categoryFields }).catch(() => {});
+      writeToCloud({ inventory: fixedItems, trash: fixedTrash, expenses, settings: businessSettings, goals: { monthly: monthlyGoal }, categories, categoryFields, dashboard: dashboardPrefs }).catch(() => {});
     }
     setRefreshKey((k) => k + 1);
-  }, [expenses, businessSettings, monthlyGoal, categories, categoryFields, authUser]);
+  }, [expenses, businessSettings, monthlyGoal, categories, categoryFields, authUser, dashboardPrefs]);
 
   const isConfigured = isCloudEnabled();
   const isAdminUser = authUser?.email === 'abelyanarmen@gmail.com';
@@ -778,7 +806,21 @@ const App: React.FC = () => {
           }
         >
           <Route index element={<Navigate to="/panel/dashboard" replace />} />
-          <Route path="dashboard" element={<Dashboard items={items} expenses={expenses} monthlyGoal={monthlyGoal} onGoalChange={setMonthlyGoal} businessSettings={businessSettings} categoryFields={categoryFields} />} />
+          <Route
+            path="dashboard"
+            element={
+              <Dashboard
+                items={items}
+                expenses={expenses}
+                monthlyGoal={monthlyGoal}
+                onGoalChange={setMonthlyGoal}
+                businessSettings={businessSettings}
+                categoryFields={categoryFields}
+                dashboardPreferences={dashboardPrefs}
+                onDashboardPreferencesChange={setDashboardPrefs}
+              />
+            }
+          />
           <Route path="analytics" element={<CategoryAnalytics items={items} businessSettings={businessSettings} />} />
           <Route path="category-suggestions" element={<CategorySuggestionsPage items={items} categories={categories} categoryFields={categoryFields} onUpdate={handleUpdate} onUpdateCategoryStructure={handleUpdateCategoryStructure} onUpdateCategoryFields={handleUpdateCategoryFields} onAddCategory={handleAddCategory} />} />
           <Route path="inventory" element={<InventoryList key="inventory-main" items={items} totalCount={items.length} onUpdate={handleUpdate} onDelete={handleDelete} onUndo={handleUndo} onRedo={handleRedo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} pageTitle="Inventory" allowedStatuses={ALL_STATUSES} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} persistenceKey="inventory_main"/>} />
@@ -807,7 +849,7 @@ const App: React.FC = () => {
           <Route path="trash" element={<TrashPage items={trash} onRestore={handleRestoreFromTrash} onPermanentDelete={handlePermanentDelete} />} />
           <Route path="missing-specs" element={<MissingSpecsReport items={items} categoryFields={categoryFields} />} />
           <Route path="store-management" element={<StoreManagementPage items={items} categories={categories} categoryFields={categoryFields} onUpdate={handleUpdate} onPublishCatalog={async () => { await writeStoreCatalog(buildStoreCatalog(items, categoryFields)); }} />} />
-          <Route path="settings" element={<SettingsPage items={items} trash={trash} expenses={expenses} monthlyGoal={monthlyGoal} onForcePush={handleForcePush} onRestoreItems={setItems} onRestoreBackup={handleRestoreBackup} onFixEncoding={handleFixEncoding} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} onUpdateCategoryStructure={handleUpdateCategoryStructure} onUpdateCategoryFields={handleUpdateCategoryFields} onRenameCategory={() => {}} onRenameSubCategory={() => {}} />} />
+          <Route path="settings" element={<SettingsPage items={items} trash={trash} expenses={expenses} monthlyGoal={monthlyGoal} dashboardPreferences={dashboardPrefs} onForcePush={handleForcePush} onRestoreItems={setItems} onRestoreBackup={handleRestoreBackup} onFixEncoding={handleFixEncoding} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} onUpdateCategoryStructure={handleUpdateCategoryStructure} onUpdateCategoryFields={handleUpdateCategoryFields} onRenameCategory={() => {}} onRenameSubCategory={() => {}} />} />
         </Route>
         <Route path="/auth/github/callback" element={<GitHubOAuthCallback />} />
         <Route path="*" element={<Navigate to="/" replace />} />
