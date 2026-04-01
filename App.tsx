@@ -191,18 +191,20 @@ interface SyncState {
 
 type AppState = 'BOOTING' | 'READY' | 'ERROR_SYNC' | 'OFFLINE_MODE';
 
+function loadActionHistoryFromStorage(): ActionHistoryEntry[] {
+  try {
+    const raw = localStorage.getItem('action_history');
+    const parsed = raw ? (JSON.parse(raw) as ActionHistoryEntry[]) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 const App: React.FC = () => {
   // State for Data
   const [items, setItems] = useState<InventoryItem[]>([]);
-  const [actionHistory, setActionHistory] = useState<ActionHistoryEntry[]>(() => {
-    try {
-      const raw = localStorage.getItem('action_history');
-      const parsed = raw ? (JSON.parse(raw) as ActionHistoryEntry[]) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  });
+  const [actionHistory, setActionHistory] = useState<ActionHistoryEntry[]>(() => loadActionHistoryFromStorage());
   const [trash, setTrash] = useState<InventoryItem[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>([]);
@@ -244,9 +246,13 @@ const App: React.FC = () => {
 
   const [dashboardPrefs, setDashboardPrefs] = useState<DashboardPreferences>(() => loadDashboardPreferencesFromLocalStorage());
   const dashboardPrefsRef = useRef(dashboardPrefs);
+  const actionHistoryRef = useRef<ActionHistoryEntry[]>(loadActionHistoryFromStorage());
   useEffect(() => {
     dashboardPrefsRef.current = dashboardPrefs;
   }, [dashboardPrefs]);
+  useEffect(() => {
+    actionHistoryRef.current = actionHistory;
+  }, [actionHistory]);
 
   // One-time storefront reset requested by user: hide all currently visible items.
   useEffect(() => {
@@ -295,9 +301,13 @@ const App: React.FC = () => {
     newCategories: Record<string, string[]>,
     newFields: Record<string, string[]>,
     newRecurringExpenses?: RecurringExpense[],
-    dashOverride?: DashboardPreferences
+    dashOverride?: DashboardPreferences,
+    actionHistorySnapshot?: ActionHistoryEntry[]
   ) => {
     const dash = dashOverride ?? dashboardPrefsRef.current;
+    const ah = (actionHistorySnapshot ?? actionHistoryRef.current).slice(-ACTION_HISTORY_LIMIT);
+    actionHistoryRef.current = ah;
+    localStorage.setItem('action_history', JSON.stringify(ah));
     localStorage.setItem('inventory_items', JSON.stringify(newItems));
     localStorage.setItem('inventory_trash', JSON.stringify(newTrash));
     localStorage.setItem('inventory_expenses', JSON.stringify(newExpenses));
@@ -362,6 +372,19 @@ const App: React.FC = () => {
     return Array.from(byId.values());
   }, []);
 
+  const mergeActionHistoryFromLocal = useCallback((remoteList: ActionHistoryEntry[], localList: ActionHistoryEntry[]): ActionHistoryEntry[] => {
+    if (!localList?.length) return [...(remoteList || [])].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    if (!remoteList?.length) return [...(localList || [])].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    const byId = new Map<string, ActionHistoryEntry>();
+    localList.forEach((e) => {
+      if (e?.id) byId.set(e.id, e);
+    });
+    remoteList.forEach((e) => {
+      if (e?.id) byId.set(e.id, e);
+    });
+    return Array.from(byId.values()).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  }, []);
+
   const applyRemoteData = useCallback((data: any) => {
     if (!data) return;
     isRemoteUpdate.current = true;
@@ -392,6 +415,11 @@ const App: React.FC = () => {
     } else {
       dashToSave = dashboardPrefsRef.current;
     }
+    const localAH = JSON.parse(localStorage.getItem('action_history') || '[]') as ActionHistoryEntry[];
+    const remoteAH = Array.isArray(data.actionHistory) ? (data.actionHistory as ActionHistoryEntry[]) : [];
+    const mergedAH = mergeActionHistoryFromLocal(remoteAH, localAH).slice(-ACTION_HISTORY_LIMIT);
+    setActionHistory(mergedAH);
+    actionHistoryRef.current = mergedAH;
     setItems(inv);
     setTrash(tr);
     setExpenses(exp);
@@ -400,8 +428,8 @@ const App: React.FC = () => {
     setMonthlyGoal(goal);
     setCategories(cats);
     setCategoryFields(fields);
-    saveToLocalStorage(inv, tr, exp, { ...sets } as BusinessSettings, goal, cats, fields, recurring, dashToSave);
-  }, []);
+    saveToLocalStorage(inv, tr, exp, { ...sets } as BusinessSettings, goal, cats, fields, recurring, dashToSave, mergedAH);
+  }, [mergeActionHistoryFromLocal, mergeExpensesFromLocal, mergeInventoryWithLocal]);
 
   // 1. BOOT: load local data and show app immediately; sync with Firestore in background
   useEffect(() => {
@@ -507,6 +535,7 @@ const App: React.FC = () => {
           settings: businessSettings,
           goals: { monthly: monthlyGoal },
           dashboard: dashboardPrefs,
+          actionHistory: actionHistory.slice(-ACTION_HISTORY_LIMIT),
         };
         await writeToCloud(payload);
         saveToLocalStorage(items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields, recurringExpenses);
@@ -519,7 +548,7 @@ const App: React.FC = () => {
         setSyncState((prev) => ({ ...prev, status: 'error', message: getSyncErrorMessage(err) }));
       }
     })();
-  }, [authUser, items, trash, expenses, recurringExpenses, categories, categoryFields, businessSettings, monthlyGoal, dashboardPrefs, applyRemoteData]);
+  }, [authUser, items, trash, expenses, recurringExpenses, categories, categoryFields, businessSettings, monthlyGoal, dashboardPrefs, actionHistory, applyRemoteData]);
 
   // Publish store catalog once when panel has items and auth (ensures storefront gets data)
   useEffect(() => {
@@ -598,7 +627,18 @@ const App: React.FC = () => {
     if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
     writeDebounceRef.current = setTimeout(() => {
       writeDebounceRef.current = null;
-      const payload = { inventory: items, trash, expenses, recurringExpenses, categories, categoryFields, settings: businessSettings, goals: { monthly: monthlyGoal }, dashboard: dashboardPrefs };
+      const payload = {
+        inventory: items,
+        trash,
+        expenses,
+        recurringExpenses,
+        categories,
+        categoryFields,
+        settings: businessSettings,
+        goals: { monthly: monthlyGoal },
+        dashboard: dashboardPrefs,
+        actionHistory: actionHistory.slice(-ACTION_HISTORY_LIMIT),
+      };
       setSyncState(prev => ({ ...prev, status: 'syncing', message: 'Saving…' }));
       writeToCloud(payload)
         .then(() => {
@@ -613,12 +653,23 @@ const App: React.FC = () => {
     return () => {
       if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
     };
-  }, [appState, authUser, items, trash, expenses, recurringExpenses, businessSettings, monthlyGoal, categories, categoryFields, dashboardPrefs]);
+  }, [appState, authUser, items, trash, expenses, recurringExpenses, businessSettings, monthlyGoal, categories, categoryFields, dashboardPrefs, actionHistory]);
 
   const handleForcePush = async () => {
     if (!isCloudEnabled() || !authUser) return false;
     setSyncState(prev => ({ ...prev, status: 'syncing', message: 'Saving…' }));
-    const payload = { inventory: items, trash, expenses, recurringExpenses, categories, categoryFields, settings: businessSettings, goals: { monthly: monthlyGoal }, dashboard: dashboardPrefs };
+    const payload = {
+      inventory: items,
+      trash,
+      expenses,
+      recurringExpenses,
+      categories,
+      categoryFields,
+      settings: businessSettings,
+      goals: { monthly: monthlyGoal },
+      dashboard: dashboardPrefs,
+      actionHistory: actionHistory.slice(-ACTION_HISTORY_LIMIT),
+    };
     try {
       await writeToCloud(payload);
       saveToLocalStorage(items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields, recurringExpenses);
@@ -638,10 +689,6 @@ const App: React.FC = () => {
   useEffect(() => {
     historyIndexRef.current = historyIndex;
   }, [historyIndex]);
-
-  useEffect(() => {
-    localStorage.setItem('action_history', JSON.stringify(actionHistory.slice(-ACTION_HISTORY_LIMIT)));
-  }, [actionHistory]);
 
   const addActionEntries = useCallback((entries: ActionHistoryEntry[]) => {
     if (!entries.length) return;
@@ -801,6 +848,7 @@ const App: React.FC = () => {
           categories,
           categoryFields,
           dashboard: wipedDash,
+          actionHistory: [],
         });
         await writeStoreCatalog(buildStoreCatalog(emptyInventory, categoryFields)).catch(() => {});
       } catch (_) {}
@@ -816,7 +864,17 @@ const App: React.FC = () => {
   };
   const handlePermanentDelete = (ids: string[]) => { setTrash(prev => prev.filter(i => !ids.includes(i.id))); };
 
-  const handleRestoreBackup = useCallback(async (data: { inventory?: InventoryItem[]; trash?: InventoryItem[]; expenses?: Expense[]; settings?: BusinessSettings; goals?: { monthly?: number }; categories?: Record<string, string[]>; categoryFields?: Record<string, string[]>; dashboard?: unknown }) => {
+  const handleRestoreBackup = useCallback(async (data: {
+    inventory?: InventoryItem[];
+    trash?: InventoryItem[];
+    expenses?: Expense[];
+    settings?: BusinessSettings;
+    goals?: { monthly?: number };
+    categories?: Record<string, string[]>;
+    categoryFields?: Record<string, string[]>;
+    dashboard?: unknown;
+    actionHistory?: ActionHistoryEntry[];
+  }) => {
     const inv = Array.isArray(data.inventory) ? data.inventory : (Array.isArray((data as any).Inventory) ? (data as any).Inventory : []);
     const tr = Array.isArray(data.trash) ? data.trash : [];
     const exp = Array.isArray(data.expenses) ? data.expenses : [];
@@ -827,6 +885,11 @@ const App: React.FC = () => {
     const restoredDash =
       data.dashboard != null ? normalizeDashboardPreferences(data.dashboard) : dashboardPrefsRef.current;
     if (data.dashboard != null) setDashboardPrefs(restoredDash);
+    const localAH = JSON.parse(localStorage.getItem('action_history') || '[]') as ActionHistoryEntry[];
+    const backupAH = Array.isArray(data.actionHistory) ? data.actionHistory : [];
+    const mergedAH = mergeActionHistoryFromLocal(backupAH, localAH).slice(-ACTION_HISTORY_LIMIT);
+    setActionHistory(mergedAH);
+    actionHistoryRef.current = mergedAH;
     isRemoteUpdate.current = true;
     setItems(inv);
     setTrash(tr);
@@ -835,22 +898,42 @@ const App: React.FC = () => {
     setCategories(cats);
     setCategoryFields(fields);
     setBusinessSettings(sets);
-    saveToLocalStorage(inv, tr, exp, sets, goal, cats, fields, undefined, restoredDash);
+    saveToLocalStorage(inv, tr, exp, sets, goal, cats, fields, undefined, restoredDash, mergedAH);
     if (isCloudEnabled() && authUser) {
       try {
-        await writeToCloud({ inventory: inv, trash: tr, expenses: exp, settings: sets, goals: { monthly: goal }, categories: cats, categoryFields: fields, dashboard: restoredDash });
+        await writeToCloud({
+          inventory: inv,
+          trash: tr,
+          expenses: exp,
+          settings: sets,
+          goals: { monthly: goal },
+          categories: cats,
+          categoryFields: fields,
+          dashboard: restoredDash,
+          actionHistory: mergedAH,
+        });
         await writeStoreCatalog(buildStoreCatalog(inv, fields)).catch(() => {});
       } catch (_) {}
     }
     setRefreshKey((k) => k + 1);
-  }, [monthlyGoal, categories, categoryFields, businessSettings, authUser, dashboardPrefs]);
+  }, [monthlyGoal, categories, categoryFields, businessSettings, authUser, dashboardPrefs, mergeActionHistoryFromLocal]);
 
   const handleFixEncoding = useCallback((fixedItems: InventoryItem[], fixedTrash: InventoryItem[]) => {
     setItems(fixedItems);
     setTrash(fixedTrash);
     saveToLocalStorage(fixedItems, fixedTrash, expenses, businessSettings, monthlyGoal, categories, categoryFields);
     if (isCloudEnabled() && authUser) {
-      writeToCloud({ inventory: fixedItems, trash: fixedTrash, expenses, settings: businessSettings, goals: { monthly: monthlyGoal }, categories, categoryFields, dashboard: dashboardPrefs }).catch(() => {});
+      writeToCloud({
+        inventory: fixedItems,
+        trash: fixedTrash,
+        expenses,
+        settings: businessSettings,
+        goals: { monthly: monthlyGoal },
+        categories,
+        categoryFields,
+        dashboard: dashboardPrefs,
+        actionHistory: actionHistoryRef.current.slice(-ACTION_HISTORY_LIMIT),
+      }).catch(() => {});
     }
     setRefreshKey((k) => k + 1);
   }, [expenses, businessSettings, monthlyGoal, categories, categoryFields, authUser, dashboardPrefs]);

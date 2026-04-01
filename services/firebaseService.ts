@@ -265,6 +265,8 @@ export interface FirestoreInventoryPayload {
   goals?: { monthly?: number };
   /** Dashboard widgets, tasks, time range (DeInventory panel). */
   dashboard?: unknown;
+  /** Timestamped audit log (item/expense actions); merged per device like expenses. */
+  actionHistory?: unknown[];
   updatedAt?: string;
   savedBy?: string;
 }
@@ -325,6 +327,7 @@ function preparePayloadForFirestore(data: FirestoreInventoryPayload): FirestoreI
     settings: data.settings != null ? sanitizeForFirestore(data.settings) : undefined,
     goals: data.goals,
     dashboard: data.dashboard != null ? sanitizeForFirestore(data.dashboard) : undefined,
+    actionHistory: (data.actionHistory || []).map(sanitizeForFirestore),
   };
   let size = new Blob([JSON.stringify(payload)]).size;
   if (size > PAYLOAD_SIZE_THRESHOLD) {
