@@ -612,6 +612,10 @@ const App: React.FC = () => {
   // ... Data Modifiers ...
   const [history, setHistory] = useState<InventoryItem[][]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const historyIndexRef = useRef(-1);
+  useEffect(() => {
+    historyIndexRef.current = historyIndex;
+  }, [historyIndex]);
   
   const handleUpdate = useCallback((updatedItems: InventoryItem[], deleteIds?: string[]) => {
     setItems(currentItems => {
@@ -644,6 +648,20 @@ const App: React.FC = () => {
            nextItems = nextItems.filter(i => !deleteIds.includes(i.id));
         }
         nextItems = syncContainerBuyTotalsFromComponents(nextItems);
+        // Record history snapshots for undo/redo.
+        let nextIdx = historyIndexRef.current;
+        setHistory((prev) => {
+          let base = prev.slice(0, Math.max(0, historyIndexRef.current + 1));
+          if (base.length === 0) base = [currentItems];
+          const last = base[base.length - 1];
+          if (last !== currentItems) base.push(currentItems);
+          base.push(nextItems);
+          nextIdx = base.length - 1;
+          return base;
+        });
+        historyIndexRef.current = nextIdx;
+        setHistoryIndex(nextIdx);
+        hasUnsavedChanges.current = true;
         return nextItems;
     });
   }, []);
@@ -658,8 +676,22 @@ const App: React.FC = () => {
   }, [handleUpdate]);
 
   const handleDelete = (id: string) => handleUpdate([], [id]);
-  const handleUndo = () => { if (historyIndex > 0) { const newIndex = historyIndex - 1; setHistoryIndex(newIndex); setItems(history[newIndex]); } };
-  const handleRedo = () => { if (historyIndex < history.length - 1) { const newIndex = historyIndex + 1; setHistoryIndex(newIndex); setItems(history[newIndex]); } };
+  const handleUndo = () => {
+    if (historyIndex > 0) {
+      const newIndex = historyIndex - 1;
+      historyIndexRef.current = newIndex;
+      setHistoryIndex(newIndex);
+      setItems(history[newIndex]);
+    }
+  };
+  const handleRedo = () => {
+    if (historyIndex < history.length - 1) {
+      const newIndex = historyIndex + 1;
+      historyIndexRef.current = newIndex;
+      setHistoryIndex(newIndex);
+      setItems(history[newIndex]);
+    }
+  };
   const handleAddExpense = (expense: Expense) => setExpenses(prev => [...prev, expense]);
   const handleUpdateExpense = (expense: Expense) =>
     setExpenses(prev => prev.map(e => (e.id === expense.id ? expense : e)));
