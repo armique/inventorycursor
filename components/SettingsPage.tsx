@@ -1057,7 +1057,7 @@ const SettingsPage: React.FC<Props> = ({
                                <strong>Bezeichnung</strong>, <strong>Einkaufsdatum</strong>, <strong>Verkaufsdatum</strong>,{' '}
                                <strong>Einkaufspreis_EUR</strong>, <strong>Verkaufspreis_EUR</strong>, <strong>Gewinn_EUR</strong> (und Gebühren)
                             </li>
-                            <li>Spalten <strong>Paket_oder_PC</strong>, <strong>Paket_ID</strong>, <strong>Rolle_im_Paket</strong> und <strong>Stückliste_Komponenten</strong> erklären Bundles und PCs</li>
+                            <li>Spalten <strong>Paket_oder_PC</strong>, <strong>Rolle_im_Paket</strong> und <strong>Stückliste_Komponenten</strong> erklären Bundles und PCs</li>
                             <li>Entwürfe (<code className="bg-slate-200 px-1 rounded text-xs">isDraft</code>) und Papierkorb sind nicht enthalten</li>
                          </ul>
                       </div>

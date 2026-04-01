@@ -60,13 +60,12 @@ function dePlatform(v?: string): string {
 }
 
 function formatStückliste(children: InventoryItem[]): string {
-  return children.map((c, i) => `${i + 1}. ${c.name} (ID: ${c.id})`).join(' | ');
+  return children.map((c, i) => `${i + 1}. ${c.name}`).join(' | ');
 }
 
 export type FinanzamtWareRow = {
   Zeilenart: string;
   Bezeichnung: string;
-  Interne_ID: string;
   Kategorie: string;
   Unterkategorie: string;
   Status: string;
@@ -77,7 +76,6 @@ export type FinanzamtWareRow = {
   'Gebühren_Verkauf_EUR': number | '';
   Gewinn_EUR: number | '';
   Paket_oder_PC: string;
-  Paket_ID: string;
   Rolle_im_Paket: string;
   Stückliste_Komponenten: string;
   Verkaufsplattform: string;
@@ -91,14 +89,12 @@ export type FinanzamtWareRow = {
 function buildWareRow(
   item: InventoryItem,
   items: InventoryItem[],
-  ctx: { paketName: string; paketId: string; rolle: string; stückliste: string }
+  ctx: { paketName: string; rolle: string; stückliste: string }
 ): FinanzamtWareRow {
   const parent = item.parentContainerId ? items.find((i) => i.id === item.parentContainerId) : undefined;
   const paketFromParent = parent && (parent.isBundle || parent.isPC) ? parent.name : '';
-  const paketIdFromParent = parent && (parent.isBundle || parent.isPC) ? parent.id : '';
 
   let paketName = ctx.paketName || paketFromParent;
-  let paketId = ctx.paketId || paketIdFromParent;
   let rolle = ctx.rolle;
   let stückliste = ctx.stückliste;
 
@@ -116,7 +112,6 @@ function buildWareRow(
   return {
     Zeilenart: zeilenart,
     Bezeichnung: item.name,
-    Interne_ID: item.id,
     Kategorie: item.category || '',
     Unterkategorie: item.subCategory || '',
     Status: STATUS_DE[item.status] ?? item.status,
@@ -132,7 +127,6 @@ function buildWareRow(
     Gewinn_EUR:
       item.profit !== undefined && item.profit !== null ? round2(Number(item.profit)) : '',
     Paket_oder_PC: paketName,
-    Paket_ID: paketId,
     Rolle_im_Paket: rolle,
     Stückliste_Komponenten: stückliste,
     Verkaufsplattform: dePlatform(item.platformSold),
@@ -158,12 +152,10 @@ export function buildFinanzamtWareRows(items: InventoryItem[]): FinanzamtWareRow
     const parent = item.parentContainerId ? list.find((i) => i.id === item.parentContainerId) : undefined;
     let rolle = '—';
     let paketName = '';
-    let paketId = '';
     let stückliste = '';
 
     if (parent && (parent.isBundle || parent.isPC)) {
       paketName = parent.name;
-      paketId = parent.id;
       if (isSoldWithProportionalChildren(parent, list) && item.status === ItemStatus.SOLD) {
         rolle =
           'Paketbestandteil (Verkauf als Paket; Umsatz und Gewinn sind auf die Komponentenzeilen nach Einkaufspreis-Anteil aufgeteilt.)';
@@ -189,14 +181,13 @@ export function buildFinanzamtWareRows(items: InventoryItem[]): FinanzamtWareRow
       }
     }
 
-    rows.push(buildWareRow(item, list, { paketName, paketId, rolle, stückliste }));
+    rows.push(buildWareRow(item, list, { paketName, rolle, stückliste }));
   }
 
   return rows;
 }
 
 export type FinanzamtPaketRow = {
-  Paket_ID: string;
   Bezeichnung: string;
   Typ: string;
   Status: string;
@@ -228,7 +219,6 @@ export function buildFinanzamtPaketSummaryRows(items: InventoryItem[]): Finanzam
     }
 
     return {
-      Paket_ID: parent.id,
       Bezeichnung: parent.name,
       Typ: parent.isPC ? 'PC' : 'Paket / Bundle',
       Status: STATUS_DE[parent.status] ?? parent.status,
@@ -251,7 +241,6 @@ function buildAusgabenRows(expenses: Expense[]): Record<string, string | number>
     Beschreibung: e.description || '',
     Betrag_EUR: round2(Number(e.amount || 0)),
     Kategorie: e.category || '',
-    Wiederkehrend_ID: e.recurringExpenseId || '',
     Beleg_URL: e.attachmentUrl || '',
     Dateiname_Beleg: e.attachmentName || '',
   }));
@@ -287,7 +276,7 @@ function instructionSheetRows(companyName: string, exportedAt: string): string[]
     ['Einkaufspreis_EUR / Verkaufspreis_EUR', 'Netto-Beträge wie erfasst (Steuerlogik bitte mit Steuerberater abstimmen).'],
     ['Gebühren_Verkauf_EUR', 'z. B. Marktplatzgebühren, auf die Komponente oder das Paket verteilt.'],
     ['Gewinn_EUR', 'Wie in der App berechnet (Verkauf − EK − Gebühr, falls erfasst).'],
-    ['Paket_oder_PC / Paket_ID', 'Zuordnung zum übergeordneten Paket, falls zutreffend.'],
+    ['Paket_oder_PC', 'Name des übergeordneten Pakets/PCs, falls zutreffend.'],
     ['', ''],
     ['Google Tabellen', ''],
     [
@@ -326,7 +315,6 @@ const MONEY_FMT = '#,##0.00';
 const WARE_HEADER_ORDER: (keyof FinanzamtWareRow)[] = [
   'Zeilenart',
   'Bezeichnung',
-  'Interne_ID',
   'Kategorie',
   'Unterkategorie',
   'Status',
@@ -337,7 +325,6 @@ const WARE_HEADER_ORDER: (keyof FinanzamtWareRow)[] = [
   'Gebühren_Verkauf_EUR',
   'Gewinn_EUR',
   'Paket_oder_PC',
-  'Paket_ID',
   'Rolle_im_Paket',
   'Stückliste_Komponenten',
   'Verkaufsplattform',
@@ -357,7 +344,6 @@ function wareRowToArray(row: FinanzamtWareRow): (string | number | null)[] {
 }
 
 const PAKET_HEADER_ORDER: (keyof FinanzamtPaketRow)[] = [
-  'Paket_ID',
   'Bezeichnung',
   'Typ',
   'Status',
@@ -540,14 +526,14 @@ export async function exportFinanzamtWorkbook(
   const wareRows = buildFinanzamtWareRows(items);
   const wareHeaders = WARE_HEADER_ORDER.map(String);
   const wareData = wareRows.map(wareRowToArray);
-  const wareMoneyIdx = [8, 9, 10, 11];
+  const wareMoneyIdx = [7, 8, 9, 10];
   addStyledTableSheet(
     wb,
     SHEET_WARE,
     wareHeaders,
     wareData,
     wareMoneyIdx,
-    [16, 28, 14, 14, 14, 14, 12, 12, 12, 12, 12, 12, 22, 14, 40, 48, 14, 18, 16, 14, 22, 36]
+    [16, 28, 14, 14, 14, 12, 12, 12, 12, 12, 12, 22, 40, 48, 14, 18, 16, 14, 22, 36]
   );
 
   const paketRows = buildFinanzamtPaketSummaryRows(items);
@@ -558,14 +544,14 @@ export async function exportFinanzamtWorkbook(
     SHEET_PAKETE,
     paketHeaders,
     paketData,
-    [6, 7],
-    [16, 28, 12, 14, 10, 56, 14, 14, 12, 52]
+    [5, 6],
+    [28, 12, 14, 10, 56, 14, 14, 12, 52]
   );
 
   const ausRows = buildAusgabenRows(expenses);
   const ausHeaders =
     ausRows.length > 0
-      ? ['Datum', 'Beschreibung', 'Betrag_EUR', 'Kategorie', 'Wiederkehrend_ID', 'Beleg_URL', 'Dateiname_Beleg']
+      ? ['Datum', 'Beschreibung', 'Betrag_EUR', 'Kategorie', 'Beleg_URL', 'Dateiname_Beleg']
       : ['Hinweis'];
   const ausData =
     ausRows.length > 0
@@ -574,12 +560,11 @@ export async function exportFinanzamtWorkbook(
           r.Beschreibung,
           typeof r.Betrag_EUR === 'number' ? r.Betrag_EUR : null,
           r.Kategorie,
-          r.Wiederkehrend_ID || null,
           r.Beleg_URL || null,
           r.Dateiname_Beleg || null,
         ])
-      : [['Keine Ausgaben erfasst.', null, null, null, null, null, null]];
-  addStyledTableSheet(wb, SHEET_AUSGABEN, ausHeaders, ausData, ausRows.length > 0 ? [2] : [], [12, 40, 14, 18, 18, 48, 24]);
+      : [['Keine Ausgaben erfasst.', null, null, null, null, null]];
+  addStyledTableSheet(wb, SHEET_AUSGABEN, ausHeaders, ausData, ausRows.length > 0 ? [2] : [], [12, 40, 14, 18, 48, 24]);
 
   const date = new Date().toISOString().slice(0, 10);
   const buffer = await wb.xlsx.writeBuffer();

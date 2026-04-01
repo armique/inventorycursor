@@ -4,7 +4,6 @@ import { InventoryItem } from '../types';
 /** Flatten an item into a row object for Excel. */
 function itemToRow(item: InventoryItem): Record<string, string | number> {
   return {
-    ID: item.id,
     Name: item.name,
     Category: item.category || '',
     SubCategory: item.subCategory || '',
