@@ -4,6 +4,13 @@
  */
 import ExcelJS from 'exceljs';
 import { Expense, InventoryItem, ItemStatus } from '../types';
+import type { DateBounds } from '../utils/exportDateRange';
+import {
+  filterExpensesForRange,
+  filterInventoryForFinanzamtRange,
+  formatBoundsForFilename,
+  formatBoundsGerman,
+} from '../utils/exportDateRange';
 import {
   roundMoney,
   getChildren,
@@ -246,12 +253,13 @@ function buildAusgabenRows(expenses: Expense[]): Record<string, string | number>
   }));
 }
 
-function instructionSheetRows(companyName: string, exportedAt: string): string[][] {
+function instructionSheetRows(companyName: string, exportedAt: string, periodNote: string): string[][] {
   return [
     ['Finanzamt-Export — Kurzanleitung', ''],
     ['', ''],
     ['Erstellt am (UTC):', exportedAt],
     ['Firma / Name (aus App-Einstellungen):', companyName || '—'],
+    ['Export-Zeitraum:', periodNote],
     ['', ''],
     ['Blätter in dieser Datei', ''],
     ['1) Anleitung', 'Diese Übersicht.'],
@@ -431,7 +439,7 @@ function addStyledTableSheet(
   setColumnWidths(ws, columnWidths);
 }
 
-function buildAnleitungSheet(wb: ExcelJS.Workbook, companyName: string, exportedAt: string): void {
+function buildAnleitungSheet(wb: ExcelJS.Workbook, companyName: string, exportedAt: string, periodNote: string): void {
   const ws = wb.addWorksheet(SHEET_ANLEITUNG, {
     views: [{ state: 'frozen', ySplit: 4 }],
   });
@@ -462,7 +470,7 @@ function buildAnleitungSheet(wb: ExcelJS.Workbook, companyName: string, exported
   ws.addRow(['', '']);
   ws.getRow(3).height = 8;
 
-  const body = instructionSheetRows(companyName, exportedAt).slice(2);
+  const body = instructionSheetRows(companyName, exportedAt, periodNote).slice(2);
   let rowIndex = 4;
   const sectionTitles = new Set([
     'Blätter in dieser Datei',
@@ -512,18 +520,32 @@ function buildAnleitungSheet(wb: ExcelJS.Workbook, companyName: string, exported
 export async function exportFinanzamtWorkbook(
   items: InventoryItem[],
   expenses: Expense[],
-  options?: { companyName?: string }
+  options?: {
+    companyName?: string;
+    /** Inclusive YYYY-MM-DD; omit or null = export all data */
+    dateRange?: DateBounds | null;
+    /** Shown on the Anleitung sheet (German, full sentence) */
+    dateRangeDescription?: string;
+  }
 ): Promise<void> {
   const exportedAt = new Date().toISOString();
   const companyName = options?.companyName?.trim() || '';
+  const bounds = options?.dateRange ?? null;
+  const exportItems = bounds ? filterInventoryForFinanzamtRange(items, bounds) : items;
+  const exportExpenses = bounds ? filterExpensesForRange(expenses, bounds) : expenses;
+  const periodNote =
+    options?.dateRangeDescription ??
+    (bounds
+      ? `${formatBoundsGerman(bounds)} — gefiltert nach Einkaufs-, Verkaufs- bzw. Container-Verkaufsdatum (Ware) und Buchungsdatum (Ausgaben).`
+      : 'Alle Daten — kein Datumsfilter.');
 
   const wb = new ExcelJS.Workbook();
   wb.creator = 'DeInventory';
   wb.created = new Date();
 
-  buildAnleitungSheet(wb, companyName, exportedAt);
+  buildAnleitungSheet(wb, companyName, exportedAt, periodNote);
 
-  const wareRows = buildFinanzamtWareRows(items);
+  const wareRows = buildFinanzamtWareRows(exportItems);
   const wareHeaders = WARE_HEADER_ORDER.map(String);
   const wareData = wareRows.map(wareRowToArray);
   const wareMoneyIdx = [7, 8, 9, 10];
@@ -536,7 +558,7 @@ export async function exportFinanzamtWorkbook(
     [16, 28, 14, 14, 14, 12, 12, 12, 12, 12, 12, 22, 40, 48, 14, 18, 16, 14, 22, 36]
   );
 
-  const paketRows = buildFinanzamtPaketSummaryRows(items);
+  const paketRows = buildFinanzamtPaketSummaryRows(exportItems);
   const paketHeaders = PAKET_HEADER_ORDER.map(String);
   const paketData = paketRows.map(paketRowToArray);
   addStyledTableSheet(
@@ -548,7 +570,7 @@ export async function exportFinanzamtWorkbook(
     [28, 12, 14, 10, 56, 14, 14, 12, 52]
   );
 
-  const ausRows = buildAusgabenRows(expenses);
+  const ausRows = buildAusgabenRows(exportExpenses);
   const ausHeaders =
     ausRows.length > 0
       ? ['Datum', 'Beschreibung', 'Betrag_EUR', 'Kategorie', 'Beleg_URL', 'Dateiname_Beleg']
@@ -567,6 +589,7 @@ export async function exportFinanzamtWorkbook(
   addStyledTableSheet(wb, SHEET_AUSGABEN, ausHeaders, ausData, ausRows.length > 0 ? [2] : [], [12, 40, 14, 18, 48, 24]);
 
   const date = new Date().toISOString().slice(0, 10);
+  const fileStem = bounds ? `Finanzamt-Export-${formatBoundsForFilename(bounds)}` : `Finanzamt-Export-${date}`;
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -574,7 +597,7 @@ export async function exportFinanzamtWorkbook(
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `Finanzamt-Export-${date}.xlsx`;
+  a.download = `${fileStem}.xlsx`;
   a.rel = 'noopener';
   document.body.appendChild(a);
   a.click();

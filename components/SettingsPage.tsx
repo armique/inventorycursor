@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   Cloud, Building2, Layers, Wrench, ShoppingBag,
   CheckCircle2, AlertTriangle, ArrowUp, RefreshCw, Save, LogIn, LogOut, User as UserIcon, Download, Upload, FileText, Github, History, ArchiveRestore, Rocket, Copy, ExternalLink, Plus, FolderPlus, FileSpreadsheet
@@ -22,6 +22,13 @@ import {
   type GitHubRepoItem,
 } from '../services/githubBackupService';
 import CategoryEditor from './CategoryEditor';
+import type { DateBounds, FinanzamtExportRangePreset } from '../utils/exportDateRange';
+import {
+  filterExpensesForRange,
+  filterInventoryForFinanzamtRange,
+  formatBoundsGerman,
+  resolveFinanzamtDateBounds,
+} from '../utils/exportDateRange';
 
 export interface BackupData {
   inventory: InventoryItem[];
@@ -130,6 +137,40 @@ const SettingsPage: React.FC<Props> = ({
   const [createAppRepoName, setCreateAppRepoName] = useState('inventory-pro');
   const [createAppRepoLoading, setCreateAppRepoLoading] = useState(false);
   const [createdAppRepoUrl, setCreatedAppRepoUrl] = useState<string | null>(null);
+
+  const [finanzRangePreset, setFinanzRangePreset] = useState<FinanzamtExportRangePreset>('all');
+  const [finanzCustomYear, setFinanzCustomYear] = useState(() => new Date().getFullYear());
+  const [finanzCustomFrom, setFinanzCustomFrom] = useState('');
+  const [finanzCustomTo, setFinanzCustomTo] = useState('');
+
+  const finanzExportResolution = useMemo(() => {
+    if (finanzRangePreset === 'all') return { bounds: null as DateBounds | null, valid: true };
+    if (finanzRangePreset === 'custom_range') {
+      if (!finanzCustomFrom.trim() || !finanzCustomTo.trim()) return { bounds: null, valid: false };
+      const b = resolveFinanzamtDateBounds('custom_range', {
+        customStart: finanzCustomFrom,
+        customEnd: finanzCustomTo,
+      });
+      return b ? { bounds: b, valid: true } : { bounds: null, valid: false };
+    }
+    const b = resolveFinanzamtDateBounds(finanzRangePreset, { customYear: finanzCustomYear });
+    return { bounds: b, valid: true };
+  }, [finanzRangePreset, finanzCustomYear, finanzCustomFrom, finanzCustomTo]);
+
+  const finanzExportCounts = useMemo(() => {
+    const { bounds, valid } = finanzExportResolution;
+    if (!valid) return { items: 0, expenses: 0 };
+    if (!bounds) {
+      return {
+        items: items.filter((i) => !i.isDraft).length,
+        expenses: expenses.length,
+      };
+    }
+    return {
+      items: filterInventoryForFinanzamtRange(items, bounds).length,
+      expenses: filterExpensesForRange(expenses, bounds).length,
+    };
+  }, [items, expenses, finanzExportResolution]);
 
   useEffect(() => {
     const unsubscribe = onAuthChange((u) => setUser(u));
@@ -1045,8 +1086,8 @@ const SettingsPage: React.FC<Props> = ({
                    <p className="text-sm text-slate-600 leading-relaxed max-w-3xl">
                       Erzeugt eine <strong>.xlsx</strong>-Datei mit mehreren Blättern, die Sie direkt in{' '}
                       <strong>Google Drive</strong> hochladen und mit <strong>Google Tabellen</strong> öffnen können — ohne OAuth oder API-Schlüssel in der App.
-                      Enthalten sind: alle aktiven Inventarpositionen (Bestand und verkauft), erklärtes Paket-/PC-Verhalten, und Ihre{' '}
-                      <strong>Betriebsausgaben</strong>.
+                      Enthalten sind: aktive Inventarpositionen (Bestand und verkauft), erklärtes Paket-/PC-Verhalten, und Ihre{' '}
+                      <strong>Betriebsausgaben</strong>. Optional schränken Sie den Export auf einen <strong>Zeitraum</strong> ein (siehe unten).
                    </p>
 
                    <div className="grid gap-4 md:grid-cols-2">
@@ -1084,32 +1125,117 @@ const SettingsPage: React.FC<Props> = ({
                       </ol>
                    </div>
 
-                   <div className="flex flex-wrap items-center gap-3">
-                      <button
-                         type="button"
-                         onClick={() => {
-                            void (async () => {
-                               try {
-                                  const { exportFinanzamtWorkbook } = await import(
-                                     '../services/finanzamtExportService'
-                                  );
-                                  await exportFinanzamtWorkbook(items, expenses, {
-                                     companyName: businessSettings.companyName,
-                                  });
-                                  showToast('Finanzamt-Export heruntergeladen', 'success');
-                               } catch {
-                                  showToast('Export fehlgeschlagen — bitte erneut versuchen.', 'error');
+                   <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5 space-y-4 max-w-3xl">
+                      <div>
+                         <label htmlFor="finanz-range-preset" className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-2">
+                            Export-Zeitraum
+                         </label>
+                         <select
+                            id="finanz-range-preset"
+                            value={finanzRangePreset}
+                            onChange={(e) => setFinanzRangePreset(e.target.value as FinanzamtExportRangePreset)}
+                            className="w-full max-w-md px-4 py-3 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-800 outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600"
+                         >
+                            <option value="all">Alle Daten (kein Datumsfilter)</option>
+                            <option value="last_month">Letzter Kalendermonat</option>
+                            <option value="last_3_months">Letzte drei Monate (laufend: seit 1. des drittletzten Monats bis heute)</option>
+                            <option value="this_year">Dieses Jahr (1. Jan. bis heute)</option>
+                            <option value="last_year">Letztes Kalenderjahr</option>
+                            <option value="custom_year">Beliebiges Kalenderjahr</option>
+                            <option value="custom_range">Eigener Zeitraum (Von / Bis)</option>
+                         </select>
+                      </div>
+                      {finanzRangePreset === 'custom_year' && (
+                         <div className="flex flex-wrap items-end gap-3">
+                            <div>
+                               <label htmlFor="finanz-custom-year" className="block text-[10px] font-black uppercase text-slate-400 mb-1 ml-1">
+                                  Jahr
+                               </label>
+                               <input
+                                  id="finanz-custom-year"
+                                  type="number"
+                                  min={1990}
+                                  max={new Date().getFullYear() + 1}
+                                  value={finanzCustomYear}
+                                  onChange={(e) => setFinanzCustomYear(Number(e.target.value) || new Date().getFullYear())}
+                                  className="w-32 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-bold outline-none focus:border-emerald-600"
+                               />
+                            </div>
+                            <p className="text-xs text-slate-500 pb-1">1. Jan. bis 31. Dez. dieses Jahres</p>
+                         </div>
+                      )}
+                      {finanzRangePreset === 'custom_range' && (
+                         <div className="flex flex-wrap items-end gap-3">
+                            <div>
+                               <label htmlFor="finanz-from" className="block text-[10px] font-black uppercase text-slate-400 mb-1 ml-1">
+                                  Von
+                               </label>
+                               <input
+                                  id="finanz-from"
+                                  type="date"
+                                  value={finanzCustomFrom}
+                                  onChange={(e) => setFinanzCustomFrom(e.target.value)}
+                                  className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-semibold outline-none focus:border-emerald-600"
+                               />
+                            </div>
+                            <div>
+                               <label htmlFor="finanz-to" className="block text-[10px] font-black uppercase text-slate-400 mb-1 ml-1">
+                                  Bis
+                               </label>
+                               <input
+                                  id="finanz-to"
+                                  type="date"
+                                  value={finanzCustomTo}
+                                  onChange={(e) => setFinanzCustomTo(e.target.value)}
+                                  className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-semibold outline-none focus:border-emerald-600"
+                               />
+                            </div>
+                         </div>
+                      )}
+                      {finanzRangePreset === 'custom_range' && !finanzExportResolution.valid && (
+                         <p className="text-xs text-amber-700 font-semibold">Bitte Von- und Bis-Datum wählen (Format JJJJ-MM-TT).</p>
+                      )}
+                      {finanzExportResolution.valid && finanzExportResolution.bounds && (
+                         <p className="text-xs text-slate-600">
+                            Zeitraum: <strong>{formatBoundsGerman(finanzExportResolution.bounds)}</strong> — im Export erscheinen nur Positionen mit Einkaufs-, Verkaufs- oder Container-Verkaufsdatum in diesem Bereich (Pakete/PCs inkl. aller Komponenten, wenn mindestens eine Position passt) sowie Ausgaben mit Buchungsdatum im Bereich.
+                         </p>
+                      )}
+                      <div className="flex flex-wrap items-center gap-3 pt-1">
+                         <button
+                            type="button"
+                            disabled={!finanzExportResolution.valid}
+                            onClick={() => {
+                               if (!finanzExportResolution.valid) {
+                                  showToast('Bitte gültigen Zeitraum wählen.', 'error');
+                                  return;
                                }
-                            })();
-                         }}
-                         className="px-6 py-3 bg-emerald-700 text-white rounded-xl font-bold text-xs uppercase hover:bg-emerald-800 transition-all flex items-center gap-2 shadow-sm"
-                      >
-                         <Download size={18} />
-                         Finanzamt-Export (.xlsx) herunterladen
-                      </button>
-                      <span className="text-xs text-slate-500">
-                         {items.filter((i) => !i.isDraft).length} Positionen · {expenses.length} Ausgaben
-                      </span>
+                               void (async () => {
+                                  try {
+                                     const { exportFinanzamtWorkbook } = await import('../services/finanzamtExportService');
+                                     const { bounds } = finanzExportResolution;
+                                     await exportFinanzamtWorkbook(items, expenses, {
+                                        companyName: businessSettings.companyName,
+                                        dateRange: bounds,
+                                        dateRangeDescription: bounds
+                                           ? `${formatBoundsGerman(bounds)} — Inventar: Positionen mit Einkaufs-, Verkaufs- oder Container-Verkaufsdatum im Zeitraum (Pakete vollständig, wenn eine Position passt). Ausgaben: Buchungsdatum im Zeitraum.`
+                                           : undefined,
+                                     });
+                                     showToast('Finanzamt-Export heruntergeladen', 'success');
+                                  } catch {
+                                     showToast('Export fehlgeschlagen — bitte erneut versuchen.', 'error');
+                                  }
+                               })();
+                            }}
+                            className="px-6 py-3 bg-emerald-700 text-white rounded-xl font-bold text-xs uppercase hover:bg-emerald-800 transition-all flex items-center gap-2 shadow-sm disabled:opacity-50 disabled:pointer-events-none"
+                         >
+                            <Download size={18} />
+                            Finanzamt-Export (.xlsx) herunterladen
+                         </button>
+                         <span className="text-xs text-slate-500">
+                            {finanzExportCounts.items} Positionen · {finanzExportCounts.expenses} Ausgaben
+                            {finanzExportResolution.bounds ? ' (gefiltert)' : ''}
+                         </span>
+                      </div>
                    </div>
 
                    <p className="text-xs text-slate-400 max-w-2xl leading-relaxed">
