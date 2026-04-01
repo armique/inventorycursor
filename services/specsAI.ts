@@ -87,7 +87,7 @@ async function callOpenAI(prompt: string): Promise<GenerateSpecsResult> {
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
+      model: 'gpt-4o',
       messages: [{ role: 'user', content: prompt }],
       response_format: { type: 'json_object' },
       max_tokens: 1536,
@@ -382,7 +382,7 @@ async function getRawJsonFromProvider(provider: Provider, prompt: string): Promi
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKeyO}` },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'gpt-4o',
         messages: [{ role: 'user', content: prompt }],
         response_format: { type: 'json_object' },
         max_tokens: 512,
@@ -520,7 +520,7 @@ async function getRawTextFromProvider(provider: Provider, prompt: string, maxTok
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKeyO}` },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'gpt-4o',
         messages: [{ role: 'user', content: prompt }],
         max_tokens: maxTokens,
       }),

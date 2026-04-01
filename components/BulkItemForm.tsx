@@ -158,6 +158,47 @@ function parseQuantityAndName(rawLine: string): { name: string; quantity: number
   return { quantity: Math.max(1, parseInt(m[1], 10) || 1), name: m[2].trim() };
 }
 
+function reconcileCategory(name: string, category?: string, subCategory?: string): { category: string; subCategory: string } {
+  const guessed = inferCategoryFromName(name);
+  const aiCategory = normalizeCategory(category || guessed.category);
+  const aiSub = normalizeSubCategory(aiCategory, subCategory || guessed.subCategory);
+
+  const n = name.toLowerCase();
+  if (/(intel core|ryzen|threadripper|cpu|prozessor)/i.test(n)) {
+    return { category: 'Components', subCategory: 'Processors' };
+  }
+  if (/(ssd|nvme|m\.2|hdd|sata)/i.test(n)) {
+    return { category: 'Components', subCategory: 'Storage (SSD/HDD)' };
+  }
+  if (/(ddr4|ddr5|ram|memory)/i.test(n)) {
+    return { category: 'Components', subCategory: 'RAM' };
+  }
+  if (/(mainboard|motherboard|b650|b760|x670|z790)/i.test(n)) {
+    return { category: 'Components', subCategory: 'Motherboards' };
+  }
+
+  if (aiCategory !== 'Components' && guessed.category === 'Components') {
+    return guessed;
+  }
+  if (aiCategory === 'Components' && aiSub === 'Graphics Cards' && guessed.subCategory !== 'Graphics Cards') {
+    return guessed;
+  }
+  return { category: aiCategory, subCategory: aiSub };
+}
+
+function extractRamStickInfo(name: string): { sticks: number; perStickGB: number | null } | null {
+  const n = name.toLowerCase();
+  if (!/(ddr4|ddr5|ram|memory)/i.test(n)) return null;
+  const explicitKit = n.match(/(\d+)\s*[x×]\s*(\d+)\s*gb/i);
+  if (explicitKit) {
+    return {
+      sticks: Math.max(1, parseInt(explicitKit[1], 10) || 1),
+      perStickGB: Math.max(1, parseInt(explicitKit[2], 10) || 0) || null,
+    };
+  }
+  return null;
+}
+
 const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORIES, onAddCategory, categoryFields = {} }) => {
   const navigate = useNavigate();
   const aiAvailable = !!getSpecsAIProvider();
@@ -314,22 +355,32 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
   const applyParsedItems = (parsed: ParsedTextItem[], importMode: TextImportMode) => {
     const appended: DraftItem[] = [];
     for (const row of parsed) {
-      const quantity = Math.max(1, Math.floor(Number(row.quantity || 1) || 1));
       const baseName = (row.name || '').trim();
       if (!baseName) continue;
-      const inferred = inferCategoryFromName(baseName);
-      const category = importMode === 'AS_IS' ? newCategory : normalizeCategory(row.category || inferred.category);
-      const subCategory = importMode === 'AS_IS'
-        ? normalizeSubCategory(newCategory, newSubCategory)
-        : normalizeSubCategory(category, row.subCategory || inferred.subCategory);
+      const parsedQty = Math.max(1, Math.floor(Number(row.quantity || 1) || 1));
+      const rec = importMode === 'AS_IS'
+        ? { category: newCategory, subCategory: normalizeSubCategory(newCategory, newSubCategory) }
+        : reconcileCategory(baseName, row.category, row.subCategory);
+      const ramInfo = extractRamStickInfo(baseName);
+      const quantity = ramInfo ? Math.max(parsedQty, ramInfo.sticks) : parsedQty;
       for (let i = 0; i < quantity; i++) {
+        const ramSpecs = ramInfo
+          ? {
+              Capacity: ramInfo.perStickGB ? `${ramInfo.perStickGB}GB` : undefined,
+              Modules: `${quantity}x`,
+              Kit: ramInfo.perStickGB ? `${quantity}x${ramInfo.perStickGB}GB` : `${quantity} modules`,
+            }
+          : {};
         appended.push({
           id: `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${i}`,
           name: baseName,
-          category,
-          subCategory,
+          category: rec.category,
+          subCategory: rec.subCategory,
           note: row.note || '',
-          specs: row.specs,
+          specs: {
+            ...(row.specs || {}),
+            ...Object.fromEntries(Object.entries(ramSpecs).filter(([, v]) => v !== undefined)),
+          },
           vendor: row.vendor,
           isDefective: !!row.isDefective,
         });
@@ -384,6 +435,8 @@ Rules:
 - Keep categories limited to: ${CATEGORY_KEYS.join(', ')}
 - SubCategory should fit the category and be concise.
 - Parse quantity from prefixes like "2x ...". If no quantity, use 1.
+- IMPORTANT: Do not classify CPUs, SSD/NVMe drives, RAM, or motherboards as Graphics Cards.
+- RAM kits: if text includes patterns like "2x 32GB", set quantity to 2 and keep per-module capacity in specs.
 - Extract useful specs when obvious from the title (e.g. VRAM, capacity, speed, wattage, form factor).
 - If uncertain, choose best likely category/subCategory.
 
