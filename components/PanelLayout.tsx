@@ -2,7 +2,7 @@ import React, { Suspense } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
   Package, PlusCircle, Settings, RefreshCw, Briefcase, Trash2, CloudUpload, LayoutDashboard, BarChart3, Sparkles,
-  Tag, Layers, Loader2, Cloud, CheckCircle2, X, FileText, Receipt,
+  Layers, Loader2, Cloud, CheckCircle2, X, Receipt,
 } from 'lucide-react';
 import { signInWithGooglePopup, logOut } from '../services/firebaseService';
 import QuotaMonitor from './QuotaMonitor';
@@ -110,13 +110,11 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     { to: '/panel/inventory', icon: <Package size={20} />, label: 'Inventory' },
     { to: '/panel/add', icon: <PlusCircle size={20} />, label: 'Add Item' },
     { to: '/panel/add-bulk', icon: <Layers size={20} />, label: 'Bulk Entry' },
-    { to: '/panel/pricing', icon: <Tag size={20} />, label: 'Price Check' },
     { to: '/panel/builder', icon: <Briefcase size={20} />, label: 'PC Builder' },
     { to: '/panel/invoices', icon: <Receipt size={20} />, label: 'Invoice Manager' },
     { to: '/panel/expenses', icon: <RefreshCw size={20} />, label: 'Expenses' },
     { to: '/panel/import', icon: <CloudUpload size={20} />, label: 'Import CSV' },
     { to: '/panel/trash', icon: <Trash2 size={20} />, label: 'Trash' },
-    { to: '/panel/missing-specs', icon: <FileText size={20} />, label: 'Missing specs' },
     { to: '/panel/settings', icon: <Settings size={20} />, label: 'Settings', alert: !isCloudEnabled },
   ];
 

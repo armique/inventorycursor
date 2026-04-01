@@ -20,7 +20,6 @@ const PCBuilderWizard = lazy(() => import('./components/PCBuilderWizard'));
 const PriceCheck = lazy(() => import('./components/PriceCheck'));
 const StoreManagementPage = lazy(() => import('./components/StoreManagementPage'));
 const LegalPage = lazy(() => import('./components/LegalPage'));
-const MissingSpecsReport = lazy(() => import('./components/MissingSpecsReport'));
 const InvoiceManager = lazy(() => import('./components/InvoiceManager'));
 
 import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense, DashboardPreferences } from './types';
@@ -923,7 +922,6 @@ const App: React.FC = () => {
           />
           <Route path="import" element={<SheetsImport onImport={handleImportBatch} onClearData={handleWipeData} />} />
           <Route path="trash" element={<TrashPage items={trash} onRestore={handleRestoreFromTrash} onPermanentDelete={handlePermanentDelete} />} />
-          <Route path="missing-specs" element={<MissingSpecsReport items={items} categoryFields={categoryFields} />} />
           <Route path="store-management" element={<StoreManagementPage items={items} categories={categories} categoryFields={categoryFields} onUpdate={handleUpdate} onPublishCatalog={async () => { await writeStoreCatalog(buildStoreCatalog(items, categoryFields)); }} />} />
           <Route path="settings" element={<SettingsPage items={items} trash={trash} expenses={expenses} monthlyGoal={monthlyGoal} dashboardPreferences={dashboardPrefs} onForcePush={handleForcePush} onRestoreItems={setItems} onRestoreBackup={handleRestoreBackup} onFixEncoding={handleFixEncoding} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} onUpdateCategoryStructure={handleUpdateCategoryStructure} onUpdateCategoryFields={handleUpdateCategoryFields} onRenameCategory={() => {}} onRenameSubCategory={() => {}} />} />
         </Route>
