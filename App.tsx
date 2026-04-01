@@ -248,6 +248,7 @@ const App: React.FC = () => {
   // Tracks when Firebase auth has completed its initial check (so we don't flash the login screen before session restore).
   const [authReady, setAuthReady] = useState<boolean>(!isCloudEnabled());
   const isRemoteUpdate = useRef(false);
+  const hasUnsavedChanges = useRef(false);
   const writeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialWriteDoneRef = useRef(false);
   const storeCatalogPublishDoneRef = useRef(false);
