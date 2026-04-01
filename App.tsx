@@ -134,7 +134,7 @@ function recomputeRealizedProfit(item: InventoryItem): InventoryItem {
   return { ...item, profit };
 }
 
-function buildStoreCatalog(items: InventoryItem[], categoryFields: Record<string, string[]>): { items: { id: string; name: string; category: string; subCategory?: string; sellPrice?: number; storeSalePrice?: number; storeOnSale?: boolean; imageUrl?: string; storeGalleryUrls?: string[]; storeDescription?: string; specs?: Record<string, string | number>; categoryFields?: string[]; badge?: 'New' | 'Price reduced'; storeMetaTitle?: string; storeMetaDescription?: string; storeDescriptionEn?: string; quantity?: number }[] } {
+function buildStoreCatalog(items: InventoryItem[], categoryFields: Record<string, string[]>): { items: { id: string; name: string; category: string; subCategory?: string; sellPrice?: number; storeSalePrice?: number; storeOnSale?: boolean; storeVisible?: boolean; imageUrl?: string; storeGalleryUrls?: string[]; storeDescription?: string; specs?: Record<string, string | number>; categoryFields?: string[]; badge?: 'New' | 'Price reduced'; storeMetaTitle?: string; storeMetaDescription?: string; storeDescriptionEn?: string; quantity?: number }[] } {
   // Explicit opt-in visibility: only items with storeVisible === true are public.
   const list = items.filter((i) => i.status === ItemStatus.IN_STOCK && i.storeVisible === true);
   return {
@@ -154,6 +154,7 @@ function buildStoreCatalog(items: InventoryItem[], categoryFields: Record<string
         sellPrice: i.sellPrice,
         storeSalePrice: i.storeSalePrice,
         storeOnSale: i.storeOnSale,
+        storeVisible: true,
         ...(imageUrl ? { imageUrl } : {}),
         ...(restGallery.length ? { storeGalleryUrls: restGallery } : {}),
         storeDescription: i.storeDescription,

@@ -302,7 +302,7 @@ const StorefrontPage: React.FC = () => {
     navigate(`/item/${item.id}`);
   };
 
-  const items = useMemo(() => catalog?.items ?? [], [catalog]);
+  const items = useMemo(() => (catalog?.items ?? []).filter((i) => i.storeVisible === true), [catalog]);
 
   // Open item detail when URL is /item/:id and catalog is loaded
   useEffect(() => {

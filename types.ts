@@ -200,6 +200,7 @@ export interface StoreCatalogItem {
   sellPrice?: number;
   storeSalePrice?: number;
   storeOnSale?: boolean;
+  storeVisible?: boolean;
   imageUrl?: string;
   storeGalleryUrls?: string[];
   storeDescription?: string;
