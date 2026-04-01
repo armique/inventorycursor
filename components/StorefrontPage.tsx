@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { formatEUR } from '../utils/formatMoney';
+import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 import { filterUsableImageUrls, isUsableProductImageUrl } from '../services/storefrontImageUtils';
 import { getCategoryImageUrl } from './ItemThumbnail';
 import { MessageCircle, ChevronLeft, ChevronRight, Tag, X, Send, Loader2, Package, Sparkles, LayoutGrid, List, ArrowUp, FileText, Share2, Heart, Moon, Sun, Search as SearchIcon, SlidersHorizontal, Home } from 'lucide-react';
@@ -344,8 +344,8 @@ const StorefrontPage: React.FC = () => {
     if (tab === 'sale') list = list.filter((i) => i.storeOnSale);
     if (categoryFilter) list = list.filter((i) => i.category === categoryFilter);
     if (subCategoryFilter) list = list.filter((i) => i.subCategory === subCategoryFilter);
-    const min = minPrice ? parseFloat(minPrice) : NaN;
-    const max = maxPrice ? parseFloat(maxPrice) : NaN;
+    const min = minPrice ? parseLocaleNumber(minPrice) : NaN;
+    const max = maxPrice ? parseLocaleNumber(maxPrice) : NaN;
     if (!Number.isNaN(min)) list = list.filter((i) => (i.storeOnSale ? i.storeSalePrice : i.sellPrice) != null && (i.storeOnSale ? i.storeSalePrice! : i.sellPrice!) >= min);
     if (!Number.isNaN(max)) list = list.filter((i) => (i.storeOnSale ? i.storeSalePrice : i.sellPrice) != null && (i.storeOnSale ? i.storeSalePrice! : i.sellPrice!) <= max);
     if (search.trim()) {
@@ -526,9 +526,9 @@ const StorefrontPage: React.FC = () => {
                   </select>
                 )}
                 <div className="flex items-center gap-1">
-                  <input type="number" min={0} step={1} value={minPrice} onChange={(e) => setMinPrice(e.target.value)} placeholder={TEXTS.minPrice} className={`w-14 sm:w-16 py-1.5 px-2 rounded-lg text-xs outline-none focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-white/20 ${darkMode ? 'bg-slate-700 border-slate-600 text-slate-100 placeholder:text-slate-500' : 'bg-slate-50 border border-slate-200 text-slate-900 placeholder:text-slate-400'}`} />
+                  <input type="text" inputMode="decimal" value={minPrice} onChange={(e) => setMinPrice(e.target.value)} placeholder={TEXTS.minPrice} className={`w-14 sm:w-16 py-1.5 px-2 rounded-lg text-xs outline-none focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-white/20 ${darkMode ? 'bg-slate-700 border-slate-600 text-slate-100 placeholder:text-slate-500' : 'bg-slate-50 border border-slate-200 text-slate-900 placeholder:text-slate-400'}`} />
                   <span className={`text-xs ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>–</span>
-                  <input type="number" min={0} step={1} value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} placeholder={TEXTS.maxPrice} className={`w-14 sm:w-16 py-1.5 px-2 rounded-lg text-xs outline-none focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-white/20 ${darkMode ? 'bg-slate-700 border-slate-600 text-slate-100 placeholder:text-slate-500' : 'bg-slate-50 border border-slate-200 text-slate-900 placeholder:text-slate-400'}`} />
+                  <input type="text" inputMode="decimal" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} placeholder={TEXTS.maxPrice} className={`w-14 sm:w-16 py-1.5 px-2 rounded-lg text-xs outline-none focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-white/20 ${darkMode ? 'bg-slate-700 border-slate-600 text-slate-100 placeholder:text-slate-500' : 'bg-slate-50 border border-slate-200 text-slate-900 placeholder:text-slate-400'}`} />
                 </div>
                 <select
                   value={sortBy}

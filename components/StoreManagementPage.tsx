@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Eye, EyeOff, Tag, MessageCircle, ExternalLink, Loader2, Check, Mail, Phone, Upload, CheckCircle2, Pencil, X, Filter, Search as SearchIcon, Sparkles, Copy, Download } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
-import { formatEUR } from '../utils/formatMoney';
+import { formatEUR, parseLocaleMoney, parseLocaleNumber } from '../utils/formatMoney';
 import { subscribeToStoreInquiries, markStoreInquiryRead, updateStoreInquiryStatus, type StoreInquiryStatus } from '../services/firebaseService';
 import { generateStoreDescription } from '../services/specsAI';
 import ItemThumbnail from './ItemThumbnail';
@@ -408,11 +408,10 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
                           </td>
                           <td className="px-2 py-3 align-top">
                             <input
-                              type="number"
-                              min={0}
-                              step={0.01}
+                              type="text"
+                              inputMode="decimal"
                               value={item.sellPrice ?? ''}
-                              onChange={(e) => setSellPrice(item, e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
+                              onChange={(e) => setSellPrice(item, e.target.value === '' ? '' : parseLocaleMoney(e.target.value, 0))}
                               placeholder="0"
                               className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-400"
                             />
@@ -451,11 +450,10 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
                           <td className="px-2 py-3 align-top">
                             {item.storeOnSale ? (
                               <input
-                                type="number"
-                                min={0}
-                                step={0.01}
+                                type="text"
+                                inputMode="decimal"
                                 value={item.storeSalePrice ?? ''}
-                                onChange={(e) => setSalePrice(item, e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
+                                onChange={(e) => setSalePrice(item, e.target.value === '' ? '' : parseLocaleMoney(e.target.value, 0))}
                                 className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-400"
                               />
                             ) : (
@@ -676,10 +674,16 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
     onSave({
       name: name.trim() || item.name,
       storeDescription: storeDescription.trim() || undefined,
-      sellPrice: sellPrice === '' ? undefined : parseFloat(sellPrice) || undefined,
+      sellPrice: (() => {
+        const v = parseLocaleNumber(sellPrice);
+        return Number.isFinite(v) ? v : undefined;
+      })(),
       storeVisible,
       storeOnSale,
-      storeSalePrice: storeSalePrice === '' ? undefined : parseFloat(storeSalePrice) || undefined,
+      storeSalePrice: (() => {
+        const v = parseLocaleNumber(storeSalePrice);
+        return Number.isFinite(v) ? v : undefined;
+      })(),
       storeBadge: storeBadge === 'auto' ? undefined : storeBadge,
       storeMetaTitle: storeMetaTitle.trim() || undefined,
       storeMetaDescription: storeMetaDescription.trim() || undefined,
@@ -765,7 +769,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">{texts.priceEur}</label>
-              <input type="number" min={0} step={0.01} value={sellPrice} onChange={(e) => setSellPriceState(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400" />
+              <input type="text" inputMode="decimal" value={sellPrice} onChange={(e) => setSellPriceState(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400" />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">On sale</label>
@@ -778,7 +782,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
           {storeOnSale && (
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">Sale price €</label>
-              <input type="number" min={0} step={0.01} value={storeSalePrice} onChange={(e) => setStoreSalePriceState(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400" />
+              <input type="text" inputMode="decimal" value={storeSalePrice} onChange={(e) => setStoreSalePriceState(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400" />
             </div>
           )}
           <div>

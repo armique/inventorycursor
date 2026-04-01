@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { formatEUR } from '../utils/formatMoney';
+import { formatEUR, parseLocaleMoney } from '../utils/formatMoney';
 
 import { X, ArrowRightLeft, Plus, Trash2, Package, Wallet, ArrowRight, Search, Database, FileText, TrendingUp, TrendingDown, RefreshCcw } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
@@ -216,10 +216,11 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose }) => {
                    <div className="relative">
                       <span className={`absolute left-4 top-1/2 -translate-y-1/2 font-black ${cashDirection === 'IN' ? 'text-emerald-500' : 'text-red-500'}`}>€</span>
                       <input 
-                        type="number" 
+                        type="text"
+                        inputMode="decimal"
                         className={`w-full pl-8 pr-4 py-3 bg-white border rounded-xl font-black text-xl outline-none text-center shadow-inner ${cashDirection === 'IN' ? 'border-emerald-200 text-emerald-900 focus:ring-2 focus:ring-emerald-200' : 'border-red-200 text-red-900 focus:ring-2 focus:ring-red-200'}`}
                         value={cashAmount}
-                        onChange={e => setCashAmount(Number(e.target.value))}
+                        onChange={e => setCashAmount(parseLocaleMoney(e.target.value, 0))}
                         placeholder="0"
                      />
                    </div>
@@ -283,11 +284,12 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose }) => {
                                  <div className="flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100">
                                     <span className="text-[9px] text-emerald-600 font-bold">Val:</span>
                                     <input 
-                                       type="number" 
+                                       type="text"
+                                       inputMode="decimal"
                                        className="w-16 bg-transparent border-none rounded text-[10px] font-black p-0 text-right focus:ring-0 text-emerald-900 placeholder:text-emerald-300"
                                        value={inc.estimatedValue || ''}
                                        placeholder="0.00"
-                                       onChange={e => updateIncomingValue(inc.id, parseFloat(e.target.value) || 0)}
+                                       onChange={e => updateIncomingValue(inc.id, parseLocaleMoney(e.target.value, 0))}
                                     />
                                     <span className="text-[9px] text-emerald-600 font-bold">€</span>
                                  </div>

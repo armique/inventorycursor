@@ -11,7 +11,7 @@ import {
   Wand2, Sliders, X, History
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, Platform, PaymentType } from '../types';
-import { formatEUR } from '../utils/formatMoney';
+import { formatEUR, parseLocaleMoney } from '../utils/formatMoney';
 import { CATEGORY_IMAGES, getSpecOptions } from '../services/hardwareDB';
 import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
 import { getCompatibleItemsForItem } from '../services/compatibility';
@@ -445,11 +445,11 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                           <div className="space-y-2">
                              <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Buy Price (€)</label>
                              <input 
-                                type="number"
-                                step="0.01"
+                                type="text"
+                                inputMode="decimal"
                                 className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-lg outline-none focus:border-blue-500 focus:bg-white transition-all"
                                 value={formData.buyPrice}
-                                onChange={e => setFormData({ ...formData, buyPrice: parseFloat(e.target.value) })}
+                                onChange={e => setFormData({ ...formData, buyPrice: parseLocaleMoney(e.target.value, 0) })}
                              />
                           </div>
                           <div className="space-y-2">

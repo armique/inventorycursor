@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { formatEUR } from '../utils/formatMoney';
+import { formatEUR, parseLocaleMoney, parseLocaleNumber } from '../utils/formatMoney';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
@@ -75,14 +75,6 @@ function clampInventoryColumnWidth(colId: ColumnId, w: number): number {
   const min = Math.max(40, Math.floor(def * 0.35));
   const max = Math.min(900, Math.ceil(def * 3.5));
   return Math.round(Math.min(max, Math.max(min, w)));
-}
-
-function parseFlexibleMoneyInput(value: string | number): number {
-  const raw = String(value ?? '').trim();
-  if (!raw) return 0;
-  const normalized = raw.replace(/\s+/g, '').replace(',', '.');
-  const num = Number(normalized);
-  return Number.isFinite(num) ? num : 0;
 }
 
 const ALL_COLUMNS: { id: ColumnId; label: string }[] = [
@@ -888,7 +880,7 @@ const InventoryList: React.FC<Props> = ({
     let newValue: any = editValue;
 
     if (targetField === 'buyPrice' || targetField === 'sellPrice') {
-       newValue = parseFlexibleMoneyInput(editValue);
+       newValue = parseLocaleMoney(editValue, 0);
     }
 
     const updates: Partial<InventoryItem> = { [targetField]: newValue };
@@ -2901,7 +2893,7 @@ const CategoryPickerModal: React.FC<{
 
 const BulkSalePctModal: React.FC<{ count: number; onApply: (pct: number) => void; onClose: () => void }> = ({ count, onApply, onClose }) => {
   const [pct, setPct] = useState<string>('10');
-  const num = parseFloat(pct);
+  const num = parseLocaleNumber(pct);
   const valid = !Number.isNaN(num) && num >= 0 && num <= 100;
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">

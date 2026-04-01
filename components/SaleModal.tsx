@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { X, Euro, Calendar, CreditCard, Percent, Camera, FileText, Check, CheckCircle2, ShoppingBag, Landmark, Wallet, User, Globe, ChevronDown, Link as LinkIcon, MessageCircle, Image as ImageIcon, Hash, Upload, Download } from 'lucide-react';
 import { fetchEbayOrder } from '../services/ebayService';
 import { InventoryItem, ItemStatus, PaymentType, CustomerInfo, Platform, TaxMode } from '../types';
+import { parseLocaleNumber } from '../utils/formatMoney';
 
 interface Props {
   item: InventoryItem;
@@ -101,7 +102,8 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
 
   const handleSave = () => {
     const finalFee = hasFee ? feeAmount : 0;
-    const priceNum = salePrice.trim() === '' ? undefined : parseFloat(salePrice);
+    const parsedPrice = parseLocaleNumber(salePrice);
+    const priceNum = salePrice.trim() === '' || !Number.isFinite(parsedPrice) ? undefined : parsedPrice;
     const profit = priceNum != null ? calculateProfit(priceNum, item.buyPrice, finalFee) : undefined;
     
     onSave({
@@ -143,7 +145,7 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <Euro className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                    <input type="number" step="0.01" min={0} placeholder="0.00" className="w-full pl-10 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-lg" value={salePrice} onChange={(e) => setSalePrice(e.target.value)} />
+                    <input type="text" inputMode="decimal" placeholder="0.00" className="w-full pl-10 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-lg" value={salePrice} onChange={(e) => setSalePrice(e.target.value)} />
                   </div>
                   <input type="date" className="flex-1 px-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} />
                 </div>

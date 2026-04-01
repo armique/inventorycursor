@@ -20,3 +20,21 @@ export function formatEUR(amount: number): string {
 export function formatEURPrefix(amount: number): string {
   return `€${formatEUR(amount)}`;
 }
+
+/**
+ * Locale-tolerant number parser for user inputs.
+ * Accepts both comma and dot decimals ("19,04" and "19.04").
+ */
+export function parseLocaleNumber(value: string | number): number {
+  const raw = String(value ?? '').trim();
+  if (!raw) return NaN;
+  const normalized = raw.replace(/\s+/g, '').replace(',', '.');
+  const n = Number(normalized);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+/** Money parser with default fallback (for controlled inputs). */
+export function parseLocaleMoney(value: string | number, fallback = 0): number {
+  const n = parseLocaleNumber(value);
+  return Number.isFinite(n) ? n : fallback;
+}

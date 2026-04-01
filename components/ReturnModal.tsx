@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { X, RotateCcw, AlertTriangle, Check, ArrowDown, Wallet } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
-import { formatEUR } from '../utils/formatMoney';
+import { formatEUR, parseLocaleMoney } from '../utils/formatMoney';
 
 interface Props {
   items: InventoryItem[];
@@ -15,7 +15,7 @@ const ReturnModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
   const [totalFee, setTotalFee] = useState<string>('');
 
   const handleSave = () => {
-    const feeAmount = hasFee ? parseFloat(totalFee) : 0;
+    const feeAmount = hasFee ? parseLocaleMoney(totalFee, 0) : 0;
     const feePerItem = items.length > 0 ? feeAmount / items.length : 0;
 
     const updatedItems = items.map(item => {
@@ -91,7 +91,8 @@ const ReturnModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">€</span>
                   <input 
                     autoFocus
-                    type="number" 
+                    type="text"
+                    inputMode="decimal"
                     step="0.01" 
                     placeholder="0.00"
                     className="w-full pl-8 pr-4 py-4 bg-white border-2 border-amber-100 rounded-2xl outline-none focus:border-amber-400 font-black text-xl text-slate-900"
@@ -101,7 +102,7 @@ const ReturnModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
                 </div>
                 {items.length > 1 && totalFee && (
                   <p className="text-[10px] text-amber-600 font-bold mt-2 text-right flex items-center justify-end gap-1">
-                    <ArrowDown size={10}/> +€{formatEUR(parseFloat(totalFee) / items.length)} added to each item
+                    <ArrowDown size={10}/> +€{formatEUR(parseLocaleMoney(totalFee, 0) / items.length)} added to each item
                   </p>
                 )}
               </div>

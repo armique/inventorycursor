@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { formatEUR } from '../utils/formatMoney';
+import { formatEUR, parseLocaleMoney } from '../utils/formatMoney';
 
 import { 
   Plus, Trash2, Calendar, Tag, CreditCard, Search, Wallet, 
@@ -483,11 +483,11 @@ const ExpenseManager: React.FC<Props> = ({
                         <div>
                            <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Amount (€)</label>
                            <input 
-                              type="number"
-                              step="0.01"
+                              type="text"
+                              inputMode="decimal"
                               className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:border-blue-500 font-black text-lg"
                               value={newExpense.amount || ''}
-                              onChange={e => setNewExpense({...newExpense, amount: parseFloat(e.target.value)})}
+                              onChange={e => setNewExpense({...newExpense, amount: parseLocaleMoney(e.target.value, 0)})}
                            />
                         </div>
                         <div>
@@ -609,11 +609,11 @@ const ExpenseManager: React.FC<Props> = ({
                         <div>
                            <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Monthly Amount (€)</label>
                            <input 
-                              type="number"
-                              step="0.01"
+                              type="text"
+                              inputMode="decimal"
                               className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:border-blue-500 font-black text-lg"
                               value={newRecurring.monthlyAmount || ''}
-                              onChange={e => setNewRecurring({...newRecurring, monthlyAmount: parseFloat(e.target.value)})}
+                              onChange={e => setNewRecurring({...newRecurring, monthlyAmount: parseLocaleMoney(e.target.value, 0)})}
                            />
                         </div>
                         <div>

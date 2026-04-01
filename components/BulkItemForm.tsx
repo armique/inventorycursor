@@ -10,7 +10,7 @@ import {
   Sparkles, Loader2, Package
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, Platform, PaymentType } from '../types';
-import { formatEUR } from '../utils/formatMoney';
+import { formatEUR, parseLocaleMoney } from '../utils/formatMoney';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { CATEGORY_IMAGES, searchAllHardware, HardwareMetadata } from '../services/hardwareDB';
 import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
@@ -194,7 +194,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
   };
 
   const updateItemCost = (id: string, val: string) => {
-    const num = parseFloat(val);
+    const num = parseLocaleMoney(val, NaN);
     setItems(prev => prev.map(i => i.id === id ? { ...i, manualCost: isNaN(num) ? undefined : num } : i));
   };
 
@@ -382,11 +382,12 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
               <div className="flex items-center gap-1">
                  <span className="text-slate-400 font-bold">€</span>
                  <input 
-                    type="number" 
+                    type="text"
+                    inputMode="decimal"
                     className="w-24 font-black text-xl outline-none text-slate-900 placeholder:text-slate-200" 
                     placeholder="0.00"
                     value={totalCost || ''}
-                    onChange={e => setTotalCost(parseFloat(e.target.value) || 0)}
+                    onChange={e => setTotalCost(parseLocaleMoney(e.target.value, 0))}
                  />
               </div>
            </div>
@@ -460,7 +461,8 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categoryFields = {} }) => {
                         <div className="w-24 space-y-2">
                            <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Count</label>
                            <input 
-                              type="number"
+                              type="text"
+                              inputMode="decimal"
                               min="1"
                               className="w-full px-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-center outline-none focus:border-slate-300"
                               value={quantity}
