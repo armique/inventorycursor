@@ -156,6 +156,17 @@ export function isCompatibleWithBuild(
     case 'RAM': {
       const ramTypeRaw = get(item, 'Memory Type') ?? get(item, 'Type') ?? get(item, 'DDR');
       const ramType = normRamType(ramTypeRaw);
+
+      // Multiple sticks: match DDR generation already in build (avoid DDR4 + DDR5 mix on boards that list both).
+      const existingSticks = parts['RAM']?.filter((r) => r.id !== item.id) ?? [];
+      if (existingSticks.length > 0 && ramType) {
+        const firstRaw = get(existingSticks[0], 'Memory Type') ?? get(existingSticks[0], 'Type') ?? get(existingSticks[0], 'DDR');
+        const firstType = normRamType(firstRaw);
+        if (firstType && ramType !== firstType) {
+          return { compatible: false, reason: `This build already uses ${firstType}; add another ${firstType} module` };
+        }
+      }
+
       if (!ramType) return { compatible: true }; // no RAM spec – allow
 
       // Primary: motherboard defines supported RAM (DDR3/DDR4/DDR5; may list multiple e.g. "DDR4, DDR5")

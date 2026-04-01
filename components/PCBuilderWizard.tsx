@@ -21,8 +21,10 @@ const SLOTS = [
   { id: 'CPU', label: 'Processor', category: 'Processors', icon: <Cpu size={20}/>, required: true },
   { id: 'GPU', label: 'Graphics Card', category: 'Graphics Cards', icon: <Monitor size={20}/>, required: true },
   { id: 'MOBO', label: 'Motherboard', category: 'Motherboards', icon: <Box size={20}/>, required: true },
-  { id: 'RAM', label: 'Memory (RAM)', category: 'RAM', icon: <Box size={20}/>, required: true },
-  { id: 'STORAGE', label: 'Storage', category: 'Storage (SSD/HDD)', icon: <HardDrive size={20}/>, required: true },
+  /** Multiple sticks/modules (e.g. 2×16GB). Compatibility still follows motherboard/CPU (e.g. DDR5 board → DDR5 only). */
+  { id: 'RAM', label: 'Memory (RAM)', category: 'RAM', icon: <Box size={20}/>, required: true, multiple: true },
+  /** Multiple drives (e.g. NVMe + SATA, or two HDDs). */
+  { id: 'STORAGE', label: 'Storage', category: 'Storage (SSD/HDD)', icon: <HardDrive size={20}/>, required: true, multiple: true },
   { id: 'PSU', label: 'Power Supply', category: 'Power Supplies', icon: <Zap size={20}/>, required: true },
   { id: 'CASE', label: 'Case', category: 'Cases', icon: <Box size={20}/>, required: true },
   { id: 'COOLING', label: 'CPU Cooler', category: 'Cooling', icon: <Wind size={20}/>, required: false },
@@ -63,18 +65,26 @@ function shortPartName(name: string, slotId: string): string {
 }
 
 /** Generate a concise build/bundle name from key parts. */
+function joinMultiShortNames(items: InventoryItem[] | undefined, slotId: string, label: string): string {
+  if (!items?.length) return '';
+  if (items.length === 1) return shortPartName(items[0].name, slotId);
+  const bits = items.map((i) => shortPartName(i.name, slotId)).filter(Boolean);
+  if (bits.length <= 2) return bits.join(' + ');
+  return `${items.length}× ${label}`;
+}
+
 function getBuildNameFromParts(parts: Record<string, InventoryItem[]>): string {
   const cpu = parts.CPU?.[0];
   const gpu = parts.GPU?.[0];
   const mobo = parts.MOBO?.[0];
-  const ram = parts.RAM?.[0];
-  const storage = parts.STORAGE?.[0];
+  const ram = parts.RAM;
+  const storage = parts.STORAGE;
   const segments: string[] = [];
   if (cpu) segments.push(shortPartName(cpu.name, 'CPU'));
   if (mobo) segments.push(shortPartName(mobo.name, 'MOBO'));
   if (gpu) segments.push(shortPartName(gpu.name, 'GPU'));
-  if (ram) segments.push(shortPartName(ram.name, 'RAM'));
-  if (storage) segments.push(shortPartName(storage.name, 'STORAGE'));
+  if (ram?.length) segments.push(joinMultiShortNames(ram, 'RAM', 'RAM'));
+  if (storage?.length) segments.push(joinMultiShortNames(storage, 'STORAGE', 'Storage'));
   if (segments.length === 0) return 'New Gaming PC';
   const name = segments.join(' · ');
   return name.length > MAX_NAME_LENGTH ? name.slice(0, MAX_NAME_LENGTH - 2) + '…' : name;
@@ -171,8 +181,8 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
      const allParts = Object.values(parts).flat() as InventoryItem[];
      if (allParts.length === 0) return alert("Build is empty.");
 
-     if (mode === 'bundle' && allParts.length > 5) {
-       return alert("Bundles in this builder are limited to 5 items. Remove some parts or use a full PC build instead.");
+     if (mode === 'bundle' && allParts.length > 12) {
+       return alert("Bundles in this builder are limited to 12 items. Remove some parts or use a full PC build instead.");
      }
 
      const totalCost = allParts.reduce((sum, i) => sum + i.buyPrice, 0);
@@ -333,7 +343,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
                 </h1>
                 <p className="text-sm text-slate-500 font-bold">
                   {mode === 'bundle'
-                    ? 'Group 1–5 parts into a sellable bundle'
+                    ? 'Group parts into a sellable bundle (up to 12 items)'
                     : 'Assemble & Track Custom PCs'}
                 </p>
              </div>
@@ -433,6 +443,11 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
                       <div>
                          <h3 className="text-xl font-black text-slate-900">Select {SLOTS.find(s => s.id === selectedSlot)?.label}</h3>
                          <p className="text-xs text-slate-500 font-bold">Showing compatible inventory items</p>
+                         {SLOTS.find(s => s.id === selectedSlot)?.multiple && (
+                           <p className="text-[10px] text-indigo-600 font-bold mt-1">
+                             You can add multiple parts here (e.g. several RAM sticks or drives). List only shows items that match your CPU/motherboard (e.g. DDR5 RAM with a DDR5 board).
+                           </p>
+                         )}
                       </div>
                       <button onClick={() => setSelectedSlot(null)} className="p-2 hover:bg-slate-200 rounded-full"><X size={20}/></button>
                    </div>
