@@ -30,3 +30,7 @@ deinventory-backup-*.json
 *.njsproj
 *.sln
 *.sw?
+
+# Script secrets (eBay / Google Sheets export)
+scripts/.env.ebay-sheets
+scripts/secrets/
