@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { filterUsableImageUrls, isUsableProductImageUrl } from '../services/storefrontImageUtils';
+import { getCategoryImageUrl } from './ItemThumbnail';
 import { MessageCircle, ChevronLeft, ChevronRight, Tag, X, Send, Loader2, Package, Sparkles, LayoutGrid, List, ArrowUp, FileText, Share2, Heart, Moon, Sun, Search as SearchIcon, SlidersHorizontal, Home } from 'lucide-react';
 import { subscribeToStoreCatalog, createStoreInquiry, type StoreCatalogPayload } from '../services/firebaseService';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -153,6 +155,14 @@ function orderedSpecKeys(specs: Record<string, string | number>, categoryFields?
 
 type StoreItem = NonNullable<StoreCatalogPayload['items']>[number];
 
+/** Collect product + gallery URLs and drop placeholders / invalid values (avoids broken <img> icons). */
+function catalogItemImageList(item: { imageUrl?: string; storeGalleryUrls?: string[] }): string[] {
+  const raw: string[] = [];
+  if (item.imageUrl) raw.push(item.imageUrl);
+  if (item.storeGalleryUrls?.length) raw.push(...item.storeGalleryUrls);
+  return filterUsableImageUrls(raw);
+}
+
 const StorefrontPage: React.FC = () => {
   const navigate = useNavigate();
   const { id: itemIdFromUrl } = useParams<{ id: string }>();
@@ -206,16 +216,12 @@ const StorefrontPage: React.FC = () => {
       if (e.key === 'Escape') {
         closeGallery();
       } else if (e.key === 'ArrowLeft') {
-        const galleryImages: string[] = [];
-        if (galleryItem.imageUrl) galleryImages.push(galleryItem.imageUrl);
-        if (galleryItem.storeGalleryUrls?.length) galleryImages.push(...galleryItem.storeGalleryUrls);
+        const galleryImages = catalogItemImageList(galleryItem);
         if (galleryImages.length > 1) {
           setGalleryIndex((i) => (i - 1 + galleryImages.length) % galleryImages.length);
         }
       } else if (e.key === 'ArrowRight') {
-        const galleryImages: string[] = [];
-        if (galleryItem.imageUrl) galleryImages.push(galleryItem.imageUrl);
-        if (galleryItem.storeGalleryUrls?.length) galleryImages.push(...galleryItem.storeGalleryUrls);
+        const galleryImages = catalogItemImageList(galleryItem);
         if (galleryImages.length > 1) {
           setGalleryIndex((i) => (i + 1) % galleryImages.length);
         }
@@ -268,7 +274,8 @@ const StorefrontPage: React.FC = () => {
     let ogDesc = document.querySelector('meta[property="og:description"]');
     if (!ogDesc) { ogDesc = document.createElement('meta'); ogDesc.setAttribute('property', 'og:description'); document.head.appendChild(ogDesc); }
     ogDesc.setAttribute('content', description);
-    const img = galleryItem.imageUrl || (galleryItem.storeGalleryUrls && galleryItem.storeGalleryUrls[0]);
+    const imgs = catalogItemImageList(galleryItem);
+    const img = imgs[0];
     if (img) {
       let ogImage = document.querySelector('meta[property="og:image"]');
       if (!ogImage) { ogImage = document.createElement('meta'); ogImage.setAttribute('property', 'og:image'); document.head.appendChild(ogImage); }
@@ -735,9 +742,7 @@ const StorefrontPage: React.FC = () => {
 
       {/* Gallery carousel modal – image + floating "Was ist drin?" */}
       {galleryItem && (() => {
-        const galleryImages: string[] = [];
-        if (galleryItem.imageUrl) galleryImages.push(galleryItem.imageUrl);
-        if (galleryItem.storeGalleryUrls?.length) galleryImages.push(...galleryItem.storeGalleryUrls);
+        const galleryImages = catalogItemImageList(galleryItem);
         const hasImages = galleryImages.length > 0;
         const currentIndex = Math.min(galleryIndex, hasImages ? galleryImages.length - 1 : 0);
         const hasSpecs = galleryItem.specs && Object.keys(galleryItem.specs).length > 0;
@@ -791,12 +796,15 @@ const StorefrontPage: React.FC = () => {
                   <div className="relative flex-1 flex items-center justify-center min-h-[240px] sm:min-h-[280px] p-4 sm:p-6">
                     {hasImages ? (
                       <>
-                        <img 
+                        <ResilientStoreImage
                           key={currentIndex}
-                          src={galleryImages[currentIndex]} 
+                          urls={galleryImages}
+                          index={currentIndex}
                           alt={`${galleryItem.name} - Bild ${currentIndex + 1}`}
+                          category={galleryItem.category}
+                          subCategory={galleryItem.subCategory}
                           className="max-w-full max-h-[50vh] sm:max-h-[55vh] lg:max-h-[calc(90vh-200px)] object-contain rounded-xl shadow-lg transition-opacity duration-300"
-                          style={{ animation: 'fadeIn 0.3s ease-in-out' }}
+                          imgStyle={{ animation: 'fadeIn 0.3s ease-in-out' }}
                         />
                         {galleryImages.length > 1 && (
                           <>
@@ -887,7 +895,16 @@ const StorefrontPage: React.FC = () => {
                       <div className="flex gap-2 overflow-x-auto">
                         {similarItems.map((sim) => (
                           <button key={sim.id} type="button" onClick={(e) => { e.stopPropagation(); addRecentlyViewedId(sim.id); setRecentKey((k) => k + 1); setGalleryIndex(0); setGalleryItem(sim); navigate(`/item/${sim.id}`); }} className="shrink-0 w-24 rounded-xl border border-slate-200 overflow-hidden hover:border-slate-400 transition-colors text-left">
-                            {sim.imageUrl ? <img src={sim.imageUrl} alt="" className="w-full aspect-square object-cover" loading="lazy" /> : <div className="w-full aspect-square bg-slate-100 flex items-center justify-center text-slate-400 text-[10px] px-1 text-center">{sim.name}</div>}
+                            <div className="w-full aspect-square overflow-hidden bg-slate-100">
+                              <ResilientStoreImage
+                                urls={catalogItemImageList(sim)}
+                                index={0}
+                                alt=""
+                                category={sim.category}
+                                subCategory={sim.subCategory}
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
                             <p className="p-2 text-[10px] font-medium text-slate-700 truncate">{sim.name}</p>
                           </button>
                         ))}
@@ -922,7 +939,7 @@ const StorefrontPage: React.FC = () => {
                   '@type': 'Product',
                   name: item.name,
                   description: getItemDescription(item, lang) || item.name,
-                  image: item.imageUrl,
+                  image: isUsableProductImageUrl(item.imageUrl) ? item.imageUrl : catalogItemImageList(item)[0],
                   category: item.category,
                   offers: item.sellPrice != null ? { '@type': 'Offer', price: item.sellPrice, priceCurrency: 'EUR' } : undefined,
                 },
@@ -932,6 +949,54 @@ const StorefrontPage: React.FC = () => {
         />
       )}
     </div>
+  );
+};
+
+/** Tries catalog image URLs, then category SVG placeholder, then name + icon (no broken-image icon). */
+const ResilientStoreImage: React.FC<{
+  urls: string[];
+  index: number;
+  alt: string;
+  category?: string;
+  subCategory?: string;
+  className?: string;
+  imgStyle?: React.CSSProperties;
+}> = ({ urls, index, alt, category, subCategory, className, imgStyle }) => {
+  const safeUrls = useMemo(() => urls.filter(isUsableProductImageUrl), [urls]);
+  const primary = safeUrls.length ? safeUrls[Math.min(Math.max(0, index), safeUrls.length - 1)] : null;
+  const catUrl = getCategoryImageUrl({ category, subCategory }) || undefined;
+  const [stage, setStage] = useState<'primary' | 'category' | 'none'>('primary');
+
+  useEffect(() => {
+    setStage('primary');
+  }, [primary, index]);
+
+  const src = stage === 'primary' ? primary : stage === 'category' ? catUrl ?? null : null;
+
+  if (!src) {
+    return (
+      <div
+        className={`flex flex-col items-center justify-center gap-2 bg-slate-100 text-slate-400 min-h-[120px] ${className || ''}`}
+      >
+        <Package size={40} strokeWidth={1.25} className="opacity-35 shrink-0" aria-hidden />
+        <span className="text-xs px-3 text-center line-clamp-3 font-medium text-slate-500">{alt}</span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className={className}
+      style={imgStyle}
+      loading="lazy"
+      decoding="async"
+      onError={() => {
+        if (stage === 'primary' && catUrl) setStage('category');
+        else setStage('none');
+      }}
+    />
   );
 };
 
@@ -948,12 +1013,7 @@ const StoreItemCard: React.FC<{
   onShare?: () => void;
 }> = ({ item, priceDisplay, texts, lang, onContact, onDetailsClick, layout = 'grid', isInWishlist = false, onToggleWishlist, onShare }) => {
   const [galleryIndex, setGalleryIndex] = useState(0);
-  const images = useMemo(() => {
-    const list: string[] = [];
-    if (item.imageUrl) list.push(item.imageUrl);
-    if (item.storeGalleryUrls?.length) list.push(...item.storeGalleryUrls!);
-    return list.length ? list : [];
-  }, [item.imageUrl, item.storeGalleryUrls]);
+  const images = useMemo(() => catalogItemImageList(item), [item.imageUrl, item.storeGalleryUrls]);
   const hasSpecs = item.specs && Object.keys(item.specs).length > 0;
   const specKeys = item.categoryFields?.length ? item.categoryFields.filter((k) => item.specs?.[k] != null) : (item.specs ? Object.keys(item.specs) : []);
 
@@ -1023,11 +1083,14 @@ const StoreItemCard: React.FC<{
         className="group rounded-2xl bg-white border border-slate-200 overflow-hidden shadow-md hover:shadow-xl hover:border-slate-300 transition-all duration-300 flex flex-row cursor-pointer"
       >
         <div className="w-32 sm:w-40 shrink-0 aspect-square bg-slate-100 overflow-hidden min-h-0">
-          {images.length > 0 ? (
-            <img src={images[galleryIndex]} alt={item.name} loading="lazy" className="w-full h-full object-contain object-center" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs px-2 text-center">{item.name}</div>
-          )}
+          <ResilientStoreImage
+            urls={images}
+            index={galleryIndex}
+            alt={item.name}
+            category={item.category}
+            subCategory={item.subCategory}
+            className="w-full h-full object-contain object-center"
+          />
         </div>
         <div className="p-4 sm:p-5 flex-1 min-w-0 flex flex-col min-h-0">
           {contentBlock}
@@ -1045,7 +1108,14 @@ const StoreItemCard: React.FC<{
       <div className="relative w-full flex-shrink-0 bg-slate-100 overflow-hidden min-h-0 aspect-[4/3] max-h-[220px] sm:max-h-[260px] lg:max-h-[280px]">
         {images.length > 0 ? (
           <>
-            <img src={images[galleryIndex]} alt={item.name} loading="lazy" className="w-full h-full object-contain object-center transition-transform duration-300 group-hover:scale-[1.03]" />
+            <ResilientStoreImage
+              urls={images}
+              index={galleryIndex}
+              alt={item.name}
+              category={item.category}
+              subCategory={item.subCategory}
+              className="w-full h-full object-contain object-center transition-transform duration-300 group-hover:scale-[1.03]"
+            />
             {images.length > 1 && (
               <>
                 <button 
@@ -1111,7 +1181,14 @@ const StoreItemCard: React.FC<{
             </div>
           </>
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm px-4 text-center min-h-[140px]">{item.name}</div>
+          <ResilientStoreImage
+            urls={[]}
+            index={0}
+            alt={item.name}
+            category={item.category}
+            subCategory={item.subCategory}
+            className="w-full h-full min-h-[140px]"
+          />
         )}
       </div>
       <div className="p-4 sm:p-5 flex-1 flex flex-col min-h-0 min-w-0">

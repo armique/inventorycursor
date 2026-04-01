@@ -34,6 +34,7 @@ import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStore
 import { DEFAULT_CATEGORIES } from './services/constants';
 import { appendPriceHistoryIfChanged } from './services/priceHistory';
 import { syncContainerBuyTotalsFromComponents } from './services/containerAggregates';
+import { filterUsableImageUrls, isUsableProductImageUrl } from './services/storefrontImageUtils';
 import { saveOAuthResult } from './services/githubBackupService';
 import { generateExpensesFromRecurring } from './services/recurringExpenseService';
 import { Analytics } from '@vercel/analytics/react';
@@ -128,6 +129,10 @@ function buildStoreCatalog(items: InventoryItem[], categoryFields: Record<string
   return {
     items: list.map((i) => {
       const badge = computeStoreBadge(i);
+      const gallery = filterUsableImageUrls(i.storeGalleryUrls);
+      let imageUrl: string | undefined = isUsableProductImageUrl(i.imageUrl) ? i.imageUrl!.trim() : undefined;
+      if (!imageUrl && gallery.length) imageUrl = gallery[0];
+      const restGallery = gallery.filter((u) => u !== imageUrl);
       return {
         id: i.id,
         name: i.name,
@@ -136,8 +141,8 @@ function buildStoreCatalog(items: InventoryItem[], categoryFields: Record<string
         sellPrice: i.sellPrice,
         storeSalePrice: i.storeSalePrice,
         storeOnSale: i.storeOnSale,
-        imageUrl: i.imageUrl,
-        storeGalleryUrls: i.storeGalleryUrls,
+        ...(imageUrl ? { imageUrl } : {}),
+        ...(restGallery.length ? { storeGalleryUrls: restGallery } : {}),
         storeDescription: i.storeDescription,
         specs: i.specs,
         categoryFields: categoryFields[`${i.category}:${i.subCategory || ''}`] || [],
