@@ -924,6 +924,18 @@ const InventoryList: React.FC<Props> = ({
       sellPrice: undefined,
       sellDate: undefined,
       profit: undefined,
+      feeAmount: undefined,
+      paymentType: undefined,
+      platformSold: undefined,
+      customer: undefined,
+      invoiceNumber: undefined,
+      ebayUsername: undefined,
+      ebayOrderId: undefined,
+      tradedForIds: undefined,
+      tradedFromId: undefined,
+      cashOnTop: undefined,
+      parentContainerId: undefined,
+      containerSoldDate: undefined,
       ebaySku: undefined,
       ebayOfferId: undefined
     };

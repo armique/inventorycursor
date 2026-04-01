@@ -21,8 +21,9 @@ const PriceCheck = lazy(() => import('./components/PriceCheck'));
 const StoreManagementPage = lazy(() => import('./components/StoreManagementPage'));
 const LegalPage = lazy(() => import('./components/LegalPage'));
 const InvoiceManager = lazy(() => import('./components/InvoiceManager'));
+const ActionHistoryPage = lazy(() => import('./components/ActionHistoryPage'));
 
-import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense, DashboardPreferences } from './types';
+import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense, DashboardPreferences, ActionHistoryEntry } from './types';
 import {
   loadDashboardPreferencesFromLocalStorage,
   persistDashboardPreferencesToLocalStorage,
@@ -39,6 +40,7 @@ import { generateExpensesFromRecurring } from './services/recurringExpenseServic
 import { Analytics } from '@vercel/analytics/react';
 
 const WRITE_DEBOUNCE_MS = 3500;
+const ACTION_HISTORY_LIMIT = 2000;
 
 /** When merging an update into an existing item, preserve these from the old item if the update doesn't provide them (so renames/edits from inventory don't wipe store data). */
 const PRESERVE_FROM_OLD_IF_UPDATE_MISSING: (keyof InventoryItem)[] = [
@@ -134,6 +136,17 @@ function recomputeRealizedProfit(item: InventoryItem): InventoryItem {
   return { ...item, profit };
 }
 
+function makeActionEntry(action: string, item?: InventoryItem, details?: string): ActionHistoryEntry {
+  return {
+    id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    timestamp: new Date().toISOString(),
+    action,
+    itemId: item?.id,
+    itemName: item?.name,
+    details,
+  };
+}
+
 function buildStoreCatalog(items: InventoryItem[], categoryFields: Record<string, string[]>): { items: { id: string; name: string; category: string; subCategory?: string; sellPrice?: number; storeSalePrice?: number; storeOnSale?: boolean; storeVisible?: boolean; imageUrl?: string; storeGalleryUrls?: string[]; storeDescription?: string; specs?: Record<string, string | number>; categoryFields?: string[]; badge?: 'New' | 'Price reduced'; storeMetaTitle?: string; storeMetaDescription?: string; storeDescriptionEn?: string; quantity?: number }[] } {
   // Explicit opt-in visibility: only items with storeVisible === true are public.
   const list = items.filter((i) => i.status === ItemStatus.IN_STOCK && i.storeVisible === true);
@@ -181,6 +194,15 @@ type AppState = 'BOOTING' | 'READY' | 'ERROR_SYNC' | 'OFFLINE_MODE';
 const App: React.FC = () => {
   // State for Data
   const [items, setItems] = useState<InventoryItem[]>([]);
+  const [actionHistory, setActionHistory] = useState<ActionHistoryEntry[]>(() => {
+    try {
+      const raw = localStorage.getItem('action_history');
+      const parsed = raw ? (JSON.parse(raw) as ActionHistoryEntry[]) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
   const [trash, setTrash] = useState<InventoryItem[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>([]);
@@ -616,10 +638,20 @@ const App: React.FC = () => {
   useEffect(() => {
     historyIndexRef.current = historyIndex;
   }, [historyIndex]);
+
+  useEffect(() => {
+    localStorage.setItem('action_history', JSON.stringify(actionHistory.slice(-ACTION_HISTORY_LIMIT)));
+  }, [actionHistory]);
+
+  const addActionEntries = useCallback((entries: ActionHistoryEntry[]) => {
+    if (!entries.length) return;
+    setActionHistory((prev) => [...prev, ...entries].slice(-ACTION_HISTORY_LIMIT));
+  }, []);
   
   const handleUpdate = useCallback((updatedItems: InventoryItem[], deleteIds?: string[]) => {
     setItems(currentItems => {
         let nextItems = [...currentItems];
+        const actionEntries: ActionHistoryEntry[] = [];
         updatedItems.forEach(u => {
           const idx = nextItems.findIndex(i => i.id === u.id);
           const oldItem = idx >= 0 ? nextItems[idx] : undefined;
@@ -636,14 +668,24 @@ const App: React.FC = () => {
             }
           }
           final = recomputeRealizedProfit(final);
-          if (idx >= 0) nextItems[idx] = final;
-          else nextItems.push(final);
+          if (idx >= 0) {
+            nextItems[idx] = final;
+            if (oldItem?.status !== final.status) {
+              actionEntries.push(makeActionEntry(`Status changed: ${oldItem?.status || '-'} -> ${final.status}`, final));
+            } else {
+              actionEntries.push(makeActionEntry('Item updated', final));
+            }
+          } else {
+            nextItems.push(final);
+            actionEntries.push(makeActionEntry('Item created', final));
+          }
         });
         
         if (deleteIds && deleteIds.length > 0) {
            const toTrash = nextItems.filter(i => deleteIds.includes(i.id));
            if (toTrash.length > 0) {
               setTrash(prev => [...prev, ...toTrash]);
+              toTrash.forEach((i) => actionEntries.push(makeActionEntry('Item moved to trash', i)));
            }
            nextItems = nextItems.filter(i => !deleteIds.includes(i.id));
         }
@@ -662,9 +704,10 @@ const App: React.FC = () => {
         historyIndexRef.current = nextIdx;
         setHistoryIndex(nextIdx);
         hasUnsavedChanges.current = true;
+        if (actionEntries.length > 0) addActionEntries(actionEntries);
         return nextItems;
     });
-  }, []);
+  }, [addActionEntries]);
 
   const handleImportBatch = useCallback((newItems: InventoryItem[], replace: boolean) => {
     if (replace) {
@@ -682,6 +725,7 @@ const App: React.FC = () => {
       historyIndexRef.current = newIndex;
       setHistoryIndex(newIndex);
       setItems(history[newIndex]);
+      addActionEntries([makeActionEntry('Undo action')]);
     }
   };
   const handleRedo = () => {
@@ -690,23 +734,35 @@ const App: React.FC = () => {
       historyIndexRef.current = newIndex;
       setHistoryIndex(newIndex);
       setItems(history[newIndex]);
+      addActionEntries([makeActionEntry('Redo action')]);
     }
   };
-  const handleAddExpense = (expense: Expense) => setExpenses(prev => [...prev, expense]);
-  const handleUpdateExpense = (expense: Expense) =>
+  const handleAddExpense = (expense: Expense) => {
+    setExpenses(prev => [...prev, expense]);
+    addActionEntries([makeActionEntry('Expense added', undefined, `${expense.description} (€${expense.amount})`)]);
+  };
+  const handleUpdateExpense = (expense: Expense) => {
     setExpenses(prev => prev.map(e => (e.id === expense.id ? expense : e)));
-  const handleDeleteExpense = (id: string) => setExpenses(prev => prev.filter(e => e.id !== id));
+    addActionEntries([makeActionEntry('Expense updated', undefined, `${expense.description} (€${expense.amount})`)]);
+  };
+  const handleDeleteExpense = (id: string) => {
+    setExpenses(prev => prev.filter(e => e.id !== id));
+    addActionEntries([makeActionEntry('Expense deleted', undefined, id)]);
+  };
   
   const handleAddRecurringExpense = (recurring: RecurringExpense) => {
     setRecurringExpenses(prev => [...prev, recurring]);
+    addActionEntries([makeActionEntry('Recurring expense added', undefined, recurring.description)]);
   };
   const handleDeleteRecurringExpense = (id: string) => {
     setRecurringExpenses(prev => prev.filter(r => r.id !== id));
     // Also delete all generated expenses from this recurring expense
     setExpenses(prev => prev.filter(e => e.recurringExpenseId !== id));
+    addActionEntries([makeActionEntry('Recurring expense deleted', undefined, id)]);
   };
   const handleUpdateRecurringExpense = (recurring: RecurringExpense) => {
     setRecurringExpenses(prev => prev.map(r => r.id === recurring.id ? recurring : r));
+    addActionEntries([makeActionEntry('Recurring expense updated', undefined, recurring.description)]);
   };
   
   const handleWipeData = async () => {
@@ -728,6 +784,8 @@ const App: React.FC = () => {
 
     localStorage.removeItem('price_check_history');
     localStorage.removeItem('ai_sourcing_history');
+    localStorage.removeItem('action_history');
+    setActionHistory([]);
 
     saveToLocalStorage(emptyInventory, emptyTrash, emptyExpenses, businessSettings, defaultGoal, categories, categoryFields, emptyRecurring, wipedDash);
 
@@ -796,6 +854,11 @@ const App: React.FC = () => {
     }
     setRefreshKey((k) => k + 1);
   }, [expenses, businessSettings, monthlyGoal, categories, categoryFields, authUser, dashboardPrefs]);
+
+  const handleClearActionHistory = useCallback(() => {
+    setActionHistory([]);
+    localStorage.removeItem('action_history');
+  }, []);
 
   const isConfigured = isCloudEnabled();
   const isAdminUser = authUser?.email === 'abelyanarmen@gmail.com';
@@ -905,6 +968,7 @@ const App: React.FC = () => {
           <Route path="builder" element={<PCBuilderWizard items={items} onSave={handleUpdate} />} />
           <Route path="pricing" element={<PriceCheck />} />
           <Route path="invoices" element={<InvoiceManager items={items} businessSettings={businessSettings} />} />
+          <Route path="action-history" element={<ActionHistoryPage entries={actionHistory} onClear={handleClearActionHistory} />} />
           <Route
             path="expenses"
             element={

@@ -286,3 +286,12 @@ export interface DashboardPreferences {
   customStart: string;
   customEnd: string;
 }
+
+export interface ActionHistoryEntry {
+  id: string;
+  timestamp: string; // ISO datetime
+  action: string;
+  itemId?: string;
+  itemName?: string;
+  details?: string;
+}
