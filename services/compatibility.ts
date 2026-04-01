@@ -82,6 +82,77 @@ function ramMatches(ramSpecValue: string | number | undefined, allowedTypes: str
   return allowedTypes.some((a) => r === a || r.includes(a) || a.includes(r));
 }
 
+/** Intersect DDR types from motherboard and CPU socket (e.g. LGA1700 CPU + DDR5-only board → DDR5 only). */
+function intersectRamTypes(a: string[], b: string[]): string[] {
+  if (a.length === 0) return b;
+  if (b.length === 0) return a;
+  const normList = (xs: string[]) => xs.map((x) => normRamType(x)).filter(Boolean);
+  const na = normList(a);
+  const nb = normList(b);
+  return na.filter((t) => nb.some((u) => t === u));
+}
+
+/**
+ * Effective DDR generations allowed for this build: motherboard Memory Type ∩ CPU socket RAM types when both are known.
+ */
+function effectiveRamTypesAllowed(mobo: InventoryItem | undefined, cpu: InventoryItem | undefined): string[] {
+  const get = (it: InventoryItem, key: string) => getSpec(it, key);
+  let fromMobo: string[] = [];
+  if (mobo) {
+    const moboMem = get(mobo, 'Memory Type') ?? get(mobo, 'RAM Type');
+    fromMobo = allowedRamTypesFromSpec(moboMem);
+  }
+  let fromCpu: string[] = [];
+  if (cpu) {
+    const cpuSocket = norm(get(cpu, 'Socket'));
+    if (cpuSocket) fromCpu = ramTypesForSocket(cpuSocket);
+  }
+  return intersectRamTypes(fromMobo, fromCpu);
+}
+
+/**
+ * Infer AMD vs Intel for a CPU from brand/vendor/name/socket (handles missing spec fields).
+ */
+function inferCpuPlatform(item: InventoryItem): 'amd' | 'intel' | null {
+  const get = (it: InventoryItem, key: string) => getSpec(it, key);
+  const brand = norm(get(item, 'Brand') || get(item, 'Vendor') || '');
+  if (brand.includes('AMD') || brand.includes('RYZEN') || brand.includes('THREADRIPPER') || brand.includes('ATHLON')) return 'amd';
+  if (brand.includes('INTEL') || brand.includes('CORE') || brand.includes('XEON') || brand.includes('PENTIUM') || brand.includes('CELERON')) return 'intel';
+  const name = norm(item.name || '');
+  if (/\bRYZEN\b|THREADRIPPER|EPYC|ATHLON|FX-\d{4}\b/i.test(name)) return 'amd';
+  if (/\bINTEL\b|\bCORE\s*(I3|I5|I7|I9|ULTRA)|\bXEON\b|PENTIUM|CELERON|CORE\s*M\b/i.test(name)) return 'intel';
+  const sock = norm(get(item, 'Socket'));
+  if (sock) return socketVendor(sock);
+  return null;
+}
+
+/**
+ * Infer AMD vs Intel platform for a motherboard from Socket, chipset, or model name.
+ */
+function inferMoboPlatform(mobo: InventoryItem): 'amd' | 'intel' | null {
+  const get = (it: InventoryItem, key: string) => getSpec(it, key);
+  const sock = norm(get(mobo, 'Socket'));
+  if (sock) {
+    const v = socketVendor(sock);
+    if (v) return v;
+    if (sock.startsWith('LGA') || sock.startsWith('S')) return 'intel';
+    if (sock.startsWith('AM') || sock.startsWith('TR') || sock.startsWith('STR')) return 'amd';
+  }
+  const chip = norm(get(mobo, 'Chipset') || '');
+  const name = norm(mobo.name || '');
+  const combined = `${chip} ${name}`;
+  // Intel desktop chipsets (recent + common)
+  if (/\b(Z890|Z790|H770|B760|H710|W680|Z690|H670|B660|H610|Z590|B560|H510|Z490|B460|H410|Z390|B365|H310|Z370|B360|H370)\b/i.test(combined)) return 'intel';
+  if (/\bLGA\s*\d+/i.test(combined)) return 'intel';
+  // AMD desktop chipsets
+  if (/\b(X870|B850|X670E|X670|B650E|B650|A620|X570|B550|A520|X470|B450|A320|X399|TRX40|WRX80)\b/i.test(combined)) return 'amd';
+  if (/\bAM[45]\b|TRX40|STRX|sTRX|WRX/i.test(combined)) return 'amd';
+  const br = norm(get(mobo, 'Brand') || get(mobo, 'Vendor') || '');
+  // Some vendors are mixed; prefer chipset regex above. EVGA had Intel boards.
+  if (br.includes('INTEL') && !br.includes('AMD')) return 'intel';
+  return null;
+}
+
 export interface CompatibilityResult {
   compatible: boolean;
   reason?: string;
@@ -105,51 +176,45 @@ export function isCompatibleWithBuild(
   switch (slotId) {
     case 'CPU': {
       if (!mobo) return { compatible: true };
+      const moboPlat = inferMoboPlatform(mobo);
+      const cpuPlat = inferCpuPlatform(item);
+      if (moboPlat && cpuPlat && moboPlat !== cpuPlat) {
+        return {
+          compatible: false,
+          reason: `Motherboard is ${moboPlat === 'intel' ? 'Intel' : 'AMD'} platform; this CPU is ${cpuPlat === 'intel' ? 'Intel' : 'AMD'}`,
+        };
+      }
       const moboSocket = norm(get(mobo, 'Socket'));
       const cpuSocket = norm(get(item, 'Socket'));
-      if (!moboSocket) return { compatible: true };
-      // When motherboard has socket (e.g. AM4), only show CPUs with matching socket
-      if (cpuSocket) {
+      if (moboSocket && cpuSocket) {
         if (normSocket(moboSocket) !== normSocket(cpuSocket)) {
           return { compatible: false, reason: `Motherboard is ${moboSocket}; this CPU is ${cpuSocket}` };
         }
-      } else {
+      } else if (moboSocket && !cpuSocket) {
         return { compatible: false, reason: 'Motherboard has socket; this CPU has no Socket spec' };
-      }
-      const vendor = socketVendor(moboSocket);
-      if (vendor) {
-        const brand = norm(get(item, 'Brand') || get(item, 'Vendor') || '');
-        const isAMD = brand.includes('AMD') || brand.includes('RYZEN') || brand.includes('THREADRIPPER');
-        const isIntel = brand.includes('INTEL') || brand.includes('CORE');
-        if (vendor === 'amd' && isIntel) return { compatible: false, reason: 'Motherboard is AMD socket; this is an Intel CPU' };
-        if (vendor === 'intel' && isAMD) return { compatible: false, reason: 'Motherboard is Intel socket; this is an AMD CPU' };
       }
       return { compatible: true };
     }
 
     case 'MOBO': {
       if (!cpu) return { compatible: true };
+      const moboPlat = inferMoboPlatform(item);
+      const cpuPlat = inferCpuPlatform(cpu);
+      if (moboPlat && cpuPlat && moboPlat !== cpuPlat) {
+        return {
+          compatible: false,
+          reason: `CPU is ${cpuPlat === 'intel' ? 'Intel' : 'AMD'}; this board is ${moboPlat === 'intel' ? 'Intel' : 'AMD'} platform`,
+        };
+      }
       const cpuSocket = norm(get(cpu, 'Socket'));
       const moboSocket = norm(get(item, 'Socket'));
-      // When CPU has socket, only show motherboards with matching socket (e.g. i7-2600 LGA1155 → only LGA1155 boards)
-      if (cpuSocket) {
-        if (!moboSocket) return { compatible: false, reason: 'CPU has socket; this board has no Socket spec' };
+      if (cpuSocket && moboSocket) {
         if (normSocket(cpuSocket) !== normSocket(moboSocket)) {
           return { compatible: false, reason: `CPU is ${cpuSocket}; this board is ${moboSocket}` };
         }
+      } else if (cpuSocket && !moboSocket) {
+        return { compatible: false, reason: 'CPU has socket; this board has no Socket spec' };
       }
-      // Intel vs AMD: if CPU has socket or brand, only show matching boards
-      const cpuVendor = cpuSocket ? socketVendor(cpuSocket) : null;
-      const cpuBrand = norm(get(cpu, 'Brand') || get(cpu, 'Vendor') || '');
-      const cpuIsAMD = cpuBrand.includes('AMD') || cpuBrand.includes('RYZEN') || cpuBrand.includes('THREADRIPPER');
-      const cpuIsIntel = cpuBrand.includes('INTEL') || cpuBrand.includes('CORE');
-      const moboBrand = norm(get(item, 'Brand') || get(item, 'Chipset') || get(item, 'Vendor') || '');
-      const moboIsAMD = moboBrand.includes('AMD') || moboBrand.includes('B550') || moboBrand.includes('B650') || moboBrand.includes('X570') || moboBrand.includes('X670');
-      const moboIsIntel = moboBrand.includes('INTEL') || moboBrand.includes('B660') || moboBrand.includes('Z690') || moboBrand.includes('B760') || moboBrand.includes('Z790');
-      if (cpuVendor === 'amd' && moboIsIntel) return { compatible: false, reason: 'CPU is AMD; this is an Intel motherboard' };
-      if (cpuVendor === 'intel' && moboIsAMD) return { compatible: false, reason: 'CPU is Intel; this is an AMD motherboard' };
-      if (cpuIsAMD && moboIsIntel) return { compatible: false, reason: 'CPU is AMD; this is an Intel motherboard' };
-      if (cpuIsIntel && moboIsAMD) return { compatible: false, reason: 'CPU is Intel; this is an AMD motherboard' };
       return { compatible: true };
     }
 
@@ -169,7 +234,19 @@ export function isCompatibleWithBuild(
 
       if (!ramType) return { compatible: true }; // no RAM spec – allow
 
-      // Primary: motherboard defines supported RAM (DDR3/DDR4/DDR5; may list multiple e.g. "DDR4, DDR5")
+      // Motherboard + CPU: intersection of allowed DDR (e.g. DDR5-only board + AM5 CPU → DDR5 only, not DDR4).
+      const effective = effectiveRamTypesAllowed(mobo, cpu);
+      if (effective.length > 0) {
+        if (!ramMatches(ramTypeRaw, effective)) {
+          return {
+            compatible: false,
+            reason: `This build allows ${effective.join('/')} (motherboard + CPU); this module is ${ramType}`,
+          };
+        }
+        return { compatible: true };
+      }
+
+      // Only motherboard RAM spec
       if (mobo) {
         const moboMem = get(mobo, 'Memory Type') ?? get(mobo, 'RAM Type');
         const allowedByMobo = allowedRamTypesFromSpec(moboMem);
@@ -181,7 +258,7 @@ export function isCompatibleWithBuild(
         }
       }
 
-      // No MOBO or MOBO has no memory spec: when CPU is selected, filter by CPU socket's supported RAM (AM4→DDR4, AM5→DDR5, LGA1155→DDR3, LGA1700→DDR4/DDR5, etc.)
+      // Only CPU socket (no mobo memory spec)
       if (cpu) {
         const cpuSocket = norm(get(cpu, 'Socket'));
         if (cpuSocket) {
@@ -229,20 +306,15 @@ export function getCompatibleItemsForItem(
 
   if (isProcessor(item)) {
     const socket = norm(get(item, 'Socket'));
+    const cpuPlat = inferCpuPlatform(item);
     if (socket) {
       const mobos = others.filter((i) => {
         if (!isMotherboard(i)) return false;
         const s = norm(get(i, 'Socket'));
         if (!s) return false;
         if (s !== socket) return false;
-        const vendor = socketVendor(s);
-        if (vendor) {
-          const brand = norm(get(item, 'Brand') || get(item, 'Vendor') || '');
-          const isAMD = brand.includes('AMD') || brand.includes('RYZEN') || brand.includes('THREADRIPPER');
-          const isIntel = brand.includes('INTEL') || brand.includes('CORE');
-          if (vendor === 'amd' && isIntel) return false;
-          if (vendor === 'intel' && isAMD) return false;
-        }
+        const moboPlat = inferMoboPlatform(i);
+        if (cpuPlat && moboPlat && cpuPlat !== moboPlat) return false;
         return true;
       });
       if (mobos.length > 0) result.push({ label: 'Compatible motherboards', items: mobos });
@@ -252,20 +324,15 @@ export function getCompatibleItemsForItem(
   if (isMotherboard(item)) {
     const moboSocket = norm(get(item, 'Socket'));
     const moboMem = norm(get(item, 'Memory Type') || get(item, 'RAM Type') || '');
+    const moboPlat = inferMoboPlatform(item);
     if (moboSocket) {
       const cpus = others.filter((i) => {
         if (!isProcessor(i)) return false;
         const s = norm(get(i, 'Socket'));
         if (!s) return false;
         if (s !== moboSocket) return false;
-        const vendor = socketVendor(moboSocket);
-        if (vendor) {
-          const brand = norm(get(i, 'Brand') || get(i, 'Vendor') || '');
-          const isAMD = brand.includes('AMD') || brand.includes('RYZEN') || brand.includes('THREADRIPPER');
-          const isIntel = brand.includes('INTEL') || brand.includes('CORE');
-          if (vendor === 'amd' && isIntel) return false;
-          if (vendor === 'intel' && isAMD) return false;
-        }
+        const cpuPlat = inferCpuPlatform(i);
+        if (moboPlat && cpuPlat && moboPlat !== cpuPlat) return false;
         return true;
       });
       if (cpus.length > 0) result.push({ label: 'Compatible CPUs', items: cpus });
