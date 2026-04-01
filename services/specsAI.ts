@@ -5,6 +5,8 @@
  * When one provider fails (rate limit, etc.) the system tries the next in order until one succeeds.
  */
 
+import { correctGpuVramInSpecs } from './gpuVramCorrection';
+
 const getEnv = (key: string): string => {
   try {
     return (typeof import.meta !== 'undefined' && import.meta.env && (import.meta.env[key] as string)) || '';
@@ -67,7 +69,9 @@ Examples by type:
 Return a valid JSON object with this exact structure (no markdown, no code fence):
 {"standardizedName":"...","vendor":"...","specs":{...}}
 
-Rules: specs values can be string or number. Include as many relevant specs as you know.`;
+Rules: specs values can be string or number. Include as many relevant specs as you know.
+
+GRAPHICS CARDS (GPUs): For the "VRAM" field, use the exact frame-buffer memory of that GPU model only (e.g. RTX 5070 has 12GB VRAM). Do not use system RAM, total memory across unrelated devices, or another GPU tier. If the product name includes a GB figure next to the chip name (e.g. "RTX 5070 12GB"), that GB value is the VRAM.`;
 }
 
 export interface GenerateSpecsResult {
@@ -287,7 +291,11 @@ export async function generateItemSpecs(
   let lastError: Error | null = null;
   for (const provider of providers) {
     try {
-      return await callProviderSpecs(provider, prompt);
+      const raw = await callProviderSpecs(provider, prompt);
+      return {
+        ...raw,
+        specs: correctGpuVramInSpecs(name, raw.standardizedName, raw.specs || {}),
+      };
     } catch (e) {
       lastError = e instanceof Error ? e : new Error(String(e));
       console.warn(`Specs AI [${provider}] failed, trying next:`, lastError.message);

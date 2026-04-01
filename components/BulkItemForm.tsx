@@ -14,6 +14,7 @@ import { formatEUR, parseLocaleMoney } from '../utils/formatMoney';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { CATEGORY_IMAGES, searchAllHardware, HardwareMetadata } from '../services/hardwareDB';
 import { generateItemSpecs, getSpecsAIProvider, requestAIJson } from '../services/specsAI';
+import { correctGpuVramInSpecs, shouldApplyGpuVramCorrection } from '../services/gpuVramCorrection';
 
 interface Props {
   onSave: (newItems: InventoryItem[]) => void;
@@ -371,16 +372,20 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
               Kit: ramInfo.perStickGB ? `${quantity}x${ramInfo.perStickGB}GB` : `${quantity} modules`,
             }
           : {};
+        let mergedSpecs: Record<string, string | number> = {
+          ...(row.specs || {}),
+          ...Object.fromEntries(Object.entries(ramSpecs).filter(([, v]) => v !== undefined)),
+        };
+        if (shouldApplyGpuVramCorrection(rec.subCategory, baseName)) {
+          mergedSpecs = correctGpuVramInSpecs(baseName, undefined, mergedSpecs);
+        }
         appended.push({
           id: `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${i}`,
           name: baseName,
           category: rec.category,
           subCategory: rec.subCategory,
           note: row.note || '',
-          specs: {
-            ...(row.specs || {}),
-            ...Object.fromEntries(Object.entries(ramSpecs).filter(([, v]) => v !== undefined)),
-          },
+          specs: mergedSpecs,
           vendor: row.vendor,
           isDefective: !!row.isDefective,
         });
@@ -438,6 +443,7 @@ Rules:
 - IMPORTANT: Do not classify CPUs, SSD/NVMe drives, RAM, or motherboards as Graphics Cards.
 - RAM kits: if text includes patterns like "2x 32GB", set quantity to 2 and keep per-module capacity in specs.
 - Extract useful specs when obvious from the title (e.g. VRAM, capacity, speed, wattage, form factor).
+- Graphics cards: VRAM must be the GPU's onboard memory for that exact chip (e.g. RTX 5070 is 12GB VRAM), not system RAM or another model's spec.
 - If uncertain, choose best likely category/subCategory.
 
 Input lines:
