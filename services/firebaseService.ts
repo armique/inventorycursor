@@ -271,13 +271,14 @@ export interface FirestoreInventoryPayload {
   savedBy?: string;
 }
 
-const FIRESTORE_DOC_SIZE_LIMIT = 1 * 1024 * 1024; // 1 MB
-const PAYLOAD_SIZE_THRESHOLD = 900 * 1024; // start trimming above 900 KB
+const FIRESTORE_DOC_SIZE_LIMIT = 1 * 1024 * 1024; // 1 MiB hard Firestore limit
+/** Stay clearly under 1 MiB after setDoc adds updatedAt / savedBy. */
+const PAYLOAD_SAFE_TARGET = 1000 * 1024;
 
 /** Placeholder when large fields are omitted for document size (exported for merge logic). */
 export const CLOUD_OMITTED_PLACEHOLDER = "[omitted for size]";
 
-/** Fields that often contain base64 or large strings; omit from cloud when payload is too big */
+/** Top-level item fields that often hold base64 or huge URLs. */
 const LARGE_ITEM_FIELDS = [
   "imageUrl",
   "receiptUrl",
@@ -285,6 +286,9 @@ const LARGE_ITEM_FIELDS = [
   "kleinanzeigenBuyChatImage",
   "marketDescription",
 ] as const;
+
+/** Gallery / multi-image fields (were not trimmed before → common cause of sync failure). */
+const LARGE_ITEM_STRING_ARRAYS = ["imageUrls", "storeGalleryUrls"] as const;
 
 function sanitizeForFirestore(obj: unknown): unknown {
   if (obj === undefined) return null;
@@ -302,25 +306,89 @@ function sanitizeForFirestore(obj: unknown): unknown {
   return obj;
 }
 
+function shouldOmitString(s: string, minLen: number): boolean {
+  if (s.length >= minLen) return true;
+  if (s.startsWith("data:") && s.length > 120) return true;
+  return false;
+}
+
 function trimItemForSize(item: unknown): unknown {
   if (!item || typeof item !== "object") return item;
-  const o = item as Record<string, unknown>;
-  const trimmed = { ...o };
+  const o = { ...(item as Record<string, unknown>) };
   for (const key of LARGE_ITEM_FIELDS) {
-    if (key in trimmed && typeof trimmed[key] === "string" && (trimmed[key] as string).length > 500) {
-      trimmed[key] = CLOUD_OMITTED_PLACEHOLDER;
+    const v = o[key];
+    if (typeof v === "string" && shouldOmitString(v, 400)) {
+      o[key] = CLOUD_OMITTED_PLACEHOLDER;
     }
   }
-  if (typeof trimmed.comment1 === "string" && trimmed.comment1.length > 5000) trimmed.comment1 = (trimmed.comment1 as string).slice(0, 5000) + "...";
-  if (typeof trimmed.comment2 === "string" && trimmed.comment2.length > 5000) trimmed.comment2 = (trimmed.comment2 as string).slice(0, 5000) + "...";
-  return trimmed;
+  for (const arrKey of LARGE_ITEM_STRING_ARRAYS) {
+    const arr = o[arrKey];
+    if (Array.isArray(arr)) {
+      o[arrKey] = arr.map((x) =>
+        typeof x === "string" && shouldOmitString(x, 400) ? CLOUD_OMITTED_PLACEHOLDER : x
+      );
+    }
+  }
+  for (const textKey of [
+    "storeDescription",
+    "storeDescriptionEn",
+    "storeMetaDescription",
+    "marketTitle",
+  ] as const) {
+    const v = o[textKey];
+    if (typeof v === "string" && v.length > 8000) {
+      o[textKey] = v.slice(0, 8000) + "...";
+    }
+  }
+  if (typeof o.comment1 === "string" && o.comment1.length > 5000) o.comment1 = o.comment1.slice(0, 5000) + "...";
+  if (typeof o.comment2 === "string" && o.comment2.length > 5000) o.comment2 = o.comment2.slice(0, 5000) + "...";
+  return o;
+}
+
+function trimExpenseForSize(exp: unknown): unknown {
+  if (!exp || typeof exp !== "object") return exp;
+  const o = { ...(exp as Record<string, unknown>) };
+  const url = o.attachmentUrl;
+  if (typeof url === "string" && shouldOmitString(url, 400)) {
+    o.attachmentUrl = CLOUD_OMITTED_PLACEHOLDER;
+  }
+  if (typeof o.description === "string" && o.description.length > 4000) {
+    o.description = o.description.slice(0, 4000) + "...";
+  }
+  return o;
+}
+
+/**
+ * Recursively replace oversized strings (and data: URLs) so nested specs / history cannot blow the 1 MiB doc cap.
+ */
+function deepTrimLargeStrings(value: unknown, maxLen: number): unknown {
+  if (value === null || value === undefined) return value;
+  if (typeof value === "string") {
+    if (value.startsWith("data:") && value.length > 120) return CLOUD_OMITTED_PLACEHOLDER;
+    if (value.length > maxLen) return CLOUD_OMITTED_PLACEHOLDER;
+    return value;
+  }
+  if (Array.isArray(value)) return value.map((x) => deepTrimLargeStrings(x, maxLen));
+  if (typeof value === "object") {
+    const o = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(o)) {
+      out[k] = deepTrimLargeStrings(v, maxLen);
+    }
+    return out;
+  }
+  return value;
+}
+
+function measurePayloadBytes(payload: FirestoreInventoryPayload): number {
+  return new Blob([JSON.stringify(payload)]).size;
 }
 
 function preparePayloadForFirestore(data: FirestoreInventoryPayload): FirestoreInventoryPayload {
   let payload: FirestoreInventoryPayload = {
-    inventory: (data.inventory || []).map(sanitizeForFirestore),
-    trash: (data.trash || []).map(sanitizeForFirestore),
-    expenses: (data.expenses || []).map(sanitizeForFirestore),
+    inventory: (data.inventory || []).map(sanitizeForFirestore).map(trimItemForSize),
+    trash: (data.trash || []).map(sanitizeForFirestore).map(trimItemForSize),
+    expenses: (data.expenses || []).map(sanitizeForFirestore).map(trimExpenseForSize),
     recurringExpenses: (data.recurringExpenses || []).map(sanitizeForFirestore),
     categories: data.categories,
     categoryFields: data.categoryFields,
@@ -329,17 +397,50 @@ function preparePayloadForFirestore(data: FirestoreInventoryPayload): FirestoreI
     dashboard: data.dashboard != null ? sanitizeForFirestore(data.dashboard) : undefined,
     actionHistory: (data.actionHistory || []).map(sanitizeForFirestore),
   };
-  let size = new Blob([JSON.stringify(payload)]).size;
-  if (size > PAYLOAD_SIZE_THRESHOLD) {
+
+  let size = measurePayloadBytes(payload);
+
+  const maxLenSteps = [48_000, 24_000, 12_000, 6_000, 3_000, 1_500, 800, 400, 250];
+  let step = 0;
+  while (size > PAYLOAD_SAFE_TARGET && step < maxLenSteps.length) {
+    const m = maxLenSteps[step++];
     payload = {
       ...payload,
-      inventory: (payload.inventory || []).map(trimItemForSize),
-      trash: (payload.trash || []).map(trimItemForSize),
+      inventory: (payload.inventory || []).map((i) => deepTrimLargeStrings(i, m)),
+      trash: (payload.trash || []).map((i) => deepTrimLargeStrings(i, m)),
+      expenses: (payload.expenses || []).map((i) => deepTrimLargeStrings(i, m)),
+      recurringExpenses: (payload.recurringExpenses || []).map((i) => deepTrimLargeStrings(i, m)),
     };
-    size = new Blob([JSON.stringify(payload)]).size;
+    size = measurePayloadBytes(payload);
   }
+
+  if (size > PAYLOAD_SAFE_TARGET) {
+    const ah = payload.actionHistory || [];
+    const keep = Math.min(ah.length, 400);
+    payload = { ...payload, actionHistory: ah.slice(-keep) };
+    size = measurePayloadBytes(payload);
+  }
+  if (size > PAYLOAD_SAFE_TARGET) {
+    payload = {
+      ...payload,
+      actionHistory: (payload.actionHistory || []).slice(-200),
+      dashboard: deepTrimLargeStrings(payload.dashboard, 2000),
+    };
+    size = measurePayloadBytes(payload);
+  }
+  if (size > PAYLOAD_SAFE_TARGET) {
+    payload = {
+      ...payload,
+      actionHistory: (payload.actionHistory || []).slice(-80),
+      dashboard: deepTrimLargeStrings(payload.dashboard, 500),
+    };
+    size = measurePayloadBytes(payload);
+  }
+
   if (size > FIRESTORE_DOC_SIZE_LIMIT) {
-    throw new Error("Data too large. Remove some images or long notes from items and try again.");
+    throw new Error(
+      "Data still too large for cloud sync after compressing images and notes. Remove a few full-size photos from items or shorten very long comments, then try again."
+    );
   }
   return payload;
 }
