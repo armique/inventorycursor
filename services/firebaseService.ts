@@ -1,12 +1,9 @@
 /**
  * Firestore real-time sync for DeInventory Pro.
  *
- * Why Firestore for this app:
- * - Real-time listeners (onSnapshot): when you edit a price, the DB updates and every
- *   open client (browser tab, another device) sees the change immediately. No polling.
- * - Generous free tier: 20K writes/day, 50K reads/day. Plenty for daily inventory edits.
- *   (Not "unlimited" but far above typical usage; each price edit = 1 write.)
- * - Single document per user keeps reads minimal: one listener = 1 read per document change.
+ * Inventory/trash are sharded across multiple documents under `users/{uid}/syncPack/*`
+ * so total data is not limited by Firestore’s ~1 MiB **per-document** cap. Legacy
+ * `users/{uid}/inventory/data` is still read until the first sharded write migrates it.
  */
 
 import { initializeApp, getApps, getApp, FirebaseApp } from "firebase/app";
@@ -18,11 +15,15 @@ import {
   addDoc,
   updateDoc,
   collection,
+  getDocs,
+  writeBatch,
+  deleteDoc,
   onSnapshot,
   query,
   orderBy,
   Unsubscribe,
   Firestore,
+  QuerySnapshot,
 } from "firebase/firestore";
 import {
   getAuth,
@@ -271,9 +272,10 @@ export interface FirestoreInventoryPayload {
   savedBy?: string;
 }
 
-const FIRESTORE_DOC_SIZE_LIMIT = 1 * 1024 * 1024; // 1 MiB hard Firestore limit
-/** Stay clearly under 1 MiB after setDoc adds updatedAt / savedBy. */
-const PAYLOAD_SAFE_TARGET = 1000 * 1024;
+/** Max JSON size per shard document (Firestore hard limit ~1 MiB per doc). */
+const CHUNK_BODY_MAX = 680 * 1024;
+
+const SYNC_PACK_COLLECTION = "syncPack";
 
 /** Placeholder when large fields are omitted for document size (exported for merge logic). */
 export const CLOUD_OMITTED_PLACEHOLDER = "[omitted for size]";
@@ -380,77 +382,201 @@ function deepTrimLargeStrings(value: unknown, maxLen: number): unknown {
   return value;
 }
 
-function measurePayloadBytes(payload: FirestoreInventoryPayload): number {
-  return new Blob([JSON.stringify(payload)]).size;
+function jsonByteSize(obj: unknown): number {
+  return new Blob([JSON.stringify(obj)]).size;
 }
 
-function preparePayloadForFirestore(data: FirestoreInventoryPayload): FirestoreInventoryPayload {
-  let payload: FirestoreInventoryPayload = {
-    inventory: (data.inventory || []).map(sanitizeForFirestore).map(trimItemForSize),
-    trash: (data.trash || []).map(sanitizeForFirestore).map(trimItemForSize),
-    expenses: (data.expenses || []).map(sanitizeForFirestore).map(trimExpenseForSize),
+/** Split items into multiple arrays so each `{ items }` document stays under CHUNK_BODY_MAX. */
+function chunkItemsForFirestore(rawItems: unknown[]): unknown[][] {
+  const chunks: unknown[][] = [];
+  let current: unknown[] = [];
+
+  const wrapSize = (arr: unknown[]) => jsonByteSize({ items: arr });
+
+  for (const raw of rawItems) {
+    let item: unknown = trimItemForSize(sanitizeForFirestore(raw));
+    let oneSize = jsonByteSize({ items: [item] });
+    let guard = 0;
+    const trimSteps = [96_000, 48_000, 16_000, 6000, 2500, 1000, 400, 200, 120];
+    while (oneSize > CHUNK_BODY_MAX && guard < trimSteps.length) {
+      item = deepTrimLargeStrings(item, trimSteps[guard++]);
+      oneSize = jsonByteSize({ items: [item] });
+    }
+    if (oneSize > CHUNK_BODY_MAX) {
+      throw new Error(
+        "One row is too large for cloud sync even after shrinking. Remove embedded photos from that item or use image URLs instead of pasted images."
+      );
+    }
+
+    if (current.length > 0 && wrapSize([...current, item]) > CHUNK_BODY_MAX) {
+      chunks.push(current);
+      current = [];
+    }
+    current.push(item);
+  }
+  if (current.length) chunks.push(current);
+  return chunks;
+}
+
+function buildCorePayloadForShard(data: FirestoreInventoryPayload): Record<string, unknown> {
+  return {
+    expenses: (data.expenses || []).map((e) => trimExpenseForSize(sanitizeForFirestore(e))),
     recurringExpenses: (data.recurringExpenses || []).map(sanitizeForFirestore),
-    categories: data.categories,
-    categoryFields: data.categoryFields,
-    settings: data.settings != null ? sanitizeForFirestore(data.settings) : undefined,
-    goals: data.goals,
-    dashboard: data.dashboard != null ? sanitizeForFirestore(data.dashboard) : undefined,
+    settings: data.settings != null ? sanitizeForFirestore(data.settings) : null,
+    goals: data.goals ?? null,
+    categories: data.categories ?? {},
+    categoryFields: data.categoryFields ?? {},
+    dashboard: data.dashboard != null ? sanitizeForFirestore(data.dashboard) : null,
     actionHistory: (data.actionHistory || []).map(sanitizeForFirestore),
   };
+}
 
-  let size = measurePayloadBytes(payload);
-
-  const maxLenSteps = [48_000, 24_000, 12_000, 6_000, 3_000, 1_500, 800, 400, 250];
-  let step = 0;
-  while (size > PAYLOAD_SAFE_TARGET && step < maxLenSteps.length) {
-    const m = maxLenSteps[step++];
-    payload = {
-      ...payload,
-      inventory: (payload.inventory || []).map((i) => deepTrimLargeStrings(i, m)),
-      trash: (payload.trash || []).map((i) => deepTrimLargeStrings(i, m)),
-      expenses: (payload.expenses || []).map((i) => deepTrimLargeStrings(i, m)),
-      recurringExpenses: (payload.recurringExpenses || []).map((i) => deepTrimLargeStrings(i, m)),
-    };
-    size = measurePayloadBytes(payload);
+function shrinkCoreUntilUnder(core: Record<string, unknown>, maxBytes: number): Record<string, unknown> {
+  let c = { ...core };
+  let size = jsonByteSize(c);
+  let rounds = 0;
+  while (size > maxBytes && rounds < 40) {
+    rounds++;
+    const ah = c.actionHistory as unknown[] | undefined;
+    if (Array.isArray(ah) && ah.length > 25) {
+      c = { ...c, actionHistory: ah.slice(-Math.max(25, Math.floor(ah.length * 0.6))) };
+    } else {
+      c = {
+        ...c,
+        dashboard: deepTrimLargeStrings(c.dashboard, 1200),
+        expenses: Array.isArray(c.expenses)
+          ? (c.expenses as unknown[]).map((e) => deepTrimLargeStrings(e, 3000))
+          : c.expenses,
+      };
+    }
+    size = jsonByteSize(c);
+    if (rounds > 25 && Array.isArray(c.actionHistory)) {
+      c = { ...c, actionHistory: (c.actionHistory as unknown[]).slice(-80) };
+      size = jsonByteSize(c);
+    }
   }
-
-  if (size > PAYLOAD_SAFE_TARGET) {
-    const ah = payload.actionHistory || [];
-    const keep = Math.min(ah.length, 400);
-    payload = { ...payload, actionHistory: ah.slice(-keep) };
-    size = measurePayloadBytes(payload);
-  }
-  if (size > PAYLOAD_SAFE_TARGET) {
-    payload = {
-      ...payload,
-      actionHistory: (payload.actionHistory || []).slice(-200),
-      dashboard: deepTrimLargeStrings(payload.dashboard, 2000),
-    };
-    size = measurePayloadBytes(payload);
-  }
-  if (size > PAYLOAD_SAFE_TARGET) {
-    payload = {
-      ...payload,
-      actionHistory: (payload.actionHistory || []).slice(-80),
-      dashboard: deepTrimLargeStrings(payload.dashboard, 500),
-    };
-    size = measurePayloadBytes(payload);
-  }
-
-  if (size > FIRESTORE_DOC_SIZE_LIMIT) {
+  if (size > maxBytes) {
     throw new Error(
-      "Data still too large for cloud sync after compressing images and notes. Remove a few full-size photos from items or shorten very long comments, then try again."
+      "Cloud sync: combined settings, expenses, and history are still too large. Try clearing action history (Settings) or removing huge expense attachments."
     );
   }
-  return payload;
+  return c;
+}
+
+function assemblePayloadFromSyncSnapshot(snap: QuerySnapshot): FirestoreInventoryPayload | null {
+  if (snap.empty) return null;
+  const docs = snap.docs;
+  const metaData = docs.find((d) => d.id === "meta")?.data() as Record<string, unknown> | undefined;
+  const coreSnap = docs.find((d) => d.id === "core");
+  if (!coreSnap) return null;
+
+  const core = coreSnap.data() as Record<string, unknown>;
+  const invParts: { n: number; items: unknown[] }[] = [];
+  const trashParts: { n: number; items: unknown[] }[] = [];
+
+  for (const d of docs) {
+    const id = d.id;
+    const row = d.data() as { items?: unknown[] };
+    const im = /^i(\d+)$/.exec(id);
+    if (im) invParts.push({ n: parseInt(im[1], 10), items: row.items || [] });
+    const tm = /^t(\d+)$/.exec(id);
+    if (tm) trashParts.push({ n: parseInt(tm[1], 10), items: row.items || [] });
+  }
+  invParts.sort((a, b) => a.n - b.n);
+  trashParts.sort((a, b) => a.n - b.n);
+
+  return {
+    inventory: invParts.flatMap((p) => p.items),
+    trash: trashParts.flatMap((p) => p.items),
+    expenses: (core.expenses as unknown[]) || [],
+    recurringExpenses: (core.recurringExpenses as unknown[]) || [],
+    categories: (core.categories as Record<string, string[]>) || {},
+    categoryFields: (core.categoryFields as Record<string, string[]>) || {},
+    settings: core.settings,
+    goals: core.goals as { monthly?: number } | undefined,
+    dashboard: core.dashboard,
+    actionHistory: (core.actionHistory as unknown[]) || [],
+    updatedAt: metaData?.updatedAt as string | undefined,
+    savedBy: metaData?.savedBy as string | undefined,
+  };
+}
+
+function legacyInventoryDocRef(db: Firestore, uid: string) {
+  return doc(db, "users", uid, "inventory", "data");
+}
+
+function syncPackCollectionRef(db: Firestore, uid: string) {
+  return collection(db, "users", uid, SYNC_PACK_COLLECTION);
+}
+
+async function writeShardedSyncPack(
+  db: Firestore,
+  uid: string,
+  data: FirestoreInventoryPayload,
+  savedBy: string
+): Promise<void> {
+  const colRef = syncPackCollectionRef(db, uid);
+  const legacyRef = legacyInventoryDocRef(db, uid);
+  const nowIso = new Date().toISOString();
+
+  const invChunks = chunkItemsForFirestore(data.inventory || []);
+  const trashChunks = chunkItemsForFirestore(data.trash || []);
+  const corePayload = shrinkCoreUntilUnder(buildCorePayloadForShard(data), CHUNK_BODY_MAX);
+
+  const existingSnap = await getDocs(colRef);
+  const extraDeletes: string[] = [];
+  existingSnap.forEach((d) => {
+    const id = d.id;
+    if (id === "meta" || id === "core") return;
+    const im = /^i(\d+)$/.exec(id);
+    if (im && parseInt(im[1], 10) >= invChunks.length) extraDeletes.push(id);
+    const tm = /^t(\d+)$/.exec(id);
+    if (tm && parseInt(tm[1], 10) >= trashChunks.length) extraDeletes.push(id);
+  });
+
+  type BatchOp = (b: ReturnType<typeof writeBatch>) => void;
+  const ops: BatchOp[] = [];
+
+  ops.push((b) =>
+    b.set(doc(colRef, "meta"), {
+      schemaVersion: 2,
+      inventoryChunks: invChunks.length,
+      trashChunks: trashChunks.length,
+      updatedAt: nowIso,
+      savedBy,
+    })
+  );
+  ops.push((b) => b.set(doc(colRef, "core"), corePayload));
+  invChunks.forEach((items, i) => {
+    ops.push((b) => b.set(doc(colRef, `i${i}`), { items }));
+  });
+  trashChunks.forEach((items, i) => {
+    ops.push((b) => b.set(doc(colRef, `t${i}`), { items }));
+  });
+  extraDeletes.forEach((id) => {
+    ops.push((b) => b.delete(doc(colRef, id)));
+  });
+  ops.push((b) => b.delete(legacyRef));
+
+  const BATCH_MAX = 400;
+  let batch = writeBatch(db);
+  let count = 0;
+  for (const op of ops) {
+    op(batch);
+    count++;
+    if (count >= BATCH_MAX) {
+      await batch.commit();
+      batch = writeBatch(db);
+      count = 0;
+    }
+  }
+  if (count > 0) await batch.commit();
 }
 
 // --- REAL-TIME SUBSCRIBE ---
 
 /**
- * Subscribe to the user's inventory document. Callback runs on every change (including
- * from this client). When you deploy to the web, any tab or device with this open
- * will see updates immediately (e.g. price edit in one tab → other tab updates live).
+ * Subscribe to sharded sync (`syncPack`) or fall back to legacy single doc until migrated.
  */
 export function subscribeToData(
   uid: string,
@@ -462,13 +588,26 @@ export function subscribeToData(
     return () => {};
   }
 
-  const docRef = doc(ctx.db, "users", uid, "inventory", "data");
+  const db = ctx.db;
+  const colRef = syncPackCollectionRef(db, uid);
+  const legacyRef = legacyInventoryDocRef(db, uid);
 
   return onSnapshot(
-    docRef,
+    colRef,
     (snap) => {
-      const data = snap.exists() ? (snap.data() as FirestoreInventoryPayload) : null;
-      onData(data);
+      void (async () => {
+        try {
+          if (snap.empty) {
+            const leg = await getDoc(legacyRef);
+            onData(leg.exists() ? (leg.data() as FirestoreInventoryPayload) : null);
+            return;
+          }
+          onData(assemblePayloadFromSyncSnapshot(snap));
+        } catch (e) {
+          console.error("Firestore sync assemble error:", e);
+          onData(null);
+        }
+      })();
     },
     (err) => {
       console.error("Firestore snapshot error:", err);
@@ -486,9 +625,13 @@ export async function fetchFromCloud(): Promise<FirestoreInventoryPayload | null
   if (!ctx?.db || !user) return null;
 
   try {
-    const docRef = doc(ctx.db, "users", user.uid, "inventory", "data");
-    const snap = await getDoc(docRef);
-    return snap.exists() ? (snap.data() as FirestoreInventoryPayload) : null;
+    const colRef = syncPackCollectionRef(ctx.db, user.uid);
+    const packSnap = await getDocs(colRef);
+    if (!packSnap.empty) {
+      return assemblePayloadFromSyncSnapshot(packSnap);
+    }
+    const leg = await getDoc(legacyInventoryDocRef(ctx.db, user.uid));
+    return leg.exists() ? (leg.data() as FirestoreInventoryPayload) : null;
   } catch (err) {
     console.error("Firestore fetch error:", err);
     return null;
@@ -528,16 +671,10 @@ export async function writeToCloud(data: FirestoreInventoryPayload): Promise<voi
   const user = ctx?.auth?.currentUser;
   if (!ctx?.db || !user) throw new Error("Not signed in");
 
-  const docRef = doc(ctx.db, "users", user.uid, "inventory", "data");
   try {
-    const payload = preparePayloadForFirestore(data);
-    await setDoc(docRef, {
-      ...payload,
-      updatedAt: new Date().toISOString(),
-      savedBy: user.email ?? user.uid,
-    });
+    await writeShardedSyncPack(ctx.db, user.uid, data, user.email ?? user.uid);
   } catch (err) {
-    const msg = getSyncErrorMessage(err);
+    const msg = err instanceof Error && err.message ? err.message : getSyncErrorMessage(err);
     const wrapped = new Error(msg) as Error & { cause?: unknown };
     wrapped.cause = err;
     throw wrapped;
