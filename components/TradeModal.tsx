@@ -2,17 +2,41 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { formatEUR, parseLocaleMoney } from '../utils/formatMoney';
 
-import { X, ArrowRightLeft, Plus, Trash2, Wallet, ArrowRight, Search, Database, FileText, TrendingUp, TrendingDown, RefreshCcw, Scale } from 'lucide-react';
+import {
+  X,
+  ArrowRightLeft,
+  Plus,
+  Trash2,
+  Wallet,
+  ArrowRight,
+  Search,
+  Database,
+  FileText,
+  TrendingUp,
+  TrendingDown,
+  RefreshCcw,
+  Scale,
+  Sparkles,
+  Loader2
+} from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { searchAllHardware, HardwareMetadata } from '../services/hardwareDB';
 import { allocateRemainderEuros, TradeSplitMode } from '../services/tradeAllocation';
+import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
 import ItemThumbnail, { CategoryIconBox } from './ItemThumbnail';
+
+function localDatetimeInputValue(d = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 interface Props {
   item: InventoryItem;
   onSave: (updatedOriginal: InventoryItem, newItems: InventoryItem[]) => void;
   onClose: () => void;
+  /** Same as bulk entry: preferred spec keys per category for AI parsing. */
+  categoryFields?: Record<string, string[]>;
 }
 
 interface IncomingItemDraft {
@@ -23,14 +47,23 @@ interface IncomingItemDraft {
   /** LOCAL_HARDWARE_INDEX category when picked from DB search. */
   hardwareDbType?: string;
   specs?: Record<string, string | number>;
+  source?: 'search' | 'manual';
+  /** When AI standardizes vendor on parse. */
+  parsedVendor?: string;
 }
 
-const TradeModal: React.FC<Props> = ({ item, onSave, onClose }) => {
+const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {} }) => {
+  const aiAvailable = !!getSpecsAIProvider();
   const [cashAmount, setCashAmount] = useState<number>(0);
   const [cashDirection, setCashDirection] = useState<'IN' | 'OUT'>('IN'); // IN = You receive, OUT = You pay
-  const [tradeDate, setTradeDate] = useState(new Date().toISOString().split('T')[0]);
+  /** Local datetime for acquired items and sell date on the traded-out line (same instant). */
+  const [tradeAcquiredAt, setTradeAcquiredAt] = useState(() => localDatetimeInputValue());
   const [tradeNote, setTradeNote] = useState('');
   const [incomingItems, setIncomingItems] = useState<IncomingItemDraft[]>([]);
+  const [parseSpecsBeforeConfirm, setParseSpecsBeforeConfirm] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [parseProgress, setParseProgress] = useState<string | null>(null);
+  const [parsingRowId, setParsingRowId] = useState<string | null>(null);
   /** Total value you attribute to your outgoing item in this deal (basis for remainder → incoming cost). */
   const [dealValue, setDealValue] = useState<number>(() =>
     item.sellPrice != null && !Number.isNaN(Number(item.sellPrice)) ? Number(item.sellPrice) : 0
@@ -44,8 +77,7 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose }) => {
 
   // Manual Form State
   const [newItemName, setNewItemName] = useState('');
-  const [newItemValue, setNewItemValue] = useState<number>(0);
-  const [newItemCategory, setNewItemCategory] = useState('PC Components');
+  const [newItemCategory, setNewItemCategory] = useState(() => Object.keys(HIERARCHY_CATEGORIES)[0] || 'Components');
 
   // Search Effect
   useEffect(() => {
@@ -77,7 +109,8 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose }) => {
       estimatedValue: 0,
       category: category,
       hardwareDbType: res.type,
-      specs: res.specs ? { ...res.specs } : undefined
+      specs: res.specs ? { ...res.specs } : undefined,
+      source: 'search'
     }]);
     setSearchQuery('');
     setShowResults(false);
@@ -85,17 +118,50 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose }) => {
 
   const addManualItem = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newItemName || newItemValue < 0) return;
+    const name = newItemName.trim();
+    if (!name) return;
 
     setIncomingItems(prev => [...prev, {
-      id: `new-${Date.now()}`,
-      name: newItemName,
-      estimatedValue: newItemValue,
-      category: newItemCategory
+      id: `new-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      name,
+      estimatedValue: 0,
+      category: newItemCategory,
+      source: 'manual'
     }]);
 
     setNewItemName('');
-    setNewItemValue(0);
+  };
+
+  const knownKeysForDraft = (d: IncomingItemDraft) => {
+    const activeKey = `${d.category}:`;
+    return categoryFields[activeKey] || categoryFields[d.category] || [];
+  };
+
+  const parseSpecsForIncomingRow = async (id: string) => {
+    const d = incomingItems.find((i) => i.id === id);
+    if (!d || !aiAvailable) return;
+    setParsingRowId(id);
+    try {
+      const result = await generateItemSpecs(d.name, d.category, knownKeysForDraft(d));
+      if (result.specs && Object.keys(result.specs).length > 0) {
+        setIncomingItems((prev) =>
+          prev.map((i) =>
+            i.id === id
+              ? {
+                  ...i,
+                  specs: result.specs,
+                  ...(result.standardizedName ? { name: result.standardizedName } : {}),
+                  ...(result.vendor ? { parsedVendor: result.vendor } : {})
+                }
+              : i
+          )
+        );
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not parse specs.');
+    } finally {
+      setParsingRowId(null);
+    }
   };
 
   const updateIncomingValue = (id: string, val: number) => {
@@ -148,7 +214,7 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose }) => {
     incomingItems.length > 0 &&
     Math.abs(totalIncomingValue + netCash - dealValue) > 0.02;
 
-  const handleConfirmTrade = () => {
+  const handleConfirmTrade = async () => {
     if (incomingItems.length === 0 && cashAmount === 0) {
       alert("Please add at least one item or cash to the trade.");
       return;
@@ -169,29 +235,60 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose }) => {
       }
     }
 
+    let drafts: IncomingItemDraft[] = incomingItems.map((d) => ({ ...d }));
+
+    if (parseSpecsBeforeConfirm && aiAvailable && drafts.some((d) => !d.specs || Object.keys(d.specs).length === 0)) {
+      const needSpecs = drafts.filter((d) => !d.specs || Object.keys(d.specs).length === 0);
+      setSaving(true);
+      try {
+        for (let i = 0; i < needSpecs.length; i++) {
+          const row = needSpecs[i];
+          setParseProgress(`Parsing specs… ${i + 1} / ${needSpecs.length}`);
+          try {
+            const result = await generateItemSpecs(row.name, row.category, knownKeysForDraft(row));
+            const idx = drafts.findIndex((x) => x.id === row.id);
+            if (idx >= 0 && result.specs && Object.keys(result.specs).length > 0) {
+              drafts[idx] = {
+                ...drafts[idx],
+                specs: result.specs,
+                ...(result.standardizedName ? { name: result.standardizedName } : {}),
+                ...(result.vendor ? { parsedVendor: result.vendor } : {})
+              };
+            }
+          } catch (e) {
+            console.warn('Trade import: AI specs parse failed for', row.name, e);
+          }
+        }
+      } finally {
+        setParseProgress(null);
+        setSaving(false);
+      }
+    }
+
     const noteSuffix = tradeNote ? `\n\n[Trade Context]: ${tradeNote}` : '';
 
-    const newInventoryItems: InventoryItem[] = incomingItems.map(draft => ({
+    const newInventoryItems: InventoryItem[] = drafts.map((draft) => ({
       id: `trade-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       name: draft.name,
-      buyPrice: draft.estimatedValue, // The cost basis is the value assigned during trade
-      buyDate: tradeDate,
+      buyPrice: draft.estimatedValue,
+      buyDate: tradeAcquiredAt,
       category: draft.category,
       subCategory: draft.category,
       status: ItemStatus.IN_STOCK,
       comment1: `Acquired via trade from: ${item.name} (Value: €${draft.estimatedValue})${noteSuffix}`,
       comment2: '',
-      vendor: 'Trade',
-      tradedFromId: item.id
+      vendor: draft.parsedVendor || 'Trade',
+      tradedFromId: item.id,
+      ...(draft.specs && Object.keys(draft.specs).length > 0 ? { specs: draft.specs } : {})
     }));
 
-    const newIds = newInventoryItems.map(i => i.id);
+    const newIds = newInventoryItems.map((i) => i.id);
 
     const updatedOriginal: InventoryItem = {
       ...item,
       status: ItemStatus.TRADED,
       sellPrice: totalTradeValue,
-      sellDate: tradeDate,
+      sellDate: tradeAcquiredAt,
       profit: projectedProfit,
       tradedForIds: newIds,
       cashOnTop: netCash,
@@ -269,8 +366,13 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose }) => {
                    </div>
 
                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Trade Date</label>
-                      <input type="date" className="w-full px-5 py-3 rounded-2xl border border-red-100 font-bold text-sm outline-none" value={tradeDate} onChange={e => setTradeDate(e.target.value)} />
+                      <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Trade date &amp; time (acquisition)</label>
+                      <input
+                        type="datetime-local"
+                        className="w-full px-5 py-3 rounded-2xl border border-red-100 font-bold text-sm outline-none"
+                        value={tradeAcquiredAt}
+                        onChange={(e) => setTradeAcquiredAt(e.target.value)}
+                      />
                    </div>
                 </div>
               </div>
@@ -387,8 +489,16 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose }) => {
                            <CategoryIconBox category={inc.category} className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100 shrink-0 text-emerald-600" size={18} />
                            <div className="flex-1 min-w-0">
                               <p className="font-black text-slate-900 text-xs truncate">{inc.name}</p>
-                              <div className="flex items-center gap-2 mt-1">
+                              <div className="flex items-center gap-2 mt-1 flex-wrap">
                                  <span className="text-[8px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded uppercase border border-slate-100">{inc.category}</span>
+                                 {inc.source === 'manual' && (
+                                   <span className="text-[8px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100">Manual</span>
+                                 )}
+                                 {inc.specs && Object.keys(inc.specs).length > 0 && (
+                                   <span className="text-[8px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
+                                     {Object.keys(inc.specs).length} specs
+                                   </span>
+                                 )}
                                  <div className="flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100">
                                     <span className="text-[9px] text-emerald-600 font-bold">Val:</span>
                                     <input 
@@ -404,23 +514,50 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose }) => {
                                  </div>
                               </div>
                            </div>
-                           <button onClick={() => removeIncomingItem(inc.id)} className="p-2 text-slate-300 hover:bg-red-50 hover:text-red-500 rounded-xl transition-all"><Trash2 size={14}/></button>
+                           <div className="flex items-center shrink-0 gap-1">
+                              {aiAvailable && (
+                                <button
+                                  type="button"
+                                  title="Parse tech specs with AI (same as bulk import)"
+                                  disabled={!!parsingRowId || saving}
+                                  onClick={() => parseSpecsForIncomingRow(inc.id)}
+                                  className="p-2 text-amber-600 hover:bg-amber-50 rounded-xl transition-all disabled:opacity-40"
+                                >
+                                  {parsingRowId === inc.id ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                                </button>
+                              )}
+                              <button type="button" onClick={() => removeIncomingItem(inc.id)} className="p-2 text-slate-300 hover:bg-red-50 hover:text-red-500 rounded-xl transition-all"><Trash2 size={14}/></button>
+                           </div>
                         </div>
                      ))}
                   </div>
 
                   {/* MANUAL ADD */}
                   <form onSubmit={addManualItem} className="bg-white/80 p-3 rounded-2xl border border-emerald-100 space-y-2 mt-auto backdrop-blur-sm">
-                     <p className="text-[9px] font-black uppercase text-emerald-600 ml-1">Manual Entry (Fallback)</p>
+                     <p className="text-[9px] font-black uppercase text-emerald-600 ml-1">Manual entry — name &amp; category; value from split mode or manual Val column</p>
+                     {aiAvailable && (
+                       <label className="flex items-center gap-2 ml-1 cursor-pointer select-none">
+                         <input
+                           type="checkbox"
+                           checked={parseSpecsBeforeConfirm}
+                           onChange={(e) => setParseSpecsBeforeConfirm(e.target.checked)}
+                           className="rounded border-emerald-200 text-emerald-600 focus:ring-emerald-200"
+                         />
+                         <span className="text-[10px] font-bold text-slate-600">
+                           Parse tech specs with AI before saving (lines without specs), like bulk import
+                           {getSpecsAIProvider() ? ` — ${getSpecsAIProvider()}` : ''}
+                         </span>
+                       </label>
+                     )}
                      <div className="flex gap-2">
                         <input 
-                           placeholder="Item Name..." 
+                           placeholder="Item name (e.g. RTX 4070 Super)..." 
                            className="flex-1 px-3 py-2 bg-white rounded-xl border border-emerald-100 text-xs font-bold outline-none focus:border-emerald-300 shadow-sm"
                            value={newItemName}
                            onChange={e => setNewItemName(e.target.value)}
                         />
                         <select 
-                           className="w-28 px-2 py-2 bg-white rounded-xl border border-emerald-100 text-[10px] font-bold outline-none shadow-sm"
+                           className="w-32 px-2 py-2 bg-white rounded-xl border border-emerald-100 text-[10px] font-bold outline-none shadow-sm"
                            value={newItemCategory}
                            onChange={e => setNewItemCategory(e.target.value)}
                         >
@@ -460,11 +597,25 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose }) => {
               </div>
            </div>
            
-           <div className="flex gap-3 w-full md:w-auto">
-              <button onClick={onClose} className="flex-1 md:flex-none px-8 py-4 font-bold text-slate-500 hover:bg-white hover:text-slate-800 rounded-2xl transition-all">Cancel</button>
-              <button onClick={handleConfirmTrade} className="flex-1 md:flex-none px-10 py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-black transition-all flex items-center justify-center gap-3">
-                 <RefreshCcw size={16} /> Confirm Deal
-              </button>
+           <div className="flex flex-col items-end gap-2 w-full md:w-auto">
+              {parseProgress && (
+                <p className="text-[10px] font-bold text-amber-700 flex items-center gap-2">
+                  <Loader2 size={14} className="animate-spin shrink-0" />
+                  {parseProgress}
+                </p>
+              )}
+              <div className="flex gap-3 w-full md:w-auto">
+                <button type="button" onClick={onClose} disabled={saving} className="flex-1 md:flex-none px-8 py-4 font-bold text-slate-500 hover:bg-white hover:text-slate-800 rounded-2xl transition-all disabled:opacity-50">Cancel</button>
+                <button
+                  type="button"
+                  onClick={() => void handleConfirmTrade()}
+                  disabled={saving}
+                  className="flex-1 md:flex-none px-10 py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-black transition-all flex items-center justify-center gap-3 disabled:opacity-60"
+                >
+                  {saving ? <Loader2 size={16} className="animate-spin" /> : <RefreshCcw size={16} />}
+                  {saving ? 'Saving…' : 'Confirm Deal'}
+                </button>
+              </div>
            </div>
         </footer>
       </div>

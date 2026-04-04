@@ -2768,6 +2768,7 @@ const InventoryList: React.FC<Props> = ({
       {itemToTrade && (
          <TradeModal 
             item={itemToTrade}
+            categoryFields={categoryFields}
             onSave={(updatedOriginal, newItems) => {
                onUpdate([updatedOriginal, ...newItems]);
                setItemToTrade(null);
