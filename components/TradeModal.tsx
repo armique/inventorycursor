@@ -1,11 +1,12 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { formatEUR, parseLocaleMoney } from '../utils/formatMoney';
 
-import { X, ArrowRightLeft, Plus, Trash2, Package, Wallet, ArrowRight, Search, Database, FileText, TrendingUp, TrendingDown, RefreshCcw } from 'lucide-react';
+import { X, ArrowRightLeft, Plus, Trash2, Wallet, ArrowRight, Search, Database, FileText, TrendingUp, TrendingDown, RefreshCcw, Scale } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { searchAllHardware, HardwareMetadata } from '../services/hardwareDB';
+import { allocateRemainderEuros, TradeSplitMode } from '../services/tradeAllocation';
 import ItemThumbnail, { CategoryIconBox } from './ItemThumbnail';
 
 interface Props {
@@ -19,6 +20,9 @@ interface IncomingItemDraft {
   name: string;
   estimatedValue: number;
   category: string;
+  /** LOCAL_HARDWARE_INDEX category when picked from DB search. */
+  hardwareDbType?: string;
+  specs?: Record<string, string | number>;
 }
 
 const TradeModal: React.FC<Props> = ({ item, onSave, onClose }) => {
@@ -27,6 +31,11 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose }) => {
   const [tradeDate, setTradeDate] = useState(new Date().toISOString().split('T')[0]);
   const [tradeNote, setTradeNote] = useState('');
   const [incomingItems, setIncomingItems] = useState<IncomingItemDraft[]>([]);
+  /** Total value you attribute to your outgoing item in this deal (basis for remainder → incoming cost). */
+  const [dealValue, setDealValue] = useState<number>(() =>
+    item.sellPrice != null && !Number.isNaN(Number(item.sellPrice)) ? Number(item.sellPrice) : 0
+  );
+  const [splitMode, setSplitMode] = useState<TradeSplitMode>('manual');
   
   // Search State
   const [searchQuery, setSearchQuery] = useState('');
@@ -65,8 +74,10 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose }) => {
     setIncomingItems(prev => [...prev, {
       id: `new-${Date.now()}-${Math.random()}`,
       name: `${res.vendor} ${res.model}`,
-      estimatedValue: 0, // User must fill this
-      category: category
+      estimatedValue: 0,
+      category: category,
+      hardwareDbType: res.type,
+      specs: res.specs ? { ...res.specs } : undefined
     }]);
     setSearchQuery('');
     setShowResults(false);
@@ -95,16 +106,67 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose }) => {
     setIncomingItems(prev => prev.filter(i => i.id !== id));
   };
 
-  // Calculations
-  const totalIncomingValue = incomingItems.reduce((sum, i) => sum + i.estimatedValue, 0);
   const netCash = cashDirection === 'IN' ? cashAmount : -cashAmount;
-  const totalTradeValue = totalIncomingValue + netCash;
+  const remainderForItems = dealValue - netCash;
+
+  const allocationStructKey = useMemo(
+    () =>
+      incomingItems
+        .map((i) => `${i.id}|${i.hardwareDbType ?? ''}|${i.name}|${JSON.stringify(i.specs ?? {})}`)
+        .join(';;'),
+    [incomingItems]
+  );
+
+  useEffect(() => {
+    if (splitMode === 'manual') return;
+    const subMode = splitMode === 'equal' ? 'equal' : 'smart';
+    setIncomingItems((prev) => {
+      if (prev.length === 0) return prev;
+      const allocated = allocateRemainderEuros(
+        Math.max(0, remainderForItems),
+        prev.map((i) => ({
+          id: i.id,
+          name: i.name,
+          category: i.category,
+          hardwareDbType: i.hardwareDbType,
+          specs: i.specs
+        })),
+        subMode
+      );
+      const next = prev.map((p, idx) => ({ ...p, estimatedValue: allocated[idx] ?? 0 }));
+      const same = next.every((n, idx) => n.estimatedValue === prev[idx].estimatedValue);
+      return same ? prev : next;
+    });
+  }, [splitMode, dealValue, netCash, allocationStructKey]);
+
+  const totalIncomingValue = incomingItems.reduce((sum, i) => sum + i.estimatedValue, 0);
+  const totalTradeValue =
+    splitMode === 'manual' ? totalIncomingValue + netCash : dealValue;
   const projectedProfit = totalTradeValue - item.buyPrice;
+  const autoSplitMismatch =
+    splitMode !== 'manual' &&
+    incomingItems.length > 0 &&
+    Math.abs(totalIncomingValue + netCash - dealValue) > 0.02;
 
   const handleConfirmTrade = () => {
     if (incomingItems.length === 0 && cashAmount === 0) {
       alert("Please add at least one item or cash to the trade.");
       return;
+    }
+
+    if (splitMode !== 'manual') {
+      if (dealValue <= 0) {
+        alert('Set "Your item deal value" to the total value of your outgoing item in this trade.');
+        return;
+      }
+      if (incomingItems.length > 0 && remainderForItems < 0) {
+        alert('Cash (and direction) exceeds your deal value — lower cash or raise deal value.');
+        return;
+      }
+      if (autoSplitMismatch) {
+        alert('Incoming item values and cash do not match deal value. Adjust deal value or switch to manual.');
+        return;
+      }
     }
 
     const noteSuffix = tradeNote ? `\n\n[Trade Context]: ${tradeNote}` : '';
@@ -177,6 +239,24 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose }) => {
                   </div>
                 </div>
 
+                <div className="space-y-2 mb-4">
+                  <label className="text-[10px] font-black uppercase text-slate-400 ml-2 flex items-center gap-2">
+                    <Scale size={12} /> Your item deal value (€)
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    className="w-full px-5 py-3 rounded-2xl border border-red-100 font-black text-sm outline-none focus:border-red-300 shadow-sm"
+                    value={dealValue || ''}
+                    onChange={(e) => setDealValue(parseLocaleMoney(e.target.value, 0))}
+                    placeholder="e.g. agreed value / list price"
+                  />
+                  <p className="text-[9px] text-slate-500 font-medium leading-snug ml-2">
+                    For cash + parts trades: set this to what your outgoing item is worth in the deal. Incoming parts get the remainder after cash (
+                    <span className="font-black text-slate-700">€{formatEUR(Math.max(0, remainderForItems))}</span> to split) when using Equal or Smart split.
+                  </p>
+                </div>
+
                 <div className="space-y-4">
                    <div className="space-y-2">
                       <label className="text-[10px] font-black uppercase text-slate-400 ml-2 flex items-center gap-2"><FileText size={12}/> Trade Note / Context</label>
@@ -233,7 +313,35 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose }) => {
             {/* RIGHT: INCOMING */}
             <div className="flex-1 space-y-6 flex flex-col">
                <div className="bg-emerald-50 rounded-[2.5rem] p-8 border border-emerald-100 flex-1 flex flex-col relative overflow-visible">
-                  <h3 className="text-xs font-black text-emerald-500 uppercase tracking-widest mb-6 flex items-center gap-2"><ArrowRightLeft size={14}/> Incoming (You Receive)</h3>
+                  <h3 className="text-xs font-black text-emerald-500 uppercase tracking-widest mb-4 flex items-center gap-2"><ArrowRightLeft size={14}/> Incoming (You Receive)</h3>
+
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {(
+                      [
+                        { id: 'manual' as const, label: 'Manual values' },
+                        { id: 'equal' as const, label: 'Split remainder equally' },
+                        { id: 'smart' as const, label: 'Smart split (CPU/GPU tier)' }
+                      ] as const
+                    ).map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setSplitMode(opt.id)}
+                        className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-wide border transition-all ${
+                          splitMode === opt.id
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-md'
+                            : 'bg-white text-slate-600 border-emerald-100 hover:border-emerald-300'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  {splitMode !== 'manual' && remainderForItems < 0 && incomingItems.length > 0 && (
+                    <p className="text-[10px] font-bold text-red-600 mb-3 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+                      Remainder for items is negative — cash exceeds deal value.
+                    </p>
+                  )}
                   
                   {/* SEARCH BAR */}
                   <div className="relative mb-4 z-20 group">
@@ -286,7 +394,8 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose }) => {
                                     <input 
                                        type="text"
                                        inputMode="decimal"
-                                       className="w-16 bg-transparent border-none rounded text-[10px] font-black p-0 text-right focus:ring-0 text-emerald-900 placeholder:text-emerald-300"
+                                       disabled={splitMode !== 'manual'}
+                                       className="w-16 bg-transparent border-none rounded text-[10px] font-black p-0 text-right focus:ring-0 text-emerald-900 placeholder:text-emerald-300 disabled:opacity-60 disabled:cursor-not-allowed"
                                        value={inc.estimatedValue || ''}
                                        placeholder="0.00"
                                        onChange={e => updateIncomingValue(inc.id, parseLocaleMoney(e.target.value, 0))}
@@ -329,10 +438,17 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose }) => {
            <div className="flex items-center gap-8 w-full md:w-auto">
               <div className="flex flex-col">
                  <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Total Trade Value</p>
-                 <div className="flex items-baseline gap-2">
+                 <div className="flex items-baseline gap-2 flex-wrap">
                     <span className="text-3xl font-black text-slate-900">€{formatEUR(totalTradeValue)}</span>
-                    <span className="text-[10px] font-bold text-slate-400">(Items + Cash)</span>
+                    <span className="text-[10px] font-bold text-slate-400">
+                      {splitMode === 'manual' ? '(Items + Cash)' : '(Deal value)'}
+                    </span>
                  </div>
+                 {splitMode !== 'manual' && (
+                   <p className="text-[9px] text-slate-500 font-bold mt-1">
+                     Items €{formatEUR(totalIncomingValue)} + cash €{formatEUR(netCash)} → deal €{formatEUR(dealValue)}
+                   </p>
+                 )}
               </div>
               <div className="h-10 w-px bg-slate-200 hidden md:block"></div>
               <div className="flex flex-col">
