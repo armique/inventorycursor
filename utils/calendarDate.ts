@@ -16,3 +16,13 @@ export function toLocalCalendarDateKey(raw: string | Date | undefined | null): s
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${mo}-${day}`;
 }
+
+/** YYYY-MM for monthly rollups; keeps date-only YYYY-MM-DD calendar-accurate (no UTC day shift). */
+export function yearMonthKeyFromDate(raw: string | Date | undefined | null): string {
+  const day = toLocalCalendarDateKey(raw);
+  return day.length >= 7 ? day.slice(0, 7) : '';
+}
+
+export function currentLocalYearMonth(ref: Date = new Date()): string {
+  return `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, '0')}`;
+}

@@ -15,7 +15,7 @@ import {
   shouldSkipForInventoryCostLine,
   shouldSkipContainerForPurchaseCogs,
 } from '../services/financialAggregation';
-import { toLocalCalendarDateKey } from '../utils/calendarDate';
+import { toLocalCalendarDateKey, yearMonthKeyFromDate, currentLocalYearMonth } from '../utils/calendarDate';
 
 interface Props {
   items: InventoryItem[];
@@ -211,22 +211,26 @@ const Dashboard: React.FC<Props> = ({
   }, [timeFilter, customStart, customEnd]);
 
   const filteredItems = useMemo(() => {
-    return items.filter(item => {
-      let relevantDate: Date | null = null;
-      if (item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED) {
-         if (item.sellDate) relevantDate = new Date(item.sellDate);
-      } else {
-         if (item.buyDate) relevantDate = new Date(item.buyDate);
-      }
-      if (!relevantDate) return false;
-      return relevantDate.getTime() >= startDate.getTime() && relevantDate.getTime() <= endDate.getTime();
+    const startKey = toLocalCalendarDateKey(startDate);
+    const endKey = toLocalCalendarDateKey(endDate);
+    return items.filter((item) => {
+      const raw =
+        item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED ? item.sellDate : item.buyDate;
+      if (!raw) return false;
+      const k = toLocalCalendarDateKey(raw);
+      if (!k) return false;
+      return k >= startKey && k <= endKey;
     });
   }, [items, startDate, endDate]);
 
   const filteredExpenses = useMemo(() => {
-    return expenses.filter(e => {
-       const d = new Date(e.date);
-       return d.getTime() >= startDate.getTime() && d.getTime() <= endDate.getTime();
+    const startKey = toLocalCalendarDateKey(startDate);
+    const endKey = toLocalCalendarDateKey(endDate);
+    return expenses.filter((e) => {
+      if (!e.date) return false;
+      const k = toLocalCalendarDateKey(e.date);
+      if (!k) return false;
+      return k >= startKey && k <= endKey;
     });
   }, [expenses, startDate, endDate]);
 
@@ -301,15 +305,12 @@ const Dashboard: React.FC<Props> = ({
       ? ((allTimeProfit - currentLevel.min) / (nextLevel.min - currentLevel.min)) * 100
       : 100;
 
-    const now = new Date();
+    const thisYearMonth = currentLocalYearMonth();
     const currentMonthItems = soldForRollup.filter(
-      (i) =>
-        i.sellDate &&
-        new Date(i.sellDate).getMonth() === now.getMonth() &&
-        new Date(i.sellDate).getFullYear() === now.getFullYear()
+      (i) => !!i.sellDate && yearMonthKeyFromDate(i.sellDate) === thisYearMonth
     );
     const currentMonthExpenses = expenses.filter(
-      (e) => new Date(e.date).getMonth() === now.getMonth() && new Date(e.date).getFullYear() === now.getFullYear()
+      (e) => !!e.date && yearMonthKeyFromDate(e.date) === thisYearMonth
     );
     const monthProfit = roundMoney(
       currentMonthItems.reduce((acc: number, i) => acc + calculateItemProfit(i), 0) -
@@ -428,8 +429,8 @@ const Dashboard: React.FC<Props> = ({
     const byMonth: Record<string, number> = {};
     sold.forEach((i) => {
       if (!i.sellDate) return;
-      const d = new Date(i.sellDate);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const key = yearMonthKeyFromDate(i.sellDate);
+      if (!key) return;
       byMonth[key] = (byMonth[key] || 0) + calculateItemProfit(i);
     });
     return Object.entries(byMonth)
