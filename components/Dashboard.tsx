@@ -15,6 +15,7 @@ import {
   shouldSkipForInventoryCostLine,
   shouldSkipContainerForPurchaseCogs,
 } from '../services/financialAggregation';
+import { toLocalCalendarDateKey } from '../utils/calendarDate';
 
 interface Props {
   items: InventoryItem[];
@@ -356,16 +357,17 @@ const Dashboard: React.FC<Props> = ({
        let curr: Date = new Date(startMs);
        
        while (curr.getTime() <= endMs) {
-          const dayStr = curr.toISOString().split('T')[0];
+          const dayStr = toLocalCalendarDateKey(curr);
           const label = diffDays > 32 ? curr.toLocaleString('default', { month: 'short' }) : curr.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit' });
           
           const sold = filteredItems.filter(
             (i) =>
               (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
               !shouldSkipForAggregatedSaleLine(i, items) &&
-              i.sellDate === dayStr
+              !!i.sellDate &&
+              toLocalCalendarDateKey(i.sellDate) === dayStr
           );
-          const exps = filteredExpenses.filter(e => e.date === dayStr);
+          const exps = filteredExpenses.filter((e) => toLocalCalendarDateKey(e.date) === dayStr);
           const revenue = roundMoney(sold.reduce((acc: number, i) => acc + (Number(i.sellPrice) || 0), 0));
           const itemProfit = roundMoney(sold.reduce((acc: number, i) => acc + calculateItemProfit(i), 0));
           const expTotal = roundMoney(exps.reduce((acc: number, e) => acc + Number(e.amount), 0));

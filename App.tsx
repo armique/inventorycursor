@@ -23,7 +23,7 @@ const LegalPage = lazy(() => import('./components/LegalPage'));
 const InvoiceManager = lazy(() => import('./components/InvoiceManager'));
 const ActionHistoryPage = lazy(() => import('./components/ActionHistoryPage'));
 
-import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense, DashboardPreferences, ActionHistoryEntry } from './types';
+import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense, DashboardPreferences, ActionHistoryEntry, TaxMode } from './types';
 import {
   loadDashboardPreferencesFromLocalStorage,
   persistDashboardPreferencesToLocalStorage,
@@ -33,6 +33,7 @@ import {
 import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchFromCloud } from './services/firebaseService';
 import { DEFAULT_CATEGORIES } from './services/constants';
 import { appendPriceHistoryIfChanged } from './services/priceHistory';
+import { computeItemProfitBeforeOverhead } from './services/financialAggregation';
 import { syncContainerBuyTotalsFromComponents } from './services/containerAggregates';
 import { filterUsableImageUrls, isUsableProductImageUrl } from './services/storefrontImageUtils';
 import { saveOAuthResult } from './services/githubBackupService';
@@ -124,27 +125,67 @@ function computeStoreBadge(item: InventoryItem): 'New' | 'Price reduced' | null 
   return null;
 }
 
-function recomputeRealizedProfit(item: InventoryItem): InventoryItem {
+function recomputeRealizedProfit(item: InventoryItem, taxMode: TaxMode): InventoryItem {
   // Keep container-style bookkeeping untouched; their profit is handled separately.
   if (item.isBundle || item.isPC) return item;
   if (item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED) return item;
-  const sell = item.sellPrice != null ? Number(item.sellPrice) : NaN;
-  const buy = Number(item.buyPrice);
-  const fee = Number(item.feeAmount || 0);
-  if (Number.isNaN(sell) || Number.isNaN(buy)) return { ...item, profit: undefined };
-  const profit = Math.round((sell - buy - fee) * 100) / 100;
+  if (item.sellPrice == null || Number.isNaN(Number(item.sellPrice))) return { ...item, profit: undefined };
+  if (Number.isNaN(Number(item.buyPrice))) return { ...item, profit: undefined };
+  const profit = computeItemProfitBeforeOverhead(item, taxMode);
   return { ...item, profit };
 }
 
-function makeActionEntry(action: string, item?: InventoryItem, details?: string): ActionHistoryEntry {
+function makeActionEntry(action: string, item?: InventoryItem, details?: string, timestampIso?: string): ActionHistoryEntry {
   return {
     id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    timestamp: new Date().toISOString(),
+    timestamp: timestampIso || new Date().toISOString(),
     action,
     itemId: item?.id,
     itemName: item?.name,
     details,
   };
+}
+
+/** One clear history row for trades; drop redundant status + per-line "created" noise from the same batch. */
+function mergeTradeActionEntries(entries: ActionHistoryEntry[], updatedItems: InventoryItem[]): ActionHistoryEntry[] {
+  const traded = updatedItems.find(
+    (u) => u.status === ItemStatus.TRADED && Array.isArray(u.tradedForIds) && u.tradedForIds.length > 0
+  );
+  if (!traded) return entries;
+
+  const receivedInBatch = updatedItems.filter((u) => u.tradedFromId === traded.id);
+  if (receivedInBatch.length === 0) return entries;
+
+  const cash = traded.cashOnTop != null ? Number(traded.cashOnTop) : 0;
+  const cashBit =
+    cash > 0 ? `cash in €${cash.toFixed(2)}` : cash < 0 ? `cash out €${Math.abs(cash).toFixed(2)}` : '';
+  const names = receivedInBatch.map((i) => i.name).slice(0, 3);
+  const nameExtra = receivedInBatch.length > 3 ? ` +${receivedInBatch.length - 3} more` : '';
+  const details = [
+    `Deal €${(Number(traded.sellPrice) || 0).toFixed(2)}`,
+    `${receivedInBatch.length} received: ${names.join(', ')}${nameExtra}`,
+    cashBit,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  const tradeTime =
+    traded.sellDate && !Number.isNaN(new Date(traded.sellDate).getTime())
+      ? new Date(traded.sellDate).toISOString()
+      : undefined;
+
+  const summary = makeActionEntry('Trade completed', traded, details, tradeTime);
+
+  const receivedIds = new Set(receivedInBatch.map((r) => r.id));
+  const filtered = entries.filter((e) => {
+    if (e.itemId === traded.id && e.action.startsWith('Status changed:') && e.action.includes(String(ItemStatus.TRADED))) {
+      return false;
+    }
+    if (e.itemId && receivedIds.has(e.itemId) && e.action === 'Item created') return false;
+    return true;
+  });
+
+  return [summary, ...filtered];
 }
 
 function buildStoreCatalog(items: InventoryItem[], categoryFields: Record<string, string[]>): { items: { id: string; name: string; category: string; subCategory?: string; sellPrice?: number; storeSalePrice?: number; storeOnSale?: boolean; storeVisible?: boolean; imageUrl?: string; storeGalleryUrls?: string[]; storeDescription?: string; specs?: Record<string, string | number>; categoryFields?: string[]; badge?: 'New' | 'Price reduced'; storeMetaTitle?: string; storeMetaDescription?: string; storeDescriptionEn?: string; quantity?: number }[] } {
@@ -714,7 +755,8 @@ const App: React.FC = () => {
                 (final as Record<string, unknown>)[k as string] = oldVal;
             }
           }
-          final = recomputeRealizedProfit(final);
+          const taxMode = businessSettings.taxMode || 'SmallBusiness';
+          final = recomputeRealizedProfit(final, taxMode);
           if (idx >= 0) {
             nextItems[idx] = final;
             if (oldItem?.status !== final.status) {
@@ -736,6 +778,7 @@ const App: React.FC = () => {
            }
            nextItems = nextItems.filter(i => !deleteIds.includes(i.id));
         }
+        const actionEntriesMerged = mergeTradeActionEntries(actionEntries, updatedItems);
         nextItems = syncContainerBuyTotalsFromComponents(nextItems);
         // Record history snapshots for undo/redo.
         let nextIdx = historyIndexRef.current;
@@ -751,10 +794,10 @@ const App: React.FC = () => {
         historyIndexRef.current = nextIdx;
         setHistoryIndex(nextIdx);
         hasUnsavedChanges.current = true;
-        if (actionEntries.length > 0) addActionEntries(actionEntries);
+        if (actionEntriesMerged.length > 0) addActionEntries(actionEntriesMerged);
         return nextItems;
     });
-  }, [addActionEntries]);
+  }, [addActionEntries, businessSettings.taxMode]);
 
   const handleImportBatch = useCallback((newItems: InventoryItem[], replace: boolean) => {
     if (replace) {
