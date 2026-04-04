@@ -10,7 +10,7 @@ import {
   Sparkles, Loader2, Package
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, Platform, PaymentType } from '../types';
-import { formatEUR, parseLocaleMoney } from '../utils/formatMoney';
+import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { CATEGORY_IMAGES, searchAllHardware, HardwareMetadata } from '../services/hardwareDB';
 import { generateItemSpecs, getSpecsAIProvider, requestAIJson } from '../services/specsAI';
@@ -206,6 +206,9 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
 
   // Shared State
   const [totalCost, setTotalCost] = useState<number>(0);
+  /** While focused, raw text so decimals like "48," / "48." can be typed before blur. */
+  const [totalCostDraft, setTotalCostDraft] = useState<string | null>(null);
+  const [rowCostDrafts, setRowCostDrafts] = useState<Record<string, string>>({});
   const [buyDate, setBuyDate] = useState(new Date().toISOString().split('T')[0]);
   const [platform, setPlatform] = useState<Platform>('kleinanzeigen.de');
   const [payment, setPayment] = useState<PaymentType>('Cash');
@@ -468,9 +471,15 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
     }
   };
 
-  const updateItemCost = (id: string, val: string) => {
-    const num = parseLocaleMoney(val, NaN);
-    setItems(prev => prev.map(i => i.id === id ? { ...i, manualCost: isNaN(num) ? undefined : num } : i));
+  const commitRowCost = (id: string, raw: string) => {
+    const t = raw.trim();
+    if (!t) {
+      setItems((prev) => prev.map((i) => (i.id === id ? { ...i, manualCost: undefined } : i)));
+      return;
+    }
+    const n = parseLocaleNumber(t);
+    if (!Number.isFinite(n)) return;
+    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, manualCost: n } : i)));
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -654,29 +663,66 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
               <p className="text-sm text-slate-500 font-bold">Add Multiple Items • One Transaction</p>
            </div>
         </div>
-        <div className="flex items-center gap-4 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm">
-           <div className="px-4 border-r border-slate-100">
-              <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest block">Total Paid</label>
+        <div className="flex flex-wrap items-end gap-3 md:gap-4 bg-white p-2 md:p-3 rounded-2xl border border-slate-200 shadow-sm">
+           <div className="px-3 border-r border-slate-100 min-w-[6rem]">
+              <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest block">Total paid</label>
               <div className="flex items-center gap-1">
                  <span className="text-slate-400 font-bold">€</span>
                  <input 
                     type="text"
                     inputMode="decimal"
-                    className="w-24 font-black text-xl outline-none text-slate-900 placeholder:text-slate-200" 
-                    placeholder="0.00"
-                    value={totalCost || ''}
-                    onChange={e => setTotalCost(parseLocaleMoney(e.target.value, 0))}
+                    className="w-28 font-black text-xl outline-none text-slate-900 placeholder:text-slate-200" 
+                    placeholder="0,00"
+                    value={totalCostDraft !== null ? totalCostDraft : totalCost === 0 ? '' : String(totalCost)}
+                    onFocus={() => setTotalCostDraft(totalCost === 0 ? '' : String(totalCost))}
+                    onBlur={() => {
+                      const raw = totalCostDraft ?? '';
+                      setTotalCostDraft(null);
+                      const t = raw.trim();
+                      if (!t) {
+                        setTotalCost(0);
+                        return;
+                      }
+                      const n = parseLocaleNumber(t);
+                      if (Number.isFinite(n)) setTotalCost(n);
+                    }}
+                    onChange={(e) => setTotalCostDraft(e.target.value)}
                  />
               </div>
            </div>
-           <div className="px-4">
-              <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest block">Date</label>
+           <div className="px-3">
+              <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest block">Buy date</label>
               <input 
                  type="date" 
                  className="font-bold text-sm outline-none text-slate-700 bg-transparent"
                  value={buyDate}
                  onChange={e => setBuyDate(e.target.value)}
               />
+           </div>
+           <div className="px-3 min-w-[9rem]">
+              <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest block">Bought on</label>
+              <select 
+                 className="w-full max-w-[11rem] py-1.5 bg-transparent font-bold text-xs outline-none text-slate-800 border border-slate-200 rounded-xl px-2"
+                 value={platform}
+                 onChange={(e) => setPlatform(e.target.value as Platform)}
+              >
+                 <option value="kleinanzeigen.de">Kleinanzeigen</option>
+                 <option value="ebay.de">eBay</option>
+                 <option value="Amazon">Amazon</option>
+                 <option value="Other">Other</option>
+              </select>
+           </div>
+           <div className="px-3 min-w-[10rem]">
+              <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest block">Paid with</label>
+              <select 
+                 className="w-full max-w-[13rem] py-1.5 bg-transparent font-bold text-xs outline-none text-slate-800 border border-slate-200 rounded-xl px-2"
+                 value={payment}
+                 onChange={(e) => setPayment(e.target.value as PaymentType)}
+              >
+                 {PAYMENT_METHODS.map((p) => (
+                   <option key={p} value={p}>{p}</option>
+                 ))}
+              </select>
            </div>
         </div>
       </header>
@@ -872,33 +918,12 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                </div>
             )}
 
-            {/* SHARED INFO CARD */}
+            {/* Optional proof — platform & payment are in the header */}
             <div className="bg-slate-50 p-6 rounded-[2.5rem] border border-slate-200 space-y-4">
-               <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 flex items-center gap-2"><Globe size={12}/> Purchase Context</h3>
-               <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                     <label className="text-[9px] font-bold text-slate-400">Source</label>
-                     <select 
-                        className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
-                        value={platform}
-                        onChange={e => setPlatform(e.target.value as Platform)}
-                     >
-                        <option value="kleinanzeigen.de">Kleinanzeigen</option>
-                        <option value="ebay.de">eBay</option>
-                        <option value="Other">Other</option>
-                     </select>
-                  </div>
-                  <div className="space-y-1">
-                     <label className="text-[9px] font-bold text-slate-400">Payment</label>
-                     <select 
-                        className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
-                        value={payment}
-                        onChange={e => setPayment(e.target.value as PaymentType)}
-                     >
-                        {PAYMENT_METHODS.map(p => <option key={p} value={p}>{p}</option>)}
-                     </select>
-                  </div>
-               </div>
+               <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 flex items-center gap-2"><Globe size={12}/> Optional purchase proof</h3>
+               <p className="text-[10px] text-slate-500 font-medium leading-snug">
+                 Source and payment are set in the top bar (same as single-item add). Add a chat link or screenshot if you bought on Kleinanzeigen.
+               </p>
                
                {platform === 'kleinanzeigen.de' && (
                   <div className="pt-2 border-t border-slate-200/50 space-y-3">
@@ -1031,10 +1056,33 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                              <input 
                                 type="text"
                                 inputMode="decimal"
-                                className="w-16 bg-transparent text-right font-black text-sm outline-none text-slate-900"
+                                className="w-20 min-w-[4.5rem] bg-transparent text-right font-black text-sm outline-none text-slate-900"
                                 placeholder={formatEUR(autoCostsById[item.id] ?? 0)}
-                                value={item.manualCost !== undefined ? item.manualCost : ''}
-                                onChange={e => updateItemCost(item.id, e.target.value)}
+                                value={
+                                  rowCostDrafts[item.id] !== undefined
+                                    ? rowCostDrafts[item.id]
+                                    : item.manualCost !== undefined
+                                      ? String(item.manualCost)
+                                      : ''
+                                }
+                                onFocus={() =>
+                                  setRowCostDrafts((d) =>
+                                    d[item.id] !== undefined
+                                      ? d
+                                      : {
+                                          ...d,
+                                          [item.id]: item.manualCost !== undefined ? String(item.manualCost) : '',
+                                        }
+                                  )
+                                }
+                                onBlur={(e) => {
+                                  const raw = e.target.value;
+                                  setRowCostDrafts(({ [item.id]: _, ...rest }) => rest);
+                                  commitRowCost(item.id, raw);
+                                }}
+                                onChange={(e) =>
+                                  setRowCostDrafts((d) => ({ ...d, [item.id]: e.target.value }))
+                                }
                              />
                           </div>
 

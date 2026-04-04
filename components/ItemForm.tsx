@@ -877,6 +877,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                        >
                           <option value="kleinanzeigen.de">Kleinanzeigen</option>
                           <option value="ebay.de">eBay</option>
+                          <option value="Amazon">Amazon</option>
                           <option value="Other">Other</option>
                        </select>
                     </div>
