@@ -367,26 +367,55 @@ const App: React.FC = () => {
     const largeFields = ['imageUrl', 'receiptUrl', 'kleinanzeigenChatImage', 'kleinanzeigenBuyChatImage', 'marketDescription'] as const;
     const localById = new Map(localList.map((i) => [i.id, i]));
     const byId = new Map<string, InventoryItem>();
+    const isDisposed = (s: ItemStatus | undefined) => s === ItemStatus.SOLD || s === ItemStatus.TRADED;
+
+    const applyLargeFieldPlaceholders = (base: InventoryItem, fromRemote: InventoryItem): InventoryItem => {
+      let changed = false;
+      const out = { ...base };
+      for (const key of largeFields) {
+        const rv = (fromRemote as Record<string, unknown>)[key];
+        const lv = (base as Record<string, unknown>)[key];
+        if (rv === CLOUD_OMITTED_PLACEHOLDER && lv && typeof lv === 'string' && lv.length > 0) {
+          (out as Record<string, unknown>)[key] = lv;
+          changed = true;
+        }
+      }
+      return changed ? out : base;
+    };
+
     // Start with local (preserves items only in local – e.g. newly added bulk items not yet in cloud)
-    localList.forEach((i) => { if (i?.id) byId.set(i.id, i); });
-    // Overlay remote (server wins when ID matches), filling large fields from local when remote has placeholder
+    localList.forEach((i) => {
+      if (i?.id) byId.set(i.id, i);
+    });
+    // Overlay remote when ID matches — default remote wins, except stale cloud must not undo a local sale/trade
     remoteList.forEach((r) => {
       if (!r?.id) return;
       const local = localById.get(r.id);
-      let merged: InventoryItem = r;
-      if (local) {
-        let changed = false;
-        const out = { ...r };
-        for (const key of largeFields) {
-          const rv = (r as any)[key];
-          const lv = (local as any)[key];
-          if (rv === CLOUD_OMITTED_PLACEHOLDER && lv && typeof lv === 'string' && lv.length > 0) {
-            (out as any)[key] = lv;
-            changed = true;
-          }
-        }
-        merged = changed ? out : r;
+      if (!local) {
+        byId.set(r.id, r);
+        return;
       }
+
+      const localDisposed = isDisposed(local.status);
+      const remoteDisposed = isDisposed(r.status);
+
+      if (localDisposed && !remoteDisposed) {
+        byId.set(r.id, applyLargeFieldPlaceholders(local, r));
+        return;
+      }
+
+      let merged: InventoryItem = r;
+      let changed = false;
+      const out = { ...r };
+      for (const key of largeFields) {
+        const rv = (r as Record<string, unknown>)[key];
+        const lv = (local as Record<string, unknown>)[key];
+        if (rv === CLOUD_OMITTED_PLACEHOLDER && lv && typeof lv === 'string' && lv.length > 0) {
+          (out as Record<string, unknown>)[key] = lv;
+          changed = true;
+        }
+      }
+      merged = changed ? out : r;
       byId.set(r.id, merged);
     });
     return Array.from(byId.values());

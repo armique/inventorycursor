@@ -286,6 +286,7 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
 
     const updatedOriginal: InventoryItem = {
       ...item,
+      id: item.id,
       status: ItemStatus.TRADED,
       sellPrice: totalTradeValue,
       sellDate: tradeAcquiredAt,
