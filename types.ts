@@ -296,4 +296,6 @@ export interface ActionHistoryEntry {
   itemId?: string;
   itemName?: string;
   details?: string;
+  /** For "Trade completed" rows: ids of items received in that trade (used to revert). */
+  tradeReceivedIds?: string[];
 }

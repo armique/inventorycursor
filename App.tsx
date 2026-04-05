@@ -35,6 +35,7 @@ import { DEFAULT_CATEGORIES } from './services/constants';
 import { appendPriceHistoryIfChanged } from './services/priceHistory';
 import { computeItemProfitBeforeOverhead } from './services/financialAggregation';
 import { syncContainerBuyTotalsFromComponents } from './services/containerAggregates';
+import { applyTradeRevert } from './services/tradeRevert';
 import { filterUsableImageUrls, isUsableProductImageUrl } from './services/storefrontImageUtils';
 import { saveOAuthResult } from './services/githubBackupService';
 import { generateExpensesFromRecurring } from './services/recurringExpenseService';
@@ -174,7 +175,10 @@ function mergeTradeActionEntries(entries: ActionHistoryEntry[], updatedItems: In
       ? new Date(traded.sellDate).toISOString()
       : undefined;
 
-  const summary = makeActionEntry('Trade completed', traded, details, tradeTime);
+  const summary: ActionHistoryEntry = {
+    ...makeActionEntry('Trade completed', traded, details, tradeTime),
+    tradeReceivedIds: receivedInBatch.map((r) => r.id),
+  };
 
   const receivedIds = new Set(receivedInBatch.map((r) => r.id));
   const filtered = entries.filter((e) => {
@@ -1015,6 +1019,65 @@ const App: React.FC = () => {
     localStorage.removeItem('action_history');
   }, []);
 
+  const handleRevertTrade = useCallback(
+    (entry: ActionHistoryEntry) => {
+      if (entry.action !== 'Trade completed' || !entry.itemId) return;
+      const outgoing = items.find((i) => i.id === entry.itemId);
+      const receivedLabel =
+        (entry.tradeReceivedIds ?? [])
+          .map((id) => items.find((x) => x.id === id)?.name)
+          .filter(Boolean)
+          .join(', ') || 'linked received items';
+      const msg =
+        `Revert this trade?\n\n"${outgoing?.name ?? entry.itemName ?? 'Outgoing item'}" will return to In Stock. ` +
+        `Received items (${receivedLabel}) will be removed from inventory. Any cash recorded on the trade will be cleared.`;
+      if (!window.confirm(msg)) return;
+
+      setItems((currentItems) => {
+        const res = applyTradeRevert(
+          currentItems,
+          entry.itemId!,
+          entry.tradeReceivedIds,
+          businessSettings.taxMode || 'SmallBusiness'
+        );
+        if (!res.ok) {
+          alert(res.message);
+          return currentItems;
+        }
+        const nextItems = syncContainerBuyTotalsFromComponents(res.nextItems);
+
+        setTrash((prev) => prev.filter((t) => !res.removedIds.includes(t.id)));
+
+        setActionHistory((prev) =>
+          [
+            ...prev.filter((e) => e.id !== entry.id),
+            makeActionEntry(
+              'Trade reverted',
+              res.outgoingRestored,
+              `${res.removedIds.length} received item(s) removed; outgoing restored to In Stock.`
+            ),
+          ].slice(-ACTION_HISTORY_LIMIT)
+        );
+
+        let nextIdx = historyIndexRef.current;
+        setHistory((prev) => {
+          let base = prev.slice(0, Math.max(0, historyIndexRef.current + 1));
+          if (base.length === 0) base = [currentItems];
+          const last = base[base.length - 1];
+          if (last !== currentItems) base.push(currentItems);
+          base.push(nextItems);
+          nextIdx = base.length - 1;
+          return base;
+        });
+        historyIndexRef.current = nextIdx;
+        setHistoryIndex(nextIdx);
+        hasUnsavedChanges.current = true;
+        return nextItems;
+      });
+    },
+    [items, businessSettings.taxMode]
+  );
+
   const isConfigured = isCloudEnabled();
   const isAdminUser = authUser?.email === 'abelyanarmen@gmail.com';
 
@@ -1123,7 +1186,17 @@ const App: React.FC = () => {
           <Route path="builder" element={<PCBuilderWizard items={items} onSave={handleUpdate} />} />
           <Route path="pricing" element={<PriceCheck />} />
           <Route path="invoices" element={<InvoiceManager items={items} businessSettings={businessSettings} />} />
-          <Route path="action-history" element={<ActionHistoryPage entries={actionHistory} onClear={handleClearActionHistory} />} />
+          <Route
+            path="action-history"
+            element={
+              <ActionHistoryPage
+                entries={actionHistory}
+                items={items}
+                onClear={handleClearActionHistory}
+                onRevertTrade={handleRevertTrade}
+              />
+            }
+          />
           <Route
             path="expenses"
             element={
