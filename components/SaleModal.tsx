@@ -1,6 +1,6 @@
 
-import React, { useState } from 'react';
-import { X, Euro, CheckCircle2, User, Globe, ChevronDown, Link as LinkIcon, MessageCircle, Hash, Upload, Download, Sparkles } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { X, Euro, CheckCircle2, User, Globe, ChevronDown, Link as LinkIcon, MessageCircle, Hash, Upload, Download, Sparkles, ImagePlus } from 'lucide-react';
 import { fetchEbayOrder } from '../services/ebayService';
 import { parseEbayOrderFromImageInput } from '../services/ebayOrderScreenshotAI';
 import { InventoryItem, ItemStatus, PaymentType, CustomerInfo, Platform, TaxMode } from '../types';
@@ -50,6 +50,12 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
   const [orderScreenshotSource, setOrderScreenshotSource] = useState('');
   const [orderScreenshotParsing, setOrderScreenshotParsing] = useState(false);
   const [orderScreenshotError, setOrderScreenshotError] = useState<string | null>(null);
+  /** True while a file is dragged over the sale modal (eBay screenshot). */
+  const [ebayScreenshotDragOver, setEbayScreenshotDragOver] = useState(false);
+
+  useEffect(() => {
+    if (platformSold !== 'ebay.de') setEbayScreenshotDragOver(false);
+  }, [platformSold]);
 
   const handleFetchFromEbay = async () => {
     const id = ebayOrderId.trim();
@@ -91,17 +97,64 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
     }
   };
 
-  const handleOrderScreenshotUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 6 * 1024 * 1024) return alert('Screenshot too large. Max 6MB.');
+  const loadOrderScreenshotFile = (file: File) => {
+    if (file.size > 6 * 1024 * 1024) {
+      setOrderScreenshotError('Screenshot too large. Max 6MB.');
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      setOrderScreenshotError('Please drop an image file (PNG, JPG, WebP, …).');
+      return;
+    }
     const reader = new FileReader();
     reader.onloadend = () => {
       setOrderScreenshotSource(reader.result as string);
       setOrderScreenshotError(null);
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleOrderScreenshotUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    loadOrderScreenshotFile(file);
     e.target.value = '';
+  };
+
+  const isEbayScreenshotDropActive = platformSold === 'ebay.de';
+
+  const handleEbayScreenshotDragOverCapture = (e: React.DragEvent) => {
+    if (!isEbayScreenshotDropActive) return;
+    if (![...e.dataTransfer.types].includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+
+  const handleEbayScreenshotDragEnterCapture = (e: React.DragEvent) => {
+    if (!isEbayScreenshotDropActive) return;
+    if (![...e.dataTransfer.types].includes('Files')) return;
+    e.preventDefault();
+    setEbayScreenshotDragOver(true);
+  };
+
+  const handleEbayScreenshotDragLeaveCapture = (e: React.DragEvent) => {
+    if (!isEbayScreenshotDropActive) return;
+    const rel = e.relatedTarget as Node | null;
+    if (rel && (e.currentTarget as HTMLElement).contains(rel)) return;
+    setEbayScreenshotDragOver(false);
+  };
+
+  const handleEbayScreenshotDropCapture = (e: React.DragEvent) => {
+    if (!isEbayScreenshotDropActive) return;
+    if (![...e.dataTransfer.types].includes('Files')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setEbayScreenshotDragOver(false);
+    const file = [...e.dataTransfer.files].find((f) => f.type.startsWith('image/'));
+    if (file) loadOrderScreenshotFile(file);
+    else if (e.dataTransfer.files.length > 0) {
+      setOrderScreenshotError('Please drop an image file (PNG, JPG, WebP, …).');
+    }
   };
 
   const handleParseOrderScreenshot = async () => {
@@ -172,8 +225,20 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-      <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl border border-slate-100 overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[90vh]">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4"
+      onDragEnterCapture={handleEbayScreenshotDragEnterCapture}
+      onDragLeaveCapture={handleEbayScreenshotDragLeaveCapture}
+      onDragOverCapture={handleEbayScreenshotDragOverCapture}
+      onDropCapture={handleEbayScreenshotDropCapture}
+    >
+      <div
+        className={`bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl border overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[90vh] transition-shadow duration-150 ${
+          ebayScreenshotDragOver && isEbayScreenshotDropActive
+            ? 'border-indigo-400 ring-4 ring-indigo-300/40 shadow-indigo-100'
+            : 'border-slate-100'
+        }`}
+      >
         <header className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/30 shrink-0">
           <div>
             <h2 className="text-2xl font-black text-slate-900 tracking-tight">Finalize Transaction</h2>
@@ -257,9 +322,22 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
                     <div className="space-y-1">
                        <label className="text-[9px] font-black uppercase text-slate-400 ml-1 flex items-center gap-1"><Sparkles size={10}/> Order screenshot (AI)</label>
                        <p className="text-[10px] text-slate-500 ml-1 leading-relaxed">
-                          Paste a direct image URL (e.g. <span className="font-mono">i.imgur.com/…</span>) or upload. Uses Gemini or OpenAI from your .env.
+                          Paste a URL, click Upload, or <span className="font-bold text-slate-600">drag and drop an image anywhere on this window</span>. Uses Gemini / OpenAI from your env.
                        </p>
-                       <div className="flex flex-col sm:flex-row gap-2">
+                       <div
+                          className={`mt-2 flex flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed px-4 py-5 text-center pointer-events-none select-none transition-colors ${
+                             ebayScreenshotDragOver
+                                ? 'border-indigo-500 bg-indigo-50/80'
+                                : 'border-slate-200 bg-white/80'
+                          }`}
+                       >
+                          <ImagePlus className={`shrink-0 ${ebayScreenshotDragOver ? 'text-indigo-600' : 'text-slate-400'}`} size={22} strokeWidth={1.75} />
+                          <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">
+                             Drop screenshot here
+                          </span>
+                          <span className="text-[9px] text-slate-400">or use URL / Upload below — max 6MB</span>
+                       </div>
+                       <div className="flex flex-col sm:flex-row gap-2 mt-2">
                           <input
                              type="text"
                              placeholder="https://i.imgur.com/....jpg"
