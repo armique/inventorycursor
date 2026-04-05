@@ -6,7 +6,7 @@ export function parseItemDateMs(d: string | undefined): number | null {
   return Number.isFinite(t) ? t : null;
 }
 
-function daysBetweenMs(start: number, end: number): number {
+export function daysBetweenMs(start: number, end: number): number {
   return Math.max(0, (end - start) / 86400000);
 }
 
@@ -59,14 +59,135 @@ export type TimeGaugeRow = {
   title: string;
   shortLabel: string;
   missingSellDate?: true;
+  fromComponents?: true;
 };
 
-export function getTimeGaugeRow(item: InventoryItem, nowMs: number): TimeGaugeRow | null {
-  if (item.isPC || item.isBundle) return null;
+export function resolveContainerChildItems(container: InventoryItem, allItems: InventoryItem[]): InventoryItem[] {
+  if (!container.isPC && !container.isBundle) return [];
+  return allItems.filter(
+    (i) =>
+      (container.componentIds && container.componentIds.includes(i.id)) || i.parentContainerId === container.id
+  );
+}
+
+function aggregateBundleStockAge(children: InventoryItem[], nowMs: number): TimeGaugeRow | null {
+  let maxDays = 0;
+  let maxT = 0;
+  let n = 0;
+  for (const c of children) {
+    const buyMs = parseItemDateMs(c.buyDate);
+    if (buyMs === null) continue;
+    const { days, t } = stockAgeStress(buyMs, nowMs);
+    n++;
+    if (days > maxDays) {
+      maxDays = days;
+      maxT = t;
+    }
+  }
+  if (n === 0) return null;
+  const d = Math.round(maxDays);
+  return {
+    days: maxDays,
+    t: maxT,
+    mode: 'stock_age',
+    title: `Bundle/PC: oldest component in stock ≈ ${d}d (${n} parts with buy date)`,
+    shortLabel: `${d}d`,
+    fromComponents: true,
+  };
+}
+
+function aggregateBundleDaysToSell(children: InventoryItem[], container: InventoryItem): TimeGaugeRow | null {
+  const spans: number[] = [];
+  for (const c of children) {
+    const buyMs = parseItemDateMs(c.buyDate);
+    const sellMs = parseItemDateMs(c.sellDate);
+    if (buyMs === null || sellMs === null) continue;
+    spans.push(daysBetweenMs(buyMs, sellMs));
+  }
+  if (spans.length > 0) {
+    const avg = spans.reduce((a, b) => a + b, 0) / spans.length;
+    const t = Math.min(1, avg / 150);
+    const d = Math.round(avg);
+    return {
+      days: avg,
+      t,
+      mode: 'days_to_sell',
+      title: `Bundle/PC: avg ${d}d buy→sell across ${spans.length} component(s)`,
+      shortLabel: `${d}d`,
+      fromComponents: true,
+    };
+  }
+  const buyMs = parseItemDateMs(container.buyDate);
+  const sellMs = parseItemDateMs(container.sellDate);
+  if (buyMs !== null && sellMs !== null) {
+    const { days, t } = daysToSellStress(buyMs, sellMs);
+    const d = Math.round(days);
+    return {
+      days,
+      t,
+      mode: 'days_to_sell',
+      title: `${d}d buy→sell (bundle row dates)`,
+      shortLabel: `${d}d`,
+    };
+  }
+  return null;
+}
+
+export function getTimeGaugeRow(item: InventoryItem, nowMs: number, allItems?: InventoryItem[]): TimeGaugeRow | null {
+  const sold = item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED;
+  const children =
+    (item.isPC || item.isBundle) && allItems?.length
+      ? resolveContainerChildItems(item, allItems)
+      : [];
+
+  if (item.isPC || item.isBundle) {
+    if (sold) {
+      if (children.length > 0) {
+        const fromKids = aggregateBundleDaysToSell(children, item);
+        if (fromKids) return fromKids;
+      }
+      const buyMs = parseItemDateMs(item.buyDate);
+      const sellMs = parseItemDateMs(item.sellDate);
+      if (buyMs !== null && sellMs !== null) {
+        const { days, t } = daysToSellStress(buyMs, sellMs);
+        const d = Math.round(days);
+        return {
+          days,
+          t,
+          mode: 'days_to_sell',
+          title: `${d}d buy→sell (bundle)`,
+          shortLabel: `${d}d`,
+        };
+      }
+      return {
+        days: 0,
+        t: 0,
+        mode: 'days_to_sell',
+        title: 'No sell date on bundle or components',
+        shortLabel: '—',
+        missingSellDate: true,
+      };
+    }
+    if (children.length > 0) {
+      const fromKids = aggregateBundleStockAge(children, nowMs);
+      if (fromKids) return fromKids;
+    }
+    const buyMs = parseItemDateMs(item.buyDate);
+    if (buyMs === null) return null;
+    const { days, t } = stockAgeStress(buyMs, nowMs);
+    const d = Math.round(days);
+    return {
+      days,
+      t,
+      mode: 'stock_age',
+      title: `${d}d in stock (bundle row)`,
+      shortLabel: `${d}d`,
+    };
+  }
+
   const buyMs = parseItemDateMs(item.buyDate);
   if (buyMs === null) return null;
 
-  const sold = item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED;
   if (sold) {
     const sellMs = parseItemDateMs(item.sellDate);
     if (sellMs === null) {
@@ -101,9 +222,8 @@ export function getTimeGaugeRow(item: InventoryItem, nowMs: number): TimeGaugeRo
   };
 }
 
-/** Numeric sort key: days for display metric (stock age or days-to-sell). */
-export function timeGaugeSortKey(item: InventoryItem, nowMs: number): number {
-  const row = getTimeGaugeRow(item, nowMs);
+export function timeGaugeSortKey(item: InventoryItem, nowMs: number, allItems?: InventoryItem[]): number {
+  const row = getTimeGaugeRow(item, nowMs, allItems);
   if (!row) return -1;
   if (row.missingSellDate) return 999999;
   return row.days;
