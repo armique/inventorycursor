@@ -4,7 +4,7 @@ import { X, Euro, CheckCircle2, User, Globe, ChevronDown, Link as LinkIcon, Mess
 import { fetchEbayOrder } from '../services/ebayService';
 import { parseEbayOrderFromImageInput } from '../services/ebayOrderScreenshotAI';
 import { InventoryItem, ItemStatus, PaymentType, CustomerInfo, Platform, TaxMode } from '../types';
-import { parseLocaleNumber } from '../utils/formatMoney';
+import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 
 interface Props {
   item: InventoryItem;
@@ -177,6 +177,11 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
         ...(data.shippingAddress && { address: data.shippingAddress }),
         ...(data.phone && { phone: data.phone }),
       }));
+      if (data.amountReceivedNetEur != null && Number.isFinite(data.amountReceivedNetEur)) {
+        setSalePrice(formatEUR(data.amountReceivedNetEur));
+        setHasFee(false);
+        setFeeAmount(0);
+      }
     } catch (err: unknown) {
       setOrderScreenshotError(err instanceof Error ? err.message : 'Parse failed');
     } finally {
@@ -322,7 +327,7 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
                     <div className="space-y-1">
                        <label className="text-[9px] font-black uppercase text-slate-400 ml-1 flex items-center gap-1"><Sparkles size={10}/> Order screenshot (AI)</label>
                        <p className="text-[10px] text-slate-500 ml-1 leading-relaxed">
-                          Paste a URL, click Upload, or <span className="font-bold text-slate-600">drag and drop an image anywhere on this window</span>. Uses Gemini / OpenAI from your env.
+                          Paste a URL, click Upload, or <span className="font-bold text-slate-600">drag and drop an image anywhere on this window</span>. Fills buyer data, order id, and your <span className="font-bold text-slate-600">net payout in €</span> (after eBay/ad fees) when visible. Uses Gemini / OpenAI from your env.
                        </p>
                        <div
                           className={`mt-2 flex flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed px-4 py-5 text-center pointer-events-none select-none transition-colors ${

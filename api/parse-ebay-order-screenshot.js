@@ -141,12 +141,23 @@ export default async function handler(req, res) {
 
       const o = parsed && typeof parsed === 'object' ? parsed : {};
       const str = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+      const netEur = (() => {
+        const v = o.amountReceivedNetEur;
+        if (typeof v === 'number' && Number.isFinite(v)) return v;
+        if (typeof v === 'string') {
+          const t = v.trim().replace(/€/g, '').replace(/\s/g, '').replace(',', '.');
+          const n = parseFloat(t);
+          return Number.isFinite(n) ? n : null;
+        }
+        return null;
+      })();
       const parsedOut = {
         ebayOrderId: str(o.ebayOrderId),
         ebayUsername: str(o.ebayUsername),
         buyerFullName: str(o.buyerFullName),
         shippingAddress: str(o.shippingAddress),
         phone: str(o.phone) ?? undefined,
+        amountReceivedNetEur: netEur,
       };
 
       return res.status(200).json({ parsed: parsedOut });
