@@ -1,7 +1,8 @@
 
 import React, { useState } from 'react';
-import { X, Euro, Calendar, CreditCard, Percent, Camera, FileText, Check, CheckCircle2, ShoppingBag, Landmark, Wallet, User, Globe, ChevronDown, Link as LinkIcon, MessageCircle, Image as ImageIcon, Hash, Upload, Download } from 'lucide-react';
+import { X, Euro, CheckCircle2, User, Globe, ChevronDown, Link as LinkIcon, MessageCircle, Hash, Upload, Download, Sparkles } from 'lucide-react';
 import { fetchEbayOrder } from '../services/ebayService';
+import { parseEbayOrderFromImageInput } from '../services/ebayOrderScreenshotAI';
 import { InventoryItem, ItemStatus, PaymentType, CustomerInfo, Platform, TaxMode } from '../types';
 import { parseLocaleNumber } from '../utils/formatMoney';
 
@@ -27,8 +28,8 @@ const PAYMENT_METHODS: PaymentType[] = [
 const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, onClose }) => {
   const [salePrice, setSalePrice] = useState<string>(item.sellPrice != null ? String(item.sellPrice) : '');
   const [saleDate, setSaleDate] = useState(item.sellDate || new Date().toISOString().split('T')[0]);
-  const [paymentType, setPaymentType] = useState<PaymentType>(item.paymentType || 'Cash');
-  const [platformSold, setPlatformSold] = useState<Platform>(item.platformSold || 'kleinanzeigen.de');
+  const [paymentType, setPaymentType] = useState<PaymentType>(item.paymentType || 'ebay.de');
+  const [platformSold, setPlatformSold] = useState<Platform>(item.platformSold || 'ebay.de');
   const [hasFee, setHasFee] = useState(item.hasFee || false);
   const [feeAmount, setFeeAmount] = useState(item.feeAmount || 0);
   const [comment, setComment] = useState(item.comment2 || '');
@@ -45,6 +46,10 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
   });
   const [fetchEbayLoading, setFetchEbayLoading] = useState(false);
   const [fetchEbayError, setFetchEbayError] = useState<string | null>(null);
+
+  const [orderScreenshotSource, setOrderScreenshotSource] = useState('');
+  const [orderScreenshotParsing, setOrderScreenshotParsing] = useState(false);
+  const [orderScreenshotError, setOrderScreenshotError] = useState<string | null>(null);
 
   const handleFetchFromEbay = async () => {
     const id = ebayOrderId.trim();
@@ -83,6 +88,46 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
         setKleinanzeigenChatImage(reader.result as string);
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const handleOrderScreenshotUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 6 * 1024 * 1024) return alert('Screenshot too large. Max 6MB.');
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setOrderScreenshotSource(reader.result as string);
+      setOrderScreenshotError(null);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleParseOrderScreenshot = async () => {
+    const src = orderScreenshotSource.trim();
+    if (!src) {
+      setOrderScreenshotError('Paste an Imgur/direct image URL or upload a screenshot.');
+      return;
+    }
+    setOrderScreenshotError(null);
+    setOrderScreenshotParsing(true);
+    try {
+      const data = await parseEbayOrderFromImageInput(src);
+      setPlatformSold('ebay.de');
+      setPaymentType('ebay.de');
+      if (data.ebayOrderId) setEbayOrderId(data.ebayOrderId);
+      if (data.ebayUsername) setEbayUsername(data.ebayUsername);
+      setCustomer((prev) => ({
+        ...prev,
+        ...(data.buyerFullName && { name: data.buyerFullName }),
+        ...(data.shippingAddress && { address: data.shippingAddress }),
+        ...(data.phone && { phone: data.phone }),
+      }));
+    } catch (err: unknown) {
+      setOrderScreenshotError(err instanceof Error ? err.message : 'Parse failed');
+    } finally {
+      setOrderScreenshotParsing(false);
     }
   };
 
@@ -154,7 +199,7 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
               <div className="space-y-3">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2"><Globe size={12}/> Sold On</label>
                 <div className="flex gap-2">
-                   {['kleinanzeigen.de', 'ebay.de'].map(p => (
+                   {['ebay.de', 'kleinanzeigen.de'].map(p => (
                       <button 
                         key={p} 
                         onClick={() => setPlatformSold(p as Platform)}
@@ -209,6 +254,46 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
 
               {platformSold === 'ebay.de' && (
                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3 animate-in fade-in">
+                    <div className="space-y-1">
+                       <label className="text-[9px] font-black uppercase text-slate-400 ml-1 flex items-center gap-1"><Sparkles size={10}/> Order screenshot (AI)</label>
+                       <p className="text-[10px] text-slate-500 ml-1 leading-relaxed">
+                          Paste a direct image URL (e.g. <span className="font-mono">i.imgur.com/…</span>) or upload. Uses Gemini or OpenAI from your .env.
+                       </p>
+                       <div className="flex flex-col sm:flex-row gap-2">
+                          <input
+                             type="text"
+                             placeholder="https://i.imgur.com/....jpg"
+                             className="flex-1 min-w-0 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
+                             value={orderScreenshotSource.startsWith('data:') ? '' : orderScreenshotSource}
+                             onChange={(e) => { setOrderScreenshotSource(e.target.value); setOrderScreenshotError(null); }}
+                          />
+                          <div className="flex gap-2 shrink-0">
+                             <label className="flex items-center justify-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase cursor-pointer hover:bg-slate-50 text-slate-600">
+                                <Upload size={12}/>
+                                Upload
+                                <input type="file" accept="image/*" className="hidden" onChange={handleOrderScreenshotUpload} />
+                             </label>
+                             <button
+                                type="button"
+                                onClick={handleParseOrderScreenshot}
+                                disabled={orderScreenshotParsing}
+                                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                             >
+                                <Sparkles size={12}/>
+                                {orderScreenshotParsing ? 'Parsing…' : 'Parse'}
+                             </button>
+                          </div>
+                       </div>
+                       {orderScreenshotSource.startsWith('data:') && (
+                          <div className="flex items-center gap-2 ml-1 flex-wrap">
+                             <p className="text-[10px] text-slate-500">Image loaded from device — click Parse.</p>
+                             <button type="button" onClick={() => { setOrderScreenshotSource(''); setOrderScreenshotError(null); }} className="text-[10px] font-bold text-indigo-600 hover:underline">Clear</button>
+                          </div>
+                       )}
+                       {orderScreenshotError && (
+                          <p className="text-xs text-red-600 font-medium ml-1">{orderScreenshotError}</p>
+                       )}
+                    </div>
                     <div className="grid grid-cols-2 gap-3">
                        <div className="space-y-1">
                           <label className="text-[9px] font-black uppercase text-slate-400 ml-1 flex items-center gap-1"><User size={10}/> eBay User</label>
