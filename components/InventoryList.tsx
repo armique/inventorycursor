@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { formatEUR, parseLocaleMoney, parseLocaleNumber } from '../utils/formatMoney';
+import { getTimeGaugeRow, stressToRgb, timeGaugeSortKey } from '../utils/inventoryTimeGauge';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
@@ -46,7 +47,7 @@ interface Props {
   persistenceKey?: string; 
 }
 
-type ColumnId = 'select' | 'item' | 'presence' | 'parseSpecs' | 'category' | 'status' | 'buyPrice' | 'sellPrice' | 'profit' | 'buyDate' | 'sellDate' | 'actions';
+type ColumnId = 'select' | 'item' | 'presence' | 'parseSpecs' | 'category' | 'status' | 'buyPrice' | 'sellPrice' | 'profit' | 'buyDate' | 'timeGauge' | 'sellDate' | 'actions';
 type TimeFilter = 'ALL' | 'THIS_WEEK' | 'LAST_WEEK' | 'THIS_MONTH' | 'LAST_MONTH' | 'LAST_30' | 'LAST_90' | 'THIS_YEAR' | 'LAST_YEAR';
 type StatusFilter = 'ACTIVE' | 'SOLD' | 'DRAFTS' | 'ALL';
 
@@ -66,6 +67,7 @@ const DEFAULT_WIDTHS: Record<string, number> = {
   sellPrice: 120,
   profit: 120,
   buyDate: 130,
+  timeGauge: 108,
   sellDate: 130,
   actions: 140
 };
@@ -88,6 +90,7 @@ const ALL_COLUMNS: { id: ColumnId; label: string }[] = [
   { id: 'sellPrice', label: 'Sell Price' },
   { id: 'profit', label: 'Margin' },
   { id: 'buyDate', label: 'Acquired' },
+  { id: 'timeGauge', label: 'Time' },
   { id: 'sellDate', label: 'Sold Date' },
   { id: 'actions', label: 'Actions' }
 ];
@@ -163,10 +166,18 @@ const InventoryList: React.FC<Props> = ({
   
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => loadState('widths', DEFAULT_WIDTHS));
 
-  const defaultColumnOrder: ColumnId[] = ['select', 'item', 'presence', 'parseSpecs', 'category', 'status', 'buyPrice', 'sellPrice', 'profit', 'buyDate', 'sellDate', 'actions'];
+  const defaultColumnOrder: ColumnId[] = ['select', 'item', 'presence', 'parseSpecs', 'category', 'status', 'buyPrice', 'sellPrice', 'profit', 'buyDate', 'timeGauge', 'sellDate', 'actions'];
   const [columnOrder, setColumnOrder] = useState<ColumnId[]>(() => {
     const saved = loadState<ColumnId[]>('column_order', defaultColumnOrder);
-    return saved && saved.length > 0 ? saved : defaultColumnOrder;
+    const base = saved && saved.length > 0 ? saved : defaultColumnOrder;
+    if (!base.includes('timeGauge')) {
+      const next = [...base];
+      const buy = next.indexOf('buyDate');
+      if (buy >= 0) next.splice(buy + 1, 0, 'timeGauge');
+      else next.splice(Math.max(0, next.length - 1), 0, 'timeGauge');
+      return next;
+    }
+    return base;
   });
   const [hiddenColumnIds, setHiddenColumnIds] = useState<ColumnId[]>(() => loadState<ColumnId[]>('hidden_columns', []));
   const [showColumnsPanel, setShowColumnsPanel] = useState(false);
@@ -184,6 +195,12 @@ const InventoryList: React.FC<Props> = ({
     const itemMap = new Map(items.map((i) => [i.id, i]));
     return ids.map((id) => itemMap.get(id)).filter(Boolean) as InventoryItem[];
   }, [items, showRecentDropdown]);
+
+  const timeGaugeColumnTitle = useMemo(() => {
+    if (statusFilter === 'SOLD') return 'Sale speed';
+    if (statusFilter === 'ACTIVE') return 'Stock age';
+    return 'Hold / sale';
+  }, [statusFilter]);
 
   type ListDensity = 'comfortable' | 'compact';
   const [listDensity, setListDensity] = useState<ListDensity>(() => loadState<ListDensity>('list_density', 'comfortable'));
@@ -701,7 +718,12 @@ const InventoryList: React.FC<Props> = ({
     filtered.sort((a, b) => {
       const key = sortConfig.key === 'item' ? 'name' : sortConfig.key;
       const dir = sortConfig.direction === 'asc' ? 1 : -1;
-      
+
+      if (sortConfig.key === 'timeGauge') {
+        const now = Date.now();
+        return (timeGaugeSortKey(a, now) - timeGaugeSortKey(b, now)) * dir;
+      }
+
       let valA: any = (a as any)[key];
       let valB: any = (b as any)[key];
 
@@ -1723,6 +1745,54 @@ const InventoryList: React.FC<Props> = ({
              {item.profit ? `€${formatEUR(item.profit)}` : '-'}
           </td>
         );
+      case 'timeGauge': {
+        const now = Date.now();
+        const row = getTimeGaugeRow(item, now);
+        if (item.isPC || item.isBundle) {
+          return (
+            <td key={id} className="p-5 text-center text-xs text-slate-300" style={style} title="Expand for component dates">
+              —
+            </td>
+          );
+        }
+        if (!row) {
+          return (
+            <td key={id} className="p-5 text-center text-xs text-slate-300" style={style} title="Set acquisition date">
+              —
+            </td>
+          );
+        }
+        if (row.missingSellDate) {
+          return (
+            <td key={id} className="p-5 align-middle" style={style}>
+              <div className="flex flex-col items-stretch gap-1 min-w-0" title={row.title}>
+                <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden" />
+                <span className="text-[9px] font-bold text-slate-400 text-center">—</span>
+              </div>
+            </td>
+          );
+        }
+        const fillPct = Math.max(8, Math.min(100, Math.round(row.t * 100)));
+        const barColor = stressToRgb(row.t);
+        return (
+          <td key={id} className="p-5 align-middle" style={style}>
+            <div className="flex flex-col items-stretch gap-1 min-w-0 max-w-[5.5rem] mx-auto" title={row.title}>
+              <div className="h-2.5 w-full rounded-full bg-slate-100 overflow-hidden ring-1 ring-slate-200/80">
+                <div
+                  className="h-full rounded-full transition-[width] duration-300"
+                  style={{
+                    width: `${fillPct}%`,
+                    backgroundColor: barColor,
+                  }}
+                />
+              </div>
+              <span className="text-[9px] font-bold text-slate-500 text-center tabular-nums leading-none">
+                {row.shortLabel}
+              </span>
+            </div>
+          </td>
+        );
+      }
       case 'buyDate':
         if ((item.isPC || item.isBundle)) {
           return (
@@ -2286,7 +2356,7 @@ const InventoryList: React.FC<Props> = ({
            [data-density="compact"] .text-sm { font-size: 0.7rem; }
            [data-density="compact"] .text-xs { font-size: 0.65rem; }
          `}</style>
-         <table className="w-full text-left border-collapse min-w-[1200px] table-fixed" data-density={listDensity}>
+         <table className="w-full text-left border-collapse min-w-[1320px] table-fixed" data-density={listDensity}>
             <thead className="sticky top-0 z-10 bg-white">
                <tr className="bg-slate-50/80 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-widest backdrop-blur-sm">
                   {visibleColumns.map((colId) => {
@@ -2312,7 +2382,7 @@ const InventoryList: React.FC<Props> = ({
                                       }
                                     : undefined
                               }
-                              className={`p-5 pr-2 flex items-center min-h-[3rem] ${sortable ? 'cursor-pointer hover:bg-slate-100/90' : ''} ${['buyPrice', 'sellPrice', 'profit', 'buyDate', 'sellDate', 'actions'].includes(colId) ? 'justify-end' : colId === 'parseSpecs' ? 'justify-center' : ''}`}
+                              className={`p-5 pr-2 flex items-center min-h-[3rem] ${sortable ? 'cursor-pointer hover:bg-slate-100/90' : ''} ${['buyPrice', 'sellPrice', 'profit', 'buyDate', 'sellDate', 'actions'].includes(colId) ? 'justify-end' : colId === 'parseSpecs' || colId === 'timeGauge' ? 'justify-center' : ''}`}
                            >
                               {colId === 'select' ? (
                                  <div
@@ -2333,6 +2403,23 @@ const InventoryList: React.FC<Props> = ({
                               ) : colId === 'parseSpecs' ? (
                                  <span className="flex items-center gap-1" title="Parse tech specs with AI">
                                     <Sparkles size={12} className="text-amber-500" /> Parse
+                                 </span>
+                              ) : colId === 'timeGauge' ? (
+                                 <span
+                                    className="flex items-center justify-center gap-1 w-full"
+                                    title={
+                                       statusFilter === 'SOLD'
+                                          ? 'Buy → sell: green = quick, red = slow'
+                                          : 'Days in stock: green = recent, red = aging'
+                                    }
+                                 >
+                                    <Clock size={12} className="text-slate-400 shrink-0" />
+                                    <span className="truncate">{timeGaugeColumnTitle}</span>
+                                    {sortConfig.key === 'timeGauge' && (
+                                       <span className="text-blue-500 shrink-0">
+                                          {sortConfig.direction === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                                       </span>
+                                    )}
                                  </span>
                               ) : (
                                  <>
