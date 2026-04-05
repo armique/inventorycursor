@@ -276,7 +276,7 @@ export async function parseEbayOrderFromImageInput(rawInput: string): Promise<Pa
   if (!hasGemini && !hasOpenAI) {
     if (serverOutcome.kind === 'fail') {
       throw new Error(
-        `${serverOutcome.message} If this is localhost, add VITE_GEMINI_API_KEY to .env and restart \`npm run dev\`, or run \`vercel dev\` so /api works. On Vercel, set the variable for Production and redeploy.`
+        `${serverOutcome.message} On Vercel, add GEMINI_API_KEY (recommended) or ensure API routes receive your key, then redeploy. Locally use .env / .env.local with GEMINI_API_KEY or VITE_GEMINI_API_KEY; use \`vercel dev\` if you need /api on localhost.`
       );
     }
     throw new Error(

@@ -1,10 +1,11 @@
 /**
  * Vercel serverless: parse eBay order screenshot with Gemini (vision).
  * POST JSON: { imageUrl?: string } OR { imageBase64: string, mimeType?: string }
- * Uses VITE_GEMINI_API_KEY or VITE_API_KEY or GEMINI_API_KEY from project env.
+ * Uses GEMINI_API_KEY (recommended on Vercel) or VITE_GEMINI_API_KEY, etc. See api/geminiServerEnv.js.
  * Fetches remote images server-side (fixes Imgur / CORS for the browser).
  */
 import { EBAY_ORDER_SCREENSHOT_EXTRACTION_PROMPT } from '../lib/ebayOrderScreenshotPrompt.js';
+import { getGeminiKeyForServer } from './geminiServerEnv.js';
 
 /** Order: prefer 2.x; fall back when quota/model unavailable (see models.list API). */
 const GEMINI_MODELS = [
@@ -25,13 +26,11 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const apiKey =
-    process.env.VITE_GEMINI_API_KEY?.trim() ||
-    process.env.VITE_API_KEY?.trim() ||
-    process.env.GEMINI_API_KEY?.trim();
+  const apiKey = getGeminiKeyForServer();
   if (!apiKey) {
     return res.status(500).json({
-      error: 'Server missing Gemini key. Set VITE_GEMINI_API_KEY in Vercel Environment Variables.',
+      error:
+        'Server missing Gemini API key. On Vercel add GEMINI_API_KEY (same value as AI Studio) for Production and redeploy — VITE_* vars are often not available to API routes. Locally ensure .env or .env.local contains GEMINI_API_KEY or VITE_GEMINI_API_KEY.',
     });
   }
 
