@@ -16,13 +16,22 @@ export interface ParsedEbayOrderScreenshot {
   amountReceivedNetEur?: number | null;
 }
 
-const getEnv = (key: string): string => {
-  try {
-    return (typeof import.meta !== 'undefined' && import.meta.env && (import.meta.env[key] as string)) || '';
-  } catch {
-    return '';
-  }
-};
+/**
+ * Vite only embeds `VITE_*` values when you use static property access.
+ * Dynamic `import.meta.env[key]` stays empty in production builds — do not use it here.
+ */
+function clientGeminiKey(): string {
+  const gemini = import.meta.env.VITE_GEMINI_API_KEY;
+  const legacy = import.meta.env.VITE_API_KEY;
+  const g = typeof gemini === 'string' ? gemini.trim() : '';
+  const l = typeof legacy === 'string' ? legacy.trim() : '';
+  return g || l;
+}
+
+function clientOpenAIKey(): string {
+  const v = import.meta.env.VITE_OPENAI_API_KEY;
+  return typeof v === 'string' ? v.trim() : '';
+}
 
 export function normalizeImgurImageUrl(url: string): string {
   const trimmed = url.trim();
@@ -84,24 +93,29 @@ function normalizeParsed(raw: unknown): ParsedEbayOrderScreenshot {
   };
 }
 
+type ServerParseOutcome =
+  | { kind: 'ok'; parsed: ParsedEbayOrderScreenshot }
+  | { kind: 'no_api' }
+  | { kind: 'fail'; message: string };
+
 /** Vercel /api route: server-side Gemini + image fetch (no CORS). */
 async function parseViaServerApi(body: {
   imageUrl?: string;
   imageBase64?: string;
   mimeType?: string;
-}): Promise<ParsedEbayOrderScreenshot | null> {
+}): Promise<ServerParseOutcome> {
   try {
     const res = await fetch('/api/parse-ebay-order-screenshot', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    if (res.status === 404) return null;
     const data = (await res.json().catch(() => null)) as { parsed?: ParsedEbayOrderScreenshot; error?: string } | null;
-    if (res.ok && data?.parsed) return data.parsed;
-    return null;
+    if (res.ok && data?.parsed) return { kind: 'ok', parsed: data.parsed };
+    if (res.status === 404) return { kind: 'no_api' };
+    return { kind: 'fail', message: data?.error || `Screenshot API failed (${res.status}).` };
   } catch {
-    return null;
+    return { kind: 'no_api' };
   }
 }
 
@@ -114,7 +128,7 @@ const GEMINI_VISION_MODELS = [
 ] as const;
 
 async function parseWithGemini(mime: string, base64: string): Promise<ParsedEbayOrderScreenshot> {
-  const apiKey = getEnv('VITE_GEMINI_API_KEY')?.trim() || getEnv('VITE_API_KEY')?.trim();
+  const apiKey = clientGeminiKey();
   if (!apiKey) throw new Error('VITE_GEMINI_API_KEY not set');
 
   const body = JSON.stringify({
@@ -179,7 +193,7 @@ async function parseWithGemini(mime: string, base64: string): Promise<ParsedEbay
 }
 
 async function parseWithOpenAI(imageUrl: string): Promise<ParsedEbayOrderScreenshot> {
-  const apiKey = getEnv('VITE_OPENAI_API_KEY')?.trim();
+  const apiKey = clientOpenAIKey();
   if (!apiKey) throw new Error('VITE_OPENAI_API_KEY not set');
 
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -248,19 +262,26 @@ export async function parseEbayOrderFromImageInput(rawInput: string): Promise<Pa
   }
 
   // 1) Vercel /api route: server downloads https images (fixes Imgur CORS) and calls Gemini.
+  let serverOutcome: ServerParseOutcome = { kind: 'no_api' };
   if (input.startsWith('data:') && geminiBase64) {
-    const fromServer = await parseViaServerApi({ imageBase64: geminiBase64, mimeType: geminiMime });
-    if (fromServer) return fromServer;
+    serverOutcome = await parseViaServerApi({ imageBase64: geminiBase64, mimeType: geminiMime });
   } else if (normalizedHttpUrl) {
-    const fromServer = await parseViaServerApi({ imageUrl: normalizedHttpUrl });
-    if (fromServer) return fromServer;
+    serverOutcome = await parseViaServerApi({ imageUrl: normalizedHttpUrl });
   }
+  if (serverOutcome.kind === 'ok') return serverOutcome.parsed;
 
-  const hasGemini = !!(getEnv('VITE_GEMINI_API_KEY')?.trim() || getEnv('VITE_API_KEY')?.trim());
-  const hasOpenAI = !!getEnv('VITE_OPENAI_API_KEY')?.trim();
+  const hasGemini = !!clientGeminiKey();
+  const hasOpenAI = !!clientOpenAIKey();
 
   if (!hasGemini && !hasOpenAI) {
-    throw new Error('Add VITE_GEMINI_API_KEY or VITE_OPENAI_API_KEY in .env for AI screenshot parsing.');
+    if (serverOutcome.kind === 'fail') {
+      throw new Error(
+        `${serverOutcome.message} If this is localhost, add VITE_GEMINI_API_KEY to .env and restart \`npm run dev\`, or run \`vercel dev\` so /api works. On Vercel, set the variable for Production and redeploy.`
+      );
+    }
+    throw new Error(
+      'Add VITE_GEMINI_API_KEY or VITE_OPENAI_API_KEY: in .env (local) restart the dev server; on Vercel set it for Production and redeploy so the key is included in the build.'
+    );
   }
 
   const errors: string[] = [];
