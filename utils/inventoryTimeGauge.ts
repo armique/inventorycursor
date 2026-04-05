@@ -64,33 +64,35 @@ export type TimeGaugeRow = {
 
 export function resolveContainerChildItems(container: InventoryItem, allItems: InventoryItem[]): InventoryItem[] {
   if (!container.isPC && !container.isBundle) return [];
-  return allItems.filter(
-    (i) =>
-      (container.componentIds && container.componentIds.includes(i.id)) || i.parentContainerId === container.id
-  );
+  const seen = new Set<string>();
+  const out: InventoryItem[] = [];
+  for (const i of allItems) {
+    const linked =
+      (container.componentIds && container.componentIds.includes(i.id)) || i.parentContainerId === container.id;
+    if (!linked || seen.has(i.id)) continue;
+    seen.add(i.id);
+    out.push(i);
+  }
+  return out;
 }
 
+/** Active bundle/PC: same idea as sold (avg buy→sell) — avg days since each part's buy date. */
 function aggregateBundleStockAge(children: InventoryItem[], nowMs: number): TimeGaugeRow | null {
-  let maxDays = 0;
-  let maxT = 0;
-  let n = 0;
+  const dayVals: number[] = [];
   for (const c of children) {
     const buyMs = parseItemDateMs(c.buyDate);
     if (buyMs === null) continue;
-    const { days, t } = stockAgeStress(buyMs, nowMs);
-    n++;
-    if (days > maxDays) {
-      maxDays = days;
-      maxT = t;
-    }
+    dayVals.push(daysBetweenMs(buyMs, nowMs));
   }
-  if (n === 0) return null;
-  const d = Math.round(maxDays);
+  if (dayVals.length === 0) return null;
+  const avgDays = dayVals.reduce((a, b) => a + b, 0) / dayVals.length;
+  const t = Math.min(1, avgDays / 300);
+  const d = Math.round(avgDays);
   return {
-    days: maxDays,
-    t: maxT,
+    days: avgDays,
+    t,
     mode: 'stock_age',
-    title: `Bundle/PC: oldest component in stock ≈ ${d}d (${n} parts with buy date)`,
+    title: `Bundle/PC: avg ${d}d in stock across ${dayVals.length} component(s)`,
     shortLabel: `${d}d`,
     fromComponents: true,
   };

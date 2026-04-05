@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { formatEUR, parseLocaleMoney, parseLocaleNumber } from '../utils/formatMoney';
-import { getTimeGaugeRow, stressToRgb, timeGaugeSortKey } from '../utils/inventoryTimeGauge';
+import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSortKey } from '../utils/inventoryTimeGauge';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
@@ -2777,17 +2777,13 @@ const InventoryList: React.FC<Props> = ({
             onSave={(updated) => { 
                // When selling a PC or bundle, also stamp all child components
                // with the container's sale date. Child items keep their original buyDate.
-               if ((updated.isPC || updated.isBundle) && updated.componentIds && updated.componentIds.length > 0) {
+               const childComponents =
+                 updated.isPC || updated.isBundle ? resolveContainerChildItems(updated, items) : [];
+               if (childComponents.length > 0) {
                  // Use the bundle/PC's sell date value for all child items
                  const soldAt = updated.sellDate || new Date().toISOString().split('T')[0];
                  const bundleSellPrice = updated.sellPrice || 0;
                  const bundleFee = updated.feeAmount || 0;
-                 
-                 // Find all child components
-                 const childComponents = items.filter(i => 
-                   (updated.componentIds && updated.componentIds.includes(i.id)) ||
-                   i.parentContainerId === updated.id
-                 );
                  
                  // Calculate proportional sell prices based on buy price ratios
                  const totalChildBuyPrice = childComponents.reduce((sum, i) => sum + (i.buyPrice || 0), 0);
