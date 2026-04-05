@@ -57,19 +57,19 @@ interface SortConfig {
 }
 
 const DEFAULT_WIDTHS: Record<string, number> = {
-  select: 50,
-  item: 260,
-  presence: 88,
-  parseSpecs: 120,
-  category: 160,
-  status: 120,
-  buyPrice: 120,
-  sellPrice: 120,
-  profit: 120,
-  buyDate: 130,
-  timeGauge: 108,
-  sellDate: 130,
-  actions: 140
+  select: 36,
+  item: 200,
+  presence: 52,
+  parseSpecs: 86,
+  category: 108,
+  status: 82,
+  buyPrice: 76,
+  sellPrice: 76,
+  profit: 76,
+  buyDate: 90,
+  timeGauge: 72,
+  sellDate: 90,
+  actions: 104,
 };
 
 function clampInventoryColumnWidth(colId: ColumnId, w: number): number {
@@ -721,7 +721,7 @@ const InventoryList: React.FC<Props> = ({
 
       if (sortConfig.key === 'timeGauge') {
         const now = Date.now();
-        return (timeGaugeSortKey(a, now) - timeGaugeSortKey(b, now)) * dir;
+        return (timeGaugeSortKey(a, now, items) - timeGaugeSortKey(b, now, items)) * dir;
       }
 
       let valA: any = (a as any)[key];
@@ -1367,8 +1367,8 @@ const InventoryList: React.FC<Props> = ({
         const isEditingName = editingCell?.itemId === item.id && editingCell?.field === 'item';
         return (
           <td key={id} className="p-5" style={style} onClick={() => handleRowClick(item, isEditingName)}>
-             <div className="flex items-center gap-4 cursor-pointer group/cell">
-                <ItemThumbnail item={item} className="w-12 h-12 rounded-xl object-cover shadow-sm border border-slate-100" size={48} />
+             <div className="flex items-center gap-2 cursor-pointer group/cell">
+                <ItemThumbnail item={item} className="w-10 h-10 rounded-lg object-cover shadow-sm border border-slate-100 shrink-0" size={40} />
                 <div className="flex-1 min-w-0">
                    <div className="flex items-center gap-2">
                       {isEditingName ? (
@@ -1542,13 +1542,13 @@ const InventoryList: React.FC<Props> = ({
                 onClick={() => handleParseSingleItem(item)}
                 disabled={parsingSingleId !== null}
                 title="Parse tech specs with AI (can correct name)"
-                className={`h-7 w-7 flex items-center justify-center rounded-xl text-slate-600 transition-colors ${
+                className={`h-6 w-6 flex items-center justify-center rounded-lg text-slate-600 transition-colors ${
                   parsingSingleId === item.id
                     ? 'bg-amber-100 text-amber-700'
                     : 'bg-slate-100 hover:bg-amber-100 hover:text-amber-700'
                 }`}
               >
-                {parsingSingleId === item.id ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                {parsingSingleId === item.id ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
               </button>
 
               {/* Suggested price from sold history (eBay/Kleinanzeigen) */}
@@ -1556,14 +1556,14 @@ const InventoryList: React.FC<Props> = ({
                 type="button"
                 onClick={() => handleSuggestPrice(item)}
                 disabled={priceSuggestId === item.id}
-                className={`h-7 w-7 flex items-center justify-center rounded-xl border text-amber-700 ${
+                className={`h-6 w-6 flex items-center justify-center rounded-lg border text-amber-700 ${
                   item.sellPrice
                     ? 'border-amber-200 bg-amber-50'
                     : 'border-amber-200 bg-white'
                 } ${priceSuggestId === item.id ? 'opacity-70 cursor-wait' : 'hover:bg-amber-100'}`}
                 title="AI: Preisvorschlag auf Basis verkaufter Angebote (eBay.de, Kleinanzeigen)"
               >
-                <Tag size={13} />
+                <Tag size={11} />
               </button>
 
               {/* Kleinanzeigen listing (green K) */}
@@ -1571,7 +1571,7 @@ const InventoryList: React.FC<Props> = ({
                 type="button"
                 onClick={() => handleGenerateListingDescription(item)}
                 disabled={listingGenId === item.id}
-                className={`h-7 w-7 flex items-center justify-center rounded-xl border text-emerald-700 ${
+                className={`h-6 w-6 flex items-center justify-center rounded-lg border text-emerald-700 ${
                   item.marketDescription
                     ? 'border-emerald-200 bg-emerald-50'
                     : 'border-emerald-200 bg-white'
@@ -1582,7 +1582,7 @@ const InventoryList: React.FC<Props> = ({
                     : 'AI: Kleinanzeigen Beschreibung auf Deutsch generieren'
                 }
               >
-                <span className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[9px]">K</span>
+                <span className="w-3.5 h-3.5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[8px]">K</span>
               </button>
 
               {/* eBay listing (blue E – same style, German text) */}
@@ -1590,7 +1590,7 @@ const InventoryList: React.FC<Props> = ({
                 type="button"
                 onClick={() => handleGenerateListingDescription(item)}
                 disabled={listingGenId === item.id}
-                className={`h-7 w-7 flex items-center justify-center rounded-xl border text-blue-700 ${
+                className={`h-6 w-6 flex items-center justify-center rounded-lg border text-blue-700 ${
                   item.marketDescription
                     ? 'border-blue-200 bg-blue-50'
                     : 'border-blue-200 bg-white'
@@ -1601,7 +1601,7 @@ const InventoryList: React.FC<Props> = ({
                     : 'AI: eBay Beschreibung auf Deutsch generieren'
                 }
               >
-                <span className="w-4 h-4 rounded-full bg-blue-600 text-white flex items-center justify-center text-[9px]">E</span>
+                <span className="w-3.5 h-3.5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[8px]">E</span>
               </button>
 
               {/* Copy generated listing text */}
@@ -1609,10 +1609,10 @@ const InventoryList: React.FC<Props> = ({
                 <button
                   type="button"
                   onClick={() => handleCopyListingDescription(item)}
-                  className="h-7 w-7 flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  className="h-6 w-6 flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                   title="Copy generated listing text (German) to clipboard"
                 >
-                  <Copy size={11} />
+                  <Copy size={10} />
                 </button>
               )}
             </div>
@@ -1747,17 +1747,10 @@ const InventoryList: React.FC<Props> = ({
         );
       case 'timeGauge': {
         const now = Date.now();
-        const row = getTimeGaugeRow(item, now);
-        if (item.isPC || item.isBundle) {
-          return (
-            <td key={id} className="p-5 text-center text-xs text-slate-300" style={style} title="Expand for component dates">
-              —
-            </td>
-          );
-        }
+        const row = getTimeGaugeRow(item, now, items);
         if (!row) {
           return (
-            <td key={id} className="p-5 text-center text-xs text-slate-300" style={style} title="Set acquisition date">
+            <td key={id} className="p-5 text-center text-[10px] text-slate-300" style={style} title="Set acquisition date (or add components to bundle)">
               —
             </td>
           );
@@ -1765,9 +1758,9 @@ const InventoryList: React.FC<Props> = ({
         if (row.missingSellDate) {
           return (
             <td key={id} className="p-5 align-middle" style={style}>
-              <div className="flex flex-col items-stretch gap-1 min-w-0" title={row.title}>
-                <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden" />
-                <span className="text-[9px] font-bold text-slate-400 text-center">—</span>
+              <div className="flex flex-col items-stretch gap-0.5 min-w-0" title={row.title}>
+                <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden" />
+                <span className="text-[8px] font-bold text-slate-400 text-center leading-none">—</span>
               </div>
             </td>
           );
@@ -1776,8 +1769,11 @@ const InventoryList: React.FC<Props> = ({
         const barColor = stressToRgb(row.t);
         return (
           <td key={id} className="p-5 align-middle" style={style}>
-            <div className="flex flex-col items-stretch gap-1 min-w-0 max-w-[5.5rem] mx-auto" title={row.title}>
-              <div className="h-2.5 w-full rounded-full bg-slate-100 overflow-hidden ring-1 ring-slate-200/80">
+            <div
+              className="flex flex-col items-stretch gap-0.5 min-w-0 max-w-[4.25rem] mx-auto"
+              title={row.title + (row.fromComponents ? ' (from components)' : '')}
+            >
+              <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden ring-1 ring-slate-200/70">
                 <div
                   className="h-full rounded-full transition-[width] duration-300"
                   style={{
@@ -1786,7 +1782,7 @@ const InventoryList: React.FC<Props> = ({
                   }}
                 />
               </div>
-              <span className="text-[9px] font-bold text-slate-500 text-center tabular-nums leading-none">
+              <span className="text-[8px] font-bold text-slate-500 text-center tabular-nums leading-none">
                 {row.shortLabel}
               </span>
             </div>
@@ -1869,32 +1865,36 @@ const InventoryList: React.FC<Props> = ({
       }
       case 'actions':
         return (
-          <td key={id} className="p-5 text-right relative" style={style}>
-            <div className="flex justify-end gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity">
+          <td
+            key={id}
+            className="p-5 text-right relative sticky right-0 z-[18] bg-white group-hover/row:bg-slate-50/98 border-l border-slate-200/90 shadow-[-6px_0_12px_-4px_rgba(15,23,42,0.07)]"
+            style={style}
+          >
+            <div className="flex flex-wrap justify-end gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity max-w-[7.5rem] ml-auto">
               {item.status === ItemStatus.IN_STOCK && (
                  <>
-                   <button onClick={(e) => { e.stopPropagation(); navigate('/panel/pricing', { state: { query: item.name } }); }} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded" title="Check Market Price"><Tag size={16}/></button>
-                   <button onClick={(e) => { e.stopPropagation(); setItemToCrossPost(item); }} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded" title="Cross-Post"><Share2 size={16}/></button>
+                   <button onClick={(e) => { e.stopPropagation(); navigate('/panel/pricing', { state: { query: item.name } }); }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md shrink-0" title="Check Market Price"><Tag size={14}/></button>
+                   <button onClick={(e) => { e.stopPropagation(); setItemToCrossPost(item); }} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-md shrink-0" title="Cross-Post"><Share2 size={14}/></button>
                  </>
               )}
-              <button onClick={(e) => { e.stopPropagation(); handleEditClick(item); }} className="p-2 text-slate-500 hover:bg-slate-100 rounded" title="Edit">
-                 <Edit2 size={16}/>
+              <button onClick={(e) => { e.stopPropagation(); handleEditClick(item); }} className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-md shrink-0" title="Edit">
+                 <Edit2 size={14}/>
               </button>
-              <button onClick={(e) => { e.stopPropagation(); handleDuplicate(item); }} className="p-2 text-blue-500 hover:bg-blue-50 rounded" title="Duplicate Item">
-                 <Copy size={16}/>
+              <button onClick={(e) => { e.stopPropagation(); handleDuplicate(item); }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-md shrink-0" title="Duplicate Item">
+                 <Copy size={14}/>
               </button>
               {(item.isPC || item.isBundle) && (
-                 <button onClick={(e) => { e.stopPropagation(); setBundleToDismantle(item); }} className="p-2 text-purple-600 hover:bg-purple-50 rounded" title="Unbundle / Dismantle"><Unlink size={16}/></button>
+                 <button onClick={(e) => { e.stopPropagation(); setBundleToDismantle(item); }} className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-md shrink-0" title="Unbundle / Dismantle"><Unlink size={14}/></button>
               )}
-              {item.status === ItemStatus.IN_STOCK && <button onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToSell(item); }} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded" title="Mark Sold"><ShoppingBag size={16}/></button>}
-              {item.status === ItemStatus.IN_STOCK && <button onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToTrade(item); }} className="p-2 text-purple-600 hover:bg-purple-50 rounded" title="Trade"><ArrowRightLeft size={16}/></button>}
+              {item.status === ItemStatus.IN_STOCK && <button onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToSell(item); }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md shrink-0" title="Mark Sold"><ShoppingBag size={14}/></button>}
+              {item.status === ItemStatus.IN_STOCK && <button onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToTrade(item); }} className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-md shrink-0" title="Trade"><ArrowRightLeft size={14}/></button>}
               {(item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED) && (
-                <button onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setInvoiceViewItem(item); }} className="p-2 text-blue-600 hover:bg-blue-50 rounded" title="Generate Invoice"><FileText size={16}/></button>
+                <button onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setInvoiceViewItem(item); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md shrink-0" title="Generate Invoice"><FileText size={14}/></button>
               )}
               {item.status === ItemStatus.SOLD && (
-                <button onClick={(e) => { e.stopPropagation(); setItemToReturn(item); }} className="p-2 text-amber-600 hover:bg-amber-50 rounded" title="Mark Unsold / Return"><RotateCcw size={16}/></button>
+                <button onClick={(e) => { e.stopPropagation(); setItemToReturn(item); }} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-md shrink-0" title="Mark Unsold / Return"><RotateCcw size={14}/></button>
               )}
-              <button onClick={(e) => { e.stopPropagation(); setItemToDelete(item); }} className="p-2 text-slate-300 hover:text-red-500 rounded" title="Delete"><Trash2 size={16}/></button>
+              <button onClick={(e) => { e.stopPropagation(); setItemToDelete(item); }} className="p-1.5 text-slate-300 hover:text-red-500 rounded-md shrink-0" title="Delete"><Trash2 size={14}/></button>
             </div>
           </td>
         );
@@ -2352,20 +2352,25 @@ const InventoryList: React.FC<Props> = ({
         className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-x-auto overflow-y-auto flex-1 custom-scrollbar min-h-0"
       >
          <style>{`
-           [data-density="compact"] th, [data-density="compact"] td { padding: 0.375rem 0.5rem !important; }
+           [data-inventory-table] tbody > tr > td { padding: 0.4rem 0.3rem !important; }
+           [data-inventory-table] thead th > div:first-of-type { padding: 0.4rem 0.3rem !important; min-height: 2rem !important; }
+           [data-inventory-table] thead th { font-size: 0.625rem; letter-spacing: 0.04em; }
+           [data-density="compact"][data-inventory-table] tbody > tr > td { padding: 0.28rem 0.22rem !important; }
+           [data-density="compact"][data-inventory-table] thead th > div:first-of-type { padding: 0.28rem 0.22rem !important; min-height: 1.65rem !important; }
            [data-density="compact"] .text-sm { font-size: 0.7rem; }
            [data-density="compact"] .text-xs { font-size: 0.65rem; }
          `}</style>
-         <table className="w-full text-left border-collapse min-w-[1320px] table-fixed" data-density={listDensity}>
+         <table className="w-full text-left border-collapse min-w-[1040px] table-fixed" data-inventory-table data-density={listDensity}>
             <thead className="sticky top-0 z-10 bg-white">
                <tr className="bg-slate-50/80 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-widest backdrop-blur-sm">
                   {visibleColumns.map((colId) => {
                      const w = columnWidths[colId] || DEFAULT_WIDTHS[colId];
                      const sortable = !['actions', 'select', 'parseSpecs'].includes(colId);
+                     const stickyActions = colId === 'actions';
                      return (
                         <th
                            key={colId}
-                           className="relative p-0 align-middle bg-slate-50/80"
+                           className={`relative p-0 align-middle bg-slate-50/80 ${stickyActions ? 'sticky right-0 z-[40] shadow-[-8px_0_14px_-6px_rgba(15,23,42,0.1)] border-l border-slate-200/90' : ''}`}
                            style={{ width: w, minWidth: w, maxWidth: w }}
                         >
                            <div
