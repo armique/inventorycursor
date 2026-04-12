@@ -304,7 +304,8 @@ export async function generateItemSpecs(
   throw lastError ?? new Error('All AI providers failed.');
 }
 
-async function getRawJsonFromProvider(provider: Provider, prompt: string): Promise<string> {
+async function getRawJsonFromProvider(provider: Provider, prompt: string, maxTokens: number = 512): Promise<string> {
+  const cap = Math.max(256, Math.min(maxTokens, 8192));
   const apiKeyG = getEnv('VITE_GROQ_API_KEY')?.trim();
   const apiKeyO = getEnv('VITE_OPENAI_API_KEY')?.trim();
   const apiKeyA = getEnv('VITE_ANTHROPIC_API_KEY')?.trim();
@@ -322,7 +323,7 @@ async function getRawJsonFromProvider(provider: Provider, prompt: string): Promi
         model: 'llama-3.3-70b-versatile',
         messages: [{ role: 'user', content: prompt }],
         response_format: { type: 'json_object' },
-        max_tokens: 512,
+        max_tokens: cap,
       }),
     });
     if (!res.ok) throw new Error(`Groq: ${res.status} ${await res.text()}`);
@@ -333,7 +334,13 @@ async function getRawJsonFromProvider(provider: Provider, prompt: string): Promi
     const res = await fetch(`${baseUrlOllama}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: modelOllama, messages: [{ role: 'user', content: prompt }], stream: false, format: 'json' }),
+      body: JSON.stringify({
+        model: modelOllama,
+        messages: [{ role: 'user', content: prompt }],
+        stream: false,
+        format: 'json',
+        options: { num_predict: cap },
+      }),
     });
     if (!res.ok) throw new Error(`Ollama: ${res.status}`);
     const data = await res.json();
@@ -347,7 +354,7 @@ async function getRawJsonFromProvider(provider: Provider, prompt: string): Promi
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json', temperature: 0.2, maxOutputTokens: 512 },
+          generationConfig: { responseMimeType: 'application/json', temperature: 0.2, maxOutputTokens: cap },
         }),
       }
     );
@@ -362,7 +369,7 @@ async function getRawJsonFromProvider(provider: Provider, prompt: string): Promi
       body: JSON.stringify({
         model: 'meta-llama/Llama-3.2-3B-Instruct-Turbo',
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 512,
+        max_tokens: cap,
       }),
     });
     if (!res.ok) throw new Error(`Together: ${res.status} ${await res.text()}`);
@@ -377,7 +384,7 @@ async function getRawJsonFromProvider(provider: Provider, prompt: string): Promi
       body: JSON.stringify({
         model: 'mistral-small-latest',
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 512,
+        max_tokens: cap,
       }),
     });
     if (!res.ok) throw new Error(`Mistral: ${res.status} ${await res.text()}`);
@@ -393,7 +400,7 @@ async function getRawJsonFromProvider(provider: Provider, prompt: string): Promi
         model: 'gpt-4o',
         messages: [{ role: 'user', content: prompt }],
         response_format: { type: 'json_object' },
-        max_tokens: 512,
+        max_tokens: cap,
       }),
     });
     if (!res.ok) throw new Error(`OpenAI: ${res.status}`);
@@ -406,7 +413,7 @@ async function getRawJsonFromProvider(provider: Provider, prompt: string): Promi
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKeyA, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
         model: 'claude-3-5-haiku-20241022',
-        max_tokens: 512,
+        max_tokens: cap,
         messages: [{ role: 'user', content: prompt }],
       }),
     });
@@ -419,13 +426,13 @@ async function getRawJsonFromProvider(provider: Provider, prompt: string): Promi
 }
 
 /** Call AI with a custom prompt; tries each configured provider until one succeeds. */
-async function getRawJsonFromAI(prompt: string): Promise<string> {
+async function getRawJsonFromAI(prompt: string, maxTokens: number = 512): Promise<string> {
   const providers = getAvailableProviders();
   if (providers.length === 0) throw new Error('No AI configured. Add at least one key to .env.');
   let lastError: Error | null = null;
   for (const provider of providers) {
     try {
-      return await getRawJsonFromProvider(provider, prompt);
+      return await getRawJsonFromProvider(provider, prompt, maxTokens);
     } catch (e) {
       lastError = e instanceof Error ? e : new Error(String(e));
       console.warn(`AI [${provider}] failed, trying next:`, lastError.message);
@@ -434,9 +441,9 @@ async function getRawJsonFromAI(prompt: string): Promise<string> {
   throw lastError ?? new Error('All AI providers failed.');
 }
 
-/** Request AI and parse response as JSON. Used by category suggestion. */
-export async function requestAIJson<T = unknown>(prompt: string): Promise<T> {
-  const raw = await getRawJsonFromAI(prompt);
+/** Request AI and parse response as JSON. Used by category suggestion and bulk text parsing. */
+export async function requestAIJson<T = unknown>(prompt: string, options?: { maxTokens?: number }): Promise<T> {
+  const raw = await getRawJsonFromAI(prompt, options?.maxTokens ?? 512);
   return JSON.parse(raw) as T;
 }
 
@@ -669,7 +676,7 @@ Return a valid JSON object (no markdown, no code fence):
 
 soldExamples MUST contain 5-10 entries with realistic German eBay listing titles and actual sold prices.`;
 
-  const raw = await getRawJsonFromAI(prompt);
+  const raw = await getRawJsonFromAI(prompt, 2048);
   const parsed = JSON.parse(raw) as SoldPriceSuggestion;
 
   if (!parsed.priceAverage && !parsed.priceLow && !parsed.priceHigh) {

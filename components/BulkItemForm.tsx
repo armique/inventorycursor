@@ -133,10 +133,12 @@ function normalizeSubCategory(category: string, sub?: string): string {
 
 function inferCategoryFromName(name: string): { category: string; subCategory: string } {
   const n = name.toLowerCase();
-  if (/(rtx|gtx|radeon|rx\s?\d{3,5}|graphics card|grafikkarte)/i.test(n)) return { category: 'Components', subCategory: 'Graphics Cards' };
+  if (/(rtx|gtx|radeon|rx\s?\d{3,5}|quadro|tesla|firepro|nvidia\s+[qkmt]|graphics card|grafikkarte)/i.test(n))
+    return { category: 'Components', subCategory: 'Graphics Cards' };
   if (/(intel core|ryzen|threadripper|cpu|prozessor)/i.test(n)) return { category: 'Components', subCategory: 'Processors' };
   if (/(mainboard|motherboard|b650|b760|x670|z790|socket\s?(am|lga))/i.test(n)) return { category: 'Components', subCategory: 'Motherboards' };
-  if (/(ddr4|ddr5|ram|memory|2x|4x\s?\d+gb)/i.test(n)) return { category: 'Components', subCategory: 'RAM' };
+  if (/(ddr[2345]|ram\b|memory\b|\d+x\d+\s*gb|12800u|10600u|1333u|2rx8|1rx8|jedec|hynix|samsung m\d|kingston khx|sk hynix)/i.test(n))
+    return { category: 'Components', subCategory: 'RAM' };
   if (/(ssd|hdd|nvme|m\.2|tb\b|gb\b)/i.test(n)) return { category: 'Components', subCategory: 'Storage (SSD/HDD)' };
   if (/(netzteil|power supply|psu|watt|80\+)/i.test(n)) return { category: 'Components', subCategory: 'Power Supplies' };
   if (/(geh[aä]use|case|micro-atx|matx|atx case)/i.test(n)) return { category: 'Components', subCategory: 'Cases' };
@@ -154,7 +156,8 @@ function parseBulkTextLines(input: string): string[] {
 }
 
 function parseQuantityAndName(rawLine: string): { name: string; quantity: number } {
-  const m = rawLine.match(/^(\d+)\s*[x×]\s+(.+)$/i);
+  /** e.g. "2x ASUS GPU", "8x4GB Hynix …" (no space after ×) */
+  const m = rawLine.match(/^(\d+)\s*[x×]\s*(.+)$/i);
   if (!m) return { name: rawLine, quantity: 1 };
   return { quantity: Math.max(1, parseInt(m[1], 10) || 1), name: m[2].trim() };
 }
@@ -189,7 +192,7 @@ function reconcileCategory(name: string, category?: string, subCategory?: string
 
 function extractRamStickInfo(name: string): { sticks: number; perStickGB: number | null } | null {
   const n = name.toLowerCase();
-  if (!/(ddr4|ddr5|ram|memory)/i.test(n)) return null;
+  if (!/(ddr[2345]|ram\b|memory\b|\d+x\d+\s*gb|12800u|10600u|2rx8|1rx8)/i.test(n)) return null;
   const explicitKit = n.match(/(\d+)\s*[x×]\s*(\d+)\s*gb/i);
   if (explicitKit) {
     return {
@@ -436,27 +439,43 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
     setBulkTextStatus(`Parsing ${lines.length} line(s) with AI…`);
     try {
       const prompt = `You are parsing bulk inventory item text into structured data for a PC hardware inventory app.
-Return JSON only (no markdown) with exact structure:
-{"items":[{"name":"string","quantity":1,"category":"PC|Laptops|Components|Gadgets|Peripherals|Network|Software|Bundle|Misc","subCategory":"string","note":"string","isDefective":false,"vendor":"string","specs":{"key":"value"}}]}
+You MUST return one JSON object per input line, in order — same count as lines. ${lines.length} input lines ⇒ exactly ${lines.length} objects in "items".
+
+Return JSON only (no markdown). Keep each item compact (omit empty strings). Prefer this shape:
+{"items":[{"name":"string","quantity":1,"category":"PC|Laptops|Components|...","subCategory":"string","note":"","isDefective":false,"vendor":"","specs":{}}]}
 
 Rules:
 - Keep categories limited to: ${CATEGORY_KEYS.join(', ')}
 - SubCategory should fit the category and be concise.
-- Parse quantity from prefixes like "2x ...". If no quantity, use 1.
+- Parse quantity from prefixes like "2x ..." or "8x4GB ...". If no quantity, use 1.
 - IMPORTANT: Do not classify CPUs, SSD/NVMe drives, RAM, or motherboards as Graphics Cards.
-- RAM kits: if text includes patterns like "2x 32GB", set quantity to 2 and keep per-module capacity in specs.
-- Extract useful specs when obvious from the title (e.g. VRAM, capacity, speed, wattage, form factor).
-- Graphics cards: VRAM must be the GPU's onboard memory for that exact chip (e.g. RTX 5070 is 12GB VRAM), not system RAM or another model's spec.
-- If uncertain, choose best likely category/subCategory.
+- RAM kits: patterns like "2x 32GB" or "8x4GB" — set quantity to the stick count when that is the intent.
+- Put only essential specs in "specs" (VRAM for GPUs, GB for RAM, wattage for PSUs). Use {} if none.
+- Graphics cards: VRAM = GPU memory for that chip (not system RAM).
 
 Input lines:
 ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
-      const result = await requestAIJson<{ items?: ParsedTextItem[] }>(prompt);
-      const parsed = Array.isArray(result?.items) ? result.items : [];
+      const maxTokens = Math.min(8192, 600 + lines.length * 280);
+      const result = await requestAIJson<{ items?: ParsedTextItem[] }>(prompt, { maxTokens });
+      let parsed = Array.isArray(result?.items) ? result.items : [];
       if (!parsed.length) {
         throw new Error('AI returned no parse results.');
       }
+      const aiCount = parsed.length;
+      if (parsed.length < lines.length) {
+        for (let i = parsed.length; i < lines.length; i++) {
+          const line = lines[i]!;
+          const { name, quantity } = parseQuantityAndName(line);
+          const guessed = inferCategoryFromName(name);
+          parsed.push({ name, quantity, category: guessed.category, subCategory: guessed.subCategory });
+        }
+      }
       applyParsedItems(parsed, 'AI');
+      if (aiCount < lines.length) {
+        setBulkTextStatus(
+          `Added ${parsed.length} item(s). AI returned ${aiCount}/${lines.length} rows (output limit or model); ${lines.length - aiCount} filled with local detection. Review before confirm.`
+        );
+      }
     } catch (e) {
       console.warn('Bulk text AI parsing failed, falling back to local heuristic', e);
       const fallback = lines.map((line) => {
