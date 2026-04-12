@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Eye, EyeOff, Tag, MessageCircle, ExternalLink, Loader2, Check, Mail, Phone, Upload, CheckCircle2, Pencil, X, Filter, Search as SearchIcon, Sparkles, Copy, Download } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
-import { formatEUR, parseLocaleMoney, parseLocaleNumber } from '../utils/formatMoney';
+import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 import { subscribeToStoreInquiries, markStoreInquiryRead, updateStoreInquiryStatus, type StoreInquiryStatus } from '../services/firebaseService';
 import { generateStoreDescription } from '../services/specsAI';
 import ItemThumbnail from './ItemThumbnail';
@@ -98,6 +98,9 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
 
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [generateDescriptionWhenOpen, setGenerateDescriptionWhenOpen] = useState(false);
+  /** Raw strings while typing so decimals like "17." are not stripped by immediate parse. */
+  const [sellPriceDraft, setSellPriceDraft] = useState<Record<string, string>>({});
+  const [storeSalePriceDraft, setStoreSalePriceDraft] = useState<Record<string, string>>({});
   const applyEdit = (updates: Partial<InventoryItem>) => {
     if (!editingItem) return;
     const next = items.map((it) => (it.id === editingItem.id ? { ...it, ...updates } : it));
@@ -410,8 +413,23 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
                             <input
                               type="text"
                               inputMode="decimal"
-                              value={item.sellPrice ?? ''}
-                              onChange={(e) => setSellPrice(item, e.target.value === '' ? '' : parseLocaleMoney(e.target.value, 0))}
+                              value={sellPriceDraft[item.id] !== undefined ? sellPriceDraft[item.id]! : String(item.sellPrice ?? '')}
+                              onChange={(e) => setSellPriceDraft((d) => ({ ...d, [item.id]: e.target.value }))}
+                              onBlur={() => {
+                                const raw = sellPriceDraft[item.id];
+                                if (raw === undefined) return;
+                                const n = parseLocaleNumber(raw);
+                                if (raw.trim() === '') {
+                                  setSellPrice(item, '');
+                                } else if (Number.isFinite(n)) {
+                                  setSellPrice(item, n);
+                                }
+                                setSellPriceDraft((d) => {
+                                  const next = { ...d };
+                                  delete next[item.id];
+                                  return next;
+                                });
+                              }}
                               placeholder="0"
                               className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-400"
                             />
@@ -452,8 +470,27 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
                               <input
                                 type="text"
                                 inputMode="decimal"
-                                value={item.storeSalePrice ?? ''}
-                                onChange={(e) => setSalePrice(item, e.target.value === '' ? '' : parseLocaleMoney(e.target.value, 0))}
+                                value={
+                                  storeSalePriceDraft[item.id] !== undefined
+                                    ? storeSalePriceDraft[item.id]!
+                                    : String(item.storeSalePrice ?? '')
+                                }
+                                onChange={(e) => setStoreSalePriceDraft((d) => ({ ...d, [item.id]: e.target.value }))}
+                                onBlur={() => {
+                                  const raw = storeSalePriceDraft[item.id];
+                                  if (raw === undefined) return;
+                                  const n = parseLocaleNumber(raw);
+                                  if (raw.trim() === '') {
+                                    setSalePrice(item, '');
+                                  } else if (Number.isFinite(n)) {
+                                    setSalePrice(item, n);
+                                  }
+                                  setStoreSalePriceDraft((d) => {
+                                    const next = { ...d };
+                                    delete next[item.id];
+                                    return next;
+                                  });
+                                }}
                                 className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-400"
                               />
                             ) : (

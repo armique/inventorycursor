@@ -11,7 +11,7 @@ import {
   Wand2, Sliders, X, History
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, Platform, PaymentType } from '../types';
-import { formatEUR, parseLocaleMoney } from '../utils/formatMoney';
+import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 import { CATEGORY_IMAGES, getSpecOptions } from '../services/hardwareDB';
 import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
 import { getCompatibleItemsForItem } from '../services/compatibility';
@@ -119,6 +119,9 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   const [quantityToCreate, setQuantityToCreate] = useState<number>(1);
   const [showExtraSpecs, setShowExtraSpecs] = useState(false);
 
+  /** Controlled string so partial decimals like "17." work (parsing on each keystroke strips the dot). */
+  const [buyPriceText, setBuyPriceText] = useState('');
+
   useEffect(() => {
     // Priority: initialData (Modal/Prop) -> ID (URL) -> Default
     if (initialData) {
@@ -135,6 +138,11 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
        setConfigStep('CATEGORY');
     }
   }, [id, items, initialData]);
+
+  useEffect(() => {
+    const bp = formData.buyPrice;
+    setBuyPriceText(bp === undefined || bp === null ? '' : String(bp));
+  }, [formData.buyPrice, formData.id]);
 
   useEffect(() => {
     setShowExtraSpecs(false);
@@ -339,6 +347,9 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
 
     const isEditingExisting = Boolean(initialData || id);
 
+    const buyParsed = parseLocaleNumber(buyPriceText);
+    const buyPriceResolved = Number.isFinite(buyParsed) ? buyParsed : 0;
+
     const normalizedImages = normalizeImageList([formData.imageUrl, ...(formData.imageUrls || [])]);
     const fallbackImage = CATEGORY_IMAGES[formData.subCategory || formData.category || 'Components'];
 
@@ -354,6 +365,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
 
     const base: InventoryItem = {
       ...formData as InventoryItem,
+      buyPrice: buyPriceResolved,
       id: formData.id || `item-${Date.now()}`,
       imageUrl: normalizedImages[0] || fallbackImage,
       imageUrls: normalizedImages.length ? normalizedImages : [fallbackImage],
@@ -655,8 +667,22 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                                 type="text"
                                 inputMode="decimal"
                                 className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-lg outline-none focus:border-blue-500 focus:bg-white transition-all"
-                                value={formData.buyPrice}
-                                onChange={e => setFormData({ ...formData, buyPrice: parseLocaleMoney(e.target.value, 0) })}
+                                value={buyPriceText}
+                                onChange={(e) => setBuyPriceText(e.target.value)}
+                                onBlur={() => {
+                                  const n = parseLocaleNumber(buyPriceText);
+                                  if (Number.isFinite(n)) {
+                                    setFormData((prev) => ({ ...prev, buyPrice: n }));
+                                    setBuyPriceText(String(n));
+                                  } else if (buyPriceText.trim() === '') {
+                                    setFormData((prev) => ({ ...prev, buyPrice: 0 }));
+                                    setBuyPriceText('');
+                                  } else {
+                                    setBuyPriceText(
+                                      String(formData.buyPrice !== undefined && formData.buyPrice !== null ? formData.buyPrice : 0)
+                                    );
+                                  }
+                                }}
                              />
                           </div>
                           <div className="space-y-2">
