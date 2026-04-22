@@ -127,6 +127,8 @@ const GEMINI_VISION_MODELS = [
   'gemini-2.0-flash-lite',
 ] as const;
 
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 async function parseWithGemini(mime: string, base64: string): Promise<ParsedEbayOrderScreenshot> {
   const apiKey = clientGeminiKey();
   if (!apiKey) throw new Error('VITE_GEMINI_API_KEY not set');
@@ -154,39 +156,55 @@ async function parseWithGemini(mime: string, base64: string): Promise<ParsedEbay
 
   const errors: string[] = [];
   for (const model of GEMINI_VISION_MODELS) {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body,
+    let handled = false;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+        }
+      );
+      const raw = await res.text();
+      if (!res.ok) {
+        const transient = res.status === 429 || res.status === 500 || res.status === 503;
+        if (res.status === 404) {
+          errors.push(`${model}: ${res.status}`);
+          handled = true;
+          break;
+        }
+        if (transient && attempt < 3) {
+          await sleep(250 * attempt);
+          continue;
+        }
+        if (transient) {
+          errors.push(`${model}: ${res.status}`);
+          handled = true;
+          break;
+        }
+        throw new Error(`Gemini: ${res.status} ${raw.slice(0, 300)}`);
       }
-    );
-    const raw = await res.text();
-    if (!res.ok) {
-      if (res.status === 404 || res.status === 429) {
-        errors.push(`${model}: ${res.status}`);
-        continue;
+      let data: {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+        promptFeedback?: { blockReason?: string };
+      };
+      try {
+        data = JSON.parse(raw) as typeof data;
+      } catch {
+        throw new Error('Gemini returned invalid JSON envelope');
       }
-      throw new Error(`Gemini: ${res.status} ${raw.slice(0, 300)}`);
+      const cand = data.candidates?.[0];
+      if (!cand) {
+        errors.push(`${model}: blocked (${data.promptFeedback?.blockReason || 'unknown'})`);
+        handled = true;
+        break;
+      }
+      const text = cand.content?.parts?.[0]?.text?.trim() || '{}';
+      const parsed = JSON.parse(text) as unknown;
+      return normalizeParsed(parsed);
     }
-    let data: {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-      promptFeedback?: { blockReason?: string };
-    };
-    try {
-      data = JSON.parse(raw) as typeof data;
-    } catch {
-      throw new Error('Gemini returned invalid JSON envelope');
-    }
-    const cand = data.candidates?.[0];
-    if (!cand) {
-      errors.push(`${model}: blocked (${data.promptFeedback?.blockReason || 'unknown'})`);
-      continue;
-    }
-    const text = cand.content?.parts?.[0]?.text?.trim() || '{}';
-    const parsed = JSON.parse(text) as unknown;
-    return normalizeParsed(parsed);
+    if (!handled) continue;
   }
 
   throw new Error(`Gemini: no model worked (${errors.join('; ')})`);

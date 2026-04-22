@@ -16,6 +16,8 @@ const GEMINI_MODELS = [
   'gemini-2.0-flash-lite',
 ];
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -99,71 +101,79 @@ export default async function handler(req, res) {
   try {
     let lastErr = '';
     for (const model of GEMINI_MODELS) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
-      const gRes = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(geminiBody),
-      });
-
-      const rawText = await gRes.text();
-      if (!gRes.ok) {
-        lastErr = rawText.slice(0, 400);
-        if (gRes.status === 404 || gRes.status === 429) continue;
-        console.error('Gemini API error', model, gRes.status, lastErr);
-        return res.status(502).json({
-          error: `Gemini API ${gRes.status}: ${lastErr.slice(0, 200)}`,
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+        const gRes = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(geminiBody),
         });
-      }
-
-      let data;
-      try {
-        data = JSON.parse(rawText);
-      } catch {
-        return res.status(502).json({ error: 'Invalid response from Gemini' });
-      }
-
-      const candidate = data.candidates?.[0];
-      if (!candidate) {
-        const block = data.promptFeedback?.blockReason || 'unknown';
-        lastErr = `block: ${block}`;
-        continue;
-      }
-
-      const text = candidate.content?.parts?.[0]?.text?.trim() || '{}';
-      let parsed;
-      try {
-        parsed = JSON.parse(text);
-      } catch {
-        return res.status(422).json({ error: 'Gemini returned non-JSON' });
-      }
-
-      const o = parsed && typeof parsed === 'object' ? parsed : {};
-      const str = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
-      const netEur = (() => {
-        const v = o.amountReceivedNetEur;
-        if (typeof v === 'number' && Number.isFinite(v)) return v;
-        if (typeof v === 'string') {
-          const t = v.trim().replace(/€/g, '').replace(/\s/g, '').replace(',', '.');
-          const n = parseFloat(t);
-          return Number.isFinite(n) ? n : null;
+  
+        const rawText = await gRes.text();
+        if (!gRes.ok) {
+          lastErr = rawText.slice(0, 400);
+          const transient = gRes.status === 429 || gRes.status === 500 || gRes.status === 503;
+          if (gRes.status === 404) break;
+          if (transient && attempt < 3) {
+            await sleep(250 * attempt);
+            continue;
+          }
+          if (transient) break;
+          console.error('Gemini API error', model, gRes.status, lastErr);
+          return res.status(502).json({
+            error: `Gemini API ${gRes.status}: ${lastErr.slice(0, 200)}`,
+          });
         }
-        return null;
-      })();
-      const parsedOut = {
-        ebayOrderId: str(o.ebayOrderId),
-        ebayUsername: str(o.ebayUsername),
-        buyerFullName: str(o.buyerFullName),
-        shippingAddress: str(o.shippingAddress),
-        phone: str(o.phone) ?? undefined,
-        amountReceivedNetEur: netEur,
-      };
 
-      return res.status(200).json({ parsed: parsedOut });
+        let data;
+        try {
+          data = JSON.parse(rawText);
+        } catch {
+          return res.status(502).json({ error: 'Invalid response from Gemini' });
+        }
+
+        const candidate = data.candidates?.[0];
+        if (!candidate) {
+          const block = data.promptFeedback?.blockReason || 'unknown';
+          lastErr = `block: ${block}`;
+          break;
+        }
+
+        const text = candidate.content?.parts?.[0]?.text?.trim() || '{}';
+        let parsed;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          return res.status(422).json({ error: 'Gemini returned non-JSON' });
+        }
+
+        const o = parsed && typeof parsed === 'object' ? parsed : {};
+        const str = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+        const netEur = (() => {
+          const v = o.amountReceivedNetEur;
+          if (typeof v === 'number' && Number.isFinite(v)) return v;
+          if (typeof v === 'string') {
+            const t = v.trim().replace(/€/g, '').replace(/\s/g, '').replace(',', '.');
+            const n = parseFloat(t);
+            return Number.isFinite(n) ? n : null;
+          }
+          return null;
+        })();
+        const parsedOut = {
+          ebayOrderId: str(o.ebayOrderId),
+          ebayUsername: str(o.ebayUsername),
+          buyerFullName: str(o.buyerFullName),
+          shippingAddress: str(o.shippingAddress),
+          phone: str(o.phone) ?? undefined,
+          amountReceivedNetEur: netEur,
+        };
+
+        return res.status(200).json({ parsed: parsedOut });
+      }
     }
 
     return res.status(502).json({
-      error: `Gemini: all models failed. Last: ${lastErr.slice(0, 280)}`,
+      error: `Gemini temporarily unavailable or all models failed. Last: ${lastErr.slice(0, 280)}`,
     });
   } catch (e) {
     console.error('parse-ebay-order-screenshot', e);

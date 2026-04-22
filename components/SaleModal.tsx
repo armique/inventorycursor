@@ -50,6 +50,13 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
   const [orderScreenshotSource, setOrderScreenshotSource] = useState('');
   const [orderScreenshotParsing, setOrderScreenshotParsing] = useState(false);
   const [orderScreenshotError, setOrderScreenshotError] = useState<string | null>(null);
+  const [ebayPasteRows, setEbayPasteRows] = useState<
+    Array<{ orderId: string; dateGuess?: string; snippet?: string; link?: string }>
+  >([]);
+  const [selectedEbayPasteRow, setSelectedEbayPasteRow] = useState<number>(0);
+  const [ebayPasteInput, setEbayPasteInput] = useState('');
+  const [ebayPasteError, setEbayPasteError] = useState<string | null>(null);
+  const [ebayPasteInfo, setEbayPasteInfo] = useState<string | null>(null);
   /** True while a file is dragged over the sale modal (eBay screenshot). */
   const [ebayScreenshotDragOver, setEbayScreenshotDragOver] = useState(false);
 
@@ -187,6 +194,103 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
     } finally {
       setOrderScreenshotParsing(false);
     }
+  };
+
+  const parseGermanDateToIso = (raw: string): string | null => {
+    const m = raw.trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$/);
+    if (!m) return null;
+    const day = m[1].padStart(2, '0');
+    const month = m[2].padStart(2, '0');
+    const year = m[3].length === 2 ? `20${m[3]}` : m[3];
+    return `${year}-${month}-${day}`;
+  };
+
+  const parseFirstMoneyAmount = (snippet: string): number | null => {
+    const matches = [...snippet.matchAll(/(-?\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})|-?\d+(?:,\d{2}))\s*€/g)];
+    if (!matches.length) return null;
+    const last = matches[matches.length - 1]?.[1] ?? '';
+    const cleaned = last.replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
+    const n = parseFloat(cleaned);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const parseEbayBrowserExportRows = (text: string): Array<{
+    orderId: string;
+    dateGuess?: string;
+    snippet?: string;
+    link?: string;
+  }> => {
+    const lines = text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (!lines.length) return [];
+
+    const rows = lines.map((line) => line.split('\t'));
+    const first = rows[0] ?? [];
+    const hasHeader = first[0]?.toLowerCase() === 'orderid';
+    const start = hasHeader ? 1 : 0;
+    const out: Array<{ orderId: string; dateGuess?: string; snippet?: string; link?: string }> = [];
+
+    for (let i = start; i < rows.length; i++) {
+      const cols = rows[i] ?? [];
+      const orderId = (cols[0] || '').trim();
+      if (!orderId) continue;
+      out.push({
+        orderId,
+        dateGuess: (cols[1] || '').trim(),
+        snippet: (cols[3] || '').trim(),
+        link: (cols[4] || '').trim(),
+      });
+    }
+    return out;
+  };
+
+  const handleParseEbayPasteRows = () => {
+    setEbayPasteError(null);
+    setEbayPasteInfo(null);
+    const rows = parseEbayBrowserExportRows(ebayPasteInput);
+    if (!rows.length) {
+      setEbayPasteError('No usable rows found. Paste TSV from "npm run ebay:browser-export".');
+      return;
+    }
+    setEbayPasteRows(rows);
+    setSelectedEbayPasteRow(0);
+    setEbayPasteInfo(`Parsed ${rows.length} row(s). Select one and click Apply selected row.`);
+  };
+
+  const handleImportFromEbayPaste = () => {
+    setEbayPasteError(null);
+    setEbayPasteInfo(null);
+    const selected = ebayPasteRows[selectedEbayPasteRow];
+    if (!selected) {
+      setEbayPasteError('No row selected. Parse and select an order first.');
+      return;
+    }
+    setPlatformSold('ebay.de');
+    setPaymentType('ebay.de');
+    setEbayOrderId(selected.orderId);
+
+    if (selected.dateGuess) {
+      const iso = parseGermanDateToIso(selected.dateGuess);
+      if (iso) setSaleDate(iso);
+    }
+    if (selected.snippet) {
+      const price = parseFirstMoneyAmount(selected.snippet);
+      if (price != null) {
+        setSalePrice(formatEUR(price));
+      }
+    }
+    if (selected.link) {
+      setComment((prev) => {
+        const marker = `eBay Order Link: ${selected.link}`;
+        return prev.includes(marker) ? prev : [prev.trim(), marker].filter(Boolean).join('\n');
+      });
+    }
+
+    setEbayPasteInfo(
+      `Imported selected order: ${selected.orderId}.`
+    );
   };
 
   const calculateProfit = (sell: number, buy: number, fee: number) => {
@@ -412,6 +516,66 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
                        {fetchEbayError && (
                           <span className="text-xs text-red-600 font-medium">{fetchEbayError}</span>
                        )}
+                    </div>
+                    <div className="space-y-1 pt-1">
+                      <label className="text-[9px] font-black uppercase text-slate-400 ml-1">
+                        Quick Paste (No API)
+                      </label>
+                      <p className="text-[10px] text-slate-500 ml-1 leading-relaxed">
+                        Paste one line (or full table) from `npm run ebay:browser-export` TSV to prefill order ID, date, and detected EUR amount.
+                      </p>
+                      <textarea
+                        rows={3}
+                        placeholder={'orderId\tdateGuess\tyearGuess\tsnippet\tlink'}
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-[11px] font-bold outline-none focus:border-blue-500"
+                        value={ebayPasteInput}
+                        onChange={(e) => {
+                          setEbayPasteInput(e.target.value);
+                          setEbayPasteRows([]);
+                          setSelectedEbayPasteRow(0);
+                          setEbayPasteError(null);
+                          setEbayPasteInfo(null);
+                        }}
+                      />
+                      {ebayPasteRows.length > 0 && (
+                        <div className="max-h-36 overflow-auto rounded-xl border border-slate-200 bg-white">
+                          {ebayPasteRows.map((r, idx) => (
+                            <button
+                              key={`${r.orderId}-${idx}`}
+                              type="button"
+                              onClick={() => setSelectedEbayPasteRow(idx)}
+                              className={`w-full text-left px-3 py-2 border-b last:border-b-0 border-slate-100 hover:bg-slate-50 ${
+                                idx === selectedEbayPasteRow ? 'bg-indigo-50' : ''
+                              }`}
+                            >
+                              <p className="text-[11px] font-black text-slate-800">
+                                {r.orderId}
+                                {r.dateGuess ? ` • ${r.dateGuess}` : ''}
+                              </p>
+                              <p className="text-[10px] text-slate-500 truncate">{r.snippet || r.link || 'No snippet'}</p>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleParseEbayPasteRows}
+                          className="px-3 py-2 bg-slate-100 text-slate-700 rounded-xl text-[10px] font-black uppercase hover:bg-slate-200"
+                        >
+                          Parse rows
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleImportFromEbayPaste}
+                          disabled={ebayPasteRows.length === 0}
+                          className="px-3 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Apply selected row
+                        </button>
+                        {ebayPasteInfo && <span className="text-[10px] text-emerald-700 font-bold">{ebayPasteInfo}</span>}
+                        {ebayPasteError && <span className="text-[10px] text-red-600 font-bold">{ebayPasteError}</span>}
+                      </div>
                     </div>
                  </div>
               )}
