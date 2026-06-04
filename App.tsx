@@ -43,8 +43,16 @@ import { Analytics } from '@vercel/analytics/react';
 import { appendUndoHistory } from './utils/appendUndoHistory';
 
 const WRITE_DEBOUNCE_MS = 3500;
-const LOCAL_PERSIST_DEBOUNCE_MS = 200;
-const ACTION_HISTORY_LIMIT = 2000;
+const LOCAL_PERSIST_DEBOUNCE_MS = 450;
+const ACTION_HISTORY_LIMIT = 400;
+
+function scheduleIdlePersist(work: () => void) {
+  if (typeof requestIdleCallback !== 'undefined') {
+    requestIdleCallback(() => work(), { timeout: 2500 });
+  } else {
+    setTimeout(work, 0);
+  }
+}
 
 /** When merging an update into an existing item, preserve these from the old item if the update doesn't provide them (so renames/edits from inventory don't wipe store data). */
 const PRESERVE_FROM_OLD_IF_UPDATE_MISSING: (keyof InventoryItem)[] = [
@@ -701,7 +709,19 @@ const App: React.FC = () => {
     if (localPersistDebounceRef.current) clearTimeout(localPersistDebounceRef.current);
     localPersistDebounceRef.current = setTimeout(() => {
       localPersistDebounceRef.current = null;
-      saveToLocalStorage(items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields, recurringExpenses);
+      scheduleIdlePersist(() => {
+        localStorage.setItem('inventory_items', JSON.stringify(items));
+        localStorage.setItem('inventory_trash', JSON.stringify(trash));
+        localStorage.setItem('inventory_expenses', JSON.stringify(expenses));
+        localStorage.setItem('business_settings', JSON.stringify(businessSettings));
+        localStorage.setItem('monthly_profit_goal', monthlyGoal.toString());
+        localStorage.setItem('custom_categories', JSON.stringify(categories));
+        localStorage.setItem('custom_category_fields', JSON.stringify(categoryFields));
+        if (recurringExpenses !== undefined) {
+          localStorage.setItem('recurring_expenses', JSON.stringify(recurringExpenses));
+        }
+        persistDashboardPreferencesToLocalStorage(dashboardPrefsRef.current);
+      });
     }, LOCAL_PERSIST_DEBOUNCE_MS);
 
     if (!isCloudEnabled() || !authUser) return;
@@ -735,7 +755,21 @@ const App: React.FC = () => {
       if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
       if (localPersistDebounceRef.current) clearTimeout(localPersistDebounceRef.current);
     };
-  }, [appState, authUser, items, trash, expenses, recurringExpenses, businessSettings, monthlyGoal, categories, categoryFields, dashboardPrefs, actionHistory]);
+  }, [appState, authUser, items, trash, expenses, recurringExpenses, businessSettings, monthlyGoal, categories, categoryFields, dashboardPrefs]);
+
+  // Action history can be large — persist separately so item edits don't always stringify it with inventory.
+  useEffect(() => {
+    if (appState !== 'READY') return;
+    const t = setTimeout(() => {
+      scheduleIdlePersist(() => {
+        localStorage.setItem(
+          'action_history',
+          JSON.stringify(actionHistory.slice(-ACTION_HISTORY_LIMIT))
+        );
+      });
+    }, 900);
+    return () => clearTimeout(t);
+  }, [appState, actionHistory]);
 
   const handleForcePush = async () => {
     if (!isCloudEnabled() || !authUser) return false;

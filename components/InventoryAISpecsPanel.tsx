@@ -30,23 +30,24 @@ const InventoryAISpecsPanelInner: React.FC<Props> = ({
   const [collapsed, setCollapsed] = useState(true);
 
   const provider = getSpecsAIProvider();
-  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const itemsById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
   const selectedItems = useMemo(() => {
     if (selectedIds.length === 0) return EMPTY_ITEMS;
     const out: InventoryItem[] = [];
-    for (const item of items) {
-      if (selectedIdSet.has(item.id)) out.push(item);
+    for (const id of selectedIds) {
+      const item = itemsById.get(id);
+      if (item) out.push(item);
     }
     return out;
-  }, [items, selectedIds.length, selectedIdSet]);
+  }, [selectedIds, itemsById]);
   const canParseCount = selectedItems.length;
   const selectedAllDefective = selectedItems.length > 0 && selectedItems.every((i) => i.isDefective);
   const defectiveLabel = selectedAllDefective ? 'Mark OK' : 'Mark defective';
   const toggleDefective = useCallback(() => {
     if (selectedItems.length === 0) return;
     const newValue = !selectedAllDefective;
-    onUpdate(items.map((i) => (selectedIdSet.has(i.id) ? { ...i, isDefective: newValue } : i)));
-  }, [selectedItems.length, selectedAllDefective, items, selectedIdSet, onUpdate]);
+    onUpdate(selectedItems.map((i) => ({ ...i, isDefective: newValue })));
+  }, [selectedItems, selectedAllDefective, onUpdate]);
 
   const waitWithCountdown = useCallback(async (totalMs: number) => {
     const totalSec = Math.ceil(totalMs / 1000);

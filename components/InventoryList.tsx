@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, useDeferredValue, startTransition } from 'react';
 import { formatEUR, parseLocaleMoney, parseLocaleNumber } from '../utils/formatMoney';
-import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSortKey } from '../utils/inventoryTimeGauge';
+import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSortKey, buildTimeGaugeSortKeyMap } from '../utils/inventoryTimeGauge';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
@@ -332,6 +332,7 @@ const InventoryList: React.FC<Props> = ({
   const searchSuggestionsRef = useRef<HTMLDivElement>(null);
 
   const searchSuggestions = useMemo(() => {
+    if (!searchSuggestionsOpen) return [];
     const q = searchTerm.trim().toLowerCase();
     if (q.length < 2) return [];
     const seen = new Set<string>();
@@ -348,7 +349,16 @@ const InventoryList: React.FC<Props> = ({
       if (i.vendor) add(i.vendor, 'vendor');
     });
     return out.slice(0, 12);
-  }, [items, searchTerm]);
+  }, [items, searchTerm, searchSuggestionsOpen]);
+
+  const deferredSearchTerm = useDeferredValue(searchTerm);
+  const hasActiveSpecFilters = useMemo(() => {
+    if (Object.values(specFilters).some((v) => v?.length)) return true;
+    return Object.values(specRangeFilters).some(
+      (r) => r && (r.min !== undefined || r.max !== undefined)
+    );
+  }, [specFilters, specRangeFilters]);
+  const timeGaugeSortKeyMap = useMemo(() => buildTimeGaugeSortKeyMap(items), [items]);
 
   // --- INVENTORY PRESENCE (PRESENT / LOST) ---
   const togglePresence = (item: InventoryItem) => {
@@ -577,6 +587,8 @@ const InventoryList: React.FC<Props> = ({
 
   // Base-filtered items (no spec filters) — used to build available spec options in the Filters panel
   const baseFilteredForSpecs = useMemo(() => {
+    if (!showSpecFiltersPanel && !hasActiveSpecFilters) return [];
+    const searchLower = deferredSearchTerm.toLowerCase();
     return items.filter(item => {
       let matchesStatus = false;
       if (statusFilter === 'ACTIVE') matchesStatus = item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED || item.status === ItemStatus.IN_COMPOSITION;
@@ -592,7 +604,7 @@ const InventoryList: React.FC<Props> = ({
         const matchSubAsTopLevel = subCategoryFilter && item.category === subCategoryFilter;
         if (!matchParentAndSub && !matchSubAsTopLevel) return false;
       }
-      const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) || item.category.toLowerCase().includes(searchTerm.toLowerCase()) || item.vendor?.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = item.name.toLowerCase().includes(searchLower) || item.category.toLowerCase().includes(searchLower) || item.vendor?.toLowerCase().includes(searchLower);
       if (!matchesSearch) return false;
       if (timeFilter !== 'ALL') {
         const isSalesItem = item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED;
@@ -607,10 +619,11 @@ const InventoryList: React.FC<Props> = ({
       }
       return true;
     });
-  }, [items, searchTerm, statusFilter, categoryFilter, subCategoryFilter, timeFilter, dateRange, salePlatformFilter, salePaymentFilter, showInComposition]);
+  }, [items, deferredSearchTerm, statusFilter, categoryFilter, subCategoryFilter, timeFilter, dateRange, salePlatformFilter, salePaymentFilter, showInComposition, showSpecFiltersPanel, hasActiveSpecFilters]);
 
   // Available spec keys and unique values (from base-filtered items) for the Filters panel
   const specOptions = useMemo(() => {
+    if (!showSpecFiltersPanel && !hasActiveSpecFilters) return [];
     const keyToValues = new Map<string, Set<string | number>>();
     const keyToNumeric = new Map<string, boolean>();
     baseFilteredForSpecs.forEach(item => {
@@ -639,7 +652,7 @@ const InventoryList: React.FC<Props> = ({
       result.push({ key, values: values.sort((a, b) => String(a).localeCompare(String(b))), isNumeric, min, max });
     });
     return result;
-  }, [baseFilteredForSpecs]);
+  }, [baseFilteredForSpecs, showSpecFiltersPanel, hasActiveSpecFilters]);
 
   // Convenience: socket filter options (e.g. for processors / motherboards)
   const socketSpec = useMemo(() => {
@@ -652,6 +665,7 @@ const InventoryList: React.FC<Props> = ({
 
   // Filtering & Sorting
   const sortedItems = useMemo(() => {
+    const searchLower = deferredSearchTerm.toLowerCase();
     let filtered = items.filter(item => {
       // 1. Status Filter
       let matchesStatus = false;
@@ -682,10 +696,13 @@ const InventoryList: React.FC<Props> = ({
       }
 
       // 3. Search Filter
-      const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                            item.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                            item.vendor?.toLowerCase().includes(searchTerm.toLowerCase());
-      if (!matchesSearch) return false;
+      if (searchLower) {
+        const matchesSearch =
+          item.name.toLowerCase().includes(searchLower) ||
+          item.category.toLowerCase().includes(searchLower) ||
+          (item.vendor?.toLowerCase().includes(searchLower) ?? false);
+        if (!matchesSearch) return false;
+      }
 
       // 4. Time Filter
       if (timeFilter !== 'ALL') {
@@ -739,8 +756,9 @@ const InventoryList: React.FC<Props> = ({
       const dir = sortConfig.direction === 'asc' ? 1 : -1;
 
       if (sortConfig.key === 'timeGauge') {
-        const now = Date.now();
-        return (timeGaugeSortKey(a, now, items) - timeGaugeSortKey(b, now, items)) * dir;
+        return (
+          ((timeGaugeSortKeyMap.get(a.id) ?? -1) - (timeGaugeSortKeyMap.get(b.id) ?? -1)) * dir
+        );
       }
 
       let valA: any = (a as any)[key];
@@ -768,22 +786,22 @@ const InventoryList: React.FC<Props> = ({
     });
 
     return filtered;
-  }, [items, searchTerm, statusFilter, categoryFilter, subCategoryFilter, sortConfig, timeFilter, dateRange, salePlatformFilter, salePaymentFilter, specFilters, specRangeFilters, showInComposition]);
+  }, [items, deferredSearchTerm, statusFilter, categoryFilter, subCategoryFilter, sortConfig, timeFilter, dateRange, salePlatformFilter, salePaymentFilter, specFilters, specRangeFilters, showInComposition, timeGaugeSortKeyMap]);
 
   const visibleItems = useMemo(() => sortedItems.slice(0, visibleCount), [sortedItems, visibleCount]);
   const showFinancials = statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS';
 
   const compatibleCountByItemId = useMemo(() => {
     const map = new Map<string, number>();
-    const partTypes = ['Processors', 'Motherboards', 'RAM'];
-    items.forEach((item) => {
-      if (!partTypes.includes(item.subCategory || '') && !partTypes.includes(item.category || '')) return;
+    const partTypes = new Set(['Processors', 'Motherboards', 'RAM']);
+    for (const item of visibleItems) {
+      if (!partTypes.has(item.subCategory || '') && !partTypes.has(item.category || '')) continue;
       const groups = getCompatibleItemsForItem(item, items);
       const total = groups.reduce((sum, g) => sum + g.items.length, 0);
       if (total > 0) map.set(item.id, total);
-    });
+    }
     return map;
-  }, [items]);
+  }, [visibleItems, items]);
 
   // Active filter count (for badge) — category/subcategory + spec keys
   const activeSpecFilterCount = useMemo(() => {
@@ -2047,7 +2065,7 @@ const InventoryList: React.FC<Props> = ({
                   className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-slate-900/20"
                   placeholder="Search..."
                   value={searchTerm}
-                  onChange={e => setSearchTerm(e.target.value)}
+                  onChange={(e) => startTransition(() => setSearchTerm(e.target.value))}
                   onFocus={() => setSearchSuggestionsOpen(true)}
                   onBlur={() => setTimeout(() => setSearchSuggestionsOpen(false), 180)}
                />
@@ -2387,7 +2405,7 @@ const InventoryList: React.FC<Props> = ({
       <div className="shrink-0">
         <InventoryAISpecsPanel
           items={items}
-          selectedIds={selectedIds}
+          selectedIds={deferredSelectedIds}
           categoryFields={categoryFields ?? {}}
           onUpdate={(updated) => onUpdate(updated)}
         />

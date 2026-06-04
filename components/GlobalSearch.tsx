@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useDeferredValue } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Package, Wallet, Settings, X } from 'lucide-react';
 import { InventoryItem, Expense, BusinessSettings } from '../types';
@@ -21,37 +21,51 @@ function matches(text: string, q: string): boolean {
 const GlobalSearch: React.FC<Props> = ({ items, expenses, businessSettings, onClose }) => {
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
+  const deferredQuery = useDeferredValue(query);
   const [isOpen, setIsOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const results = useMemo(() => {
-    const q = query.trim();
+    const q = deferredQuery.trim();
     if (q.length < 2) return { items: [] as InventoryItem[], expenses: [] as Expense[], settings: false };
 
-    const itemMatches = items.filter(
-      (i) =>
-        matches(i.name, q) ||
-        matches(i.category, q) ||
-        matches(i.subCategory || '', q) ||
-        matches(i.vendor || '', q) ||
-        matches(i.comment1 || '', q) ||
-        matches(i.comment2 || '', q)
-    );
-    const expenseMatches = expenses.filter(
-      (e) => matches(e.description, q) || matches(e.category, q)
-    );
+    const qLower = q.toLowerCase();
+    const itemMatches: InventoryItem[] = [];
+    for (const i of items) {
+      if (itemMatches.length >= MAX_RESULTS) break;
+      if (
+        i.name.toLowerCase().includes(qLower) ||
+        i.category.toLowerCase().includes(qLower) ||
+        (i.subCategory || '').toLowerCase().includes(qLower) ||
+        (i.vendor || '').toLowerCase().includes(qLower) ||
+        (i.comment1 || '').toLowerCase().includes(qLower) ||
+        (i.comment2 || '').toLowerCase().includes(qLower)
+      ) {
+        itemMatches.push(i);
+      }
+    }
+    const expenseMatches: Expense[] = [];
+    for (const e of expenses) {
+      if (expenseMatches.length >= MAX_RESULTS) break;
+      if (
+        e.description.toLowerCase().includes(qLower) ||
+        e.category.toLowerCase().includes(qLower)
+      ) {
+        expenseMatches.push(e);
+      }
+    }
     const settingsMatch =
-      matches(businessSettings.companyName || '', q) ||
-      matches(businessSettings.ownerName || '', q) ||
-      matches(businessSettings.address || '', q);
+      (businessSettings.companyName || '').toLowerCase().includes(qLower) ||
+      (businessSettings.ownerName || '').toLowerCase().includes(qLower) ||
+      (businessSettings.address || '').toLowerCase().includes(qLower);
 
     return {
-      items: itemMatches.slice(0, MAX_RESULTS),
-      expenses: expenseMatches.slice(0, MAX_RESULTS),
+      items: itemMatches,
+      expenses: expenseMatches,
       settings: settingsMatch,
     };
-  }, [query, items, expenses, businessSettings]);
+  }, [deferredQuery, items, expenses, businessSettings]);
 
   const hasResults =
     results.items.length > 0 || results.expenses.length > 0 || results.settings;
@@ -115,7 +129,7 @@ const GlobalSearch: React.FC<Props> = ({ items, expenses, businessSettings, onCl
           </button>
         )}
       </div>
-      {isOpen && query.trim().length >= 2 && (
+      {isOpen && deferredQuery.trim().length >= 2 && (
         <div className="absolute left-0 right-0 top-full mt-1 z-[200] rounded-xl border border-slate-700 bg-slate-900 shadow-xl overflow-hidden">
           {!hasResults ? (
             <p className="px-4 py-4 text-sm text-slate-400">No matches</p>
@@ -198,4 +212,4 @@ const GlobalSearch: React.FC<Props> = ({ items, expenses, businessSettings, onCl
   );
 };
 
-export default GlobalSearch;
+export default React.memo(GlobalSearch);

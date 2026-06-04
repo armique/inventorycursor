@@ -230,3 +230,12 @@ export function timeGaugeSortKey(item: InventoryItem, nowMs: number, allItems?: 
   if (row.missingSellDate) return 999999;
   return row.days;
 }
+
+/** Precompute sort keys once — avoids O(n log n × n) scans during table sort. */
+export function buildTimeGaugeSortKeyMap(items: InventoryItem[], nowMs: number = Date.now()): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const item of items) {
+    map.set(item.id, timeGaugeSortKey(item, nowMs, items));
+  }
+  return map;
+}
