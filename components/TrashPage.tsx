@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { InventoryItem } from '../types';
 import ItemThumbnail from './ItemThumbnail';
-import BulkSelectionBar, { bulkSelectionPadClass } from './BulkSelectionBar';
+import BulkSelectionBar from './BulkSelectionBar';
 
 interface Props {
   items: InventoryItem[];
@@ -31,7 +31,6 @@ const TRASH_SORT_KEY = 'trash_sort_config';
 const TrashPage: React.FC<Props> = ({ items, onRestore, onPermanentDelete }) => {
   const [searchTerm, setSearchTerm] = useState(() => localStorage.getItem('trash_search') || '');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [bulkActionsExpanded, setBulkActionsExpanded] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => (localStorage.getItem('trash_view_mode') as any) || 'grid');
   
   // Persisted Sort Config
@@ -222,12 +221,8 @@ const TrashPage: React.FC<Props> = ({ items, onRestore, onPermanentDelete }) => 
     );
   };
 
-  const trashPadClass = bulkSelectionPadClass(bulkActionsExpanded, selectedIds.length > 0);
-
   return (
-    <div
-      className={`space-y-6 animate-in fade-in duration-500 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-8 ${trashPadClass}`}
-    >
+    <div className="min-h-full flex flex-col flex-1 gap-6 animate-in fade-in duration-500">
       <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-3xl font-black text-slate-900 tracking-tighter flex items-center gap-3">
@@ -283,7 +278,7 @@ const TrashPage: React.FC<Props> = ({ items, onRestore, onPermanentDelete }) => 
       </div>
 
       {viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 flex-1 min-h-0 overflow-y-auto custom-scrollbar">
           {filteredItems.map(item => {
             const isSelected = selectedIds.includes(item.id);
             return (
@@ -329,7 +324,7 @@ const TrashPage: React.FC<Props> = ({ items, onRestore, onPermanentDelete }) => 
           })}
         </div>
       ) : (
-        <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-x-auto">
+        <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-x-auto flex-1 min-h-0 overflow-y-auto custom-scrollbar">
            <div className="min-w-max p-1">
               <table className="w-full text-left">
                  <thead>
@@ -421,17 +416,14 @@ const TrashPage: React.FC<Props> = ({ items, onRestore, onPermanentDelete }) => 
         </div>
       )}
 
-      {selectedIds.length > 0 && (
-        <BulkSelectionBar
-          count={selectedIds.length}
-          onClear={() => setSelectedIds([])}
-          onExpandedChange={setBulkActionsExpanded}
-          actions={[
-            { id: 'restore', label: 'Restore', icon: <RotateCcw size={16} />, onClick: handleRestoreSelected, variant: 'primary' },
-            { id: 'purge', label: 'Purge', icon: <Trash2 size={16} />, onClick: handlePurgeSelected, variant: 'danger' },
-          ]}
-        />
-      )}
+      <BulkSelectionBar
+        count={selectedIds.length}
+        onClear={() => setSelectedIds([])}
+        actions={[
+          { id: 'restore', label: 'Restore', icon: <RotateCcw size={16} />, onClick: handleRestoreSelected, variant: 'primary' },
+          { id: 'purge', label: 'Purge', icon: <Trash2 size={16} />, onClick: handlePurgeSelected, variant: 'danger' },
+        ]}
+      />
 
       {/* CONFIRMATION MODAL */}
       {purgeConfirmData && (

@@ -27,7 +27,7 @@ import ItemForm from './ItemForm';
 import ItemThumbnail from './ItemThumbnail';
 import InvoiceView from './InvoiceView';
 import InventoryAISpecsPanel from './InventoryAISpecsPanel';
-import BulkSelectionBar, { bulkSelectionPadClass, type BulkAction } from './BulkSelectionBar';
+import BulkSelectionBar, { type BulkAction } from './BulkSelectionBar';
 import { generateItemSpecs } from '../services/specsAI';
 
 interface Props {
@@ -303,7 +303,6 @@ const InventoryList: React.FC<Props> = ({
   };
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [bulkActionsExpanded, setBulkActionsExpanded] = useState(false);
   const [expandedBundles, setExpandedBundles] = useState<Set<string>>(new Set());
   
   // Modals
@@ -2002,10 +2001,8 @@ const InventoryList: React.FC<Props> = ({
     handleBulkGenerateDescriptions,
   ]);
 
-  const tablePadClass = bulkSelectionPadClass(bulkActionsExpanded, selectedIds.length > 0);
-
   return (
-    <div className="space-y-4 animate-in fade-in pb-4 relative h-full flex flex-col">
+    <div className="min-h-full flex flex-col flex-1 gap-3 animate-in fade-in relative">
       <header className="shrink-0 space-y-2">
          {/* Compact bar: title + count + search + status + category + time + sales + filters + undo/redo */}
          <div className="flex flex-wrap items-center gap-2">
@@ -2423,11 +2420,12 @@ const InventoryList: React.FC<Props> = ({
          </div>
       )}
 
-      {/* Main Table Area */}
+      {/* Main table + docked bulk actions (single column — list scrolls above the bar) */}
+      <div className="flex flex-col flex-1 min-h-0 rounded-[2.5rem] border border-slate-100 shadow-sm bg-white overflow-hidden">
       <div 
         ref={tableContainerRef}
         onScroll={handleScroll}
-        className={`bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-x-auto overflow-y-auto flex-1 custom-scrollbar min-h-0 transition-[padding] duration-200 ${tablePadClass}`}
+        className="overflow-x-auto overflow-y-auto flex-1 min-h-0 custom-scrollbar"
       >
          <style>{`
            [data-inventory-table] tbody > tr > td { padding: 0.4rem 0.3rem !important; }
@@ -2553,14 +2551,12 @@ const InventoryList: React.FC<Props> = ({
          </table>
       </div>
 
-      {selectedIds.length > 0 && (
-        <BulkSelectionBar
-          count={selectedIds.length}
-          onClear={() => setSelectedIds([])}
-          actions={bulkActions}
-          onExpandedChange={setBulkActionsExpanded}
-        />
-      )}
+      <BulkSelectionBar
+        count={selectedIds.length}
+        onClear={() => setSelectedIds([])}
+        actions={bulkActions}
+      />
+      </div>
 
       {/* MODALS */}
       {itemToEdit && (
