@@ -3,7 +3,7 @@ import { formatEUR } from '../utils/formatMoney';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend
 } from 'recharts';
-import { TrendingUp, Wallet, Target, Package, Calendar, TrendingDown, Hourglass, Skull, Trophy, Star, Crown, Zap, Edit3, Check, CalendarDays, ArrowRight, CheckCircle2, Circle, Plus, X, Activity, Clock, AlertCircle, Euro, Settings2, ChevronUp, ChevronDown } from 'lucide-react';
+import { TrendingUp, Wallet, Target, Package, Calendar, TrendingDown, Hourglass, Skull, Trophy, Star, Crown, Zap, Edit3, Check, CalendarDays, ArrowRight, CheckCircle2, Circle, Plus, X, Activity, Clock, AlertCircle, Euro, Settings2, ChevronUp, ChevronDown, ChevronRight } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { InventoryItem, ItemStatus, Expense, BusinessSettings, TaxMode, DashboardPreferences, DashboardTask } from '../types';
 import { DEFAULT_DASHBOARD_WIDGET_IDS } from '../services/constants';
@@ -42,6 +42,22 @@ const DASHBOARD_WIDGET_IDS = DEFAULT_DASHBOARD_WIDGET_IDS;
 
 type WidgetId = (typeof DASHBOARD_WIDGET_IDS)[number];
 
+const TIME_FILTER_LABELS: Record<string, string> = {
+  ALL: 'All time',
+  THIS_MONTH: 'This month',
+  LAST_MONTH: 'Last month',
+  LAST_7: 'Last 7 days',
+  LAST_30: 'Last 30 days',
+  LAST_90: 'Last 90 days',
+  CUSTOM: 'Custom range',
+};
+
+function formatYearMonthLabel(key: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(key);
+  if (!m) return key;
+  return new Date(Number(m[1]), Number(m[2]) - 1, 1).toLocaleString(undefined, { month: 'long', year: 'numeric' });
+}
+
 const WIDGET_LABELS: Record<WidgetId, string> = {
   gamification: 'Monthly goal & level',
   statCards: 'Stats (inventory, sales, profit, overhead, capital trap)',
@@ -77,17 +93,44 @@ const Dashboard: React.FC<Props> = ({
   const setCustomEnd = (v: string) =>
     onDashboardPreferencesChange({ ...dashboardPreferences, customEnd: v });
 
-  type DayDetailModal = {
-    dayLabel: string;
-    dateStr: string;
+  type FinancialDetailModal = {
+    title: string;
     items: InventoryItem[];
-    dayExpenses: Expense[];
+    scopeExpenses: Expense[];
     revenue: number;
     itemProfit: number;
     expTotal: number;
     netProfit: number;
+    footnote?: string;
   };
-  const [dayDetailModal, setDayDetailModal] = useState<DayDetailModal | null>(null);
+  const [financialDetailModal, setFinancialDetailModal] = useState<FinancialDetailModal | null>(null);
+
+  const openFinancialDetail = (p: {
+    title: string;
+    items: InventoryItem[];
+    scopeExpenses: Expense[];
+    revenue?: number;
+    itemProfit?: number;
+    expTotal?: number;
+    netProfit?: number;
+    footnote?: string;
+  }) => {
+    const sold = p.items;
+    const revenue = p.revenue ?? roundMoney(sold.reduce((acc, i) => acc + (Number(i.sellPrice) || 0), 0));
+    const itemProfit = p.itemProfit ?? roundMoney(sold.reduce((acc, i) => acc + calculateItemProfit(i), 0));
+    const expTotal = p.expTotal ?? roundMoney(p.scopeExpenses.reduce((acc, e) => acc + Number(e.amount), 0));
+    const netProfit = p.netProfit ?? roundMoney(itemProfit - expTotal);
+    setFinancialDetailModal({
+      title: p.title,
+      items: sold,
+      scopeExpenses: p.scopeExpenses,
+      revenue,
+      itemProfit,
+      expTotal,
+      netProfit,
+      footnote: p.footnote,
+    });
+  };
 
   const openDayDetail = (p: {
     dayLabel: string;
@@ -98,22 +141,16 @@ const Dashboard: React.FC<Props> = ({
     expTotal?: number;
     netProfit?: number;
   }) => {
-    const sold = p.items;
     const dayExpenses =
       p.dateStr.length === 10 ? expenses.filter((e) => toLocalCalendarDateKey(e.date) === p.dateStr) : [];
-    const revenue = p.revenue ?? roundMoney(sold.reduce((acc, i) => acc + (Number(i.sellPrice) || 0), 0));
-    const itemProfit = p.itemProfit ?? roundMoney(sold.reduce((acc, i) => acc + calculateItemProfit(i), 0));
-    const expTotal = p.expTotal ?? roundMoney(dayExpenses.reduce((acc, e) => acc + Number(e.amount), 0));
-    const netProfit = p.netProfit ?? roundMoney(itemProfit - expTotal);
-    setDayDetailModal({
-      dayLabel: p.dayLabel,
-      dateStr: p.dateStr,
-      items: sold,
-      dayExpenses,
-      revenue,
-      itemProfit,
-      expTotal,
-      netProfit,
+    openFinancialDetail({
+      title: `Day — ${p.dayLabel}`,
+      items: p.items,
+      scopeExpenses: dayExpenses,
+      revenue: p.revenue,
+      itemProfit: p.itemProfit,
+      expTotal: p.expTotal,
+      netProfit: p.netProfit,
     });
   };
   const [showWidgetModal, setShowWidgetModal] = useState(false);
@@ -272,12 +309,27 @@ const Dashboard: React.FC<Props> = ({
     });
   }, [expenses, startDate, endDate]);
 
+  const soldInPeriod = useMemo(
+    () =>
+      filteredItems.filter(
+        (i) =>
+          (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
+          !shouldSkipForAggregatedSaleLine(i, items)
+      ),
+    [filteredItems, items]
+  );
+
+  const periodLabel = useMemo(() => {
+    if (timeFilter === 'CUSTOM' && customStart && customEnd) {
+      return `${customStart} – ${customEnd}`;
+    }
+    const year = parseInt(timeFilter, 10);
+    if (!Number.isNaN(year)) return String(year);
+    return TIME_FILTER_LABELS[timeFilter] ?? timeFilter;
+  }, [timeFilter, customStart, customEnd]);
+
   const stats = useMemo(() => {
-    const soldForStats = filteredItems.filter(
-      (i) =>
-        (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
-        !shouldSkipForAggregatedSaleLine(i, items)
-    );
+    const soldForStats = soldInPeriod;
     const inStockForValue = filteredItems.filter(
       (i) => i.status === ItemStatus.IN_STOCK && !shouldSkipForInventoryCostLine(i, items)
     );
@@ -324,7 +376,7 @@ const Dashboard: React.FC<Props> = ({
       deathPileCount: deathPileItems.length,
       deathPileValue,
     };
-  }, [filteredItems, filteredExpenses, items, taxMode]);
+  }, [soldInPeriod, filteredItems, filteredExpenses, items, taxMode]);
 
   const gameStats = useMemo(() => {
     const soldForRollup = items.filter(
@@ -470,41 +522,71 @@ const Dashboard: React.FC<Props> = ({
       .sort((a, b) => b.value - a.value);
   }, [items]);
 
-  // Profit by category (sold items in period)
-  const profitByCategory = useMemo(() => {
-    const sold = filteredItems.filter(
-      (i) =>
-        (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
-        !shouldSkipForAggregatedSaleLine(i, items)
-    );
-    const byCat: Record<string, number> = {};
-    sold.forEach((i) => {
+  type ProfitRollupRow = {
+    name: string;
+    saleProfit: number;
+    expenses: number;
+    netProfit: number;
+    items: InventoryItem[];
+    scopeExpenses: Expense[];
+  };
+
+  // Profit by category — sale margin per category (expenses are period-wide; see month / P&L strip for net)
+  const profitByCategory = useMemo((): ProfitRollupRow[] => {
+    const byCat: Record<string, { items: InventoryItem[]; saleProfit: number }> = {};
+    soldInPeriod.forEach((i) => {
       const cat = i.category || 'Other';
-      byCat[cat] = (byCat[cat] || 0) + calculateItemProfit(i);
+      if (!byCat[cat]) byCat[cat] = { items: [], saleProfit: 0 };
+      byCat[cat].items.push(i);
+      byCat[cat].saleProfit += calculateItemProfit(i);
     });
     return Object.entries(byCat)
-      .map(([name, profit]) => ({ name, profit: roundMoney(profit) }))
-      .sort((a, b) => b.profit - a.profit);
-  }, [filteredItems, items, taxMode]);
+      .map(([name, g]) => {
+        const saleProfit = roundMoney(g.saleProfit);
+        return {
+          name,
+          saleProfit,
+          expenses: 0,
+          netProfit: saleProfit,
+          items: g.items,
+          scopeExpenses: [] as Expense[],
+        };
+      })
+      .sort((a, b) => b.saleProfit - a.saleProfit);
+  }, [soldInPeriod, taxMode]);
 
-  // Profit by month (sold items in period)
-  const profitByMonth = useMemo(() => {
-    const sold = filteredItems.filter(
-      (i) =>
-        (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
-        !shouldSkipForAggregatedSaleLine(i, items)
-    );
-    const byMonth: Record<string, number> = {};
-    sold.forEach((i) => {
+  // Profit by month — sale profit minus expenses dated that month
+  const profitByMonth = useMemo((): ProfitRollupRow[] => {
+    const byMonth: Record<string, { items: InventoryItem[]; saleProfit: number }> = {};
+    soldInPeriod.forEach((i) => {
       if (!i.sellDate) return;
       const key = yearMonthKeyFromDate(i.sellDate);
       if (!key) return;
-      byMonth[key] = (byMonth[key] || 0) + calculateItemProfit(i);
+      if (!byMonth[key]) byMonth[key] = { items: [], saleProfit: 0 };
+      byMonth[key].items.push(i);
+      byMonth[key].saleProfit += calculateItemProfit(i);
+    });
+    filteredExpenses.forEach((e) => {
+      const key = yearMonthKeyFromDate(e.date);
+      if (!key) return;
+      if (!byMonth[key]) byMonth[key] = { items: [], saleProfit: 0 };
     });
     return Object.entries(byMonth)
-      .map(([name, profit]) => ({ name, profit: roundMoney(profit) }))
+      .map(([name, g]) => {
+        const saleProfit = roundMoney(g.saleProfit);
+        const scopeExpenses = filteredExpenses.filter((e) => yearMonthKeyFromDate(e.date) === name);
+        const expenses = roundMoney(scopeExpenses.reduce((acc, e) => acc + Number(e.amount), 0));
+        return {
+          name,
+          saleProfit,
+          expenses,
+          netProfit: roundMoney(saleProfit - expenses),
+          items: g.items,
+          scopeExpenses,
+        };
+      })
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [filteredItems, items, taxMode]);
+  }, [soldInPeriod, filteredExpenses, taxMode]);
 
   // Tax report summary (by year)
   const [taxReportYear, setTaxReportYear] = useState(() => new Date().getFullYear());
@@ -709,11 +791,69 @@ const Dashboard: React.FC<Props> = ({
       )}
 
       {isVisible('statCards') && (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-        <StatCard title="Inventory value" value={`€${formatEUR(stats.totalInventoryValue)}`} icon={<Package className="text-slate-600" />} subtitle="All in-stock (cost)" />
-        <StatCard title="Total Sales" value={`€${formatEUR(stats.totalTurnover)}`} icon={<Wallet className="text-blue-600" />} subtitle="Revenue (period)" />
-        <StatCard title="Net Profit" value={`€${formatEUR(stats.netProfit)}`} icon={<TrendingUp className="text-emerald-600" />} subtitle={taxMode === 'RegularVAT' ? "After Tax & Exp" : "After Expenses"} />
-        <StatCard title="Overhead" value={`€${formatEUR(stats.totalExpenses)}`} icon={<TrendingDown className="text-red-500" />} subtitle="Expenses" />
+      <>
+      <button
+        type="button"
+        onClick={() =>
+          openFinancialDetail({
+            title: `Period — ${periodLabel}`,
+            items: soldInPeriod,
+            scopeExpenses: filteredExpenses,
+            revenue: stats.totalTurnover,
+            itemProfit: stats.grossProfit,
+            expTotal: stats.totalExpenses,
+            netProfit: stats.netProfit,
+            footnote:
+              'Net profit = sale profit − operating expenses in this period. Annual tax export (below) also uses purchases by buy date (Wareneingang) per EÜR rules.',
+          })
+        }
+        className="w-full text-left bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:border-blue-300 hover:shadow-md transition-all group"
+      >
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <p className="text-xs font-black uppercase tracking-widest text-slate-500">
+            Period P&L — {periodLabel}
+          </p>
+          <span className="text-xs font-bold text-blue-600 group-hover:underline flex items-center gap-0.5">
+            View all sales & expenses <ChevronRight size={14} />
+          </span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+          <div>
+            <p className="text-[10px] font-bold uppercase text-slate-400">Revenue</p>
+            <p className="font-black text-slate-900">€{formatEUR(stats.totalTurnover)}</p>
+            <p className="text-[10px] text-slate-400">Sell price (sold)</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold uppercase text-slate-400">Sale profit</p>
+            <p className="font-black text-blue-700">€{formatEUR(stats.grossProfit)}</p>
+            <p className="text-[10px] text-slate-400">Sell − buy − fees</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold uppercase text-slate-400">Expenses</p>
+            <p className="font-black text-red-600">−€{formatEUR(stats.totalExpenses)}</p>
+            <p className="text-[10px] text-slate-400">Operating (period)</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold uppercase text-emerald-600">Net profit</p>
+            <p className={`font-black ${stats.netProfit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+              €{formatEUR(stats.netProfit)}
+            </p>
+            <p className="text-[10px] text-slate-400">Sale profit − expenses</p>
+          </div>
+        </div>
+      </button>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+        <StatCard title="Revenue" value={`€${formatEUR(stats.totalTurnover)}`} icon={<Wallet className="text-blue-600" />} subtitle="Period" />
+        <StatCard title="Sale profit" value={`€${formatEUR(stats.grossProfit)}`} icon={<TrendingUp className="text-blue-600" />} subtitle="Sell − buy − fees" />
+        <StatCard
+          title="Net profit"
+          value={`€${formatEUR(stats.netProfit)}`}
+          icon={<TrendingUp className="text-emerald-600" />}
+          subtitle="After expenses"
+          description={`−€${formatEUR(stats.totalExpenses)} overhead in period`}
+        />
+        <StatCard title="Expenses" value={`€${formatEUR(stats.totalExpenses)}`} icon={<TrendingDown className="text-red-500" />} subtitle="Operating" />
+        <StatCard title="Inventory value" value={`€${formatEUR(stats.totalInventoryValue)}`} icon={<Package className="text-slate-600" />} subtitle="In stock (cost)" />
         <div className={`bg-white p-6 rounded-3xl shadow-sm border ${stats.deathPileCount > 0 ? 'border-amber-200 bg-amber-50/30' : 'border-slate-100'}`}>
            <div className="flex justify-between items-start mb-4">
               <div className={`p-3 rounded-2xl ${stats.deathPileCount > 0 ? 'bg-amber-100 text-amber-600' : 'bg-slate-50 text-slate-400'}`}>
@@ -729,6 +869,7 @@ const Dashboard: React.FC<Props> = ({
            </h4>
         </div>
       </div>
+      </>
       )}
 
       {/* WIDGET: ANALYTICS & PIE CHART ROW */}
@@ -921,16 +1062,36 @@ const Dashboard: React.FC<Props> = ({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
          {isVisible('profitByCategory') && (
          <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
-            <h3 className="text-lg font-bold mb-4">Profit by category (period)</h3>
+            <h3 className="text-lg font-bold mb-1">Sale profit by category</h3>
+            <p className="text-xs text-slate-500 mb-4">Margin per category (sell − buy − fees). Expenses are in the period P&L above, not split by category.</p>
             {profitByCategory.length === 0 ? (
                <p className="text-slate-400 text-sm">No sales in this period.</p>
             ) : (
-               <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {profitByCategory.map((row, idx) => (
-                     <div key={row.name} className="flex justify-between items-center py-2 border-b border-slate-50 last:border-0">
-                        <span className="font-medium text-slate-700 truncate">{row.name}</span>
-                        <span className={`font-bold shrink-0 ${row.profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>€{formatEUR(row.profit)}</span>
-                     </div>
+               <div className="space-y-1 max-h-64 overflow-y-auto">
+                  {profitByCategory.map((row) => (
+                     <button
+                        key={row.name}
+                        type="button"
+                        onClick={() =>
+                          openFinancialDetail({
+                            title: `Category — ${row.name}`,
+                            items: row.items,
+                            scopeExpenses: [],
+                            itemProfit: row.saleProfit,
+                            netProfit: row.saleProfit,
+                            footnote:
+                              'Category totals are sale profit only. Net profit after operating expenses is shown in Profit by month and the period P&L strip.',
+                          })
+                        }
+                        className="w-full flex items-center gap-2 py-2.5 px-2 rounded-xl border-b border-slate-50 last:border-0 hover:bg-slate-50 text-left transition-colors group"
+                     >
+                        <span className="font-medium text-slate-700 truncate flex-1">{row.name}</span>
+                        <span className="text-[10px] text-slate-400 shrink-0">{row.items.length} sold</span>
+                        <span className={`font-bold shrink-0 ${row.saleProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                           €{formatEUR(row.saleProfit)}
+                        </span>
+                        <ChevronRight size={16} className="text-slate-300 group-hover:text-blue-500 shrink-0" />
+                     </button>
                   ))}
                </div>
             )}
@@ -938,16 +1099,38 @@ const Dashboard: React.FC<Props> = ({
          )}
          {isVisible('profitByMonth') && (
          <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
-            <h3 className="text-lg font-bold mb-4">Profit by month (period)</h3>
+            <h3 className="text-lg font-bold mb-1">Profit by month</h3>
+            <p className="text-xs text-slate-500 mb-4">Sale profit minus expenses dated in each month (matches net profit logic).</p>
             {profitByMonth.length === 0 ? (
-               <p className="text-slate-400 text-sm">No sales in this period.</p>
+               <p className="text-slate-400 text-sm">No sales or expenses in this period.</p>
             ) : (
-               <div className="space-y-2 max-h-64 overflow-y-auto">
+               <div className="space-y-1 max-h-64 overflow-y-auto">
                   {profitByMonth.map((row) => (
-                     <div key={row.name} className="flex justify-between items-center py-2 border-b border-slate-50 last:border-0">
-                        <span className="font-medium text-slate-700">{row.name}</span>
-                        <span className={`font-bold ${row.profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>€{formatEUR(row.profit)}</span>
-                     </div>
+                     <button
+                        key={row.name}
+                        type="button"
+                        onClick={() =>
+                          openFinancialDetail({
+                            title: formatYearMonthLabel(row.name),
+                            items: row.items,
+                            scopeExpenses: row.scopeExpenses,
+                            itemProfit: row.saleProfit,
+                            expTotal: row.expenses,
+                            netProfit: row.netProfit,
+                          })
+                        }
+                        className="w-full flex items-center gap-2 py-2.5 px-2 rounded-xl border-b border-slate-50 last:border-0 hover:bg-slate-50 text-left transition-colors group"
+                     >
+                        <span className="font-medium text-slate-700 shrink-0 w-28">{formatYearMonthLabel(row.name)}</span>
+                        <span className="text-[10px] text-slate-500 flex-1 truncate">
+                           Sale €{formatEUR(row.saleProfit)}
+                           {row.expenses > 0 ? ` · Exp −€${formatEUR(row.expenses)}` : ''}
+                        </span>
+                        <span className={`font-bold shrink-0 ${row.netProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                           Net €{formatEUR(row.netProfit)}
+                        </span>
+                        <ChevronRight size={16} className="text-slate-300 group-hover:text-blue-500 shrink-0" />
+                     </button>
                   ))}
                </div>
             )}
@@ -958,8 +1141,12 @@ const Dashboard: React.FC<Props> = ({
 
       {isVisible('taxReport') && (
       <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
-        <h3 className="text-lg font-bold mb-3">Tax report (period summary)</h3>
-        <p className="text-sm text-slate-500 mb-4">Summary by calendar year for export or accountant. VAT figures when applicable.</p>
+        <h3 className="text-lg font-bold mb-3">Tax report (Finanzamt / EÜR)</h3>
+        <p className="text-sm text-slate-500 mb-2">
+          Calendar-year export: revenue & fees by <strong>sell date</strong>, purchases (Wareneingang) by <strong>buy date</strong>, expenses by payment date.
+          Dashboard period net profit uses <strong>sell-date sales minus period expenses</strong> — different timing than annual COGS, so totals may differ from the table below.
+        </p>
+        <p className="text-xs text-slate-400 mb-4">Use Export CSV for your Finanzamt records; every line is listed in the file.</p>
         <div className="flex flex-wrap items-center gap-4 mb-4">
           <label className="text-sm font-medium text-slate-600">Year</label>
           <select value={taxReportYear} onChange={(e) => setTaxReportYear(Number(e.target.value))} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-400">
@@ -1102,55 +1289,66 @@ const Dashboard: React.FC<Props> = ({
       </div>
       )}
     </div>
-    {dayDetailModal && createPortal(
+    {financialDetailModal && createPortal(
       <div 
         className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 animate-in fade-in" 
-        onClick={() => setDayDetailModal(null)}
+        onClick={() => setFinancialDetailModal(null)}
       >
         <div 
-          className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[80vh] overflow-hidden m-4 animate-in zoom-in-95" 
+          className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[85vh] overflow-hidden m-4 animate-in zoom-in-95" 
           onClick={e => e.stopPropagation()}
         >
-          <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-            <h3 className="text-lg font-bold text-slate-900">Day breakdown — {dayDetailModal.dayLabel}</h3>
-            <button onClick={() => setDayDetailModal(null)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors"><X size={20} className="text-slate-500"/></button>
+          <div className="p-5 border-b border-slate-100 flex items-center justify-between gap-2">
+            <h3 className="text-lg font-bold text-slate-900 truncate">{financialDetailModal.title}</h3>
+            <button onClick={() => setFinancialDetailModal(null)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors shrink-0"><X size={20} className="text-slate-500"/></button>
           </div>
           <div className="px-4 pt-4 pb-2 grid grid-cols-2 gap-2 text-sm">
             <div className="p-3 rounded-xl bg-blue-50">
               <p className="text-[10px] font-bold uppercase text-blue-600">Revenue</p>
-              <p className="font-black text-slate-900">€{formatEUR(dayDetailModal.revenue)}</p>
+              <p className="font-black text-slate-900">€{formatEUR(financialDetailModal.revenue)}</p>
             </div>
             <div className="p-3 rounded-xl bg-emerald-50">
               <p className="text-[10px] font-bold uppercase text-emerald-600">Net profit</p>
-              <p className={`font-black ${dayDetailModal.netProfit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                €{formatEUR(dayDetailModal.netProfit)}
+              <p className={`font-black ${financialDetailModal.netProfit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                €{formatEUR(financialDetailModal.netProfit)}
               </p>
             </div>
             <div className="p-3 rounded-xl bg-slate-50 col-span-2 text-xs text-slate-600 space-y-1">
               <p>
-                <span className="font-bold">Sale profit</span> (sell − buy − fees): €{formatEUR(dayDetailModal.itemProfit)}
+                <span className="font-bold">Sale profit</span> (sell − buy − fees): €{formatEUR(financialDetailModal.itemProfit)}
               </p>
-              {dayDetailModal.expTotal > 0 && (
+              {financialDetailModal.expTotal > 0 && (
                 <p>
-                  <span className="font-bold">Expenses this day</span>: −€{formatEUR(dayDetailModal.expTotal)}
+                  <span className="font-bold">Operating expenses</span>: −€{formatEUR(financialDetailModal.expTotal)}
                 </p>
               )}
             </div>
+            {financialDetailModal.footnote && (
+              <p className="col-span-2 text-[11px] text-slate-500 bg-amber-50/80 border border-amber-100 rounded-lg px-3 py-2">
+                {financialDetailModal.footnote}
+              </p>
+            )}
           </div>
-          <div className="p-4 overflow-y-auto max-h-[50vh] space-y-3">
-            {dayDetailModal.items.length === 0 ? (
-              <p className="text-slate-500 text-sm text-center py-4">No items sold on this day.</p>
+          <div className="p-4 overflow-y-auto max-h-[52vh] space-y-3">
+            {financialDetailModal.items.length === 0 ? (
+              <p className="text-slate-500 text-sm text-center py-4">No sold items in this selection.</p>
             ) : (
               <>
-                <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Sold items</p>
-                {dayDetailModal.items.map((item) => {
+                <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">
+                  Sold items ({financialDetailModal.items.length})
+                </p>
+                {financialDetailModal.items.map((item) => {
                   const sell = Number(item.sellPrice) || 0;
                   const buy = Number(item.buyPrice) || 0;
                   const fee = Number(item.feeAmount) || 0;
                   const profit = calculateItemProfit(item);
+                  const soldOn = item.sellDate ? toLocalCalendarDateKey(item.sellDate) : '';
                   return (
                     <div key={item.id} className="p-3 bg-slate-50 rounded-xl space-y-1">
                       <p className="font-medium text-slate-900 truncate">{item.name}</p>
+                      {soldOn && (
+                        <p className="text-[10px] text-slate-400 font-bold uppercase">Sold {soldOn}</p>
+                      )}
                       <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-600">
                         <span>Sell €{formatEUR(sell)}</span>
                         <span>Buy €{formatEUR(buy)}</span>
@@ -1164,12 +1362,19 @@ const Dashboard: React.FC<Props> = ({
                 })}
               </>
             )}
-            {dayDetailModal.dayExpenses.length > 0 && (
+            {financialDetailModal.scopeExpenses.length > 0 && (
               <>
-                <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider pt-2">Expenses</p>
-                {dayDetailModal.dayExpenses.map((exp) => (
+                <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider pt-2">
+                  Expenses ({financialDetailModal.scopeExpenses.length})
+                </p>
+                {financialDetailModal.scopeExpenses.map((exp) => (
                   <div key={exp.id} className="flex items-center justify-between gap-3 p-3 bg-amber-50 rounded-xl">
-                    <p className="text-sm font-medium text-slate-900 truncate flex-1">{exp.description}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-slate-900 truncate">{exp.description}</p>
+                      {exp.date && (
+                        <p className="text-[10px] text-slate-500">{toLocalCalendarDateKey(exp.date)}</p>
+                      )}
+                    </div>
                     <span className="text-sm font-bold text-amber-800 shrink-0">−€{formatEUR(Number(exp.amount) || 0)}</span>
                   </div>
                 ))}
