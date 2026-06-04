@@ -594,6 +594,7 @@ const Dashboard: React.FC<Props> = ({
 
   type ProfitRollupRow = {
     name: string;
+    revenue?: number;
     saleProfit: number;
     expenses: number;
     netProfit: number;
@@ -627,27 +628,30 @@ const Dashboard: React.FC<Props> = ({
 
   // Profit by month — sale profit minus expenses dated that month
   const profitByMonth = useMemo((): ProfitRollupRow[] => {
-    const byMonth: Record<string, { items: InventoryItem[]; saleProfit: number }> = {};
+    const byMonth: Record<string, { items: InventoryItem[]; saleProfit: number; revenue: number }> = {};
     soldInPeriod.forEach((i) => {
       if (!i.sellDate) return;
       const key = yearMonthKeyFromDate(i.sellDate);
       if (!key) return;
-      if (!byMonth[key]) byMonth[key] = { items: [], saleProfit: 0 };
+      if (!byMonth[key]) byMonth[key] = { items: [], saleProfit: 0, revenue: 0 };
       byMonth[key].items.push(i);
       byMonth[key].saleProfit += calculateItemProfit(i);
+      byMonth[key].revenue += Number(i.sellPrice) || 0;
     });
     filteredExpenses.forEach((e) => {
       const key = yearMonthKeyFromDate(e.date);
       if (!key) return;
-      if (!byMonth[key]) byMonth[key] = { items: [], saleProfit: 0 };
+      if (!byMonth[key]) byMonth[key] = { items: [], saleProfit: 0, revenue: 0 };
     });
     return Object.entries(byMonth)
       .map(([name, g]) => {
         const saleProfit = roundMoney(g.saleProfit);
+        const revenue = roundMoney(g.revenue);
         const scopeExpenses = filteredExpenses.filter((e) => yearMonthKeyFromDate(e.date) === name);
         const expenses = roundMoney(scopeExpenses.reduce((acc, e) => acc + Number(e.amount), 0));
         return {
           name,
+          revenue,
           saleProfit,
           expenses,
           netProfit: roundMoney(saleProfit - expenses),
@@ -1137,10 +1141,11 @@ const Dashboard: React.FC<Props> = ({
                  profitByMonth.length === 0 ? (
                    <p className="text-sm text-slate-400 py-6 text-center">No data</p>
                  ) : profitByMonth.map((row) => (
-                   <button key={row.name} type="button" onClick={() => openFinancialDetail({ title: formatYearMonthLabel(row.name), items: row.items, scopeExpenses: row.scopeExpenses, itemProfit: row.saleProfit, expTotal: row.expenses, netProfit: row.netProfit })} className="w-full flex items-center gap-2 py-2 lg:py-2.5 px-2 rounded-lg hover:bg-slate-50 text-left text-sm lg:text-base">
-                     <span className="font-medium text-slate-700 w-20 lg:w-28 shrink-0 truncate">{formatYearMonthLabel(row.name).split(' ')[0]}</span>
-                     <span className="text-slate-500 flex-1 truncate">Sale €{formatEUR(row.saleProfit)}</span>
-                     <span className={`font-black shrink-0 ${row.netProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>Net €{formatEUR(row.netProfit)}</span>
+                   <button key={row.name} type="button" onClick={() => openFinancialDetail({ title: formatYearMonthLabel(row.name), items: row.items, scopeExpenses: row.scopeExpenses, revenue: row.revenue, itemProfit: row.saleProfit, expTotal: row.expenses, netProfit: row.netProfit })} className="w-full flex items-center gap-2 py-2 lg:py-2.5 px-2 rounded-lg hover:bg-slate-50 text-left text-sm lg:text-base">
+                     <span className="font-medium text-slate-700 w-16 lg:w-20 shrink-0 truncate">{formatYearMonthLabel(row.name).split(' ')[0]}</span>
+                     <span className="text-slate-800 flex-1 truncate tabular-nums">Rev €{formatEUR(row.revenue ?? 0)}</span>
+                     <span className="text-blue-700 shrink-0 tabular-nums hidden sm:inline">Margin €{formatEUR(row.saleProfit)}</span>
+                     <span className={`font-black shrink-0 tabular-nums ${row.netProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>Net €{formatEUR(row.netProfit)}</span>
                      <ChevronRight size={14} className="lg:w-[18px] lg:h-[18px] text-slate-300 shrink-0" />
                    </button>
                  ))
