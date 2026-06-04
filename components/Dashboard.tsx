@@ -402,13 +402,31 @@ const Dashboard: React.FC<Props> = ({
     const currentMonthExpenses = expenses.filter(
       (e) => !!e.date && yearMonthKeyFromDate(e.date) === thisYearMonth
     );
-    const monthProfit = roundMoney(
-      currentMonthItems.reduce((acc: number, i) => acc + calculateItemProfit(i), 0) -
-        currentMonthExpenses.reduce((acc: number, e) => acc + Number(e.amount || 0), 0)
+    const monthSaleProfit = roundMoney(
+      currentMonthItems.reduce((acc: number, i) => acc + calculateItemProfit(i), 0)
     );
-    const goalProgress = Math.min((monthProfit / monthlyGoal) * 100, 100);
+    const monthExpensesTotal = roundMoney(
+      currentMonthExpenses.reduce((acc: number, e) => acc + Number(e.amount || 0), 0)
+    );
+    const monthProfit = roundMoney(monthSaleProfit - monthExpensesTotal);
+    const monthRevenue = roundMoney(
+      currentMonthItems.reduce((acc: number, i) => acc + (Number(i.sellPrice) || 0), 0)
+    );
+    const goalProgress = Math.min((monthlyGoal > 0 ? (monthProfit / monthlyGoal) * 100 : 0), 100);
 
-    return { allTimeProfit, currentLevel, nextLevel, progressToNext, monthProfit, goalProgress };
+    return {
+      allTimeProfit,
+      currentLevel,
+      nextLevel,
+      progressToNext,
+      monthProfit,
+      monthSaleProfit,
+      monthExpensesTotal,
+      monthRevenue,
+      monthSoldCount: currentMonthItems.length,
+      allTimeSoldCount: soldForRollup.length,
+      goalProgress,
+    };
   }, [items, expenses, monthlyGoal, taxMode]);
 
   const chartData = useMemo(() => {
@@ -716,77 +734,138 @@ const Dashboard: React.FC<Props> = ({
         </div>
       </header>
 
-      {/* WIDGET: GAMIFICATION SECTION */}
+      {/* WIDGET: GAMIFICATION — unified performance block */}
       {isVisible('gamification') && (
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
-         {/* Monthly Goal Card */}
-         <div className="bg-slate-900 text-white p-4 rounded-2xl relative overflow-hidden shadow-md group max-w-md lg:max-w-none">
-            <div className="absolute top-0 right-0 p-3 opacity-10 transition-transform group-hover:scale-110 duration-500 pointer-events-none">
-               <Target size={56} />
-            </div>
-            <div className="relative z-10">
-               <div className="flex justify-between items-center mb-1.5">
-                  <div className="flex items-center gap-1.5 text-slate-400 text-[10px] font-black uppercase tracking-widest">
-                     <Calendar size={10}/> Current Month
-                  </div>
-                  <button onClick={() => setIsEditingGoal(true)} className="p-1.5 hover:bg-white/10 rounded-lg transition-all text-slate-400 hover:text-white">
-                     <Edit3 size={12}/>
-                  </button>
-               </div>
-               {isEditingGoal ? (
-                  <div className="flex items-center gap-2 animate-in fade-in">
-                     <span className="text-lg font-black text-slate-500">€</span>
-                     <input autoFocus type="number" className="w-24 bg-white/10 border-b-2 border-blue-500 text-xl font-black text-white outline-none p-0.5" value={tempGoal} onChange={e => setTempGoal(e.target.value)} onBlur={handleSaveGoal} onKeyDown={e => e.key === 'Enter' && handleSaveGoal()} />
-                     <button onClick={handleSaveGoal} className="bg-blue-600 p-1.5 rounded-lg text-white"><Check size={14}/></button>
-                  </div>
-               ) : (
-                  <>
-                     <h3 className="text-2xl font-black tracking-tight leading-tight">€{formatEUR(gameStats.monthProfit)} <span className="text-slate-500 text-sm font-bold">/ €{formatEUR(monthlyGoal)}</span></h3>
-                     <p className="text-[11px] font-medium text-slate-400 mt-0.5 line-clamp-2">{gameStats.monthProfit >= monthlyGoal ? 'Goal reached!' : `€${formatEUR(monthlyGoal - gameStats.monthProfit)} to go`}</p>
-                  </>
-               )}
-            </div>
-            <div className="relative z-10 mt-3 space-y-1">
-               <div className="flex justify-between text-[9px] font-black uppercase text-slate-400 tracking-widest">
-                  <span>Progress</span>
-                  <span>{gameStats.goalProgress.toFixed(0)}%</span>
-               </div>
-               <div className="h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
-                  <div className={`h-full rounded-full transition-all duration-1000 ease-out ${gameStats.goalProgress >= 100 ? 'bg-gradient-to-r from-emerald-400 to-emerald-600' : 'bg-gradient-to-r from-blue-600 to-indigo-500'}`} style={{ width: `${gameStats.goalProgress}%` }}></div>
-               </div>
-            </div>
-         </div>
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-slate-50 border-b border-slate-100">
+          <h2 className="text-sm font-black text-slate-800">Performance overview</h2>
+          <span className="text-xs font-bold text-slate-500">
+            {new Date().toLocaleString(undefined, { month: 'long', year: 'numeric' })}
+          </span>
+        </div>
 
-         {/* Level Status Card */}
-         <div className="lg:col-span-2 bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col md:flex-row gap-8 items-center relative overflow-hidden">
-            <div className="flex-1 space-y-4 relative z-10 w-full">
-               <div className="flex items-center gap-3">
-                  <div className={`p-3 rounded-2xl ${gameStats.currentLevel.bg} ${gameStats.currentLevel.color}`}>
-                     {gameStats.currentLevel.icon}
-                  </div>
-                  <div>
-                     <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Current Rank</p>
-                     <h3 className="text-xl font-black text-slate-900">{gameStats.currentLevel.name}</h3>
-                  </div>
-               </div>
-               <div className="space-y-2">
-                  <div className="flex justify-between text-xs font-bold text-slate-500">
-                     <span>Total Profit: €{formatEUR(gameStats.allTimeProfit)}</span>
-                     {gameStats.nextLevel ? <span>Next: {gameStats.nextLevel.name} (€{formatEUR(gameStats.nextLevel.min)})</span> : <span>Max Level!</span>}
-                  </div>
-                  <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
-                     <div className="h-full bg-slate-900 rounded-full transition-all duration-1000" style={{ width: `${gameStats.progressToNext}%` }} />
-                  </div>
-               </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+          {/* Month goal */}
+          <section className="p-4 min-w-0">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <div className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wide text-slate-500">
+                <Target size={14} className="text-blue-600 shrink-0" />
+                Month goal
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditingGoal(true)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg"
+                aria-label="Edit monthly goal"
+              >
+                <Edit3 size={14} />
+              </button>
             </div>
-            <div className="hidden md:flex flex-col items-center justify-center p-6 bg-slate-50 rounded-3xl border border-slate-100 w-48 shrink-0">
-               <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-3 shadow-sm ${gameStats.currentLevel.bg} ${gameStats.currentLevel.color}`}>
-                  {React.cloneElement(gameStats.currentLevel.icon as React.ReactElement<any>, { size: 32 })}
-               </div>
-               <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest text-center">Lifetime Earnings</p>
-               <p className="text-lg font-black text-slate-900">€{formatEUR(gameStats.allTimeProfit)}</p>
+            {isEditingGoal ? (
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-base font-black text-slate-400">€</span>
+                <input
+                  autoFocus
+                  type="number"
+                  className="w-28 border-b-2 border-blue-500 text-xl font-black text-slate-900 outline-none py-0.5 min-h-[44px]"
+                  value={tempGoal}
+                  onChange={(e) => setTempGoal(e.target.value)}
+                  onBlur={handleSaveGoal}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSaveGoal()}
+                />
+                <button type="button" onClick={handleSaveGoal} className="bg-blue-600 p-2 rounded-lg text-white min-h-[44px] min-w-[44px] flex items-center justify-center">
+                  <Check size={16} />
+                </button>
+              </div>
+            ) : (
+              <p className="text-xl sm:text-2xl font-black text-slate-900 leading-tight tabular-nums">
+                €{formatEUR(gameStats.monthProfit)}
+                <span className="text-slate-400 text-sm font-bold"> / €{formatEUR(monthlyGoal)}</span>
+              </p>
+            )}
+            <p className="text-xs text-slate-500 mt-1">
+              {gameStats.monthProfit >= monthlyGoal
+                ? 'Goal reached this month'
+                : `€${formatEUR(Math.max(0, monthlyGoal - gameStats.monthProfit))} to go`}
+            </p>
+            <div className="mt-3 space-y-1">
+              <div className="flex justify-between text-[11px] font-bold text-slate-500">
+                <span>Goal progress</span>
+                <span>{gameStats.goalProgress.toFixed(0)}%</span>
+              </div>
+              <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-700 ${gameStats.goalProgress >= 100 ? 'bg-emerald-500' : 'bg-blue-600'}`}
+                  style={{ width: `${gameStats.goalProgress}%` }}
+                />
+              </div>
             </div>
-         </div>
+          </section>
+
+          {/* Rank */}
+          <section className="p-4 min-w-0">
+            <div className="flex items-center gap-2 mb-2">
+              <div className={`p-2 rounded-xl shrink-0 ${gameStats.currentLevel.bg} ${gameStats.currentLevel.color}`}>
+                {gameStats.currentLevel.icon}
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Current rank</p>
+                <p className="text-base sm:text-lg font-black text-slate-900 truncate">{gameStats.currentLevel.name}</p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-500 mb-2">
+              {gameStats.nextLevel
+                ? `Next: ${gameStats.nextLevel.name} at €${formatEUR(gameStats.nextLevel.min)}`
+                : 'Highest rank unlocked'}
+            </p>
+            <div className="space-y-1">
+              <div className="flex justify-between text-[11px] font-bold text-slate-500">
+                <span>Level progress</span>
+                <span>{gameStats.progressToNext.toFixed(0)}%</span>
+              </div>
+              <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                <div className="h-full bg-slate-800 rounded-full transition-all duration-700" style={{ width: `${gameStats.progressToNext}%` }} />
+              </div>
+            </div>
+          </section>
+
+          {/* Lifetime */}
+          <section className="p-4 min-w-0 bg-slate-50/50 md:bg-transparent">
+            <div className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wide text-slate-500 mb-2">
+              <Trophy size={14} className="text-amber-600 shrink-0" />
+              Lifetime (all time)
+            </div>
+            <p className={`text-xl sm:text-2xl font-black tabular-nums leading-tight ${gameStats.allTimeProfit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+              €{formatEUR(gameStats.allTimeProfit)}
+            </p>
+            <p className="text-xs text-slate-500 mt-1">Net after all expenses</p>
+            <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+              <div>
+                <dt className="text-slate-400 font-bold">Items sold</dt>
+                <dd className="font-black text-slate-800 tabular-nums">{gameStats.allTimeSoldCount}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-400 font-bold">Rank threshold</dt>
+                <dd className="font-black text-slate-800 tabular-nums">€{formatEUR(gameStats.currentLevel.min)}</dd>
+              </div>
+            </dl>
+          </section>
+        </div>
+
+        {/* Month detail strip */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-slate-100 border-t border-slate-100 text-center">
+          {[
+            { label: 'Month revenue', value: `€${formatEUR(gameStats.monthRevenue)}` },
+            { label: 'Month sale profit', value: `€${formatEUR(gameStats.monthSaleProfit)}` },
+            { label: 'Month expenses', value: `−€${formatEUR(gameStats.monthExpensesTotal)}` },
+            { label: 'Sold this month', value: String(gameStats.monthSoldCount) },
+          ].map((cell) => (
+            <div key={cell.label} className="bg-white px-2 py-2.5 sm:py-3 min-h-[52px] flex flex-col justify-center">
+              <p className="text-[10px] sm:text-[11px] font-bold uppercase text-slate-400 leading-tight">{cell.label}</p>
+              <p className="text-sm sm:text-base font-black text-slate-900 tabular-nums mt-0.5">{cell.value}</p>
+            </div>
+          ))}
+        </div>
       </div>
       )}
 
