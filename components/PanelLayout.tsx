@@ -150,7 +150,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
         </div>
       </aside>
       {/* MAIN AREA */}
-      <main className="flex-1 flex flex-col min-h-0 overflow-hidden p-4 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:p-8 md:pb-8 relative">
+      <main className="flex-1 flex flex-col min-h-0 overflow-hidden p-4 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:p-8 lg:p-8 xl:p-10 2xl:p-12 md:pb-8 relative">
         {/* eBay sync on load */}
         {onUpdateItems && (
           <EbaySyncBanner items={items} onUpdate={onUpdateItems} />

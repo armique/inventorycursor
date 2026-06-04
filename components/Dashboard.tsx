@@ -62,7 +62,14 @@ function formatYearMonthLabel(key: string): string {
   return new Date(Number(m[1]), Number(m[2]) - 1, 1).toLocaleString(undefined, { month: 'long', year: 'numeric' });
 }
 
-const DASH_CARD = 'bg-white rounded-xl border border-slate-200/90 shadow-sm';
+const DASH_CARD = 'bg-white rounded-xl lg:rounded-2xl border border-slate-200/90 shadow-sm';
+/** Chart / side-panel height scales with viewport on large screens */
+const CHART_PANEL_H =
+  'h-[220px] sm:h-[280px] md:h-[320px] lg:h-[min(42vh,420px)] xl:h-[min(45vh,480px)] 2xl:h-[min(48vh,520px)] min-h-[220px]';
+const CARD_PAD = 'p-3 sm:p-4 lg:p-5 xl:p-6';
+const KPI_LABEL = 'text-[10px] sm:text-xs lg:text-sm font-bold uppercase text-slate-400';
+const KPI_VALUE = 'text-lg sm:text-xl lg:text-2xl xl:text-3xl 2xl:text-[2rem] font-black tabular-nums leading-tight';
+const SECTION_TITLE = 'text-xs sm:text-sm lg:text-base font-black uppercase tracking-wide text-slate-500';
 
 const QUICK_FILTERS: { value: string; label: string }[] = [
   { value: 'LAST_7', label: '7d' },
@@ -775,23 +782,23 @@ const Dashboard: React.FC<Props> = ({
 
   return (
     <>
-    <div className="h-full min-h-0 overflow-y-auto space-y-2.5 sm:space-y-3 animate-in fade-in pb-8 max-w-[1600px] mx-auto">
-      {/* Compact header + period filters */}
-      <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <div className="h-full min-h-0 w-full overflow-y-auto space-y-3 sm:space-y-4 lg:space-y-6 xl:space-y-7 animate-in fade-in pb-8 lg:pb-10 xl:px-1">
+      {/* Header + period filters */}
+      <header className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Dashboard</h1>
-          <p className="text-xs text-slate-500 truncate">
+          <h1 className="text-xl sm:text-2xl lg:text-3xl xl:text-4xl font-black text-slate-900 tracking-tight">Dashboard</h1>
+          <p className="text-xs sm:text-sm lg:text-base text-slate-500 truncate mt-0.5">
             {items.length} items · {expenses.length} expenses · {periodLabel}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <div className="flex rounded-lg border border-slate-200 bg-white p-0.5">
+        <div className="flex flex-wrap items-center gap-2 lg:gap-3">
+          <div className="flex rounded-lg lg:rounded-xl border border-slate-200 bg-white p-0.5 lg:p-1">
             {QUICK_FILTERS.map((f) => (
               <button
                 key={f.value}
                 type="button"
                 onClick={() => setTimeFilter(f.value)}
-                className={`px-2.5 py-1.5 text-xs font-bold rounded-md transition-colors min-h-[36px] ${
+                className={`px-2.5 py-1.5 lg:px-4 lg:py-2 text-xs lg:text-sm font-bold rounded-md lg:rounded-lg transition-colors min-h-[36px] lg:min-h-[44px] ${
                   timeFilter === f.value ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'
                 }`}
               >
@@ -799,10 +806,10 @@ const Dashboard: React.FC<Props> = ({
               </button>
             ))}
           </div>
-          <div className="relative flex items-center rounded-lg border border-slate-200 bg-white">
-            <CalendarDays size={14} className="absolute left-2 text-slate-400 pointer-events-none" />
+          <div className="relative flex items-center rounded-lg lg:rounded-xl border border-slate-200 bg-white">
+            <CalendarDays size={14} className="lg:w-[18px] lg:h-[18px] absolute left-2 lg:left-3 text-slate-400 pointer-events-none" />
             <select
-              className="bg-transparent border-none outline-none text-xs font-bold text-slate-700 pl-7 pr-6 py-2 cursor-pointer appearance-none min-w-[100px]"
+              className="bg-transparent border-none outline-none text-xs lg:text-sm font-bold text-slate-700 pl-7 lg:pl-9 pr-6 lg:pr-8 py-2 lg:py-2.5 cursor-pointer appearance-none min-w-[100px] lg:min-w-[130px]"
               value={timeFilter}
               onChange={(e) => setTimeFilter(e.target.value)}
             >
@@ -815,19 +822,19 @@ const Dashboard: React.FC<Props> = ({
             </select>
           </div>
           {timeFilter === 'CUSTOM' && (
-            <div className="flex items-center gap-1">
-              <input type="date" className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-bold" value={customStart} onChange={(e) => setCustomStart(e.target.value)} />
-              <ArrowRight size={12} className="text-slate-300" />
-              <input type="date" className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-bold" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} />
+            <div className="flex items-center gap-1 lg:gap-2">
+              <input type="date" className="rounded-lg border border-slate-200 px-2 lg:px-3 py-1.5 lg:py-2 text-xs lg:text-sm font-bold" value={customStart} onChange={(e) => setCustomStart(e.target.value)} />
+              <ArrowRight size={12} className="text-slate-300 lg:w-4 lg:h-4" />
+              <input type="date" className="rounded-lg border border-slate-200 px-2 lg:px-3 py-1.5 lg:py-2 text-xs lg:text-sm font-bold" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} />
             </div>
           )}
           <button
             type="button"
             onClick={() => setShowWidgetModal(true)}
-            className="p-2 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 min-h-[36px] min-w-[36px] flex items-center justify-center"
+            className="p-2 lg:p-2.5 rounded-lg lg:rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 min-h-[36px] min-w-[36px] lg:min-h-[44px] lg:min-w-[44px] flex items-center justify-center"
             aria-label="Customise widgets"
           >
-            <Settings2 size={16} />
+            <Settings2 size={16} className="lg:w-5 lg:h-5" />
           </button>
         </div>
       </header>
@@ -856,16 +863,16 @@ const Dashboard: React.FC<Props> = ({
             { label: 'Expenses', value: `−€${formatEUR(stats.totalExpenses)}`, tone: 'text-red-600' },
             { label: 'Net profit', value: `€${formatEUR(stats.netProfit)}`, tone: stats.netProfit >= 0 ? 'text-emerald-700' : 'text-red-600' },
           ].map((k) => (
-            <div key={k.label} className="bg-white px-3 py-2.5">
-              <p className="text-[10px] font-bold uppercase text-slate-400">{k.label}</p>
-              <p className={`text-base sm:text-lg font-black tabular-nums ${k.tone}`}>{k.value}</p>
+            <div key={k.label} className="bg-white px-3 py-2.5 sm:px-4 sm:py-3 lg:px-6 lg:py-4">
+              <p className={KPI_LABEL}>{k.label}</p>
+              <p className={`${KPI_VALUE} ${k.tone}`}>{k.value}</p>
             </div>
           ))}
         </button>
 
         {monthOverMonth && (
-          <div className="px-3 py-1.5 bg-blue-50/80 border-b border-blue-100 flex items-center gap-2 text-xs">
-            <Sparkles size={13} className="text-blue-600 shrink-0" />
+          <div className="px-3 lg:px-6 py-2 lg:py-3 bg-blue-50/80 border-b border-blue-100 flex items-center gap-2 text-xs lg:text-sm">
+            <Sparkles size={13} className="lg:w-4 lg:h-4 text-blue-600 shrink-0" />
             <span className="text-slate-600">
               vs last month:{' '}
               <span className={`font-black ${monthOverMonth.delta >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
@@ -877,52 +884,52 @@ const Dashboard: React.FC<Props> = ({
         )}
 
         {isVisible('gamification') && (
-        <div className="grid grid-cols-3 divide-x divide-slate-100 border-b border-slate-100">
-          <div className="px-2.5 py-2 min-w-0">
-            <div className="flex items-center justify-between gap-1 mb-0.5">
-              <span className="text-[10px] font-bold uppercase text-slate-400 flex items-center gap-1">
-                <Target size={11} className="text-blue-600" /> Goal
+        <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 border-b border-slate-100">
+          <div className="px-3 py-3 sm:px-4 lg:px-6 lg:py-4 min-w-0">
+            <div className="flex items-center justify-between gap-1 mb-1 lg:mb-2">
+              <span className={`${KPI_LABEL} flex items-center gap-1.5`}>
+                <Target size={11} className="lg:w-4 lg:h-4 text-blue-600" /> Goal
               </span>
-              <button type="button" onClick={() => setIsEditingGoal(true)} className="p-1 text-slate-400 hover:text-slate-700" aria-label="Edit goal">
-                <Edit3 size={11} />
+              <button type="button" onClick={() => setIsEditingGoal(true)} className="p-1 lg:p-1.5 text-slate-400 hover:text-slate-700" aria-label="Edit goal">
+                <Edit3 size={11} className="lg:w-4 lg:h-4" />
               </button>
             </div>
             {isEditingGoal ? (
-              <div className="flex items-center gap-1">
-                <input autoFocus type="number" className="w-full border-b border-blue-500 text-sm font-black outline-none min-h-[32px]" value={tempGoal} onChange={(e) => setTempGoal(e.target.value)} onBlur={handleSaveGoal} onKeyDown={(e) => e.key === 'Enter' && handleSaveGoal()} />
-                <button type="button" onClick={handleSaveGoal} className="p-1 bg-blue-600 text-white rounded"><Check size={12} /></button>
+              <div className="flex items-center gap-2">
+                <input autoFocus type="number" className="w-full border-b-2 border-blue-500 text-base lg:text-xl font-black outline-none min-h-[36px] lg:min-h-[44px]" value={tempGoal} onChange={(e) => setTempGoal(e.target.value)} onBlur={handleSaveGoal} onKeyDown={(e) => e.key === 'Enter' && handleSaveGoal()} />
+                <button type="button" onClick={handleSaveGoal} className="p-1.5 lg:p-2 bg-blue-600 text-white rounded-lg"><Check size={14} className="lg:w-5 lg:h-5" /></button>
               </div>
             ) : (
-              <p className="text-sm font-black tabular-nums truncate">
-                €{formatEUR(gameStats.monthProfit)}<span className="text-slate-400 font-bold text-xs"> /€{formatEUR(monthlyGoal)}</span>
+              <p className="text-base sm:text-lg lg:text-xl xl:text-2xl font-black tabular-nums truncate">
+                €{formatEUR(gameStats.monthProfit)}<span className="text-slate-400 font-bold text-sm lg:text-base"> / €{formatEUR(monthlyGoal)}</span>
               </p>
             )}
-            <div className="h-1.5 bg-slate-100 rounded-full mt-1 overflow-hidden">
+            <div className="h-2 lg:h-2.5 bg-slate-100 rounded-full mt-2 overflow-hidden">
               <div className={`h-full rounded-full ${gameStats.goalProgress >= 100 ? 'bg-emerald-500' : 'bg-blue-600'}`} style={{ width: `${gameStats.goalProgress}%` }} />
             </div>
           </div>
-          <div className="px-2.5 py-2 min-w-0">
-            <span className="text-[10px] font-bold uppercase text-slate-400">Rank</span>
-            <p className="text-sm font-black truncate flex items-center gap-1">
-              <span className={`inline-flex p-0.5 rounded ${gameStats.currentLevel.bg}`}>{React.cloneElement(gameStats.currentLevel.icon as React.ReactElement<any>, { size: 12 })}</span>
+          <div className="px-3 py-3 sm:px-4 lg:px-6 lg:py-4 min-w-0">
+            <span className={KPI_LABEL}>Rank</span>
+            <p className="text-base sm:text-lg lg:text-xl font-black truncate flex items-center gap-2 mt-1">
+              <span className={`inline-flex p-1 lg:p-1.5 rounded-lg ${gameStats.currentLevel.bg}`}>{React.cloneElement(gameStats.currentLevel.icon as React.ReactElement<any>, { size: 16 })}</span>
               {gameStats.currentLevel.name}
             </p>
-            <div className="h-1.5 bg-slate-100 rounded-full mt-1 overflow-hidden">
+            <div className="h-2 lg:h-2.5 bg-slate-100 rounded-full mt-2 overflow-hidden">
               <div className="h-full bg-slate-700 rounded-full" style={{ width: `${gameStats.progressToNext}%` }} />
             </div>
           </div>
-          <div className="px-2.5 py-2 min-w-0">
-            <span className="text-[10px] font-bold uppercase text-slate-400">Lifetime</span>
-            <p className={`text-sm font-black tabular-nums ${gameStats.allTimeProfit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+          <div className="px-3 py-3 sm:px-4 lg:px-6 lg:py-4 min-w-0">
+            <span className={KPI_LABEL}>Lifetime</span>
+            <p className={`text-base sm:text-lg lg:text-xl xl:text-2xl font-black tabular-nums mt-1 ${gameStats.allTimeProfit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
               €{formatEUR(gameStats.allTimeProfit)}
             </p>
-            <p className="text-[10px] text-slate-400">{gameStats.allTimeSoldCount} sold</p>
+            <p className="text-xs lg:text-sm text-slate-400 mt-0.5">{gameStats.allTimeSoldCount} sold</p>
           </div>
         </div>
         )}
 
         {isVisible('statCards') && (
-        <div className="flex flex-wrap gap-x-3 gap-y-1 px-3 py-2 text-xs">
+        <div className="flex flex-wrap gap-x-4 gap-y-2 px-3 lg:px-6 py-3 lg:py-4 text-xs sm:text-sm lg:text-base">
           <span className="text-slate-500"><strong className="text-slate-800">{periodInsights.soldCount}</strong> sold</span>
           <span className="text-slate-300">·</span>
           <span className="text-slate-500">Avg <strong className="text-slate-800">€{formatEUR(periodInsights.avgProfitPerSale)}</strong>/sale</span>
@@ -956,9 +963,9 @@ const Dashboard: React.FC<Props> = ({
             <button
               type="button"
               onClick={() => exportPeriodSalesCsv(soldInPeriod, periodLabel)}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-100 text-slate-700 font-bold hover:bg-slate-200"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 lg:px-3 lg:py-2 rounded-md lg:rounded-lg bg-slate-100 text-slate-700 font-bold hover:bg-slate-200 text-xs lg:text-sm"
             >
-              <Download size={12} /> CSV
+              <Download size={12} className="lg:w-4 lg:h-4" /> CSV
             </button>
           </span>
         </div>
@@ -967,8 +974,8 @@ const Dashboard: React.FC<Props> = ({
       )}
 
       {isVisible('todoFromData') && todoFromData.length > 0 && (
-         <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-xs">
-            <AlertCircle size={14} className="text-amber-600 shrink-0" />
+         <div className="flex flex-wrap items-center gap-2 lg:gap-3 px-3 lg:px-4 py-2 lg:py-3 rounded-xl lg:rounded-2xl bg-amber-50 border border-amber-200 text-xs sm:text-sm lg:text-base">
+            <AlertCircle size={14} className="lg:w-5 lg:h-5 text-amber-600 shrink-0" />
             {todoFromData.map((t) => (
                <a key={t.id} href={t.href} className="inline-flex items-center gap-1 font-bold text-amber-800 hover:underline">
                   {t.label} <span className="bg-amber-200 px-1.5 rounded">{t.count}</span>
@@ -979,19 +986,19 @@ const Dashboard: React.FC<Props> = ({
 
       {/* Charts + breakdown — compact row */}
       {(isVisible('performanceChart') || isVisible('capitalDistribution') || isVisible('profitByCategory') || isVisible('profitByMonth')) && (
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-3 lg:gap-5 xl:gap-6 lg:min-h-[min(52vh,560px)]">
          {isVisible('performanceChart') && (
-         <div className={`lg:col-span-7 ${DASH_CARD} p-3 h-[200px] sm:h-[220px] flex flex-col`}>
-            <h3 className="text-xs font-black uppercase text-slate-500 mb-1">Performance</h3>
+         <div className={`xl:col-span-7 ${DASH_CARD} ${CARD_PAD} ${CHART_PANEL_H} flex flex-col`}>
+            <h3 className={`${SECTION_TITLE} mb-2 lg:mb-3`}>Performance</h3>
             <div className="flex-1 min-h-0 [&_rect]:cursor-pointer">
                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+                  <BarChart data={chartData} margin={{ top: 8, right: 12, left: -16, bottom: 0 }}>
                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                      <XAxis 
                         dataKey="name" 
                         axisLine={false} 
                         tickLine={false} 
-                        tick={{ fill: '#64748b', fontSize: 10 }}
+                        tick={{ fill: '#64748b', fontSize: 12 }}
                         tick={(props: { x: number; y: number; payload?: { value?: string }; index?: number }) => {
                           const { x, y, payload, index } = props;
                           const point = typeof index === 'number' ? chartData[index] : chartData.find(d => d.name === payload?.value);
@@ -1003,7 +1010,7 @@ const Dashboard: React.FC<Props> = ({
                                 dy={8}
                                 textAnchor="middle"
                                 fill="#64748b"
-                                fontSize={10}
+                                fontSize={12}
                                 fontWeight="bold"
                                 onClick={() => point && openDayDetail({ dayLabel: point.dayLabel, dateStr: point.dateStr, items: point.soldItems ?? [], revenue: point.revenue, itemProfit: point.itemProfit, expTotal: point.expTotal, netProfit: point.netProfit })}
                                 role="button"
@@ -1015,7 +1022,7 @@ const Dashboard: React.FC<Props> = ({
                           );
                         }}
                      />
-                     <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10 }} width={42} />
+                     <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} width={48} />
                      <Tooltip 
                         cursor={{ fill: '#f8fafc' }} 
                         contentStyle={{ borderRadius: '12px', border: 'none', fontSize: '12px' }} 
@@ -1041,38 +1048,38 @@ const Dashboard: React.FC<Props> = ({
                           );
                         }}
                      />
-                     <Bar dataKey="revenue" fill="#3B82F6" radius={[4, 4, 0, 0]} name="Revenue" maxBarSize={28} onClick={(data: any) => { const p = data?.payload ?? data; openDayDetail({ dayLabel: p?.dayLabel ?? '', dateStr: p?.dateStr ?? '', items: p?.soldItems ?? [], revenue: p?.revenue, itemProfit: p?.itemProfit, expTotal: p?.expTotal, netProfit: p?.netProfit }); }} />
-                     <Bar dataKey="netProfit" fill="#10B981" radius={[4, 4, 0, 0]} name="Net" maxBarSize={28} onClick={(data: any) => { const p = data?.payload ?? data; openDayDetail({ dayLabel: p?.dayLabel ?? '', dateStr: p?.dateStr ?? '', items: p?.soldItems ?? [], revenue: p?.revenue, itemProfit: p?.itemProfit, expTotal: p?.expTotal, netProfit: p?.netProfit }); }} />
+                     <Bar dataKey="revenue" fill="#3B82F6" radius={[4, 4, 0, 0]} name="Revenue" maxBarSize={40} onClick={(data: any) => { const p = data?.payload ?? data; openDayDetail({ dayLabel: p?.dayLabel ?? '', dateStr: p?.dateStr ?? '', items: p?.soldItems ?? [], revenue: p?.revenue, itemProfit: p?.itemProfit, expTotal: p?.expTotal, netProfit: p?.netProfit }); }} />
+                     <Bar dataKey="netProfit" fill="#10B981" radius={[4, 4, 0, 0]} name="Net" maxBarSize={40} onClick={(data: any) => { const p = data?.payload ?? data; openDayDetail({ dayLabel: p?.dayLabel ?? '', dateStr: p?.dateStr ?? '', items: p?.soldItems ?? [], revenue: p?.revenue, itemProfit: p?.itemProfit, expTotal: p?.expTotal, netProfit: p?.netProfit }); }} />
                   </BarChart>
                </ResponsiveContainer>
             </div>
          </div>
          )}
 
-         <div className={`${isVisible('performanceChart') ? 'lg:col-span-5' : 'lg:col-span-12'} grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2.5`}>
+         <div className={`${isVisible('performanceChart') ? 'xl:col-span-5' : 'xl:col-span-12'} grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-1 gap-3 lg:gap-5 min-h-0`}>
          {isVisible('capitalDistribution') && (
-         <div className={`${DASH_CARD} p-3 h-[200px] sm:h-[220px] flex flex-col`}>
-            <div className="flex justify-between items-center mb-1">
-               <h3 className="text-xs font-black uppercase text-slate-500">Stock by category</h3>
-               <span className="text-[10px] font-bold text-slate-400">€{formatEUR(stats.totalInventoryValue)}</span>
+         <div className={`${DASH_CARD} ${CARD_PAD} ${CHART_PANEL_H} flex flex-col`}>
+            <div className="flex justify-between items-center mb-2 lg:mb-3">
+               <h3 className={SECTION_TITLE}>Stock by category</h3>
+               <span className="text-xs lg:text-sm font-bold text-slate-500">€{formatEUR(stats.totalInventoryValue)}</span>
             </div>
             {categoryData.length > 0 ? (
                <>
                <div className="flex-1 min-h-0 relative">
                   <ResponsiveContainer width="100%" height="100%">
                      <PieChart>
-                        <Pie data={categoryData} cx="50%" cy="50%" innerRadius={36} outerRadius={52} paddingAngle={3} dataKey="value">
+                        <Pie data={categoryData} cx="50%" cy="50%" innerRadius="42%" outerRadius="68%" paddingAngle={3} dataKey="value">
                            {categoryData.map((_, index) => (
                               <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} stroke="none" />
                            ))}
                         </Pie>
-                        <Tooltip formatter={(value: number) => `€${formatEUR(value)}`} contentStyle={{ borderRadius: '8px', fontSize: '11px' }} />
+                        <Tooltip formatter={(value: number) => `€${formatEUR(value)}`} contentStyle={{ borderRadius: '12px', fontSize: '13px' }} />
                      </PieChart>
                   </ResponsiveContainer>
                </div>
-               <div className="flex flex-wrap gap-x-2 gap-y-0.5 max-h-[44px] overflow-hidden">
-                  {categoryData.slice(0, 4).map((cat, idx) => (
-                     <span key={cat.name} className="text-[10px] text-slate-600 truncate">
+               <div className="flex flex-wrap gap-x-3 gap-y-1 max-h-[56px] lg:max-h-[72px] overflow-hidden mt-1">
+                  {categoryData.slice(0, 5).map((cat, idx) => (
+                     <span key={cat.name} className="text-xs lg:text-sm text-slate-600 truncate">
                         <span className="inline-block w-1.5 h-1.5 rounded-full mr-0.5" style={{ backgroundColor: PIE_COLORS[idx % PIE_COLORS.length] }} />
                         {cat.name} €{formatEUR(cat.value)}
                      </span>
@@ -1086,37 +1093,37 @@ const Dashboard: React.FC<Props> = ({
          )}
 
          {(isVisible('profitByCategory') || isVisible('profitByMonth')) && (
-         <div className={`${DASH_CARD} p-3 flex flex-col ${isVisible('capitalDistribution') ? 'h-[200px] sm:h-[220px]' : 'min-h-[200px]'}`}>
-            <div className="flex gap-1 mb-2">
+         <div className={`${DASH_CARD} ${CARD_PAD} flex flex-col ${CHART_PANEL_H}`}>
+            <div className="flex gap-2 mb-3">
                {isVisible('profitByMonth') && (
-                 <button type="button" onClick={() => setProfitTab('month')} className={`px-2 py-1 rounded-md text-[10px] font-black uppercase ${profitTab === 'month' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>By month</button>
+                 <button type="button" onClick={() => setProfitTab('month')} className={`px-3 py-1.5 lg:px-4 lg:py-2 rounded-lg text-xs lg:text-sm font-black uppercase ${profitTab === 'month' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>By month</button>
                )}
                {isVisible('profitByCategory') && (
-                 <button type="button" onClick={() => setProfitTab('category')} className={`px-2 py-1 rounded-md text-[10px] font-black uppercase ${profitTab === 'category' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>By category</button>
+                 <button type="button" onClick={() => setProfitTab('category')} className={`px-3 py-1.5 lg:px-4 lg:py-2 rounded-lg text-xs lg:text-sm font-black uppercase ${profitTab === 'category' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>By category</button>
                )}
             </div>
-            <div className="flex-1 overflow-y-auto min-h-0 space-y-0.5 -mx-1 px-1">
+            <div className="flex-1 overflow-y-auto min-h-0 space-y-1 -mx-1 px-1">
                {profitTab === 'month' && isVisible('profitByMonth') && (
                  profitByMonth.length === 0 ? (
-                   <p className="text-xs text-slate-400 py-4 text-center">No data</p>
+                   <p className="text-sm text-slate-400 py-6 text-center">No data</p>
                  ) : profitByMonth.map((row) => (
-                   <button key={row.name} type="button" onClick={() => openFinancialDetail({ title: formatYearMonthLabel(row.name), items: row.items, scopeExpenses: row.scopeExpenses, itemProfit: row.saleProfit, expTotal: row.expenses, netProfit: row.netProfit })} className="w-full flex items-center gap-1 py-1.5 px-1 rounded-lg hover:bg-slate-50 text-left text-xs">
-                     <span className="font-medium text-slate-700 w-16 shrink-0 truncate">{formatYearMonthLabel(row.name).split(' ')[0]}</span>
-                     <span className="text-slate-400 flex-1 truncate">S €{formatEUR(row.saleProfit)}</span>
-                     <span className={`font-black shrink-0 ${row.netProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>N €{formatEUR(row.netProfit)}</span>
-                     <ChevronRight size={12} className="text-slate-300 shrink-0" />
+                   <button key={row.name} type="button" onClick={() => openFinancialDetail({ title: formatYearMonthLabel(row.name), items: row.items, scopeExpenses: row.scopeExpenses, itemProfit: row.saleProfit, expTotal: row.expenses, netProfit: row.netProfit })} className="w-full flex items-center gap-2 py-2 lg:py-2.5 px-2 rounded-lg hover:bg-slate-50 text-left text-sm lg:text-base">
+                     <span className="font-medium text-slate-700 w-20 lg:w-28 shrink-0 truncate">{formatYearMonthLabel(row.name).split(' ')[0]}</span>
+                     <span className="text-slate-500 flex-1 truncate">Sale €{formatEUR(row.saleProfit)}</span>
+                     <span className={`font-black shrink-0 ${row.netProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>Net €{formatEUR(row.netProfit)}</span>
+                     <ChevronRight size={14} className="lg:w-[18px] lg:h-[18px] text-slate-300 shrink-0" />
                    </button>
                  ))
                )}
                {profitTab === 'category' && isVisible('profitByCategory') && (
                  profitByCategory.length === 0 ? (
-                   <p className="text-xs text-slate-400 py-4 text-center">No sales</p>
+                   <p className="text-sm text-slate-400 py-6 text-center">No sales</p>
                  ) : profitByCategory.map((row) => (
-                   <button key={row.name} type="button" onClick={() => openFinancialDetail({ title: `Category — ${row.name}`, items: row.items, scopeExpenses: [], itemProfit: row.saleProfit, netProfit: row.saleProfit, footnote: 'Sale profit only — expenses not split by category.' })} className="w-full flex items-center gap-1 py-1.5 px-1 rounded-lg hover:bg-slate-50 text-left text-xs">
+                   <button key={row.name} type="button" onClick={() => openFinancialDetail({ title: `Category — ${row.name}`, items: row.items, scopeExpenses: [], itemProfit: row.saleProfit, netProfit: row.saleProfit, footnote: 'Sale profit only — expenses not split by category.' })} className="w-full flex items-center gap-2 py-2 lg:py-2.5 px-2 rounded-lg hover:bg-slate-50 text-left text-sm lg:text-base">
                      <span className="font-medium text-slate-700 flex-1 truncate">{row.name}</span>
-                     <span className="text-slate-400 shrink-0">{row.items.length}×</span>
+                     <span className="text-slate-500 shrink-0">{row.items.length}×</span>
                      <span className={`font-black shrink-0 ${row.saleProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>€{formatEUR(row.saleProfit)}</span>
-                     <ChevronRight size={12} className="text-slate-300 shrink-0" />
+                     <ChevronRight size={14} className="lg:w-[18px] lg:h-[18px] text-slate-300 shrink-0" />
                    </button>
                  ))
                )}
@@ -1133,42 +1140,42 @@ const Dashboard: React.FC<Props> = ({
         <button
           type="button"
           onClick={() => setShowMoreSections((v) => !v)}
-          className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50"
+          className="w-full flex items-center justify-between px-4 lg:px-6 py-3 lg:py-4 text-sm lg:text-base font-bold text-slate-700 hover:bg-slate-50"
         >
           <span>Tax export, tasks & activity</span>
-          <ChevronDown size={18} className={`text-slate-400 transition-transform ${showMoreSections ? 'rotate-180' : ''}`} />
+          <ChevronDown size={18} className={`lg:w-5 lg:h-5 text-slate-400 transition-transform ${showMoreSections ? 'rotate-180' : ''}`} />
         </button>
         {showMoreSections && (
-        <div className="border-t border-slate-100 p-3 space-y-3">
+        <div className="border-t border-slate-100 p-4 lg:p-6 space-y-4 lg:space-y-6">
       {isVisible('taxReport') && (
       <div>
-        <div className="flex flex-wrap items-center gap-2 mb-2">
-          <h3 className="text-xs font-black uppercase text-slate-500 flex-1">Finanzamt / EÜR</h3>
-          <select value={taxReportYear} onChange={(e) => setTaxReportYear(Number(e.target.value))} className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-bold">
+        <div className="flex flex-wrap items-center gap-3 mb-3">
+          <h3 className={`${SECTION_TITLE} flex-1`}>Finanzamt / EÜR</h3>
+          <select value={taxReportYear} onChange={(e) => setTaxReportYear(Number(e.target.value))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold">
             {taxYears.length ? taxYears.map(y => <option key={y} value={y}>{y}</option>) : <option value={taxReportYear}>{taxReportYear}</option>}
           </select>
-          <button type="button" onClick={() => { const csv = generateTaxReportCSV(items, expenses, taxReportYear); const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `tax-report-${taxReportYear}.csv`; a.click(); URL.revokeObjectURL(a.href); }} className="px-2.5 py-1 rounded-lg bg-slate-900 text-white text-xs font-bold">
+          <button type="button" onClick={() => { const csv = generateTaxReportCSV(items, expenses, taxReportYear); const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `tax-report-${taxReportYear}.csv`; a.click(); URL.revokeObjectURL(a.href); }} className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-bold">
             Export CSV
           </button>
         </div>
-        <div className="overflow-x-auto text-xs">
+        <div className="overflow-x-auto text-sm lg:text-base">
           <table className="w-full">
             <thead>
               <tr className="text-slate-500 font-bold uppercase">
-                <th className="py-1 pr-2 text-left">Revenue</th>
-                <th className="py-1 pr-2 text-left">COGS</th>
-                <th className="py-1 pr-2 text-left">Exp</th>
-                <th className="py-1 pr-2 text-left">Fees</th>
-                <th className="py-1 text-left">Net</th>
+                <th className="py-2 pr-3 text-left">Revenue</th>
+                <th className="py-2 pr-3 text-left">COGS</th>
+                <th className="py-2 pr-3 text-left">Exp</th>
+                <th className="py-2 pr-3 text-left">Fees</th>
+                <th className="py-2 text-left">Net</th>
               </tr>
             </thead>
             <tbody>
               <tr className="font-bold tabular-nums">
-                <td className="py-1">€{formatEUR(taxSummary.revenue)}</td>
-                <td className="py-1 text-slate-600">€{formatEUR(taxSummary.cogs)}</td>
-                <td className="py-1 text-slate-600">€{formatEUR(taxSummary.expenses)}</td>
-                <td className="py-1 text-slate-600">€{formatEUR(taxSummary.fees)}</td>
-                <td className="py-1 text-emerald-600">€{formatEUR(taxSummary.netProfit)}</td>
+                <td className="py-2">€{formatEUR(taxSummary.revenue)}</td>
+                <td className="py-2 text-slate-600">€{formatEUR(taxSummary.cogs)}</td>
+                <td className="py-2 text-slate-600">€{formatEUR(taxSummary.expenses)}</td>
+                <td className="py-2 text-slate-600">€{formatEUR(taxSummary.fees)}</td>
+                <td className="py-2 text-emerald-600">€{formatEUR(taxSummary.netProfit)}</td>
               </tr>
             </tbody>
           </table>
@@ -1177,17 +1184,17 @@ const Dashboard: React.FC<Props> = ({
       )}
 
       {(isVisible('tasks') || isVisible('recentActivity')) && (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
          {isVisible('tasks') && (
          <div>
-            <h3 className="text-xs font-black uppercase text-slate-500 mb-2 flex items-center gap-1"><CheckCircle2 size={14}/> Tasks</h3>
-            <form onSubmit={handleAddTask} className="flex gap-1 mb-2">
-               <input className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold outline-none min-h-[36px]" placeholder="Add task…" value={newTaskText} onChange={e => setNewTaskText(e.target.value)} />
-               <button type="submit" className="bg-blue-600 text-white p-1.5 rounded-lg min-h-[36px] min-w-[36px] flex items-center justify-center"><Plus size={16}/></button>
+            <h3 className={`${SECTION_TITLE} mb-3 flex items-center gap-2`}><CheckCircle2 size={16}/> Tasks</h3>
+            <form onSubmit={handleAddTask} className="flex gap-2 mb-3">
+               <input className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm lg:text-base font-bold outline-none min-h-[44px]" placeholder="Add task…" value={newTaskText} onChange={e => setNewTaskText(e.target.value)} />
+               <button type="submit" className="bg-blue-600 text-white p-2 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center"><Plus size={18}/></button>
             </form>
-            <div className="space-y-1 max-h-[120px] overflow-y-auto">
+            <div className="space-y-2 max-h-[160px] lg:max-h-[220px] overflow-y-auto">
                {tasks.map(task => (
-                  <div key={task.id} className="group flex items-center gap-2 py-1 px-1 hover:bg-slate-50 rounded-lg cursor-pointer text-xs" onClick={() => toggleTask(task.id)}>
+                  <div key={task.id} className="group flex items-center gap-2 py-1.5 px-1 hover:bg-slate-50 rounded-lg cursor-pointer text-sm lg:text-base" onClick={() => toggleTask(task.id)}>
                      <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${task.completed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300'}`}>
                         {task.completed && <Check size={10} className="text-white"/>}
                      </div>
@@ -1200,16 +1207,16 @@ const Dashboard: React.FC<Props> = ({
          )}
          {isVisible('recentActivity') && (
          <div>
-            <h3 className="text-xs font-black uppercase text-slate-500 mb-2 flex items-center gap-1"><Activity size={14}/> Recent</h3>
-            <div className="space-y-1.5 max-h-[160px] overflow-y-auto">
+            <h3 className={`${SECTION_TITLE} mb-3 flex items-center gap-2`}><Activity size={16}/> Recent</h3>
+            <div className="space-y-2 max-h-[160px] lg:max-h-[220px] overflow-y-auto">
                {activityFeed.map((action, idx) => (
-                  <div key={idx} className="flex items-center gap-2 text-xs">
-                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${action.type === 'SOLD' ? 'bg-emerald-100 text-emerald-600' : action.type === 'BOUGHT' ? 'bg-blue-100 text-blue-600' : 'bg-red-50 text-red-500'}`}>
-                        {action.type === 'SOLD' ? <TrendingUp size={14}/> : action.type === 'BOUGHT' ? <Package size={14}/> : <TrendingDown size={14}/>}
+                  <div key={idx} className="flex items-center gap-3 text-sm lg:text-base">
+                     <div className={`w-9 h-9 lg:w-10 lg:h-10 rounded-lg flex items-center justify-center shrink-0 ${action.type === 'SOLD' ? 'bg-emerald-100 text-emerald-600' : action.type === 'BOUGHT' ? 'bg-blue-100 text-blue-600' : 'bg-red-50 text-red-500'}`}>
+                        {action.type === 'SOLD' ? <TrendingUp size={16}/> : action.type === 'BOUGHT' ? <Package size={16}/> : <TrendingDown size={16}/>}
                      </div>
                      <div className="flex-1 min-w-0">
                         <p className="font-bold text-slate-900 truncate">{action.item}</p>
-                        <p className="text-[10px] text-slate-400">{new Date(action.date).toLocaleDateString()}</p>
+                        <p className="text-xs lg:text-sm text-slate-400">{new Date(action.date).toLocaleDateString()}</p>
                      </div>
                      <span className={`font-black tabular-nums shrink-0 ${action.amount > 0 ? 'text-emerald-600' : 'text-slate-700'}`}>
                         {action.amount > 0 ? '+' : ''}€{formatEUR(Math.abs(action.amount))}
