@@ -1,8 +1,9 @@
 
-import React, { useState } from 'react';
-import { X, Euro, CheckCircle2, User, Globe, ChevronDown, Link as LinkIcon, MessageCircle, Hash, Upload } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { X, Euro, CheckCircle2, User, Globe, ChevronDown, Link as LinkIcon, MessageCircle, Hash, Upload, Sparkles, ImagePlus } from 'lucide-react';
+import { parseEbayOrderFromImageInput } from '../services/ebayOrderScreenshotAI';
 import { InventoryItem, ItemStatus, PaymentType, CustomerInfo, Platform, TaxMode } from '../types';
-import { parseLocaleNumber } from '../utils/formatMoney';
+import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 
 interface Props {
   item: InventoryItem;
@@ -42,6 +43,15 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
     address: item.customer?.address || ''
   });
 
+  const [orderScreenshotSource, setOrderScreenshotSource] = useState('');
+  const [orderScreenshotParsing, setOrderScreenshotParsing] = useState(false);
+  const [orderScreenshotError, setOrderScreenshotError] = useState<string | null>(null);
+  const [ebayScreenshotDragOver, setEbayScreenshotDragOver] = useState(false);
+
+  useEffect(() => {
+    if (platformSold !== 'ebay.de') setEbayScreenshotDragOver(false);
+  }, [platformSold]);
+
   const handleChatImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -51,6 +61,98 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
         setKleinanzeigenChatImage(reader.result as string);
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const loadOrderScreenshotFile = (file: File) => {
+    if (file.size > 6 * 1024 * 1024) {
+      setOrderScreenshotError('Screenshot too large. Max 6MB.');
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      setOrderScreenshotError('Please drop an image file (PNG, JPG, WebP, …).');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setOrderScreenshotSource(reader.result as string);
+      setOrderScreenshotError(null);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleOrderScreenshotUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    loadOrderScreenshotFile(file);
+    e.target.value = '';
+  };
+
+  const isEbayScreenshotDropActive = platformSold === 'ebay.de';
+
+  const handleEbayScreenshotDragOverCapture = (e: React.DragEvent) => {
+    if (!isEbayScreenshotDropActive) return;
+    if (![...e.dataTransfer.types].includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+
+  const handleEbayScreenshotDragEnterCapture = (e: React.DragEvent) => {
+    if (!isEbayScreenshotDropActive) return;
+    if (![...e.dataTransfer.types].includes('Files')) return;
+    e.preventDefault();
+    setEbayScreenshotDragOver(true);
+  };
+
+  const handleEbayScreenshotDragLeaveCapture = (e: React.DragEvent) => {
+    if (!isEbayScreenshotDropActive) return;
+    const rel = e.relatedTarget as Node | null;
+    if (rel && (e.currentTarget as HTMLElement).contains(rel)) return;
+    setEbayScreenshotDragOver(false);
+  };
+
+  const handleEbayScreenshotDropCapture = (e: React.DragEvent) => {
+    if (!isEbayScreenshotDropActive) return;
+    if (![...e.dataTransfer.types].includes('Files')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setEbayScreenshotDragOver(false);
+    const file = [...e.dataTransfer.files].find((f) => f.type.startsWith('image/'));
+    if (file) loadOrderScreenshotFile(file);
+    else if (e.dataTransfer.files.length > 0) {
+      setOrderScreenshotError('Please drop an image file (PNG, JPG, WebP, …).');
+    }
+  };
+
+  const handleParseOrderScreenshot = async () => {
+    const src = orderScreenshotSource.trim();
+    if (!src) {
+      setOrderScreenshotError('Paste an Imgur/direct image URL or upload a screenshot.');
+      return;
+    }
+    setOrderScreenshotError(null);
+    setOrderScreenshotParsing(true);
+    try {
+      const data = await parseEbayOrderFromImageInput(src);
+      setPlatformSold('ebay.de');
+      setPaymentType('ebay.de');
+      if (data.ebayOrderId) setEbayOrderId(data.ebayOrderId);
+      if (data.ebayUsername) setEbayUsername(data.ebayUsername);
+      setCustomer((prev) => ({
+        ...prev,
+        ...(data.buyerFullName && { name: data.buyerFullName }),
+        ...(data.shippingAddress && { address: data.shippingAddress }),
+        ...(data.phone && { phone: data.phone }),
+      }));
+      if (data.amountReceivedNetEur != null && Number.isFinite(data.amountReceivedNetEur)) {
+        setSalePrice(formatEUR(data.amountReceivedNetEur));
+        setHasFee(false);
+        setFeeAmount(0);
+      }
+    } catch (err: unknown) {
+      setOrderScreenshotError(err instanceof Error ? err.message : 'Parse failed');
+    } finally {
+      setOrderScreenshotParsing(false);
     }
   };
 
@@ -95,8 +197,20 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
-      <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[90vh]">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
+      onDragEnterCapture={handleEbayScreenshotDragEnterCapture}
+      onDragLeaveCapture={handleEbayScreenshotDragLeaveCapture}
+      onDragOverCapture={handleEbayScreenshotDragOverCapture}
+      onDropCapture={handleEbayScreenshotDropCapture}
+    >
+      <div
+        className={`bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl border overflow-hidden flex flex-col max-h-[90vh] transition-shadow duration-150 ${
+          ebayScreenshotDragOver && isEbayScreenshotDropActive
+            ? 'border-indigo-400 ring-4 ring-indigo-300/40 shadow-indigo-100'
+            : 'border-slate-100'
+        }`}
+      >
         <header className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/30 shrink-0">
           <div>
             <h2 className="text-2xl font-black text-slate-900 tracking-tight">Finalize Transaction</h2>
@@ -176,6 +290,56 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
 
               {platformSold === 'ebay.de' && (
                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                    <div className="space-y-1">
+                       <label className="text-[9px] font-black uppercase text-slate-400 ml-1 flex items-center gap-1"><Sparkles size={10}/> Order screenshot (AI)</label>
+                       <div
+                          className={`mt-2 flex flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed px-4 py-5 text-center pointer-events-none select-none transition-colors ${
+                             ebayScreenshotDragOver
+                                ? 'border-indigo-500 bg-indigo-50/80'
+                                : 'border-slate-200 bg-white/80'
+                          }`}
+                       >
+                          <ImagePlus className={`shrink-0 ${ebayScreenshotDragOver ? 'text-indigo-600' : 'text-slate-400'}`} size={22} strokeWidth={1.75} />
+                          <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">
+                             Drop screenshot here
+                          </span>
+                          <span className="text-[9px] text-slate-400">or use URL / Upload below — max 6MB</span>
+                       </div>
+                       <div className="flex flex-col sm:flex-row gap-2 mt-2">
+                          <input
+                             type="text"
+                             placeholder="https://i.imgur.com/....jpg"
+                             className="flex-1 min-w-0 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
+                             value={orderScreenshotSource.startsWith('data:') ? '' : orderScreenshotSource}
+                             onChange={(e) => { setOrderScreenshotSource(e.target.value); setOrderScreenshotError(null); }}
+                          />
+                          <div className="flex gap-2 shrink-0">
+                             <label className="flex items-center justify-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase cursor-pointer hover:bg-slate-50 text-slate-600">
+                                <Upload size={12}/>
+                                Upload
+                                <input type="file" accept="image/*" className="hidden" onChange={handleOrderScreenshotUpload} />
+                             </label>
+                             <button
+                                type="button"
+                                onClick={handleParseOrderScreenshot}
+                                disabled={orderScreenshotParsing}
+                                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                             >
+                                <Sparkles size={12}/>
+                                {orderScreenshotParsing ? 'Parsing…' : 'Parse'}
+                             </button>
+                          </div>
+                       </div>
+                       {orderScreenshotSource.startsWith('data:') && (
+                          <div className="flex items-center gap-2 ml-1 flex-wrap">
+                             <p className="text-[10px] text-slate-500">Image loaded from device — click Parse.</p>
+                             <button type="button" onClick={() => { setOrderScreenshotSource(''); setOrderScreenshotError(null); }} className="text-[10px] font-bold text-indigo-600 hover:underline">Clear</button>
+                          </div>
+                       )}
+                       {orderScreenshotError && (
+                          <p className="text-xs text-red-600 font-medium ml-1">{orderScreenshotError}</p>
+                       )}
+                    </div>
                     <div className="grid grid-cols-2 gap-3">
                        <div className="space-y-1">
                           <label className="text-[9px] font-black uppercase text-slate-400 ml-1 flex items-center gap-1"><User size={10}/> eBay User</label>
