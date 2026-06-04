@@ -1,9 +1,13 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { formatEUR } from '../utils/formatMoney';
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell
 } from 'recharts';
-import { TrendingUp, Wallet, Target, Package, Calendar, TrendingDown, Hourglass, Skull, Trophy, Star, Crown, Zap, Edit3, Check, CalendarDays, ArrowRight, CheckCircle2, Circle, Plus, X, Activity, Clock, AlertCircle, Euro, Settings2, ChevronUp, ChevronDown, ChevronRight } from 'lucide-react';
+import {
+  TrendingUp, Target, Package, TrendingDown, Trophy, Star, Crown, Zap,
+  Edit3, Check, CalendarDays, ArrowRight, CheckCircle2, Plus, X, Activity, AlertCircle,
+  Settings2, ChevronUp, ChevronDown, ChevronRight, Download, Sparkles,
+} from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { InventoryItem, ItemStatus, Expense, BusinessSettings, TaxMode, DashboardPreferences, DashboardTask } from '../types';
 import { DEFAULT_DASHBOARD_WIDGET_IDS } from '../services/constants';
@@ -56,6 +60,36 @@ function formatYearMonthLabel(key: string): string {
   const m = /^(\d{4})-(\d{2})$/.exec(key);
   if (!m) return key;
   return new Date(Number(m[1]), Number(m[2]) - 1, 1).toLocaleString(undefined, { month: 'long', year: 'numeric' });
+}
+
+const DASH_CARD = 'bg-white rounded-xl border border-slate-200/90 shadow-sm';
+
+const QUICK_FILTERS: { value: string; label: string }[] = [
+  { value: 'LAST_7', label: '7d' },
+  { value: 'LAST_30', label: '30d' },
+  { value: 'THIS_MONTH', label: 'Month' },
+  { value: 'LAST_90', label: '90d' },
+  { value: 'ALL', label: 'All' },
+];
+
+function exportPeriodSalesCsv(sold: InventoryItem[], label: string) {
+  const headers = ['Name', 'Category', 'SellDate', 'SellPrice', 'BuyPrice', 'Fees', 'Profit'];
+  const rows = sold.map((i) => {
+    const sell = Number(i.sellPrice) || 0;
+    const buy = Number(i.buyPrice) || 0;
+    const fee = Number(i.feeAmount) || 0;
+    const profit = roundMoney(sell - buy - fee);
+    return [i.name, i.category || '', i.sellDate || '', sell, buy, fee, profit]
+      .map((c) => `"${String(c).replace(/"/g, '""')}"`)
+      .join(';');
+  });
+  const csv = [headers.join(';'), ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `sales-${label.replace(/\s+/g, '-')}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 const WIDGET_LABELS: Record<WidgetId, string> = {
@@ -154,6 +188,8 @@ const Dashboard: React.FC<Props> = ({
     });
   };
   const [showWidgetModal, setShowWidgetModal] = useState(false);
+  const [profitTab, setProfitTab] = useState<'month' | 'category'>('month');
+  const [showMoreSections, setShowMoreSections] = useState(false);
 
   /** Enabled widgets only, in order (subset of DASHBOARD_WIDGET_IDS). */
   const visibleWidgets = useMemo((): WidgetId[] => {
@@ -184,6 +220,14 @@ const Dashboard: React.FC<Props> = ({
   };
 
   const isVisible = (id: WidgetId) => visibleWidgets.includes(id);
+
+  const showCommandCenter = isVisible('gamification') || isVisible('statCards');
+
+  useEffect(() => {
+    if (!visibleWidgets.includes('profitByMonth') && visibleWidgets.includes('profitByCategory')) {
+      setProfitTab('category');
+    }
+  }, [visibleWidgets]);
 
   // Goal State managed via props now
   const [isEditingGoal, setIsEditingGoal] = useState(false);
@@ -606,6 +650,53 @@ const Dashboard: React.FC<Props> = ({
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [soldInPeriod, filteredExpenses, taxMode]);
 
+  const periodInsights = useMemo(() => {
+    const count = soldInPeriod.length;
+    const avgProfitPerSale = count > 0 ? roundMoney(stats.grossProfit / count) : 0;
+    let bestSale: InventoryItem | null = null;
+    let bestSaleProfit = 0;
+    soldInPeriod.forEach((i) => {
+      const p = calculateItemProfit(i);
+      if (p > bestSaleProfit) {
+        bestSaleProfit = p;
+        bestSale = i;
+      }
+    });
+    const inStockCount = items.filter(
+      (i) => i.status === ItemStatus.IN_STOCK && !shouldSkipForInventoryCostLine(i, items)
+    ).length;
+    return {
+      soldCount: count,
+      avgProfitPerSale,
+      bestSale,
+      bestSaleProfit: roundMoney(bestSaleProfit),
+      inStockCount,
+    };
+  }, [soldInPeriod, stats.grossProfit, items, taxMode]);
+
+  const monthOverMonth = useMemo(() => {
+    if (timeFilter !== 'THIS_MONTH') return null;
+    const now = new Date();
+    const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const prevKey = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
+    const soldPrev = items.filter(
+      (i) =>
+        (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
+        !shouldSkipForAggregatedSaleLine(i, items) &&
+        i.sellDate &&
+        yearMonthKeyFromDate(i.sellDate) === prevKey
+    );
+    const salePrev = roundMoney(soldPrev.reduce((acc, i) => acc + calculateItemProfit(i), 0));
+    const expPrev = roundMoney(
+      expenses
+        .filter((e) => yearMonthKeyFromDate(e.date) === prevKey)
+        .reduce((acc, e) => acc + Number(e.amount), 0)
+    );
+    const netPrev = roundMoney(salePrev - expPrev);
+    const delta = roundMoney(stats.netProfit - netPrev);
+    return { netPrev, delta };
+  }, [timeFilter, stats.netProfit, items, expenses, taxMode]);
+
   // Tax report summary (by year)
   const [taxReportYear, setTaxReportYear] = useState(() => new Date().getFullYear());
   const taxSummary = useMemo(() => calculateTaxSummary(items, expenses, taxReportYear, taxMode), [items, expenses, taxReportYear, taxMode]);
@@ -684,288 +775,223 @@ const Dashboard: React.FC<Props> = ({
 
   return (
     <>
-    <div className="h-full min-h-0 overflow-y-auto space-y-6 animate-in fade-in pb-20">
-      {/* Header & Date Filter */}
-      <header className="flex flex-col xl:flex-row xl:items-center justify-between gap-6">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900">Dashboard</h1>
-          <p className="text-slate-500">Analytics for {items.length} items & {expenses.length} expenses</p>
+    <div className="h-full min-h-0 overflow-y-auto space-y-2.5 sm:space-y-3 animate-in fade-in pb-8 max-w-[1600px] mx-auto">
+      {/* Compact header + period filters */}
+      <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Dashboard</h1>
+          <p className="text-xs text-slate-500 truncate">
+            {items.length} items · {expenses.length} expenses · {periodLabel}
+          </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex rounded-lg border border-slate-200 bg-white p-0.5">
+            {QUICK_FILTERS.map((f) => (
+              <button
+                key={f.value}
+                type="button"
+                onClick={() => setTimeFilter(f.value)}
+                className={`px-2.5 py-1.5 text-xs font-bold rounded-md transition-colors min-h-[36px] ${
+                  timeFilter === f.value ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <div className="relative flex items-center rounded-lg border border-slate-200 bg-white">
+            <CalendarDays size={14} className="absolute left-2 text-slate-400 pointer-events-none" />
+            <select
+              className="bg-transparent border-none outline-none text-xs font-bold text-slate-700 pl-7 pr-6 py-2 cursor-pointer appearance-none min-w-[100px]"
+              value={timeFilter}
+              onChange={(e) => setTimeFilter(e.target.value)}
+            >
+              <option value="THIS_MONTH">This month</option>
+              <option value="LAST_MONTH">Last month</option>
+              {availableYears.map((year) => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+              <option value="CUSTOM">Custom</option>
+            </select>
+          </div>
+          {timeFilter === 'CUSTOM' && (
+            <div className="flex items-center gap-1">
+              <input type="date" className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-bold" value={customStart} onChange={(e) => setCustomStart(e.target.value)} />
+              <ArrowRight size={12} className="text-slate-300" />
+              <input type="date" className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-bold" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} />
+            </div>
+          )}
           <button
             type="button"
             onClick={() => setShowWidgetModal(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 text-sm font-bold hover:bg-slate-50 transition-colors"
+            className="p-2 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 min-h-[36px] min-w-[36px] flex items-center justify-center"
+            aria-label="Customise widgets"
           >
-            <Settings2 size={18} />
-            Customise widgets
+            <Settings2 size={16} />
           </button>
-          <div className="flex flex-col sm:flex-row gap-2 bg-white p-2 rounded-2xl shadow-sm border border-slate-200">
-          <div className="relative flex items-center">
-             <div className="absolute left-3 text-slate-400 pointer-events-none"><CalendarDays size={18} /></div>
-             <select 
-               className="bg-transparent border-none outline-none font-bold text-slate-700 pl-10 pr-8 py-2 cursor-pointer appearance-none min-w-[140px]"
-               value={timeFilter}
-               onChange={(e) => setTimeFilter(e.target.value)}
-             >
-               <option value="ALL">All Time</option>
-               <option value="THIS_MONTH">This Month</option>
-               <option value="LAST_MONTH">Last Month</option>
-               <option value="LAST_7">Last 7 Days</option>
-               <option value="LAST_30">Last 30 Days</option>
-               <option value="LAST_90">Last 90 Days</option>
-               <option disabled>──────────</option>
-               {availableYears.map(year => (
-                 <option key={year} value={year}>{year}</option>
-               ))}
-               <option disabled>──────────</option>
-               <option value="CUSTOM">Custom Range</option>
-             </select>
-          </div>
-          {timeFilter === 'CUSTOM' && (
-             <div className="flex items-center gap-2 animate-in slide-in-from-right-4 fade-in">
-                <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block"></div>
-                <input type="date" className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold outline-none" value={customStart} onChange={e => setCustomStart(e.target.value)} />
-                <ArrowRight size={12} className="text-slate-300"/>
-                <input type="date" className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold outline-none" value={customEnd} onChange={e => setCustomEnd(e.target.value)} />
-             </div>
-          )}
-          </div>
         </div>
       </header>
 
-      {/* WIDGET: GAMIFICATION — unified performance block */}
-      {isVisible('gamification') && (
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-slate-50 border-b border-slate-100">
-          <h2 className="text-sm font-black text-slate-800">Performance overview</h2>
-          <span className="text-xs font-bold text-slate-500">
-            {new Date().toLocaleString(undefined, { month: 'long', year: 'numeric' })}
-          </span>
-        </div>
+      {/* Command center — period P&L + performance + insights */}
+      {showCommandCenter && (
+      <div className={`${DASH_CARD} overflow-hidden`}>
+        <button
+          type="button"
+          onClick={() =>
+            openFinancialDetail({
+              title: `Period — ${periodLabel}`,
+              items: soldInPeriod,
+              scopeExpenses: filteredExpenses,
+              revenue: stats.totalTurnover,
+              itemProfit: stats.grossProfit,
+              expTotal: stats.totalExpenses,
+              netProfit: stats.netProfit,
+            })
+          }
+          className="w-full grid grid-cols-2 sm:grid-cols-4 gap-px bg-slate-100 border-b border-slate-100 hover:bg-slate-50/50 transition-colors text-left"
+        >
+          {[
+            { label: 'Revenue', value: `€${formatEUR(stats.totalTurnover)}`, tone: 'text-slate-900' },
+            { label: 'Sale profit', value: `€${formatEUR(stats.grossProfit)}`, tone: 'text-blue-700' },
+            { label: 'Expenses', value: `−€${formatEUR(stats.totalExpenses)}`, tone: 'text-red-600' },
+            { label: 'Net profit', value: `€${formatEUR(stats.netProfit)}`, tone: stats.netProfit >= 0 ? 'text-emerald-700' : 'text-red-600' },
+          ].map((k) => (
+            <div key={k.label} className="bg-white px-3 py-2.5">
+              <p className="text-[10px] font-bold uppercase text-slate-400">{k.label}</p>
+              <p className={`text-base sm:text-lg font-black tabular-nums ${k.tone}`}>{k.value}</p>
+            </div>
+          ))}
+        </button>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-100">
-          {/* Month goal */}
-          <section className="p-4 min-w-0">
-            <div className="flex items-center justify-between gap-2 mb-2">
-              <div className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wide text-slate-500">
-                <Target size={14} className="text-blue-600 shrink-0" />
-                Month goal
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsEditingGoal(true)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg"
-                aria-label="Edit monthly goal"
-              >
-                <Edit3 size={14} />
+        {monthOverMonth && (
+          <div className="px-3 py-1.5 bg-blue-50/80 border-b border-blue-100 flex items-center gap-2 text-xs">
+            <Sparkles size={13} className="text-blue-600 shrink-0" />
+            <span className="text-slate-600">
+              vs last month:{' '}
+              <span className={`font-black ${monthOverMonth.delta >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                {monthOverMonth.delta >= 0 ? '+' : ''}€{formatEUR(monthOverMonth.delta)}
+              </span>
+              <span className="text-slate-400 ml-1">(last: €{formatEUR(monthOverMonth.netPrev)})</span>
+            </span>
+          </div>
+        )}
+
+        {isVisible('gamification') && (
+        <div className="grid grid-cols-3 divide-x divide-slate-100 border-b border-slate-100">
+          <div className="px-2.5 py-2 min-w-0">
+            <div className="flex items-center justify-between gap-1 mb-0.5">
+              <span className="text-[10px] font-bold uppercase text-slate-400 flex items-center gap-1">
+                <Target size={11} className="text-blue-600" /> Goal
+              </span>
+              <button type="button" onClick={() => setIsEditingGoal(true)} className="p-1 text-slate-400 hover:text-slate-700" aria-label="Edit goal">
+                <Edit3 size={11} />
               </button>
             </div>
             {isEditingGoal ? (
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-base font-black text-slate-400">€</span>
-                <input
-                  autoFocus
-                  type="number"
-                  className="w-28 border-b-2 border-blue-500 text-xl font-black text-slate-900 outline-none py-0.5 min-h-[44px]"
-                  value={tempGoal}
-                  onChange={(e) => setTempGoal(e.target.value)}
-                  onBlur={handleSaveGoal}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSaveGoal()}
-                />
-                <button type="button" onClick={handleSaveGoal} className="bg-blue-600 p-2 rounded-lg text-white min-h-[44px] min-w-[44px] flex items-center justify-center">
-                  <Check size={16} />
-                </button>
+              <div className="flex items-center gap-1">
+                <input autoFocus type="number" className="w-full border-b border-blue-500 text-sm font-black outline-none min-h-[32px]" value={tempGoal} onChange={(e) => setTempGoal(e.target.value)} onBlur={handleSaveGoal} onKeyDown={(e) => e.key === 'Enter' && handleSaveGoal()} />
+                <button type="button" onClick={handleSaveGoal} className="p-1 bg-blue-600 text-white rounded"><Check size={12} /></button>
               </div>
             ) : (
-              <p className="text-xl sm:text-2xl font-black text-slate-900 leading-tight tabular-nums">
-                €{formatEUR(gameStats.monthProfit)}
-                <span className="text-slate-400 text-sm font-bold"> / €{formatEUR(monthlyGoal)}</span>
+              <p className="text-sm font-black tabular-nums truncate">
+                €{formatEUR(gameStats.monthProfit)}<span className="text-slate-400 font-bold text-xs"> /€{formatEUR(monthlyGoal)}</span>
               </p>
             )}
-            <p className="text-xs text-slate-500 mt-1">
-              {gameStats.monthProfit >= monthlyGoal
-                ? 'Goal reached this month'
-                : `€${formatEUR(Math.max(0, monthlyGoal - gameStats.monthProfit))} to go`}
+            <div className="h-1.5 bg-slate-100 rounded-full mt-1 overflow-hidden">
+              <div className={`h-full rounded-full ${gameStats.goalProgress >= 100 ? 'bg-emerald-500' : 'bg-blue-600'}`} style={{ width: `${gameStats.goalProgress}%` }} />
+            </div>
+          </div>
+          <div className="px-2.5 py-2 min-w-0">
+            <span className="text-[10px] font-bold uppercase text-slate-400">Rank</span>
+            <p className="text-sm font-black truncate flex items-center gap-1">
+              <span className={`inline-flex p-0.5 rounded ${gameStats.currentLevel.bg}`}>{React.cloneElement(gameStats.currentLevel.icon as React.ReactElement<any>, { size: 12 })}</span>
+              {gameStats.currentLevel.name}
             </p>
-            <div className="mt-3 space-y-1">
-              <div className="flex justify-between text-[11px] font-bold text-slate-500">
-                <span>Goal progress</span>
-                <span>{gameStats.goalProgress.toFixed(0)}%</span>
-              </div>
-              <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all duration-700 ${gameStats.goalProgress >= 100 ? 'bg-emerald-500' : 'bg-blue-600'}`}
-                  style={{ width: `${gameStats.goalProgress}%` }}
-                />
-              </div>
+            <div className="h-1.5 bg-slate-100 rounded-full mt-1 overflow-hidden">
+              <div className="h-full bg-slate-700 rounded-full" style={{ width: `${gameStats.progressToNext}%` }} />
             </div>
-          </section>
-
-          {/* Rank */}
-          <section className="p-4 min-w-0">
-            <div className="flex items-center gap-2 mb-2">
-              <div className={`p-2 rounded-xl shrink-0 ${gameStats.currentLevel.bg} ${gameStats.currentLevel.color}`}>
-                {gameStats.currentLevel.icon}
-              </div>
-              <div className="min-w-0">
-                <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Current rank</p>
-                <p className="text-base sm:text-lg font-black text-slate-900 truncate">{gameStats.currentLevel.name}</p>
-              </div>
-            </div>
-            <p className="text-xs text-slate-500 mb-2">
-              {gameStats.nextLevel
-                ? `Next: ${gameStats.nextLevel.name} at €${formatEUR(gameStats.nextLevel.min)}`
-                : 'Highest rank unlocked'}
-            </p>
-            <div className="space-y-1">
-              <div className="flex justify-between text-[11px] font-bold text-slate-500">
-                <span>Level progress</span>
-                <span>{gameStats.progressToNext.toFixed(0)}%</span>
-              </div>
-              <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                <div className="h-full bg-slate-800 rounded-full transition-all duration-700" style={{ width: `${gameStats.progressToNext}%` }} />
-              </div>
-            </div>
-          </section>
-
-          {/* Lifetime */}
-          <section className="p-4 min-w-0 bg-slate-50/50 md:bg-transparent">
-            <div className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wide text-slate-500 mb-2">
-              <Trophy size={14} className="text-amber-600 shrink-0" />
-              Lifetime (all time)
-            </div>
-            <p className={`text-xl sm:text-2xl font-black tabular-nums leading-tight ${gameStats.allTimeProfit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+          </div>
+          <div className="px-2.5 py-2 min-w-0">
+            <span className="text-[10px] font-bold uppercase text-slate-400">Lifetime</span>
+            <p className={`text-sm font-black tabular-nums ${gameStats.allTimeProfit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
               €{formatEUR(gameStats.allTimeProfit)}
             </p>
-            <p className="text-xs text-slate-500 mt-1">Net after all expenses</p>
-            <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-              <div>
-                <dt className="text-slate-400 font-bold">Items sold</dt>
-                <dd className="font-black text-slate-800 tabular-nums">{gameStats.allTimeSoldCount}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-400 font-bold">Rank threshold</dt>
-                <dd className="font-black text-slate-800 tabular-nums">€{formatEUR(gameStats.currentLevel.min)}</dd>
-              </div>
-            </dl>
-          </section>
+            <p className="text-[10px] text-slate-400">{gameStats.allTimeSoldCount} sold</p>
+          </div>
         </div>
+        )}
 
-        {/* Month detail strip */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-slate-100 border-t border-slate-100 text-center">
-          {[
-            { label: 'Month revenue', value: `€${formatEUR(gameStats.monthRevenue)}` },
-            { label: 'Month sale profit', value: `€${formatEUR(gameStats.monthSaleProfit)}` },
-            { label: 'Month expenses', value: `−€${formatEUR(gameStats.monthExpensesTotal)}` },
-            { label: 'Sold this month', value: String(gameStats.monthSoldCount) },
-          ].map((cell) => (
-            <div key={cell.label} className="bg-white px-2 py-2.5 sm:py-3 min-h-[52px] flex flex-col justify-center">
-              <p className="text-[10px] sm:text-[11px] font-bold uppercase text-slate-400 leading-tight">{cell.label}</p>
-              <p className="text-sm sm:text-base font-black text-slate-900 tabular-nums mt-0.5">{cell.value}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-      )}
-
-      {isVisible('statCards') && (
-      <>
-      <button
-        type="button"
-        onClick={() =>
-          openFinancialDetail({
-            title: `Period — ${periodLabel}`,
-            items: soldInPeriod,
-            scopeExpenses: filteredExpenses,
-            revenue: stats.totalTurnover,
-            itemProfit: stats.grossProfit,
-            expTotal: stats.totalExpenses,
-            netProfit: stats.netProfit,
-            footnote:
-              'Net profit = sale profit − operating expenses in this period. Annual tax export (below) also uses purchases by buy date (Wareneingang) per EÜR rules.',
-          })
-        }
-        className="w-full text-left bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:border-blue-300 hover:shadow-md transition-all group"
-      >
-        <div className="flex items-center justify-between gap-2 mb-3">
-          <p className="text-xs font-black uppercase tracking-widest text-slate-500">
-            Period P&L — {periodLabel}
-          </p>
-          <span className="text-xs font-bold text-blue-600 group-hover:underline flex items-center gap-0.5">
-            View all sales & expenses <ChevronRight size={14} />
+        {isVisible('statCards') && (
+        <div className="flex flex-wrap gap-x-3 gap-y-1 px-3 py-2 text-xs">
+          <span className="text-slate-500"><strong className="text-slate-800">{periodInsights.soldCount}</strong> sold</span>
+          <span className="text-slate-300">·</span>
+          <span className="text-slate-500">Avg <strong className="text-slate-800">€{formatEUR(periodInsights.avgProfitPerSale)}</strong>/sale</span>
+          <span className="text-slate-300">·</span>
+          <span className="text-slate-500"><strong className="text-slate-800">{periodInsights.inStockCount}</strong> in stock</span>
+          <span className="text-slate-300">·</span>
+          <span className={`${stats.deathPileCount > 0 ? 'text-amber-700' : 'text-slate-500'}`}>
+            <strong>{stats.deathPileCount}</strong> stale &gt;60d (€{formatEUR(stats.deathPileValue)})
+          </span>
+          {periodInsights.bestSale && (
+            <>
+              <span className="text-slate-300">·</span>
+              <button
+                type="button"
+                onClick={() =>
+                  openFinancialDetail({
+                    title: `Best sale — ${periodInsights.bestSale!.name}`,
+                    items: [periodInsights.bestSale!],
+                    scopeExpenses: [],
+                    itemProfit: periodInsights.bestSaleProfit,
+                    netProfit: periodInsights.bestSaleProfit,
+                  })
+                }
+                className="text-emerald-700 font-bold hover:underline truncate max-w-[140px] sm:max-w-none"
+              >
+                Best +€{formatEUR(periodInsights.bestSaleProfit)}
+              </button>
+            </>
+          )}
+          <span className="ml-auto flex gap-1.5">
+            <button
+              type="button"
+              onClick={() => exportPeriodSalesCsv(soldInPeriod, periodLabel)}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-100 text-slate-700 font-bold hover:bg-slate-200"
+            >
+              <Download size={12} /> CSV
+            </button>
           </span>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-          <div>
-            <p className="text-[10px] font-bold uppercase text-slate-400">Revenue</p>
-            <p className="font-black text-slate-900">€{formatEUR(stats.totalTurnover)}</p>
-            <p className="text-[10px] text-slate-400">Sell price (sold)</p>
-          </div>
-          <div>
-            <p className="text-[10px] font-bold uppercase text-slate-400">Sale profit</p>
-            <p className="font-black text-blue-700">€{formatEUR(stats.grossProfit)}</p>
-            <p className="text-[10px] text-slate-400">Sell − buy − fees</p>
-          </div>
-          <div>
-            <p className="text-[10px] font-bold uppercase text-slate-400">Expenses</p>
-            <p className="font-black text-red-600">−€{formatEUR(stats.totalExpenses)}</p>
-            <p className="text-[10px] text-slate-400">Operating (period)</p>
-          </div>
-          <div>
-            <p className="text-[10px] font-bold uppercase text-emerald-600">Net profit</p>
-            <p className={`font-black ${stats.netProfit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-              €{formatEUR(stats.netProfit)}
-            </p>
-            <p className="text-[10px] text-slate-400">Sale profit − expenses</p>
-          </div>
-        </div>
-      </button>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-        <StatCard title="Revenue" value={`€${formatEUR(stats.totalTurnover)}`} icon={<Wallet className="text-blue-600" />} subtitle="Period" />
-        <StatCard title="Sale profit" value={`€${formatEUR(stats.grossProfit)}`} icon={<TrendingUp className="text-blue-600" />} subtitle="Sell − buy − fees" />
-        <StatCard
-          title="Net profit"
-          value={`€${formatEUR(stats.netProfit)}`}
-          icon={<TrendingUp className="text-emerald-600" />}
-          subtitle="After expenses"
-          description={`−€${formatEUR(stats.totalExpenses)} overhead in period`}
-        />
-        <StatCard title="Expenses" value={`€${formatEUR(stats.totalExpenses)}`} icon={<TrendingDown className="text-red-500" />} subtitle="Operating" />
-        <StatCard title="Inventory value" value={`€${formatEUR(stats.totalInventoryValue)}`} icon={<Package className="text-slate-600" />} subtitle="In stock (cost)" />
-        <div className={`bg-white p-6 rounded-3xl shadow-sm border ${stats.deathPileCount > 0 ? 'border-amber-200 bg-amber-50/30' : 'border-slate-100'}`}>
-           <div className="flex justify-between items-start mb-4">
-              <div className={`p-3 rounded-2xl ${stats.deathPileCount > 0 ? 'bg-amber-100 text-amber-600' : 'bg-slate-50 text-slate-400'}`}>
-                 {stats.deathPileCount > 0 ? <Skull size={24}/> : <Hourglass size={24}/>}
-              </div>
-              <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-lg ${stats.deathPileCount > 0 ? 'bg-amber-100 text-amber-700' : 'bg-slate-50 text-slate-400'}`}>
-                 {stats.deathPileCount > 0 ? 'Action Needed' : 'Healthy'}
-              </span>
-           </div>
-           <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">{`Capital Trap (>60d)`}</p>
-           <h4 className={`text-2xl font-black ${stats.deathPileCount > 0 ? 'text-amber-600' : 'text-slate-900'}`}>
-              €{formatEUR(stats.deathPileValue)}
-           </h4>
-        </div>
+        )}
       </div>
-      </>
       )}
 
-      {/* WIDGET: ANALYTICS & PIE CHART ROW */}
-      {(isVisible('performanceChart') || isVisible('capitalDistribution')) && (
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {isVisible('todoFromData') && todoFromData.length > 0 && (
+         <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-xs">
+            <AlertCircle size={14} className="text-amber-600 shrink-0" />
+            {todoFromData.map((t) => (
+               <a key={t.id} href={t.href} className="inline-flex items-center gap-1 font-bold text-amber-800 hover:underline">
+                  {t.label} <span className="bg-amber-200 px-1.5 rounded">{t.count}</span>
+               </a>
+            ))}
+         </div>
+      )}
+
+      {/* Charts + breakdown — compact row */}
+      {(isVisible('performanceChart') || isVisible('capitalDistribution') || isVisible('profitByCategory') || isVisible('profitByMonth')) && (
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5">
          {isVisible('performanceChart') && (
-         <div className="lg:col-span-2 bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 h-[400px] flex flex-col">
-            <h3 className="text-lg font-bold mb-4">Performance Analytics</h3>
-            <div className={`flex-1 [&_rect]:cursor-pointer`}>
+         <div className={`lg:col-span-7 ${DASH_CARD} p-3 h-[200px] sm:h-[220px] flex flex-col`}>
+            <h3 className="text-xs font-black uppercase text-slate-500 mb-1">Performance</h3>
+            <div className="flex-1 min-h-0 [&_rect]:cursor-pointer">
                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <BarChart data={chartData} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                      <XAxis 
                         dataKey="name" 
                         axisLine={false} 
                         tickLine={false} 
-                        tick={{ fill: '#64748b', fontSize: 12 }}
+                        tick={{ fill: '#64748b', fontSize: 10 }}
                         tick={(props: { x: number; y: number; payload?: { value?: string }; index?: number }) => {
                           const { x, y, payload, index } = props;
                           const point = typeof index === 'number' ? chartData[index] : chartData.find(d => d.name === payload?.value);
@@ -977,25 +1003,22 @@ const Dashboard: React.FC<Props> = ({
                                 dy={8}
                                 textAnchor="middle"
                                 fill="#64748b"
-                                fontSize={12}
+                                fontSize={10}
                                 fontWeight="bold"
                                 onClick={() => point && openDayDetail({ dayLabel: point.dayLabel, dateStr: point.dateStr, items: point.soldItems ?? [], revenue: point.revenue, itemProfit: point.itemProfit, expTotal: point.expTotal, netProfit: point.netProfit })}
-                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); point && openDayDetail({ dayLabel: point.dayLabel, dateStr: point.dateStr, items: point.soldItems ?? [], revenue: point.revenue, itemProfit: point.itemProfit, expTotal: point.expTotal, netProfit: point.netProfit }); } }}
                                 role="button"
                                 tabIndex={0}
-                                style={{ cursor: 'pointer' }}
                               >
-                                {payload.value}
+                                {payload?.value}
                               </text>
                             </g>
                           );
                         }}
                      />
-                     <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
+                     <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10 }} width={42} />
                      <Tooltip 
                         cursor={{ fill: '#f8fafc' }} 
-                        contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px -5px rgb(0 0 0 / 0.1)' }} 
-                        formatter={(v: number) => [`€${formatEUR(v)}`, '']}
+                        contentStyle={{ borderRadius: '12px', border: 'none', fontSize: '12px' }} 
                         content={({ active, payload }) => {
                           if (!active || !payload?.length) return null;
                           const p = payload[0]?.payload;
@@ -1003,270 +1026,149 @@ const Dashboard: React.FC<Props> = ({
                           const itemProfit = Number(p?.itemProfit) || 0;
                           const expTotal = Number(p?.expTotal) || 0;
                           return (
-                            <div className="bg-white rounded-xl border border-slate-200 shadow-lg p-3">
-                              <p className="text-xs font-bold text-slate-500 mb-1">{p?.dayLabel ?? p?.name}</p>
+                            <div className="bg-white rounded-lg border border-slate-200 shadow-lg p-2 text-xs">
+                              <p className="font-bold text-slate-500 mb-1">{p?.dayLabel ?? p?.name}</p>
                               {payload.map((entry) => (
-                                <p key={entry.dataKey} className="text-sm font-bold text-slate-900">€{formatEUR(Number(entry.value))} ({entry.name})</p>
+                                <p key={entry.dataKey} className="font-bold">€{formatEUR(Number(entry.value))} ({entry.name})</p>
                               ))}
-                              <p className="text-xs text-slate-500 mt-1">
-                                Sale profit: €{formatEUR(itemProfit)}
-                                {expTotal > 0 ? ` · Expenses: −€${formatEUR(expTotal)}` : ''}
-                              </p>
+                              <p className="text-slate-500 mt-1">Sale €{formatEUR(itemProfit)}{expTotal > 0 ? ` · Exp −€${formatEUR(expTotal)}` : ''}</p>
                               {sold.length > 0 && (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    openDayDetail({
-                                      dayLabel: p?.dayLabel ?? p?.name,
-                                      dateStr: p?.dateStr ?? '',
-                                      items: sold,
-                                      revenue: p?.revenue,
-                                      itemProfit: p?.itemProfit,
-                                      expTotal: p?.expTotal,
-                                      netProfit: p?.netProfit,
-                                    })
-                                  }
-                                  className="mt-2 text-xs font-bold text-blue-600 hover:underline"
-                                >
-                                  View {sold.length} item{sold.length !== 1 ? 's' : ''} sold →
+                                <button type="button" onClick={() => openDayDetail({ dayLabel: p?.dayLabel ?? p?.name, dateStr: p?.dateStr ?? '', items: sold, revenue: p?.revenue, itemProfit: p?.itemProfit, expTotal: p?.expTotal, netProfit: p?.netProfit })} className="mt-1 font-bold text-blue-600 hover:underline">
+                                  {sold.length} sold →
                                 </button>
                               )}
                             </div>
                           );
                         }}
                      />
-                     <Bar 
-                        dataKey="revenue" 
-                        fill="#3B82F6" 
-                        radius={[6, 6, 0, 0]} 
-                        name="Revenue" 
-                        minPointSize={8}
-                        onClick={(data: any) => {
-                          const p = data?.payload ?? data;
-                          openDayDetail({
-                            dayLabel: p?.dayLabel ?? p?.name ?? '',
-                            dateStr: p?.dateStr ?? '',
-                            items: p?.soldItems ?? [],
-                            revenue: p?.revenue,
-                            itemProfit: p?.itemProfit,
-                            expTotal: p?.expTotal,
-                            netProfit: p?.netProfit,
-                          });
-                        }}
-                     />
-                     <Bar 
-                        dataKey="netProfit" 
-                        fill="#10B981" 
-                        radius={[6, 6, 0, 0]} 
-                        name="Net Profit"
-                        minPointSize={8}
-                        onClick={(data: any) => {
-                          const p = data?.payload ?? data;
-                          openDayDetail({
-                            dayLabel: p?.dayLabel ?? p?.name ?? '',
-                            dateStr: p?.dateStr ?? '',
-                            items: p?.soldItems ?? [],
-                            revenue: p?.revenue,
-                            itemProfit: p?.itemProfit,
-                            expTotal: p?.expTotal,
-                            netProfit: p?.netProfit,
-                          });
-                        }}
-                     />
+                     <Bar dataKey="revenue" fill="#3B82F6" radius={[4, 4, 0, 0]} name="Revenue" maxBarSize={28} onClick={(data: any) => { const p = data?.payload ?? data; openDayDetail({ dayLabel: p?.dayLabel ?? '', dateStr: p?.dateStr ?? '', items: p?.soldItems ?? [], revenue: p?.revenue, itemProfit: p?.itemProfit, expTotal: p?.expTotal, netProfit: p?.netProfit }); }} />
+                     <Bar dataKey="netProfit" fill="#10B981" radius={[4, 4, 0, 0]} name="Net" maxBarSize={28} onClick={(data: any) => { const p = data?.payload ?? data; openDayDetail({ dayLabel: p?.dayLabel ?? '', dateStr: p?.dateStr ?? '', items: p?.soldItems ?? [], revenue: p?.revenue, itemProfit: p?.itemProfit, expTotal: p?.expTotal, netProfit: p?.netProfit }); }} />
                   </BarChart>
                </ResponsiveContainer>
             </div>
          </div>
          )}
 
+         <div className={`${isVisible('performanceChart') ? 'lg:col-span-5' : 'lg:col-span-12'} grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2.5`}>
          {isVisible('capitalDistribution') && (
-         <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 h-[400px] flex flex-col">
-            <div className="flex justify-between items-center mb-2">
-               <h3 className="text-lg font-bold">Capital Distribution</h3>
-               <span className="text-[10px] font-black uppercase text-slate-400 bg-slate-50 px-2 py-1 rounded-lg">Active Inventory</span>
+         <div className={`${DASH_CARD} p-3 h-[200px] sm:h-[220px] flex flex-col`}>
+            <div className="flex justify-between items-center mb-1">
+               <h3 className="text-xs font-black uppercase text-slate-500">Stock by category</h3>
+               <span className="text-[10px] font-bold text-slate-400">€{formatEUR(stats.totalInventoryValue)}</span>
             </div>
             {categoryData.length > 0 ? (
-               <div className="flex-1 relative">
+               <>
+               <div className="flex-1 min-h-0 relative">
                   <ResponsiveContainer width="100%" height="100%">
                      <PieChart>
-                        <Pie
-                           data={categoryData}
-                           cx="50%"
-                           cy="50%"
-                           innerRadius={60}
-                           outerRadius={80}
-                           paddingAngle={5}
-                           dataKey="value"
-                        >
-                           {categoryData.map((entry, index) => (
+                        <Pie data={categoryData} cx="50%" cy="50%" innerRadius={36} outerRadius={52} paddingAngle={3} dataKey="value">
+                           {categoryData.map((_, index) => (
                               <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} stroke="none" />
                            ))}
                         </Pie>
-                        <Tooltip 
-                           formatter={(value: number) => `€${formatEUR(value)}`} 
-                           contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                        />
+                        <Tooltip formatter={(value: number) => `€${formatEUR(value)}`} contentStyle={{ borderRadius: '8px', fontSize: '11px' }} />
                      </PieChart>
                   </ResponsiveContainer>
-                  {/* Custom Legend */}
-                  <div className="absolute inset-0 flex flex-col justify-center pointer-events-none items-center">
-                     <p className="text-2xl font-black text-slate-900">€{formatEUR(stats.inventoryValue)}</p>
-                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Value</p>
-                  </div>
                </div>
+               <div className="flex flex-wrap gap-x-2 gap-y-0.5 max-h-[44px] overflow-hidden">
+                  {categoryData.slice(0, 4).map((cat, idx) => (
+                     <span key={cat.name} className="text-[10px] text-slate-600 truncate">
+                        <span className="inline-block w-1.5 h-1.5 rounded-full mr-0.5" style={{ backgroundColor: PIE_COLORS[idx % PIE_COLORS.length] }} />
+                        {cat.name} €{formatEUR(cat.value)}
+                     </span>
+                  ))}
+               </div>
+               </>
             ) : (
-               <div className="flex-1 flex items-center justify-center opacity-30 text-center flex-col">
-                  <Package size={48} className="mb-2"/>
-                  <p className="text-xs font-bold">No Inventory</p>
-               </div>
+               <div className="flex-1 flex items-center justify-center text-slate-300 text-xs">No stock</div>
             )}
-            {/* Mini Legend List */}
-            <div className="mt-2 space-y-1 overflow-y-auto max-h-[100px] scrollbar-hide">
-               {categoryData.map((cat, idx) => (
-                  <div key={idx} className="flex justify-between text-xs">
-                     <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: PIE_COLORS[idx % PIE_COLORS.length] }}></div>
-                        <span className="font-medium text-slate-600 truncate max-w-[120px]">{cat.name}</span>
-                     </div>
-                     <span className="font-bold text-slate-900">€{formatEUR(cat.value)}</span>
-                  </div>
-               ))}
+         </div>
+         )}
+
+         {(isVisible('profitByCategory') || isVisible('profitByMonth')) && (
+         <div className={`${DASH_CARD} p-3 flex flex-col ${isVisible('capitalDistribution') ? 'h-[200px] sm:h-[220px]' : 'min-h-[200px]'}`}>
+            <div className="flex gap-1 mb-2">
+               {isVisible('profitByMonth') && (
+                 <button type="button" onClick={() => setProfitTab('month')} className={`px-2 py-1 rounded-md text-[10px] font-black uppercase ${profitTab === 'month' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>By month</button>
+               )}
+               {isVisible('profitByCategory') && (
+                 <button type="button" onClick={() => setProfitTab('category')} className={`px-2 py-1 rounded-md text-[10px] font-black uppercase ${profitTab === 'category' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>By category</button>
+               )}
+            </div>
+            <div className="flex-1 overflow-y-auto min-h-0 space-y-0.5 -mx-1 px-1">
+               {profitTab === 'month' && isVisible('profitByMonth') && (
+                 profitByMonth.length === 0 ? (
+                   <p className="text-xs text-slate-400 py-4 text-center">No data</p>
+                 ) : profitByMonth.map((row) => (
+                   <button key={row.name} type="button" onClick={() => openFinancialDetail({ title: formatYearMonthLabel(row.name), items: row.items, scopeExpenses: row.scopeExpenses, itemProfit: row.saleProfit, expTotal: row.expenses, netProfit: row.netProfit })} className="w-full flex items-center gap-1 py-1.5 px-1 rounded-lg hover:bg-slate-50 text-left text-xs">
+                     <span className="font-medium text-slate-700 w-16 shrink-0 truncate">{formatYearMonthLabel(row.name).split(' ')[0]}</span>
+                     <span className="text-slate-400 flex-1 truncate">S €{formatEUR(row.saleProfit)}</span>
+                     <span className={`font-black shrink-0 ${row.netProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>N €{formatEUR(row.netProfit)}</span>
+                     <ChevronRight size={12} className="text-slate-300 shrink-0" />
+                   </button>
+                 ))
+               )}
+               {profitTab === 'category' && isVisible('profitByCategory') && (
+                 profitByCategory.length === 0 ? (
+                   <p className="text-xs text-slate-400 py-4 text-center">No sales</p>
+                 ) : profitByCategory.map((row) => (
+                   <button key={row.name} type="button" onClick={() => openFinancialDetail({ title: `Category — ${row.name}`, items: row.items, scopeExpenses: [], itemProfit: row.saleProfit, netProfit: row.saleProfit, footnote: 'Sale profit only — expenses not split by category.' })} className="w-full flex items-center gap-1 py-1.5 px-1 rounded-lg hover:bg-slate-50 text-left text-xs">
+                     <span className="font-medium text-slate-700 flex-1 truncate">{row.name}</span>
+                     <span className="text-slate-400 shrink-0">{row.items.length}×</span>
+                     <span className={`font-black shrink-0 ${row.saleProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>€{formatEUR(row.saleProfit)}</span>
+                     <ChevronRight size={12} className="text-slate-300 shrink-0" />
+                   </button>
+                 ))
+               )}
             </div>
          </div>
          )}
+         </div>
       </div>
       )}
 
-      {(isVisible('profitByCategory') || isVisible('profitByMonth')) && (
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-         {isVisible('profitByCategory') && (
-         <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
-            <h3 className="text-lg font-bold mb-1">Sale profit by category</h3>
-            <p className="text-xs text-slate-500 mb-4">Margin per category (sell − buy − fees). Expenses are in the period P&L above, not split by category.</p>
-            {profitByCategory.length === 0 ? (
-               <p className="text-slate-400 text-sm">No sales in this period.</p>
-            ) : (
-               <div className="space-y-1 max-h-64 overflow-y-auto">
-                  {profitByCategory.map((row) => (
-                     <button
-                        key={row.name}
-                        type="button"
-                        onClick={() =>
-                          openFinancialDetail({
-                            title: `Category — ${row.name}`,
-                            items: row.items,
-                            scopeExpenses: [],
-                            itemProfit: row.saleProfit,
-                            netProfit: row.saleProfit,
-                            footnote:
-                              'Category totals are sale profit only. Net profit after operating expenses is shown in Profit by month and the period P&L strip.',
-                          })
-                        }
-                        className="w-full flex items-center gap-2 py-2.5 px-2 rounded-xl border-b border-slate-50 last:border-0 hover:bg-slate-50 text-left transition-colors group"
-                     >
-                        <span className="font-medium text-slate-700 truncate flex-1">{row.name}</span>
-                        <span className="text-[10px] text-slate-400 shrink-0">{row.items.length} sold</span>
-                        <span className={`font-bold shrink-0 ${row.saleProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                           €{formatEUR(row.saleProfit)}
-                        </span>
-                        <ChevronRight size={16} className="text-slate-300 group-hover:text-blue-500 shrink-0" />
-                     </button>
-                  ))}
-               </div>
-            )}
-         </div>
-         )}
-         {isVisible('profitByMonth') && (
-         <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
-            <h3 className="text-lg font-bold mb-1">Profit by month</h3>
-            <p className="text-xs text-slate-500 mb-4">Sale profit minus expenses dated in each month (matches net profit logic).</p>
-            {profitByMonth.length === 0 ? (
-               <p className="text-slate-400 text-sm">No sales or expenses in this period.</p>
-            ) : (
-               <div className="space-y-1 max-h-64 overflow-y-auto">
-                  {profitByMonth.map((row) => (
-                     <button
-                        key={row.name}
-                        type="button"
-                        onClick={() =>
-                          openFinancialDetail({
-                            title: formatYearMonthLabel(row.name),
-                            items: row.items,
-                            scopeExpenses: row.scopeExpenses,
-                            itemProfit: row.saleProfit,
-                            expTotal: row.expenses,
-                            netProfit: row.netProfit,
-                          })
-                        }
-                        className="w-full flex items-center gap-2 py-2.5 px-2 rounded-xl border-b border-slate-50 last:border-0 hover:bg-slate-50 text-left transition-colors group"
-                     >
-                        <span className="font-medium text-slate-700 shrink-0 w-28">{formatYearMonthLabel(row.name)}</span>
-                        <span className="text-[10px] text-slate-500 flex-1 truncate">
-                           Sale €{formatEUR(row.saleProfit)}
-                           {row.expenses > 0 ? ` · Exp −€${formatEUR(row.expenses)}` : ''}
-                        </span>
-                        <span className={`font-bold shrink-0 ${row.netProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                           Net €{formatEUR(row.netProfit)}
-                        </span>
-                        <ChevronRight size={16} className="text-slate-300 group-hover:text-blue-500 shrink-0" />
-                     </button>
-                  ))}
-               </div>
-            )}
-         </div>
-         )}
-      </div>
-      )}
-
+      {/* Collapsible: tax, tasks, activity */}
+      {(isVisible('taxReport') || isVisible('tasks') || isVisible('recentActivity')) && (
+      <div className={DASH_CARD}>
+        <button
+          type="button"
+          onClick={() => setShowMoreSections((v) => !v)}
+          className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50"
+        >
+          <span>Tax export, tasks & activity</span>
+          <ChevronDown size={18} className={`text-slate-400 transition-transform ${showMoreSections ? 'rotate-180' : ''}`} />
+        </button>
+        {showMoreSections && (
+        <div className="border-t border-slate-100 p-3 space-y-3">
       {isVisible('taxReport') && (
-      <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
-        <h3 className="text-lg font-bold mb-3">Tax report (Finanzamt / EÜR)</h3>
-        <p className="text-sm text-slate-500 mb-2">
-          Calendar-year export: revenue & fees by <strong>sell date</strong>, purchases (Wareneingang) by <strong>buy date</strong>, expenses by payment date.
-          Dashboard period net profit uses <strong>sell-date sales minus period expenses</strong> — different timing than annual COGS, so totals may differ from the table below.
-        </p>
-        <p className="text-xs text-slate-400 mb-4">Use Export CSV for your Finanzamt records; every line is listed in the file.</p>
-        <div className="flex flex-wrap items-center gap-4 mb-4">
-          <label className="text-sm font-medium text-slate-600">Year</label>
-          <select value={taxReportYear} onChange={(e) => setTaxReportYear(Number(e.target.value))} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-400">
+      <div>
+        <div className="flex flex-wrap items-center gap-2 mb-2">
+          <h3 className="text-xs font-black uppercase text-slate-500 flex-1">Finanzamt / EÜR</h3>
+          <select value={taxReportYear} onChange={(e) => setTaxReportYear(Number(e.target.value))} className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-bold">
             {taxYears.length ? taxYears.map(y => <option key={y} value={y}>{y}</option>) : <option value={taxReportYear}>{taxReportYear}</option>}
           </select>
-          <button
-            type="button"
-            onClick={() => {
-              const csv = generateTaxReportCSV(items, expenses, taxReportYear);
-              const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-              const a = document.createElement('a');
-              a.href = URL.createObjectURL(blob);
-              a.download = `tax-report-${taxReportYear}.csv`;
-              a.click();
-              URL.revokeObjectURL(a.href);
-            }}
-            className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-slate-800"
-          >
+          <button type="button" onClick={() => { const csv = generateTaxReportCSV(items, expenses, taxReportYear); const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `tax-report-${taxReportYear}.csv`; a.click(); URL.revokeObjectURL(a.href); }} className="px-2.5 py-1 rounded-lg bg-slate-900 text-white text-xs font-bold">
             Export CSV
           </button>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto text-xs">
+          <table className="w-full">
             <thead>
-              <tr className="border-b border-slate-200 text-left text-slate-500 font-bold uppercase tracking-wider">
-                <th className="py-2 pr-4">Revenue (net)</th>
-                <th className="py-2 pr-4">COGS</th>
-                <th className="py-2 pr-4">Expenses</th>
-                <th className="py-2 pr-4">Fees</th>
-                {taxMode === 'RegularVAT' && <th className="py-2 pr-4">VAT (est.)</th>}
-                <th className="py-2">Net profit</th>
+              <tr className="text-slate-500 font-bold uppercase">
+                <th className="py-1 pr-2 text-left">Revenue</th>
+                <th className="py-1 pr-2 text-left">COGS</th>
+                <th className="py-1 pr-2 text-left">Exp</th>
+                <th className="py-1 pr-2 text-left">Fees</th>
+                <th className="py-1 text-left">Net</th>
               </tr>
             </thead>
             <tbody>
-              <tr className="border-b border-slate-100">
-                <td className="py-3 font-semibold text-slate-900">€{formatEUR(taxSummary.revenue)}</td>
-                <td className="py-3 text-slate-600">€{formatEUR(taxSummary.cogs)}</td>
-                <td className="py-3 text-slate-600">€{formatEUR(taxSummary.expenses)}</td>
-                <td className="py-3 text-slate-600">€{formatEUR(taxSummary.fees)}</td>
-                {taxMode === 'RegularVAT' && <td className="py-3 text-amber-600 font-semibold">€{formatEUR(taxSummary.vatPayable ?? 0)}</td>}
-                <td className="py-3 font-bold text-emerald-600">€{formatEUR(taxSummary.netProfit)}</td>
+              <tr className="font-bold tabular-nums">
+                <td className="py-1">€{formatEUR(taxSummary.revenue)}</td>
+                <td className="py-1 text-slate-600">€{formatEUR(taxSummary.cogs)}</td>
+                <td className="py-1 text-slate-600">€{formatEUR(taxSummary.expenses)}</td>
+                <td className="py-1 text-slate-600">€{formatEUR(taxSummary.fees)}</td>
+                <td className="py-1 text-emerald-600">€{formatEUR(taxSummary.netProfit)}</td>
               </tr>
             </tbody>
           </table>
@@ -1274,97 +1176,53 @@ const Dashboard: React.FC<Props> = ({
       </div>
       )}
 
-      {isVisible('todoFromData') && todoFromData.length > 0 && (
-         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 sm:p-5">
-            <h3 className="text-sm font-bold text-amber-900 mb-3 flex items-center gap-2">
-               <AlertCircle size={18} className="text-amber-600"/> Data to review
-            </h3>
-            <ul className="space-y-2">
-               {todoFromData.map(t => (
-                  <li key={t.id} className="flex items-center justify-between gap-3">
-                     <span className="text-sm font-medium text-amber-800">{t.label}</span>
-                     <a href={t.href} className="inline-flex items-center gap-1.5 text-sm font-bold text-amber-700 hover:text-amber-900 hover:underline">
-                        <span className="bg-amber-200 text-amber-900 px-2 py-0.5 rounded-lg">{t.count}</span>
-                        <ArrowRight size={14}/>
-                     </a>
-                  </li>
-               ))}
-            </ul>
-         </div>
-      )}
-
       {(isVisible('tasks') || isVisible('recentActivity')) && (
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
          {isVisible('tasks') && (
-         <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[300px]">
-            <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-               <CheckCircle2 className="text-blue-600"/> Reseller Tasks
-            </h3>
-            
-            <form onSubmit={handleAddTask} className="flex gap-2 mb-4">
-               <input 
-                  className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold outline-none focus:border-blue-500"
-                  placeholder="Add new task..."
-                  value={newTaskText}
-                  onChange={e => setNewTaskText(e.target.value)}
-               />
-               <button type="submit" className="bg-blue-600 text-white p-2 rounded-xl hover:bg-blue-700 transition-all"><Plus size={20}/></button>
+         <div>
+            <h3 className="text-xs font-black uppercase text-slate-500 mb-2 flex items-center gap-1"><CheckCircle2 size={14}/> Tasks</h3>
+            <form onSubmit={handleAddTask} className="flex gap-1 mb-2">
+               <input className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold outline-none min-h-[36px]" placeholder="Add task…" value={newTaskText} onChange={e => setNewTaskText(e.target.value)} />
+               <button type="submit" className="bg-blue-600 text-white p-1.5 rounded-lg min-h-[36px] min-w-[36px] flex items-center justify-center"><Plus size={16}/></button>
             </form>
-
-            <div className="flex-1 space-y-2 overflow-y-auto max-h-[250px] scrollbar-hide pr-1">
-               {tasks.length === 0 && (
-                  <p className="text-center text-slate-400 text-xs py-8 italic">No active tasks. Good job!</p>
-               )}
+            <div className="space-y-1 max-h-[120px] overflow-y-auto">
                {tasks.map(task => (
-                  <div key={task.id} className="group flex items-center gap-3 p-3 hover:bg-slate-50 rounded-xl transition-all cursor-pointer" onClick={() => toggleTask(task.id)}>
-                     <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${task.completed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300'}`}>
-                        {task.completed && <Check size={12} className="text-white"/>}
+                  <div key={task.id} className="group flex items-center gap-2 py-1 px-1 hover:bg-slate-50 rounded-lg cursor-pointer text-xs" onClick={() => toggleTask(task.id)}>
+                     <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${task.completed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300'}`}>
+                        {task.completed && <Check size={10} className="text-white"/>}
                      </div>
-                     <span className={`flex-1 text-sm font-medium transition-all ${task.completed ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{task.text}</span>
-                     <button onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
-                        <X size={16}/>
-                     </button>
+                     <span className={`flex-1 truncate ${task.completed ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{task.text}</span>
+                     <button type="button" onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100"><X size={14}/></button>
                   </div>
                ))}
             </div>
          </div>
          )}
-
          {isVisible('recentActivity') && (
-         <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[300px]">
-            <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-               <Activity className="text-indigo-600"/> Recent Activity
-            </h3>
-            
-            <div className="flex-1 space-y-4 overflow-y-auto max-h-[300px] scrollbar-hide">
-               {activityFeed.length === 0 && (
-                  <p className="text-center text-slate-400 text-xs py-8 italic">No recent activity recorded.</p>
-               )}
+         <div>
+            <h3 className="text-xs font-black uppercase text-slate-500 mb-2 flex items-center gap-1"><Activity size={14}/> Recent</h3>
+            <div className="space-y-1.5 max-h-[160px] overflow-y-auto">
                {activityFeed.map((action, idx) => (
-                  <div key={idx} className="flex items-center gap-4">
-                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                        action.type === 'SOLD' ? 'bg-emerald-100 text-emerald-600' : 
-                        action.type === 'BOUGHT' ? 'bg-blue-100 text-blue-600' : 
-                        'bg-red-50 text-red-500'
-                     }`}>
-                        {action.type === 'SOLD' ? <TrendingUp size={18}/> : 
-                         action.type === 'BOUGHT' ? <Package size={18}/> : 
-                         <TrendingDown size={18}/>}
+                  <div key={idx} className="flex items-center gap-2 text-xs">
+                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${action.type === 'SOLD' ? 'bg-emerald-100 text-emerald-600' : action.type === 'BOUGHT' ? 'bg-blue-100 text-blue-600' : 'bg-red-50 text-red-500'}`}>
+                        {action.type === 'SOLD' ? <TrendingUp size={14}/> : action.type === 'BOUGHT' ? <Package size={14}/> : <TrendingDown size={14}/>}
                      </div>
                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-black text-slate-900 truncate">{action.item}</p>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase flex items-center gap-1">
-                           <Clock size={10}/> {new Date(action.date).toLocaleDateString()}
-                        </p>
+                        <p className="font-bold text-slate-900 truncate">{action.item}</p>
+                        <p className="text-[10px] text-slate-400">{new Date(action.date).toLocaleDateString()}</p>
                      </div>
-                     <div className={`font-black text-sm ${action.amount > 0 ? 'text-emerald-600' : 'text-slate-900'}`}>
+                     <span className={`font-black tabular-nums shrink-0 ${action.amount > 0 ? 'text-emerald-600' : 'text-slate-700'}`}>
                         {action.amount > 0 ? '+' : ''}€{formatEUR(Math.abs(action.amount))}
-                     </div>
+                     </span>
                   </div>
                ))}
             </div>
          </div>
          )}
+      </div>
+      )}
+        </div>
+        )}
       </div>
       )}
     </div>
@@ -1556,17 +1414,5 @@ const Dashboard: React.FC<Props> = ({
   </>
   );
 };
-
-const StatCard: React.FC<{ title: string, value: string, icon: React.ReactNode, subtitle?: string, description?: string }> = ({ title, value, icon, subtitle, description }) => (
-  <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-    <div className="flex justify-between items-start mb-4">
-      <div className="p-3 bg-slate-50 rounded-2xl">{icon}</div>
-      {subtitle && <span className="text-[10px] font-bold uppercase text-slate-400 bg-slate-50 px-2 py-1 rounded-lg">{subtitle}</span>}
-    </div>
-    <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">{title}</p>
-    <h4 className="text-2xl font-black text-slate-900">{value}</h4>
-    {description && <p className="text-[10px] text-slate-400 mt-2 font-medium">{description}</p>}
-  </div>
-);
 
 export default Dashboard;
