@@ -20,6 +20,7 @@ import {
   shouldSkipContainerForPurchaseCogs,
 } from '../services/financialAggregation';
 import { toLocalCalendarDateKey, yearMonthKeyFromDate, currentLocalYearMonth } from '../utils/calendarDate';
+import { countSalesByPlatform, formatItemSalePlatform } from '../utils/salePlatform';
 
 interface Props {
   items: InventoryItem[];
@@ -80,13 +81,13 @@ const QUICK_FILTERS: { value: string; label: string }[] = [
 ];
 
 function exportPeriodSalesCsv(sold: InventoryItem[], label: string) {
-  const headers = ['Name', 'Category', 'SellDate', 'SellPrice', 'BuyPrice', 'Fees', 'Profit'];
+  const headers = ['Name', 'Category', 'Platform', 'SellDate', 'SellPrice', 'BuyPrice', 'Fees', 'Profit'];
   const rows = sold.map((i) => {
     const sell = Number(i.sellPrice) || 0;
     const buy = Number(i.buyPrice) || 0;
     const fee = Number(i.feeAmount) || 0;
     const profit = roundMoney(sell - buy - fee);
-    return [i.name, i.category || '', i.sellDate || '', sell, buy, fee, profit]
+    return [i.name, i.category || '', formatItemSalePlatform(i), i.sellDate || '', sell, buy, fee, profit]
       .map((c) => `"${String(c).replace(/"/g, '""')}"`)
       .join(';');
   });
@@ -678,6 +679,7 @@ const Dashboard: React.FC<Props> = ({
       bestSale,
       bestSaleProfit: roundMoney(bestSaleProfit),
       inStockCount,
+      platformSales: countSalesByPlatform(soldInPeriod),
     };
   }, [soldInPeriod, stats.grossProfit, items, taxMode]);
 
@@ -931,6 +933,34 @@ const Dashboard: React.FC<Props> = ({
         {isVisible('statCards') && (
         <div className="flex flex-wrap gap-x-4 gap-y-2 px-3 lg:px-6 py-3 lg:py-4 text-xs sm:text-sm lg:text-base">
           <span className="text-slate-500"><strong className="text-slate-800">{periodInsights.soldCount}</strong> sold</span>
+          <span className="text-slate-300">·</span>
+          <span className="inline-flex flex-wrap items-center gap-1.5">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold">
+              eBay <strong>{periodInsights.platformSales.ebay}</strong>
+            </span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold">
+              Kleinanzeigen <strong>{periodInsights.platformSales.kleinanzeigen}</strong>
+            </span>
+            {(periodInsights.platformSales.amazon > 0 || periodInsights.platformSales.other > 0 || periodInsights.platformSales.unknown > 0) && (
+              <>
+                {periodInsights.platformSales.amazon > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 font-bold">
+                    Amazon <strong>{periodInsights.platformSales.amazon}</strong>
+                  </span>
+                )}
+                {periodInsights.platformSales.other > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-bold">
+                    Other <strong>{periodInsights.platformSales.other}</strong>
+                  </span>
+                )}
+                {periodInsights.platformSales.unknown > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 font-bold" title="Sales without platform set">
+                    Unknown <strong>{periodInsights.platformSales.unknown}</strong>
+                  </span>
+                )}
+              </>
+            )}
+          </span>
           <span className="text-slate-300">·</span>
           <span className="text-slate-500">Avg <strong className="text-slate-800">€{formatEUR(periodInsights.avgProfitPerSale)}</strong>/sale</span>
           <span className="text-slate-300">·</span>
@@ -1293,6 +1323,7 @@ const Dashboard: React.FC<Props> = ({
                       {soldOn && (
                         <p className="text-[10px] text-slate-400 font-bold uppercase">Sold {soldOn}</p>
                       )}
+                      <p className="text-[10px] text-slate-500 font-bold">{formatItemSalePlatform(item)}</p>
                       <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-600">
                         <span>Sell €{formatEUR(sell)}</span>
                         <span>Buy €{formatEUR(buy)}</span>
