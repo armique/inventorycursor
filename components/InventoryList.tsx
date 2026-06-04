@@ -218,21 +218,36 @@ const InventoryList: React.FC<Props> = ({
     if (q != null) setSearchTerm(q);
   }, [searchParams]);
 
-  // -- STATE PERSISTENCE EFFECTS --
-  useEffect(() => localStorage.setItem(`${persistenceKey}_search`, JSON.stringify(searchTerm)), [searchTerm, persistenceKey]);
-  useEffect(() => localStorage.setItem(`${persistenceKey}_time`, JSON.stringify(timeFilter)), [timeFilter, persistenceKey]);
-  useEffect(() => localStorage.setItem(`${persistenceKey}_status_filter`, JSON.stringify(statusFilter)), [statusFilter, persistenceKey]);
-  useEffect(() => localStorage.setItem(`${persistenceKey}_category_filter`, JSON.stringify(categoryFilter)), [categoryFilter, persistenceKey]);
-  useEffect(() => localStorage.setItem(`${persistenceKey}_subcategory_filter`, JSON.stringify(subCategoryFilter)), [subCategoryFilter, persistenceKey]);
-  useEffect(() => localStorage.setItem(`${persistenceKey}_sort_config`, JSON.stringify(sortConfig)), [sortConfig, persistenceKey]);
-  useEffect(() => localStorage.setItem(`${persistenceKey}_widths`, JSON.stringify(columnWidths)), [columnWidths, persistenceKey]);
-  useEffect(() => localStorage.setItem(`${persistenceKey}_sale_platform`, JSON.stringify(salePlatformFilter)), [salePlatformFilter, persistenceKey]);
-  useEffect(() => localStorage.setItem(`${persistenceKey}_sale_payment`, JSON.stringify(salePaymentFilter)), [salePaymentFilter, persistenceKey]);
-  useEffect(() => localStorage.setItem(`${persistenceKey}_spec_filters`, JSON.stringify(specFilters)), [specFilters, persistenceKey]);
-  useEffect(() => localStorage.setItem(`${persistenceKey}_spec_range_filters`, JSON.stringify(specRangeFilters)), [specRangeFilters, persistenceKey]);
-  useEffect(() => localStorage.setItem(`${persistenceKey}_show_in_composition`, JSON.stringify(showInComposition)), [showInComposition, persistenceKey]);
-  useEffect(() => localStorage.setItem(`${persistenceKey}_column_order`, JSON.stringify(columnOrder)), [columnOrder, persistenceKey]);
-  useEffect(() => localStorage.setItem(`${persistenceKey}_hidden_columns`, JSON.stringify(hiddenColumnIds)), [hiddenColumnIds, persistenceKey]);
+  // -- STATE PERSISTENCE (batched; avoids many sync localStorage writes per keystroke) --
+  const listPrefsPersistRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (listPrefsPersistRef.current) clearTimeout(listPrefsPersistRef.current);
+    listPrefsPersistRef.current = setTimeout(() => {
+      listPrefsPersistRef.current = null;
+      const k = persistenceKey;
+      localStorage.setItem(`${k}_search`, JSON.stringify(searchTerm));
+      localStorage.setItem(`${k}_time`, JSON.stringify(timeFilter));
+      localStorage.setItem(`${k}_status_filter`, JSON.stringify(statusFilter));
+      localStorage.setItem(`${k}_category_filter`, JSON.stringify(categoryFilter));
+      localStorage.setItem(`${k}_subcategory_filter`, JSON.stringify(subCategoryFilter));
+      localStorage.setItem(`${k}_sort_config`, JSON.stringify(sortConfig));
+      localStorage.setItem(`${k}_widths`, JSON.stringify(columnWidths));
+      localStorage.setItem(`${k}_sale_platform`, JSON.stringify(salePlatformFilter));
+      localStorage.setItem(`${k}_sale_payment`, JSON.stringify(salePaymentFilter));
+      localStorage.setItem(`${k}_spec_filters`, JSON.stringify(specFilters));
+      localStorage.setItem(`${k}_spec_range_filters`, JSON.stringify(specRangeFilters));
+      localStorage.setItem(`${k}_show_in_composition`, JSON.stringify(showInComposition));
+      localStorage.setItem(`${k}_column_order`, JSON.stringify(columnOrder));
+      localStorage.setItem(`${k}_hidden_columns`, JSON.stringify(hiddenColumnIds));
+    }, 200);
+    return () => {
+      if (listPrefsPersistRef.current) clearTimeout(listPrefsPersistRef.current);
+    };
+  }, [
+    searchTerm, timeFilter, statusFilter, categoryFilter, subCategoryFilter, sortConfig, columnWidths,
+    salePlatformFilter, salePaymentFilter, specFilters, specRangeFilters, showInComposition, columnOrder,
+    hiddenColumnIds, persistenceKey,
+  ]);
 
   // Close spec filters panel when clicking outside
   useEffect(() => {

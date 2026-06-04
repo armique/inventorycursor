@@ -87,6 +87,8 @@ interface ParsedTextItem {
 }
 
 const CATEGORY_KEYS = Object.keys(HIERARCHY_CATEGORIES);
+const MOTHERBOARD_PATTERN =
+  /\b(mainboard|motherboard|mobo|chipset|form\s*factor|io[\s-]*shield|(?:a|b|h|x|z)\d{2,4}[a-z0-9-]*)\b/i;
 
 function estimateDraftWeight(item: DraftItem): number {
   const sub = (item.subCategory || '').toLowerCase();
@@ -136,7 +138,7 @@ function inferCategoryFromName(name: string): { category: string; subCategory: s
   if (/(rtx|gtx|radeon|rx\s?\d{3,5}|quadro|tesla|firepro|nvidia\s+[qkmt]|graphics card|grafikkarte)/i.test(n))
     return { category: 'Components', subCategory: 'Graphics Cards' };
   if (/(intel core|ryzen|threadripper|cpu|prozessor)/i.test(n)) return { category: 'Components', subCategory: 'Processors' };
-  if (/(mainboard|motherboard|b650|b760|x670|z790|socket\s?(am|lga))/i.test(n)) return { category: 'Components', subCategory: 'Motherboards' };
+  if (MOTHERBOARD_PATTERN.test(n) || /socket\s?(am|lga)/i.test(n)) return { category: 'Components', subCategory: 'Motherboards' };
   if (/(ddr[2345]|ram\b|memory\b|\d+x\d+\s*gb|12800u|10600u|1333u|2rx8|1rx8|jedec|hynix|samsung m\d|kingston khx|sk hynix)/i.test(n))
     return { category: 'Components', subCategory: 'RAM' };
   if (/(ssd|hdd|nvme|m\.2|tb\b|gb\b)/i.test(n)) return { category: 'Components', subCategory: 'Storage (SSD/HDD)' };
@@ -177,7 +179,7 @@ function reconcileCategory(name: string, category?: string, subCategory?: string
   if (/(ddr4|ddr5|ram|memory)/i.test(n)) {
     return { category: 'Components', subCategory: 'RAM' };
   }
-  if (/(mainboard|motherboard|b650|b760|x670|z790)/i.test(n)) {
+  if (MOTHERBOARD_PATTERN.test(n)) {
     return { category: 'Components', subCategory: 'Motherboards' };
   }
 
@@ -243,7 +245,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
   const [newNote, setNewNote] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [newDefective, setNewDefective] = useState(false);
-  const [costSplitMode, setCostSplitMode] = useState<CostSplitMode>('EQUAL');
+  const [costSplitMode, setCostSplitMode] = useState<CostSplitMode>('SMART');
   const [itemImageUrls, setItemImageUrls] = useState<string[]>([]);
   const [imageUrlInput, setImageUrlInput] = useState('');
   const [bulkText, setBulkText] = useState('');
@@ -449,6 +451,7 @@ Rules:
 - SubCategory should fit the category and be concise.
 - Parse quantity from prefixes like "2x ..." or "8x4GB ...". If no quantity, use 1.
 - IMPORTANT: Do not classify CPUs, SSD/NVMe drives, RAM, or motherboards as Graphics Cards.
+- IMPORTANT: Motherboards are often listed only by chipset/model (for example A320M, B450, B550, X570, Z690, Z790, H610) without the word "motherboard". Classify those as category "Components" and subCategory "Motherboards".
 - RAM kits: patterns like "2x 32GB" or "8x4GB" — set quantity to the stick count when that is the intent.
 - Put only essential specs in "specs" (VRAM for GPUs, GB for RAM, wattage for PSUs). Use {} if none.
 - Graphics cards: VRAM = GPU memory for that chip (not system RAM).

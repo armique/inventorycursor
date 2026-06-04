@@ -1,10 +1,8 @@
 
-import React, { useEffect, useState } from 'react';
-import { X, Euro, CheckCircle2, User, Globe, ChevronDown, Link as LinkIcon, MessageCircle, Hash, Upload, Download, Sparkles, ImagePlus } from 'lucide-react';
-import { fetchEbayOrder } from '../services/ebayService';
-import { parseEbayOrderFromImageInput } from '../services/ebayOrderScreenshotAI';
+import React, { useState } from 'react';
+import { X, Euro, CheckCircle2, User, Globe, ChevronDown, Link as LinkIcon, MessageCircle, Hash, Upload } from 'lucide-react';
 import { InventoryItem, ItemStatus, PaymentType, CustomerInfo, Platform, TaxMode } from '../types';
-import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
+import { parseLocaleNumber } from '../utils/formatMoney';
 
 interface Props {
   item: InventoryItem;
@@ -33,64 +31,16 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
   const [hasFee, setHasFee] = useState(item.hasFee || false);
   const [feeAmount, setFeeAmount] = useState(item.feeAmount || 0);
   const [comment, setComment] = useState(item.comment2 || '');
-  
-  // New Sales Data Fields
+
   const [ebayUsername, setEbayUsername] = useState(item.ebayUsername || '');
   const [ebayOrderId, setEbayOrderId] = useState(item.ebayOrderId || '');
   const [kleinanzeigenChatUrl, setKleinanzeigenChatUrl] = useState(item.kleinanzeigenChatUrl || '');
   const [kleinanzeigenChatImage, setKleinanzeigenChatImage] = useState(item.kleinanzeigenChatImage || '');
-  
+
   const [customer, setCustomer] = useState<CustomerInfo>({
     name: item.customer?.name || '',
     address: item.customer?.address || ''
   });
-  const [fetchEbayLoading, setFetchEbayLoading] = useState(false);
-  const [fetchEbayError, setFetchEbayError] = useState<string | null>(null);
-
-  const [orderScreenshotSource, setOrderScreenshotSource] = useState('');
-  const [orderScreenshotParsing, setOrderScreenshotParsing] = useState(false);
-  const [orderScreenshotError, setOrderScreenshotError] = useState<string | null>(null);
-  const [ebayPasteRows, setEbayPasteRows] = useState<
-    Array<{ orderId: string; dateGuess?: string; snippet?: string; link?: string }>
-  >([]);
-  const [selectedEbayPasteRow, setSelectedEbayPasteRow] = useState<number>(0);
-  const [ebayPasteInput, setEbayPasteInput] = useState('');
-  const [ebayPasteError, setEbayPasteError] = useState<string | null>(null);
-  const [ebayPasteInfo, setEbayPasteInfo] = useState<string | null>(null);
-  /** True while a file is dragged over the sale modal (eBay screenshot). */
-  const [ebayScreenshotDragOver, setEbayScreenshotDragOver] = useState(false);
-
-  useEffect(() => {
-    if (platformSold !== 'ebay.de') setEbayScreenshotDragOver(false);
-  }, [platformSold]);
-
-  const handleFetchFromEbay = async () => {
-    const id = ebayOrderId.trim();
-    if (!id) {
-      setFetchEbayError('Enter an order ID first');
-      return;
-    }
-    setFetchEbayError(null);
-    setFetchEbayLoading(true);
-    try {
-      const data = await fetchEbayOrder(id);
-      setEbayUsername(data.ebayUsername);
-      setEbayOrderId(data.ebayOrderId);
-      setCustomer(prev => ({
-        ...prev,
-        name: data.customer.name || prev.name,
-        address: data.customer.address || prev.address,
-        ...(data.customer.phone && { phone: data.customer.phone }),
-        ...(data.customer.email && { email: data.customer.email }),
-      }));
-      if (data.sellPrice != null) setSalePrice(String(data.sellPrice));
-      if (data.sellDate) setSaleDate(data.sellDate);
-    } catch (e: any) {
-      setFetchEbayError(e?.message || 'Failed to fetch order');
-    } finally {
-      setFetchEbayLoading(false);
-    }
-  };
 
   const handleChatImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -102,195 +52,6 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
       };
       reader.readAsDataURL(file);
     }
-  };
-
-  const loadOrderScreenshotFile = (file: File) => {
-    if (file.size > 6 * 1024 * 1024) {
-      setOrderScreenshotError('Screenshot too large. Max 6MB.');
-      return;
-    }
-    if (!file.type.startsWith('image/')) {
-      setOrderScreenshotError('Please drop an image file (PNG, JPG, WebP, …).');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setOrderScreenshotSource(reader.result as string);
-      setOrderScreenshotError(null);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleOrderScreenshotUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    loadOrderScreenshotFile(file);
-    e.target.value = '';
-  };
-
-  const isEbayScreenshotDropActive = platformSold === 'ebay.de';
-
-  const handleEbayScreenshotDragOverCapture = (e: React.DragEvent) => {
-    if (!isEbayScreenshotDropActive) return;
-    if (![...e.dataTransfer.types].includes('Files')) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
-  };
-
-  const handleEbayScreenshotDragEnterCapture = (e: React.DragEvent) => {
-    if (!isEbayScreenshotDropActive) return;
-    if (![...e.dataTransfer.types].includes('Files')) return;
-    e.preventDefault();
-    setEbayScreenshotDragOver(true);
-  };
-
-  const handleEbayScreenshotDragLeaveCapture = (e: React.DragEvent) => {
-    if (!isEbayScreenshotDropActive) return;
-    const rel = e.relatedTarget as Node | null;
-    if (rel && (e.currentTarget as HTMLElement).contains(rel)) return;
-    setEbayScreenshotDragOver(false);
-  };
-
-  const handleEbayScreenshotDropCapture = (e: React.DragEvent) => {
-    if (!isEbayScreenshotDropActive) return;
-    if (![...e.dataTransfer.types].includes('Files')) return;
-    e.preventDefault();
-    e.stopPropagation();
-    setEbayScreenshotDragOver(false);
-    const file = [...e.dataTransfer.files].find((f) => f.type.startsWith('image/'));
-    if (file) loadOrderScreenshotFile(file);
-    else if (e.dataTransfer.files.length > 0) {
-      setOrderScreenshotError('Please drop an image file (PNG, JPG, WebP, …).');
-    }
-  };
-
-  const handleParseOrderScreenshot = async () => {
-    const src = orderScreenshotSource.trim();
-    if (!src) {
-      setOrderScreenshotError('Paste an Imgur/direct image URL or upload a screenshot.');
-      return;
-    }
-    setOrderScreenshotError(null);
-    setOrderScreenshotParsing(true);
-    try {
-      const data = await parseEbayOrderFromImageInput(src);
-      setPlatformSold('ebay.de');
-      setPaymentType('ebay.de');
-      if (data.ebayOrderId) setEbayOrderId(data.ebayOrderId);
-      if (data.ebayUsername) setEbayUsername(data.ebayUsername);
-      setCustomer((prev) => ({
-        ...prev,
-        ...(data.buyerFullName && { name: data.buyerFullName }),
-        ...(data.shippingAddress && { address: data.shippingAddress }),
-        ...(data.phone && { phone: data.phone }),
-      }));
-      if (data.amountReceivedNetEur != null && Number.isFinite(data.amountReceivedNetEur)) {
-        setSalePrice(formatEUR(data.amountReceivedNetEur));
-        setHasFee(false);
-        setFeeAmount(0);
-      }
-    } catch (err: unknown) {
-      setOrderScreenshotError(err instanceof Error ? err.message : 'Parse failed');
-    } finally {
-      setOrderScreenshotParsing(false);
-    }
-  };
-
-  const parseGermanDateToIso = (raw: string): string | null => {
-    const m = raw.trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$/);
-    if (!m) return null;
-    const day = m[1].padStart(2, '0');
-    const month = m[2].padStart(2, '0');
-    const year = m[3].length === 2 ? `20${m[3]}` : m[3];
-    return `${year}-${month}-${day}`;
-  };
-
-  const parseFirstMoneyAmount = (snippet: string): number | null => {
-    const matches = [...snippet.matchAll(/(-?\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})|-?\d+(?:,\d{2}))\s*€/g)];
-    if (!matches.length) return null;
-    const last = matches[matches.length - 1]?.[1] ?? '';
-    const cleaned = last.replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
-    const n = parseFloat(cleaned);
-    return Number.isFinite(n) ? n : null;
-  };
-
-  const parseEbayBrowserExportRows = (text: string): Array<{
-    orderId: string;
-    dateGuess?: string;
-    snippet?: string;
-    link?: string;
-  }> => {
-    const lines = text
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter(Boolean);
-    if (!lines.length) return [];
-
-    const rows = lines.map((line) => line.split('\t'));
-    const first = rows[0] ?? [];
-    const hasHeader = first[0]?.toLowerCase() === 'orderid';
-    const start = hasHeader ? 1 : 0;
-    const out: Array<{ orderId: string; dateGuess?: string; snippet?: string; link?: string }> = [];
-
-    for (let i = start; i < rows.length; i++) {
-      const cols = rows[i] ?? [];
-      const orderId = (cols[0] || '').trim();
-      if (!orderId) continue;
-      out.push({
-        orderId,
-        dateGuess: (cols[1] || '').trim(),
-        snippet: (cols[3] || '').trim(),
-        link: (cols[4] || '').trim(),
-      });
-    }
-    return out;
-  };
-
-  const handleParseEbayPasteRows = () => {
-    setEbayPasteError(null);
-    setEbayPasteInfo(null);
-    const rows = parseEbayBrowserExportRows(ebayPasteInput);
-    if (!rows.length) {
-      setEbayPasteError('No usable rows found. Paste TSV from "npm run ebay:browser-export".');
-      return;
-    }
-    setEbayPasteRows(rows);
-    setSelectedEbayPasteRow(0);
-    setEbayPasteInfo(`Parsed ${rows.length} row(s). Select one and click Apply selected row.`);
-  };
-
-  const handleImportFromEbayPaste = () => {
-    setEbayPasteError(null);
-    setEbayPasteInfo(null);
-    const selected = ebayPasteRows[selectedEbayPasteRow];
-    if (!selected) {
-      setEbayPasteError('No row selected. Parse and select an order first.');
-      return;
-    }
-    setPlatformSold('ebay.de');
-    setPaymentType('ebay.de');
-    setEbayOrderId(selected.orderId);
-
-    if (selected.dateGuess) {
-      const iso = parseGermanDateToIso(selected.dateGuess);
-      if (iso) setSaleDate(iso);
-    }
-    if (selected.snippet) {
-      const price = parseFirstMoneyAmount(selected.snippet);
-      if (price != null) {
-        setSalePrice(formatEUR(price));
-      }
-    }
-    if (selected.link) {
-      setComment((prev) => {
-        const marker = `eBay Order Link: ${selected.link}`;
-        return prev.includes(marker) ? prev : [prev.trim(), marker].filter(Boolean).join('\n');
-      });
-    }
-
-    setEbayPasteInfo(
-      `Imported selected order: ${selected.orderId}.`
-    );
   };
 
   const calculateProfit = (sell: number, buy: number, fee: number) => {
@@ -312,7 +73,7 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
     const parsedPrice = parseLocaleNumber(salePrice);
     const priceNum = salePrice.trim() === '' || !Number.isFinite(parsedPrice) ? undefined : parsedPrice;
     const profit = priceNum != null ? calculateProfit(priceNum, item.buyPrice, finalFee) : undefined;
-    
+
     onSave({
       ...item,
       sellPrice: priceNum,
@@ -334,20 +95,8 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4"
-      onDragEnterCapture={handleEbayScreenshotDragEnterCapture}
-      onDragLeaveCapture={handleEbayScreenshotDragLeaveCapture}
-      onDragOverCapture={handleEbayScreenshotDragOverCapture}
-      onDropCapture={handleEbayScreenshotDropCapture}
-    >
-      <div
-        className={`bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl border overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[90vh] transition-shadow duration-150 ${
-          ebayScreenshotDragOver && isEbayScreenshotDropActive
-            ? 'border-indigo-400 ring-4 ring-indigo-300/40 shadow-indigo-100'
-            : 'border-slate-100'
-        }`}
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+      <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[90vh]">
         <header className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/30 shrink-0">
           <div>
             <h2 className="text-2xl font-black text-slate-900 tracking-tight">Finalize Transaction</h2>
@@ -374,8 +123,8 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2"><Globe size={12}/> Sold On</label>
                 <div className="flex gap-2">
                    {['ebay.de', 'kleinanzeigen.de'].map(p => (
-                      <button 
-                        key={p} 
+                      <button
+                        key={p}
                         onClick={() => setPlatformSold(p as Platform)}
                         className={`flex-1 py-3 rounded-xl border text-[10px] font-black uppercase transition-all ${platformSold === p ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-100 text-slate-500 hover:bg-slate-50'}`}
                       >
@@ -385,13 +134,12 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
                 </div>
               </div>
 
-              {/* Platform Specific Data Inputs */}
               {platformSold === 'kleinanzeigen.de' && (
-                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3 animate-in fade-in">
+                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
                     <div className="space-y-1">
                        <label className="text-[9px] font-black uppercase text-slate-400 ml-1 flex items-center gap-1"><LinkIcon size={10}/> Chat Link</label>
-                       <input 
-                          type="text" 
+                       <input
+                          type="text"
                           placeholder="https://www.kleinanzeigen.de/..."
                           className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
                           value={kleinanzeigenChatUrl}
@@ -402,8 +150,8 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
                        <label className="text-[9px] font-black uppercase text-slate-400 ml-1 flex items-center gap-1"><MessageCircle size={10}/> Screenshot</label>
                        <div className="flex gap-2">
                           <div className="relative flex-1">
-                             <input 
-                                type="text" 
+                             <input
+                                type="text"
                                 placeholder="Upload or paste URL..."
                                 className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
                                 value={kleinanzeigenChatImage}
@@ -418,7 +166,7 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
                           </div>
                           {kleinanzeigenChatImage && (
                              <a href={kleinanzeigenChatImage} target="_blank" rel="noreferrer" className="w-9 h-9 rounded-lg overflow-hidden border border-slate-200 shrink-0 bg-white">
-                                <img src={kleinanzeigenChatImage} className="w-full h-full object-cover" />
+                                <img src={kleinanzeigenChatImage} className="w-full h-full object-cover" alt="" />
                              </a>
                           )}
                        </div>
@@ -427,65 +175,12 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
               )}
 
               {platformSold === 'ebay.de' && (
-                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3 animate-in fade-in">
-                    <div className="space-y-1">
-                       <label className="text-[9px] font-black uppercase text-slate-400 ml-1 flex items-center gap-1"><Sparkles size={10}/> Order screenshot (AI)</label>
-                       <p className="text-[10px] text-slate-500 ml-1 leading-relaxed">
-                          Paste a URL, click Upload, or <span className="font-bold text-slate-600">drag and drop an image anywhere on this window</span>. Fills buyer data, order id, and your <span className="font-bold text-slate-600">net payout in €</span> (after eBay/ad fees) when visible. Uses Gemini / OpenAI from your env.
-                       </p>
-                       <div
-                          className={`mt-2 flex flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed px-4 py-5 text-center pointer-events-none select-none transition-colors ${
-                             ebayScreenshotDragOver
-                                ? 'border-indigo-500 bg-indigo-50/80'
-                                : 'border-slate-200 bg-white/80'
-                          }`}
-                       >
-                          <ImagePlus className={`shrink-0 ${ebayScreenshotDragOver ? 'text-indigo-600' : 'text-slate-400'}`} size={22} strokeWidth={1.75} />
-                          <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">
-                             Drop screenshot here
-                          </span>
-                          <span className="text-[9px] text-slate-400">or use URL / Upload below — max 6MB</span>
-                       </div>
-                       <div className="flex flex-col sm:flex-row gap-2 mt-2">
-                          <input
-                             type="text"
-                             placeholder="https://i.imgur.com/....jpg"
-                             className="flex-1 min-w-0 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
-                             value={orderScreenshotSource.startsWith('data:') ? '' : orderScreenshotSource}
-                             onChange={(e) => { setOrderScreenshotSource(e.target.value); setOrderScreenshotError(null); }}
-                          />
-                          <div className="flex gap-2 shrink-0">
-                             <label className="flex items-center justify-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase cursor-pointer hover:bg-slate-50 text-slate-600">
-                                <Upload size={12}/>
-                                Upload
-                                <input type="file" accept="image/*" className="hidden" onChange={handleOrderScreenshotUpload} />
-                             </label>
-                             <button
-                                type="button"
-                                onClick={handleParseOrderScreenshot}
-                                disabled={orderScreenshotParsing}
-                                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                             >
-                                <Sparkles size={12}/>
-                                {orderScreenshotParsing ? 'Parsing…' : 'Parse'}
-                             </button>
-                          </div>
-                       </div>
-                       {orderScreenshotSource.startsWith('data:') && (
-                          <div className="flex items-center gap-2 ml-1 flex-wrap">
-                             <p className="text-[10px] text-slate-500">Image loaded from device — click Parse.</p>
-                             <button type="button" onClick={() => { setOrderScreenshotSource(''); setOrderScreenshotError(null); }} className="text-[10px] font-bold text-indigo-600 hover:underline">Clear</button>
-                          </div>
-                       )}
-                       {orderScreenshotError && (
-                          <p className="text-xs text-red-600 font-medium ml-1">{orderScreenshotError}</p>
-                       )}
-                    </div>
+                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
                     <div className="grid grid-cols-2 gap-3">
                        <div className="space-y-1">
                           <label className="text-[9px] font-black uppercase text-slate-400 ml-1 flex items-center gap-1"><User size={10}/> eBay User</label>
-                          <input 
-                             type="text" 
+                          <input
+                             type="text"
                              placeholder="buyer_123"
                              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
                              value={ebayUsername}
@@ -494,88 +189,14 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
                        </div>
                        <div className="space-y-1">
                           <label className="text-[9px] font-black uppercase text-slate-400 ml-1 flex items-center gap-1"><Hash size={10}/> Order ID</label>
-                          <input 
-                             type="text" 
+                          <input
+                             type="text"
                              placeholder="12-34567-89012"
                              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
                              value={ebayOrderId}
-                             onChange={e => { setEbayOrderId(e.target.value); setFetchEbayError(null); }}
+                             onChange={e => setEbayOrderId(e.target.value)}
                           />
                        </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                       <button
-                          type="button"
-                          onClick={handleFetchFromEbay}
-                          disabled={fetchEbayLoading}
-                          className="flex items-center gap-2 px-3 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
-                       >
-                          <Download size={14}/>
-                          {fetchEbayLoading ? 'Importing…' : 'Import from eBay'}
-                       </button>
-                       {fetchEbayError && (
-                          <span className="text-xs text-red-600 font-medium">{fetchEbayError}</span>
-                       )}
-                    </div>
-                    <div className="space-y-1 pt-1">
-                      <label className="text-[9px] font-black uppercase text-slate-400 ml-1">
-                        Quick Paste (No API)
-                      </label>
-                      <p className="text-[10px] text-slate-500 ml-1 leading-relaxed">
-                        Paste one line (or full table) from `npm run ebay:browser-export` TSV to prefill order ID, date, and detected EUR amount.
-                      </p>
-                      <textarea
-                        rows={3}
-                        placeholder={'orderId\tdateGuess\tyearGuess\tsnippet\tlink'}
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-[11px] font-bold outline-none focus:border-blue-500"
-                        value={ebayPasteInput}
-                        onChange={(e) => {
-                          setEbayPasteInput(e.target.value);
-                          setEbayPasteRows([]);
-                          setSelectedEbayPasteRow(0);
-                          setEbayPasteError(null);
-                          setEbayPasteInfo(null);
-                        }}
-                      />
-                      {ebayPasteRows.length > 0 && (
-                        <div className="max-h-36 overflow-auto rounded-xl border border-slate-200 bg-white">
-                          {ebayPasteRows.map((r, idx) => (
-                            <button
-                              key={`${r.orderId}-${idx}`}
-                              type="button"
-                              onClick={() => setSelectedEbayPasteRow(idx)}
-                              className={`w-full text-left px-3 py-2 border-b last:border-b-0 border-slate-100 hover:bg-slate-50 ${
-                                idx === selectedEbayPasteRow ? 'bg-indigo-50' : ''
-                              }`}
-                            >
-                              <p className="text-[11px] font-black text-slate-800">
-                                {r.orderId}
-                                {r.dateGuess ? ` • ${r.dateGuess}` : ''}
-                              </p>
-                              <p className="text-[10px] text-slate-500 truncate">{r.snippet || r.link || 'No snippet'}</p>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={handleParseEbayPasteRows}
-                          className="px-3 py-2 bg-slate-100 text-slate-700 rounded-xl text-[10px] font-black uppercase hover:bg-slate-200"
-                        >
-                          Parse rows
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleImportFromEbayPaste}
-                          disabled={ebayPasteRows.length === 0}
-                          className="px-3 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          Apply selected row
-                        </button>
-                        {ebayPasteInfo && <span className="text-[10px] text-emerald-700 font-bold">{ebayPasteInfo}</span>}
-                        {ebayPasteError && <span className="text-[10px] text-red-600 font-bold">{ebayPasteError}</span>}
-                      </div>
                     </div>
                  </div>
               )}
@@ -583,7 +204,7 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
               <div className="space-y-3">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Payment Method</label>
                 <div className="relative">
-                   <select 
+                   <select
                       className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-xs outline-none appearance-none cursor-pointer"
                       value={paymentType}
                       onChange={(e) => setPaymentType(e.target.value as PaymentType)}

@@ -8,6 +8,8 @@ export interface CategorySuggestionResult {
 }
 
 const KNOWN_CATEGORIES_EXAMPLE = `Common categories in this inventory app: PC (Custom Built PC, Pre-Built PC, Server), Laptops (Gaming Laptop, Ultrabook, MacBook), Components (Graphics Cards, Processors, Motherboards, RAM, Storage (SSD/HDD), Power Supplies, Cases, Cooling), Gadgets (Smartphones, Tablets, Consoles), Peripherals (Monitors, Keyboards, Mice), Network (Routers, Switches), Software, Bundle, Misc (Cables, Adapters, Tools).`;
+const MOTHERBOARD_PATTERN =
+  /\b(mainboard|motherboard|mobo|chipset|form\s*factor|io[\s-]*shield|(?:a|b|h|x|z)\d{2,4}[a-z0-9-]*)\b/i;
 
 function buildCategoryPrompt(itemName: string, currentCategory?: string, currentSub?: string): string {
   const current = currentCategory || currentSub ? `Current assignment: ${[currentCategory, currentSub].filter(Boolean).join(' / ')}.` : 'No category assigned yet.';
@@ -37,6 +39,15 @@ export async function suggestCategoryForItem(
 ): Promise<CategorySuggestionResult> {
   const prompt = buildCategoryPrompt(itemName, currentCategory, currentSubCategory);
   const raw = await requestAIJson<CategorySuggestionResult & { suggestedFields?: string[] }>(prompt);
+  const normalizedName = String(itemName || '').toLowerCase();
+  if (MOTHERBOARD_PATTERN.test(normalizedName) || /socket\s?(am|lga)/i.test(normalizedName)) {
+    return {
+      category: 'Components',
+      subCategory: 'Motherboards',
+      suggestedFields: Array.isArray(raw?.suggestedFields) ? raw.suggestedFields.filter((f) => typeof f === 'string') : undefined,
+      reason: typeof raw?.reason === 'string' ? raw.reason : 'Detected motherboard keywords/model pattern',
+    };
+  }
   return {
     category: String(raw?.category ?? 'Misc').trim(),
     subCategory: String(raw?.subCategory ?? 'Other').trim(),

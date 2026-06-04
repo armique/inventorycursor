@@ -40,8 +40,10 @@ import { filterUsableImageUrls, isUsableProductImageUrl } from './services/store
 import { saveOAuthResult } from './services/githubBackupService';
 import { generateExpensesFromRecurring } from './services/recurringExpenseService';
 import { Analytics } from '@vercel/analytics/react';
+import { appendUndoHistory } from './utils/appendUndoHistory';
 
 const WRITE_DEBOUNCE_MS = 3500;
+const LOCAL_PERSIST_DEBOUNCE_MS = 200;
 const ACTION_HISTORY_LIMIT = 2000;
 
 /** When merging an update into an existing item, preserve these from the old item if the update doesn't provide them (so renames/edits from inventory don't wipe store data). */
@@ -323,6 +325,7 @@ const App: React.FC = () => {
   const isRemoteUpdate = useRef(false);
   const hasUnsavedChanges = useRef(false);
   const writeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const localPersistDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialWriteDoneRef = useRef(false);
   const storeCatalogPublishDoneRef = useRef(false);
   const catalogPublishDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -688,14 +691,18 @@ const App: React.FC = () => {
     });
   }, [appState, recurringExpenses]); // Only depend on recurringExpenses, use functional setState for expenses
 
-  // 2. Local persistence + debounced Firestore write
+  // 2. Local persistence (debounced to avoid main-thread stalls) + debounced Firestore write
   useEffect(() => {
     if (appState !== 'READY') return;
     if (isRemoteUpdate.current) {
       isRemoteUpdate.current = false;
       return;
     }
-    saveToLocalStorage(items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields, recurringExpenses);
+    if (localPersistDebounceRef.current) clearTimeout(localPersistDebounceRef.current);
+    localPersistDebounceRef.current = setTimeout(() => {
+      localPersistDebounceRef.current = null;
+      saveToLocalStorage(items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields, recurringExpenses);
+    }, LOCAL_PERSIST_DEBOUNCE_MS);
 
     if (!isCloudEnabled() || !authUser) return;
     if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
@@ -726,6 +733,7 @@ const App: React.FC = () => {
     }, WRITE_DEBOUNCE_MS);
     return () => {
       if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
+      if (localPersistDebounceRef.current) clearTimeout(localPersistDebounceRef.current);
     };
   }, [appState, authUser, items, trash, expenses, recurringExpenses, businessSettings, monthlyGoal, categories, categoryFields, dashboardPrefs, actionHistory]);
 
@@ -812,16 +820,15 @@ const App: React.FC = () => {
            nextItems = nextItems.filter(i => !deleteIds.includes(i.id));
         }
         const actionEntriesMerged = mergeTradeActionEntries(actionEntries, updatedItems);
-        nextItems = syncContainerBuyTotalsFromComponents(nextItems);
-        // Record history snapshots for undo/redo.
+        const touchedIds = [
+          ...updatedItems.map((u) => u.id),
+          ...(deleteIds ?? []),
+        ];
+        nextItems = syncContainerBuyTotalsFromComponents(nextItems, touchedIds);
         let nextIdx = historyIndexRef.current;
         setHistory((prev) => {
-          let base = prev.slice(0, Math.max(0, historyIndexRef.current + 1));
-          if (base.length === 0) base = [currentItems];
-          const last = base[base.length - 1];
-          if (last !== currentItems) base.push(currentItems);
-          base.push(nextItems);
-          nextIdx = base.length - 1;
+          const { base, nextIdx: idx } = appendUndoHistory(prev, historyIndexRef.current, currentItems, nextItems);
+          nextIdx = idx;
           return base;
         });
         historyIndexRef.current = nextIdx;
@@ -1044,7 +1051,11 @@ const App: React.FC = () => {
           alert(res.message);
           return currentItems;
         }
-        const nextItems = syncContainerBuyTotalsFromComponents(res.nextItems);
+        const nextItems = syncContainerBuyTotalsFromComponents(res.nextItems, [
+          entry.itemId!,
+          ...(entry.tradeReceivedIds ?? []),
+          ...res.removedIds,
+        ]);
 
         setTrash((prev) => prev.filter((t) => !res.removedIds.includes(t.id)));
 
@@ -1061,12 +1072,8 @@ const App: React.FC = () => {
 
         let nextIdx = historyIndexRef.current;
         setHistory((prev) => {
-          let base = prev.slice(0, Math.max(0, historyIndexRef.current + 1));
-          if (base.length === 0) base = [currentItems];
-          const last = base[base.length - 1];
-          if (last !== currentItems) base.push(currentItems);
-          base.push(nextItems);
-          nextIdx = base.length - 1;
+          const { base, nextIdx: idx } = appendUndoHistory(prev, historyIndexRef.current, currentItems, nextItems);
+          nextIdx = idx;
           return base;
         });
         historyIndexRef.current = nextIdx;
