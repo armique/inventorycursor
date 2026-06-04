@@ -142,4 +142,4 @@ const BulkSelectionBar: React.FC<Props> = ({ count, onClear, actions, onExpanded
   );
 };
 
-export default BulkSelectionBar;
+export default React.memo(BulkSelectionBar);

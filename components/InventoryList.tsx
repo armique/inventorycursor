@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef, useDeferredValue, startTransition } from 'react';
 import { formatEUR, parseLocaleMoney, parseLocaleNumber } from '../utils/formatMoney';
 import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSortKey } from '../utils/inventoryTimeGauge';
 import { createPortal } from 'react-dom';
@@ -516,8 +516,11 @@ const InventoryList: React.FC<Props> = ({
     }
   };
   
-  // Visible Columns (from order, excluding hidden)
-  const visibleColumns: ColumnId[] = columnOrder.filter((id) => !hiddenColumnIds.includes(id));
+  // Visible Columns (from order, excluding hidden) — memoized so row renders are not invalidated every parent render
+  const visibleColumns = useMemo(
+    () => columnOrder.filter((id) => !hiddenColumnIds.includes(id)),
+    [columnOrder, hiddenColumnIds]
+  );
 
   // Calculate Date Range based on filter
   const dateRange = useMemo(() => {
@@ -941,17 +944,30 @@ const InventoryList: React.FC<Props> = ({
     setEditingCell(null);
   };
 
-  const handleSelectAll = () => {
-    if (selectedIds.length === sortedItems.length && sortedItems.length > 0) {
-      setSelectedIds([]);
-    } else {
-      setSelectedIds(sortedItems.map(i => i.id));
-    }
-  };
+  const handleSelectAll = useCallback(() => {
+    startTransition(() => {
+      setSelectedIds((prev) => {
+        if (prev.length === sortedItems.length && sortedItems.length > 0) return [];
+        return sortedItems.map((i) => i.id);
+      });
+    });
+  }, [sortedItems]);
 
-  const toggleSelect = (id: string) => {
-    setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
-  };
+  const toggleSelect = useCallback((id: string) => {
+    startTransition(() => {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return [...next];
+      });
+    });
+  }, []);
+
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const deferredSelectedIds = useDeferredValue(selectedIds);
+
+  const itemsById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
 
   const handleDuplicate = (item: InventoryItem) => {
     const copy: InventoryItem = {
@@ -1226,7 +1242,7 @@ const InventoryList: React.FC<Props> = ({
      setSelectedIds([]);
   };
 
-  const renderCell = (item: InventoryItem, id: ColumnId) => {
+  const renderCell = (item: InventoryItem, id: ColumnId, isSelected: boolean) => {
     const width = columnWidths[id] || DEFAULT_WIDTHS[id];
     const style = { width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px` };
 
@@ -1234,8 +1250,8 @@ const InventoryList: React.FC<Props> = ({
       case 'select':
         return (
           <td key={id} className="p-5 text-center" style={style}>
-             <div onClick={(e) => { e.stopPropagation(); toggleSelect(item.id); }} className={`w-6 h-6 sm:w-5 sm:h-5 mx-auto border-2 rounded-lg flex items-center justify-center cursor-pointer transition-all touch-manipulation ${selectedIds.includes(item.id) ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 hover:border-blue-400'}`}>
-                {selectedIds.includes(item.id) && <Check size={12}/>}
+             <div onClick={(e) => { e.stopPropagation(); toggleSelect(item.id); }} className={`w-6 h-6 sm:w-5 sm:h-5 mx-auto border-2 rounded-lg flex items-center justify-center cursor-pointer transition-all touch-manipulation ${isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 hover:border-blue-400'}`}>
+                {isSelected && <Check size={12}/>}
              </div>
           </td>
         );
@@ -1918,6 +1934,14 @@ const InventoryList: React.FC<Props> = ({
     }
   };
 
+  const renderCellRef = useRef(renderCell);
+  renderCellRef.current = renderCell;
+  const renderRowCells = useCallback(
+    (item: InventoryItem, isSelected: boolean) =>
+      visibleColumns.map((colId) => renderCellRef.current(item, colId, isSelected)),
+    [visibleColumns, columnWidths]
+  );
+
   const handleDeleteItem = (item: InventoryItem) => {
      onDelete(item.id);
      setItemToDelete(null);
@@ -1943,13 +1967,17 @@ const InventoryList: React.FC<Props> = ({
   };
 
   const selectedHasSoldOrTraded = useMemo(
-    () => items.some((i) => selectedIds.includes(i.id) && (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED)),
-    [items, selectedIds]
+    () =>
+      deferredSelectedIds.some((id) => {
+        const s = itemsById.get(id)?.status;
+        return s === ItemStatus.SOLD || s === ItemStatus.TRADED;
+      }),
+    [deferredSelectedIds, itemsById]
   );
 
   const bulkActions = useMemo((): BulkAction[] => {
     const exportKleinanzeigen = () => {
-      const selected = items.filter((i) => selectedIds.includes(i.id));
+      const selected = deferredSelectedIds.map((id) => itemsById.get(id)).filter(Boolean) as InventoryItem[];
       const csv = generateKleinanzeigenCSV(selected);
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
       const a = document.createElement('a');
@@ -1959,7 +1987,8 @@ const InventoryList: React.FC<Props> = ({
       URL.revokeObjectURL(a.href);
     };
     const exportExcel = () => {
-      exportInventoryToExcel(items.filter((i) => selectedIds.includes(i.id)));
+      const selected = deferredSelectedIds.map((id) => itemsById.get(id)).filter(Boolean) as InventoryItem[];
+      exportInventoryToExcel(selected);
     };
     return [
       { id: 'compose', label: 'Compose Bundle', icon: <Monitor size={16} />, onClick: handleBuildFromSelection, variant: 'primary' },
@@ -1990,8 +2019,8 @@ const InventoryList: React.FC<Props> = ({
       { id: 'delete', label: 'Delete', icon: <Trash2 size={16} />, onClick: () => setShowBulkDeleteConfirm(true), variant: 'danger' },
     ];
   }, [
-    items,
-    selectedIds,
+    deferredSelectedIds,
+    itemsById,
     bulkGenerateDescriptions,
     bulkGenerateProgress,
     selectedHasSoldOrTraded,
@@ -2000,6 +2029,8 @@ const InventoryList: React.FC<Props> = ({
     handleBulkStoreVisible,
     handleBulkGenerateDescriptions,
   ]);
+
+  const bulkSelectionCount = deferredSelectedIds.length;
 
   return (
     <div className="h-full min-h-0 flex flex-col gap-2 overflow-hidden animate-in fade-in relative">
@@ -2530,10 +2561,15 @@ const InventoryList: React.FC<Props> = ({
                </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-               {visibleItems.length > 0 ? visibleItems.map(item => (
-                  <tr key={item.id} className={`hover:bg-slate-50/50 transition-colors group/row ${selectedIds.includes(item.id) ? 'bg-blue-50/20' : ''}`}>
-                     {visibleColumns.map(colId => renderCell(item, colId))}
-                  </tr>
+               {visibleItems.length > 0 ? visibleItems.map((item) => (
+                  <InventoryTableRow
+                    key={item.id}
+                    item={item}
+                    isSelected={selectedIdSet.has(item.id)}
+                    visibleColumns={visibleColumns}
+                    renderRowCells={renderRowCells}
+                    rowActivityKey={`${editingCell?.itemId === item.id ? editingCell.field : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}`}
+                  />
                )) : (
                   <tr>
                      <td colSpan={visibleColumns.length} className="p-20 text-center opacity-40">
@@ -2561,8 +2597,8 @@ const InventoryList: React.FC<Props> = ({
 
       <div className="shrink-0 w-full">
         <BulkSelectionBar
-          count={selectedIds.length}
-          onClear={() => setSelectedIds([])}
+          count={bulkSelectionCount}
+          onClear={() => startTransition(() => setSelectedIds([]))}
           actions={bulkActions}
         />
       </div>
@@ -2915,6 +2951,31 @@ const InventoryList: React.FC<Props> = ({
     </div>
   );
 };
+
+type InventoryTableRowProps = {
+  item: InventoryItem;
+  isSelected: boolean;
+  visibleColumns: ColumnId[];
+  renderRowCells: (item: InventoryItem, isSelected: boolean) => React.ReactNode;
+  /** Bumps when inline edit / AI spinners affect this row so memo does not skip updates. */
+  rowActivityKey: string;
+};
+
+const InventoryTableRow = React.memo(
+  function InventoryTableRow({ item, isSelected, renderRowCells }: InventoryTableRowProps) {
+    return (
+      <tr className={`hover:bg-slate-50/50 transition-colors group/row ${isSelected ? 'bg-blue-50/20' : ''}`}>
+        {renderRowCells(item, isSelected)}
+      </tr>
+    );
+  },
+  (prev, next) =>
+    prev.item === next.item &&
+    prev.isSelected === next.isSelected &&
+    prev.visibleColumns === next.visibleColumns &&
+    prev.rowActivityKey === next.rowActivityKey &&
+    prev.renderRowCells === next.renderRowCells
+);
 
 const CategoryPickerModal: React.FC<{
   initialCategory?: string;

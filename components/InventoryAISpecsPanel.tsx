@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { Sparkles, Loader2, AlertCircle, Info, AlertTriangle, ChevronDown } from 'lucide-react';
 import { InventoryItem } from '../types';
 import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
@@ -14,7 +14,9 @@ interface Props {
   onUpdate: (items: InventoryItem[]) => void;
 }
 
-export const InventoryAISpecsPanel: React.FC<Props> = ({
+const EMPTY_ITEMS: InventoryItem[] = [];
+
+const InventoryAISpecsPanelInner: React.FC<Props> = ({
   items,
   selectedIds,
   categoryFields,
@@ -28,15 +30,23 @@ export const InventoryAISpecsPanel: React.FC<Props> = ({
   const [collapsed, setCollapsed] = useState(true);
 
   const provider = getSpecsAIProvider();
-  const selectedItems = items.filter((i) => selectedIds.includes(i.id));
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const selectedItems = useMemo(() => {
+    if (selectedIds.length === 0) return EMPTY_ITEMS;
+    const out: InventoryItem[] = [];
+    for (const item of items) {
+      if (selectedIdSet.has(item.id)) out.push(item);
+    }
+    return out;
+  }, [items, selectedIds.length, selectedIdSet]);
   const canParseCount = selectedItems.length;
   const selectedAllDefective = selectedItems.length > 0 && selectedItems.every((i) => i.isDefective);
   const defectiveLabel = selectedAllDefective ? 'Mark OK' : 'Mark defective';
   const toggleDefective = useCallback(() => {
     if (selectedItems.length === 0) return;
     const newValue = !selectedAllDefective;
-    onUpdate(items.map((i) => (selectedIds.includes(i.id) ? { ...i, isDefective: newValue } : i)));
-  }, [selectedItems.length, selectedAllDefective, items, selectedIds, onUpdate]);
+    onUpdate(items.map((i) => (selectedIdSet.has(i.id) ? { ...i, isDefective: newValue } : i)));
+  }, [selectedItems.length, selectedAllDefective, items, selectedIdSet, onUpdate]);
 
   const waitWithCountdown = useCallback(async (totalMs: number) => {
     const totalSec = Math.ceil(totalMs / 1000);
@@ -243,5 +253,7 @@ export const InventoryAISpecsPanel: React.FC<Props> = ({
     </div>
   );
 };
+
+export const InventoryAISpecsPanel = React.memo(InventoryAISpecsPanelInner);
 
 export default InventoryAISpecsPanel;
