@@ -29,6 +29,46 @@ export function formatItemSalePlatform(item: Pick<InventoryItem, 'platformSold' 
   return formatSalePlatformLabel(resolveSalePlatform(item));
 }
 
+export type PlatformGroupKey = 'ebay' | 'kleinanzeigen' | 'amazon' | 'other' | 'unknown';
+
+export const PLATFORM_GROUP_LABEL: Record<PlatformGroupKey, string> = {
+  ebay: 'eBay',
+  kleinanzeigen: 'Kleinanzeigen',
+  amazon: 'Amazon',
+  other: 'Other',
+  unknown: 'Unknown',
+};
+
+function toPlatformGroupKey(platform: ResolvedSalePlatform): PlatformGroupKey {
+  if (platform === 'ebay.de') return 'ebay';
+  if (platform === 'kleinanzeigen.de') return 'kleinanzeigen';
+  if (platform === 'Amazon') return 'amazon';
+  if (platform === 'Other') return 'other';
+  return 'unknown';
+}
+
+export function platformGroupKey(
+  item: Pick<InventoryItem, 'platformSold' | 'paymentType'>
+): PlatformGroupKey {
+  return toPlatformGroupKey(resolveSalePlatform(item));
+}
+
+export function groupSalesByPlatform<T extends Pick<InventoryItem, 'platformSold' | 'paymentType'>>(
+  sold: T[]
+): Record<PlatformGroupKey, T[]> {
+  const groups: Record<PlatformGroupKey, T[]> = {
+    ebay: [],
+    kleinanzeigen: [],
+    amazon: [],
+    other: [],
+    unknown: [],
+  };
+  for (const item of sold) {
+    groups[platformGroupKey(item)].push(item);
+  }
+  return groups;
+}
+
 export type PlatformSalesCounts = {
   ebay: number;
   kleinanzeigen: number;
@@ -40,14 +80,12 @@ export type PlatformSalesCounts = {
 export function countSalesByPlatform(
   sold: Pick<InventoryItem, 'platformSold' | 'paymentType'>[]
 ): PlatformSalesCounts {
-  const counts: PlatformSalesCounts = { ebay: 0, kleinanzeigen: 0, amazon: 0, other: 0, unknown: 0 };
-  for (const item of sold) {
-    const p = resolveSalePlatform(item);
-    if (p === 'ebay.de') counts.ebay += 1;
-    else if (p === 'kleinanzeigen.de') counts.kleinanzeigen += 1;
-    else if (p === 'Amazon') counts.amazon += 1;
-    else if (p === 'Other') counts.other += 1;
-    else counts.unknown += 1;
-  }
-  return counts;
+  const groups = groupSalesByPlatform(sold);
+  return {
+    ebay: groups.ebay.length,
+    kleinanzeigen: groups.kleinanzeigen.length,
+    amazon: groups.amazon.length,
+    other: groups.other.length,
+    unknown: groups.unknown.length,
+  };
 }

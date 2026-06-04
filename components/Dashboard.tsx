@@ -20,7 +20,7 @@ import {
   shouldSkipContainerForPurchaseCogs,
 } from '../services/financialAggregation';
 import { toLocalCalendarDateKey, yearMonthKeyFromDate, currentLocalYearMonth } from '../utils/calendarDate';
-import { countSalesByPlatform, formatItemSalePlatform } from '../utils/salePlatform';
+import { countSalesByPlatform, formatItemSalePlatform, groupSalesByPlatform, PLATFORM_GROUP_LABEL, type PlatformGroupKey } from '../utils/salePlatform';
 
 interface Props {
   items: InventoryItem[];
@@ -684,8 +684,22 @@ const Dashboard: React.FC<Props> = ({
       bestSaleProfit: roundMoney(bestSaleProfit),
       inStockCount,
       platformSales: countSalesByPlatform(soldInPeriod),
+      salesByPlatform: groupSalesByPlatform(soldInPeriod),
     };
   }, [soldInPeriod, stats.grossProfit, items, taxMode]);
+
+  const openPlatformSales = (key: PlatformGroupKey) => {
+    const platformItems = periodInsights.salesByPlatform[key];
+    openFinancialDetail({
+      title: `${PLATFORM_GROUP_LABEL[key]} — ${periodLabel}`,
+      items: platformItems,
+      scopeExpenses: [],
+      footnote:
+        key === 'unknown'
+          ? 'These sales have no platform recorded — set “Platform sold” when logging the sale.'
+          : undefined,
+    });
+  };
 
   const monthOverMonth = useMemo(() => {
     if (timeFilter !== 'THIS_MONTH') return null;
@@ -861,7 +875,7 @@ const Dashboard: React.FC<Props> = ({
               netProfit: stats.netProfit,
             })
           }
-          className="w-full grid grid-cols-2 sm:grid-cols-4 gap-px bg-slate-100 border-b border-slate-100 hover:bg-slate-50/50 transition-colors text-left"
+          className="w-full grid grid-cols-2 lg:grid-cols-4 gap-px bg-slate-100 border-b border-slate-100 hover:bg-slate-50/50 transition-colors text-left"
         >
           {[
             { label: 'Revenue', value: `€${formatEUR(stats.totalTurnover)}`, tone: 'text-slate-900' },
@@ -869,9 +883,9 @@ const Dashboard: React.FC<Props> = ({
             { label: 'Expenses', value: `−€${formatEUR(stats.totalExpenses)}`, tone: 'text-red-600' },
             { label: 'Net profit', value: `€${formatEUR(stats.netProfit)}`, tone: stats.netProfit >= 0 ? 'text-emerald-700' : 'text-red-600' },
           ].map((k) => (
-            <div key={k.label} className="bg-white px-3 py-2.5 sm:px-4 sm:py-3 lg:px-6 lg:py-4">
-              <p className={KPI_LABEL}>{k.label}</p>
-              <p className={`${KPI_VALUE} ${k.tone}`}>{k.value}</p>
+            <div key={k.label} className="bg-white px-3 py-3 sm:px-4 sm:py-3.5 lg:px-6 lg:py-5 flex flex-col justify-center min-h-[4.5rem] lg:min-h-[5.5rem]">
+              <p className={`${KPI_LABEL} mb-1 lg:mb-1.5`}>{k.label}</p>
+              <p className={`${KPI_VALUE} ${k.tone} leading-tight`}>{k.value}</p>
             </div>
           ))}
         </button>
@@ -891,117 +905,145 @@ const Dashboard: React.FC<Props> = ({
 
         {isVisible('gamification') && (
         <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 border-b border-slate-100">
-          <div className="px-3 py-3 sm:px-4 lg:px-6 lg:py-4 min-w-0">
-            <div className="flex items-center justify-between gap-1 mb-1 lg:mb-2">
+          <div className="px-3 py-4 sm:px-4 lg:px-6 lg:py-5 min-w-0 flex flex-col">
+            <div className="flex items-center justify-between gap-2 min-h-[1.25rem] lg:min-h-[1.5rem] mb-2">
               <span className={`${KPI_LABEL} flex items-center gap-1.5`}>
-                <Target size={11} className="lg:w-4 lg:h-4 text-blue-600" /> Goal
+                <Target size={11} className="lg:w-4 lg:h-4 text-blue-600 shrink-0" /> Goal
               </span>
-              <button type="button" onClick={() => setIsEditingGoal(true)} className="p-1 lg:p-1.5 text-slate-400 hover:text-slate-700" aria-label="Edit goal">
+              <button type="button" onClick={() => setIsEditingGoal(true)} className="p-1 lg:p-1.5 text-slate-400 hover:text-slate-700 shrink-0" aria-label="Edit goal">
                 <Edit3 size={11} className="lg:w-4 lg:h-4" />
               </button>
             </div>
-            {isEditingGoal ? (
-              <div className="flex items-center gap-2">
-                <input autoFocus type="number" className="w-full border-b-2 border-blue-500 text-base lg:text-xl font-black outline-none min-h-[36px] lg:min-h-[44px]" value={tempGoal} onChange={(e) => setTempGoal(e.target.value)} onBlur={handleSaveGoal} onKeyDown={(e) => e.key === 'Enter' && handleSaveGoal()} />
-                <button type="button" onClick={handleSaveGoal} className="p-1.5 lg:p-2 bg-blue-600 text-white rounded-lg"><Check size={14} className="lg:w-5 lg:h-5" /></button>
-              </div>
-            ) : (
-              <p className="text-base sm:text-lg lg:text-xl xl:text-2xl font-black tabular-nums truncate">
-                €{formatEUR(gameStats.monthProfit)}<span className="text-slate-400 font-bold text-sm lg:text-base"> / €{formatEUR(monthlyGoal)}</span>
-              </p>
-            )}
-            <div className="h-2 lg:h-2.5 bg-slate-100 rounded-full mt-2 overflow-hidden">
+            <div className="min-h-[2rem] lg:min-h-[2.75rem] flex items-center">
+              {isEditingGoal ? (
+                <div className="flex items-center gap-2 w-full">
+                  <input autoFocus type="number" className="w-full border-b-2 border-blue-500 text-base lg:text-xl font-black outline-none min-h-[36px] lg:min-h-[44px]" value={tempGoal} onChange={(e) => setTempGoal(e.target.value)} onBlur={handleSaveGoal} onKeyDown={(e) => e.key === 'Enter' && handleSaveGoal()} />
+                  <button type="button" onClick={handleSaveGoal} className="p-1.5 lg:p-2 bg-blue-600 text-white rounded-lg shrink-0"><Check size={14} className="lg:w-5 lg:h-5" /></button>
+                </div>
+              ) : (
+                <p className="text-base sm:text-lg lg:text-xl xl:text-2xl font-black tabular-nums truncate w-full">
+                  €{formatEUR(gameStats.monthProfit)}<span className="text-slate-400 font-bold text-sm lg:text-base"> / €{formatEUR(monthlyGoal)}</span>
+                </p>
+              )}
+            </div>
+            <div className="h-2 lg:h-2.5 bg-slate-100 rounded-full mt-3 overflow-hidden shrink-0">
               <div className={`h-full rounded-full ${gameStats.goalProgress >= 100 ? 'bg-emerald-500' : 'bg-blue-600'}`} style={{ width: `${gameStats.goalProgress}%` }} />
             </div>
           </div>
-          <div className="px-3 py-3 sm:px-4 lg:px-6 lg:py-4 min-w-0">
-            <span className={KPI_LABEL}>Rank</span>
-            <p className="text-base sm:text-lg lg:text-xl font-black truncate flex items-center gap-2 mt-1">
-              <span className={`inline-flex p-1 lg:p-1.5 rounded-lg ${gameStats.currentLevel.bg}`}>{React.cloneElement(gameStats.currentLevel.icon as React.ReactElement<any>, { size: 16 })}</span>
-              {gameStats.currentLevel.name}
-            </p>
-            <div className="h-2 lg:h-2.5 bg-slate-100 rounded-full mt-2 overflow-hidden">
+          <div className="px-3 py-4 sm:px-4 lg:px-6 lg:py-5 min-w-0 flex flex-col">
+            <div className="flex items-center justify-between gap-2 min-h-[1.25rem] lg:min-h-[1.5rem] mb-2">
+              <span className={KPI_LABEL}>Rank</span>
+              <span className="w-7 lg:w-8 shrink-0" aria-hidden="true" />
+            </div>
+            <div className="min-h-[2rem] lg:min-h-[2.75rem] flex items-center">
+              <p className="text-base sm:text-lg lg:text-xl font-black truncate flex items-center gap-2 w-full">
+                <span className={`inline-flex p-1 lg:p-1.5 rounded-lg shrink-0 ${gameStats.currentLevel.bg}`}>{React.cloneElement(gameStats.currentLevel.icon as React.ReactElement<any>, { size: 16 })}</span>
+                <span className="truncate">{gameStats.currentLevel.name}</span>
+              </p>
+            </div>
+            <div className="h-2 lg:h-2.5 bg-slate-100 rounded-full mt-3 overflow-hidden shrink-0">
               <div className="h-full bg-slate-700 rounded-full" style={{ width: `${gameStats.progressToNext}%` }} />
             </div>
           </div>
-          <div className="px-3 py-3 sm:px-4 lg:px-6 lg:py-4 min-w-0">
-            <span className={KPI_LABEL}>Lifetime</span>
-            <p className={`text-base sm:text-lg lg:text-xl xl:text-2xl font-black tabular-nums mt-1 ${gameStats.allTimeProfit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-              €{formatEUR(gameStats.allTimeProfit)}
-            </p>
-            <p className="text-xs lg:text-sm text-slate-400 mt-0.5">{gameStats.allTimeSoldCount} sold</p>
+          <div className="px-3 py-4 sm:px-4 lg:px-6 lg:py-5 min-w-0 flex flex-col">
+            <div className="flex items-center justify-between gap-2 min-h-[1.25rem] lg:min-h-[1.5rem] mb-2">
+              <span className={KPI_LABEL}>Lifetime</span>
+              <span className="w-7 lg:w-8 shrink-0" aria-hidden="true" />
+            </div>
+            <div className="min-h-[2rem] lg:min-h-[2.75rem] flex items-center">
+              <p className={`text-base sm:text-lg lg:text-xl xl:text-2xl font-black tabular-nums truncate w-full ${gameStats.allTimeProfit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                €{formatEUR(gameStats.allTimeProfit)}
+              </p>
+            </div>
+            <p className="mt-3 text-xs lg:text-sm text-slate-400 shrink-0 min-h-[0.625rem] lg:min-h-[0.75rem]">{gameStats.allTimeSoldCount} sold all time</p>
           </div>
         </div>
         )}
 
         {isVisible('statCards') && (
-        <div className="flex flex-wrap gap-x-4 gap-y-2 px-3 lg:px-6 py-3 lg:py-4 text-xs sm:text-sm lg:text-base">
-          <span className="text-slate-500"><strong className="text-slate-800">{periodInsights.soldCount}</strong> sold</span>
-          <span className="text-slate-300">·</span>
-          <span className="inline-flex flex-wrap items-center gap-1.5">
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-bold">
-              eBay <strong>{periodInsights.platformSales.ebay}</strong>
-            </span>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold">
-              Kleinanzeigen <strong>{periodInsights.platformSales.kleinanzeigen}</strong>
-            </span>
-            {(periodInsights.platformSales.amazon > 0 || periodInsights.platformSales.other > 0 || periodInsights.platformSales.unknown > 0) && (
-              <>
-                {periodInsights.platformSales.amazon > 0 && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 font-bold">
-                    Amazon <strong>{periodInsights.platformSales.amazon}</strong>
-                  </span>
-                )}
-                {periodInsights.platformSales.other > 0 && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-bold">
-                    Other <strong>{periodInsights.platformSales.other}</strong>
-                  </span>
-                )}
-                {periodInsights.platformSales.unknown > 0 && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 font-bold" title="Sales without platform set">
-                    Unknown <strong>{periodInsights.platformSales.unknown}</strong>
-                  </span>
-                )}
-              </>
-            )}
-          </span>
-          <span className="text-slate-300">·</span>
-          <span className="text-slate-500">Avg <strong className="text-slate-800">€{formatEUR(periodInsights.avgProfitPerSale)}</strong>/sale</span>
-          <span className="text-slate-300">·</span>
-          <span className="text-slate-500"><strong className="text-slate-800">{periodInsights.inStockCount}</strong> in stock</span>
-          <span className="text-slate-300">·</span>
-          <span className={`${stats.deathPileCount > 0 ? 'text-amber-700' : 'text-slate-500'}`}>
-            <strong>{stats.deathPileCount}</strong> stale &gt;60d (€{formatEUR(stats.deathPileValue)})
-          </span>
-          {periodInsights.bestSale && (
-            <>
-              <span className="text-slate-300">·</span>
-              <button
-                type="button"
-                onClick={() =>
-                  openFinancialDetail({
-                    title: `Best sale — ${periodInsights.bestSale!.name}`,
-                    items: [periodInsights.bestSale!],
-                    scopeExpenses: [],
-                    itemProfit: periodInsights.bestSaleProfit,
-                    netProfit: periodInsights.bestSaleProfit,
-                  })
-                }
-                className="text-emerald-700 font-bold hover:underline truncate max-w-[140px] sm:max-w-none"
-              >
-                Best +€{formatEUR(periodInsights.bestSaleProfit)}
-              </button>
-            </>
-          )}
-          <span className="ml-auto flex gap-1.5">
+        <div className="px-3 lg:px-6 py-3 lg:py-4 space-y-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-stretch lg:gap-4">
+            <button
+              type="button"
+              onClick={() =>
+                openFinancialDetail({
+                  title: `All sales — ${periodLabel}`,
+                  items: soldInPeriod,
+                  scopeExpenses: filteredExpenses,
+                  revenue: stats.totalTurnover,
+                  itemProfit: stats.grossProfit,
+                  expTotal: stats.totalExpenses,
+                  netProfit: stats.netProfit,
+                })
+              }
+              className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 px-3 py-2.5 lg:px-4 lg:py-3 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-slate-300 transition-colors text-left shrink-0"
+            >
+              <span className={KPI_LABEL}>Total sales</span>
+              <span className="text-lg lg:text-xl font-black text-slate-900 tabular-nums">{periodInsights.soldCount}</span>
+              <span className="text-xs lg:text-sm text-slate-500 tabular-nums">Rev €{formatEUR(stats.totalTurnover)}</span>
+            </button>
+            <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
+              {(
+                [
+                  { key: 'ebay' as PlatformGroupKey, className: 'bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200' },
+                  { key: 'kleinanzeigen' as PlatformGroupKey, className: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-200' },
+                  { key: 'amazon' as PlatformGroupKey, className: 'bg-amber-50 text-amber-800 hover:bg-amber-100 border-amber-200' },
+                  { key: 'other' as PlatformGroupKey, className: 'bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-200' },
+                  { key: 'unknown' as PlatformGroupKey, className: 'bg-slate-100 text-slate-500 hover:bg-slate-200 border-slate-200' },
+                ] as const
+              )
+                .filter(({ key }) => key === 'ebay' || key === 'kleinanzeigen' || periodInsights.platformSales[key] > 0)
+                .map(({ key, className }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => openPlatformSales(key)}
+                    disabled={periodInsights.platformSales[key] === 0}
+                    className={`inline-flex items-center gap-1.5 px-3 py-2 lg:px-4 lg:py-2.5 rounded-xl border text-xs lg:text-sm font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${className}`}
+                  >
+                    {PLATFORM_GROUP_LABEL[key]}
+                    <span className="font-black tabular-nums">{periodInsights.platformSales[key]}</span>
+                    <ChevronRight size={14} className="opacity-50 shrink-0" />
+                  </button>
+                ))}
+            </div>
             <button
               type="button"
               onClick={() => exportPeriodSalesCsv(soldInPeriod, periodLabel)}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 lg:px-3 lg:py-2 rounded-md lg:rounded-lg bg-slate-100 text-slate-700 font-bold hover:bg-slate-200 text-xs lg:text-sm"
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 lg:px-4 lg:py-2.5 rounded-xl bg-slate-900 text-white font-bold hover:bg-slate-800 text-xs lg:text-sm shrink-0 self-start lg:self-center"
             >
-              <Download size={12} className="lg:w-4 lg:h-4" /> CSV
+              <Download size={14} className="lg:w-4 lg:h-4" /> CSV
             </button>
-          </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs sm:text-sm lg:text-base text-slate-500 border-t border-slate-100 pt-3">
+            <span>Avg <strong className="text-slate-800">€{formatEUR(periodInsights.avgProfitPerSale)}</strong>/sale</span>
+            <span className="text-slate-300 hidden sm:inline">·</span>
+            <span><strong className="text-slate-800">{periodInsights.inStockCount}</strong> in stock</span>
+            <span className="text-slate-300 hidden sm:inline">·</span>
+            <span className={stats.deathPileCount > 0 ? 'text-amber-700' : undefined}>
+              <strong>{stats.deathPileCount}</strong> stale &gt;60d (€{formatEUR(stats.deathPileValue)})
+            </span>
+            {periodInsights.bestSale && (
+              <>
+                <span className="text-slate-300 hidden sm:inline">·</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    openFinancialDetail({
+                      title: `Best sale — ${periodInsights.bestSale!.name}`,
+                      items: [periodInsights.bestSale!],
+                      scopeExpenses: [],
+                      itemProfit: periodInsights.bestSaleProfit,
+                      netProfit: periodInsights.bestSaleProfit,
+                    })
+                  }
+                  className="text-emerald-700 font-bold hover:underline truncate max-w-[180px] sm:max-w-none"
+                >
+                  Best +€{formatEUR(periodInsights.bestSaleProfit)}
+                </button>
+              </>
+            )}
+          </div>
         </div>
         )}
       </div>
