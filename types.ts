@@ -7,7 +7,7 @@ export enum ItemStatus {
   TRADED = 'Traded'
 }
 
-export type Platform = 'ebay.de' | 'kleinanzeigen.de' | 'Amazon' | 'Other';
+export type Platform = 'ebay.de' | 'kleinanzeigen.de' | 'In Person' | 'Amazon' | 'Other';
 
 export type PaymentType = 
   'Cash' 

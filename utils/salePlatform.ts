@@ -1,12 +1,25 @@
 import type { InventoryItem, Platform } from '../types';
+import { ItemStatus } from '../types';
 import { roundMoney } from '../services/financialAggregation';
 
 const PLATFORM_LABELS: Record<string, string> = {
   'ebay.de': 'eBay',
   'kleinanzeigen.de': 'Kleinanzeigen',
+  'In Person': 'In person',
   Amazon: 'Amazon',
   Other: 'Other',
 };
+
+/** Filter token for sold tab — items with no platform explicitly selected. */
+export const MISSING_PLATFORM_FILTER = '__MISSING__';
+
+export const SALE_PLATFORM_OPTIONS: { value: Platform; label: string }[] = [
+  { value: 'ebay.de', label: 'eBay' },
+  { value: 'kleinanzeigen.de', label: 'Kleinanzeigen' },
+  { value: 'In Person', label: 'In person (pickup)' },
+  { value: 'Amazon', label: 'Amazon' },
+  { value: 'Other', label: 'Other' },
+];
 
 export type ResolvedSalePlatform = Platform | 'unknown';
 
@@ -34,8 +47,23 @@ export function resolveSalePlatform(item: SalePlatformFields): ResolvedSalePlatf
   return 'unknown';
 }
 
-export function itemMatchesSalePlatformFilter(item: SalePlatformFields, filter: Platform): boolean {
+export function itemMatchesSalePlatformFilter(
+  item: SalePlatformFields & Pick<InventoryItem, 'status' | 'platformSold'>,
+  filter: Platform | typeof MISSING_PLATFORM_FILTER
+): boolean {
+  if (filter === MISSING_PLATFORM_FILTER) return isMissingExplicitSalePlatform(item);
   return resolveSalePlatform(item) === filter;
+}
+
+export function isSoldOrTradedItem(item: Pick<InventoryItem, 'status'>): boolean {
+  return item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED;
+}
+
+/** Sold item with no platform chosen in the form (may still infer eBay from order ID). */
+export function isMissingExplicitSalePlatform(
+  item: Pick<InventoryItem, 'status' | 'platformSold'>
+): boolean {
+  return isSoldOrTradedItem(item) && !item.platformSold?.trim();
 }
 
 export function formatSalePlatformLabel(platform?: ResolvedSalePlatform | string): string {
@@ -47,11 +75,12 @@ export function formatItemSalePlatform(item: SalePlatformFields): string {
   return formatSalePlatformLabel(resolveSalePlatform(item));
 }
 
-export type PlatformGroupKey = 'ebay' | 'kleinanzeigen' | 'amazon' | 'other' | 'unknown';
+export type PlatformGroupKey = 'ebay' | 'kleinanzeigen' | 'inPerson' | 'amazon' | 'other' | 'unknown';
 
 export const PLATFORM_GROUP_LABEL: Record<PlatformGroupKey, string> = {
   ebay: 'eBay',
   kleinanzeigen: 'Kleinanzeigen',
+  inPerson: 'In person',
   amazon: 'Amazon',
   other: 'Other',
   unknown: 'Unknown',
@@ -60,6 +89,7 @@ export const PLATFORM_GROUP_LABEL: Record<PlatformGroupKey, string> = {
 function toPlatformGroupKey(platform: ResolvedSalePlatform): PlatformGroupKey {
   if (platform === 'ebay.de') return 'ebay';
   if (platform === 'kleinanzeigen.de') return 'kleinanzeigen';
+  if (platform === 'In Person') return 'inPerson';
   if (platform === 'Amazon') return 'amazon';
   if (platform === 'Other') return 'other';
   return 'unknown';
@@ -73,6 +103,7 @@ export function groupSalesByPlatform<T extends SalePlatformFields>(sold: T[]): R
   const groups: Record<PlatformGroupKey, T[]> = {
     ebay: [],
     kleinanzeigen: [],
+    inPerson: [],
     amazon: [],
     other: [],
     unknown: [],
@@ -86,6 +117,7 @@ export function groupSalesByPlatform<T extends SalePlatformFields>(sold: T[]): R
 export type PlatformSalesCounts = {
   ebay: number;
   kleinanzeigen: number;
+  inPerson: number;
   amazon: number;
   other: number;
   unknown: number;
@@ -96,6 +128,7 @@ export function countSalesByPlatform(sold: SalePlatformFields[]): PlatformSalesC
   return {
     ebay: groups.ebay.length,
     kleinanzeigen: groups.kleinanzeigen.length,
+    inPerson: groups.inPerson.length,
     amazon: groups.amazon.length,
     other: groups.other.length,
     unknown: groups.unknown.length,
@@ -106,7 +139,14 @@ export type PlatformRevenueTotals = Record<PlatformGroupKey, number>;
 
 export function sumRevenueByPlatform(sold: InventoryItem[]): PlatformRevenueTotals {
   const groups = groupSalesByPlatform(sold);
-  const totals: PlatformRevenueTotals = { ebay: 0, kleinanzeigen: 0, amazon: 0, other: 0, unknown: 0 };
+  const totals: PlatformRevenueTotals = {
+    ebay: 0,
+    kleinanzeigen: 0,
+    inPerson: 0,
+    amazon: 0,
+    other: 0,
+    unknown: 0,
+  };
   for (const key of Object.keys(totals) as PlatformGroupKey[]) {
     totals[key] = roundMoney(groups[key].reduce((acc, i) => acc + (Number(i.sellPrice) || 0), 0));
   }
@@ -118,14 +158,13 @@ export function findLikelyMisclassifiedEbayItems(sold: InventoryItem[]): Invento
   return sold.filter((i) => platformGroupKey(i) !== 'ebay' && hasEbaySaleSignals(i));
 }
 
-/** Sold with no platform and no eBay/Klein signals — needs manual tagging. */
+/** Sold with no platform field set — needs manual tagging in inventory. */
 export function findItemsNeedingPlatformTag(sold: InventoryItem[]): InventoryItem[] {
-  return sold.filter(
-    (i) =>
-      !i.platformSold &&
-      !hasEbaySaleSignals(i) &&
-      !i.paymentType?.startsWith('Kleinanzeigen')
-  );
+  return sold.filter((i) => isMissingExplicitSalePlatform(i));
+}
+
+export function countMissingExplicitSalePlatform(sold: InventoryItem[]): number {
+  return sold.filter((i) => isMissingExplicitSalePlatform(i)).length;
 }
 
 /** Apply eBay platform tags where order ID / username / payment prove eBay but platformSold was empty. */

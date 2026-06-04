@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { X, Euro, CheckCircle2, User, Globe, ChevronDown, Link as LinkIcon, MessageCircle, Hash, Upload, Sparkles, ImagePlus } from 'lucide-react';
 import { parseEbayOrderFromImageInput } from '../services/ebayOrderScreenshotAI';
 import { InventoryItem, ItemStatus, PaymentType, CustomerInfo, Platform, TaxMode } from '../types';
+import { SALE_PLATFORM_OPTIONS } from '../utils/salePlatform';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 
 interface Props {
@@ -235,18 +236,37 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
 
               <div className="space-y-3">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2"><Globe size={12}/> Sold On</label>
-                <div className="flex gap-2">
-                   {['ebay.de', 'kleinanzeigen.de'].map(p => (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                   {SALE_PLATFORM_OPTIONS.filter((p) => ['ebay.de', 'kleinanzeigen.de', 'In Person'].includes(p.value)).map((p) => (
                       <button
-                        key={p}
-                        onClick={() => setPlatformSold(p as Platform)}
-                        className={`flex-1 py-3 rounded-xl border text-[10px] font-black uppercase transition-all ${platformSold === p ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-100 text-slate-500 hover:bg-slate-50'}`}
+                        key={p.value}
+                        type="button"
+                        onClick={() => {
+                          setPlatformSold(p.value);
+                          if (p.value === 'In Person' && paymentType === 'ebay.de') setPaymentType('Cash');
+                        }}
+                        className={`py-3 rounded-xl border text-[10px] font-black uppercase transition-all ${platformSold === p.value ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-100 text-slate-500 hover:bg-slate-50'}`}
                       >
-                        {p}
+                        {p.value === 'In Person' ? 'In person' : p.label}
                       </button>
                    ))}
                 </div>
+                <select
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs outline-none"
+                  value={platformSold}
+                  onChange={(e) => setPlatformSold(e.target.value as Platform)}
+                >
+                  {SALE_PLATFORM_OPTIONS.map((p) => (
+                    <option key={p.value} value={p.value}>{p.label}</option>
+                  ))}
+                </select>
               </div>
+
+              {platformSold === 'In Person' && (
+                 <div className="p-4 bg-violet-50 rounded-2xl border border-violet-100 text-xs text-violet-900">
+                    Local pickup / buyer came to your place. Cash or bank transfer is typical — buyer details below can go on the invoice.
+                 </div>
+              )}
 
               {platformSold === 'kleinanzeigen.de' && (
                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">

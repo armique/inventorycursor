@@ -11,6 +11,7 @@ import {
   Wand2, Sliders, X, History
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, Platform, PaymentType } from '../types';
+import { SALE_PLATFORM_OPTIONS } from '../utils/salePlatform';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 import { CATEGORY_IMAGES, getSpecOptions } from '../services/hardwareDB';
 import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
@@ -990,12 +991,13 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                               <label className="text-[10px] font-bold text-slate-400">Sold On</label>
                               <select 
                                  className="w-full px-4 py-3 bg-emerald-50 text-emerald-900 border border-emerald-100 rounded-xl font-bold text-xs outline-none"
-                                 value={formData.platformSold}
-                                 onChange={e => setFormData({ ...formData, platformSold: e.target.value as Platform })}
+                                 value={formData.platformSold || ''}
+                                 onChange={e => setFormData({ ...formData, platformSold: (e.target.value || undefined) as Platform | undefined })}
                               >
-                                 <option value="kleinanzeigen.de">Kleinanzeigen</option>
-                                 <option value="ebay.de">eBay</option>
-                                 <option value="Other">Other</option>
+                                 <option value="">— Select platform —</option>
+                                 {SALE_PLATFORM_OPTIONS.map((p) => (
+                                   <option key={p.value} value={p.value}>{p.label}</option>
+                                 ))}
                               </select>
                            </div>
 

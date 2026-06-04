@@ -4,10 +4,10 @@ import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSort
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType } from '../types';
-import { itemMatchesSalePlatformFilter } from '../utils/salePlatform';
+import { itemMatchesSalePlatformFilter, isMissingExplicitSalePlatform, MISSING_PLATFORM_FILTER, SALE_PLATFORM_OPTIONS, formatItemSalePlatform } from '../utils/salePlatform';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { getCompatibleItemsForItem } from '../services/compatibility';
 import { generateKleinanzeigenCSV } from '../services/ebayCsvService';
@@ -49,7 +49,7 @@ interface Props {
   persistenceKey?: string; 
 }
 
-type ColumnId = 'select' | 'item' | 'presence' | 'parseSpecs' | 'category' | 'status' | 'buyPrice' | 'sellPrice' | 'profit' | 'buyDate' | 'timeGauge' | 'sellDate' | 'actions';
+type ColumnId = 'select' | 'item' | 'presence' | 'parseSpecs' | 'category' | 'status' | 'buyPrice' | 'sellPrice' | 'profit' | 'buyDate' | 'timeGauge' | 'sellDate' | 'salePlatform' | 'actions';
 type TimeFilter = 'ALL' | 'THIS_WEEK' | 'LAST_WEEK' | 'THIS_MONTH' | 'LAST_MONTH' | 'LAST_30' | 'LAST_90' | 'THIS_YEAR' | 'LAST_YEAR';
 type StatusFilter = 'ACTIVE' | 'SOLD' | 'DRAFTS' | 'ALL';
 
@@ -71,6 +71,7 @@ const DEFAULT_WIDTHS: Record<string, number> = {
   buyDate: 90,
   timeGauge: 72,
   sellDate: 90,
+  salePlatform: 148,
   actions: 104,
 };
 
@@ -94,6 +95,7 @@ const ALL_COLUMNS: { id: ColumnId; label: string }[] = [
   { id: 'buyDate', label: 'Acquired' },
   { id: 'timeGauge', label: 'Time' },
   { id: 'sellDate', label: 'Sold Date' },
+  { id: 'salePlatform', label: 'Sold on' },
   { id: 'actions', label: 'Actions' }
 ];
 
@@ -168,18 +170,22 @@ const InventoryList: React.FC<Props> = ({
   
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => loadState('widths', DEFAULT_WIDTHS));
 
-  const defaultColumnOrder: ColumnId[] = ['select', 'item', 'presence', 'parseSpecs', 'category', 'status', 'buyPrice', 'sellPrice', 'profit', 'buyDate', 'timeGauge', 'sellDate', 'actions'];
+  const defaultColumnOrder: ColumnId[] = ['select', 'item', 'presence', 'parseSpecs', 'category', 'status', 'buyPrice', 'sellPrice', 'profit', 'buyDate', 'timeGauge', 'sellDate', 'salePlatform', 'actions'];
   const [columnOrder, setColumnOrder] = useState<ColumnId[]>(() => {
     const saved = loadState<ColumnId[]>('column_order', defaultColumnOrder);
     const base = saved && saved.length > 0 ? saved : defaultColumnOrder;
-    if (!base.includes('timeGauge')) {
-      const next = [...base];
+    let next = [...base];
+    if (!next.includes('timeGauge')) {
       const buy = next.indexOf('buyDate');
       if (buy >= 0) next.splice(buy + 1, 0, 'timeGauge');
       else next.splice(Math.max(0, next.length - 1), 0, 'timeGauge');
-      return next;
     }
-    return base;
+    if (!next.includes('salePlatform')) {
+      const sell = next.indexOf('sellDate');
+      if (sell >= 0) next.splice(sell + 1, 0, 'salePlatform');
+      else next.splice(Math.max(0, next.length - 1), 0, 'salePlatform');
+    }
+    return next;
   });
   const [hiddenColumnIds, setHiddenColumnIds] = useState<ColumnId[]>(() => loadState<ColumnId[]>('hidden_columns', []));
   const [showColumnsPanel, setShowColumnsPanel] = useState(false);
@@ -615,7 +621,11 @@ const InventoryList: React.FC<Props> = ({
         if (itemDate < dateRange.start || itemDate > dateRange.end) return false;
       }
       if (statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS') {
-        if (salePlatformFilter !== 'ALL' && !itemMatchesSalePlatformFilter(item, salePlatformFilter as Platform)) return false;
+        if (salePlatformFilter !== 'ALL') {
+          if (salePlatformFilter === MISSING_PLATFORM_FILTER) {
+            if (!isMissingExplicitSalePlatform(item)) return false;
+          } else if (!itemMatchesSalePlatformFilter(item, salePlatformFilter as Platform)) return false;
+        }
         if (salePaymentFilter !== 'ALL' && item.paymentType !== salePaymentFilter) return false;
       }
       return true;
@@ -717,7 +727,9 @@ const InventoryList: React.FC<Props> = ({
       // 5. Sales Info Filters (Only apply if we are looking at Sold items or All)
       if (statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS') {
          if (salePlatformFilter !== 'ALL') {
-            if (!itemMatchesSalePlatformFilter(item, salePlatformFilter as Platform)) return false;
+            if (salePlatformFilter === MISSING_PLATFORM_FILTER) {
+               if (!isMissingExplicitSalePlatform(item)) return false;
+            } else if (!itemMatchesSalePlatformFilter(item, salePlatformFilter as Platform)) return false;
          }
          if (salePaymentFilter !== 'ALL') {
             if (item.paymentType !== salePaymentFilter) return false;
@@ -791,6 +803,11 @@ const InventoryList: React.FC<Props> = ({
 
   const visibleItems = useMemo(() => sortedItems.slice(0, visibleCount), [sortedItems, visibleCount]);
   const showFinancials = statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS';
+
+  const missingPlatformSoldCount = useMemo(
+    () => sortedItems.filter((i) => isMissingExplicitSalePlatform(i)).length,
+    [sortedItems]
+  );
 
   const compatibleCountByItemId = useMemo(() => {
     const map = new Map<string, number>();
@@ -1204,6 +1221,17 @@ const InventoryList: React.FC<Props> = ({
      setSelectedIds([]);
   };
 
+  const handleQuickPlatformChange = (item: InventoryItem, platform: Platform | '') => {
+    const next: InventoryItem = { ...item, platformSold: platform || undefined };
+    if (platform === 'In Person' && !next.paymentType) {
+      next.paymentType = 'Cash';
+    }
+    if (platform === 'ebay.de' && !next.paymentType) {
+      next.paymentType = 'ebay.de';
+    }
+    onUpdate([next]);
+  };
+
   const handleBulkCategorySave = (category: string, subCategory: string) => {
      const updates = items.filter(i => selectedIds.includes(i.id)).map(i => ({
         ...i,
@@ -1472,6 +1500,14 @@ const InventoryList: React.FC<Props> = ({
                       {item.isBundle && <span className="text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-black uppercase">Bundle</span>}
                       {item.isPC && <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-black uppercase">PC Build</span>}
                       {item.isDefective && <span className="text-[9px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-black uppercase">Defective</span>}
+                      {showFinancials && isMissingExplicitSalePlatform(item) && (
+                        <span
+                          className="inline-flex items-center gap-0.5 text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-black uppercase"
+                          title="Platform not set — choose Sold on in the row or use bulk edit"
+                        >
+                          <AlertTriangle size={9} className="shrink-0" /> No platform
+                        </span>
+                      )}
                       <span className="text-[10px] text-slate-400 font-bold uppercase truncate">{item.vendor}</span>
                       {(item.isPC || item.isBundle) && childItems.length > 0 && (
                          <span className="text-[9px] text-slate-500 font-medium">({childItems.length} items)</span>
@@ -1914,6 +1950,50 @@ const InventoryList: React.FC<Props> = ({
            </td>
         );
       }
+      case 'salePlatform': {
+        const isSoldOrTraded = item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED;
+        if (!isSoldOrTraded) {
+          return (
+            <td key={id} className="p-5 text-xs text-slate-300 text-center" style={style}>—</td>
+          );
+        }
+        const missing = isMissingExplicitSalePlatform(item);
+        const inferred = missing ? formatItemSalePlatform(item) : null;
+        return (
+          <td key={id} className="p-3" style={style} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-1 min-w-0">
+              {missing && (
+                <span title={`Platform not set${inferred && inferred !== 'Unknown' ? ` (detected: ${inferred})` : ''}`}>
+                  <AlertTriangle size={14} className="text-amber-500 shrink-0" />
+                </span>
+              )}
+              <select
+                value={item.platformSold || ''}
+                onChange={(e) => handleQuickPlatformChange(item, e.target.value as Platform | '')}
+                className={`w-full min-w-0 py-1.5 pl-2 pr-6 rounded-lg border text-[11px] font-bold outline-none focus:ring-2 focus:ring-blue-400/40 appearance-none bg-no-repeat bg-right ${
+                  missing
+                    ? 'border-amber-300 bg-amber-50 text-amber-950'
+                    : 'border-slate-200 bg-white text-slate-700'
+                }`}
+                style={{
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`,
+                  backgroundPosition: 'right 0.35rem center',
+                }}
+              >
+                <option value="">— Select —</option>
+                {SALE_PLATFORM_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+            {missing && inferred && inferred !== 'Unknown' && (
+              <p className="text-[9px] text-amber-700 mt-1 truncate" title="Inferred from order ID / payment — pick a platform to confirm">
+                Detected: {inferred}
+              </p>
+            )}
+          </td>
+        );
+      }
       case 'actions':
         return (
           <td
@@ -2180,8 +2260,11 @@ const InventoryList: React.FC<Props> = ({
                <>
                   <select value={salePlatformFilter} onChange={e => setSalePlatformFilter(e.target.value)} className="py-1.5 pl-2.5 pr-7 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-slate-900/20 appearance-none bg-no-repeat bg-right min-w-[100px]" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.35rem center' }}>
                       <option value="ALL">Platform</option>
+                      <option value={MISSING_PLATFORM_FILTER}>⚠ No platform</option>
                       <option value="kleinanzeigen.de">Kleinanzeigen</option>
                       <option value="ebay.de">eBay</option>
+                      <option value="In Person">In person</option>
+                      <option value="Amazon">Amazon</option>
                       <option value="Other">Other</option>
                   </select>
                   <select value={salePaymentFilter} onChange={e => setSalePaymentFilter(e.target.value)} className="py-1.5 pl-2.5 pr-7 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-slate-900/20 appearance-none bg-no-repeat bg-right min-w-[100px]" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.35rem center' }}>
@@ -2356,7 +2439,12 @@ const InventoryList: React.FC<Props> = ({
                )}
                {statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS' && (salePlatformFilter !== 'ALL' || salePaymentFilter !== 'ALL') && (
                   <>
-                     {salePlatformFilter !== 'ALL' && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 text-xs font-medium">{salePlatformFilter} <button type="button" onClick={() => setSalePlatformFilter('ALL')} className="hover:opacity-80">×</button></span>}
+                     {salePlatformFilter !== 'ALL' && (
+                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 text-xs font-medium">
+                         {salePlatformFilter === MISSING_PLATFORM_FILTER ? 'No platform' : salePlatformFilter}
+                         <button type="button" onClick={() => setSalePlatformFilter('ALL')} className="hover:opacity-80">×</button>
+                       </span>
+                     )}
                      {salePaymentFilter !== 'ALL' && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 text-xs font-medium truncate max-w-[120px]" title={salePaymentFilter}>{salePaymentFilter} <button type="button" onClick={() => setSalePaymentFilter('ALL')} className="hover:opacity-80">×</button></span>}
                   </>
                )}
@@ -2370,6 +2458,22 @@ const InventoryList: React.FC<Props> = ({
                      {k}: {r?.min ?? '?'}–{r?.max ?? '?'} <button type="button" onClick={() => setSpecRangeFilters(prev => { const n = { ...prev }; delete n[k]; return n; })} className="hover:opacity-80">×</button>
                   </span>
                ))}
+            </div>
+         )}
+
+         {statusFilter === 'SOLD' && missingPlatformSoldCount > 0 && (
+            <div className="flex flex-wrap items-center gap-2 mt-2 px-3 py-2 rounded-xl border border-amber-200 bg-amber-50 text-xs text-amber-950">
+              <AlertTriangle size={14} className="text-amber-600 shrink-0" />
+              <span>
+                <strong>{missingPlatformSoldCount}</strong> sold item{missingPlatformSoldCount === 1 ? '' : 's'} without a platform — use the <strong>Sold on</strong> column or filter below.
+              </span>
+              <button
+                type="button"
+                onClick={() => setSalePlatformFilter(MISSING_PLATFORM_FILTER)}
+                className="ml-auto px-2.5 py-1 rounded-lg bg-amber-200/80 font-bold hover:bg-amber-300/80"
+              >
+                Show only missing
+              </button>
             </div>
          )}
 
@@ -3120,9 +3224,9 @@ const BulkSalesEditModal: React.FC<{
                   value={platform}
                   onChange={e => setPlatform(e.target.value as Platform)}
                >
-                  <option value="kleinanzeigen.de">Kleinanzeigen</option>
-                  <option value="ebay.de">eBay</option>
-                  <option value="Other">Other</option>
+                  {SALE_PLATFORM_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
                </select>
             </div>
             

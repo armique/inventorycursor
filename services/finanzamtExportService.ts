@@ -52,6 +52,7 @@ const PAYMENT_DE: Partial<Record<string, string>> = {
 const PLATFORM_DE: Partial<Record<string, string>> = {
   'ebay.de': 'eBay',
   'kleinanzeigen.de': 'Kleinanzeigen',
+  'In Person': 'Persönlich (Abholung)',
   Amazon: 'Amazon',
   Other: 'Sonstiges',
 };

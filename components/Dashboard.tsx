@@ -20,7 +20,7 @@ import {
   shouldSkipContainerForPurchaseCogs,
 } from '../services/financialAggregation';
 import { toLocalCalendarDateKey, yearMonthKeyFromDate, currentLocalYearMonth } from '../utils/calendarDate';
-import { countSalesByPlatform, formatItemSalePlatform, groupSalesByPlatform, PLATFORM_GROUP_LABEL, buildPlatformReconciliation, buildEbayTagFixUpdates, sumRevenueByPlatform, countOrdersByPlatform, groupItemsByMarketplaceOrder, type PlatformGroupKey } from '../utils/salePlatform';
+import { countSalesByPlatform, formatItemSalePlatform, groupSalesByPlatform, PLATFORM_GROUP_LABEL, buildPlatformReconciliation, buildEbayTagFixUpdates, sumRevenueByPlatform, countOrdersByPlatform, groupItemsByMarketplaceOrder, countMissingExplicitSalePlatform, type PlatformGroupKey } from '../utils/salePlatform';
 
 interface Props {
   items: InventoryItem[];
@@ -695,6 +695,7 @@ const Dashboard: React.FC<Props> = ({
       salesByPlatform: groupSalesByPlatform(soldInPeriod),
       platformRevenue: sumRevenueByPlatform(soldInPeriod),
       platformOrders: countOrdersByPlatform(soldInPeriod),
+      missingPlatformCount: countMissingExplicitSalePlatform(soldInPeriod),
     };
   }, [soldInPeriod, stats.grossProfit, items, taxMode]);
 
@@ -724,12 +725,14 @@ const Dashboard: React.FC<Props> = ({
       orderGroups,
       footnote:
         key === 'unknown'
-          ? 'These sales have no platform recorded — set “Platform sold” when logging the sale, or use “Fix eBay tags” if they were eBay orders.'
+          ? 'No platform selected — set Sold on in Inventory → Sold tab. Items may still infer eBay from order ID until you confirm; use “Fix eBay tags” if needed.'
           : key === 'ebay' && orderStats.orderCount !== orderStats.itemCount
             ? `${orderStats.orderCount} eBay orders split across ${orderStats.itemCount} inventory items (e.g. bundle parts). Compare order count to eBay “Stückzahl verkauft”; revenue is the sum of all parts.`
             : key === 'ebay'
               ? 'Compare order count to eBay “Stückzahl verkauft”. Revenue = sum of sell prices on each inventory row.'
-              : undefined,
+              : key === 'inPerson'
+                ? 'Local pickup / in-person sales — not counted on eBay or Kleinanzeigen.'
+                : undefined,
     });
   };
 
@@ -1031,12 +1034,19 @@ const Dashboard: React.FC<Props> = ({
                 [
                   { key: 'ebay' as PlatformGroupKey, className: 'bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200' },
                   { key: 'kleinanzeigen' as PlatformGroupKey, className: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-200' },
+                  { key: 'inPerson' as PlatformGroupKey, className: 'bg-violet-50 text-violet-800 hover:bg-violet-100 border-violet-200' },
                   { key: 'amazon' as PlatformGroupKey, className: 'bg-amber-50 text-amber-800 hover:bg-amber-100 border-amber-200' },
                   { key: 'other' as PlatformGroupKey, className: 'bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-200' },
-                  { key: 'unknown' as PlatformGroupKey, className: 'bg-slate-100 text-slate-500 hover:bg-slate-200 border-slate-200' },
+                  { key: 'unknown' as PlatformGroupKey, className: 'bg-amber-50 text-amber-800 hover:bg-amber-100 border-amber-300' },
                 ] as const
               )
-                .filter(({ key }) => key === 'ebay' || key === 'kleinanzeigen' || periodInsights.platformSales[key] > 0)
+                .filter(({ key }) =>
+                  key === 'ebay' ||
+                  key === 'kleinanzeigen' ||
+                  key === 'inPerson' ||
+                  periodInsights.platformSales[key] > 0 ||
+                  (key === 'unknown' && periodInsights.missingPlatformCount > 0)
+                )
                 .map(({ key, className }) => (
                   <button
                     key={key}
@@ -1045,7 +1055,7 @@ const Dashboard: React.FC<Props> = ({
                     disabled={periodInsights.platformSales[key] === 0}
                     className={`inline-flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2 px-3 py-2 lg:px-4 lg:py-2.5 rounded-xl border text-xs lg:text-sm font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${className}`}
                   >
-                    <span>{PLATFORM_GROUP_LABEL[key]}</span>
+                    <span>{PLATFORM_GROUP_LABEL[key]}{key === 'unknown' && periodInsights.missingPlatformCount > 0 ? ' ⚠' : ''}</span>
                     <span className="font-black tabular-nums whitespace-nowrap">
                       {formatPlatformChipLabel(key)}
                     </span>
@@ -1073,8 +1083,8 @@ const Dashboard: React.FC<Props> = ({
                 </li>
                 {platformReconciliation.needingTagRevenue > 0 && (
                   <li>
-                    <strong>€{formatEUR(platformReconciliation.needingTagRevenue)}</strong> ({platformReconciliation.needingTag.length} sales) have{' '}
-                    <strong>no platform</strong> — often from CSV import. They appear under Unknown, not eBay.
+                    <strong>{periodInsights.missingPlatformCount}</strong> sold item{periodInsights.missingPlatformCount === 1 ? '' : 's'} with{' '}
+                    <strong>no platform selected</strong> (€{formatEUR(platformReconciliation.needingTagRevenue)} revenue).
                     <button
                       type="button"
                       onClick={() => openPlatformSales('unknown')}
@@ -1082,6 +1092,8 @@ const Dashboard: React.FC<Props> = ({
                     >
                       Review
                     </button>
+                    {' · '}
+                    Fix in Inventory → Sold tab (Sold on column).
                   </li>
                 )}
                 {platformReconciliation.misclassifiedEbay.length > 0 && (
