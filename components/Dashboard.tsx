@@ -516,7 +516,7 @@ const Dashboard: React.FC<Props> = ({
 
   return (
     <>
-    <div className="space-y-6 animate-in fade-in pb-20">
+    <div className="h-full min-h-0 overflow-y-auto space-y-6 animate-in fade-in pb-20">
       {/* Header & Date Filter */}
       <header className="flex flex-col xl:flex-row xl:items-center justify-between gap-6">
         <div>

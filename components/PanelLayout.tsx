@@ -36,6 +36,8 @@ interface PanelLayoutProps {
 const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, authReady = false, isAdmin = false, syncState = { status: 'idle', lastSynced: null }, onForcePush, backupBannerDismissed = true, onDismissBackupBanner, items = [], expenses = [], businessSettings = { companyName: '', ownerName: '', address: '', taxMode: 'SmallBusiness' }, onUpdateItems }) => {
   const location = useLocation();
   const [signingIn, setSigningIn] = React.useState(false);
+  /** Inventory/trash use internal scroll + docked bulk bar; other pages scroll normally. */
+  const isDockedPanelPage = /^\/panel\/(inventory|trash)(\/|$)/.test(location.pathname);
 
   const requireAuth = isCloudEnabled && authReady && !authUser;
 
@@ -193,7 +195,9 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             </button>
           </div>
         )}
-        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
+        <div
+          className={`flex-1 min-h-0 flex flex-col ${isDockedPanelPage ? 'overflow-hidden' : 'overflow-y-auto'}`}
+        >
           <Suspense fallback={
             <div className="flex items-center justify-center min-h-[300px] flex-1">
               <Loader2 size={32} className="animate-spin text-slate-400" />

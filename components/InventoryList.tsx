@@ -2002,7 +2002,7 @@ const InventoryList: React.FC<Props> = ({
   ]);
 
   return (
-    <div className="min-h-full flex flex-col flex-1 gap-3 animate-in fade-in relative">
+    <div className="h-full min-h-0 flex flex-col gap-2 overflow-hidden animate-in fade-in relative">
       <header className="shrink-0 space-y-2">
          {/* Compact bar: title + count + search + status + category + time + sales + filters + undo/redo */}
          <div className="flex flex-wrap items-center gap-2">
@@ -2353,12 +2353,14 @@ const InventoryList: React.FC<Props> = ({
          )}
       </header>
 
-      <InventoryAISpecsPanel
-        items={items}
-        selectedIds={selectedIds}
-        categoryFields={categoryFields ?? {}}
-        onUpdate={(updated) => onUpdate(updated)}
-      />
+      <div className="shrink-0">
+        <InventoryAISpecsPanel
+          items={items}
+          selectedIds={selectedIds}
+          categoryFields={categoryFields ?? {}}
+          onUpdate={(updated) => onUpdate(updated)}
+        />
+      </div>
 
       {/* Toast notification for quick actions (e.g. copy listing text) */}
       {toast && (
@@ -2420,12 +2422,12 @@ const InventoryList: React.FC<Props> = ({
          </div>
       )}
 
-      {/* Main table + docked bulk actions (single column — list scrolls above the bar) */}
-      <div className="flex flex-col flex-1 min-h-0 rounded-[2.5rem] border border-slate-100 shadow-sm bg-white overflow-hidden">
+      {/* Table scrolls in remaining height; bulk bar is a separate row below (never overlays rows) */}
+      <div className="flex flex-col flex-1 min-h-0 min-w-0 rounded-[2.5rem] border border-slate-100 shadow-sm bg-white overflow-hidden">
       <div 
         ref={tableContainerRef}
         onScroll={handleScroll}
-        className="overflow-x-auto overflow-y-auto flex-1 min-h-0 custom-scrollbar"
+        className="flex-1 min-h-0 overflow-x-auto overflow-y-auto custom-scrollbar pb-3"
       >
          <style>{`
            [data-inventory-table] tbody > tr > td { padding: 0.4rem 0.3rem !important; }
@@ -2547,15 +2549,22 @@ const InventoryList: React.FC<Props> = ({
                      </td>
                   </tr>
                )}
+               {selectedIds.length > 0 && (
+                  <tr aria-hidden="true" className="pointer-events-none border-0">
+                     <td colSpan={visibleColumns.length} className="!p-0 !border-0 h-24 lg:h-28" />
+                  </tr>
+               )}
             </tbody>
          </table>
       </div>
+      </div>
 
-      <BulkSelectionBar
-        count={selectedIds.length}
-        onClear={() => setSelectedIds([])}
-        actions={bulkActions}
-      />
+      <div className="shrink-0 w-full">
+        <BulkSelectionBar
+          count={selectedIds.length}
+          onClear={() => setSelectedIds([])}
+          actions={bulkActions}
+        />
       </div>
 
       {/* MODALS */}
