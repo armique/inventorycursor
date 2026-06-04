@@ -7,6 +7,7 @@ import {
   Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType } from '../types';
+import { itemMatchesSalePlatformFilter } from '../utils/salePlatform';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { getCompatibleItemsForItem } from '../services/compatibility';
 import { generateKleinanzeigenCSV } from '../services/ebayCsvService';
@@ -614,7 +615,7 @@ const InventoryList: React.FC<Props> = ({
         if (itemDate < dateRange.start || itemDate > dateRange.end) return false;
       }
       if (statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS') {
-        if (salePlatformFilter !== 'ALL' && item.platformSold !== salePlatformFilter) return false;
+        if (salePlatformFilter !== 'ALL' && !itemMatchesSalePlatformFilter(item, salePlatformFilter as Platform)) return false;
         if (salePaymentFilter !== 'ALL' && item.paymentType !== salePaymentFilter) return false;
       }
       return true;
@@ -716,7 +717,7 @@ const InventoryList: React.FC<Props> = ({
       // 5. Sales Info Filters (Only apply if we are looking at Sold items or All)
       if (statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS') {
          if (salePlatformFilter !== 'ALL') {
-            if (item.platformSold !== salePlatformFilter) return false;
+            if (!itemMatchesSalePlatformFilter(item, salePlatformFilter as Platform)) return false;
          }
          if (salePaymentFilter !== 'ALL') {
             if (item.paymentType !== salePaymentFilter) return false;

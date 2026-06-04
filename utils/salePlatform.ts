@@ -1,4 +1,5 @@
 import type { InventoryItem, Platform } from '../types';
+import { roundMoney } from '../services/financialAggregation';
 
 const PLATFORM_LABELS: Record<string, string> = {
   'ebay.de': 'eBay',
@@ -9,15 +10,32 @@ const PLATFORM_LABELS: Record<string, string> = {
 
 export type ResolvedSalePlatform = Platform | 'unknown';
 
-/** Prefer platformSold; fall back to payment type when legacy rows lack platform. */
-export function resolveSalePlatform(
-  item: Pick<InventoryItem, 'platformSold' | 'paymentType'>
-): ResolvedSalePlatform {
+export type SalePlatformFields = Pick<
+  InventoryItem,
+  'platformSold' | 'paymentType' | 'ebayOrderId' | 'ebayUsername'
+>;
+
+/** eBay order ID, username, or payment type — even when platformSold was never set (common after CSV import). */
+export function hasEbaySaleSignals(item: SalePlatformFields): boolean {
+  if (item.ebayOrderId?.trim()) return true;
+  if (item.ebayUsername?.trim()) return true;
+  if (item.paymentType === 'ebay.de') return true;
+  return false;
+}
+
+/**
+ * Resolve where the item was sold. Explicit platformSold wins; otherwise infer from eBay fields / payment type.
+ */
+export function resolveSalePlatform(item: SalePlatformFields): ResolvedSalePlatform {
   if (item.platformSold) return item.platformSold;
+  if (hasEbaySaleSignals(item)) return 'ebay.de';
   const pt = item.paymentType;
-  if (pt === 'ebay.de') return 'ebay.de';
   if (pt?.startsWith('Kleinanzeigen')) return 'kleinanzeigen.de';
   return 'unknown';
+}
+
+export function itemMatchesSalePlatformFilter(item: SalePlatformFields, filter: Platform): boolean {
+  return resolveSalePlatform(item) === filter;
 }
 
 export function formatSalePlatformLabel(platform?: ResolvedSalePlatform | string): string {
@@ -25,7 +43,7 @@ export function formatSalePlatformLabel(platform?: ResolvedSalePlatform | string
   return PLATFORM_LABELS[platform] ?? platform;
 }
 
-export function formatItemSalePlatform(item: Pick<InventoryItem, 'platformSold' | 'paymentType'>): string {
+export function formatItemSalePlatform(item: SalePlatformFields): string {
   return formatSalePlatformLabel(resolveSalePlatform(item));
 }
 
@@ -47,15 +65,11 @@ function toPlatformGroupKey(platform: ResolvedSalePlatform): PlatformGroupKey {
   return 'unknown';
 }
 
-export function platformGroupKey(
-  item: Pick<InventoryItem, 'platformSold' | 'paymentType'>
-): PlatformGroupKey {
+export function platformGroupKey(item: SalePlatformFields): PlatformGroupKey {
   return toPlatformGroupKey(resolveSalePlatform(item));
 }
 
-export function groupSalesByPlatform<T extends Pick<InventoryItem, 'platformSold' | 'paymentType'>>(
-  sold: T[]
-): Record<PlatformGroupKey, T[]> {
+export function groupSalesByPlatform<T extends SalePlatformFields>(sold: T[]): Record<PlatformGroupKey, T[]> {
   const groups: Record<PlatformGroupKey, T[]> = {
     ebay: [],
     kleinanzeigen: [],
@@ -77,9 +91,7 @@ export type PlatformSalesCounts = {
   unknown: number;
 };
 
-export function countSalesByPlatform(
-  sold: Pick<InventoryItem, 'platformSold' | 'paymentType'>[]
-): PlatformSalesCounts {
+export function countSalesByPlatform(sold: SalePlatformFields[]): PlatformSalesCounts {
   const groups = groupSalesByPlatform(sold);
   return {
     ebay: groups.ebay.length,
@@ -87,5 +99,75 @@ export function countSalesByPlatform(
     amazon: groups.amazon.length,
     other: groups.other.length,
     unknown: groups.unknown.length,
+  };
+}
+
+export type PlatformRevenueTotals = Record<PlatformGroupKey, number>;
+
+export function sumRevenueByPlatform(sold: InventoryItem[]): PlatformRevenueTotals {
+  const groups = groupSalesByPlatform(sold);
+  const totals: PlatformRevenueTotals = { ebay: 0, kleinanzeigen: 0, amazon: 0, other: 0, unknown: 0 };
+  for (const key of Object.keys(totals) as PlatformGroupKey[]) {
+    totals[key] = roundMoney(groups[key].reduce((acc, i) => acc + (Number(i.sellPrice) || 0), 0));
+  }
+  return totals;
+}
+
+/** Sold on eBay (by signals) but stored under another / missing platform tag. */
+export function findLikelyMisclassifiedEbayItems(sold: InventoryItem[]): InventoryItem[] {
+  return sold.filter((i) => platformGroupKey(i) !== 'ebay' && hasEbaySaleSignals(i));
+}
+
+/** Sold with no platform and no eBay/Klein signals — needs manual tagging. */
+export function findItemsNeedingPlatformTag(sold: InventoryItem[]): InventoryItem[] {
+  return sold.filter(
+    (i) =>
+      !i.platformSold &&
+      !hasEbaySaleSignals(i) &&
+      !i.paymentType?.startsWith('Kleinanzeigen')
+  );
+}
+
+/** Apply eBay platform tags where order ID / username / payment prove eBay but platformSold was empty. */
+export function buildEbayTagFixUpdates(items: InventoryItem[]): InventoryItem[] {
+  return items
+    .map((item) => {
+      if (platformGroupKey(item) === 'ebay' && item.platformSold === 'ebay.de') return null;
+      if (!hasEbaySaleSignals(item)) return null;
+      if (item.platformSold && item.platformSold !== 'ebay.de') return null;
+      return {
+        ...item,
+        platformSold: 'ebay.de' as Platform,
+        paymentType: item.paymentType || 'ebay.de',
+      };
+    })
+    .filter((x): x is InventoryItem => x !== null);
+}
+
+export type PlatformReconciliation = {
+  platformRevenue: PlatformRevenueTotals;
+  unknownRevenue: number;
+  misclassifiedEbay: InventoryItem[];
+  misclassifiedEbayRevenue: number;
+  needingTag: InventoryItem[];
+  needingTagRevenue: number;
+  zeroSellPrice: InventoryItem[];
+};
+
+export function buildPlatformReconciliation(sold: InventoryItem[]): PlatformReconciliation {
+  const platformRevenue = sumRevenueByPlatform(sold);
+  const misclassifiedEbay = findLikelyMisclassifiedEbayItems(sold);
+  const needingTag = findItemsNeedingPlatformTag(sold);
+  const zeroSellPrice = sold.filter((i) => !(Number(i.sellPrice) > 0));
+  return {
+    platformRevenue,
+    unknownRevenue: platformRevenue.unknown,
+    misclassifiedEbay,
+    misclassifiedEbayRevenue: roundMoney(
+      misclassifiedEbay.reduce((acc, i) => acc + (Number(i.sellPrice) || 0), 0)
+    ),
+    needingTag,
+    needingTagRevenue: roundMoney(needingTag.reduce((acc, i) => acc + (Number(i.sellPrice) || 0), 0)),
+    zeroSellPrice,
   };
 }

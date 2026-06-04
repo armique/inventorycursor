@@ -20,7 +20,7 @@ import {
   shouldSkipContainerForPurchaseCogs,
 } from '../services/financialAggregation';
 import { toLocalCalendarDateKey, yearMonthKeyFromDate, currentLocalYearMonth } from '../utils/calendarDate';
-import { countSalesByPlatform, formatItemSalePlatform, groupSalesByPlatform, PLATFORM_GROUP_LABEL, type PlatformGroupKey } from '../utils/salePlatform';
+import { countSalesByPlatform, formatItemSalePlatform, groupSalesByPlatform, PLATFORM_GROUP_LABEL, buildPlatformReconciliation, buildEbayTagFixUpdates, sumRevenueByPlatform, type PlatformGroupKey } from '../utils/salePlatform';
 
 interface Props {
   items: InventoryItem[];
@@ -31,6 +31,7 @@ interface Props {
   categoryFields?: Record<string, string[]>;
   dashboardPreferences: DashboardPreferences;
   onDashboardPreferencesChange: (next: DashboardPreferences) => void;
+  onUpdateItems?: (items: InventoryItem[]) => void;
 }
 
 const LEVELS = [
@@ -122,6 +123,7 @@ const Dashboard: React.FC<Props> = ({
   categoryFields = {},
   dashboardPreferences,
   onDashboardPreferencesChange,
+  onUpdateItems,
 }) => {
   const timeFilter = dashboardPreferences.timeFilter;
   const customStart = dashboardPreferences.customStart;
@@ -685,20 +687,37 @@ const Dashboard: React.FC<Props> = ({
       inStockCount,
       platformSales: countSalesByPlatform(soldInPeriod),
       salesByPlatform: groupSalesByPlatform(soldInPeriod),
+      platformRevenue: sumRevenueByPlatform(soldInPeriod),
     };
   }, [soldInPeriod, stats.grossProfit, items, taxMode]);
 
   const openPlatformSales = (key: PlatformGroupKey) => {
     const platformItems = periodInsights.salesByPlatform[key];
+    const rev = periodInsights.platformRevenue[key];
     openFinancialDetail({
       title: `${PLATFORM_GROUP_LABEL[key]} — ${periodLabel}`,
       items: platformItems,
       scopeExpenses: [],
+      revenue: rev,
       footnote:
         key === 'unknown'
-          ? 'These sales have no platform recorded — set “Platform sold” when logging the sale.'
-          : undefined,
+          ? 'These sales have no platform recorded — set “Platform sold” when logging the sale, or use “Fix eBay tags” if they were eBay orders.'
+          : key === 'ebay'
+            ? 'Revenue = sum of sell prices. eBay Seller Hub may include buyer shipping or differ if sell prices were not entered for every item.'
+            : undefined,
     });
+  };
+
+  const platformReconciliation = useMemo(
+    () => buildPlatformReconciliation(soldInPeriod),
+    [soldInPeriod]
+  );
+
+  const handleFixEbayTags = () => {
+    if (!onUpdateItems) return;
+    const updates = buildEbayTagFixUpdates(soldInPeriod);
+    if (updates.length === 0) return;
+    onUpdateItems(updates);
   };
 
   const monthOverMonth = useMemo(() => {
@@ -999,11 +1018,13 @@ const Dashboard: React.FC<Props> = ({
                     type="button"
                     onClick={() => openPlatformSales(key)}
                     disabled={periodInsights.platformSales[key] === 0}
-                    className={`inline-flex items-center gap-1.5 px-3 py-2 lg:px-4 lg:py-2.5 rounded-xl border text-xs lg:text-sm font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${className}`}
+                    className={`inline-flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2 px-3 py-2 lg:px-4 lg:py-2.5 rounded-xl border text-xs lg:text-sm font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${className}`}
                   >
-                    {PLATFORM_GROUP_LABEL[key]}
-                    <span className="font-black tabular-nums">{periodInsights.platformSales[key]}</span>
-                    <ChevronRight size={14} className="opacity-50 shrink-0" />
+                    <span>{PLATFORM_GROUP_LABEL[key]}</span>
+                    <span className="font-black tabular-nums whitespace-nowrap">
+                      {periodInsights.platformSales[key]} · €{formatEUR(periodInsights.platformRevenue[key])}
+                    </span>
+                    <ChevronRight size={14} className="opacity-50 shrink-0 hidden sm:block" />
                   </button>
                 ))}
             </div>
@@ -1015,6 +1036,51 @@ const Dashboard: React.FC<Props> = ({
               <Download size={14} className="lg:w-4 lg:h-4" /> CSV
             </button>
           </div>
+          {(platformReconciliation.needingTagRevenue > 0 ||
+            platformReconciliation.misclassifiedEbay.length > 0 ||
+            platformReconciliation.zeroSellPrice.length > 0) && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2.5 lg:px-4 lg:py-3 text-xs sm:text-sm text-amber-950 space-y-2">
+              <p className="font-bold">Why eBay totals may differ from Seller Hub</p>
+              <ul className="list-disc list-inside space-y-1 text-amber-900/90">
+                <li>
+                  App eBay revenue: <strong>€{formatEUR(periodInsights.platformRevenue.ebay)}</strong> ({periodInsights.platformSales.ebay} sales) — sum of{' '}
+                  <strong>sell prices</strong> tagged or detected as eBay for {periodLabel}.
+                </li>
+                {platformReconciliation.needingTagRevenue > 0 && (
+                  <li>
+                    <strong>€{formatEUR(platformReconciliation.needingTagRevenue)}</strong> ({platformReconciliation.needingTag.length} sales) have{' '}
+                    <strong>no platform</strong> — often from CSV import. They appear under Unknown, not eBay.
+                    <button
+                      type="button"
+                      onClick={() => openPlatformSales('unknown')}
+                      className="ml-1 font-bold underline hover:no-underline"
+                    >
+                      Review
+                    </button>
+                  </li>
+                )}
+                {platformReconciliation.misclassifiedEbay.length > 0 && (
+                  <li>
+                    <strong>{platformReconciliation.misclassifiedEbay.length}</strong> sales have eBay order/username but are not tagged as eBay (
+                    €{formatEUR(platformReconciliation.misclassifiedEbayRevenue)}).
+                    {onUpdateItems && (
+                      <button type="button" onClick={handleFixEbayTags} className="ml-1 font-bold underline hover:no-underline">
+                        Fix eBay tags
+                      </button>
+                    )}
+                  </li>
+                )}
+                {platformReconciliation.zeroSellPrice.length > 0 && (
+                  <li>
+                    <strong>{platformReconciliation.zeroSellPrice.length}</strong> sold items have sell price €0 — they add no revenue until you enter the price.
+                  </li>
+                )}
+              </ul>
+              <p className="text-[11px] sm:text-xs text-amber-800/80">
+                eBay Seller Hub gross sales can also include buyer shipping and orders not yet in inventory. Use the same year filter (e.g. 2026) on both sides.
+              </p>
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs sm:text-sm lg:text-base text-slate-500 border-t border-slate-100 pt-3">
             <span>Avg <strong className="text-slate-800">€{formatEUR(periodInsights.avgProfitPerSale)}</strong>/sale</span>
             <span className="text-slate-300 hidden sm:inline">·</span>

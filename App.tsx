@@ -1215,6 +1215,7 @@ const App: React.FC = () => {
                 categoryFields={categoryFields}
                 dashboardPreferences={dashboardPrefs}
                 onDashboardPreferencesChange={setDashboardPrefs}
+                onUpdateItems={handleUpdate}
               />
             }
           />
