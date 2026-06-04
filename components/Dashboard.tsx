@@ -77,7 +77,45 @@ const Dashboard: React.FC<Props> = ({
   const setCustomEnd = (v: string) =>
     onDashboardPreferencesChange({ ...dashboardPreferences, customEnd: v });
 
-  const [dayDetailModal, setDayDetailModal] = useState<{ dayLabel: string; dateStr: string; items: InventoryItem[] } | null>(null);
+  type DayDetailModal = {
+    dayLabel: string;
+    dateStr: string;
+    items: InventoryItem[];
+    dayExpenses: Expense[];
+    revenue: number;
+    itemProfit: number;
+    expTotal: number;
+    netProfit: number;
+  };
+  const [dayDetailModal, setDayDetailModal] = useState<DayDetailModal | null>(null);
+
+  const openDayDetail = (p: {
+    dayLabel: string;
+    dateStr: string;
+    items: InventoryItem[];
+    revenue?: number;
+    itemProfit?: number;
+    expTotal?: number;
+    netProfit?: number;
+  }) => {
+    const sold = p.items;
+    const dayExpenses =
+      p.dateStr.length === 10 ? expenses.filter((e) => toLocalCalendarDateKey(e.date) === p.dateStr) : [];
+    const revenue = p.revenue ?? roundMoney(sold.reduce((acc, i) => acc + (Number(i.sellPrice) || 0), 0));
+    const itemProfit = p.itemProfit ?? roundMoney(sold.reduce((acc, i) => acc + calculateItemProfit(i), 0));
+    const expTotal = p.expTotal ?? roundMoney(dayExpenses.reduce((acc, e) => acc + Number(e.amount), 0));
+    const netProfit = p.netProfit ?? roundMoney(itemProfit - expTotal);
+    setDayDetailModal({
+      dayLabel: p.dayLabel,
+      dateStr: p.dateStr,
+      items: sold,
+      dayExpenses,
+      revenue,
+      itemProfit,
+      expTotal,
+      netProfit,
+    });
+  };
   const [showWidgetModal, setShowWidgetModal] = useState(false);
 
   /** Enabled widgets only, in order (subset of DASHBOARD_WIDGET_IDS). */
@@ -330,7 +368,17 @@ const Dashboard: React.FC<Props> = ({
     const diffTime: number = Math.abs(endMs - startMs);
     const diffDays: number = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     
-    const data: { name: string, revenue: number, netProfit: number, timestamp: number, soldItems: InventoryItem[], dayLabel: string, dateStr: string }[] = [];
+    const data: {
+      name: string;
+      revenue: number;
+      itemProfit: number;
+      expTotal: number;
+      netProfit: number;
+      timestamp: number;
+      soldItems: InventoryItem[];
+      dayLabel: string;
+      dateStr: string;
+    }[] = [];
 
     if (timeFilter === 'ALL' || diffDays > 366) {
        const years = new Set<number>();
@@ -352,7 +400,17 @@ const Dashboard: React.FC<Props> = ({
           const itemProfit = roundMoney(sold.reduce((acc: number, i) => acc + calculateItemProfit(i), 0));
           const expTotal = roundMoney(exps.reduce((acc: number, e) => acc + Number(e.amount), 0));
           
-          data.push({ name: year.toString(), revenue, netProfit: roundMoney(itemProfit - expTotal), timestamp: year, soldItems: sold, dayLabel: year.toString(), dateStr: year.toString() });
+          data.push({
+            name: year.toString(),
+            revenue,
+            itemProfit,
+            expTotal,
+            netProfit: roundMoney(itemProfit - expTotal),
+            timestamp: year,
+            soldItems: sold,
+            dayLabel: year.toString(),
+            dateStr: year.toString(),
+          });
        });
     } else {
        let curr: Date = new Date(startMs);
@@ -375,7 +433,17 @@ const Dashboard: React.FC<Props> = ({
 
           const profitVal = roundMoney(itemProfit - expTotal);
 
-          data.push({ name: label, revenue, netProfit: profitVal, timestamp: curr.getTime(), soldItems: sold, dayLabel: label, dateStr: dayStr });
+          data.push({
+            name: label,
+            revenue,
+            itemProfit,
+            expTotal,
+            netProfit: profitVal,
+            timestamp: curr.getTime(),
+            soldItems: sold,
+            dayLabel: label,
+            dateStr: dayStr,
+          });
           
           const nextDay = new Date(curr);
           nextDay.setDate(curr.getDate() + 1);
@@ -691,8 +759,8 @@ const Dashboard: React.FC<Props> = ({
                                 fill="#64748b"
                                 fontSize={12}
                                 fontWeight="bold"
-                                onClick={() => point && setDayDetailModal({ dayLabel: point.dayLabel, dateStr: point.dateStr, items: point.soldItems ?? [] })}
-                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); point && setDayDetailModal({ dayLabel: point.dayLabel, dateStr: point.dateStr, items: point.soldItems ?? [] }); } }}
+                                onClick={() => point && openDayDetail({ dayLabel: point.dayLabel, dateStr: point.dateStr, items: point.soldItems ?? [], revenue: point.revenue, itemProfit: point.itemProfit, expTotal: point.expTotal, netProfit: point.netProfit })}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); point && openDayDetail({ dayLabel: point.dayLabel, dateStr: point.dateStr, items: point.soldItems ?? [], revenue: point.revenue, itemProfit: point.itemProfit, expTotal: point.expTotal, netProfit: point.netProfit }); } }}
                                 role="button"
                                 tabIndex={0}
                                 style={{ cursor: 'pointer' }}
@@ -712,16 +780,32 @@ const Dashboard: React.FC<Props> = ({
                           if (!active || !payload?.length) return null;
                           const p = payload[0]?.payload;
                           const sold = p?.soldItems ?? [];
+                          const itemProfit = Number(p?.itemProfit) || 0;
+                          const expTotal = Number(p?.expTotal) || 0;
                           return (
                             <div className="bg-white rounded-xl border border-slate-200 shadow-lg p-3">
                               <p className="text-xs font-bold text-slate-500 mb-1">{p?.dayLabel ?? p?.name}</p>
                               {payload.map((entry) => (
                                 <p key={entry.dataKey} className="text-sm font-bold text-slate-900">€{formatEUR(Number(entry.value))} ({entry.name})</p>
                               ))}
+                              <p className="text-xs text-slate-500 mt-1">
+                                Sale profit: €{formatEUR(itemProfit)}
+                                {expTotal > 0 ? ` · Expenses: −€${formatEUR(expTotal)}` : ''}
+                              </p>
                               {sold.length > 0 && (
                                 <button
                                   type="button"
-                                  onClick={() => setDayDetailModal({ dayLabel: p?.dayLabel ?? p?.name, dateStr: p?.dateStr ?? '', items: sold })}
+                                  onClick={() =>
+                                    openDayDetail({
+                                      dayLabel: p?.dayLabel ?? p?.name,
+                                      dateStr: p?.dateStr ?? '',
+                                      items: sold,
+                                      revenue: p?.revenue,
+                                      itemProfit: p?.itemProfit,
+                                      expTotal: p?.expTotal,
+                                      netProfit: p?.netProfit,
+                                    })
+                                  }
                                   className="mt-2 text-xs font-bold text-blue-600 hover:underline"
                                 >
                                   View {sold.length} item{sold.length !== 1 ? 's' : ''} sold →
@@ -739,7 +823,15 @@ const Dashboard: React.FC<Props> = ({
                         minPointSize={8}
                         onClick={(data: any) => {
                           const p = data?.payload ?? data;
-                          setDayDetailModal({ dayLabel: p?.dayLabel ?? p?.name ?? '', dateStr: p?.dateStr ?? '', items: p?.soldItems ?? [] });
+                          openDayDetail({
+                            dayLabel: p?.dayLabel ?? p?.name ?? '',
+                            dateStr: p?.dateStr ?? '',
+                            items: p?.soldItems ?? [],
+                            revenue: p?.revenue,
+                            itemProfit: p?.itemProfit,
+                            expTotal: p?.expTotal,
+                            netProfit: p?.netProfit,
+                          });
                         }}
                      />
                      <Bar 
@@ -750,7 +842,15 @@ const Dashboard: React.FC<Props> = ({
                         minPointSize={8}
                         onClick={(data: any) => {
                           const p = data?.payload ?? data;
-                          setDayDetailModal({ dayLabel: p?.dayLabel ?? p?.name ?? '', dateStr: p?.dateStr ?? '', items: p?.soldItems ?? [] });
+                          openDayDetail({
+                            dayLabel: p?.dayLabel ?? p?.name ?? '',
+                            dateStr: p?.dateStr ?? '',
+                            items: p?.soldItems ?? [],
+                            revenue: p?.revenue,
+                            itemProfit: p?.itemProfit,
+                            expTotal: p?.expTotal,
+                            netProfit: p?.netProfit,
+                          });
                         }}
                      />
                   </BarChart>
@@ -1012,21 +1112,69 @@ const Dashboard: React.FC<Props> = ({
           onClick={e => e.stopPropagation()}
         >
           <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-            <h3 className="text-lg font-bold text-slate-900">Items sold on {dayDetailModal.dayLabel}</h3>
+            <h3 className="text-lg font-bold text-slate-900">Day breakdown — {dayDetailModal.dayLabel}</h3>
             <button onClick={() => setDayDetailModal(null)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors"><X size={20} className="text-slate-500"/></button>
           </div>
-          <div className="p-4 overflow-y-auto max-h-[60vh] space-y-3">
+          <div className="px-4 pt-4 pb-2 grid grid-cols-2 gap-2 text-sm">
+            <div className="p-3 rounded-xl bg-blue-50">
+              <p className="text-[10px] font-bold uppercase text-blue-600">Revenue</p>
+              <p className="font-black text-slate-900">€{formatEUR(dayDetailModal.revenue)}</p>
+            </div>
+            <div className="p-3 rounded-xl bg-emerald-50">
+              <p className="text-[10px] font-bold uppercase text-emerald-600">Net profit</p>
+              <p className={`font-black ${dayDetailModal.netProfit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                €{formatEUR(dayDetailModal.netProfit)}
+              </p>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-50 col-span-2 text-xs text-slate-600 space-y-1">
+              <p>
+                <span className="font-bold">Sale profit</span> (sell − buy − fees): €{formatEUR(dayDetailModal.itemProfit)}
+              </p>
+              {dayDetailModal.expTotal > 0 && (
+                <p>
+                  <span className="font-bold">Expenses this day</span>: −€{formatEUR(dayDetailModal.expTotal)}
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="p-4 overflow-y-auto max-h-[50vh] space-y-3">
             {dayDetailModal.items.length === 0 ? (
-              <p className="text-slate-500 text-sm text-center py-8">No items sold on this day.</p>
-            ) : dayDetailModal.items.map((item) => (
-              <div key={item.id} className="flex items-center justify-between gap-3 p-3 bg-slate-50 rounded-xl">
-                <p className="font-medium text-slate-900 truncate flex-1 min-w-0">{item.name}</p>
-                <div className="flex items-center gap-4 shrink-0">
-                  <span className="text-emerald-600 font-bold flex items-center gap-1"><Euro size={14}/>{formatEUR(Number(item.sellPrice) || 0)}</span>
-                  <span className="text-slate-500 text-sm">Profit: €{formatEUR(calculateItemProfit(item))}</span>
-                </div>
-              </div>
-            ))}
+              <p className="text-slate-500 text-sm text-center py-4">No items sold on this day.</p>
+            ) : (
+              <>
+                <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Sold items</p>
+                {dayDetailModal.items.map((item) => {
+                  const sell = Number(item.sellPrice) || 0;
+                  const buy = Number(item.buyPrice) || 0;
+                  const fee = Number(item.feeAmount) || 0;
+                  const profit = calculateItemProfit(item);
+                  return (
+                    <div key={item.id} className="p-3 bg-slate-50 rounded-xl space-y-1">
+                      <p className="font-medium text-slate-900 truncate">{item.name}</p>
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-600">
+                        <span>Sell €{formatEUR(sell)}</span>
+                        <span>Buy €{formatEUR(buy)}</span>
+                        {fee > 0 && <span>Fees €{formatEUR(fee)}</span>}
+                        <span className={`font-bold ${profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                          Profit €{formatEUR(profit)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </>
+            )}
+            {dayDetailModal.dayExpenses.length > 0 && (
+              <>
+                <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider pt-2">Expenses</p>
+                {dayDetailModal.dayExpenses.map((exp) => (
+                  <div key={exp.id} className="flex items-center justify-between gap-3 p-3 bg-amber-50 rounded-xl">
+                    <p className="text-sm font-medium text-slate-900 truncate flex-1">{exp.description}</p>
+                    <span className="text-sm font-bold text-amber-800 shrink-0">−€{formatEUR(Number(exp.amount) || 0)}</span>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         </div>
       </div>,
