@@ -636,41 +636,41 @@ const Dashboard: React.FC<Props> = ({
 
       {/* WIDGET: GAMIFICATION SECTION */}
       {isVisible('gamification') && (
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
          {/* Monthly Goal Card */}
-         <div className="bg-slate-900 text-white p-6 rounded-[2.5rem] relative overflow-hidden shadow-2xl flex flex-col justify-between group">
-            <div className="absolute top-0 right-0 p-6 opacity-10 transition-transform group-hover:scale-110 duration-500">
-               <Target size={120} />
+         <div className="bg-slate-900 text-white p-4 rounded-2xl relative overflow-hidden shadow-md group max-w-md lg:max-w-none">
+            <div className="absolute top-0 right-0 p-3 opacity-10 transition-transform group-hover:scale-110 duration-500 pointer-events-none">
+               <Target size={56} />
             </div>
             <div className="relative z-10">
-               <div className="flex justify-between items-start mb-2">
-                  <div className="flex items-center gap-2 text-slate-400 text-xs font-black uppercase tracking-widest">
-                     <Calendar size={12}/> Current Month
+               <div className="flex justify-between items-center mb-1.5">
+                  <div className="flex items-center gap-1.5 text-slate-400 text-[10px] font-black uppercase tracking-widest">
+                     <Calendar size={10}/> Current Month
                   </div>
-                  <button onClick={() => setIsEditingGoal(true)} className="p-2 hover:bg-white/10 rounded-xl transition-all text-slate-400 hover:text-white">
-                     <Edit3 size={14}/>
+                  <button onClick={() => setIsEditingGoal(true)} className="p-1.5 hover:bg-white/10 rounded-lg transition-all text-slate-400 hover:text-white">
+                     <Edit3 size={12}/>
                   </button>
                </div>
                {isEditingGoal ? (
-                  <div className="flex items-center gap-2 mb-2 animate-in fade-in">
-                     <span className="text-2xl font-black text-slate-500">€</span>
-                     <input autoFocus type="number" className="w-32 bg-white/10 border-b-2 border-blue-500 text-3xl font-black text-white outline-none p-1" value={tempGoal} onChange={e => setTempGoal(e.target.value)} onBlur={handleSaveGoal} onKeyDown={e => e.key === 'Enter' && handleSaveGoal()} />
-                     <button onClick={handleSaveGoal} className="bg-blue-600 p-2 rounded-lg text-white"><Check size={16}/></button>
+                  <div className="flex items-center gap-2 animate-in fade-in">
+                     <span className="text-lg font-black text-slate-500">€</span>
+                     <input autoFocus type="number" className="w-24 bg-white/10 border-b-2 border-blue-500 text-xl font-black text-white outline-none p-0.5" value={tempGoal} onChange={e => setTempGoal(e.target.value)} onBlur={handleSaveGoal} onKeyDown={e => e.key === 'Enter' && handleSaveGoal()} />
+                     <button onClick={handleSaveGoal} className="bg-blue-600 p-1.5 rounded-lg text-white"><Check size={14}/></button>
                   </div>
                ) : (
                   <>
-                     <h3 className="text-4xl font-black tracking-tight mb-1">€{formatEUR(gameStats.monthProfit)} <span className="text-slate-500 text-lg font-bold">/ €{formatEUR(monthlyGoal)}</span></h3>
-                     <p className="text-xs font-medium text-slate-400">Net profit vs goal · {gameStats.monthProfit >= monthlyGoal ? 'Goal reached!' : `€${formatEUR(monthlyGoal - gameStats.monthProfit)} to go`}</p>
+                     <h3 className="text-2xl font-black tracking-tight leading-tight">€{formatEUR(gameStats.monthProfit)} <span className="text-slate-500 text-sm font-bold">/ €{formatEUR(monthlyGoal)}</span></h3>
+                     <p className="text-[11px] font-medium text-slate-400 mt-0.5 line-clamp-2">{gameStats.monthProfit >= monthlyGoal ? 'Goal reached!' : `€${formatEUR(monthlyGoal - gameStats.monthProfit)} to go`}</p>
                   </>
                )}
             </div>
-            <div className="relative z-10 mt-6 space-y-2">
-               <div className="flex justify-between text-[10px] font-black uppercase text-slate-400 tracking-widest">
+            <div className="relative z-10 mt-3 space-y-1">
+               <div className="flex justify-between text-[9px] font-black uppercase text-slate-400 tracking-widest">
                   <span>Progress</span>
                   <span>{gameStats.goalProgress.toFixed(0)}%</span>
                </div>
-               <div className="h-4 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
-                  <div className={`h-full rounded-full transition-all duration-1000 ease-out ${gameStats.goalProgress >= 100 ? 'bg-gradient-to-r from-emerald-400 to-emerald-600 shadow-[0_0_15px_rgba(16,185,129,0.5)]' : 'bg-gradient-to-r from-blue-600 to-indigo-500'}`} style={{ width: `${gameStats.goalProgress}%` }}></div>
+               <div className="h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
+                  <div className={`h-full rounded-full transition-all duration-1000 ease-out ${gameStats.goalProgress >= 100 ? 'bg-gradient-to-r from-emerald-400 to-emerald-600' : 'bg-gradient-to-r from-blue-600 to-indigo-500'}`} style={{ width: `${gameStats.goalProgress}%` }}></div>
                </div>
             </div>
          </div>
