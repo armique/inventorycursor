@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { InventoryItem } from '../types';
 import ItemThumbnail from './ItemThumbnail';
+import BulkSelectionBar, { bulkSelectionPadClass } from './BulkSelectionBar';
 
 interface Props {
   items: InventoryItem[];
@@ -30,6 +31,7 @@ const TRASH_SORT_KEY = 'trash_sort_config';
 const TrashPage: React.FC<Props> = ({ items, onRestore, onPermanentDelete }) => {
   const [searchTerm, setSearchTerm] = useState(() => localStorage.getItem('trash_search') || '');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkActionsExpanded, setBulkActionsExpanded] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => (localStorage.getItem('trash_view_mode') as any) || 'grid');
   
   // Persisted Sort Config
@@ -220,8 +222,12 @@ const TrashPage: React.FC<Props> = ({ items, onRestore, onPermanentDelete }) => 
     );
   };
 
+  const trashPadClass = bulkSelectionPadClass(bulkActionsExpanded, selectedIds.length > 0);
+
   return (
-    <div className="space-y-6 animate-in fade-in duration-500 pb-32">
+    <div
+      className={`space-y-6 animate-in fade-in duration-500 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-8 ${trashPadClass}`}
+    >
       <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-3xl font-black text-slate-900 tracking-tighter flex items-center gap-3">
@@ -416,30 +422,15 @@ const TrashPage: React.FC<Props> = ({ items, onRestore, onPermanentDelete }) => 
       )}
 
       {selectedIds.length > 0 && (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] bg-slate-900 px-8 py-5 rounded-[2.5rem] border border-slate-800 shadow-2xl flex items-center gap-8 animate-in slide-in-from-bottom-12 duration-300">
-           <div className="flex flex-col">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Selected</p>
-              <p className="text-xl font-black text-white">{selectedIds.length}</p>
-           </div>
-           <div className="h-10 w-px bg-slate-800"></div>
-           <div className="flex gap-2">
-              <button 
-                onClick={handleRestoreSelected} 
-                className="bg-white text-slate-900 px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-slate-100 transition-all"
-              >
-                <RotateCcw size={16}/> Restore Selection
-              </button>
-              <button 
-                onClick={handlePurgeSelected} 
-                className="bg-red-500 text-white px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg hover:bg-red-600 transition-all flex items-center gap-2"
-              >
-                <Trash2 size={16}/> Purge Permanently
-              </button>
-           </div>
-           <button onClick={() => setSelectedIds([])} className="p-3 text-slate-500 hover:text-white transition-colors">
-              <X size={20}/>
-           </button>
-        </div>
+        <BulkSelectionBar
+          count={selectedIds.length}
+          onClear={() => setSelectedIds([])}
+          onExpandedChange={setBulkActionsExpanded}
+          actions={[
+            { id: 'restore', label: 'Restore', icon: <RotateCcw size={16} />, onClick: handleRestoreSelected, variant: 'primary' },
+            { id: 'purge', label: 'Purge', icon: <Trash2 size={16} />, onClick: handlePurgeSelected, variant: 'danger' },
+          ]}
+        />
       )}
 
       {/* CONFIRMATION MODAL */}

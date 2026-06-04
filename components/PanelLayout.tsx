@@ -148,7 +148,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
         </div>
       </aside>
       {/* MAIN AREA */}
-      <main className="flex-1 overflow-auto p-4 pb-20 md:p-8 md:pb-8 relative">
+      <main className="flex-1 overflow-auto p-4 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:p-8 md:pb-8 relative">
         {/* eBay sync on load */}
         {onUpdateItems && (
           <EbaySyncBanner items={items} onUpdate={onUpdateItems} />
@@ -204,7 +204,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
           <button
             onClick={() => onForcePush?.()}
             disabled={syncState.status === 'syncing'}
-            className={`md:hidden fixed bottom-20 left-4 z-[200] px-4 py-2.5 rounded-full shadow-2xl flex items-center gap-2.5 text-xs font-black uppercase tracking-widest border ${
+            className={`md:hidden fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] left-4 z-[110] px-4 py-2.5 rounded-full shadow-2xl flex items-center gap-2.5 text-xs font-black uppercase tracking-widest border ${
               syncState.status === 'error' ? 'bg-red-600 text-white border-red-500' :
               syncState.status === 'success' ? 'bg-emerald-600 text-white border-emerald-500' :
               'bg-slate-900 text-white border-slate-800'
@@ -219,8 +219,8 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
       </main>
 
       {/* MOBILE BOTTOM NAVIGATION */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-[120] border-t border-slate-200 bg-white/95 backdrop-blur-sm">
-        <div className="flex justify-around items-stretch py-1">
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-[120] border-t border-slate-200 bg-white/95 backdrop-blur-sm pb-safe">
+        <div className="flex justify-around items-stretch py-1 min-h-[56px]">
           {nav
             .filter((item) =>
               ['/panel/dashboard', '/panel/inventory', '/panel/builder', '/panel/settings'].includes(

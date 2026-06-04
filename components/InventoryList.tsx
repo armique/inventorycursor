@@ -27,6 +27,7 @@ import ItemForm from './ItemForm';
 import ItemThumbnail from './ItemThumbnail';
 import InvoiceView from './InvoiceView';
 import InventoryAISpecsPanel from './InventoryAISpecsPanel';
+import BulkSelectionBar, { bulkSelectionPadClass, type BulkAction } from './BulkSelectionBar';
 import { generateItemSpecs } from '../services/specsAI';
 
 interface Props {
@@ -302,6 +303,7 @@ const InventoryList: React.FC<Props> = ({
   };
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkActionsExpanded, setBulkActionsExpanded] = useState(false);
   const [expandedBundles, setExpandedBundles] = useState<Set<string>>(new Set());
   
   // Modals
@@ -1233,7 +1235,7 @@ const InventoryList: React.FC<Props> = ({
       case 'select':
         return (
           <td key={id} className="p-5 text-center" style={style}>
-             <div onClick={(e) => { e.stopPropagation(); toggleSelect(item.id); }} className={`w-5 h-5 mx-auto border-2 rounded-lg flex items-center justify-center cursor-pointer transition-all ${selectedIds.includes(item.id) ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 hover:border-blue-400'}`}>
+             <div onClick={(e) => { e.stopPropagation(); toggleSelect(item.id); }} className={`w-6 h-6 sm:w-5 sm:h-5 mx-auto border-2 rounded-lg flex items-center justify-center cursor-pointer transition-all touch-manipulation ${selectedIds.includes(item.id) ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 hover:border-blue-400'}`}>
                 {selectedIds.includes(item.id) && <Check size={12}/>}
              </div>
           </td>
@@ -1885,7 +1887,7 @@ const InventoryList: React.FC<Props> = ({
             className="p-5 text-right relative sticky right-0 z-[18] bg-white group-hover/row:bg-slate-50/98 border-l border-slate-200/90 shadow-[-6px_0_12px_-4px_rgba(15,23,42,0.07)]"
             style={style}
           >
-            <div className="flex flex-wrap justify-end gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity max-w-[7.5rem] ml-auto">
+            <div className="flex flex-wrap justify-end gap-0.5 opacity-100 sm:opacity-0 sm:group-hover/row:opacity-100 transition-opacity max-w-[7.5rem] ml-auto">
               {item.status === ItemStatus.IN_STOCK && (
                  <>
                    <button onClick={(e) => { e.stopPropagation(); navigate('/panel/pricing', { state: { query: item.name } }); }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md shrink-0" title="Check Market Price"><Tag size={14}/></button>
@@ -1940,6 +1942,67 @@ const InventoryList: React.FC<Props> = ({
     setSpecRangeFilters({});
     setShowInComposition(true);
   };
+
+  const selectedHasSoldOrTraded = useMemo(
+    () => items.some((i) => selectedIds.includes(i.id) && (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED)),
+    [items, selectedIds]
+  );
+
+  const bulkActions = useMemo((): BulkAction[] => {
+    const exportKleinanzeigen = () => {
+      const selected = items.filter((i) => selectedIds.includes(i.id));
+      const csv = generateKleinanzeigenCSV(selected);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `kleinanzeigen-export-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    };
+    const exportExcel = () => {
+      exportInventoryToExcel(items.filter((i) => selectedIds.includes(i.id)));
+    };
+    return [
+      { id: 'compose', label: 'Compose Bundle', icon: <Monitor size={16} />, onClick: handleBuildFromSelection, variant: 'primary' },
+      { id: 'lot', label: 'Lot Bundle', icon: <Package size={16} />, onClick: handleCreateLotBundleFromSelection, variant: 'violet' },
+      { id: 'category', label: 'Set category', icon: <Layers size={16} />, onClick: () => setShowBulkCategoryEdit(true), variant: 'primary' },
+      { id: 'publish', label: 'Publish store', icon: <Globe size={16} />, onClick: () => handleBulkStoreVisible(true), variant: 'emerald' },
+      { id: 'visible', label: 'Store visible', icon: <Eye size={16} />, onClick: () => setShowBulkStoreVisible(true), variant: 'primary' },
+      { id: 'salepct', label: 'Sale %', icon: <Percent size={16} />, onClick: () => setShowBulkSalePct(true), variant: 'primary' },
+      { id: 'tag', label: 'Add tag', icon: <Tag size={16} />, onClick: () => setShowBulkTag(true), variant: 'primary' },
+      { id: 'kleincsv', label: 'Kleinanzeigen CSV', icon: <Download size={16} />, onClick: exportKleinanzeigen, variant: 'primary' },
+      { id: 'excel', label: 'Export Excel', icon: <FileSpreadsheet size={16} />, onClick: exportExcel, variant: 'primary' },
+      {
+        id: 'aidesc',
+        label: bulkGenerateDescriptions ? bulkGenerateProgress || 'Generating…' : 'AI descriptions',
+        icon: bulkGenerateDescriptions ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />,
+        onClick: () => handleBulkGenerateDescriptions(),
+        variant: 'violet',
+        disabled: bulkGenerateDescriptions,
+      },
+      {
+        id: 'editsales',
+        label: 'Edit sales',
+        icon: <Edit2 size={16} />,
+        onClick: () => setShowBulkSalesEdit(true),
+        variant: 'indigo',
+        hidden: !selectedHasSoldOrTraded,
+      },
+      { id: 'delete', label: 'Delete', icon: <Trash2 size={16} />, onClick: () => setShowBulkDeleteConfirm(true), variant: 'danger' },
+    ];
+  }, [
+    items,
+    selectedIds,
+    bulkGenerateDescriptions,
+    bulkGenerateProgress,
+    selectedHasSoldOrTraded,
+    handleBuildFromSelection,
+    handleCreateLotBundleFromSelection,
+    handleBulkStoreVisible,
+    handleBulkGenerateDescriptions,
+  ]);
+
+  const tablePadClass = bulkSelectionPadClass(bulkActionsExpanded, selectedIds.length > 0);
 
   return (
     <div className="space-y-4 animate-in fade-in pb-4 relative h-full flex flex-col">
@@ -2302,7 +2365,7 @@ const InventoryList: React.FC<Props> = ({
 
       {/* Toast notification for quick actions (e.g. copy listing text) */}
       {toast && (
-        <div className="pointer-events-none fixed bottom-6 right-6 z-[180]">
+        <div className={`pointer-events-none fixed z-[180] ${selectedIds.length > 0 ? 'top-4 right-4' : 'bottom-6 right-6 max-lg:bottom-[calc(5rem+env(safe-area-inset-bottom))]'}`}>
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-slate-900 text-white text-xs font-bold shadow-lg shadow-slate-900/30">
             <Check size={14} className="text-emerald-400" />
             <span>{toast}</span>
@@ -2364,7 +2427,7 @@ const InventoryList: React.FC<Props> = ({
       <div 
         ref={tableContainerRef}
         onScroll={handleScroll}
-        className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-x-auto overflow-y-auto flex-1 custom-scrollbar min-h-0"
+        className={`bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-x-auto overflow-y-auto flex-1 custom-scrollbar min-h-0 transition-[padding] duration-200 ${tablePadClass}`}
       >
          <style>{`
            [data-inventory-table] tbody > tr > td { padding: 0.4rem 0.3rem !important; }
@@ -2491,110 +2554,12 @@ const InventoryList: React.FC<Props> = ({
       </div>
 
       {selectedIds.length > 0 && (
-         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] bg-slate-900 px-8 py-5 rounded-[2.5rem] border border-slate-800 shadow-2xl flex items-center gap-8 animate-in slide-in-from-bottom-12 duration-300">
-            <div className="flex flex-col">
-               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Selected</p>
-               <p className="text-xl font-black text-white">{selectedIds.length}</p>
-            </div>
-            <div className="h-10 w-px bg-slate-800"></div>
-            <div className="flex gap-2">
-               <button 
-                 onClick={handleBuildFromSelection} 
-                 className="bg-white text-slate-900 px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-slate-100 transition-all"
-               >
-                 <Monitor size={16}/> Compose Bundle
-               </button>
-               <button
-                 onClick={handleCreateLotBundleFromSelection}
-                 className="bg-violet-600 text-white px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-violet-700 transition-all"
-               >
-                 <Package size={16}/> Create Lot Bundle
-               </button>
-               
-               <button 
-                 onClick={() => setShowBulkCategoryEdit(true)} 
-                 className="bg-white text-slate-900 px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-slate-100 transition-all"
-               >
-                 <Layers size={16}/> Set category
-               </button>
-               <button 
-                 onClick={() => handleBulkStoreVisible(true)} 
-                 className="bg-emerald-600 text-white px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-emerald-700 transition-all"
-               >
-                 <Globe size={16}/> Publish to store
-               </button>
-               <button 
-                 onClick={() => setShowBulkStoreVisible(true)} 
-                 className="bg-white text-slate-900 px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-slate-100 transition-all"
-               >
-                 <Eye size={16}/> Store visible
-               </button>
-               <button 
-                 onClick={() => setShowBulkSalePct(true)} 
-                 className="bg-white text-slate-900 px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-slate-100 transition-all"
-               >
-                 <Percent size={16}/> Sale %
-               </button>
-               <button 
-                 onClick={() => setShowBulkTag(true)} 
-                 className="bg-white text-slate-900 px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-slate-100 transition-all"
-               >
-                 <Tag size={16}/> Add tag
-               </button>
-               <button 
-                 onClick={() => {
-                   const selected = items.filter(i => selectedIds.includes(i.id));
-                   const csv = generateKleinanzeigenCSV(selected);
-                   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-                   const a = document.createElement('a');
-                   a.href = URL.createObjectURL(blob);
-                   a.download = `kleinanzeigen-export-${new Date().toISOString().slice(0,10)}.csv`;
-                   a.click();
-                   URL.revokeObjectURL(a.href);
-                 }}
-                 className="bg-white text-slate-900 px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-slate-100 transition-all"
-               >
-                 <Download size={16}/> Export Kleinanzeigen CSV
-               </button>
-               <button 
-                 onClick={() => {
-                   const selected = items.filter(i => selectedIds.includes(i.id));
-                   exportInventoryToExcel(selected);
-                 }}
-                 className="bg-white text-slate-900 px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-slate-100 transition-all"
-               >
-                 <FileSpreadsheet size={16}/> Export to Excel
-               </button>
-               <button 
-                 onClick={() => handleBulkGenerateDescriptions()}
-                 disabled={bulkGenerateDescriptions}
-                 className="bg-violet-600 text-white px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-violet-700 disabled:opacity-60 transition-all"
-               >
-                 {bulkGenerateDescriptions ? <Loader2 size={16} className="animate-spin"/> : <Sparkles size={16}/>}
-                 {bulkGenerateDescriptions ? bulkGenerateProgress || 'Generating…' : 'Generate descriptions (AI)'}
-               </button>
-
-               {/* Show Edit Sales Button if any selected item is sold/traded */}
-               {items.filter(i => selectedIds.includes(i.id)).some(i => i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) && (
-                  <button 
-                    onClick={() => setShowBulkSalesEdit(true)} 
-                    className="bg-indigo-600 text-white px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-indigo-700 transition-all"
-                  >
-                    <Edit2 size={16}/> Edit Sales Info
-                  </button>
-               )}
-
-               <button 
-                 onClick={() => setShowBulkDeleteConfirm(true)} 
-                 className="bg-red-600 text-white px-6 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2 hover:bg-red-700 transition-all"
-               >
-                 <Trash2 size={16}/> Delete
-               </button>
-            </div>
-            <button onClick={() => setSelectedIds([])} className="p-3 text-slate-500 hover:text-white transition-colors">
-               <X size={20}/>
-            </button>
-         </div>
+        <BulkSelectionBar
+          count={selectedIds.length}
+          onClear={() => setSelectedIds([])}
+          actions={bulkActions}
+          onExpandedChange={setBulkActionsExpanded}
+        />
       )}
 
       {/* MODALS */}

@@ -198,14 +198,14 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/60 p-0 sm:p-4 pb-safe"
       onDragEnterCapture={handleEbayScreenshotDragEnterCapture}
       onDragLeaveCapture={handleEbayScreenshotDragLeaveCapture}
       onDragOverCapture={handleEbayScreenshotDragOverCapture}
       onDropCapture={handleEbayScreenshotDropCapture}
     >
       <div
-        className={`bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl border overflow-hidden flex flex-col max-h-[90vh] transition-shadow duration-150 ${
+        className={`bg-white w-full max-w-2xl rounded-t-[2rem] sm:rounded-[3rem] shadow-2xl border overflow-hidden flex flex-col max-h-[92dvh] sm:max-h-[90vh] transition-shadow duration-150 ${
           ebayScreenshotDragOver && isEbayScreenshotDropActive
             ? 'border-indigo-400 ring-4 ring-indigo-300/40 shadow-indigo-100'
             : 'border-slate-100'
