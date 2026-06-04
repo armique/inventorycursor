@@ -20,7 +20,7 @@ import {
   shouldSkipContainerForPurchaseCogs,
 } from '../services/financialAggregation';
 import { toLocalCalendarDateKey, yearMonthKeyFromDate, currentLocalYearMonth } from '../utils/calendarDate';
-import { countSalesByPlatform, formatItemSalePlatform, groupSalesByPlatform, PLATFORM_GROUP_LABEL, buildPlatformReconciliation, buildEbayTagFixUpdates, sumRevenueByPlatform, type PlatformGroupKey } from '../utils/salePlatform';
+import { countSalesByPlatform, formatItemSalePlatform, groupSalesByPlatform, PLATFORM_GROUP_LABEL, buildPlatformReconciliation, buildEbayTagFixUpdates, sumRevenueByPlatform, countOrdersByPlatform, groupItemsByMarketplaceOrder, type PlatformGroupKey } from '../utils/salePlatform';
 
 interface Props {
   items: InventoryItem[];
@@ -82,13 +82,13 @@ const QUICK_FILTERS: { value: string; label: string }[] = [
 ];
 
 function exportPeriodSalesCsv(sold: InventoryItem[], label: string) {
-  const headers = ['Name', 'Category', 'Platform', 'SellDate', 'SellPrice', 'BuyPrice', 'Fees', 'Profit'];
+  const headers = ['Name', 'Category', 'Platform', 'eBayOrderId', 'SellDate', 'SellPrice', 'BuyPrice', 'Fees', 'Profit'];
   const rows = sold.map((i) => {
     const sell = Number(i.sellPrice) || 0;
     const buy = Number(i.buyPrice) || 0;
     const fee = Number(i.feeAmount) || 0;
     const profit = roundMoney(sell - buy - fee);
-    return [i.name, i.category || '', formatItemSalePlatform(i), i.sellDate || '', sell, buy, fee, profit]
+    return [i.name, i.category || '', formatItemSalePlatform(i), i.ebayOrderId || '', i.sellDate || '', sell, buy, fee, profit]
       .map((c) => `"${String(c).replace(/"/g, '""')}"`)
       .join(';');
   });
@@ -146,6 +146,8 @@ const Dashboard: React.FC<Props> = ({
     expTotal: number;
     netProfit: number;
     footnote?: string;
+    orderStats?: { orderCount: number; itemCount: number };
+    orderGroups?: ReturnType<typeof groupItemsByMarketplaceOrder>;
   };
   const [financialDetailModal, setFinancialDetailModal] = useState<FinancialDetailModal | null>(null);
 
@@ -158,6 +160,8 @@ const Dashboard: React.FC<Props> = ({
     expTotal?: number;
     netProfit?: number;
     footnote?: string;
+    orderStats?: { orderCount: number; itemCount: number };
+    orderGroups?: ReturnType<typeof groupItemsByMarketplaceOrder>;
   }) => {
     const sold = p.items;
     const revenue = p.revenue ?? roundMoney(sold.reduce((acc, i) => acc + (Number(i.sellPrice) || 0), 0));
@@ -173,6 +177,8 @@ const Dashboard: React.FC<Props> = ({
       expTotal,
       netProfit,
       footnote: p.footnote,
+      orderStats: p.orderStats,
+      orderGroups: p.orderGroups,
     });
   };
 
@@ -688,23 +694,42 @@ const Dashboard: React.FC<Props> = ({
       platformSales: countSalesByPlatform(soldInPeriod),
       salesByPlatform: groupSalesByPlatform(soldInPeriod),
       platformRevenue: sumRevenueByPlatform(soldInPeriod),
+      platformOrders: countOrdersByPlatform(soldInPeriod),
     };
   }, [soldInPeriod, stats.grossProfit, items, taxMode]);
+
+  const formatPlatformChipLabel = (key: PlatformGroupKey) => {
+    const stats = periodInsights.platformOrders[key];
+    const rev = periodInsights.platformRevenue[key];
+    if (stats.orderCount !== stats.itemCount && stats.itemCount > 0) {
+      return `${stats.orderCount} orders · ${stats.itemCount} items · €${formatEUR(rev)}`;
+    }
+    return `${stats.itemCount} · €${formatEUR(rev)}`;
+  };
 
   const openPlatformSales = (key: PlatformGroupKey) => {
     const platformItems = periodInsights.salesByPlatform[key];
     const rev = periodInsights.platformRevenue[key];
+    const orderStats = periodInsights.platformOrders[key];
+    const orderGroups =
+      orderStats.orderCount !== orderStats.itemCount
+        ? groupItemsByMarketplaceOrder(platformItems, items)
+        : undefined;
     openFinancialDetail({
       title: `${PLATFORM_GROUP_LABEL[key]} — ${periodLabel}`,
       items: platformItems,
       scopeExpenses: [],
       revenue: rev,
+      orderStats,
+      orderGroups,
       footnote:
         key === 'unknown'
           ? 'These sales have no platform recorded — set “Platform sold” when logging the sale, or use “Fix eBay tags” if they were eBay orders.'
-          : key === 'ebay'
-            ? 'Revenue = sum of sell prices. eBay Seller Hub may include buyer shipping or differ if sell prices were not entered for every item.'
-            : undefined,
+          : key === 'ebay' && orderStats.orderCount !== orderStats.itemCount
+            ? `${orderStats.orderCount} eBay orders split across ${orderStats.itemCount} inventory items (e.g. bundle parts). Compare order count to eBay “Stückzahl verkauft”; revenue is the sum of all parts.`
+            : key === 'ebay'
+              ? 'Compare order count to eBay “Stückzahl verkauft”. Revenue = sum of sell prices on each inventory row.'
+              : undefined,
     });
   };
 
@@ -1022,7 +1047,7 @@ const Dashboard: React.FC<Props> = ({
                   >
                     <span>{PLATFORM_GROUP_LABEL[key]}</span>
                     <span className="font-black tabular-nums whitespace-nowrap">
-                      {periodInsights.platformSales[key]} · €{formatEUR(periodInsights.platformRevenue[key])}
+                      {formatPlatformChipLabel(key)}
                     </span>
                     <ChevronRight size={14} className="opacity-50 shrink-0 hidden sm:block" />
                   </button>
@@ -1410,15 +1435,54 @@ const Dashboard: React.FC<Props> = ({
                 </p>
               )}
             </div>
-            {financialDetailModal.footnote && (
-              <p className="col-span-2 text-[11px] text-slate-500 bg-amber-50/80 border border-amber-100 rounded-lg px-3 py-2">
-                {financialDetailModal.footnote}
-              </p>
+            {financialDetailModal.orderStats &&
+              financialDetailModal.orderStats.orderCount !== financialDetailModal.orderStats.itemCount && (
+              <div className="col-span-2 p-3 rounded-xl bg-blue-50/80 border border-blue-100 text-xs text-blue-900">
+                <span className="font-bold">{financialDetailModal.orderStats.orderCount} marketplace orders</span>
+                {' · '}
+                <span>{financialDetailModal.orderStats.itemCount} inventory items</span>
+                <span className="text-blue-700/80"> — bundles count as one order on eBay but several rows here.</span>
+              </div>
             )}
           </div>
           <div className="p-4 overflow-y-auto max-h-[52vh] space-y-3">
             {financialDetailModal.items.length === 0 ? (
               <p className="text-slate-500 text-sm text-center py-4">No sold items in this selection.</p>
+            ) : financialDetailModal.orderGroups && financialDetailModal.orderGroups.length > 0 ? (
+              <>
+                <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">
+                  By order ({financialDetailModal.orderGroups.length})
+                </p>
+                {financialDetailModal.orderGroups.map((group) => (
+                  <div key={group.key} className="rounded-xl border border-slate-200 overflow-hidden">
+                    <div className="px-3 py-2 bg-slate-100 flex items-center justify-between gap-2">
+                      <p className="text-sm font-bold text-slate-800 truncate">{group.label}</p>
+                      <span className="text-xs font-black text-slate-600 tabular-nums shrink-0">€{formatEUR(group.revenue)}</span>
+                    </div>
+                    <div className="divide-y divide-slate-100">
+                      {group.items.map((item) => {
+                        const sell = Number(item.sellPrice) || 0;
+                        const buy = Number(item.buyPrice) || 0;
+                        const fee = Number(item.feeAmount) || 0;
+                        const profit = calculateItemProfit(item);
+                        return (
+                          <div key={item.id} className="px-3 py-2.5 space-y-0.5">
+                            <p className="font-medium text-slate-900 truncate text-sm">{item.name}</p>
+                            <div className="flex flex-wrap gap-x-3 text-xs text-slate-600">
+                              <span>Sell €{formatEUR(sell)}</span>
+                              <span>Buy €{formatEUR(buy)}</span>
+                              {fee > 0 && <span>Fees €{formatEUR(fee)}</span>}
+                              <span className={`font-bold ${profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                Profit €{formatEUR(profit)}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </>
             ) : (
               <>
                 <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">
@@ -1449,6 +1513,11 @@ const Dashboard: React.FC<Props> = ({
                   );
                 })}
               </>
+            )}
+            {financialDetailModal.footnote && (
+              <p className="text-[11px] text-slate-500 bg-amber-50/80 border border-amber-100 rounded-lg px-3 py-2">
+                {financialDetailModal.footnote}
+              </p>
             )}
             {financialDetailModal.scopeExpenses.length > 0 && (
               <>

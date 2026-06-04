@@ -171,3 +171,75 @@ export function buildPlatformReconciliation(sold: InventoryItem[]): PlatformReco
     zeroSellPrice,
   };
 }
+
+export type MarketplaceOrderStats = {
+  /** Inventory rows counted (bundle parts = multiple items). */
+  itemCount: number;
+  /** Buyer-facing orders — matches eBay “Stückzahl” when order IDs / bundle splits align. */
+  orderCount: number;
+};
+
+function marketplaceOrderKey(item: InventoryItem): string {
+  const oid = item.ebayOrderId?.trim();
+  if (oid) return `oid:${oid}`;
+  const sellDay = item.sellDate?.slice(0, 10) || '';
+  if (item.parentContainerId && sellDay) return `bundle:${item.parentContainerId}:${sellDay}`;
+  return `solo:${item.id}`;
+}
+
+/** Count marketplace orders vs inventory line items (bundles / shared order IDs collapse to one order). */
+export function countMarketplaceOrders(items: InventoryItem[]): MarketplaceOrderStats {
+  const itemCount = items.length;
+  if (itemCount === 0) return { itemCount: 0, orderCount: 0 };
+  const keys = new Set(items.map(marketplaceOrderKey));
+  return { itemCount, orderCount: keys.size };
+}
+
+export type MarketplaceOrderGroup = {
+  key: string;
+  label: string;
+  items: InventoryItem[];
+  revenue: number;
+};
+
+export function groupItemsByMarketplaceOrder(
+  items: InventoryItem[],
+  allItems?: InventoryItem[]
+): MarketplaceOrderGroup[] {
+  const map = new Map<string, InventoryItem[]>();
+  for (const item of items) {
+    const key = marketplaceOrderKey(item);
+    const list = map.get(key) || [];
+    list.push(item);
+    map.set(key, list);
+  }
+  return [...map.entries()].map(([key, groupItems]) => {
+    const first = groupItems[0]!;
+    const oid = first.ebayOrderId?.trim();
+    let label: string;
+    if (oid) {
+      label = groupItems.length > 1 ? `eBay order #${oid} (${groupItems.length} parts)` : `eBay order #${oid}`;
+    } else if (first.parentContainerId) {
+      const parent = allItems?.find((i) => i.id === first.parentContainerId);
+      const day = first.sellDate?.slice(0, 10) || '';
+      label = parent
+        ? `Bundle: ${parent.name} (${groupItems.length} parts${day ? ` · ${day}` : ''})`
+        : `Bundle split · ${groupItems.length} parts`;
+    } else {
+      label = first.name;
+    }
+    const revenue = roundMoney(groupItems.reduce((acc, i) => acc + (Number(i.sellPrice) || 0), 0));
+    return { key, label, items: groupItems, revenue };
+  });
+}
+
+export type PlatformOrderStatsMap = Record<PlatformGroupKey, MarketplaceOrderStats>;
+
+export function countOrdersByPlatform(sold: InventoryItem[]): PlatformOrderStatsMap {
+  const groups = groupSalesByPlatform(sold);
+  const out = {} as PlatformOrderStatsMap;
+  for (const key of Object.keys(groups) as PlatformGroupKey[]) {
+    out[key] = countMarketplaceOrders(groups[key]);
+  }
+  return out;
+}

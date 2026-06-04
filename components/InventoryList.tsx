@@ -2855,6 +2855,9 @@ const InventoryList: React.FC<Props> = ({
                      containerSoldDate: soldAt,
                      platformSold: updated.platformSold,
                      paymentType: updated.paymentType,
+                     ebayOrderId: updated.ebayOrderId ?? i.ebayOrderId,
+                     ebayUsername: updated.ebayUsername ?? i.ebayUsername,
+                     customer: updated.customer ?? i.customer,
                      // Keep original buyDate - don't overwrite it
                    };
                  });
