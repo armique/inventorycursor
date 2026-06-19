@@ -4,7 +4,10 @@
  * Uses GEMINI_API_KEY (recommended on Vercel) or VITE_GEMINI_API_KEY, etc. See api/geminiServerEnv.js.
  * Fetches remote images server-side (fixes Imgur / CORS for the browser).
  */
-import { EBAY_ORDER_SCREENSHOT_EXTRACTION_PROMPT } from '../lib/ebayOrderScreenshotPrompt.js';
+import {
+  EBAY_ORDER_SCREENSHOT_EXTRACTION_PROMPT,
+  parseExtractedSaleDate,
+} from '../lib/ebayOrderScreenshotPrompt.js';
 import { getGeminiKeyForServer } from './geminiServerEnv.js';
 
 /** Order: prefer 2.x; fall back when quota/model unavailable (see models.list API). */
@@ -166,6 +169,7 @@ export default async function handler(req, res) {
           shippingAddress: str(o.shippingAddress),
           phone: str(o.phone) ?? undefined,
           amountReceivedNetEur: netEur,
+          saleDate: parseExtractedSaleDate(o.saleDate),
         };
 
         return res.status(200).json({ parsed: parsedOut });

@@ -150,6 +150,7 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
         setHasFee(false);
         setFeeAmount(0);
       }
+      if (data.saleDate) setSaleDate(data.saleDate);
     } catch (err: unknown) {
       setOrderScreenshotError(err instanceof Error ? err.message : 'Parse failed');
     } finally {

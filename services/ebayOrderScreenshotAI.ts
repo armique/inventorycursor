@@ -4,7 +4,10 @@
  * Fallback: browser → Gemini (VITE_GEMINI_API_KEY) or OpenAI.
  */
 
-import { EBAY_ORDER_SCREENSHOT_EXTRACTION_PROMPT } from '../lib/ebayOrderScreenshotPrompt.js';
+import {
+  EBAY_ORDER_SCREENSHOT_EXTRACTION_PROMPT,
+  parseExtractedSaleDate,
+} from '../lib/ebayOrderScreenshotPrompt.js';
 
 export interface ParsedEbayOrderScreenshot {
   ebayOrderId: string | null;
@@ -14,6 +17,8 @@ export interface ParsedEbayOrderScreenshot {
   phone?: string | null;
   /** Seller's net EUR after eBay / ad fees when visible on the screenshot. */
   amountReceivedNetEur?: number | null;
+  /** ISO calendar date YYYY-MM-DD from "Verkauft" / "Sold" when visible. */
+  saleDate?: string | null;
 }
 
 /**
@@ -90,6 +95,7 @@ function normalizeParsed(raw: unknown): ParsedEbayOrderScreenshot {
     shippingAddress: str(o.shippingAddress),
     phone: str(o.phone) ?? undefined,
     amountReceivedNetEur: net,
+    saleDate: parseExtractedSaleDate(o.saleDate),
   };
 }
 

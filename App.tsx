@@ -23,7 +23,7 @@ const LegalPage = lazy(() => import('./components/LegalPage'));
 const InvoiceManager = lazy(() => import('./components/InvoiceManager'));
 const ActionHistoryPage = lazy(() => import('./components/ActionHistoryPage'));
 
-import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense, DashboardPreferences, ActionHistoryEntry, TaxMode } from './types';
+import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense, DashboardPreferences, ActionHistoryEntry, TaxMode, ItemUpdateOptions } from './types';
 import {
   loadDashboardPreferencesFromLocalStorage,
   persistDashboardPreferencesToLocalStorage,
@@ -811,7 +811,9 @@ const App: React.FC = () => {
     setActionHistory((prev) => [...prev, ...entries].slice(-ACTION_HISTORY_LIMIT));
   }, []);
   
-  const handleUpdate = useCallback((updatedItems: InventoryItem[], deleteIds?: string[]) => {
+  const handleUpdate = useCallback((updatedItems: InventoryItem[], deleteIds?: string[], options?: ItemUpdateOptions) => {
+    const recordAction = !options?.skipActionLog;
+    const recordUndo = !options?.skipUndo;
     setItems(currentItems => {
         let nextItems = [...currentItems];
         const actionEntries: ActionHistoryEntry[] = [];
@@ -834,14 +836,16 @@ const App: React.FC = () => {
           final = recomputeRealizedProfit(final, taxMode);
           if (idx >= 0) {
             nextItems[idx] = final;
-            if (oldItem?.status !== final.status) {
-              actionEntries.push(makeActionEntry(`Status changed: ${oldItem?.status || '-'} -> ${final.status}`, final));
-            } else {
-              actionEntries.push(makeActionEntry('Item updated', final));
+            if (recordAction) {
+              if (oldItem?.status !== final.status) {
+                actionEntries.push(makeActionEntry(`Status changed: ${oldItem?.status || '-'} -> ${final.status}`, final));
+              } else {
+                actionEntries.push(makeActionEntry('Item updated', final));
+              }
             }
           } else {
             nextItems.push(final);
-            actionEntries.push(makeActionEntry('Item created', final));
+            if (recordAction) actionEntries.push(makeActionEntry('Item created', final));
           }
         });
         
@@ -849,24 +853,28 @@ const App: React.FC = () => {
            const toTrash = nextItems.filter(i => deleteIds.includes(i.id));
            if (toTrash.length > 0) {
               setTrash(prev => [...prev, ...toTrash]);
-              toTrash.forEach((i) => actionEntries.push(makeActionEntry('Item moved to trash', i)));
+              if (recordAction) toTrash.forEach((i) => actionEntries.push(makeActionEntry('Item moved to trash', i)));
            }
            nextItems = nextItems.filter(i => !deleteIds.includes(i.id));
         }
-        const actionEntriesMerged = mergeTradeActionEntries(actionEntries, updatedItems);
+        const actionEntriesMerged = recordAction ? mergeTradeActionEntries(actionEntries, updatedItems) : [];
         const touchedIds = [
           ...updatedItems.map((u) => u.id),
           ...(deleteIds ?? []),
         ];
-        nextItems = syncContainerBuyTotalsFromComponents(nextItems, touchedIds);
-        let nextIdx = historyIndexRef.current;
-        setHistory((prev) => {
-          const { base, nextIdx: idx } = appendUndoHistory(prev, historyIndexRef.current, currentItems, nextItems);
-          nextIdx = idx;
-          return base;
-        });
-        historyIndexRef.current = nextIdx;
-        setHistoryIndex(nextIdx);
+        if (!options?.skipContainerSync) {
+          nextItems = syncContainerBuyTotalsFromComponents(nextItems, touchedIds);
+        }
+        if (recordUndo) {
+          let nextIdx = historyIndexRef.current;
+          setHistory((prev) => {
+            const { base, nextIdx: idx } = appendUndoHistory(prev, historyIndexRef.current, currentItems, nextItems);
+            nextIdx = idx;
+            return base;
+          });
+          historyIndexRef.current = nextIdx;
+          setHistoryIndex(nextIdx);
+        }
         hasUnsavedChanges.current = true;
         if (actionEntriesMerged.length > 0) addActionEntries(actionEntriesMerged);
         return nextItems;

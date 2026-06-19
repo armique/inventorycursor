@@ -6,7 +6,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
   Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home
 } from 'lucide-react';
-import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType } from '../types';
+import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions } from '../types';
 import { itemMatchesSalePlatformFilter, isMissingExplicitSalePlatform, MISSING_PLATFORM_FILTER, SALE_PLATFORM_OPTIONS, formatItemSalePlatform } from '../utils/salePlatform';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { getCompatibleItemsForItem } from '../services/compatibility';
@@ -34,7 +34,7 @@ import { generateItemSpecs } from '../services/specsAI';
 interface Props {
   items: InventoryItem[];
   totalCount: number;
-  onUpdate: (items: InventoryItem[], deleteIds?: string[]) => void;
+  onUpdate: (items: InventoryItem[], deleteIds?: string[], options?: ItemUpdateOptions) => void;
   onDelete: (id: string) => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -48,6 +48,9 @@ interface Props {
   categoryFields?: Record<string, string[]>; 
   persistenceKey?: string; 
 }
+
+const EMPTY_TIME_GAUGE_SORT_MAP = new Map<string, number>();
+const EMPTY_COMPAT_COUNT_MAP = new Map<string, number>();
 
 type ColumnId = 'select' | 'item' | 'presence' | 'parseSpecs' | 'category' | 'status' | 'buyPrice' | 'sellPrice' | 'profit' | 'buyDate' | 'timeGauge' | 'sellDate' | 'salePlatform' | 'actions';
 type TimeFilter = 'ALL' | 'THIS_WEEK' | 'LAST_WEEK' | 'THIS_MONTH' | 'LAST_MONTH' | 'LAST_30' | 'LAST_90' | 'THIS_YEAR' | 'LAST_YEAR';
@@ -338,9 +341,11 @@ const InventoryList: React.FC<Props> = ({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchSuggestionsRef = useRef<HTMLDivElement>(null);
 
+  const deferredSearchTerm = useDeferredValue(searchTerm);
+
   const searchSuggestions = useMemo(() => {
     if (!searchSuggestionsOpen) return [];
-    const q = searchTerm.trim().toLowerCase();
+    const q = deferredSearchTerm.trim().toLowerCase();
     if (q.length < 2) return [];
     const seen = new Set<string>();
     const out: { text: string; type: 'name' | 'category' | 'vendor' }[] = [];
@@ -349,23 +354,29 @@ const InventoryList: React.FC<Props> = ({
       seen.add(t);
       out.push({ text: t, type });
     };
-    items.forEach((i) => {
+    for (const i of items) {
+      if (out.length >= 12) break;
       add(i.name, 'name');
+      if (out.length >= 12) break;
       if (i.category) add(i.category, 'category');
+      if (out.length >= 12) break;
       if (i.subCategory) add(`${i.category} / ${i.subCategory}`, 'category');
+      if (out.length >= 12) break;
       if (i.vendor) add(i.vendor, 'vendor');
-    });
-    return out.slice(0, 12);
-  }, [items, searchTerm, searchSuggestionsOpen]);
+    }
+    return out;
+  }, [items, deferredSearchTerm, searchSuggestionsOpen]);
 
-  const deferredSearchTerm = useDeferredValue(searchTerm);
   const hasActiveSpecFilters = useMemo(() => {
     if (Object.values(specFilters).some((v) => v?.length)) return true;
     return Object.values(specRangeFilters).some(
       (r) => r && (r.min !== undefined || r.max !== undefined)
     );
   }, [specFilters, specRangeFilters]);
-  const timeGaugeSortKeyMap = useMemo(() => buildTimeGaugeSortKeyMap(items), [items]);
+  const timeGaugeSortKeyMap = useMemo(() => {
+    if (sortConfig.key !== 'timeGauge') return EMPTY_TIME_GAUGE_SORT_MAP;
+    return buildTimeGaugeSortKeyMap(items);
+  }, [items, sortConfig.key]);
 
   // --- INVENTORY PRESENCE (PRESENT / LOST) ---
   const togglePresence = (item: InventoryItem) => {
@@ -810,6 +821,7 @@ const InventoryList: React.FC<Props> = ({
   );
 
   const compatibleCountByItemId = useMemo(() => {
+    if (statusFilter !== 'ACTIVE') return EMPTY_COMPAT_COUNT_MAP;
     const map = new Map<string, number>();
     const partTypes = new Set(['Processors', 'Motherboards', 'RAM']);
     for (const item of visibleItems) {
@@ -819,7 +831,7 @@ const InventoryList: React.FC<Props> = ({
       if (total > 0) map.set(item.id, total);
     }
     return map;
-  }, [visibleItems, items]);
+  }, [visibleItems, items, statusFilter]);
 
   // Active filter count (for badge) — category/subcategory + spec keys
   const activeSpecFilterCount = useMemo(() => {
@@ -1229,7 +1241,13 @@ const InventoryList: React.FC<Props> = ({
     if (platform === 'ebay.de' && !next.paymentType) {
       next.paymentType = 'ebay.de';
     }
-    onUpdate([next]);
+    startTransition(() => {
+      onUpdate([next], undefined, {
+        skipUndo: true,
+        skipActionLog: true,
+        skipContainerSync: true,
+      });
+    });
   };
 
   const handleBulkCategorySave = (category: string, subCategory: string) => {

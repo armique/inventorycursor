@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef, useDeferredValue } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useDeferredValue, startTransition } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Package, Wallet, Settings, X } from 'lucide-react';
 import { InventoryItem, Expense, BusinessSettings } from '../types';
@@ -114,7 +114,7 @@ const GlobalSearch: React.FC<Props> = ({ items, expenses, businessSettings, onCl
           ref={inputRef}
           type="text"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => startTransition(() => setQuery(e.target.value))}
           onFocus={() => setIsOpen(true)}
           placeholder="Search inventory, expenses…"
           className="w-full pl-9 pr-3 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-white text-sm placeholder:text-slate-500 outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500"

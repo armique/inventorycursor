@@ -299,3 +299,10 @@ export interface ActionHistoryEntry {
   /** For "Trade completed" rows: ids of items received in that trade (used to revert). */
   tradeReceivedIds?: string[];
 }
+
+/** Lightweight metadata edits (e.g. platform tag) can skip heavy undo/action/sync work. */
+export type ItemUpdateOptions = {
+  skipUndo?: boolean;
+  skipActionLog?: boolean;
+  skipContainerSync?: boolean;
+};
