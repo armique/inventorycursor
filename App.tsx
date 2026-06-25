@@ -41,18 +41,26 @@ import { saveOAuthResult } from './services/githubBackupService';
 import { generateExpensesFromRecurring } from './services/recurringExpenseService';
 import { Analytics } from '@vercel/analytics/react';
 import { appendUndoHistory } from './utils/appendUndoHistory';
+import { persistSnapshotToLocalStorage, scheduleBackgroundWork } from './services/backgroundPersistence';
 
-const WRITE_DEBOUNCE_MS = 3500;
-const LOCAL_PERSIST_DEBOUNCE_MS = 450;
+const WRITE_DEBOUNCE_MS = 5000;
+const LOCAL_PERSIST_DEBOUNCE_MS = 900;
+const STORE_CATALOG_DEBOUNCE_MS = 8000;
+const REMOTE_APPLY_SUPPRESS_MS = 1500;
 const ACTION_HISTORY_LIMIT = 400;
 
-function scheduleIdlePersist(work: () => void) {
-  if (typeof requestIdleCallback !== 'undefined') {
-    requestIdleCallback(() => work(), { timeout: 2500 });
-  } else {
-    setTimeout(work, 0);
-  }
-}
+type AppSyncSnapshot = {
+  items: InventoryItem[];
+  trash: InventoryItem[];
+  expenses: Expense[];
+  recurringExpenses: RecurringExpense[];
+  categories: Record<string, string[]>;
+  categoryFields: Record<string, string[]>;
+  businessSettings: BusinessSettings;
+  monthlyGoal: number;
+  dashboardPrefs: DashboardPreferences;
+  actionHistory: ActionHistoryEntry[];
+};
 
 /** When merging an update into an existing item, preserve these from the old item if the update doesn't provide them (so renames/edits from inventory don't wipe store data). */
 const PRESERVE_FROM_OLD_IF_UPDATE_MISSING: (keyof InventoryItem)[] = [
@@ -337,6 +345,48 @@ const App: React.FC = () => {
   const initialWriteDoneRef = useRef(false);
   const storeCatalogPublishDoneRef = useRef(false);
   const catalogPublishDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cloudSyncInFlightRef = useRef(false);
+  const suppressRemoteApplyUntilRef = useRef(0);
+  const remoteSnapshotSeenRef = useRef(false);
+  const itemsRef = useRef(items);
+  const trashRef = useRef(trash);
+  const expensesRef = useRef(expenses);
+  const recurringExpensesRef = useRef(recurringExpenses);
+  const categoriesRef = useRef(categories);
+  const categoryFieldsRef = useRef(categoryFields);
+  const businessSettingsRef = useRef(businessSettings);
+  const monthlyGoalRef = useRef(monthlyGoal);
+
+  useEffect(() => { itemsRef.current = items; }, [items]);
+  useEffect(() => { trashRef.current = trash; }, [trash]);
+  useEffect(() => { expensesRef.current = expenses; }, [expenses]);
+  useEffect(() => { recurringExpensesRef.current = recurringExpenses; }, [recurringExpenses]);
+  useEffect(() => { categoriesRef.current = categories; }, [categories]);
+  useEffect(() => { categoryFieldsRef.current = categoryFields; }, [categoryFields]);
+  useEffect(() => { businessSettingsRef.current = businessSettings; }, [businessSettings]);
+  useEffect(() => { monthlyGoalRef.current = monthlyGoal; }, [monthlyGoal]);
+
+  const getSyncSnapshot = useCallback((): AppSyncSnapshot => ({
+    items: itemsRef.current,
+    trash: trashRef.current,
+    expenses: expensesRef.current,
+    recurringExpenses: recurringExpensesRef.current,
+    categories: categoriesRef.current,
+    categoryFields: categoryFieldsRef.current,
+    businessSettings: businessSettingsRef.current,
+    monthlyGoal: monthlyGoalRef.current,
+    dashboardPrefs: dashboardPrefsRef.current,
+    actionHistory: actionHistoryRef.current,
+  }), []);
+
+  const shouldApplyRemoteSnapshot = useCallback((data: { updatedAt?: string } | null) => {
+    if (!data) return false;
+    if (!remoteSnapshotSeenRef.current) return true;
+    if (Date.now() < suppressRemoteApplyUntilRef.current) return false;
+    if (cloudSyncInFlightRef.current) return false;
+    if (hasUnsavedChanges.current) return false;
+    return true;
+  }, []);
 
   // One-time hard reset of public storefront catalog.
   // Ensures legacy published items are cleared and storefront starts empty.
@@ -475,24 +525,24 @@ const App: React.FC = () => {
     isRemoteUpdate.current = true;
     const remoteInv = (data.inventory || []) as InventoryItem[];
     const remoteTrash = (data.trash || []) as InventoryItem[];
-    const localItems = JSON.parse(localStorage.getItem('inventory_items') || '[]') as InventoryItem[];
-    const localTrash = JSON.parse(localStorage.getItem('inventory_trash') || '[]') as InventoryItem[];
+    const localItems = itemsRef.current;
+    const localTrash = trashRef.current;
     const inv = mergeInventoryWithLocal(remoteInv, localItems);
     const tr = mergeInventoryWithLocal(remoteTrash, localTrash);
-    const localExpenses = JSON.parse(localStorage.getItem('inventory_expenses') || '[]') as Expense[];
+    const localExpenses = expensesRef.current;
     const remoteExpenses = (data.expenses || []) as Expense[];
     const exp = mergeExpensesFromLocal(remoteExpenses, localExpenses);
     const remoteRecurring = (data.recurringExpenses || []) as RecurringExpense[];
-    const localRecurring = JSON.parse(localStorage.getItem('recurring_expenses') || '[]') as RecurringExpense[];
+    const localRecurring = recurringExpensesRef.current;
     // Merge recurring expenses by ID (remote wins on conflicts)
     const recurringMap = new Map<string, RecurringExpense>();
     localRecurring.forEach(r => { if (r && r.id) recurringMap.set(r.id, r); });
     remoteRecurring.forEach(r => { if (r && r.id) recurringMap.set(r.id, r); });
     const recurring = Array.from(recurringMap.values());
     const sets = data.settings || {};
-    const goal = data.goals?.monthly ?? 1000;
-    const cats = data.categories || {};
-    const fields = data.categoryFields || {};
+    const goal = data.goals?.monthly ?? monthlyGoalRef.current;
+    const cats = data.categories || categoriesRef.current;
+    const fields = data.categoryFields || categoryFieldsRef.current;
     let dashToSave: DashboardPreferences;
     if (data.dashboard != null) {
       dashToSave = normalizeDashboardPreferences(data.dashboard);
@@ -500,7 +550,7 @@ const App: React.FC = () => {
     } else {
       dashToSave = dashboardPrefsRef.current;
     }
-    const localAH = JSON.parse(localStorage.getItem('action_history') || '[]') as ActionHistoryEntry[];
+    const localAH = actionHistoryRef.current;
     const remoteAH = Array.isArray(data.actionHistory) ? (data.actionHistory as ActionHistoryEntry[]) : [];
     const mergedAH = mergeActionHistoryFromLocal(remoteAH, localAH).slice(-ACTION_HISTORY_LIMIT);
     setActionHistory(mergedAH);
@@ -513,7 +563,20 @@ const App: React.FC = () => {
     setMonthlyGoal(goal);
     setCategories(cats);
     setCategoryFields(fields);
-    saveToLocalStorage(inv, tr, exp, { ...sets } as BusinessSettings, goal, cats, fields, recurring, dashToSave, mergedAH);
+    scheduleBackgroundWork(() =>
+      persistSnapshotToLocalStorage({
+        itemsJson: JSON.stringify(inv),
+        trashJson: JSON.stringify(tr),
+        expensesJson: JSON.stringify(exp),
+        settingsJson: JSON.stringify({ ...businessSettingsRef.current, ...sets }),
+        monthlyGoal: goal.toString(),
+        categoriesJson: JSON.stringify(cats),
+        categoryFieldsJson: JSON.stringify(fields),
+        recurringExpensesJson: JSON.stringify(recurring),
+        dashboardPrefs: dashToSave,
+        actionHistoryJson: JSON.stringify(mergedAH),
+      })
+    );
   }, [mergeActionHistoryFromLocal, mergeExpensesFromLocal, mergeInventoryWithLocal]);
 
   // 1. BOOT: load local data and show app immediately; sync with Firestore in background
@@ -536,7 +599,10 @@ const App: React.FC = () => {
       }
       setSyncState({ status: 'syncing', lastSynced: null, message: 'Connecting…' });
       unsubSnapshot = subscribeToData(user.uid, (data) => {
-        if (data) applyRemoteData(data);
+        if (data && shouldApplyRemoteSnapshot(data)) {
+          applyRemoteData(data);
+        }
+        remoteSnapshotSeenRef.current = true;
         setSyncState({ status: 'success', lastSynced: new Date(), message: 'Live' });
       });
     });
@@ -544,7 +610,7 @@ const App: React.FC = () => {
       if (unsubSnapshot) unsubSnapshot();
       if (unsubAuth) unsubAuth();
     };
-  }, [applyRemoteData]);
+  }, [applyRemoteData, shouldApplyRemoteSnapshot]);
 
   const loadLocalData = () => {
     const localItems = JSON.parse(localStorage.getItem('inventory_items') || '[]');
@@ -623,11 +689,14 @@ const App: React.FC = () => {
           actionHistory: actionHistory.slice(-ACTION_HISTORY_LIMIT),
         };
         await writeToCloud(payload);
-        saveToLocalStorage(items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields, recurringExpenses);
+        hasUnsavedChanges.current = false;
+        suppressRemoteApplyUntilRef.current = Date.now() + REMOTE_APPLY_SUPPRESS_MS;
         setSyncState({ status: 'success', lastSynced: new Date(), message: 'Live' });
-        await writeStoreCatalog(buildStoreCatalog(items, categoryFields)).catch((e) =>
-          console.warn('Store catalog update failed', e)
-        );
+        scheduleBackgroundWork(async () => {
+          await writeStoreCatalog(buildStoreCatalog(items, categoryFields)).catch((e) =>
+            console.warn('Store catalog update failed', e)
+          );
+        });
       } catch (err) {
         initialWriteDoneRef.current = false;
         setSyncState((prev) => ({ ...prev, status: 'error', message: getSyncErrorMessage(err) }));
@@ -645,18 +714,22 @@ const App: React.FC = () => {
     return () => clearTimeout(t);
   }, [authUser, items.length, isCloudEnabled(), items, categoryFields]);
 
-  // Publish store catalog soon after items change (so visibility toggles show on store within ~1s)
+  // Publish store catalog soon after store-visible items change (long debounce, idle work)
   useEffect(() => {
     if (!isCloudEnabled() || !authUser) return;
     if (catalogPublishDebounceRef.current) clearTimeout(catalogPublishDebounceRef.current);
     catalogPublishDebounceRef.current = setTimeout(() => {
       catalogPublishDebounceRef.current = null;
-      writeStoreCatalog(buildStoreCatalog(items, categoryFields)).catch((e) => console.warn('Store catalog update failed', e));
-    }, 1000);
+      const snap = getSyncSnapshot();
+      scheduleBackgroundWork(async () => {
+        const catalog = buildStoreCatalog(snap.items, snap.categoryFields);
+        await writeStoreCatalog(catalog).catch((e) => console.warn('Store catalog update failed', e));
+      });
+    }, STORE_CATALOG_DEBOUNCE_MS);
     return () => {
       if (catalogPublishDebounceRef.current) clearTimeout(catalogPublishDebounceRef.current);
     };
-  }, [items, categoryFields, authUser]);
+  }, [items, categoryFields, authUser, getSyncSnapshot]);
 
   // Generate expenses from recurring expenses
   const recurringGenRef = useRef<string>(''); // Track last generation to avoid loops
@@ -699,7 +772,39 @@ const App: React.FC = () => {
     });
   }, [appState, recurringExpenses]); // Only depend on recurringExpenses, use functional setState for expenses
 
-  // 2. Local persistence (debounced to avoid main-thread stalls) + debounced Firestore write
+  const runSilentCloudSync = useCallback(async () => {
+    if (!isCloudEnabled() || !authUser || cloudSyncInFlightRef.current) return;
+    const snap = getSyncSnapshot();
+    cloudSyncInFlightRef.current = true;
+    const payload = {
+      inventory: snap.items,
+      trash: snap.trash,
+      expenses: snap.expenses,
+      recurringExpenses: snap.recurringExpenses,
+      categories: snap.categories,
+      categoryFields: snap.categoryFields,
+      settings: snap.businessSettings,
+      goals: { monthly: snap.monthlyGoal },
+      dashboard: snap.dashboardPrefs,
+      actionHistory: snap.actionHistory.slice(-ACTION_HISTORY_LIMIT),
+    };
+    try {
+      await writeToCloud(payload);
+      hasUnsavedChanges.current = false;
+      suppressRemoteApplyUntilRef.current = Date.now() + REMOTE_APPLY_SUPPRESS_MS;
+      setSyncState({ status: 'success', lastSynced: new Date(), message: 'Live' });
+      scheduleBackgroundWork(async () => {
+        const catalog = buildStoreCatalog(snap.items, snap.categoryFields);
+        await writeStoreCatalog(catalog).catch((e) => console.warn('Store catalog update failed', e));
+      });
+    } catch (err) {
+      setSyncState((prev) => ({ ...prev, status: 'error', message: getSyncErrorMessage(err) }));
+    } finally {
+      cloudSyncInFlightRef.current = false;
+    }
+  }, [authUser, getSyncSnapshot]);
+
+  // 2. Local persistence (debounced, chunked) + silent background Firestore write
   useEffect(() => {
     if (appState !== 'READY') return;
     if (isRemoteUpdate.current) {
@@ -709,65 +814,43 @@ const App: React.FC = () => {
     if (localPersistDebounceRef.current) clearTimeout(localPersistDebounceRef.current);
     localPersistDebounceRef.current = setTimeout(() => {
       localPersistDebounceRef.current = null;
-      scheduleIdlePersist(() => {
-        localStorage.setItem('inventory_items', JSON.stringify(items));
-        localStorage.setItem('inventory_trash', JSON.stringify(trash));
-        localStorage.setItem('inventory_expenses', JSON.stringify(expenses));
-        localStorage.setItem('business_settings', JSON.stringify(businessSettings));
-        localStorage.setItem('monthly_profit_goal', monthlyGoal.toString());
-        localStorage.setItem('custom_categories', JSON.stringify(categories));
-        localStorage.setItem('custom_category_fields', JSON.stringify(categoryFields));
-        if (recurringExpenses !== undefined) {
-          localStorage.setItem('recurring_expenses', JSON.stringify(recurringExpenses));
-        }
-        persistDashboardPreferencesToLocalStorage(dashboardPrefsRef.current);
-      });
+      const snap = getSyncSnapshot();
+      scheduleBackgroundWork(() =>
+        persistSnapshotToLocalStorage({
+          itemsJson: JSON.stringify(snap.items),
+          trashJson: JSON.stringify(snap.trash),
+          expensesJson: JSON.stringify(snap.expenses),
+          settingsJson: JSON.stringify(snap.businessSettings),
+          monthlyGoal: snap.monthlyGoal.toString(),
+          categoriesJson: JSON.stringify(snap.categories),
+          categoryFieldsJson: JSON.stringify(snap.categoryFields),
+          recurringExpensesJson: JSON.stringify(snap.recurringExpenses),
+          dashboardPrefs: snap.dashboardPrefs,
+        })
+      );
     }, LOCAL_PERSIST_DEBOUNCE_MS);
 
     if (!isCloudEnabled() || !authUser) return;
     if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
     writeDebounceRef.current = setTimeout(() => {
       writeDebounceRef.current = null;
-      const payload = {
-        inventory: items,
-        trash,
-        expenses,
-        recurringExpenses,
-        categories,
-        categoryFields,
-        settings: businessSettings,
-        goals: { monthly: monthlyGoal },
-        dashboard: dashboardPrefs,
-        actionHistory: actionHistory.slice(-ACTION_HISTORY_LIMIT),
-      };
-      setSyncState(prev => ({ ...prev, status: 'syncing', message: 'Saving…' }));
-      writeToCloud(payload)
-        .then(() => {
-          saveToLocalStorage(items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields, recurringExpenses);
-          setSyncState({ status: 'success', lastSynced: new Date(), message: 'Live' });
-          const catalog = buildStoreCatalog(items, categoryFields);
-          return writeStoreCatalog(catalog).catch((e) => console.warn('Store catalog update failed', e));
-        })
-        .then(() => setSyncState({ status: 'success', lastSynced: new Date(), message: 'Live' }))
-        .catch((err) => setSyncState(prev => ({ ...prev, status: 'error', message: getSyncErrorMessage(err) })));
+      void runSilentCloudSync();
     }, WRITE_DEBOUNCE_MS);
     return () => {
       if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
       if (localPersistDebounceRef.current) clearTimeout(localPersistDebounceRef.current);
     };
-  }, [appState, authUser, items, trash, expenses, recurringExpenses, businessSettings, monthlyGoal, categories, categoryFields, dashboardPrefs]);
+  }, [appState, authUser, items, trash, expenses, recurringExpenses, businessSettings, monthlyGoal, categories, categoryFields, dashboardPrefs, getSyncSnapshot, runSilentCloudSync]);
 
   // Action history can be large — persist separately so item edits don't always stringify it with inventory.
   useEffect(() => {
     if (appState !== 'READY') return;
     const t = setTimeout(() => {
-      scheduleIdlePersist(() => {
-        localStorage.setItem(
-          'action_history',
-          JSON.stringify(actionHistory.slice(-ACTION_HISTORY_LIMIT))
-        );
+      const ah = actionHistoryRef.current.slice(-ACTION_HISTORY_LIMIT);
+      scheduleBackgroundWork(() => {
+        localStorage.setItem('action_history', JSON.stringify(ah));
       });
-    }, 900);
+    }, 1200);
     return () => clearTimeout(t);
   }, [appState, actionHistory]);
 
@@ -787,14 +870,33 @@ const App: React.FC = () => {
       actionHistory: actionHistory.slice(-ACTION_HISTORY_LIMIT),
     };
     try {
+      cloudSyncInFlightRef.current = true;
       await writeToCloud(payload);
-      saveToLocalStorage(items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields, recurringExpenses);
+      hasUnsavedChanges.current = false;
+      suppressRemoteApplyUntilRef.current = Date.now() + REMOTE_APPLY_SUPPRESS_MS;
+      scheduleBackgroundWork(() =>
+        persistSnapshotToLocalStorage({
+          itemsJson: JSON.stringify(items),
+          trashJson: JSON.stringify(trash),
+          expensesJson: JSON.stringify(expenses),
+          settingsJson: JSON.stringify(businessSettings),
+          monthlyGoal: monthlyGoal.toString(),
+          categoriesJson: JSON.stringify(categories),
+          categoryFieldsJson: JSON.stringify(categoryFields),
+          recurringExpensesJson: JSON.stringify(recurringExpenses),
+          dashboardPrefs: dashboardPrefsRef.current,
+        })
+      );
+      scheduleBackgroundWork(async () => {
         await writeStoreCatalog(buildStoreCatalog(items, categoryFields)).catch((e) => console.warn('Store catalog update failed', e));
+      });
       setSyncState({ status: 'success', lastSynced: new Date(), message: 'Saved' });
       return true;
     } catch (err) {
       setSyncState(prev => ({ ...prev, status: 'error', lastSynced: null, message: getSyncErrorMessage(err) }));
       return false;
+    } finally {
+      cloudSyncInFlightRef.current = false;
     }
   };
 

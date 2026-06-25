@@ -43,6 +43,7 @@ import {
   getDownloadURL,
   type FirebaseStorage,
 } from "firebase/storage";
+import { yieldToMain } from "./backgroundPersistence";
 
 // --- CONFIG ---
 
@@ -387,13 +388,15 @@ function jsonByteSize(obj: unknown): number {
 }
 
 /** Split items into multiple arrays so each `{ items }` document stays under CHUNK_BODY_MAX. */
-function chunkItemsForFirestore(rawItems: unknown[]): unknown[][] {
+async function chunkItemsForFirestore(rawItems: unknown[]): Promise<unknown[][]> {
   const chunks: unknown[][] = [];
   let current: unknown[] = [];
 
   const wrapSize = (arr: unknown[]) => jsonByteSize({ items: arr });
+  const YIELD_EVERY = 18;
 
-  for (const raw of rawItems) {
+  for (let index = 0; index < rawItems.length; index++) {
+    const raw = rawItems[index];
     let item: unknown = trimItemForSize(sanitizeForFirestore(raw));
     let oneSize = jsonByteSize({ items: [item] });
     let guard = 0;
@@ -413,6 +416,10 @@ function chunkItemsForFirestore(rawItems: unknown[]): unknown[][] {
       current = [];
     }
     current.push(item);
+
+    if (index > 0 && index % YIELD_EVERY === 0) {
+      await yieldToMain();
+    }
   }
   if (current.length) chunks.push(current);
   return chunks;
@@ -515,12 +522,15 @@ async function writeShardedSyncPack(
   data: FirestoreInventoryPayload,
   savedBy: string
 ): Promise<void> {
+  await yieldToMain();
   const colRef = syncPackCollectionRef(db, uid);
   const legacyRef = legacyInventoryDocRef(db, uid);
   const nowIso = new Date().toISOString();
 
-  const invChunks = chunkItemsForFirestore(data.inventory || []);
-  const trashChunks = chunkItemsForFirestore(data.trash || []);
+  const invChunks = await chunkItemsForFirestore(data.inventory || []);
+  await yieldToMain();
+  const trashChunks = await chunkItemsForFirestore(data.trash || []);
+  await yieldToMain();
   const corePayload = shrinkCoreUntilUnder(buildCorePayloadForShard(data), CHUNK_BODY_MAX);
 
   const existingSnap = await getDocs(colRef);
@@ -670,6 +680,8 @@ export async function writeToCloud(data: FirestoreInventoryPayload): Promise<voi
   const ctx = init();
   const user = ctx?.auth?.currentUser;
   if (!ctx?.db || !user) throw new Error("Not signed in");
+
+  await yieldToMain();
 
   try {
     await writeShardedSyncPack(ctx.db, user.uid, data, user.email ?? user.uid);
