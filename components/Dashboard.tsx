@@ -7,7 +7,7 @@ import {
 import {
   TrendingUp, Target, Package, TrendingDown, Trophy, Star, Crown, Zap,
   Edit3, Check, CalendarDays, ArrowRight, CheckCircle2, Plus, X, Activity, AlertCircle,
-  Settings2, ChevronUp, ChevronDown, ChevronRight, Download, Sparkles,
+  Settings2, ChevronUp, ChevronDown, ChevronRight, Download, Sparkles, BarChart3, LayoutDashboard,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { InventoryItem, ItemStatus, Expense, BusinessSettings, TaxMode, DashboardPreferences, DashboardTask } from '../types';
@@ -83,6 +83,8 @@ const QUICK_FILTERS: { value: string; label: string }[] = [
   { value: 'LAST_90', label: '90d' },
   { value: 'ALL', label: 'All' },
 ];
+
+type DashboardMainTab = 'overview' | 'charts';
 
 function exportPeriodSalesCsv(sold: InventoryItem[], label: string) {
   const headers = ['Name', 'Category', 'Platform', 'eBayOrderId', 'SellDate', 'SellPrice', 'BuyPrice', 'Fees', 'Profit'];
@@ -208,6 +210,7 @@ const Dashboard: React.FC<Props> = ({
     });
   };
   const [showWidgetModal, setShowWidgetModal] = useState(false);
+  const [mainTab, setMainTab] = useState<DashboardMainTab>('overview');
   const [profitTab, setProfitTab] = useState<'month' | 'category'>('month');
   const [showMoreSections, setShowMoreSections] = useState(false);
 
@@ -242,6 +245,11 @@ const Dashboard: React.FC<Props> = ({
   const isVisible = (id: WidgetId) => visibleWidgets.includes(id);
 
   const showCommandCenter = isVisible('gamification') || isVisible('statCards');
+  const hasChartWidgets =
+    isVisible('performanceChart') ||
+    isVisible('capitalDistribution') ||
+    isVisible('profitByCategory') ||
+    isVisible('profitByMonth');
 
   useEffect(() => {
     if (!visibleWidgets.includes('profitByMonth') && visibleWidgets.includes('profitByCategory')) {
@@ -924,6 +932,32 @@ const Dashboard: React.FC<Props> = ({
         </div>
       </header>
 
+      {/* Overview vs charts */}
+      <div className="flex rounded-xl lg:rounded-2xl border border-slate-200 bg-white p-1 lg:p-1.5 w-full sm:w-auto">
+        <button
+          type="button"
+          onClick={() => setMainTab('overview')}
+          className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 lg:px-6 py-2.5 lg:py-3 rounded-lg lg:rounded-xl text-xs lg:text-sm font-black uppercase tracking-wide transition-all min-h-[44px] ${
+            mainTab === 'overview' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          <LayoutDashboard size={16} className="lg:w-[18px] lg:h-[18px] shrink-0" />
+          Overview
+        </button>
+        <button
+          type="button"
+          onClick={() => setMainTab('charts')}
+          className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 lg:px-6 py-2.5 lg:py-3 rounded-lg lg:rounded-xl text-xs lg:text-sm font-black uppercase tracking-wide transition-all min-h-[44px] ${
+            mainTab === 'charts' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          <BarChart3 size={16} className="lg:w-[18px] lg:h-[18px] shrink-0" />
+          Charts
+        </button>
+      </div>
+
+      {mainTab === 'overview' && (
+      <>
       {/* Command center — period P&L + performance + insights */}
       {showCommandCenter && (
       <div className={`${DASH_CARD} overflow-hidden`}>
@@ -1218,8 +1252,110 @@ const Dashboard: React.FC<Props> = ({
          </div>
       )}
 
-      {/* Charts + breakdown — compact row */}
-      {(isVisible('performanceChart') || isVisible('capitalDistribution') || isVisible('profitByCategory') || isVisible('profitByMonth')) && (
+      {(isVisible('taxReport') || isVisible('tasks') || isVisible('recentActivity')) && (
+      <div className={DASH_CARD}>
+        <button
+          type="button"
+          onClick={() => setShowMoreSections((v) => !v)}
+          className="w-full flex items-center justify-between px-4 lg:px-6 py-3 lg:py-4 text-sm lg:text-base font-bold text-slate-700 hover:bg-slate-50"
+        >
+          <span>Tax export, tasks & activity</span>
+          <ChevronDown size={18} className={`lg:w-5 lg:h-5 text-slate-400 transition-transform ${showMoreSections ? 'rotate-180' : ''}`} />
+        </button>
+        {showMoreSections && (
+        <div className="border-t border-slate-100 p-4 lg:p-6 space-y-4 lg:space-y-6">
+      {isVisible('taxReport') && (
+      <div>
+        <div className="flex flex-wrap items-center gap-3 mb-3">
+          <h3 className={`${SECTION_TITLE} flex-1`}>Finanzamt / EÜR</h3>
+          <select value={taxReportYear} onChange={(e) => setTaxReportYear(Number(e.target.value))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold">
+            {taxYears.length ? taxYears.map(y => <option key={y} value={y}>{y}</option>) : <option value={taxReportYear}>{taxReportYear}</option>}
+          </select>
+          <button type="button" onClick={() => { const csv = generateTaxReportCSV(items, expenses, taxReportYear); const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `tax-report-${taxReportYear}.csv`; a.click(); URL.revokeObjectURL(a.href); }} className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-bold">
+            Export CSV
+          </button>
+        </div>
+        <div className="overflow-x-auto text-sm lg:text-base">
+          <table className="w-full">
+            <thead>
+              <tr className="text-slate-500 font-bold uppercase">
+                <th className="py-2 pr-3 text-left">Revenue</th>
+                <th className="py-2 pr-3 text-left">COGS</th>
+                <th className="py-2 pr-3 text-left">Exp</th>
+                <th className="py-2 pr-3 text-left">Fees</th>
+                <th className="py-2 text-left">Net</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="font-bold tabular-nums">
+                <td className="py-2">€{formatEUR(taxSummary.revenue)}</td>
+                <td className="py-2 text-slate-600">€{formatEUR(taxSummary.cogs)}</td>
+                <td className="py-2 text-slate-600">€{formatEUR(taxSummary.expenses)}</td>
+                <td className="py-2 text-slate-600">€{formatEUR(taxSummary.fees)}</td>
+                <td className="py-2 text-emerald-600">€{formatEUR(taxSummary.netProfit)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      )}
+
+      {(isVisible('tasks') || isVisible('recentActivity')) && (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+         {isVisible('tasks') && (
+         <div>
+            <h3 className={`${SECTION_TITLE} mb-3 flex items-center gap-2`}><CheckCircle2 size={16}/> Tasks</h3>
+            <form onSubmit={handleAddTask} className="flex gap-2 mb-3">
+               <input className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm lg:text-base font-bold outline-none min-h-[44px]" placeholder="Add task…" value={newTaskText} onChange={e => setNewTaskText(e.target.value)} />
+               <button type="submit" className="bg-blue-600 text-white p-2 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center"><Plus size={18}/></button>
+            </form>
+            <div className="space-y-2 max-h-[160px] lg:max-h-[220px] overflow-y-auto">
+               {tasks.map(task => (
+                  <div key={task.id} className="group flex items-center gap-2 py-1.5 px-1 hover:bg-slate-50 rounded-lg cursor-pointer text-sm lg:text-base" onClick={() => toggleTask(task.id)}>
+                     <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${task.completed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300'}`}>
+                        {task.completed && <Check size={10} className="text-white"/>}
+                     </div>
+                     <span className={`flex-1 truncate ${task.completed ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{task.text}</span>
+                     <button type="button" onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100"><X size={14}/></button>
+                  </div>
+               ))}
+            </div>
+         </div>
+         )}
+         {isVisible('recentActivity') && (
+         <div>
+            <h3 className={`${SECTION_TITLE} mb-3 flex items-center gap-2`}><Activity size={16}/> Recent</h3>
+            <div className="space-y-2 max-h-[160px] lg:max-h-[220px] overflow-y-auto">
+               {activityFeed.map((action, idx) => (
+                  <div key={idx} className="flex items-center gap-3 text-sm lg:text-base">
+                     <div className={`w-9 h-9 lg:w-10 lg:h-10 rounded-lg flex items-center justify-center shrink-0 ${action.type === 'SOLD' ? 'bg-emerald-100 text-emerald-600' : action.type === 'BOUGHT' ? 'bg-blue-100 text-blue-600' : 'bg-red-50 text-red-500'}`}>
+                        {action.type === 'SOLD' ? <TrendingUp size={16}/> : action.type === 'BOUGHT' ? <Package size={16}/> : <TrendingDown size={16}/>}
+                     </div>
+                     <div className="flex-1 min-w-0">
+                        <p className="font-bold text-slate-900 truncate">{action.item}</p>
+                        <p className="text-xs lg:text-sm text-slate-400">{new Date(action.date).toLocaleDateString()}</p>
+                     </div>
+                     <span className={`font-black tabular-nums shrink-0 ${action.amount > 0 ? 'text-emerald-600' : 'text-slate-700'}`}>
+                        {action.amount > 0 ? '+' : ''}€{formatEUR(Math.abs(action.amount))}
+                     </span>
+                  </div>
+               ))}
+            </div>
+         </div>
+         )}
+      </div>
+      )}
+        </div>
+        )}
+      </div>
+      )}
+      </>
+      )}
+
+      {mainTab === 'charts' && (
+      <>
+      {/* Charts + breakdown */}
+      {hasChartWidgets ? (
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-3 lg:gap-5 xl:gap-6 lg:min-h-[min(52vh,560px)]">
          {isVisible('performanceChart') && (
          <div className={`xl:col-span-7 ${DASH_CARD} ${CARD_PAD} ${CHART_PANEL_H} flex flex-col`}>
@@ -1367,117 +1503,33 @@ const Dashboard: React.FC<Props> = ({
          )}
          </div>
       </div>
-      )}
-
-      {/* Collapsible: tax, tasks, activity */}
-      {(isVisible('taxReport') || isVisible('tasks') || isVisible('recentActivity')) && (
-      <div className={DASH_CARD}>
-        <button
-          type="button"
-          onClick={() => setShowMoreSections((v) => !v)}
-          className="w-full flex items-center justify-between px-4 lg:px-6 py-3 lg:py-4 text-sm lg:text-base font-bold text-slate-700 hover:bg-slate-50"
-        >
-          <span>Tax export, tasks & activity</span>
-          <ChevronDown size={18} className={`lg:w-5 lg:h-5 text-slate-400 transition-transform ${showMoreSections ? 'rotate-180' : ''}`} />
-        </button>
-        {showMoreSections && (
-        <div className="border-t border-slate-100 p-4 lg:p-6 space-y-4 lg:space-y-6">
-      {isVisible('taxReport') && (
-      <div>
-        <div className="flex flex-wrap items-center gap-3 mb-3">
-          <h3 className={`${SECTION_TITLE} flex-1`}>Finanzamt / EÜR</h3>
-          <select value={taxReportYear} onChange={(e) => setTaxReportYear(Number(e.target.value))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold">
-            {taxYears.length ? taxYears.map(y => <option key={y} value={y}>{y}</option>) : <option value={taxReportYear}>{taxReportYear}</option>}
-          </select>
-          <button type="button" onClick={() => { const csv = generateTaxReportCSV(items, expenses, taxReportYear); const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `tax-report-${taxReportYear}.csv`; a.click(); URL.revokeObjectURL(a.href); }} className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-bold">
-            Export CSV
+      ) : (
+        <div className={`${DASH_CARD} ${CARD_PAD} text-center py-16 lg:py-20`}>
+          <BarChart3 size={40} className="mx-auto text-slate-300 mb-4" />
+          <p className="font-bold text-slate-600 mb-2">No chart widgets enabled</p>
+          <p className="text-sm text-slate-500 mb-4">Turn on Performance, Stock pie, or Profit breakdown in widget settings.</p>
+          <button
+            type="button"
+            onClick={() => setShowWidgetModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-slate-800"
+          >
+            <Settings2 size={16} /> Customise widgets
           </button>
         </div>
-        <div className="overflow-x-auto text-sm lg:text-base">
-          <table className="w-full">
-            <thead>
-              <tr className="text-slate-500 font-bold uppercase">
-                <th className="py-2 pr-3 text-left">Revenue</th>
-                <th className="py-2 pr-3 text-left">COGS</th>
-                <th className="py-2 pr-3 text-left">Exp</th>
-                <th className="py-2 pr-3 text-left">Fees</th>
-                <th className="py-2 text-left">Net</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="font-bold tabular-nums">
-                <td className="py-2">€{formatEUR(taxSummary.revenue)}</td>
-                <td className="py-2 text-slate-600">€{formatEUR(taxSummary.cogs)}</td>
-                <td className="py-2 text-slate-600">€{formatEUR(taxSummary.expenses)}</td>
-                <td className="py-2 text-slate-600">€{formatEUR(taxSummary.fees)}</td>
-                <td className="py-2 text-emerald-600">€{formatEUR(taxSummary.netProfit)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
       )}
 
-      {(isVisible('tasks') || isVisible('recentActivity')) && (
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
-         {isVisible('tasks') && (
-         <div>
-            <h3 className={`${SECTION_TITLE} mb-3 flex items-center gap-2`}><CheckCircle2 size={16}/> Tasks</h3>
-            <form onSubmit={handleAddTask} className="flex gap-2 mb-3">
-               <input className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm lg:text-base font-bold outline-none min-h-[44px]" placeholder="Add task…" value={newTaskText} onChange={e => setNewTaskText(e.target.value)} />
-               <button type="submit" className="bg-blue-600 text-white p-2 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center"><Plus size={18}/></button>
-            </form>
-            <div className="space-y-2 max-h-[160px] lg:max-h-[220px] overflow-y-auto">
-               {tasks.map(task => (
-                  <div key={task.id} className="group flex items-center gap-2 py-1.5 px-1 hover:bg-slate-50 rounded-lg cursor-pointer text-sm lg:text-base" onClick={() => toggleTask(task.id)}>
-                     <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${task.completed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300'}`}>
-                        {task.completed && <Check size={10} className="text-white"/>}
-                     </div>
-                     <span className={`flex-1 truncate ${task.completed ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{task.text}</span>
-                     <button type="button" onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100"><X size={14}/></button>
-                  </div>
-               ))}
-            </div>
-         </div>
-         )}
-         {isVisible('recentActivity') && (
-         <div>
-            <h3 className={`${SECTION_TITLE} mb-3 flex items-center gap-2`}><Activity size={16}/> Recent</h3>
-            <div className="space-y-2 max-h-[160px] lg:max-h-[220px] overflow-y-auto">
-               {activityFeed.map((action, idx) => (
-                  <div key={idx} className="flex items-center gap-3 text-sm lg:text-base">
-                     <div className={`w-9 h-9 lg:w-10 lg:h-10 rounded-lg flex items-center justify-center shrink-0 ${action.type === 'SOLD' ? 'bg-emerald-100 text-emerald-600' : action.type === 'BOUGHT' ? 'bg-blue-100 text-blue-600' : 'bg-red-50 text-red-500'}`}>
-                        {action.type === 'SOLD' ? <TrendingUp size={16}/> : action.type === 'BOUGHT' ? <Package size={16}/> : <TrendingDown size={16}/>}
-                     </div>
-                     <div className="flex-1 min-w-0">
-                        <p className="font-bold text-slate-900 truncate">{action.item}</p>
-                        <p className="text-xs lg:text-sm text-slate-400">{new Date(action.date).toLocaleDateString()}</p>
-                     </div>
-                     <span className={`font-black tabular-nums shrink-0 ${action.amount > 0 ? 'text-emerald-600' : 'text-slate-700'}`}>
-                        {action.amount > 0 ? '+' : ''}€{formatEUR(Math.abs(action.amount))}
-                     </span>
-                  </div>
-               ))}
-            </div>
-         </div>
-         )}
-      </div>
-      )}
-        </div>
-        )}
-      </div>
+      <Suspense fallback={null}>
+        <DashboardAnalyticsPanel
+          items={items}
+          expenses={expenses}
+          range={{ start: startDate, end: endDate }}
+          rangeLabel={periodLabel}
+          profitGoal={monthlyGoal}
+        />
+      </Suspense>
+      </>
       )}
     </div>
-
-    <Suspense fallback={null}>
-      <DashboardAnalyticsPanel
-        items={items}
-        expenses={expenses}
-        range={{ start: startDate, end: endDate }}
-        rangeLabel={periodLabel}
-        profitGoal={monthlyGoal}
-      />
-    </Suspense>
 
     {financialDetailModal && createPortal(
       <div 
