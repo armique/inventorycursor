@@ -5,7 +5,7 @@ import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSort
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone, Camera
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions } from '../types';
 import { itemMatchesSalePlatformFilter, isMissingExplicitSalePlatform, MISSING_PLATFORM_FILTER, SALE_PLATFORM_OPTIONS, formatItemSalePlatform, formatSalePlatformLabel } from '../utils/salePlatform';
@@ -15,6 +15,7 @@ import { generateKleinanzeigenCSV, generateEbayCSV } from '../services/ebayCsvSe
 import { searchInventory } from '../utils/inventorySearchIndex';
 import { copyKleinanzeigenListing } from '../utils/copyKleinanzeigenListing';
 import { bundleComponentBreakdown } from '../utils/bundleProfitBreakdown';
+import { cycleInventoryItemPresence, getItemPresenceCycleState, normalizeImageList } from '../utils/imageImport';
 import { exportInventoryToExcel } from '../services/excelExportService';
 import { getRecentItemIds, addRecentItemId } from '../services/recentItemsService';
 import { generateStoreDescription } from '../services/specsAI';
@@ -32,6 +33,7 @@ import ItemForm from './ItemForm';
 import ItemThumbnail from './ItemThumbnail';
 import InvoiceView from './InvoiceView';
 import InventoryAISpecsPanel from './InventoryAISpecsPanel';
+import AddPhotosModal from './AddPhotosModal';
 import BulkSelectionBar, { type BulkAction } from './BulkSelectionBar';
 import { generateItemSpecs } from '../services/specsAI';
 
@@ -84,10 +86,10 @@ interface SortConfig {
   direction: 'asc' | 'desc';
 }
 
-/** Inv column: 5 icon buttons in one row (28px each + 6px gaps + cell padding). */
+/** Inv column: 4 icon buttons in one row (28px each + 6px gaps + cell padding). */
 const PRESENCE_ICON_SIZE_PX = 28;
 const PRESENCE_ICON_GAP_PX = 6;
-const PRESENCE_ICON_COUNT = 5;
+const PRESENCE_ICON_COUNT = 4;
 const PRESENCE_COL_WIDTH =
   PRESENCE_ICON_COUNT * PRESENCE_ICON_SIZE_PX +
   (PRESENCE_ICON_COUNT - 1) * PRESENCE_ICON_GAP_PX +
@@ -418,6 +420,7 @@ const InventoryList: React.FC<Props> = ({
   const [listDensity, setListDensity] = useState<ListDensity>(() => loadState<ListDensity>('list_density', 'compact'));
   useEffect(() => localStorage.setItem(`${persistenceKey}_list_density`, JSON.stringify(listDensity)), [listDensity, persistenceKey]);
   const [showAISpecsModal, setShowAISpecsModal] = useState(false);
+  const [showBulkAddPhotosModal, setShowBulkAddPhotosModal] = useState(false);
 
   // -- INLINE EDITING STATE --
   const [editingCell, setEditingCell] = useState<{ itemId: string, field: ColumnId } | null>(null);
@@ -582,33 +585,9 @@ const InventoryList: React.FC<Props> = ({
     return buildTimeGaugeSortKeyMap(items);
   }, [items, sortConfig.key]);
 
-  // --- INVENTORY PRESENCE (PRESENT / LOST) ---
+  // --- INVENTORY PRESENCE (PRESENT / LOST / DEFECTIVE cycle) ---
   const togglePresence = (item: InventoryItem) => {
-    let next: 'present' | 'lost' | undefined;
-    if (!item.presence) {
-      next = 'present';
-    } else if (item.presence === 'present') {
-      next = 'lost';
-    } else {
-      // 'lost' -> back to unknown (unset)
-      next = undefined;
-    }
-    const updated: InventoryItem = { ...item };
-    if (next) {
-      updated.presence = next;
-    } else {
-      delete (updated as any).presence;
-    }
-    onUpdate([updated]);
-  };
-
-  // --- INVENTORY CONDITION (WORKING / DEFECTIVE) ---
-  const toggleDefective = (item: InventoryItem) => {
-    const updated: InventoryItem = {
-      ...item,
-      isDefective: !item.isDefective,
-    };
-    onUpdate([updated]);
+    onUpdate([cycleInventoryItemPresence(item)]);
   };
 
   // --- MARKETPLACE LISTING FLAGS (Kleinanzeigen / eBay) ---
@@ -1468,56 +1447,51 @@ const InventoryList: React.FC<Props> = ({
         return (
           <td key={id} className="inv-col-icons border-r border-slate-100/90 align-middle" style={style} onClick={(e) => e.stopPropagation()}>
             <div
-              className={`grid grid-cols-5 ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-items-center mx-auto shrink-0`}
+              className={`grid grid-cols-4 ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-items-center mx-auto shrink-0`}
               style={{ width: PRESENCE_ICON_COUNT * PRESENCE_ICON_SIZE_PX + (PRESENCE_ICON_COUNT - 1) * PRESENCE_ICON_GAP_PX }}
             >
-              {/* Physical presence: present / lost / unknown */}
+              {/* Physical presence: present → lost → defective → unknown */}
+              {(() => {
+                const cycleState = getItemPresenceCycleState(item);
+                return (
               <button
                 type="button"
                 onClick={() => togglePresence(item)}
                 className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors ${
-                  item.presence === 'present'
+                  cycleState === 'present'
                     ? 'border-emerald-300 bg-emerald-50'
-                  : item.presence === 'lost'
+                  : cycleState === 'lost'
                     ? 'border-red-300 bg-red-50'
+                  : cycleState === 'defective'
+                    ? 'border-amber-300 bg-amber-50'
                     : 'border-slate-200 bg-white hover:bg-slate-50'
                 }`}
                 title={
-                  item.presence === 'present'
-                    ? 'Present (click to mark as lost)'
-                    : item.presence === 'lost'
-                    ? 'Lost (click to clear)'
-                    : 'Not checked (click to mark as present)'
+                  cycleState === 'present'
+                    ? 'Present (click → lost)'
+                    : cycleState === 'lost'
+                    ? 'Lost (click → defective)'
+                    : cycleState === 'defective'
+                    ? 'Defective (click → clear)'
+                    : 'Not checked (click → present)'
                 }
               >
+                {cycleState === 'defective' ? (
+                  <AlertCircle size={13} className="text-amber-600" />
+                ) : (
                 <span
                   className={`w-2.5 h-2.5 rounded-full ${
-                    item.presence === 'present'
+                    cycleState === 'present'
                       ? 'bg-emerald-500'
-                      : item.presence === 'lost'
+                      : cycleState === 'lost'
                       ? 'bg-red-500'
                       : 'bg-slate-300'
                   }`}
                 />
+                )}
               </button>
-
-              {/* Condition: working / defective */}
-              <button
-                type="button"
-                onClick={() => toggleDefective(item)}
-                className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg text-[10px] font-bold transition-colors ${
-                  item.isDefective
-                    ? 'bg-red-100 text-red-700'
-                    : 'bg-slate-100 text-slate-500 hover:bg-amber-50 hover:text-amber-700'
-                }`}
-                title={
-                  item.isDefective
-                    ? 'Defective / not working (click to mark as working)'
-                    : 'Working / OK (click to mark as defective)'
-                }
-              >
-                {item.isDefective ? <AlertCircle size={13} /> : <Wrench size={13} />}
-              </button>
+                );
+              })()}
 
               {/* Listed on Kleinanzeigen (same style as Parse K icon) */}
               <button
@@ -2305,6 +2279,30 @@ const InventoryList: React.FC<Props> = ({
     [deferredSelectedIds, itemsById]
   );
 
+  const handleBulkAddPhotos = useCallback(
+    (urls: string[]) => {
+      if (!urls.length || deferredSelectedIds.length === 0) return;
+      const idSet = new Set(deferredSelectedIds);
+      const updated = items
+        .filter((i) => idSet.has(i.id))
+        .map((item) => {
+          const existing = normalizeImageList([item.imageUrl, ...(item.imageUrls || [])]);
+          const merged = normalizeImageList([...existing, ...urls]);
+          return {
+            ...item,
+            imageUrl: merged[0],
+            imageUrls: merged,
+          };
+        });
+      if (updated.length) {
+        onUpdate(updated);
+        setToast(`Added ${urls.length} photo${urls.length === 1 ? '' : 's'} to ${updated.length} item${updated.length === 1 ? '' : 's'}`);
+      }
+      setShowBulkAddPhotosModal(false);
+    },
+    [deferredSelectedIds, items, onUpdate]
+  );
+
   const bulkActions = useMemo((): BulkAction[] => {
     const exportKleinanzeigen = () => {
       const selected = deferredSelectedIds.map((id) => itemsById.get(id)).filter(Boolean) as InventoryItem[];
@@ -2331,6 +2329,7 @@ const InventoryList: React.FC<Props> = ({
       exportInventoryToExcel(selected);
     };
     return [
+      { id: 'photos', label: 'Add photos', icon: <Camera size={16} />, onClick: () => setShowBulkAddPhotosModal(true), variant: 'primary' },
       { id: 'compose', label: 'Compose Bundle', icon: <Monitor size={16} />, onClick: handleBuildFromSelection, variant: 'primary' },
       { id: 'lot', label: 'Lot Bundle', icon: <Package size={16} />, onClick: handleCreateLotBundleFromSelection, variant: 'violet' },
       { id: 'category', label: 'Set category', icon: <Layers size={16} />, onClick: () => setShowBulkCategoryEdit(true), variant: 'primary' },
@@ -2878,6 +2877,13 @@ const InventoryList: React.FC<Props> = ({
         selectedIds={deferredSelectedIds}
         categoryFields={categoryFields ?? {}}
         onUpdate={(updated) => onUpdate(updated)}
+      />
+
+      <AddPhotosModal
+        open={showBulkAddPhotosModal}
+        onClose={() => setShowBulkAddPhotosModal(false)}
+        onApply={handleBulkAddPhotos}
+        itemCount={bulkSelectionCount}
       />
 
       {/* Toast notification for quick actions (e.g. copy listing text) */}
