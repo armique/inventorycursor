@@ -5,10 +5,10 @@ import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSort
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions } from '../types';
-import { itemMatchesSalePlatformFilter, isMissingExplicitSalePlatform, MISSING_PLATFORM_FILTER, SALE_PLATFORM_OPTIONS, formatItemSalePlatform } from '../utils/salePlatform';
+import { itemMatchesSalePlatformFilter, isMissingExplicitSalePlatform, MISSING_PLATFORM_FILTER, SALE_PLATFORM_OPTIONS, formatItemSalePlatform, formatSalePlatformLabel } from '../utils/salePlatform';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { getCompatibleItemsForItem } from '../services/compatibility';
 import { generateKleinanzeigenCSV, generateEbayCSV } from '../services/ebayCsvService';
@@ -106,7 +106,7 @@ const DEFAULT_WIDTHS: Record<string, number> = {
   buyDate: 90,
   timeGauge: 72,
   sellDate: 90,
-  salePlatform: 148,
+  salePlatform: 168,
   actions: 104,
 };
 
@@ -1375,8 +1375,8 @@ const InventoryList: React.FC<Props> = ({
     if (platform === 'In Person' && !next.paymentType) {
       next.paymentType = 'Cash';
     }
-    if (platform === 'ebay.de' && !next.paymentType) {
-      next.paymentType = 'ebay.de';
+    if (platform === 'kleinanzeigen.de' && !next.paymentType) {
+      next.paymentType = 'Kleinanzeigen (Cash)';
     }
     startTransition(() => {
       onUpdate([next], undefined, {
@@ -1384,6 +1384,9 @@ const InventoryList: React.FC<Props> = ({
         skipActionLog: true,
         skipContainerSync: true,
       });
+      if (platform) {
+        setToast(`Sold on ${formatSalePlatformLabel(platform)}`);
+      }
     });
   };
 
@@ -2143,35 +2146,40 @@ const InventoryList: React.FC<Props> = ({
         const inferred = missing ? formatItemSalePlatform(item) : null;
         return (
           <td key={id} style={style} onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-1 min-w-0">
-              {missing && (
-                <span title={`Platform not set${inferred && inferred !== 'Unknown' ? ` (detected: ${inferred})` : ''}`}>
-                  <AlertTriangle size={14} className="text-amber-500 shrink-0" />
-                </span>
-              )}
-              <select
-                value={item.platformSold || ''}
-                onChange={(e) => handleQuickPlatformChange(item, e.target.value as Platform | '')}
-                className={`w-full min-w-0 py-1.5 pl-2 pr-6 rounded-lg border text-[11px] font-bold outline-none focus:ring-2 focus:ring-blue-400/40 appearance-none bg-no-repeat bg-right ${
-                  missing
-                    ? 'border-amber-300 bg-amber-50 text-amber-950'
-                    : 'border-slate-200 bg-white text-slate-700'
-                }`}
-                style={{
-                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`,
-                  backgroundPosition: 'right 0.35rem center',
-                }}
-              >
-                <option value="">— Select —</option>
-                {SALE_PLATFORM_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-            {missing && inferred && inferred !== 'Unknown' && (
-              <p className="text-[9px] text-amber-700 mt-1 truncate" title="Inferred from order ID / payment — pick a platform to confirm">
-                Detected: {inferred}
-              </p>
+            {missing ? (
+              <div className="flex flex-col gap-1 min-w-0">
+                <div className="flex items-center gap-1">
+                  <span title="Platform not set — pick where this was sold">
+                    <AlertTriangle size={13} className="text-amber-500 shrink-0" />
+                  </span>
+                  <SalePlatformQuickPickButtons
+                    dense={dense}
+                    onPick={(platform) => handleQuickPlatformChange(item, platform)}
+                  />
+                </div>
+                {inferred && inferred !== 'Unknown' && (
+                  <p className="text-[9px] text-amber-700 truncate pl-4" title="Inferred from order ID / payment">
+                    Detected: {inferred}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 min-w-0">
+                <select
+                  value={item.platformSold || ''}
+                  onChange={(e) => handleQuickPlatformChange(item, e.target.value as Platform | '')}
+                  className="w-full min-w-0 py-1.5 pl-2 pr-6 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-400/40 appearance-none bg-no-repeat bg-right"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`,
+                    backgroundPosition: 'right 0.35rem center',
+                  }}
+                >
+                  <option value="">— Select —</option>
+                  {SALE_PLATFORM_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
             )}
           </td>
         );
@@ -2940,19 +2948,23 @@ const InventoryList: React.FC<Props> = ({
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <label className="text-[9px] font-black uppercase text-slate-400">Sold on</label>
-                  <select
-                    value={item.platformSold || ''}
-                    onChange={(e) => handleQuickPlatformChange(item, e.target.value as Platform | '')}
-                    className={`text-xs font-bold rounded-lg border px-2 py-1.5 flex-1 min-w-[8rem] ${
-                      isMissingExplicitSalePlatform(item) ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-slate-50'
-                    }`}
-                  >
-                    <option value="">—</option>
-                    {SALE_PLATFORM_OPTIONS.map((p) => (
-                      <option key={p.value} value={p.value}>{p.label}</option>
-                    ))}
-                  </select>
+                  <label className="text-[9px] font-black uppercase text-slate-400 w-full">Sold on</label>
+                  {isMissingExplicitSalePlatform(item) ? (
+                    <SalePlatformQuickPickButtons
+                      onPick={(platform) => handleQuickPlatformChange(item, platform)}
+                    />
+                  ) : (
+                    <select
+                      value={item.platformSold || ''}
+                      onChange={(e) => handleQuickPlatformChange(item, e.target.value as Platform | '')}
+                      className="text-xs font-bold rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 flex-1 min-w-[8rem]"
+                    >
+                      <option value="">—</option>
+                      {SALE_PLATFORM_OPTIONS.map((p) => (
+                        <option key={p.value} value={p.value}>{p.label}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -3429,6 +3441,55 @@ const InventoryList: React.FC<Props> = ({
 
 /** Below this count, native table scrolling is smoother than virtualized absolute rows. */
 const INVENTORY_VIRTUAL_THRESHOLD = 100;
+
+const SalePlatformQuickPickButtons: React.FC<{
+  dense?: boolean;
+  onPick: (platform: Platform) => void;
+}> = ({ dense, onPick }) => {
+  const btn = dense ? 'h-6 w-6' : 'h-7 w-7';
+  const badge = dense ? 'h-3.5 w-3.5 text-[7px]' : 'h-4 w-4 text-[8px]';
+  const handSize = dense ? 11 : 13;
+
+  return (
+    <div className="flex items-center gap-0.5" role="group" aria-label="Quick set sale platform">
+      <button
+        type="button"
+        title="eBay"
+        aria-label="Mark sold on eBay"
+        onClick={() => onPick('ebay.de')}
+        className={`${btn} flex items-center justify-center rounded-lg border border-blue-300 bg-gradient-to-b from-blue-50 to-blue-100/90 hover:from-blue-100 hover:to-blue-200 shadow-sm transition-colors`}
+      >
+        <span
+          className={`${badge} rounded-full bg-[#0064D2] text-white flex items-center justify-center font-black leading-none shadow-inner`}
+        >
+          e
+        </span>
+      </button>
+      <button
+        type="button"
+        title="Kleinanzeigen"
+        aria-label="Mark sold on Kleinanzeigen"
+        onClick={() => onPick('kleinanzeigen.de')}
+        className={`${btn} flex items-center justify-center rounded-lg border border-emerald-400 bg-gradient-to-b from-emerald-50 to-lime-50 hover:from-emerald-100 hover:to-lime-100 shadow-sm transition-colors`}
+      >
+        <span
+          className={`${badge} rounded-full bg-emerald-600 text-white flex items-center justify-center font-black leading-none shadow-inner`}
+        >
+          K
+        </span>
+      </button>
+      <button
+        type="button"
+        title="In person (pickup / cash)"
+        aria-label="Mark sold in person"
+        onClick={() => onPick('In Person')}
+        className={`${btn} flex items-center justify-center rounded-lg border border-slate-300 bg-gradient-to-b from-slate-50 to-slate-100 hover:from-slate-100 hover:to-slate-200 shadow-sm transition-colors text-slate-700`}
+      >
+        <Handshake size={handSize} strokeWidth={2.25} aria-hidden />
+      </button>
+    </div>
+  );
+};
 
 type InventoryTableBodyProps = {
   sortedItems: InventoryItem[];
