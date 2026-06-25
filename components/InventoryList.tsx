@@ -902,7 +902,7 @@ const InventoryList: React.FC<Props> = ({
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const activeTableRef = useRef<HTMLDivElement>(null);
   const soldTableRef = useRef<HTMLDivElement>(null);
-  const rowHeightEstimate = listDensity === 'compact' ? 52 : 68;
+  const rowHeightEstimate = listDensity === 'compact' ? 64 : 78;
 
   useEffect(() => {
     if (tableContainerRef.current) tableContainerRef.current.scrollTop = 0;
@@ -1588,7 +1588,7 @@ const InventoryList: React.FC<Props> = ({
         const hasUserPhotos = userPhotoCount > 0;
         return (
           <td key={id} style={style} onClick={() => handleRowClick(item, isEditingName)}>
-             <div className="flex items-center gap-1.5 cursor-pointer group/cell w-full">
+             <div className="flex items-start gap-1.5 cursor-pointer group/cell w-full py-0.5">
                 <div
                   className={`relative shrink-0 rounded-md ${
                     hasUserPhotos
@@ -1727,7 +1727,7 @@ const InventoryList: React.FC<Props> = ({
                       </p>
                    )}
                    {item.specs && Object.keys(item.specs).length > 0 && (
-                      <p className="text-[10px] text-slate-500 font-medium mt-1 truncate" title={Object.entries(item.specs).map(([k, v]) => `${k}: ${v}`).join(' • ')}>
+                      <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-snug truncate pb-0.5" title={Object.entries(item.specs).map(([k, v]) => `${k}: ${v}`).join(' • ')}>
                          {Object.entries(item.specs).slice(0, 4).map(([k, v]) => `${k}: ${v}`).join(' · ')}
                       </p>
                    )}
@@ -3045,7 +3045,7 @@ const InventoryList: React.FC<Props> = ({
 
       {/* Table scrolls in remaining height; bulk bar is a separate row below (never overlays rows) */}
       <style>{`
-        [data-inventory-table] tbody > tr > td { padding: 0.28rem 0.32rem !important; vertical-align: middle !important; }
+        [data-inventory-table] tbody > tr > td { padding: 0.28rem 0.32rem !important; vertical-align: top !important; }
         [data-inventory-table] tbody > tr > td.inv-col-icons { padding: 0.25rem 0.38rem !important; }
         [data-inventory-table] thead th > div:first-of-type { padding: 0.28rem 0.32rem !important; min-height: 1.65rem !important; }
         [data-inventory-table] thead th { font-size: 0.625rem; letter-spacing: 0.04em; }
@@ -3564,7 +3564,19 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
   const rowVirtualizer = useVirtualizer({
     count: sortedItems.length,
     getScrollElement: () => scrollElement,
-    estimateSize: () => rowHeightEstimate,
+    estimateSize: (index) => {
+      const item = sortedItems[index];
+      if (!item) return rowHeightEstimate;
+      let h = rowHeightEstimate;
+      if (item.specs && Object.keys(item.specs).length > 0) h += 14;
+      if (
+        (item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED) &&
+        (item.customer?.name || item.ebayUsername || item.ebayOrderId)
+      ) {
+        h += 16;
+      }
+      return h;
+    },
     overscan: 5,
     getItemKey: (index) => sortedItems[index]?.id ?? index,
   });
@@ -3575,7 +3587,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
     const ro = new ResizeObserver(() => rowVirtualizer.measure());
     ro.observe(scrollElement);
     return () => ro.disconnect();
-  }, [scrollElement, useVirtual, sortedItems.length, rowVirtualizer]);
+  }, [scrollElement, useVirtual, sortedItems, rowVirtualizer]);
 
   if (sortedItems.length === 0) {
     return (
@@ -3628,6 +3640,8 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
             renderRowCells={renderRowCells}
             rowActivityKey={getRowActivityKey(item)}
             rowTranslateY={virtualRow.start}
+            virtualIndex={virtualRow.index}
+            measureRef={rowVirtualizer.measureElement}
           />
         );
       })}
@@ -3648,13 +3662,17 @@ type InventoryTableRowProps = {
   /** Bumps when inline edit / AI spinners affect this row so memo does not skip updates. */
   rowActivityKey: string;
   rowTranslateY?: number;
+  virtualIndex?: number;
+  measureRef?: (node: Element | null) => void;
 };
 
 const InventoryTableRow = React.memo(
-  function InventoryTableRow({ item, isSelected, renderRowCells, rowTranslateY }: InventoryTableRowProps) {
+  function InventoryTableRow({ item, isSelected, renderRowCells, rowTranslateY, virtualIndex, measureRef }: InventoryTableRowProps) {
     const virtualized = rowTranslateY !== undefined;
     return (
       <tr
+        ref={measureRef}
+        data-index={virtualIndex}
         style={
           virtualized
             ? {
@@ -3663,7 +3681,6 @@ const InventoryTableRow = React.memo(
                 left: 0,
                 width: '100%',
                 transform: `translate3d(0, ${rowTranslateY}px, 0)`,
-                contain: 'layout style paint',
               }
             : undefined
         }
