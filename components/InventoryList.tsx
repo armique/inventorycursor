@@ -64,11 +64,12 @@ type QuickCategoryPin = {
   id: string;
   label: string;
   category: string;
-  subCategory: string;
+  /** Empty = filter by top-level category only */
+  subCategory?: string;
 };
 
-function quickCategoryPinId(category: string, subCategory: string): string {
-  return `${category}::${subCategory}`;
+function quickCategoryPinId(category: string, subCategory?: string): string {
+  return subCategory ? `${category}::${subCategory}` : `${category}::`;
 }
 
 const DEFAULT_QUICK_CATEGORY_PINS: QuickCategoryPin[] = [
@@ -2245,7 +2246,11 @@ const InventoryList: React.FC<Props> = ({
   };
 
   const isQuickCategoryPinActive = useCallback(
-    (pin: QuickCategoryPin) => categoryFilter === pin.category && subCategoryFilter === pin.subCategory,
+    (pin: QuickCategoryPin) => {
+      if (categoryFilter !== pin.category) return false;
+      if (!pin.subCategory) return !subCategoryFilter;
+      return subCategoryFilter === pin.subCategory;
+    },
     [categoryFilter, subCategoryFilter]
   );
 
@@ -2256,18 +2261,19 @@ const InventoryList: React.FC<Props> = ({
         setSubCategoryFilter('');
       } else {
         setCategoryFilter(pin.category);
-        setSubCategoryFilter(pin.subCategory);
+        setSubCategoryFilter(pin.subCategory ?? '');
       }
     },
     [isQuickCategoryPinActive]
   );
 
   const addQuickCategoryPin = useCallback((category: string, subCategory: string, label: string) => {
-    const id = quickCategoryPinId(category, subCategory);
-    const trimmedLabel = label.trim() || subCategory;
+    const sub = subCategory.trim();
+    const id = quickCategoryPinId(category, sub || undefined);
+    const trimmedLabel = label.trim() || sub || category;
     setQuickCategoryPins((prev) => {
       if (prev.some((p) => p.id === id)) return prev;
-      return [...prev, { id, label: trimmedLabel, category, subCategory }];
+      return [...prev, { id, label: trimmedLabel, category, ...(sub ? { subCategory: sub } : {}) }];
     });
   }, []);
 
@@ -2785,7 +2791,7 @@ const InventoryList: React.FC<Props> = ({
                       ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
                       : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200 hover:border-slate-300'
                   }`}
-                  title={`${pin.category} › ${pin.subCategory}`}
+                  title={pin.subCategory ? `${pin.category} › ${pin.subCategory}` : pin.category}
                 >
                   {pin.label}
                 </button>
@@ -3723,24 +3729,25 @@ const QuickCategoryPinPickerModal: React.FC<{
 }> = ({ categories, pins, onAdd, onRemove, onReset, onClose }) => {
   const categoryKeys = Object.keys(categories);
   const [pickCategory, setPickCategory] = useState(() => categoryKeys[0] ?? 'Components');
-  const [pickSub, setPickSub] = useState(() => (categories[pickCategory]?.[0] ?? ''));
-  const [pickLabel, setPickLabel] = useState('');
+  const [pickSub, setPickSub] = useState('');
+  const [pickLabel, setPickLabel] = useState(() => categoryKeys[0] ?? 'Components');
 
   useEffect(() => {
-    const subs = categories[pickCategory] ?? [];
-    const nextSub = subs[0] ?? '';
-    setPickSub(nextSub);
-    setPickLabel(nextSub);
-  }, [pickCategory, categories]);
+    setPickSub('');
+    setPickLabel(pickCategory);
+  }, [pickCategory]);
 
-  const pickId = pickSub ? quickCategoryPinId(pickCategory, pickSub) : '';
-  const alreadyPinned = pickId ? pins.some((p) => p.id === pickId) : false;
+  const pickId = quickCategoryPinId(pickCategory, pickSub || undefined);
+  const alreadyPinned = pins.some((p) => p.id === pickId);
 
   const handleAdd = () => {
-    if (!pickCategory || !pickSub || alreadyPinned) return;
-    onAdd(pickCategory, pickSub, pickLabel.trim() || pickSub);
-    setPickLabel('');
+    if (!pickCategory || alreadyPinned) return;
+    onAdd(pickCategory, pickSub, pickLabel.trim() || pickSub || pickCategory);
+    setPickLabel(pickCategory);
+    setPickSub('');
   };
+
+  const labelPlaceholder = pickSub || pickCategory;
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in">
@@ -3769,12 +3776,17 @@ const QuickCategoryPinPickerModal: React.FC<{
             </select>
           </div>
           <div className="space-y-1">
-            <label className="text-[10px] font-black uppercase text-slate-400 ml-0.5">Subcategory</label>
+            <label className="text-[10px] font-black uppercase text-slate-400 ml-0.5">Subcategory (optional)</label>
             <select
               value={pickSub}
-              onChange={(e) => setPickSub(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value;
+                setPickSub(v);
+                setPickLabel(v || pickCategory);
+              }}
               className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-400/30"
             >
+              <option value="">All subcategories — category only</option>
               {(categories[pickCategory] ?? []).map((sub) => (
                 <option key={sub} value={sub}>{sub}</option>
               ))}
@@ -3786,14 +3798,14 @@ const QuickCategoryPinPickerModal: React.FC<{
               type="text"
               value={pickLabel}
               onChange={(e) => setPickLabel(e.target.value)}
-              placeholder={pickSub || 'Short label'}
+              placeholder={labelPlaceholder}
               className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-400/30"
             />
           </div>
           <button
             type="button"
             onClick={handleAdd}
-            disabled={!pickSub || alreadyPinned}
+            disabled={!pickCategory || alreadyPinned}
             className="w-full py-2.5 rounded-xl bg-slate-900 text-white text-sm font-black uppercase tracking-wide hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {alreadyPinned ? 'Already in quick list' : 'Add shortcut'}
@@ -3815,7 +3827,9 @@ const QuickCategoryPinPickerModal: React.FC<{
                 <li key={pin.id} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-50 border border-slate-100">
                   <span className="flex-1 min-w-0">
                     <span className="text-sm font-bold text-slate-900">{pin.label}</span>
-                    <span className="block text-[10px] text-slate-500 truncate">{pin.category} › {pin.subCategory}</span>
+                    <span className="block text-[10px] text-slate-500 truncate">
+                      {pin.subCategory ? `${pin.category} › ${pin.subCategory}` : pin.category}
+                    </span>
                   </span>
                   <button
                     type="button"
