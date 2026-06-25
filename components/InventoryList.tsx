@@ -1465,26 +1465,14 @@ const InventoryList: React.FC<Props> = ({
         const canExpandBundle = (item.isPC || item.isBundle) && childItems.length > 0;
         return (
           <td key={id} className="p-5" style={style} onClick={() => handleRowClick(item, isEditingName)}>
-             <div className="flex items-start gap-2 cursor-pointer group/cell">
+             <div className="flex items-start gap-2 cursor-pointer group/cell w-full">
                 <ItemThumbnail item={item} className="w-10 h-10 rounded-lg object-cover shadow-sm border border-slate-100 shrink-0" size={40} />
-                {canExpandBundle && (
-                  <button
-                    type="button"
-                    onClick={toggleExpand}
-                    className="mt-0.5 p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
-                    title={isExpanded ? 'Collapse components' : 'Expand to show components'}
-                    aria-expanded={isExpanded}
-                    aria-label={isExpanded ? 'Collapse bundle components' : 'Expand bundle components'}
-                  >
-                    {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                  </button>
-                )}
                 <div className="flex-1 min-w-0">
-                   <div className="flex items-center gap-2">
+                   <div className="flex items-center gap-2 w-full min-w-0">
                       {isEditingName ? (
                         <input
                           autoFocus
-                          className="flex-1 px-2 py-1 bg-white border-2 border-blue-500 rounded-lg text-sm font-black text-slate-900 outline-none shadow-lg"
+                          className="flex-1 min-w-0 px-2 py-1 bg-white border-2 border-blue-500 rounded-lg text-sm font-black text-slate-900 outline-none shadow-lg"
                           value={editValue}
                           onChange={(e) => setEditValue(e.target.value)}
                           onBlur={saveEdit}
@@ -1496,7 +1484,7 @@ const InventoryList: React.FC<Props> = ({
                         />
                       ) : (
                         <p
-                          className="text-sm font-black text-slate-900 truncate group-hover/cell:text-blue-600 transition-colors flex-1"
+                          className="text-sm font-black text-slate-900 truncate group-hover/cell:text-blue-600 transition-colors flex-1 min-w-0"
                           title="Double click to rename"
                           onDoubleClick={(e) => {
                             e.stopPropagation();
@@ -1509,6 +1497,18 @@ const InventoryList: React.FC<Props> = ({
                         >
                           {item.name}
                         </p>
+                      )}
+                      {canExpandBundle && (
+                        <button
+                          type="button"
+                          onClick={toggleExpand}
+                          className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
+                          title={isExpanded ? 'Collapse components' : 'Expand to show components'}
+                          aria-expanded={isExpanded}
+                          aria-label={isExpanded ? 'Collapse bundle components' : 'Expand bundle components'}
+                        >
+                          {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                        </button>
                       )}
                    </div>
                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
