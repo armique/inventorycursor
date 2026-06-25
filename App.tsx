@@ -22,6 +22,7 @@ const StoreManagementPage = lazy(() => import('./components/StoreManagementPage'
 const LegalPage = lazy(() => import('./components/LegalPage'));
 const InvoiceManager = lazy(() => import('./components/InvoiceManager'));
 const ActionHistoryPage = lazy(() => import('./components/ActionHistoryPage'));
+const MissingSpecsReport = lazy(() => import('./components/MissingSpecsReport'));
 
 import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense, DashboardPreferences, ActionHistoryEntry, TaxMode, ItemUpdateOptions } from './types';
 import {
@@ -1331,6 +1332,7 @@ const App: React.FC = () => {
           />
           <Route path="analytics" element={<CategoryAnalytics items={items} businessSettings={businessSettings} />} />
           <Route path="category-suggestions" element={<CategorySuggestionsPage items={items} categories={categories} categoryFields={categoryFields} onUpdate={handleUpdate} onUpdateCategoryStructure={handleUpdateCategoryStructure} onUpdateCategoryFields={handleUpdateCategoryFields} onAddCategory={handleAddCategory} />} />
+          <Route path="missing-specs" element={<MissingSpecsReport items={items} categoryFields={categoryFields} />} />
           <Route path="inventory" element={<InventoryList key="inventory-main" items={items} totalCount={items.length} onUpdate={handleUpdate} onDelete={handleDelete} onUndo={handleUndo} onRedo={handleRedo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} pageTitle="Inventory" allowedStatuses={ALL_STATUSES} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} persistenceKey="inventory_main"/>} />
           <Route path="add" element={<ItemForm onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="add-bulk" element={<BulkItemForm onSave={handleUpdate} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />

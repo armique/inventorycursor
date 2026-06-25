@@ -2,7 +2,7 @@ import React, { Suspense } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
   Package, PlusCircle, Settings, RefreshCw, Briefcase, Trash2, CloudUpload, LayoutDashboard, BarChart3,
-  Layers, Loader2, Cloud, CheckCircle2, X, Receipt, History,
+  Layers, Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe, Tag, Sparkles, AlertCircle,
 } from 'lucide-react';
 import { signInWithGooglePopup, logOut } from '../services/firebaseService';
 import QuotaMonitor from './QuotaMonitor';
@@ -108,15 +108,19 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   const nav = [
     { to: '/panel/dashboard', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
     { to: '/panel/analytics', icon: <BarChart3 size={20} />, label: 'Category analytics' },
+    { to: '/panel/category-suggestions', icon: <Sparkles size={20} />, label: 'Category suggestions' },
+    { to: '/panel/missing-specs', icon: <AlertCircle size={20} />, label: 'Missing specs' },
     { to: '/panel/inventory', icon: <Package size={20} />, label: 'Inventory' },
     { to: '/panel/add', icon: <PlusCircle size={20} />, label: 'Add Item' },
     { to: '/panel/add-bulk', icon: <Layers size={20} />, label: 'Bulk Entry' },
     { to: '/panel/builder', icon: <Briefcase size={20} />, label: 'PC Builder' },
+    { to: '/panel/pricing', icon: <Tag size={20} />, label: 'Price check' },
     { to: '/panel/invoices', icon: <Receipt size={20} />, label: 'Invoice Manager' },
     { to: '/panel/action-history', icon: <History size={20} />, label: 'Action history' },
     { to: '/panel/expenses', icon: <RefreshCw size={20} />, label: 'Expenses' },
     { to: '/panel/import', icon: <CloudUpload size={20} />, label: 'Import CSV' },
     { to: '/panel/trash', icon: <Trash2 size={20} />, label: 'Trash' },
+    { to: '/panel/store-management', icon: <Globe size={20} />, label: 'Store management' },
     { to: '/panel/settings', icon: <Settings size={20} />, label: 'Settings', alert: !isCloudEnabled },
   ];
 
