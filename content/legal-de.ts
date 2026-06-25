@@ -53,10 +53,9 @@ export const DATENSCHUTZ_CONTENT = `
 **1. Verantwortliche Stelle**
 
 Verantwortlich für die Datenverarbeitung im Sinne der DSGVO ist:
-[Name/Unternehmen]
-[Straße und Hausnummer]
-[PLZ und Ort]
-E-Mail: [Ihre E-Mail]
+ArmikTech / Armen Abelyan
+Berlin, Deutschland
+E-Mail: kontakt@armiktech.com
 
 **2. Erhebung und Speicherung personenbezogener Daten**
 
@@ -94,21 +93,19 @@ export const IMPRESSUM_TITLE = 'Impressum';
 export const IMPRESSUM_CONTENT = `
 **Angaben gemäß § 5 TMG**
 
-[Firmenname / Name des Betreibers]
-[Straße und Hausnummer]
-[PLZ und Ort]
+ArmikTech
+Berlin, Deutschland
 
 **Website:** https://armiktech.com
 
 **Kontakt**
-E-Mail: [Ihre E-Mail]
-Telefon: [Ihre Telefonnummer] (optional)
+E-Mail: kontakt@armiktech.com
 
 **Umsatzsteuer-ID** (falls vorhanden)
-USt-IdNr.: [Ihre USt-IdNr.]
+USt-IdNr.: auf Anfrage
 
 **Verantwortlich für den Inhalt nach § 55 Abs. 2 RStV**
-[Name und Anschrift wie oben]
+Armen Abelyan, Berlin
 
 **Haftungsausschluss**
 Die Inhalte dieser Seiten wurden mit Sorgfalt erstellt. Für die Richtigkeit, Vollständigkeit und Aktualität der Inhalte wird jedoch keine Gewähr übernommen. Als Diensteanbieter sind wir für eigene Inhalte auf diesen Seiten nach den allgemeinen Gesetzen verantwortlich.

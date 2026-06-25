@@ -64,15 +64,17 @@ export const generateEbayCSV = (items: InventoryItem[], settings: BusinessSettin
  * Columns: Title, Description, Price, Category, SubCategory, ImageURL, ItemID
  */
 export const generateKleinanzeigenCSV = (items: InventoryItem[]): string => {
-  const headers = ['Title', 'Description', 'Price', 'Category', 'SubCategory', 'ImageURL', 'ItemID'];
+  const headers = ['Title', 'Description', 'Price', 'Category', 'SubCategory', 'ImageURL', 'ItemID', 'KleinanzeigenURL', 'Location'];
   const rows = items.map(item => {
-    const title = (item.name || '').substring(0, 80).replace(/"/g, '""');
-    const desc = (item.storeDescription || item.comment2 || item.comment1 || item.name || '').replace(/"/g, '""').replace(/\n/g, ' ');
+    const title = (item.marketTitle || item.name || '').substring(0, 80).replace(/"/g, '""');
+    const desc = (item.marketDescription || item.storeDescription || item.comment2 || item.comment1 || item.name || '').replace(/"/g, '""').replace(/\n/g, ' ');
     const price = (item.sellPrice ?? item.buyPrice ?? 0).toFixed(2);
     const cat = (item.category || '').replace(/"/g, '""');
     const sub = (item.subCategory || '').replace(/"/g, '""');
     const img = (item.imageUrl || '').replace(/"/g, '""');
-    return [`"${title}"`, `"${desc}"`, price, `"${cat}"`, `"${sub}"`, `"${img}"`, item.id];
+    const kaUrl = (item.kleinanzeigenChatUrl || '').replace(/"/g, '""');
+    const loc = (item.comment2 || '').replace(/"/g, '""').substring(0, 40);
+    return [`"${title}"`, `"${desc}"`, price, `"${cat}"`, `"${sub}"`, `"${img}"`, item.id, `"${kaUrl}"`, `"${loc}"`];
   });
   return [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
 };

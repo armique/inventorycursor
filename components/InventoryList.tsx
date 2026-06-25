@@ -12,6 +12,9 @@ import { itemMatchesSalePlatformFilter, isMissingExplicitSalePlatform, MISSING_P
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { getCompatibleItemsForItem } from '../services/compatibility';
 import { generateKleinanzeigenCSV } from '../services/ebayCsvService';
+import { searchInventory } from '../utils/inventorySearchIndex';
+import { copyKleinanzeigenListing } from '../utils/copyKleinanzeigenListing';
+import { bundleComponentBreakdown } from '../utils/bundleProfitBreakdown';
 import { exportInventoryToExcel } from '../services/excelExportService';
 import { getRecentItemIds, addRecentItemId } from '../services/recentItemsService';
 import { generateStoreDescription } from '../services/specsAI';
@@ -671,6 +674,10 @@ const InventoryList: React.FC<Props> = ({
   // Filtering & Sorting
   const sortedItems = useMemo(() => {
     const searchLower = deferredSearchTerm.toLowerCase();
+    const indexedIds =
+      searchLower.trim().length >= 2
+        ? new Set(searchInventory(items, searchLower, 500).map((h) => h.item.id))
+        : null;
     let filtered = items.filter(item => {
       // 1. Status Filter
       let matchesStatus = false;
@@ -702,10 +709,11 @@ const InventoryList: React.FC<Props> = ({
 
       // 3. Search Filter
       if (searchLower) {
-        const matchesSearch =
-          item.name.toLowerCase().includes(searchLower) ||
-          item.category.toLowerCase().includes(searchLower) ||
-          (item.vendor?.toLowerCase().includes(searchLower) ?? false);
+        const matchesSearch = indexedIds
+          ? indexedIds.has(item.id)
+          : item.name.toLowerCase().includes(searchLower) ||
+            item.category.toLowerCase().includes(searchLower) ||
+            (item.vendor?.toLowerCase().includes(searchLower) ?? false);
         if (!matchesSearch) return false;
       }
 
@@ -1565,7 +1573,8 @@ const InventoryList: React.FC<Props> = ({
                       <div className="mt-3 ml-4 pl-4 border-l-2 border-slate-200 space-y-2">
                          <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Components:</p>
                          {childItems.map(child => {
-                            const childMargin = child.profit != null ? child.profit : (child.sellPrice && child.buyPrice ? child.sellPrice - child.buyPrice - (child.feeAmount || 0) : null);
+                            const breakdown = bundleComponentBreakdown(item, items).find((b) => b.item.id === child.id);
+                            const childMargin = breakdown?.profit ?? (child.profit != null ? child.profit : (child.sellPrice && child.buyPrice ? child.sellPrice - child.buyPrice - (child.feeAmount || 0) : null));
                             return (
                                <button
                                  key={child.id}
@@ -1723,6 +1732,20 @@ const InventoryList: React.FC<Props> = ({
                   <Copy size={10} />
                 </button>
               )}
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await copyKleinanzeigenListing(item);
+                  } catch {
+                    alert('Copy failed');
+                  }
+                }}
+                className="h-6 px-1.5 flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-[8px] font-black"
+                title="Copy Kleinanzeigen listing (title + description + price)"
+              >
+                KA
+              </button>
             </div>
           </td>
         );

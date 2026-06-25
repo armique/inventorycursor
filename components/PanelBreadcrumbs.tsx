@@ -1,0 +1,54 @@
+import React from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { ChevronRight, Home } from 'lucide-react';
+
+const LABELS: Record<string, string> = {
+  dashboard: 'Dashboard',
+  inventory: 'Inventory',
+  add: 'Add item',
+  'add-bulk': 'Bulk add',
+  builder: 'PC builder',
+  pricing: 'Price check',
+  'deal-hunter': 'Deal hunter',
+  invoices: 'Invoices',
+  'action-history': 'Action history',
+  expenses: 'Expenses',
+  import: 'Import',
+  trash: 'Trash',
+  'store-management': 'Store',
+  settings: 'Settings',
+  analytics: 'Analytics',
+  'category-suggestions': 'Category suggestions',
+  'missing-specs': 'Missing specs',
+  'health-check': 'Health check',
+  competitors: 'Competitors',
+};
+
+const PanelBreadcrumbs: React.FC = () => {
+  const { pathname } = useLocation();
+  if (!pathname.startsWith('/panel')) return null;
+
+  const segments = pathname.replace(/^\/panel\/?/, '').split('/').filter(Boolean);
+  const crumbs = [{ path: '/panel/dashboard', label: 'Panel' }, ...segments.map((seg, i) => ({
+    path: `/panel/${segments.slice(0, i + 1).join('/')}`,
+    label: LABELS[seg] || seg,
+  }))];
+
+  return (
+    <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3 flex-wrap">
+      <Link to="/panel/dashboard" className="hover:text-slate-700 flex items-center gap-1">
+        <Home size={12} />
+      </Link>
+      {crumbs.slice(1).map((c) => (
+        <React.Fragment key={c.path}>
+          <ChevronRight size={12} className="text-slate-300" />
+          <Link to={c.path} className="hover:text-slate-700 truncate max-w-[140px]">
+            {c.label}
+          </Link>
+        </React.Fragment>
+      ))}
+    </nav>
+  );
+};
+
+export default PanelBreadcrumbs;

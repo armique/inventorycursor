@@ -4,6 +4,14 @@ import { formatEUR } from '../utils/formatMoney';
 
 import { Search, Plus, Trash2, ExternalLink, RefreshCcw, Bell, ArrowRight, X, Clock, MapPin, Euro, Loader2, Link as LinkIcon, Power, Play } from 'lucide-react';
 import { executeSavedSearch, SavedSearchCriteria, LiveDeal, DealSearchPlatform, resolveSearchPlatform } from '../services/geminiService';
+import {
+  filterDealByFlags,
+  computeDealScore,
+  saveToWatchlist,
+  upsertPriceAlert,
+  loadDealWatchlist,
+  type DealWatchlistItem,
+} from '../services/dealHunterExtras';
 
 interface SavedSearch extends SavedSearchCriteria {
   id: string; // Ensure ID is present
@@ -48,6 +56,11 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate, embedded = fa
   const [newMaxPrice, setNewMaxPrice] = useState<string>('');
   const [newCustomUrl, setNewCustomUrl] = useState('');
   const [platformFilter, setPlatformFilter] = useState<DealSearchPlatform>('kleinanzeigen');
+  const [excludeVB, setExcludeVB] = useState(true);
+  const [excludeTausch, setExcludeTausch] = useState(true);
+  const [plzFilter, setPlzFilter] = useState('');
+  const [enablePriceAlert, setEnablePriceAlert] = useState(false);
+  const [watchlist, setWatchlist] = useState<DealWatchlistItem[]>(() => loadDealWatchlist());
   const [searchError, setSearchError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -108,7 +121,8 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate, embedded = fa
     for (let i = 0; i < updatedSearches.length; i++) {
        const search = updatedSearches[i];
        try {
-          const results = await executeSavedSearch(search);
+          const raw = await executeSavedSearch(search);
+          const results = postProcessResults(search, raw);
           const oldUrls = search.results.map(r => r.url);
           const newItems = results.filter(r => !oldUrls.includes(r.url));
           
@@ -142,6 +156,10 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate, embedded = fa
       platform: platformFilter,
       includeEbay: platformFilter !== 'kleinanzeigen',
       customUrl: newCustomUrl.trim(),
+      excludeVB,
+      excludeTausch,
+      plz: plzFilter.trim(),
+      enablePriceAlert,
       results: [],
       newResultCount: 0
     };
@@ -154,6 +172,10 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate, embedded = fa
     setNewMaxPrice('');
     setNewCustomUrl('');
     setPlatformFilter('kleinanzeigen');
+    setExcludeVB(true);
+    setExcludeTausch(true);
+    setPlzFilter('');
+    setEnablePriceAlert(false);
     void runSearch(newSearch, nextList);
   };
 
@@ -165,12 +187,28 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate, embedded = fa
     }
   };
 
+  const postProcessResults = (search: SavedSearch, results: LiveDeal[]): LiveDeal[] => {
+    return results
+      .filter((d) =>
+        filterDealByFlags(d, {
+          excludeVB: search.excludeVB,
+          excludeTausch: search.excludeTausch,
+          plz: search.plz,
+        })
+      )
+      .map((d) => {
+        const score = computeDealScore(d.numericPrice, search.maxPrice);
+        return { ...d, dealScore: score } as LiveDeal & { dealScore?: number };
+      });
+  };
+
   const runSearch = async (search: SavedSearch, searchList?: SavedSearch[]) => {
     const list = searchList ?? searches;
     setLoadingSearchId(search.id);
     setSearchError(null);
     try {
-      const results = await executeSavedSearch(search);
+      const raw = await executeSavedSearch(search);
+      const results = postProcessResults(search, raw);
       
       const updated = list.map(s => {
         if (s.id === search.id) {
@@ -187,6 +225,19 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate, embedded = fa
         return s;
       });
       updateSearches(updated);
+      if (search.enablePriceAlert && results.length > 0) {
+        upsertPriceAlert({
+          id: search.id,
+          searchId: search.id,
+          query: search.query,
+          maxPrice: search.maxPrice,
+          enabled: true,
+          lastTriggered: new Date().toISOString(),
+        });
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification(`Deal alert: ${search.query}`, { body: `${results.length} listings` });
+        }
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Search failed. Check your Gemini API key.';
       setSearchError(msg);
@@ -305,6 +356,24 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate, embedded = fa
                     ))}
                   </div>
                </div>
+               <div className="grid grid-cols-2 gap-2">
+                  <label className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                    <input type="checkbox" checked={excludeVB} onChange={(e) => setExcludeVB(e.target.checked)} className="accent-emerald-500" />
+                    Exclude VB
+                  </label>
+                  <label className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                    <input type="checkbox" checked={excludeTausch} onChange={(e) => setExcludeTausch(e.target.checked)} className="accent-emerald-500" />
+                    Exclude Tausch
+                  </label>
+               </div>
+               <div>
+                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1">PLZ filter</label>
+                  <input className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm" placeholder="e.g. 10115" value={plzFilter} onChange={(e) => setPlzFilter(e.target.value)} />
+               </div>
+               <label className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                  <input type="checkbox" checked={enablePriceAlert} onChange={(e) => setEnablePriceAlert(e.target.checked)} className="accent-emerald-500" />
+                  Notify when deals found
+               </label>
                <div className="flex gap-2 pt-2">
                   <button type="button" onClick={() => setIsCreating(false)} className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-xl font-bold text-xs">Cancel</button>
                   <button type="submit" className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-bold text-xs shadow-md">Save</button>
@@ -422,32 +491,34 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate, embedded = fa
                        </div>
                     ) : (
                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                          {selectedSearch.results.map((deal, idx) => (
-                             <a 
-                                key={idx}
-                                href={deal.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-xl hover:border-emerald-300 transition-all group flex flex-col justify-between h-full"
-                             >
+                          {selectedSearch.results.map((deal, idx) => {
+                             const score = (deal as LiveDeal & { dealScore?: number }).dealScore;
+                             return (
+                             <div key={idx} className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-xl hover:border-emerald-300 transition-all flex flex-col justify-between h-full">
                                 <div className="space-y-3">
-                                   <div className="flex justify-between items-start">
+                                   <div className="flex justify-between items-start gap-2">
                                       <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase ${deal.platform === 'Kleinanzeigen' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
                                          {deal.platform}
                                       </span>
-                                      <ExternalLink size={14} className="text-slate-300 group-hover:text-emerald-500 transition-colors"/>
+                                      {score != null && (
+                                        <span className={`text-[9px] font-black px-2 py-1 rounded-lg ${score >= 75 ? 'bg-emerald-100 text-emerald-700' : score >= 50 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                                          Score {score}
+                                        </span>
+                                      )}
                                    </div>
-                                   <h4 className="font-bold text-slate-900 text-sm line-clamp-2 leading-tight group-hover:text-emerald-800 transition-colors">{deal.title}</h4>
+                                   <a href={deal.url} target="_blank" rel="noreferrer" className="block">
+                                     <h4 className="font-bold text-slate-900 text-sm line-clamp-2 leading-tight hover:text-emerald-800">{deal.title}</h4>
+                                   </a>
                                 </div>
-                                
-                                <div className="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between">
+                                <div className="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between gap-2">
                                    <p className={`text-lg font-black ${deal.numericPrice === 0 ? 'text-amber-500' : 'text-slate-900'}`}>€{formatEUR(Number(deal.numericPrice ?? 0))}</p>
-                                   <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg group-hover:bg-emerald-600 group-hover:text-white transition-colors">
-                                      View <ArrowRight size={10}/>
+                                   <div className="flex gap-1">
+                                     <button type="button" onClick={() => setWatchlist(saveToWatchlist(deal, selectedSearch.id, score))} className="text-[9px] font-bold px-2 py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-amber-100">★ Save</button>
+                                     <a href={deal.url} target="_blank" rel="noreferrer" className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">View</a>
                                    </div>
                                 </div>
-                             </a>
-                          ))}
+                             </div>
+                          );})}
                        </div>
                     )}
                  </div>

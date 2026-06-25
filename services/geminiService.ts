@@ -195,6 +195,10 @@ export interface SavedSearchCriteria {
   platform?: DealSearchPlatform;
   customUrl?: string;
   lastRun?: string;
+  excludeVB?: boolean;
+  excludeTausch?: boolean;
+  plz?: string;
+  enablePriceAlert?: boolean;
 }
 
 export const resolveSearchPlatform = (criteria: SavedSearchCriteria): DealSearchPlatform => {

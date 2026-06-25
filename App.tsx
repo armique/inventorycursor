@@ -24,6 +24,8 @@ const InvoiceManager = lazy(() => import('./components/InvoiceManager'));
 const ActionHistoryPage = lazy(() => import('./components/ActionHistoryPage'));
 const MissingSpecsReport = lazy(() => import('./components/MissingSpecsReport'));
 const DealHunterPage = lazy(() => import('./components/DealHunterPage'));
+const HealthCheckPage = lazy(() => import('./components/HealthCheckPage'));
+const CompetitorTracker = lazy(() => import('./components/CompetitorTracker'));
 
 import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense, DashboardPreferences, ActionHistoryEntry, TaxMode, ItemUpdateOptions } from './types';
 import {
@@ -38,10 +40,13 @@ import { appendPriceHistoryIfChanged } from './services/priceHistory';
 import { computeItemProfitBeforeOverhead } from './services/financialAggregation';
 import { syncContainerBuyTotalsFromComponents } from './services/containerAggregates';
 import { applyTradeRevert } from './services/tradeRevert';
+import { applySaleRevert } from './services/saleRevert';
+import { pruneActionHistory } from './services/saleRevert';
 import { filterUsableImageUrls, isUsableProductImageUrl } from './services/storefrontImageUtils';
 import { saveOAuthResult } from './services/githubBackupService';
 import { generateExpensesFromRecurring } from './services/recurringExpenseService';
 import { Analytics } from '@vercel/analytics/react';
+import { PanelLocaleProvider } from './context/PanelLocaleContext';
 import { appendUndoHistory } from './utils/appendUndoHistory';
 import { persistSnapshotToLocalStorage, scheduleBackgroundWork } from './services/backgroundPersistence';
 
@@ -260,7 +265,8 @@ function loadActionHistoryFromStorage(): ActionHistoryEntry[] {
   try {
     const raw = localStorage.getItem('action_history');
     const parsed = raw ? (JSON.parse(raw) as ActionHistoryEntry[]) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    const list = Array.isArray(parsed) ? parsed : [];
+    return pruneActionHistory(list).active;
   } catch {
     return [];
   }
@@ -1172,6 +1178,23 @@ const App: React.FC = () => {
     localStorage.removeItem('action_history');
   }, []);
 
+  const handleRevertSale = useCallback(
+    (entry: ActionHistoryEntry) => {
+      if (!entry.itemId || !entry.action.includes('Sold')) return;
+      const item = items.find((i) => i.id === entry.itemId);
+      if (!item || item.status !== ItemStatus.SOLD) {
+        alert('Item is not sold anymore or was removed.');
+        return;
+      }
+      if (!window.confirm(`Revert sale for "${item.name}"? Item returns to In Stock; sale data is cleared.`)) return;
+      const nextItems = applySaleRevert(items, entry.itemId);
+      const updated = nextItems.find((i) => i.id === entry.itemId);
+      if (updated) handleUpdate([updated], undefined, { skipActionLog: true });
+      addActionEntries([makeActionEntry('Sale reverted', item, 'Restored to In Stock from action history.')]);
+    },
+    [items, handleUpdate, addActionEntries]
+  );
+
   const handleRevertTrade = useCallback(
     (entry: ActionHistoryEntry) => {
       if (entry.action !== 'Trade completed' || !entry.itemId) return;
@@ -1286,6 +1309,7 @@ const App: React.FC = () => {
   return (
     <Router>
       <Analytics />
+      <PanelLocaleProvider>
       <Routes>
         <Route path="/" element={<StorefrontPage />} />
         <Route path="/item/:id" element={<StorefrontPage />} />
@@ -1341,6 +1365,8 @@ const App: React.FC = () => {
           <Route path="builder" element={<PCBuilderWizard items={items} onSave={handleUpdate} />} />
           <Route path="pricing" element={<PriceCheck />} />
           <Route path="deal-hunter" element={<DealHunterPage items={items} onUpdate={handleUpdate} />} />
+          <Route path="health-check" element={<HealthCheckPage />} />
+          <Route path="competitors" element={<CompetitorTracker />} />
           <Route path="invoices" element={<InvoiceManager items={items} businessSettings={businessSettings} />} />
           <Route
             path="action-history"
@@ -1350,6 +1376,7 @@ const App: React.FC = () => {
                 items={items}
                 onClear={handleClearActionHistory}
                 onRevertTrade={handleRevertTrade}
+                onRevertSale={handleRevertSale}
               />
             }
           />
@@ -1376,6 +1403,7 @@ const App: React.FC = () => {
         <Route path="/auth/github/callback" element={<GitHubOAuthCallback />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </PanelLocaleProvider>
     </Router>
   );
 };

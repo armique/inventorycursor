@@ -1,4 +1,5 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, lazy, Suspense } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { formatEUR } from '../utils/formatMoney';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell
@@ -21,6 +22,8 @@ import {
 } from '../services/financialAggregation';
 import { toLocalCalendarDateKey, yearMonthKeyFromDate, currentLocalYearMonth } from '../utils/calendarDate';
 import { countSalesByPlatform, formatItemSalePlatform, groupSalesByPlatform, PLATFORM_GROUP_LABEL, buildPlatformReconciliation, buildEbayTagFixUpdates, sumRevenueByPlatform, countOrdersByPlatform, groupItemsByMarketplaceOrder, countMissingExplicitSalePlatform, type PlatformGroupKey } from '../utils/salePlatform';
+
+const DashboardAnalyticsPanel = lazy(() => import('./DashboardAnalyticsPanel'));
 
 interface Props {
   items: InventoryItem[];
@@ -125,6 +128,7 @@ const Dashboard: React.FC<Props> = ({
   onDashboardPreferencesChange,
   onUpdateItems,
 }) => {
+  const navigate = useNavigate();
   const timeFilter = dashboardPreferences.timeFilter;
   const customStart = dashboardPreferences.customStart;
   const customEnd = dashboardPreferences.customEnd;
@@ -854,8 +858,8 @@ const Dashboard: React.FC<Props> = ({
           <p className="text-slate-500 max-w-sm mt-2">Add your first item or import sales history from CSV to start analysis.</p>
         </div>
         <div className="flex gap-4">
-          <button onClick={() => window.location.hash = '#/add'} className="bg-blue-600 text-white px-8 py-3 rounded-2xl font-bold shadow-lg shadow-blue-200 hover:bg-blue-700 transition-all">Add Item</button>
-          <button onClick={() => window.location.hash = '#/import'} className="bg-white text-slate-700 border px-8 py-3 rounded-2xl font-bold hover:bg-slate-50 transition-all">Import Data</button>
+          <button type="button" onClick={() => navigate('/panel/add')} className="bg-blue-600 text-white px-8 py-3 rounded-2xl font-bold shadow-lg shadow-blue-200 hover:bg-blue-700 transition-all">Add Item</button>
+          <button type="button" onClick={() => navigate('/panel/import')} className="bg-white text-slate-700 border px-8 py-3 rounded-2xl font-bold hover:bg-slate-50 transition-all">Import Data</button>
         </div>
       </div>
     );
@@ -1464,6 +1468,17 @@ const Dashboard: React.FC<Props> = ({
       </div>
       )}
     </div>
+
+    <Suspense fallback={null}>
+      <DashboardAnalyticsPanel
+        items={items}
+        expenses={expenses}
+        range={{ start: startDate, end: endDate }}
+        rangeLabel={periodLabel}
+        profitGoal={monthlyGoal}
+      />
+    </Suspense>
+
     {financialDetailModal && createPortal(
       <div 
         className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 animate-in fade-in" 

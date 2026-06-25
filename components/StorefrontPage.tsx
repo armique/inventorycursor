@@ -925,7 +925,7 @@ const StorefrontPage: React.FC = () => {
         );
       })()}
       {aboutContactModal && <AboutContactModal type={aboutContactModal} onClose={() => setAboutContactModal(null)} onOpenPrivacy={() => { setAboutContactModal(null); setLegalModal('datenschutz'); }} />}
-      {!getCookieConsentAccepted() && <CookieConsent onAccept={() => { try { localStorage.setItem('armiktech_cookie_consent', '1'); } catch {} setCookieConsent(true); }} onPrivacyClick={() => setLegalModal('datenschutz')} />}
+      {!getCookieConsentAccepted() && <CookieConsent onAccept={() => setCookieConsent(true)} onPrivacyClick={() => setLegalModal('datenschutz')} />}
       {catalogLoaded && items.length > 0 && (
         <script
           type="application/ld+json"

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { formatEUR } from '../utils/formatMoney';
 
 import { read, utils } from 'xlsx';
@@ -38,6 +39,7 @@ const DEFAULT_MAPPING: ColumnMapping = {
 };
 
 const SheetsImport: React.FC<Props> = ({ onImport, onClearData }) => {
+  const navigate = useNavigate();
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [rawSheetData, setRawSheetData] = useState<any[][]>([]);
@@ -682,7 +684,7 @@ const SheetsImport: React.FC<Props> = ({ onImport, onClearData }) => {
                 <StatBox label="Recognized" value={stats.autoCategorized} color="text-emerald-400" />
                 <StatBox label="Manual Review" value={stats.review} color="text-amber-400" />
              </div>
-             <button onClick={() => window.location.hash = '#/inventory'} className="w-full py-6 bg-blue-600 text-white rounded-[1.5rem] font-black uppercase text-xs tracking-widest hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
+             <button type="button" onClick={() => navigate('/panel/inventory')} className="w-full py-6 bg-blue-600 text-white rounded-[1.5rem] font-black uppercase text-xs tracking-widest hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
                Open Inventory Hub <ArrowRight size={16}/>
              </button>
           </div>

@@ -2,8 +2,10 @@ import React, { Suspense } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
   Package, PlusCircle, Settings, RefreshCw, Briefcase, Trash2, CloudUpload, LayoutDashboard, BarChart3,
-  Layers, Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe, Tag, Sparkles, AlertCircle, Radar,
+  Layers, Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe, Tag, Sparkles, AlertCircle, Radar, Activity, Swords,
 } from 'lucide-react';
+import PanelBreadcrumbs from './PanelBreadcrumbs';
+import { usePanelLocale } from '../context/PanelLocaleContext';
 import { signInWithGooglePopup, logOut } from '../services/firebaseService';
 import QuotaMonitor from './QuotaMonitor';
 import GlobalSearch from './GlobalSearch';
@@ -35,6 +37,7 @@ interface PanelLayoutProps {
 
 const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, authReady = false, isAdmin = false, syncState = { status: 'idle', lastSynced: null }, onForcePush, backupBannerDismissed = true, onDismissBackupBanner, items = [], expenses = [], businessSettings = { companyName: '', ownerName: '', address: '', taxMode: 'SmallBusiness' }, onUpdateItems }) => {
   const location = useLocation();
+  const { locale, setLocale } = usePanelLocale();
   const [signingIn, setSigningIn] = React.useState(false);
   /** Inventory/trash use internal scroll + docked bulk bar; other pages scroll normally. */
   const isDockedPanelPage = /^\/panel\/(inventory|trash)(\/|$)/.test(location.pathname);
@@ -116,6 +119,8 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     { to: '/panel/builder', icon: <Briefcase size={20} />, label: 'PC Builder' },
     { to: '/panel/pricing', icon: <Tag size={20} />, label: 'Price check' },
     { to: '/panel/deal-hunter', icon: <Radar size={20} />, label: 'Deal hunter' },
+    { to: '/panel/competitors', icon: <Swords size={20} />, label: 'Competitors' },
+    { to: '/panel/health-check', icon: <Activity size={20} />, label: 'Health check' },
     { to: '/panel/invoices', icon: <Receipt size={20} />, label: 'Invoice Manager' },
     { to: '/panel/action-history', icon: <History size={20} />, label: 'Action history' },
     { to: '/panel/expenses', icon: <RefreshCw size={20} />, label: 'Expenses' },
@@ -203,6 +208,13 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
         <div
           className={`flex-1 min-h-0 flex flex-col ${isDockedPanelPage ? 'overflow-hidden' : 'overflow-y-auto'}`}
         >
+          <div className="px-4 md:px-8 pt-4 shrink-0 flex items-center justify-between gap-3">
+            <PanelBreadcrumbs />
+            <div className="flex rounded-lg border border-slate-200 bg-white p-0.5 text-[10px] font-black uppercase">
+              <button type="button" onClick={() => setLocale('en')} className={`px-2 py-1 rounded ${locale === 'en' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>EN</button>
+              <button type="button" onClick={() => setLocale('de')} className={`px-2 py-1 rounded ${locale === 'de' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>DE</button>
+            </div>
+          </div>
           <Suspense fallback={
             <div className="flex items-center justify-center min-h-[300px] flex-1">
               <Loader2 size={32} className="animate-spin text-slate-400" />

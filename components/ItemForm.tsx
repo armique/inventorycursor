@@ -17,6 +17,8 @@ import { CATEGORY_IMAGES, getSpecOptions } from '../services/hardwareDB';
 import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
 import { getCompatibleItemsForItem } from '../services/compatibility';
 import { getEssentialSpecFieldKeys } from '../services/essentialSpecFields';
+import { getCompatibilityWarnings } from '../utils/compatibilityWarnings';
+import { recordCategoryCorrection } from '../services/categoryCorrections';
 
 interface Props {
   items: InventoryItem[];
@@ -122,6 +124,11 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
 
   /** Controlled string so partial decimals like "17." work (parsing on each keystroke strips the dot). */
   const [buyPriceText, setBuyPriceText] = useState('');
+
+  const compatWarnings = useMemo(() => {
+    if (!formData.name) return [];
+    return getCompatibilityWarnings(formData as InventoryItem, items);
+  }, [formData, items]);
 
   useEffect(() => {
     // Priority: initialData (Modal/Prop) -> ID (URL) -> Default
@@ -590,6 +597,16 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
             </div>
           </div>
         </header>
+      )}
+
+      {compatWarnings.length > 0 && (
+        <div className="space-y-1">
+          {compatWarnings.map((w, i) => (
+            <p key={i} className={`text-xs font-bold px-3 py-2 rounded-xl ${w.level === 'error' ? 'bg-red-50 text-red-700 border border-red-100' : 'bg-amber-50 text-amber-800 border border-amber-100'}`}>
+              {w.message}
+            </p>
+          ))}
+        </div>
       )}
 
       {isModal && configStep === 'DONE' && (
