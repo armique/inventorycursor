@@ -644,9 +644,9 @@ const SettingsPage: React.FC<Props> = ({
 
           {activeTab === 'EBAY' && (
              <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
-                <h3 className="text-xl font-black text-slate-900 flex items-center gap-2"><ShoppingBag size={24}/> eBay API</h3>
+                <h3 className="text-xl font-black text-slate-900 flex items-center gap-2"><ShoppingBag size={24}/> eBay sync (optional)</h3>
                 <p className="text-sm text-slate-500">
-                   Add your eBay OAuth access token to enable order import. When you mark an item sold on ebay.de, you can fetch buyer and shipping details automatically by entering the order ID.
+                   Optional OAuth token for the automatic eBay order banner in the panel. Most sellers mark sales with the eBay order screenshot parser in the sale dialog instead — no API setup required.
                 </p>
                 <div className="space-y-2">
                    <label className="text-[10px] font-black uppercase text-slate-400 ml-1">OAuth Access Token</label>

@@ -741,6 +741,20 @@ const Dashboard: React.FC<Props> = ({
     [soldInPeriod]
   );
 
+  const ebayMonthlyReconciliation = useMemo(() => {
+    const ebayItems = periodInsights.salesByPlatform.ebay || [];
+    const orderStats = periodInsights.platformOrders.ebay;
+    const orderGroups = groupItemsByMarketplaceOrder(ebayItems, items);
+    const bundleSplits = orderGroups.filter((g) => g.items.length > 1);
+    return {
+      ebayItems,
+      orderStats,
+      orderGroups,
+      bundleSplits,
+      revenue: periodInsights.platformRevenue.ebay,
+    };
+  }, [periodInsights, items]);
+
   const handleFixEbayTags = () => {
     if (!onUpdateItems) return;
     const updates = buildEbayTagFixUpdates(soldInPeriod);
@@ -1115,6 +1129,43 @@ const Dashboard: React.FC<Props> = ({
               </ul>
               <p className="text-[11px] sm:text-xs text-amber-800/80">
                 eBay Seller Hub gross sales can also include buyer shipping and orders not yet in inventory. Use the same year filter (e.g. 2026) on both sides.
+              </p>
+            </div>
+          )}
+          {ebayMonthlyReconciliation.orderStats.itemCount > 0 && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50/90 px-3 py-2.5 lg:px-4 lg:py-3 text-xs sm:text-sm text-slate-800 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-bold">Monthly eBay ↔ inventory reconciliation ({periodLabel})</p>
+                <button
+                  type="button"
+                  onClick={() => openPlatformSales('ebay')}
+                  className="text-[10px] font-black uppercase tracking-widest text-blue-700 hover:underline"
+                >
+                  Open all eBay sales
+                </button>
+              </div>
+              <ul className="space-y-1 text-slate-700">
+                <li>
+                  <strong>{ebayMonthlyReconciliation.orderStats.orderCount}</strong> eBay order
+                  {ebayMonthlyReconciliation.orderStats.orderCount === 1 ? '' : 's'} in app →{' '}
+                  <strong>{ebayMonthlyReconciliation.orderStats.itemCount}</strong> inventory row
+                  {ebayMonthlyReconciliation.orderStats.itemCount === 1 ? '' : 's'} · revenue{' '}
+                  <strong>€{formatEUR(ebayMonthlyReconciliation.revenue)}</strong>
+                </li>
+                {ebayMonthlyReconciliation.orderStats.orderCount !== ebayMonthlyReconciliation.orderStats.itemCount && (
+                  <li className="text-slate-600">
+                    {ebayMonthlyReconciliation.bundleSplits.length} order
+                    {ebayMonthlyReconciliation.bundleSplits.length === 1 ? '' : 's'} split into multiple parts (bundle rows) — normal if one eBay sale = several components.
+                  </li>
+                )}
+                {ebayMonthlyReconciliation.bundleSplits.slice(0, 5).map((g) => (
+                  <li key={g.key} className="text-[11px] text-slate-500 pl-3">
+                    {g.label} — €{formatEUR(g.revenue)}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-[11px] text-slate-500">
+                Compare <strong>{ebayMonthlyReconciliation.orderStats.orderCount}</strong> to eBay Seller Hub “Stückzahl” for the same period. Revenue here is net sell prices stored per item (after fees if you used screenshot parse).
               </p>
             </div>
           )}

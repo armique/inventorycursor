@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Euro, CheckCircle2, User, Globe, ChevronDown, Link as LinkIcon, MessageCircle, Hash, Upload, Sparkles, ImagePlus } from 'lucide-react';
 import { parseEbayOrderFromImageInput } from '../services/ebayOrderScreenshotAI';
+import { mapKleinanzeigenPaymentMethod, parseKleinanzeigenChatFromImageInput } from '../services/kleinanzeigenChatScreenshotAI';
 import { InventoryItem, ItemStatus, PaymentType, CustomerInfo, Platform, TaxMode } from '../types';
 import { SALE_PLATFORM_OPTIONS } from '../utils/salePlatform';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
@@ -48,6 +49,8 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
   const [orderScreenshotParsing, setOrderScreenshotParsing] = useState(false);
   const [orderScreenshotError, setOrderScreenshotError] = useState<string | null>(null);
   const [ebayScreenshotDragOver, setEbayScreenshotDragOver] = useState(false);
+  const [kaChatParsing, setKaChatParsing] = useState(false);
+  const [kaChatParseError, setKaChatParseError] = useState<string | null>(null);
 
   useEffect(() => {
     if (platformSold !== 'ebay.de') setEbayScreenshotDragOver(false);
@@ -155,6 +158,35 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
       setOrderScreenshotError(err instanceof Error ? err.message : 'Parse failed');
     } finally {
       setOrderScreenshotParsing(false);
+    }
+  };
+
+  const handleParseKleinanzeigenChat = async () => {
+    const src = kleinanzeigenChatImage.trim();
+    if (!src) {
+      setKaChatParseError('Upload a chat screenshot or paste an image URL first.');
+      return;
+    }
+    setKaChatParseError(null);
+    setKaChatParsing(true);
+    try {
+      const data = await parseKleinanzeigenChatFromImageInput(src);
+      setPlatformSold('kleinanzeigen.de');
+      setPaymentType(mapKleinanzeigenPaymentMethod(data.paymentMethod));
+      if (data.buyerName) {
+        setCustomer((prev) => ({ ...prev, name: data.buyerName! }));
+      }
+      if (data.agreedPriceEur != null && Number.isFinite(data.agreedPriceEur)) {
+        setSalePrice(formatEUR(data.agreedPriceEur));
+        setHasFee(false);
+        setFeeAmount(0);
+      }
+      if (data.saleDate) setSaleDate(data.saleDate);
+      if (data.chatUrl) setKleinanzeigenChatUrl(data.chatUrl);
+    } catch (err: unknown) {
+      setKaChatParseError(err instanceof Error ? err.message : 'Parse failed');
+    } finally {
+      setKaChatParsing(false);
     }
   };
 
@@ -290,7 +322,7 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
                                 placeholder="Upload or paste URL..."
                                 className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
                                 value={kleinanzeigenChatImage}
-                                onChange={e => setKleinanzeigenChatImage(e.target.value)}
+                                onChange={e => { setKleinanzeigenChatImage(e.target.value); setKaChatParseError(null); }}
                              />
                              <div className="absolute right-2 top-1/2 -translate-y-1/2">
                                 <label className="p-1.5 cursor-pointer text-slate-400 hover:text-blue-500 transition-colors bg-slate-50 rounded-lg border border-slate-200">
@@ -305,6 +337,18 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
                              </a>
                           )}
                        </div>
+                       <button
+                          type="button"
+                          onClick={handleParseKleinanzeigenChat}
+                          disabled={kaChatParsing || !kleinanzeigenChatImage.trim()}
+                          className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50"
+                       >
+                          <Sparkles size={12} className={kaChatParsing ? 'animate-spin' : ''} />
+                          {kaChatParsing ? 'Parsing chat…' : 'Parse chat (AI)'}
+                       </button>
+                       {kaChatParseError && (
+                          <p className="text-[10px] text-red-600 font-bold mt-1">{kaChatParseError}</p>
+                       )}
                     </div>
                  </div>
               )}

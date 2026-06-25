@@ -46,13 +46,6 @@ const makeRequest = async (endpoint: string, options: RequestInit) => {
   }
 };
 
-export const testEbayConnection = async () => {
-  // Test connection via our proxy
-  return await makeRequest('https://api.ebay.com/sell/inventory/v1/inventory_item?limit=1', {
-    method: 'GET'
-  });
-};
-
 export const createEbayDraft = async (item: any) => {
   // Generate a SKU if not present.
   const sku = item.ebaySku || `SKU-${item.id.replace(/[^a-zA-Z0-9-]/g, '')}-${Date.now().toString().slice(-4)}`;

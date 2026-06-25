@@ -20,10 +20,11 @@ interface SourcingSession {
 interface Props {
   items: InventoryItem[];
   onUpdate?: (toSave: InventoryItem[]) => void;
+  defaultTab?: 'MARKET' | 'BUNDLES' | 'SOURCING';
 }
 
-const AIAssistant: React.FC<Props> = ({ items, onUpdate }) => {
-  const [activeTab, setActiveTab] = useState<'MARKET' | 'BUNDLES' | 'SOURCING'>('MARKET');
+const AIAssistant: React.FC<Props> = ({ items, onUpdate, defaultTab = 'MARKET' }) => {
+  const [activeTab, setActiveTab] = useState<'MARKET' | 'BUNDLES' | 'SOURCING'>(defaultTab);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState<AIResponse | null>(null);

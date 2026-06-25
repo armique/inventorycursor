@@ -3,6 +3,8 @@ import { FileText, Check, Search, Receipt, Calendar, Info, CreditCard, Square, C
 import { InventoryItem, ItemStatus, BusinessSettings } from '../types';
 import { formatEUR } from '../utils/formatMoney';
 import InvoiceGenerator from './InvoiceGenerator';
+import { buildBuyerInvoiceGroups } from '../utils/invoiceBuyerGroups';
+import { Users } from 'lucide-react';
 
 type TimeFilter = 'ALL' | 'THIS_WEEK' | 'LAST_WEEK' | 'THIS_MONTH' | 'LAST_MONTH' | 'LAST_30' | 'LAST_90' | 'THIS_YEAR' | 'LAST_YEAR';
 
@@ -118,6 +120,12 @@ const InvoiceManager: React.FC<Props> = ({ items, businessSettings }) => {
   };
 
   const selectedItems = items.filter(i => selectedIds.includes(i.id));
+
+  const buyerGroups = useMemo(() => buildBuyerInvoiceGroups(soldItems), [soldItems]);
+
+  const selectBuyerGroup = (itemIds: string[]) => {
+    setSelectedIds(itemIds);
+  };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
@@ -242,6 +250,38 @@ const InvoiceManager: React.FC<Props> = ({ items, businessSettings }) => {
                    </div>
                 </div>
               )}
+           </div>
+
+           <div className="bg-white p-8 rounded-[3rem] border border-slate-100 space-y-4">
+              <h4 className="font-black text-xs uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                <Users size={14} /> Invoice by buyer / order
+              </h4>
+              {buyerGroups.length > 0 ? (
+                <div className="space-y-2 max-h-[280px] overflow-y-auto scrollbar-hide pr-1">
+                  {buyerGroups.slice(0, 24).map((g) => (
+                    <button
+                      key={g.key}
+                      type="button"
+                      onClick={() => selectBuyerGroup(g.itemIds)}
+                      className={`w-full text-left p-3 rounded-2xl border transition-all ${
+                        g.itemIds.every((id) => selectedIds.includes(id)) && g.itemIds.length > 0
+                          ? 'bg-blue-50 border-blue-200'
+                          : 'bg-slate-50 border-slate-100 hover:border-slate-200'
+                      }`}
+                    >
+                      <p className="text-sm font-black text-slate-900 truncate">{g.label}</p>
+                      <p className="text-[10px] text-slate-500 font-bold mt-0.5">
+                        {g.sublabel || `${g.itemIds.length} item(s)`} · €{formatEUR(g.total)}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 italic">No sold items in the current filter.</p>
+              )}
+              <p className="text-[10px] text-slate-400 leading-snug">
+                Groups eBay orders and same-day buyers so one invoice covers a full order or bundle split.
+              </p>
            </div>
 
            <div className="bg-white p-8 rounded-[3rem] border border-slate-100 space-y-4">

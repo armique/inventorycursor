@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, useDeferredValue, startTransition } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { formatEUR, parseLocaleMoney, parseLocaleNumber } from '../utils/formatMoney';
 import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSortKey, buildTimeGaugeSortKeyMap } from '../utils/inventoryTimeGauge';
 import { createPortal } from 'react-dom';
@@ -526,24 +527,6 @@ const InventoryList: React.FC<Props> = ({
     closePriceSuggestModal();
   };
 
-  // -- VIRTUALIZATION / PERFORMANCE --
-  const [visibleCount, setVisibleCount] = useState(50);
-  const tableContainerRef = useRef<HTMLDivElement>(null);
-
-  // Reset visual count when filters change to ensure user sees top results
-  useEffect(() => {
-    setVisibleCount(50);
-    if(tableContainerRef.current) tableContainerRef.current.scrollTop = 0;
-  }, [searchTerm, timeFilter, sortConfig, statusFilter, categoryFilter, subCategoryFilter, salePlatformFilter, salePaymentFilter, specFilters, specRangeFilters]);
-
-  // Infinite Scroll Handler
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
-    if (scrollHeight - scrollTop - clientHeight < 300) {
-      setVisibleCount(prev => prev + 20);
-    }
-  };
-  
   // Visible Columns (from order, excluding hidden) — memoized so row renders are not invalidated every parent render
   const visibleColumns = useMemo(
     () => columnOrder.filter((id) => !hiddenColumnIds.includes(id)),
@@ -812,7 +795,20 @@ const InventoryList: React.FC<Props> = ({
     return filtered;
   }, [items, deferredSearchTerm, statusFilter, categoryFilter, subCategoryFilter, sortConfig, timeFilter, dateRange, salePlatformFilter, salePaymentFilter, specFilters, specRangeFilters, showInComposition, timeGaugeSortKeyMap]);
 
-  const visibleItems = useMemo(() => sortedItems.slice(0, visibleCount), [sortedItems, visibleCount]);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const rowHeightEstimate = listDensity === 'compact' ? 76 : 118;
+  const rowVirtualizer = useVirtualizer({
+    count: sortedItems.length,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => rowHeightEstimate,
+    overscan: 12,
+  });
+
+  useEffect(() => {
+    if (tableContainerRef.current) tableContainerRef.current.scrollTop = 0;
+    rowVirtualizer.scrollToIndex(0);
+  }, [searchTerm, timeFilter, sortConfig, statusFilter, categoryFilter, subCategoryFilter, salePlatformFilter, salePaymentFilter, specFilters, specRangeFilters, rowVirtualizer]);
+
   const showFinancials = statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS';
 
   const missingPlatformSoldCount = useMemo(
@@ -824,14 +820,14 @@ const InventoryList: React.FC<Props> = ({
     if (statusFilter !== 'ACTIVE') return EMPTY_COMPAT_COUNT_MAP;
     const map = new Map<string, number>();
     const partTypes = new Set(['Processors', 'Motherboards', 'RAM']);
-    for (const item of visibleItems) {
+    for (const item of sortedItems.slice(0, 120)) {
       if (!partTypes.has(item.subCategory || '') && !partTypes.has(item.category || '')) continue;
       const groups = getCompatibleItemsForItem(item, items);
       const total = groups.reduce((sum, g) => sum + g.items.length, 0);
       if (total > 0) map.set(item.id, total);
     }
     return map;
-  }, [visibleItems, items, statusFilter]);
+  }, [sortedItems, items, statusFilter]);
 
   // Active filter count (for badge) — category/subcategory + spec keys
   const activeSpecFilterCount = useMemo(() => {
@@ -2601,11 +2597,77 @@ const InventoryList: React.FC<Props> = ({
          </div>
       )}
 
+      {/* Mobile-friendly sold list (phones) */}
+      {statusFilter === 'SOLD' && (
+        <div className="lg:hidden flex-1 min-h-0 overflow-y-auto custom-scrollbar px-3 pb-4 space-y-3">
+          {sortedItems.length === 0 ? (
+            <div className="py-16 text-center opacity-40">
+              <Package size={40} className="mx-auto mb-3 text-slate-300" />
+              <p className="font-bold text-slate-400 text-sm">No sold items match filters</p>
+            </div>
+          ) : (
+            sortedItems.map((item) => (
+              <div key={item.id} className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm space-y-3">
+                <div className="flex gap-3 items-start">
+                  <ItemThumbnail item={item} className="w-12 h-12 rounded-xl object-cover border border-slate-100 shrink-0" size={48} />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-black text-slate-900 text-sm leading-snug">{item.name}</p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Sold {item.sellDate || '—'} · €{item.sellPrice != null ? formatEUR(item.sellPrice) : '—'}
+                      {item.profit != null && (
+                        <span className={item.profit >= 0 ? ' text-emerald-600' : ' text-red-600'}>
+                          {' '}· {item.profit >= 0 ? '+' : ''}€{formatEUR(item.profit)}
+                        </span>
+                      )}
+                    </p>
+                    {(item.customer?.name || item.ebayUsername) && (
+                      <p className="text-[10px] text-slate-500 mt-1 truncate">
+                        {item.customer?.name}{item.ebayUsername ? ` · ${item.ebayUsername}` : ''}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="text-[9px] font-black uppercase text-slate-400">Sold on</label>
+                  <select
+                    value={item.platformSold || ''}
+                    onChange={(e) => handleQuickPlatformChange(item, e.target.value as Platform | '')}
+                    className={`text-xs font-bold rounded-lg border px-2 py-1.5 flex-1 min-w-[8rem] ${
+                      isMissingExplicitSalePlatform(item) ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-slate-50'
+                    }`}
+                  >
+                    <option value="">—</option>
+                    {SALE_PLATFORM_OPTIONS.map((p) => (
+                      <option key={p.value} value={p.value}>{p.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleEditClick(item)}
+                    className="flex-1 py-2 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { addRecentItemId(item.id); setInvoiceViewItem(item); }}
+                    className="flex-1 py-2 rounded-xl border border-slate-200 text-slate-700 text-[10px] font-black uppercase"
+                  >
+                    Invoice
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
       {/* Table scrolls in remaining height; bulk bar is a separate row below (never overlays rows) */}
-      <div className="flex flex-col flex-1 min-h-0 min-w-0 rounded-[2.5rem] border border-slate-100 shadow-sm bg-white overflow-hidden">
+      <div className={`flex flex-col flex-1 min-h-0 min-w-0 rounded-[2.5rem] border border-slate-100 shadow-sm bg-white overflow-hidden ${statusFilter === 'SOLD' ? 'hidden lg:flex' : 'flex'}`}>
       <div 
         ref={tableContainerRef}
-        onScroll={handleScroll}
         className="flex-1 min-h-0 overflow-x-auto overflow-y-auto custom-scrollbar pb-3"
       >
          <style>{`
@@ -2708,8 +2770,10 @@ const InventoryList: React.FC<Props> = ({
                   })}
                </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
-               {visibleItems.length > 0 ? visibleItems.map((item) => (
+            <tbody className="divide-y divide-slate-50" style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative' }}>
+               {sortedItems.length > 0 ? rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const item = sortedItems[virtualRow.index]!;
+                  return (
                   <InventoryTableRow
                     key={item.id}
                     item={item}
@@ -2717,19 +2781,21 @@ const InventoryList: React.FC<Props> = ({
                     visibleColumns={visibleColumns}
                     renderRowCells={renderRowCells}
                     rowActivityKey={`${editingCell?.itemId === item.id ? editingCell.field : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${expandedBundles.has(item.id) ? 'open' : 'shut'}`}
+                    virtualStyle={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                    measureRef={rowVirtualizer.measureElement}
+                    dataIndex={virtualRow.index}
                   />
-               )) : (
+               ); }) : (
                   <tr>
                      <td colSpan={visibleColumns.length} className="p-20 text-center opacity-40">
                         <Package size={48} className="mx-auto mb-4 text-slate-300"/>
                         <p className="font-bold text-slate-400">No items found matching current filters</p>
-                     </td>
-                  </tr>
-               )}
-               {visibleCount < sortedItems.length && (
-                  <tr>
-                     <td colSpan={visibleColumns.length} className="p-4 text-center">
-                        <span className="text-xs text-slate-400 font-bold animate-pulse">Loading more items...</span>
                      </td>
                   </tr>
                )}
@@ -3110,12 +3176,20 @@ type InventoryTableRowProps = {
   renderRowCells: (item: InventoryItem, isSelected: boolean) => React.ReactNode;
   /** Bumps when inline edit / AI spinners affect this row so memo does not skip updates. */
   rowActivityKey: string;
+  virtualStyle?: React.CSSProperties;
+  measureRef?: (node: Element | null) => void;
+  dataIndex?: number;
 };
 
 const InventoryTableRow = React.memo(
-  function InventoryTableRow({ item, isSelected, renderRowCells }: InventoryTableRowProps) {
+  function InventoryTableRow({ item, isSelected, renderRowCells, virtualStyle, measureRef, dataIndex }: InventoryTableRowProps) {
     return (
-      <tr className={`hover:bg-slate-50/50 transition-colors group/row ${isSelected ? 'bg-blue-50/20' : ''}`}>
+      <tr
+        ref={measureRef}
+        data-index={dataIndex}
+        style={virtualStyle}
+        className={`hover:bg-slate-50/50 transition-colors group/row ${isSelected ? 'bg-blue-50/20' : ''}`}
+      >
         {renderRowCells(item, isSelected)}
       </tr>
     );
@@ -3125,7 +3199,9 @@ const InventoryTableRow = React.memo(
     prev.isSelected === next.isSelected &&
     prev.visibleColumns === next.visibleColumns &&
     prev.rowActivityKey === next.rowActivityKey &&
-    prev.renderRowCells === next.renderRowCells
+    prev.renderRowCells === next.renderRowCells &&
+    prev.virtualStyle === next.virtualStyle &&
+    prev.dataIndex === next.dataIndex
 );
 
 const CategoryPickerModal: React.FC<{

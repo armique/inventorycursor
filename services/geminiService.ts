@@ -470,13 +470,13 @@ export const analyzeSourcingStrategy = async (items: InventoryItem[]): Promise<S
 };
 
 export const findLiveDeals = async (strategy: SourcingStrategy): Promise<LiveDeal[]> => {
+  const query = [strategy.targetCategory, strategy.title].filter(Boolean).join(' ').trim() || strategy.targetCategory;
   return executeSavedSearch({
     id: 'temp',
-    query: strategy.targetCategory,
-    maxBuyPrice: strategy.maxBuyPrice, // Fixed: ensure this matches SavedSearchCriteria interface if needed, or mapped
-    maxPrice: strategy.maxBuyPrice, // Mapping to SavedSearchCriteria
-    includeEbay: true
-  } as any);
+    query,
+    maxPrice: strategy.maxBuyPrice,
+    includeEbay: true,
+  });
 };
 
 export const generateCrossPostingContent = async (item: InventoryItem): Promise<CrossPostContent | null> => {

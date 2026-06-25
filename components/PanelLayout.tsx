@@ -2,7 +2,7 @@ import React, { Suspense } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
   Package, PlusCircle, Settings, RefreshCw, Briefcase, Trash2, CloudUpload, LayoutDashboard, BarChart3,
-  Layers, Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe, Tag, Sparkles, AlertCircle,
+  Layers, Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe, Tag, Sparkles, AlertCircle, Radar,
 } from 'lucide-react';
 import { signInWithGooglePopup, logOut } from '../services/firebaseService';
 import QuotaMonitor from './QuotaMonitor';
@@ -115,6 +115,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     { to: '/panel/add-bulk', icon: <Layers size={20} />, label: 'Bulk Entry' },
     { to: '/panel/builder', icon: <Briefcase size={20} />, label: 'PC Builder' },
     { to: '/panel/pricing', icon: <Tag size={20} />, label: 'Price check' },
+    { to: '/panel/deal-hunter', icon: <Radar size={20} />, label: 'Deal hunter' },
     { to: '/panel/invoices', icon: <Receipt size={20} />, label: 'Invoice Manager' },
     { to: '/panel/action-history', icon: <History size={20} />, label: 'Action history' },
     { to: '/panel/expenses', icon: <RefreshCw size={20} />, label: 'Expenses' },
