@@ -1462,10 +1462,23 @@ const InventoryList: React.FC<Props> = ({
           setExpandedBundles(newExpanded);
         };
         const isEditingName = editingCell?.itemId === item.id && editingCell?.field === 'item';
+        const canExpandBundle = (item.isPC || item.isBundle) && childItems.length > 0;
         return (
           <td key={id} className="p-5" style={style} onClick={() => handleRowClick(item, isEditingName)}>
-             <div className="flex items-center gap-2 cursor-pointer group/cell">
+             <div className="flex items-start gap-2 cursor-pointer group/cell">
                 <ItemThumbnail item={item} className="w-10 h-10 rounded-lg object-cover shadow-sm border border-slate-100 shrink-0" size={40} />
+                {canExpandBundle && (
+                  <button
+                    type="button"
+                    onClick={toggleExpand}
+                    className="mt-0.5 p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
+                    title={isExpanded ? 'Collapse components' : 'Expand to show components'}
+                    aria-expanded={isExpanded}
+                    aria-label={isExpanded ? 'Collapse bundle components' : 'Expand bundle components'}
+                  >
+                    {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                  </button>
+                )}
                 <div className="flex-1 min-w-0">
                    <div className="flex items-center gap-2">
                       {isEditingName ? (
@@ -1497,15 +1510,6 @@ const InventoryList: React.FC<Props> = ({
                           {item.name}
                         </p>
                       )}
-                      {(item.isPC || item.isBundle) && childItems.length > 0 && (
-                         <button
-                            onClick={toggleExpand}
-                            className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-                            title={isExpanded ? "Collapse components" : "Expand to show components"}
-                         >
-                            {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                         </button>
-                      )}
                    </div>
                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                       {item.specs && Object.keys(item.specs).length > 0 && (
@@ -1527,7 +1531,7 @@ const InventoryList: React.FC<Props> = ({
                         </span>
                       )}
                       <span className="text-[10px] text-slate-400 font-bold uppercase truncate">{item.vendor}</span>
-                      {(item.isPC || item.isBundle) && childItems.length > 0 && (
+                      {canExpandBundle && (
                          <span className="text-[9px] text-slate-500 font-medium">({childItems.length} items)</span>
                       )}
                    </div>
@@ -2709,7 +2713,7 @@ const InventoryList: React.FC<Props> = ({
                     isSelected={selectedIdSet.has(item.id)}
                     visibleColumns={visibleColumns}
                     renderRowCells={renderRowCells}
-                    rowActivityKey={`${editingCell?.itemId === item.id ? editingCell.field : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}`}
+                    rowActivityKey={`${editingCell?.itemId === item.id ? editingCell.field : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${expandedBundles.has(item.id) ? 'open' : 'shut'}`}
                   />
                )) : (
                   <tr>
