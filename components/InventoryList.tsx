@@ -1594,6 +1594,9 @@ const InventoryList: React.FC<Props> = ({
                                          <span className="flex items-center gap-1 text-slate-500">
                                             <Calendar size={10} />
                                             Buy: {new Date(child.buyDate).toLocaleDateString()}
+                                            {child.buyPrice != null && (
+                                              <span className="font-semibold text-slate-600">· €{formatEUR(child.buyPrice)}</span>
+                                            )}
                                          </span>
                                       )}
                                       {child.sellDate && (
