@@ -68,9 +68,9 @@ interface SortConfig {
 const DEFAULT_WIDTHS: Record<string, number> = {
   select: 36,
   item: 200,
-  presence: 52,
-  parseSpecs: 86,
-  category: 108,
+  presence: 128,
+  parseSpecs: 148,
+  category: 116,
   status: 82,
   buyPrice: 76,
   sellPrice: 76,
@@ -84,7 +84,9 @@ const DEFAULT_WIDTHS: Record<string, number> = {
 
 function clampInventoryColumnWidth(colId: ColumnId, w: number): number {
   const def = DEFAULT_WIDTHS[colId];
-  const min = Math.max(40, Math.floor(def * 0.35));
+  const floor =
+    colId === 'presence' ? 112 : colId === 'parseSpecs' ? 132 : colId === 'category' ? 96 : Math.max(40, Math.floor(def * 0.35));
+  const min = floor;
   const max = Math.min(900, Math.ceil(def * 3.5));
   return Math.round(Math.min(max, Math.max(min, w)));
 }
@@ -175,7 +177,14 @@ const InventoryList: React.FC<Props> = ({
      return saved ? JSON.parse(saved) : { key: 'buyDate', direction: 'desc' };
   });
   
-  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => loadState('widths', DEFAULT_WIDTHS));
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
+    const saved = loadState<Record<string, number>>('widths', DEFAULT_WIDTHS);
+    const merged = { ...DEFAULT_WIDTHS, ...saved };
+    if ((merged.presence ?? 0) < DEFAULT_WIDTHS.presence) merged.presence = DEFAULT_WIDTHS.presence;
+    if ((merged.parseSpecs ?? 0) < DEFAULT_WIDTHS.parseSpecs) merged.parseSpecs = DEFAULT_WIDTHS.parseSpecs;
+    if ((merged.category ?? 0) < DEFAULT_WIDTHS.category) merged.category = DEFAULT_WIDTHS.category;
+    return merged;
+  });
 
   const defaultColumnOrder: ColumnId[] = ['select', 'item', 'presence', 'parseSpecs', 'category', 'status', 'buyPrice', 'sellPrice', 'profit', 'buyDate', 'timeGauge', 'sellDate', 'salePlatform', 'actions'];
   const [columnOrder, setColumnOrder] = useState<ColumnId[]>(() => {
@@ -1325,8 +1334,8 @@ const InventoryList: React.FC<Props> = ({
         );
       case 'presence':
         return (
-          <td key={id} className="p-5 text-center" style={style} onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-center gap-1.5">
+          <td key={id} className="p-3 inv-col-icons border-r border-slate-100/90" style={style} onClick={(e) => e.stopPropagation()}>
+            <div className="flex flex-wrap items-center justify-center gap-2 max-w-full">
               {/* Physical presence: present / lost / unknown */}
               <button
                 type="button"
@@ -1642,8 +1651,8 @@ const InventoryList: React.FC<Props> = ({
         );
       case 'parseSpecs':
         return (
-          <td key={id} className="p-5 text-center" style={style} onClick={(e) => e.stopPropagation()}>
-            <div className="flex flex-row items-center justify-center gap-1">
+          <td key={id} className="p-3 inv-col-icons text-center border-r border-slate-100/90" style={style} onClick={(e) => e.stopPropagation()}>
+            <div className="flex flex-row flex-wrap items-center justify-center gap-2">
               {/* Visual indicator if AI listing text already exists */}
               {item.marketDescription && (
                 <span
@@ -1750,17 +1759,17 @@ const InventoryList: React.FC<Props> = ({
         );
       case 'category':
         return (
-          <td key={id} className="p-5" style={style}>
+          <td key={id} className="p-3 pl-4" style={style}>
              <div 
                onClick={(e) => { e.stopPropagation(); setItemToEditCategory(item); }}
-               className="group/cat cursor-pointer hover:bg-slate-100 rounded-lg p-2 -m-2 transition-colors"
+               className="group/cat cursor-pointer hover:bg-slate-100 rounded-lg px-2 py-1.5 -mx-1 transition-colors"
                title="Click to reclassify"
              >
-                <p className="text-[11px] font-black text-slate-500 uppercase tracking-tight group-hover/cat:text-blue-600 flex items-center gap-1">
+                <p className="text-[11px] font-black text-slate-500 uppercase tracking-tight group-hover/cat:text-blue-600 flex items-center gap-1.5 leading-snug">
                    {item.category}
-                   <Edit2 size={10} className="opacity-0 group-hover/cat:opacity-100 transition-opacity"/>
+                   <Edit2 size={10} className="opacity-0 group-hover/cat:opacity-100 transition-opacity shrink-0"/>
                 </p>
-                {item.subCategory && <p className="text-[9px] font-bold text-slate-400 group-hover/cat:text-blue-400 truncate">{item.subCategory}</p>}
+                {item.subCategory && <p className="text-[9px] font-bold text-slate-400 group-hover/cat:text-blue-400 truncate mt-0.5 pl-0.5">{item.subCategory}</p>}
              </div>
           </td>
         );
@@ -2704,15 +2713,16 @@ const InventoryList: React.FC<Props> = ({
         className="flex-1 min-h-0 overflow-x-auto overflow-y-auto custom-scrollbar pb-3"
       >
          <style>{`
-           [data-inventory-table] tbody > tr > td { padding: 0.4rem 0.3rem !important; }
-           [data-inventory-table] thead th > div:first-of-type { padding: 0.4rem 0.3rem !important; min-height: 2rem !important; }
+           [data-inventory-table] tbody > tr > td { padding: 0.45rem 0.4rem !important; }
+           [data-inventory-table] tbody > tr > td.inv-col-icons { padding: 0.5rem 0.55rem !important; }
+           [data-inventory-table] thead th > div:first-of-type { padding: 0.45rem 0.4rem !important; min-height: 2rem !important; }
            [data-inventory-table] thead th { font-size: 0.625rem; letter-spacing: 0.04em; }
            [data-density="compact"][data-inventory-table] tbody > tr > td { padding: 0.28rem 0.22rem !important; }
            [data-density="compact"][data-inventory-table] thead th > div:first-of-type { padding: 0.28rem 0.22rem !important; min-height: 1.65rem !important; }
            [data-density="compact"] .text-sm { font-size: 0.7rem; }
            [data-density="compact"] .text-xs { font-size: 0.65rem; }
          `}</style>
-         <table className="w-full text-left border-collapse min-w-[1040px] table-fixed" data-inventory-table data-density={listDensity}>
+         <table className="w-full text-left border-collapse min-w-[1120px] table-fixed" data-inventory-table data-density={listDensity}>
             <thead className="sticky top-0 z-10 bg-white">
                <tr className="bg-slate-50/80 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-widest backdrop-blur-sm">
                   {visibleColumns.map((colId) => {
