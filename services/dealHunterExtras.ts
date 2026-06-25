@@ -1,4 +1,6 @@
 import type { LiveDeal } from '../services/geminiService';
+import { matchesItemConditions } from '../services/dealSearchConditions';
+import type { DealItemCondition } from '../services/dealSearchConditions';
 
 export type DealWatchlistItem = LiveDeal & { savedAt: string; searchId?: string; dealScore?: number };
 
@@ -67,14 +69,20 @@ export function computeDealScore(dealPrice: number, maxPrice: number, marketAvg?
 
 export function filterDealByFlags(
   deal: LiveDeal,
-  opts: { excludeVB?: boolean; excludeTausch?: boolean; plz?: string; maxKm?: number }
+  opts: {
+    excludeVB?: boolean;
+    excludeTausch?: boolean;
+    plz?: string;
+    maxKm?: number;
+    itemConditions?: DealItemCondition[];
+  }
 ): boolean {
   const t = `${deal.title} ${deal.price}`.toLowerCase();
   if (opts.excludeVB && (t.includes('vb') || t.includes('verhandlungsbasis'))) return false;
   if (opts.excludeTausch && (t.includes('tausch') || t.includes('swap'))) return false;
-  // PLZ/distance needs geocoding — skip unless title contains plz prefix
   if (opts.plz && opts.plz.length >= 4) {
     if (!t.includes(opts.plz.slice(0, 4))) return false;
   }
+  if (!matchesItemConditions(deal, opts.itemConditions)) return false;
   return true;
 }

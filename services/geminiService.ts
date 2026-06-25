@@ -208,6 +208,8 @@ export interface SavedSearchCriteria {
   excludeTausch?: boolean;
   plz?: string;
   enablePriceAlert?: boolean;
+  /** eBay.de-style item conditions (multi-select). */
+  itemConditions?: import('./dealSearchConditions').DealItemCondition[];
 }
 
 export const resolveSearchPlatform = (criteria: SavedSearchCriteria): DealSearchPlatform => {
@@ -237,7 +239,7 @@ const matchesSearchPlatform = (deal: LiveDeal, platform: DealSearchPlatform): bo
   return deal.platform === 'Kleinanzeigen' || deal.platform === 'eBay' || url.includes('kleinanzeigen') || url.includes('ebay');
 };
 
-// ... Implementation
+import { appendEbayConditionParams, buildConditionPromptNote } from './dealSearchConditions';
 
 export const estimateMarketValue = async (itemName: string, condition: string = 'Used'): Promise<PriceEstimate | null> => {
   try {
@@ -315,6 +317,7 @@ export const executeSavedSearch = async (criteria: SavedSearchCriteria): Promise
     excludeVB: criteria.excludeVB,
     excludeTausch: criteria.excludeTausch,
     plz: criteria.plz,
+    itemConditions: criteria.itemConditions,
   };
 
   // Prefer unified server route (GEMINI_API_KEY on Vercel); fall back to browser key for local dev.
@@ -364,9 +367,11 @@ export const executeSavedSearch = async (criteria: SavedSearchCriteria): Promise
               ? 'Only include eBay.de listings.'
               : 'Include listings from both Kleinanzeigen.de and eBay.de.';
 
+        const conditionNote = buildConditionPromptNote(criteria.itemConditions);
+
         const prompt = `
           Perform a Google Search: ${googleQuery}
-          ${platformNote}${customNote}
+          ${platformNote}${customNote}${conditionNote}
           
           Extract sales listings. 
           Important: Look for Price in the snippet (e.g. "50 €", "50€", "50 EUR", "VB").
@@ -613,6 +618,7 @@ function buildClientMarketplaceLinks(criteria: SavedSearchCriteria): LiveDeal[] 
   if (platform === 'ebay' || platform === 'both') {
     let url = `https://www.ebay.de/sch/i.html?_nkw=${encodeURIComponent(q)}&_sop=16`;
     if (maxPrice > 0) url += `&_udhi=${maxPrice}`;
+    url = appendEbayConditionParams(url, criteria.itemConditions);
     deals.push({
       title: `Open eBay search: ${q}${maxPrice > 0 ? ` (≤ €${maxPrice})` : ''}`,
       url,

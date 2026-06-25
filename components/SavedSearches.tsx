@@ -2,8 +2,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { formatEUR } from '../utils/formatMoney';
 
-import { Search, Plus, Trash2, ExternalLink, RefreshCcw, Bell, ArrowRight, X, Clock, MapPin, Euro, Loader2, Link as LinkIcon, Power, Play } from 'lucide-react';
+import { Search, Plus, Trash2, ExternalLink, RefreshCcw, Bell, ArrowRight, X, Clock, MapPin, Euro, Loader2, Link as LinkIcon, Power, Play, Pencil } from 'lucide-react';
 import { executeSavedSearch, SavedSearchCriteria, LiveDeal, DealSearchPlatform, resolveSearchPlatform } from '../services/geminiService';
+import { conditionLabels } from '../services/dealSearchConditions';
+import SavedSearchForm, {
+  EMPTY_SEARCH_FORM,
+  formValuesFromSearch,
+  buildSearchFromForm,
+  type SavedSearchFormValues,
+} from './dealHunter/SavedSearchForm';
 import {
   filterDealByFlags,
   computeDealScore,
@@ -29,12 +36,6 @@ interface Props {
   seedQuery?: string | null;
   onSeedQueryConsumed?: () => void;
 }
-
-const PLATFORM_OPTIONS: { id: DealSearchPlatform; label: string }[] = [
-  { id: 'kleinanzeigen', label: 'Kleinanzeigen' },
-  { id: 'ebay', label: 'eBay' },
-  { id: 'both', label: 'Both' },
-];
 
 const platformLabel = (search: SavedSearch): string => {
   const p = resolveSearchPlatform(search);
@@ -62,16 +63,10 @@ const SavedSearches: React.FC<Props> = ({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loadingSearchId, setLoadingSearchId] = useState<string | null>(null);
   
-  // New Search Form State
-  const [isCreating, setIsCreating] = useState(false);
-  const [newQuery, setNewQuery] = useState('');
-  const [newMaxPrice, setNewMaxPrice] = useState<string>('');
-  const [newCustomUrl, setNewCustomUrl] = useState('');
-  const [platformFilter, setPlatformFilter] = useState<DealSearchPlatform>('kleinanzeigen');
-  const [excludeVB, setExcludeVB] = useState(true);
-  const [excludeTausch, setExcludeTausch] = useState(true);
-  const [plzFilter, setPlzFilter] = useState('');
-  const [enablePriceAlert, setEnablePriceAlert] = useState(false);
+  // Form state (create + edit)
+  const [formMode, setFormMode] = useState<'closed' | 'create' | 'edit'>('closed');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [formValues, setFormValues] = useState<SavedSearchFormValues>(EMPTY_SEARCH_FORM);
   const [watchlist, setWatchlist] = useState<DealWatchlistItem[]>(() => loadDealWatchlist());
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchNotice, setSearchNotice] = useState<string | null>(null);
@@ -86,10 +81,33 @@ const SavedSearches: React.FC<Props> = ({
 
   useEffect(() => {
     if (!seedQuery?.trim()) return;
-    setNewQuery(seedQuery.trim());
-    setIsCreating(true);
+    setFormValues({ ...EMPTY_SEARCH_FORM, query: seedQuery.trim() });
+    setFormMode('create');
+    setEditingId(null);
     onSeedQueryConsumed?.();
   }, [seedQuery, onSeedQueryConsumed]);
+
+  const isFormOpen = formMode !== 'closed';
+
+  const closeForm = () => {
+    setFormMode('closed');
+    setEditingId(null);
+    setFormValues(EMPTY_SEARCH_FORM);
+  };
+
+  const startCreate = () => {
+    setFormValues(EMPTY_SEARCH_FORM);
+    setEditingId(null);
+    setFormMode('create');
+  };
+
+  const startEdit = (search: SavedSearch, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setFormValues(formValuesFromSearch(search));
+    setEditingId(search.id);
+    setFormMode('edit');
+    setSelectedId(search.id);
+  };
 
   // --- AUTOMATIC BACKGROUND CHECKER ---
   useEffect(() => {
@@ -165,37 +183,27 @@ const SavedSearches: React.FC<Props> = ({
 
   const selectedSearch = searches.find(s => s.id === selectedId);
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newQuery.trim()) return;
+    if (!formValues.query.trim()) return;
 
-    const newSearch: SavedSearch = {
-      id: `search-${Date.now()}`,
-      query: newQuery.trim(),
-      maxPrice: parseFloat(newMaxPrice) || 0,
-      platform: platformFilter,
-      includeEbay: platformFilter !== 'kleinanzeigen',
-      customUrl: newCustomUrl.trim(),
-      excludeVB,
-      excludeTausch,
-      plz: plzFilter.trim(),
-      enablePriceAlert,
-      results: [],
-      newResultCount: 0
-    };
+    if (formMode === 'edit' && editingId) {
+      const existing = searches.find((s) => s.id === editingId);
+      if (!existing) return;
+      const updatedSearch = buildSearchFromForm(formValues, existing) as SavedSearch;
+      const nextList = searches.map((s) => (s.id === editingId ? updatedSearch : s));
+      updateSearches(nextList);
+      setSelectedId(editingId);
+      closeForm();
+      void runSearch(updatedSearch, nextList);
+      return;
+    }
 
+    const newSearch = buildSearchFromForm(formValues) as SavedSearch;
     const nextList = [newSearch, ...searches];
     updateSearches(nextList);
     setSelectedId(newSearch.id);
-    setIsCreating(false);
-    setNewQuery('');
-    setNewMaxPrice('');
-    setNewCustomUrl('');
-    setPlatformFilter('kleinanzeigen');
-    setExcludeVB(true);
-    setExcludeTausch(true);
-    setPlzFilter('');
-    setEnablePriceAlert(false);
+    closeForm();
     void runSearch(newSearch, nextList);
   };
 
@@ -214,6 +222,7 @@ const SavedSearches: React.FC<Props> = ({
           excludeVB: search.excludeVB,
           excludeTausch: search.excludeTausch,
           plz: search.plz,
+          itemConditions: search.itemConditions,
         })
       )
       .map((d) => {
@@ -337,10 +346,10 @@ const SavedSearches: React.FC<Props> = ({
           {/* Embedded toolbar: auto-check + new alert */}
           {embedded && (
             <div className="flex items-center gap-2 shrink-0">
-              {!isCreating ? (
+              {!isFormOpen ? (
                 <button
                   type="button"
-                  onClick={() => setIsCreating(true)}
+                  onClick={startCreate}
                   className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-emerald-700 transition-all flex items-center justify-center gap-1.5"
                 >
                   <Plus size={14} /> New alert
@@ -377,150 +386,27 @@ const SavedSearches: React.FC<Props> = ({
           )}
 
           {/* Create Button (standalone page only) */}
-          {!embedded && !isCreating ? (
+          {!embedded && !isFormOpen ? (
             <button 
-              onClick={() => setIsCreating(true)}
+              onClick={startCreate}
               className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-all flex items-center justify-center gap-2"
             >
               <Plus size={16}/> New Alert
             </button>
-          ) : !embedded ? (
-            <form onSubmit={handleCreate} className="bg-white p-5 rounded-[2rem] border border-emerald-200 shadow-lg space-y-4 animate-in slide-in-from-left-4">
-               <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Search Term</label>
-                  <input 
-                    autoFocus
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-emerald-500"
-                    placeholder="e.g. RTX 4070"
-                    value={newQuery}
-                    onChange={e => setNewQuery(e.target.value)}
-                  />
-               </div>
-               <div className="flex gap-2">
-                  <div className="flex-1">
-                     <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Max Price (€)</label>
-                     <input 
-                        type="number"
-                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-emerald-500"
-                        placeholder="Any"
-                        value={newMaxPrice}
-                        onChange={e => setNewMaxPrice(e.target.value)}
-                     />
-                  </div>
-               </div>
-               <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1 flex items-center gap-1"><LinkIcon size={10}/> Custom URL (Optional)</label>
-                  <input 
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-[10px] outline-none focus:border-emerald-500 text-slate-600"
-                    placeholder="https://www.kleinanzeigen.de/..."
-                    value={newCustomUrl}
-                    onChange={e => setNewCustomUrl(e.target.value)}
-                  />
-                  <p className="text-[9px] text-slate-400 mt-1 ml-1">Use a pre-filtered URL for best results.</p>
-               </div>
-               <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Platforms</label>
-                  <div className="flex gap-1.5 mt-1">
-                    {PLATFORM_OPTIONS.map(opt => (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        onClick={() => setPlatformFilter(opt.id)}
-                        className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wide border transition-all ${
-                          platformFilter === opt.id
-                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
-                            : 'bg-slate-50 text-slate-500 border-slate-200 hover:border-emerald-200'
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-               </div>
-               <div className="grid grid-cols-2 gap-2">
-                  <label className="flex items-center gap-2 text-xs font-bold text-slate-600">
-                    <input type="checkbox" checked={excludeVB} onChange={(e) => setExcludeVB(e.target.checked)} className="accent-emerald-500" />
-                    Exclude VB
-                  </label>
-                  <label className="flex items-center gap-2 text-xs font-bold text-slate-600">
-                    <input type="checkbox" checked={excludeTausch} onChange={(e) => setExcludeTausch(e.target.checked)} className="accent-emerald-500" />
-                    Exclude Tausch
-                  </label>
-               </div>
-               <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1">PLZ filter</label>
-                  <input className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm" placeholder="e.g. 10115" value={plzFilter} onChange={(e) => setPlzFilter(e.target.value)} />
-               </div>
-               <label className="flex items-center gap-2 text-xs font-bold text-slate-600">
-                  <input type="checkbox" checked={enablePriceAlert} onChange={(e) => setEnablePriceAlert(e.target.checked)} className="accent-emerald-500" />
-                  Notify when deals found
-               </label>
-               <div className="flex gap-2 pt-2">
-                  <button type="button" onClick={() => setIsCreating(false)} className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-xl font-bold text-xs">Cancel</button>
-                  <button type="submit" className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-bold text-xs shadow-md">Save</button>
-               </div>
-            </form>
-          ) : embedded && isCreating ? (
-            <form onSubmit={handleCreate} className="bg-white p-4 rounded-xl border border-emerald-200 shadow-sm space-y-3 animate-in slide-in-from-left-4 shrink-0 max-h-[45vh] overflow-y-auto custom-scrollbar">
-               <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Search Term</label>
-                  <input 
-                    autoFocus
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-sm outline-none focus:border-emerald-500"
-                    placeholder="e.g. RTX 4070"
-                    value={newQuery}
-                    onChange={e => setNewQuery(e.target.value)}
-                  />
-               </div>
-               <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Max €</label>
-                  <input 
-                    type="number"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-sm outline-none focus:border-emerald-500"
-                    placeholder="Any"
-                    value={newMaxPrice}
-                    onChange={e => setNewMaxPrice(e.target.value)}
-                  />
-               </div>
-               <div>
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Platforms</label>
-                  <div className="flex gap-1 mt-1">
-                    {PLATFORM_OPTIONS.map(opt => (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        onClick={() => setPlatformFilter(opt.id)}
-                        className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase border transition-all ${
-                          platformFilter === opt.id
-                            ? 'bg-emerald-600 text-white border-emerald-600'
-                            : 'bg-slate-50 text-slate-500 border-slate-200'
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-               </div>
-               <div className="grid grid-cols-2 gap-2 text-[11px] font-bold text-slate-600">
-                  <label className="flex items-center gap-1.5">
-                    <input type="checkbox" checked={excludeVB} onChange={(e) => setExcludeVB(e.target.checked)} className="accent-emerald-500" />
-                    No VB
-                  </label>
-                  <label className="flex items-center gap-1.5">
-                    <input type="checkbox" checked={excludeTausch} onChange={(e) => setExcludeTausch(e.target.checked)} className="accent-emerald-500" />
-                    No Tausch
-                  </label>
-               </div>
-               <div className="flex gap-2 pt-1">
-                  <button type="button" onClick={() => setIsCreating(false)} className="flex-1 py-2 bg-slate-100 text-slate-500 rounded-lg font-bold text-xs">Cancel</button>
-                  <button type="submit" className="flex-1 py-2 bg-emerald-600 text-white rounded-lg font-bold text-xs">Save</button>
-               </div>
-            </form>
+          ) : isFormOpen ? (
+            <SavedSearchForm
+              compact={embedded}
+              values={formValues}
+              onChange={(patch) => setFormValues((v) => ({ ...v, ...patch }))}
+              onSubmit={handleFormSubmit}
+              onCancel={closeForm}
+              submitLabel={formMode === 'edit' ? 'Update alert' : 'Save alert'}
+            />
           ) : null}
 
           {/* List */}
           <div className="flex-1 overflow-y-auto space-y-2 pr-1 scrollbar-hide">
-             {searches.length === 0 && !isCreating && (
+             {searches.length === 0 && !isFormOpen && (
                 <div className="text-center py-10 opacity-40">
                    <Search size={48} className="mx-auto mb-2 text-slate-300"/>
                    <p className="font-bold text-slate-400 text-sm">No saved searches</p>
@@ -544,6 +430,14 @@ const SavedSearches: React.FC<Props> = ({
                       {search.maxPrice > 0 ? <span>&lt; €{formatEUR(Number(search.maxPrice))}</span> : <span>Any Price</span>}
                       <span>•</span>
                       {search.customUrl ? <span className="text-blue-500 flex items-center gap-1"><LinkIcon size={8}/> URL</span> : <span>{platformLabel(search)}</span>}
+                      {search.itemConditions?.length ? (
+                        <>
+                          <span>•</span>
+                          <span className="text-indigo-500 normal-case tracking-normal font-semibold truncate max-w-[120px]" title={conditionLabels(search.itemConditions, 'de')}>
+                            {conditionLabels(search.itemConditions, 'de')}
+                          </span>
+                        </>
+                      ) : null}
                    </div>
                    
                    <div className="mt-3 flex items-center justify-between">
@@ -551,6 +445,13 @@ const SavedSearches: React.FC<Props> = ({
                          {search.lastRun ? `Checked: ${new Date(search.lastRun).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}` : 'Never checked'}
                       </p>
                       <div className="flex gap-2">
+                         <button 
+                            onClick={(e) => startEdit(search, e)}
+                            className="p-1.5 bg-slate-100 text-slate-400 hover:bg-indigo-600 hover:text-white rounded-lg transition-all"
+                            title="Edit alert"
+                         >
+                            <Pencil size={14}/>
+                         </button>
                          <button 
                             onClick={(e) => { e.stopPropagation(); runSearch(search); }}
                             className={`p-1.5 rounded-lg transition-all ${loadingSearchId === search.id ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400 hover:bg-emerald-600 hover:text-white'}`}
@@ -585,6 +486,7 @@ const SavedSearches: React.FC<Props> = ({
                           <div className="flex items-center gap-2 mt-1">
                              <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">
                                 {selectedSearch.results.length} results • Max: {selectedSearch.maxPrice > 0 ? `€${selectedSearch.maxPrice}` : 'Any'}
+                                {selectedSearch.itemConditions?.length ? ` • ${conditionLabels(selectedSearch.itemConditions, 'de')}` : ''}
                              </p>
                              {selectedSearch.customUrl && (
                                 <a 
@@ -599,6 +501,14 @@ const SavedSearches: React.FC<Props> = ({
                           </div>
                        </div>
                     </div>
+                    <div className="flex items-center gap-2">
+                    <button
+                       type="button"
+                       onClick={() => startEdit(selectedSearch)}
+                       className="px-4 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-slate-50 transition-all flex items-center gap-2"
+                    >
+                       <Pencil size={14}/> Edit
+                    </button>
                     <button 
                        onClick={() => runSearch(selectedSearch)}
                        disabled={loadingSearchId === selectedSearch.id}
@@ -607,6 +517,7 @@ const SavedSearches: React.FC<Props> = ({
                        {loadingSearchId === selectedSearch.id ? <Loader2 size={16} className="animate-spin"/> : <RefreshCcw size={16}/>}
                        {loadingSearchId === selectedSearch.id ? 'Scanning...' : 'Check Now'}
                     </button>
+                    </div>
                  </header>
 
                  {searchError && (
