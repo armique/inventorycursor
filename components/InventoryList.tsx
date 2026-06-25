@@ -65,10 +65,19 @@ interface SortConfig {
   direction: 'asc' | 'desc';
 }
 
+/** Inv column: 5 icon buttons in one row (28px each + 6px gaps + cell padding). */
+const PRESENCE_ICON_SIZE_PX = 28;
+const PRESENCE_ICON_GAP_PX = 6;
+const PRESENCE_ICON_COUNT = 5;
+const PRESENCE_COL_WIDTH =
+  PRESENCE_ICON_COUNT * PRESENCE_ICON_SIZE_PX +
+  (PRESENCE_ICON_COUNT - 1) * PRESENCE_ICON_GAP_PX +
+  20;
+
 const DEFAULT_WIDTHS: Record<string, number> = {
   select: 36,
   item: 200,
-  presence: 128,
+  presence: PRESENCE_COL_WIDTH,
   parseSpecs: 148,
   category: 116,
   status: 82,
@@ -85,7 +94,13 @@ const DEFAULT_WIDTHS: Record<string, number> = {
 function clampInventoryColumnWidth(colId: ColumnId, w: number): number {
   const def = DEFAULT_WIDTHS[colId];
   const floor =
-    colId === 'presence' ? 112 : colId === 'parseSpecs' ? 132 : colId === 'category' ? 96 : Math.max(40, Math.floor(def * 0.35));
+    colId === 'presence'
+      ? PRESENCE_COL_WIDTH - 8
+      : colId === 'parseSpecs'
+        ? 132
+        : colId === 'category'
+          ? 96
+          : Math.max(40, Math.floor(def * 0.35));
   const min = floor;
   const max = Math.min(900, Math.ceil(def * 3.5));
   return Math.round(Math.min(max, Math.max(min, w)));
@@ -1334,13 +1349,16 @@ const InventoryList: React.FC<Props> = ({
         );
       case 'presence':
         return (
-          <td key={id} className="p-3 inv-col-icons border-r border-slate-100/90" style={style} onClick={(e) => e.stopPropagation()}>
-            <div className="flex flex-wrap items-center justify-center gap-2 max-w-full">
+          <td key={id} className="p-2 inv-col-icons border-r border-slate-100/90 align-middle" style={style} onClick={(e) => e.stopPropagation()}>
+            <div
+              className="grid grid-cols-5 gap-1.5 items-center justify-items-center mx-auto shrink-0"
+              style={{ width: PRESENCE_ICON_COUNT * PRESENCE_ICON_SIZE_PX + (PRESENCE_ICON_COUNT - 1) * PRESENCE_ICON_GAP_PX }}
+            >
               {/* Physical presence: present / lost / unknown */}
               <button
                 type="button"
                 onClick={() => togglePresence(item)}
-                className={`h-7 w-7 flex items-center justify-center rounded-xl border transition-colors ${
+                className={`h-7 w-7 shrink-0 flex items-center justify-center rounded-xl border transition-colors ${
                   item.presence === 'present'
                     ? 'border-emerald-300 bg-emerald-50'
                   : item.presence === 'lost'
@@ -1370,7 +1388,7 @@ const InventoryList: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => toggleDefective(item)}
-                className={`h-7 w-7 flex items-center justify-center rounded-xl text-[10px] font-bold transition-colors ${
+                className={`h-7 w-7 shrink-0 flex items-center justify-center rounded-xl text-[10px] font-bold transition-colors ${
                   item.isDefective
                     ? 'bg-red-100 text-red-700'
                     : 'bg-slate-100 text-slate-500 hover:bg-amber-50 hover:text-amber-700'
@@ -1388,7 +1406,7 @@ const InventoryList: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => toggleListedKleinanzeigen(item)}
-                className={`h-7 w-7 flex items-center justify-center rounded-xl border text-emerald-700 ${
+                className={`h-7 w-7 shrink-0 flex items-center justify-center rounded-xl border text-emerald-700 ${
                   item.listedOnKleinanzeigen
                     ? 'border-emerald-200 bg-emerald-50'
                     : 'border-emerald-200 bg-white'
@@ -1412,7 +1430,7 @@ const InventoryList: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => toggleListedEbay(item)}
-                className={`h-7 w-7 flex items-center justify-center rounded-xl border text-blue-700 ${
+                className={`h-7 w-7 shrink-0 flex items-center justify-center rounded-xl border text-blue-700 ${
                   item.listedOnEbay
                     ? 'border-blue-200 bg-blue-50'
                     : 'border-blue-200 bg-white'
@@ -1435,7 +1453,7 @@ const InventoryList: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => toggleStoreVisible(item)}
-                className={`h-7 w-7 flex items-center justify-center rounded-xl border text-violet-700 ${
+                className={`h-7 w-7 shrink-0 flex items-center justify-center rounded-xl border text-violet-700 ${
                   item.storeVisible === true ? 'border-violet-200 bg-violet-50' : 'border-violet-200 bg-white'
                 }`}
                 title={
@@ -2722,7 +2740,7 @@ const InventoryList: React.FC<Props> = ({
            [data-density="compact"] .text-sm { font-size: 0.7rem; }
            [data-density="compact"] .text-xs { font-size: 0.65rem; }
          `}</style>
-         <table className="w-full text-left border-collapse min-w-[1120px] table-fixed" data-inventory-table data-density={listDensity}>
+         <table className="w-full text-left border-collapse min-w-[1160px] table-fixed" data-inventory-table data-density={listDensity}>
             <thead className="sticky top-0 z-10 bg-white">
                <tr className="bg-slate-50/80 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-widest backdrop-blur-sm">
                   {visibleColumns.map((colId) => {
