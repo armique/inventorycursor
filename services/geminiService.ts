@@ -56,11 +56,14 @@ const clientGeminiKey = (): string => {
   return g || l;
 };
 
+export const hasClientGeminiKey = (): boolean => Boolean(clientGeminiKey());
+
 const getAI = () => {
   const apiKey = clientGeminiKey();
   if (!apiKey) {
     throw new Error(
-      'VITE_GEMINI_API_KEY not set. Add it to .env / .env.local and restart the dev server.'
+      'Gemini API key missing. Local dev: add VITE_GEMINI_API_KEY to .env or .env.local and restart `npm run dev`. ' +
+        'Vercel: add GEMINI_API_KEY (server) or VITE_GEMINI_API_KEY (rebuild required) in project Environment Variables.'
     );
   }
   return new GoogleGenAI({ apiKey });
@@ -290,6 +293,33 @@ const parseGermanPrice = (priceStr: string): number => {
 };
 
 export const executeSavedSearch = async (criteria: SavedSearchCriteria): Promise<LiveDeal[]> => {
+  // Prefer server route (GEMINI_API_KEY on Vercel); fall back to browser key for local `vite` dev.
+  try {
+    const res = await fetch('/api/deal-search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: criteria.query,
+        maxPrice: criteria.maxPrice,
+        platform: criteria.platform,
+        includeEbay: criteria.includeEbay,
+        customUrl: criteria.customUrl,
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.deals)) return data.deals as LiveDeal[];
+    } else if (res.status !== 404) {
+      const data = await res.json().catch(() => ({}));
+      const errMsg = typeof data.error === 'string' ? data.error : `Search failed (HTTP ${res.status})`;
+      throw new Error(errMsg);
+    }
+  } catch (e) {
+    if (e instanceof Error && !e.message.includes('Failed to fetch') && !e.message.includes('404')) {
+      throw e;
+    }
+  }
+
   try {
     return await withAI(async (ai, model) => {
         const platform = resolveSearchPlatform(criteria);
@@ -390,7 +420,7 @@ export const executeSavedSearch = async (criteria: SavedSearchCriteria): Promise
   } catch (error: any) {
     console.error("Saved Search Error", error);
     const msg = error?.message || String(error);
-    if (msg.includes('VITE_GEMINI_API_KEY')) throw error;
+    if (msg.includes('Gemini API key missing') || msg.includes('VITE_GEMINI')) throw error;
     throw new Error(msg.includes('429') || msg.includes('exhausted')
       ? 'AI quota exceeded. Try again later or check your Gemini API key.'
       : `Search failed: ${msg}`);
