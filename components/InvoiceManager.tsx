@@ -3,6 +3,7 @@ import { FileText, Check, Search, Receipt, Calendar, Info, CreditCard, Square, C
 import { InventoryItem, ItemStatus, BusinessSettings } from '../types';
 import { formatEUR } from '../utils/formatMoney';
 import InvoiceGenerator from './InvoiceGenerator';
+import { VirtualList } from './VirtualList';
 import { buildBuyerInvoiceGroups } from '../utils/invoiceBuyerGroups';
 import { Users } from 'lucide-react';
 
@@ -182,14 +183,18 @@ const InvoiceManager: React.FC<Props> = ({ items, businessSettings }) => {
                 </button>
               </div>
 
-              <div className="space-y-2 max-h-[600px] overflow-y-auto scrollbar-hide pr-2">
-                 {soldItems.length > 0 ? soldItems.map(item => {
+              <VirtualList
+                className="max-h-[600px] pr-2"
+                items={soldItems}
+                estimateSize={88}
+                getKey={(item) => item.id}
+                renderItem={(item) => {
                    const isSelected = selectedIds.includes(item.id);
                    return (
                      <div 
-                       key={item.id} 
+                       key={item.id}
                        onClick={() => toggleSelect(item.id)}
-                       className={`p-5 rounded-3xl border transition-all cursor-pointer flex items-center justify-between group ${isSelected ? 'bg-blue-600 border-blue-600 text-white shadow-xl translate-x-1' : 'bg-white border-slate-100 hover:border-slate-200'}`}
+                       className={`p-5 rounded-3xl border transition-all cursor-pointer flex items-center justify-between group mb-2 ${isSelected ? 'bg-blue-600 border-blue-600 text-white shadow-xl translate-x-1' : 'bg-white border-slate-100 hover:border-slate-200'}`}
                      >
                         <div className="flex items-center gap-4">
                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isSelected ? 'bg-white/20' : 'bg-slate-50'}`}>
@@ -207,10 +212,11 @@ const InvoiceManager: React.FC<Props> = ({ items, businessSettings }) => {
                         </div>
                      </div>
                    );
-                 }) : (
+                }}
+              />
+              {soldItems.length === 0 && (
                    <div className="py-20 text-center opacity-30 italic">No sold items found</div>
-                 )}
-              </div>
+              )}
            </div>
         </div>
 

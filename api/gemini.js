@@ -20,7 +20,15 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const route = String(req.query?.route || '').trim();
+  let route = String(req.query?.route || '').trim();
+  if (!route && req.url) {
+    const path = String(req.url).split('?')[0] || '';
+    if (path.includes('deal-search')) route = 'deal-search';
+    else if (path.includes('ebay-screenshot') || path.includes('parse-ebay-order'))
+      route = 'ebay-screenshot';
+    else if (path.includes('ka-screenshot') || path.includes('kleinanzeigen-chat'))
+      route = 'ka-screenshot';
+  }
 
   switch (route) {
     case 'deal-search':

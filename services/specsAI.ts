@@ -6,6 +6,7 @@
  */
 
 import { correctGpuVramInSpecs } from './gpuVramCorrection';
+import { loadAISettings } from './aiSettings';
 
 const getEnv = (key: string): string => {
   try {
@@ -31,7 +32,18 @@ function getAvailableProviders(): Provider[] {
     openai: getEnv('VITE_OPENAI_API_KEY')?.trim(),
     anthropic: getEnv('VITE_ANTHROPIC_API_KEY')?.trim(),
   };
-  return PROVIDER_ORDER.filter((p) => env[p]);
+  let order: Provider[] = PROVIDER_ORDER;
+  try {
+    const prefs = loadAISettings();
+    const priority = prefs.providerPriority.filter((p): p is Provider => PROVIDER_ORDER.includes(p as Provider));
+    order = [...priority, ...PROVIDER_ORDER.filter((p) => !priority.includes(p))];
+    if (prefs.preferGroqForSpecs && env.groq) {
+      order = ['groq', ...order.filter((p) => p !== 'groq')];
+    }
+  } catch {
+    /* use default order */
+  }
+  return order.filter((p) => env[p]);
 }
 
 function getProvider(): Provider | null {

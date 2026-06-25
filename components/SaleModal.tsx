@@ -221,6 +221,7 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
       comment2: comment,
       customer,
       status: ItemStatus.SOLD,
+      storeVisible: false,
       profit: profit != null ? parseFloat(profit.toFixed(2)) : undefined,
       ebayUsername,
       ebayOrderId,

@@ -26,7 +26,7 @@ const HealthCheckPage: React.FC = () => {
       status: hasClientGeminiKey() ? 'ok' : 'warn',
       detail: hasClientGeminiKey()
         ? 'VITE_GEMINI_API_KEY detected in build.'
-        : 'Missing — Deal Hunter & some AI features need VITE_GEMINI_API_KEY in .env',
+        : 'Optional in browser — on Vercel set GEMINI_API_KEY (server) for Deal Hunter; redeploy after adding.',
     });
 
     list.push({
@@ -47,18 +47,18 @@ const HealthCheckPage: React.FC = () => {
       id: 'deal-api',
       label: 'Deal search API',
       status: 'loading',
-      detail: 'Testing /api/deal-search…',
+      detail: 'Testing /api/gemini?route=deal-search…',
     });
     setChecks([...list]);
 
     try {
-      const res = await fetch('/api/deal-search', { method: 'OPTIONS' });
+      const res = await fetch('/api/gemini?route=deal-search', { method: 'OPTIONS' });
       list[list.length - 1] = {
         id: 'deal-api',
         label: 'Deal search API',
         status: res.ok || res.status === 204 ? 'ok' : 'warn',
         detail: res.ok || res.status === 204
-          ? 'Server route reachable (Vercel / vercel dev).'
+          ? 'Server route reachable. Set GEMINI_API_KEY on Vercel for live listings; GROQ_API_KEY optional fallback.'
           : 'Not available in plain vite dev — uses browser Gemini fallback.',
       };
     } catch {

@@ -3,6 +3,7 @@ import { Radar } from 'lucide-react';
 import { InventoryItem } from '../types';
 import AIAssistant from './AIAssistant';
 import SavedSearches from './SavedSearches';
+import DealHunterInsights from './DealHunterInsights';
 import type { LiveDeal, DealSearchPlatform } from '../services/geminiService';
 
 export type SavedDealSearch = {
@@ -54,6 +55,11 @@ const DealHunterPage: React.FC<Props> = ({ items, onUpdate }) => {
           </p>
         </div>
       </header>
+
+      <section className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-6">
+        <h2 className="text-sm font-black uppercase tracking-widest text-slate-400 mb-4">Sourcing insights</h2>
+        <DealHunterInsights items={items} />
+      </section>
 
       <section className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-6">
         <h2 className="text-sm font-black uppercase tracking-widest text-slate-400 mb-4">Saved searches</h2>

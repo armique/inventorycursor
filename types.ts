@@ -122,6 +122,8 @@ export interface InventoryItem {
   isPC?: boolean;
   isDraft?: boolean; // New flag for saved drafts
   isDefective?: boolean; // Flag for broken/defective items
+  /** Item subject to §25a differential VAT (used goods margin scheme). */
+  usesDifferentialVat?: boolean;
   componentIds?: string[];
   parentContainerId?: string;
 

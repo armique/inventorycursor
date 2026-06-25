@@ -1,5 +1,4 @@
-
-import { InventoryItem, BusinessSettings } from '../types';
+import { resolveEbayCategoryId } from './ebayCategoryMap';
 
 /**
  * Generates an eBay File Exchange compatible CSV string.
@@ -32,7 +31,7 @@ export const generateEbayCSV = (items: InventoryItem[], settings: BusinessSettin
     const description = (item.comment2 || item.comment1 || item.name).replace(/"/g, '""').replace(/\n/g, '<br>');
     
     // Default Category ID - 175673 is generic "Computer Components", users should map better but this works as a placeholder
-    const categoryId = '175673'; 
+    const categoryId = resolveEbayCategoryId(item);
 
     // Pricing: Default to 15% margin over buy price if no sell price set
     const price = (item.sellPrice || (item.buyPrice * 1.15)).toFixed(2);

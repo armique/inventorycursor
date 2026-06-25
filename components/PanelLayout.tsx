@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import PanelBreadcrumbs from './PanelBreadcrumbs';
 import { usePanelLocale } from '../context/PanelLocaleContext';
+import { usePanelKeyboardShortcuts } from '../hooks/usePanelKeyboardShortcuts';
 import { signInWithGooglePopup, logOut } from '../services/firebaseService';
 import QuotaMonitor from './QuotaMonitor';
 import GlobalSearch from './GlobalSearch';
@@ -38,6 +39,7 @@ interface PanelLayoutProps {
 const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, authReady = false, isAdmin = false, syncState = { status: 'idle', lastSynced: null }, onForcePush, backupBannerDismissed = true, onDismissBackupBanner, items = [], expenses = [], businessSettings = { companyName: '', ownerName: '', address: '', taxMode: 'SmallBusiness' }, onUpdateItems }) => {
   const location = useLocation();
   const { locale, setLocale } = usePanelLocale();
+  usePanelKeyboardShortcuts();
   const [signingIn, setSigningIn] = React.useState(false);
   /** Inventory/trash use internal scroll + docked bulk bar; other pages scroll normally. */
   const isDockedPanelPage = /^\/panel\/(inventory|trash)(\/|$)/.test(location.pathname);

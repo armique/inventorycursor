@@ -1,10 +1,15 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
-  Cloud, Building2, Layers, Wrench, ShoppingBag,
+  Cloud, Building2, Layers, Wrench, ShoppingBag, Sparkles, Shield,
   CheckCircle2, AlertTriangle, ArrowUp, RefreshCw, Save, LogIn, LogOut, User as UserIcon, Download, Upload, FileText, Github, History, ArchiveRestore, Rocket, Copy, ExternalLink, Plus, FolderPlus, FileSpreadsheet
 } from 'lucide-react';
 import { fixItemsEncoding } from '../services/encodingFix';
-import { InventoryItem, BusinessSettings, Expense, ItemStatus, DashboardPreferences } from '../types';
+import { InventoryItem, BusinessSettings, Expense, ItemStatus, DashboardPreferences, ActionHistoryEntry } from '../types';
+import { loadAISettings, saveAISettings, type AISettings, type AIModelTier } from '../services/aiSettings';
+import { buildElsterChecklist } from '../services/elsterChecklist';
+import { buildSteuerberaterBundle, downloadSteuerberaterBundle } from '../services/steuerberaterExport';
+import { buildGdprExportBlob, downloadGdprExport } from '../services/gdprExport';
+import { encryptBackupJson } from '../services/encryptedBackup';
 import { isCloudEnabled, saveFirebaseConfig, getFirebaseConfig, signInWithGooglePopup, logOut, onAuthChange } from '../services/firebaseService';
 import {
   getStoredConfig,
@@ -61,12 +66,14 @@ interface Props {
   onRenameCategory?: (oldName: string, newName: string) => void;
   onRenameSubCategory?: (category: string, oldSubName: string, newSubName: string) => void;
   dashboardPreferences?: DashboardPreferences;
+  actionHistory?: ActionHistoryEntry[];
 }
 
 const SETTINGS_TABS = [
   { id: 'BUSINESS', label: 'Business', icon: <Building2 size={18}/> },
   { id: 'EBAY', label: 'eBay API', icon: <ShoppingBag size={18}/> },
   { id: 'CLOUD', label: 'Cloud Sync', icon: <Cloud size={18}/> },
+  { id: 'AI', label: 'AI', icon: <Sparkles size={18}/> },
   { id: 'FINANZAMT', label: 'Finanzamt', icon: <FileSpreadsheet size={18}/> },
   { id: 'DEPLOY', label: 'Deploy to Vercel', icon: <Rocket size={18}/> },
   { id: 'CATEGORIES', label: 'Categories', icon: <Layers size={18}/> },
@@ -111,8 +118,13 @@ const SettingsPage: React.FC<Props> = ({
   categoryFields = {},
   onUpdateCategoryStructure,
   onUpdateCategoryFields
+  ,
+  actionHistory = [],
 }) => {
   const [activeTab, setActiveTab] = useState<typeof SETTINGS_TABS[number]['id']>('BUSINESS');
+  const [aiSettings, setAiSettings] = useState<AISettings>(() => loadAISettings());
+  const [backupEncrypt, setBackupEncrypt] = useState(false);
+  const [backupPassphrase, setBackupPassphrase] = useState('');
   const [firebaseConfig, setFirebaseConfig] = useState(getFirebaseConfig() || { apiKey: '', authDomain: '', projectId: '' });
   const [user, setUser] = useState<any>(null);
   const [isPushing, setIsPushing] = useState(false);
@@ -171,6 +183,18 @@ const SettingsPage: React.FC<Props> = ({
       expenses: filterExpensesForRange(expenses, bounds).length,
     };
   }, [items, expenses, finanzExportResolution]);
+
+  const elsterChecklist = useMemo(
+    () =>
+      buildElsterChecklist({
+        hasFinanzamtExport: items.some((i) => i.status === ItemStatus.SOLD),
+        hasInvoices: items.some((i) => i.invoiceNumber || i.customer?.name),
+        hasExpenseReceipts: expenses.some((e) => !!e.attachmentUrl),
+        taxMode: businessSettings.taxMode,
+        differentialItems: items.filter((i) => i.usesDifferentialVat).length,
+      }),
+    [items, expenses, businessSettings.taxMode]
+  );
 
   useEffect(() => {
     const unsubscribe = onAuthChange((u) => setUser(u));
@@ -494,10 +518,19 @@ const SettingsPage: React.FC<Props> = ({
       showToast('Save repo and token first', 'error');
       return;
     }
+    if (backupEncrypt && !backupPassphrase.trim()) {
+      showToast('Enter a passphrase for encrypted backup', 'error');
+      return;
+    }
     setGitHubSyncLoading(true);
     try {
       const payload = buildBackupPayload();
-      await pushBackup(config, payload);
+      let toPush: object = payload;
+      if (backupEncrypt && backupPassphrase.trim()) {
+        const enc = await encryptBackupJson(JSON.stringify(payload), backupPassphrase.trim());
+        toPush = { encrypted: true, v: 2, data: enc, exportedAt: new Date().toISOString() };
+      }
+      await pushBackup(config, toPush);
       showToast('Backup pushed to GitHub', 'success');
       const commits = await listBackupCommits(config, 20);
       setGitHubCommits(commits);
@@ -528,7 +561,14 @@ const SettingsPage: React.FC<Props> = ({
     setGitHubRestoreLoading(commitSha);
     try {
       const raw = await getBackupAtCommit(config, commitSha);
-      const data = JSON.parse(raw);
+      let data = JSON.parse(raw);
+      if (data?.encrypted && typeof data.data === 'string') {
+        const pass = window.prompt('This backup is encrypted. Enter passphrase:');
+        if (!pass) throw new Error('Passphrase required');
+        const { decryptBackupJson } = await import('../services/encryptedBackup');
+        const plain = await decryptBackupJson(data.data, pass);
+        data = JSON.parse(plain);
+      }
       await Promise.resolve(onRestoreBackup(data));
       const inv = getInventoryFromBackup(data);
       showToast(`Restored ${inv.length} items from this version`, 'success');
@@ -762,7 +802,20 @@ const SettingsPage: React.FC<Props> = ({
                                </div>
                             </div>
                          </div>
-                         <div className="flex flex-wrap gap-3">
+                         <div className="flex flex-wrap gap-3 items-end">
+                            <label className="flex items-center gap-2 text-xs font-bold text-slate-600 w-full sm:w-auto">
+                              <input type="checkbox" checked={backupEncrypt} onChange={(e) => setBackupEncrypt(e.target.checked)} className="accent-slate-900" />
+                              Encrypt backup (passphrase)
+                            </label>
+                            {backupEncrypt && (
+                              <input
+                                type="password"
+                                className="w-full sm:w-48 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold"
+                                placeholder="Passphrase"
+                                value={backupPassphrase}
+                                onChange={(e) => setBackupPassphrase(e.target.value)}
+                              />
+                            )}
                             <button
                                type="button"
                                onClick={handleSyncToGitHub}
@@ -1076,6 +1129,65 @@ const SettingsPage: React.FC<Props> = ({
              </div>
           )}
 
+          {activeTab === 'AI' && (
+             <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
+                <h3 className="text-xl font-black text-slate-900 flex items-center gap-2"><Sparkles size={22} className="text-amber-500"/> AI settings (#92–93)</h3>
+                <p className="text-sm text-slate-600 max-w-2xl">
+                   Control provider priority and model tiers. Keys stay in <code className="bg-slate-100 px-1 rounded">.env</code> / Vercel — this panel only stores preferences.
+                </p>
+                <div className="grid gap-4 md:grid-cols-2 max-w-2xl">
+                   <div>
+                      <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Specs fill tier</label>
+                      <select
+                         value={aiSettings.specsModelTier}
+                         onChange={(e) => {
+                            const next = { ...aiSettings, specsModelTier: e.target.value as AIModelTier };
+                            setAiSettings(next);
+                            saveAISettings(next);
+                         }}
+                         className="w-full mt-1 px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 font-bold text-sm"
+                      >
+                         <option value="fast">Fast (Groq)</option>
+                         <option value="balanced">Balanced</option>
+                         <option value="quality">Quality (Gemini)</option>
+                      </select>
+                   </div>
+                   <div>
+                      <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Deal search tier</label>
+                      <select
+                         value={aiSettings.dealSearchModelTier}
+                         onChange={(e) => {
+                            const next = { ...aiSettings, dealSearchModelTier: e.target.value as AIModelTier };
+                            setAiSettings(next);
+                            saveAISettings(next);
+                         }}
+                         className="w-full mt-1 px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 font-bold text-sm"
+                      >
+                         <option value="fast">Fast</option>
+                         <option value="balanced">Balanced</option>
+                         <option value="quality">Quality</option>
+                      </select>
+                   </div>
+                </div>
+                <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                   <input
+                      type="checkbox"
+                      checked={aiSettings.preferGroqForSpecs}
+                      onChange={(e) => {
+                         const next = { ...aiSettings, preferGroqForSpecs: e.target.checked };
+                         setAiSettings(next);
+                         saveAISettings(next);
+                      }}
+                      className="accent-amber-500"
+                   />
+                   Prefer Groq for spec fill when available
+                </label>
+                <p className="text-xs text-slate-500">
+                   Provider order: {aiSettings.providerPriority.join(' → ')}. Add keys in Health check.
+                </p>
+             </div>
+          )}
+
           {activeTab === 'FINANZAMT' && (
              <div className="space-y-6">
                 <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
@@ -1238,6 +1350,54 @@ const SettingsPage: React.FC<Props> = ({
                       </div>
                    </div>
 
+                   <div className="rounded-2xl border border-indigo-200 bg-indigo-50/50 p-5 space-y-4">
+                      <h4 className="text-sm font-black text-indigo-900 flex items-center gap-2">
+                         <FileText size={18} /> Steuerberater-Paket (JSON)
+                      </h4>
+                      <p className="text-xs text-indigo-900/80">
+                         Ein ZIP-freies JSON-Bundle mit Inventar, Ausgaben und Einstellungen — zum Weitergeben an Ihren Steuerberater (#70).
+                      </p>
+                      <button
+                         type="button"
+                         onClick={() => {
+                            void (async () => {
+                               const blob = await buildSteuerberaterBundle({
+                                  items,
+                                  expenses,
+                                  businessSettings,
+                                  actionHistory,
+                                  rangeLabel: finanzExportResolution.bounds ? formatBoundsGerman(finanzExportResolution.bounds) : 'Alle Daten',
+                               });
+                               downloadSteuerberaterBundle(blob, `steuerberater-${new Date().toISOString().slice(0, 10)}.json`);
+                               showToast('Steuerberater-Paket heruntergeladen', 'success');
+                            })();
+                         }}
+                         className="px-5 py-2.5 bg-indigo-700 text-white rounded-xl font-bold text-xs uppercase hover:bg-indigo-800 flex items-center gap-2"
+                      >
+                         <Download size={16} /> Steuerberater-Paket (.json)
+                      </button>
+                   </div>
+
+                   <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-3">
+                      <h4 className="text-sm font-black text-slate-900">ELSTER-Vorbereitung (#64)</h4>
+                      <p className="text-xs text-slate-500">Checkliste — ersetzt keine ELSTER-Übermittlung.</p>
+                      <ul className="space-y-2">
+                         {elsterChecklist.map((row) => (
+                            <li key={row.id} className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
+                               {row.done ? (
+                                  <CheckCircle2 size={18} className="text-emerald-500 shrink-0 mt-0.5" />
+                               ) : (
+                                  <AlertTriangle size={18} className="text-amber-500 shrink-0 mt-0.5" />
+                               )}
+                               <div>
+                                  <p className="text-sm font-bold text-slate-800">{row.label}</p>
+                                  <p className="text-[10px] text-slate-500">{row.hint}</p>
+                               </div>
+                            </li>
+                         ))}
+                      </ul>
+                   </div>
+
                    <p className="text-xs text-slate-400 max-w-2xl leading-relaxed">
                       Keine Rechtsberatung: Die Datei spiegelt Ihre App-Daten wider. Bewertung für Umsatzsteuer, EÜR oder Gewinnermittlung bleibt Sache von Ihnen und ggf. Ihrem Steuerberater.
                    </p>
@@ -1257,6 +1417,23 @@ const SettingsPage: React.FC<Props> = ({
           {activeTab === 'SYSTEM' && (
              <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
                 <h3 className="text-xl font-black text-slate-900 flex items-center gap-2"><Wrench size={22}/> System</h3>
+                <div className="bg-violet-50 border border-violet-200 p-6 rounded-2xl">
+                   <h4 className="text-sm font-black text-violet-900 flex items-center gap-2 mb-2"><Shield size={18}/> GDPR buyer data export (#146)</h4>
+                   <p className="text-sm text-violet-800 leading-relaxed mb-4">
+                      Export buyer names and linked sales from inventory for data-subject requests.
+                   </p>
+                   <button
+                      type="button"
+                      onClick={() => {
+                         const blob = buildGdprExportBlob({ items, expenses, businessSettings });
+                         downloadGdprExport(blob);
+                         showToast('GDPR export downloaded', 'success');
+                      }}
+                      className="px-5 py-2.5 bg-violet-700 text-white rounded-xl font-bold text-xs uppercase hover:bg-violet-800 flex items-center gap-2"
+                   >
+                      <Download size={16}/> Export buyer data (.json)
+                   </button>
+                </div>
                 <div className="bg-amber-50 border border-amber-200 p-6 rounded-2xl">
                    <h4 className="text-sm font-black text-amber-900 flex items-center gap-2 mb-2"><FileText size={18}/> Fix broken text encoding</h4>
                    <p className="text-sm text-amber-800 leading-relaxed mb-4">

@@ -176,6 +176,15 @@ export interface LiveDeal {
   platform: 'Kleinanzeigen' | 'eBay' | 'Web';
   dateFound: string;
   numericPrice: number;
+  /** True when the row is a marketplace search page, not a parsed listing */
+  isSearchLink?: boolean;
+}
+
+export interface DealSearchResult {
+  deals: LiveDeal[];
+  provider?: string;
+  fallback?: boolean;
+  message?: string;
 }
 
 export interface CrossPostContent {
@@ -296,26 +305,37 @@ const parseGermanPrice = (priceStr: string): number => {
   return parseFloat(clean) || 0;
 };
 
-export const executeSavedSearch = async (criteria: SavedSearchCriteria): Promise<LiveDeal[]> => {
-  // Prefer server route (GEMINI_API_KEY on Vercel); fall back to browser key for local `vite` dev.
+export const executeSavedSearch = async (criteria: SavedSearchCriteria): Promise<DealSearchResult> => {
+  const payload = {
+    query: criteria.query,
+    maxPrice: criteria.maxPrice,
+    platform: criteria.platform,
+    includeEbay: criteria.includeEbay,
+    customUrl: criteria.customUrl,
+    excludeVB: criteria.excludeVB,
+    excludeTausch: criteria.excludeTausch,
+    plz: criteria.plz,
+  };
+
+  // Prefer unified server route (GEMINI_API_KEY on Vercel); fall back to browser key for local dev.
   try {
-    const res = await fetch('/api/deal-search', {
+    const res = await fetch('/api/gemini?route=deal-search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        query: criteria.query,
-        maxPrice: criteria.maxPrice,
-        platform: criteria.platform,
-        includeEbay: criteria.includeEbay,
-        customUrl: criteria.customUrl,
-      }),
+      body: JSON.stringify(payload),
     });
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data.deals)) return data.deals as LiveDeal[];
-    } else if (res.status !== 404) {
-      const data = await res.json().catch(() => ({}));
-      const errMsg = typeof data.error === 'string' ? data.error : `Search failed (HTTP ${res.status})`;
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && Array.isArray(data.deals)) {
+      return {
+        deals: data.deals as LiveDeal[],
+        provider: typeof data.provider === 'string' ? data.provider : undefined,
+        fallback: Boolean(data.fallback),
+        message: typeof data.message === 'string' ? data.message : undefined,
+      };
+    }
+    if (res.status !== 404) {
+      const errMsg =
+        typeof data.error === 'string' ? data.error : `Search failed (HTTP ${res.status})`;
       throw new Error(errMsg);
     }
   } catch (e) {
@@ -325,7 +345,7 @@ export const executeSavedSearch = async (criteria: SavedSearchCriteria): Promise
   }
 
   try {
-    return await withAI(async (ai, model) => {
+    const deals = await withAI(async (ai, model) => {
         const platform = resolveSearchPlatform(criteria);
         const siteFilter = buildSiteFilter(platform);
         
@@ -421,6 +441,15 @@ export const executeSavedSearch = async (criteria: SavedSearchCriteria): Promise
             return 0;
         }).slice(0, 25);
     });
+    if (deals.length > 0) {
+      return { deals, provider: 'gemini-client', fallback: false };
+    }
+    return {
+      deals: buildClientMarketplaceLinks(criteria),
+      provider: 'direct-links',
+      fallback: true,
+      message: 'Browser AI found no listings. Open these marketplace searches to browse manually.',
+    };
   } catch (error: any) {
     console.error("Saved Search Error", error);
     const msg = error?.message || String(error);
@@ -560,18 +589,56 @@ export const analyzeSourcingStrategy = async (items: InventoryItem[]): Promise<S
   }
 };
 
+function buildClientMarketplaceLinks(criteria: SavedSearchCriteria): LiveDeal[] {
+  const platform = resolveSearchPlatform(criteria);
+  const q = criteria.query.trim();
+  const maxPrice = criteria.maxPrice || 0;
+  const deals: LiveDeal[] = [];
+  const slug = q.replace(/\s+/g, '-');
+
+  if (platform === 'kleinanzeigen' || platform === 'both') {
+    const custom = criteria.customUrl?.trim();
+    let url = custom || `https://www.kleinanzeigen.de/s-${encodeURIComponent(slug)}/k0`;
+    if (!custom && maxPrice > 0) url += `?preis=:${maxPrice}`;
+    deals.push({
+      title: `Open Kleinanzeigen search: ${q}${maxPrice > 0 ? ` (≤ €${maxPrice})` : ''}`,
+      url,
+      price: maxPrice > 0 ? `≤ €${maxPrice}` : 'Browse listings',
+      platform: 'Kleinanzeigen',
+      dateFound: new Date().toISOString(),
+      numericPrice: 0,
+      isSearchLink: true,
+    });
+  }
+  if (platform === 'ebay' || platform === 'both') {
+    let url = `https://www.ebay.de/sch/i.html?_nkw=${encodeURIComponent(q)}&_sop=16`;
+    if (maxPrice > 0) url += `&_udhi=${maxPrice}`;
+    deals.push({
+      title: `Open eBay search: ${q}${maxPrice > 0 ? ` (≤ €${maxPrice})` : ''}`,
+      url,
+      price: maxPrice > 0 ? `≤ €${maxPrice}` : 'Browse listings',
+      platform: 'eBay',
+      dateFound: new Date().toISOString(),
+      numericPrice: 0,
+      isSearchLink: true,
+    });
+  }
+  return deals;
+}
+
 export const findLiveDeals = async (
   strategy: SourcingStrategy,
   platform: DealSearchPlatform = 'both'
 ): Promise<LiveDeal[]> => {
   const query = [strategy.targetCategory, strategy.title].filter(Boolean).join(' ').trim() || strategy.targetCategory;
-  return executeSavedSearch({
+  const result = await executeSavedSearch({
     id: 'temp',
     query,
     maxPrice: strategy.maxBuyPrice,
     platform,
     includeEbay: platform !== 'kleinanzeigen',
   });
+  return result.deals;
 };
 
 export const generateCrossPostingContent = async (item: InventoryItem): Promise<CrossPostContent | null> => {

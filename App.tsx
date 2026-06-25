@@ -47,6 +47,8 @@ import { saveOAuthResult } from './services/githubBackupService';
 import { generateExpensesFromRecurring } from './services/recurringExpenseService';
 import { Analytics } from '@vercel/analytics/react';
 import { PanelLocaleProvider } from './context/PanelLocaleContext';
+import { UndoToastProvider, useUndoToastContext } from './context/UndoToastContext';
+import OnboardingWizard, { isOnboardingComplete } from './components/OnboardingWizard';
 import { appendUndoHistory } from './utils/appendUndoHistory';
 import { persistSnapshotToLocalStorage, scheduleBackgroundWork } from './services/backgroundPersistence';
 
@@ -944,6 +946,9 @@ const App: React.FC = () => {
           }
           const taxMode = businessSettings.taxMode || 'SmallBusiness';
           final = recomputeRealizedProfit(final, taxMode);
+          if (final.status === ItemStatus.SOLD || final.status === ItemStatus.TRADED) {
+            final = { ...final, storeVisible: false };
+          }
           if (idx >= 0) {
             nextItems[idx] = final;
             if (recordAction) {
@@ -1000,7 +1005,18 @@ const App: React.FC = () => {
     }
   }, [handleUpdate]);
 
-  const handleDelete = (id: string) => handleUpdate([], [id]);
+  const showUndoRef = useRef<(msg: string, onUndo: () => void) => void>(() => {});
+  const [showOnboarding, setShowOnboarding] = useState(() => !isOnboardingComplete());
+
+  const handleDelete = useCallback((id: string) => {
+    const item = items.find((i) => i.id === id);
+    if (!item) return;
+    handleUpdate([], [id]);
+    showUndoRef.current('Moved to trash', () => {
+      setTrash((prev) => prev.filter((i) => i.id !== id));
+      handleUpdate([item], undefined, { skipActionLog: true, skipUndo: true });
+    });
+  }, [items, handleUpdate]);
   const handleUndo = () => {
     if (historyIndex > 0) {
       const newIndex = historyIndex - 1;
@@ -1309,7 +1325,10 @@ const App: React.FC = () => {
   return (
     <Router>
       <Analytics />
+      <UndoToastProvider>
+      <UndoToastBridge showUndoRef={showUndoRef} />
       <PanelLocaleProvider>
+      {showOnboarding && <OnboardingWizard onComplete={() => setShowOnboarding(false)} />}
       <Routes>
         <Route path="/" element={<StorefrontPage />} />
         <Route path="/item/:id" element={<StorefrontPage />} />
@@ -1398,14 +1417,23 @@ const App: React.FC = () => {
           <Route path="import" element={<SheetsImport onImport={handleImportBatch} onClearData={handleWipeData} />} />
           <Route path="trash" element={<TrashPage items={trash} onRestore={handleRestoreFromTrash} onPermanentDelete={handlePermanentDelete} />} />
           <Route path="store-management" element={<StoreManagementPage items={items} categories={categories} categoryFields={categoryFields} onUpdate={handleUpdate} onPublishCatalog={async () => { await writeStoreCatalog(buildStoreCatalog(items, categoryFields)); }} />} />
-          <Route path="settings" element={<SettingsPage items={items} trash={trash} expenses={expenses} monthlyGoal={monthlyGoal} dashboardPreferences={dashboardPrefs} onForcePush={handleForcePush} onRestoreItems={setItems} onRestoreBackup={handleRestoreBackup} onFixEncoding={handleFixEncoding} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} onUpdateCategoryStructure={handleUpdateCategoryStructure} onUpdateCategoryFields={handleUpdateCategoryFields} onRenameCategory={() => {}} onRenameSubCategory={() => {}} />} />
+          <Route path="settings" element={<SettingsPage items={items} trash={trash} expenses={expenses} monthlyGoal={monthlyGoal} dashboardPreferences={dashboardPrefs} actionHistory={actionHistory} onForcePush={handleForcePush} onRestoreItems={setItems} onRestoreBackup={handleRestoreBackup} onFixEncoding={handleFixEncoding} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} onUpdateCategoryStructure={handleUpdateCategoryStructure} onUpdateCategoryFields={handleUpdateCategoryFields} onRenameCategory={() => {}} onRenameSubCategory={() => {}} />} />
         </Route>
         <Route path="/auth/github/callback" element={<GitHubOAuthCallback />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </PanelLocaleProvider>
+      </UndoToastProvider>
     </Router>
   );
 };
+
+function UndoToastBridge({ showUndoRef }: { showUndoRef: React.MutableRefObject<(msg: string, onUndo: () => void) => void> }) {
+  const { showUndo } = useUndoToastContext();
+  useEffect(() => {
+    showUndoRef.current = showUndo;
+  }, [showUndo, showUndoRef]);
+  return null;
+}
 
 export default App;

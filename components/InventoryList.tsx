@@ -11,7 +11,7 @@ import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, Ite
 import { itemMatchesSalePlatformFilter, isMissingExplicitSalePlatform, MISSING_PLATFORM_FILTER, SALE_PLATFORM_OPTIONS, formatItemSalePlatform } from '../utils/salePlatform';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { getCompatibleItemsForItem } from '../services/compatibility';
-import { generateKleinanzeigenCSV } from '../services/ebayCsvService';
+import { generateKleinanzeigenCSV, generateEbayCSV } from '../services/ebayCsvService';
 import { searchInventory } from '../utils/inventorySearchIndex';
 import { copyKleinanzeigenListing } from '../utils/copyKleinanzeigenListing';
 import { bundleComponentBreakdown } from '../utils/bundleProfitBreakdown';
@@ -805,17 +805,16 @@ const InventoryList: React.FC<Props> = ({
 
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const rowHeightEstimate = listDensity === 'compact' ? 76 : 118;
-  const rowVirtualizer = useVirtualizer({
-    count: sortedItems.length,
-    getScrollElement: () => tableContainerRef.current,
-    estimateSize: () => rowHeightEstimate,
-    overscan: 12,
-  });
 
   useEffect(() => {
     if (tableContainerRef.current) tableContainerRef.current.scrollTop = 0;
-    rowVirtualizer.scrollToIndex(0);
-  }, [searchTerm, timeFilter, sortConfig, statusFilter, categoryFilter, subCategoryFilter, salePlatformFilter, salePaymentFilter, specFilters, specRangeFilters, rowVirtualizer]);
+  }, [searchTerm, timeFilter, sortConfig, statusFilter, categoryFilter, subCategoryFilter, salePlatformFilter, salePaymentFilter, specFilters, specRangeFilters]);
+
+  const getRowActivityKey = useCallback(
+    (item: InventoryItem) =>
+      `${editingCell?.itemId === item.id ? editingCell.field : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${expandedBundles.has(item.id) ? 'open' : 'shut'}`,
+    [editingCell, listingGenId, parsingSingleId, priceSuggestId, expandedBundles]
+  );
 
   const showFinancials = statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS';
 
@@ -2129,6 +2128,16 @@ const InventoryList: React.FC<Props> = ({
       a.click();
       URL.revokeObjectURL(a.href);
     };
+    const exportEbayCsv = () => {
+      const selected = deferredSelectedIds.map((id) => itemsById.get(id)).filter(Boolean) as InventoryItem[];
+      const csv = generateEbayCSV(selected, businessSettings);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `ebay-file-exchange-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    };
     const exportExcel = () => {
       const selected = deferredSelectedIds.map((id) => itemsById.get(id)).filter(Boolean) as InventoryItem[];
       exportInventoryToExcel(selected);
@@ -2142,6 +2151,7 @@ const InventoryList: React.FC<Props> = ({
       { id: 'salepct', label: 'Sale %', icon: <Percent size={16} />, onClick: () => setShowBulkSalePct(true), variant: 'primary' },
       { id: 'tag', label: 'Add tag', icon: <Tag size={16} />, onClick: () => setShowBulkTag(true), variant: 'primary' },
       { id: 'kleincsv', label: 'Kleinanzeigen CSV', icon: <Download size={16} />, onClick: exportKleinanzeigen, variant: 'primary' },
+      { id: 'ebaycsv', label: 'eBay CSV', icon: <Download size={16} />, onClick: exportEbayCsv, variant: 'primary' },
       { id: 'excel', label: 'Export Excel', icon: <FileSpreadsheet size={16} />, onClick: exportExcel, variant: 'primary' },
       {
         id: 'aidesc',
@@ -2793,41 +2803,16 @@ const InventoryList: React.FC<Props> = ({
                   })}
                </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50" style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative' }}>
-               {sortedItems.length > 0 ? rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                  const item = sortedItems[virtualRow.index]!;
-                  return (
-                  <InventoryTableRow
-                    key={item.id}
-                    item={item}
-                    isSelected={selectedIdSet.has(item.id)}
-                    visibleColumns={visibleColumns}
-                    renderRowCells={renderRowCells}
-                    rowActivityKey={`${editingCell?.itemId === item.id ? editingCell.field : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${expandedBundles.has(item.id) ? 'open' : 'shut'}`}
-                    virtualStyle={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '100%',
-                      transform: `translateY(${virtualRow.start}px)`,
-                    }}
-                    measureRef={rowVirtualizer.measureElement}
-                    dataIndex={virtualRow.index}
-                  />
-               ); }) : (
-                  <tr>
-                     <td colSpan={visibleColumns.length} className="p-20 text-center opacity-40">
-                        <Package size={48} className="mx-auto mb-4 text-slate-300"/>
-                        <p className="font-bold text-slate-400">No items found matching current filters</p>
-                     </td>
-                  </tr>
-               )}
-               {selectedIds.length > 0 && (
-                  <tr aria-hidden="true" className="pointer-events-none border-0">
-                     <td colSpan={visibleColumns.length} className="!p-0 !border-0 h-24 lg:h-28" />
-                  </tr>
-               )}
-            </tbody>
+            <InventoryTableBody
+              sortedItems={sortedItems}
+              selectedIdSet={selectedIdSet}
+              visibleColumns={visibleColumns}
+              renderRowCells={renderRowCells}
+              getRowActivityKey={getRowActivityKey}
+              scrollRef={tableContainerRef}
+              rowHeightEstimate={rowHeightEstimate}
+              bulkBarSpacer={selectedIds.length > 0}
+            />
          </table>
       </div>
       </div>
@@ -3192,6 +3177,103 @@ const InventoryList: React.FC<Props> = ({
   );
 };
 
+/** Below this count, native table scrolling is smoother than virtualized absolute rows. */
+const INVENTORY_VIRTUAL_THRESHOLD = 100;
+
+type InventoryTableBodyProps = {
+  sortedItems: InventoryItem[];
+  selectedIdSet: Set<string>;
+  visibleColumns: ColumnId[];
+  renderRowCells: (item: InventoryItem, isSelected: boolean) => React.ReactNode;
+  getRowActivityKey: (item: InventoryItem) => string;
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+  rowHeightEstimate: number;
+  bulkBarSpacer: boolean;
+};
+
+const InventoryTableBody = React.memo(function InventoryTableBody({
+  sortedItems,
+  selectedIdSet,
+  visibleColumns,
+  renderRowCells,
+  getRowActivityKey,
+  scrollRef,
+  rowHeightEstimate,
+  bulkBarSpacer,
+}: InventoryTableBodyProps) {
+  const useVirtual = sortedItems.length > INVENTORY_VIRTUAL_THRESHOLD;
+
+  const rowVirtualizer = useVirtualizer({
+    count: sortedItems.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => rowHeightEstimate,
+    overscan: 5,
+    getItemKey: (index) => sortedItems[index]?.id ?? index,
+  });
+
+  if (sortedItems.length === 0) {
+    return (
+      <tbody className="divide-y divide-slate-50">
+        <tr>
+          <td colSpan={visibleColumns.length} className="p-20 text-center opacity-40">
+            <Package size={48} className="mx-auto mb-4 text-slate-300" />
+            <p className="font-bold text-slate-400">No items found matching current filters</p>
+          </td>
+        </tr>
+      </tbody>
+    );
+  }
+
+  if (!useVirtual) {
+    return (
+      <tbody className="divide-y divide-slate-50">
+        {sortedItems.map((item) => (
+          <InventoryTableRow
+            key={item.id}
+            item={item}
+            isSelected={selectedIdSet.has(item.id)}
+            visibleColumns={visibleColumns}
+            renderRowCells={renderRowCells}
+            rowActivityKey={getRowActivityKey(item)}
+          />
+        ))}
+        {bulkBarSpacer && (
+          <tr aria-hidden="true" className="pointer-events-none border-0">
+            <td colSpan={visibleColumns.length} className="!p-0 !border-0 h-24 lg:h-28" />
+          </tr>
+        )}
+      </tbody>
+    );
+  }
+
+  return (
+    <tbody
+      className="divide-y divide-slate-50"
+      style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative' }}
+    >
+      {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+        const item = sortedItems[virtualRow.index]!;
+        return (
+          <InventoryTableRow
+            key={item.id}
+            item={item}
+            isSelected={selectedIdSet.has(item.id)}
+            visibleColumns={visibleColumns}
+            renderRowCells={renderRowCells}
+            rowActivityKey={getRowActivityKey(item)}
+            rowTranslateY={virtualRow.start}
+          />
+        );
+      })}
+      {bulkBarSpacer && (
+        <tr aria-hidden="true" className="pointer-events-none border-0">
+          <td colSpan={visibleColumns.length} className="!p-0 !border-0 h-24 lg:h-28" />
+        </tr>
+      )}
+    </tbody>
+  );
+});
+
 type InventoryTableRowProps = {
   item: InventoryItem;
   isSelected: boolean;
@@ -3199,19 +3281,27 @@ type InventoryTableRowProps = {
   renderRowCells: (item: InventoryItem, isSelected: boolean) => React.ReactNode;
   /** Bumps when inline edit / AI spinners affect this row so memo does not skip updates. */
   rowActivityKey: string;
-  virtualStyle?: React.CSSProperties;
-  measureRef?: (node: Element | null) => void;
-  dataIndex?: number;
+  rowTranslateY?: number;
 };
 
 const InventoryTableRow = React.memo(
-  function InventoryTableRow({ item, isSelected, renderRowCells, virtualStyle, measureRef, dataIndex }: InventoryTableRowProps) {
+  function InventoryTableRow({ item, isSelected, renderRowCells, rowTranslateY }: InventoryTableRowProps) {
+    const virtualized = rowTranslateY !== undefined;
     return (
       <tr
-        ref={measureRef}
-        data-index={dataIndex}
-        style={virtualStyle}
-        className={`hover:bg-slate-50/50 transition-colors group/row ${isSelected ? 'bg-blue-50/20' : ''}`}
+        style={
+          virtualized
+            ? {
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translate3d(0, ${rowTranslateY}px, 0)`,
+                contain: 'layout style paint',
+              }
+            : undefined
+        }
+        className={`hover:bg-slate-50/50 group/row ${isSelected ? 'bg-blue-50/20' : ''}`}
       >
         {renderRowCells(item, isSelected)}
       </tr>
@@ -3223,8 +3313,7 @@ const InventoryTableRow = React.memo(
     prev.visibleColumns === next.visibleColumns &&
     prev.rowActivityKey === next.rowActivityKey &&
     prev.renderRowCells === next.renderRowCells &&
-    prev.virtualStyle === next.virtualStyle &&
-    prev.dataIndex === next.dataIndex
+    prev.rowTranslateY === next.rowTranslateY
 );
 
 const CategoryPickerModal: React.FC<{

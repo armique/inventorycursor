@@ -62,6 +62,7 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate, embedded = fa
   const [enablePriceAlert, setEnablePriceAlert] = useState(false);
   const [watchlist, setWatchlist] = useState<DealWatchlistItem[]>(() => loadDealWatchlist());
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchNotice, setSearchNotice] = useState<string | null>(null);
 
   useEffect(() => {
     localStorage.setItem('auto_check_active', String(isAutoCheckActive));
@@ -121,8 +122,8 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate, embedded = fa
     for (let i = 0; i < updatedSearches.length; i++) {
        const search = updatedSearches[i];
        try {
-          const raw = await executeSavedSearch(search);
-          const results = postProcessResults(search, raw);
+          const result = await executeSavedSearch(search);
+          const results = postProcessResults(search, result.deals);
           const oldUrls = search.results.map(r => r.url);
           const newItems = results.filter(r => !oldUrls.includes(r.url));
           
@@ -206,9 +207,22 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate, embedded = fa
     const list = searchList ?? searches;
     setLoadingSearchId(search.id);
     setSearchError(null);
+    setSearchNotice(null);
     try {
-      const raw = await executeSavedSearch(search);
-      const results = postProcessResults(search, raw);
+      const result = await executeSavedSearch(search);
+      const results = postProcessResults(search, result.deals);
+
+      if (result.fallback && result.message) {
+        setSearchNotice(result.message);
+      } else if (result.deals.length > 0 && results.length === 0) {
+        setSearchNotice(
+          'AI returned listings but your filters (Exclude VB / Tausch / PLZ) removed all of them. Try relaxing filters.'
+        );
+      } else if (results.length === 0 && !result.fallback) {
+        setSearchNotice(
+          'No listings found for this search. Try a broader term, higher max price, or a custom Kleinanzeigen URL.'
+        );
+      }
       
       const updated = list.map(s => {
         if (s.id === search.id) {
@@ -477,6 +491,11 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate, embedded = fa
                        {searchError}
                     </div>
                  )}
+                 {searchNotice && !searchError && (
+                    <div className="mx-6 mt-4 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold">
+                       {searchNotice}
+                    </div>
+                 )}
 
                  <div className="flex-1 overflow-y-auto p-6 bg-slate-50/30">
                     {selectedSearch.results.length === 0 ? (
@@ -511,7 +530,9 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate, embedded = fa
                                    </a>
                                 </div>
                                 <div className="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between gap-2">
-                                   <p className={`text-lg font-black ${deal.numericPrice === 0 ? 'text-amber-500' : 'text-slate-900'}`}>€{formatEUR(Number(deal.numericPrice ?? 0))}</p>
+                                   <p className={`text-lg font-black ${deal.numericPrice === 0 ? 'text-amber-500' : 'text-slate-900'}`}>
+                                     {deal.isSearchLink ? deal.price : `€${formatEUR(Number(deal.numericPrice ?? 0))}`}
+                                   </p>
                                    <div className="flex gap-1">
                                      <button type="button" onClick={() => setWatchlist(saveToWatchlist(deal, selectedSearch.id, score))} className="text-[9px] font-bold px-2 py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-amber-100">★ Save</button>
                                      <a href={deal.url} target="_blank" rel="noreferrer" className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">View</a>

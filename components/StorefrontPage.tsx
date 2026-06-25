@@ -304,6 +304,23 @@ const StorefrontPage: React.FC = () => {
 
   const items = useMemo(() => (catalog?.items ?? []).filter((i) => i.storeVisible === true), [catalog]);
 
+  useEffect(() => {
+    if (!catalogLoaded) return;
+    document.title = items.length > 0 ? `ArmikTech — ${items.length} PC parts` : 'ArmikTech — PC parts store';
+    let meta = document.querySelector('meta[name="description"]');
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.setAttribute('name', 'description');
+      document.head.appendChild(meta);
+    }
+    meta.setAttribute(
+      'content',
+      items.length > 0
+        ? `Browse ${items.length} used PC components and systems at ArmikTech. GPUs, CPUs, RAM and more.`
+        : 'ArmikTech — used PC hardware and components in Germany.'
+    );
+  }, [catalogLoaded, items.length]);
+
   // Open item detail when URL is /item/:id and catalog is loaded
   useEffect(() => {
     if (!catalogLoaded || !itemIdFromUrl || items.length === 0) return;

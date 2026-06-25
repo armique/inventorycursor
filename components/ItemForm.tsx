@@ -18,7 +18,7 @@ import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
 import { getCompatibleItemsForItem } from '../services/compatibility';
 import { getEssentialSpecFieldKeys } from '../services/essentialSpecFields';
 import { getCompatibilityWarnings } from '../utils/compatibilityWarnings';
-import { recordCategoryCorrection } from '../services/categoryCorrections';
+import { recordCategoryCorrection, suggestCategoryFromCorrections } from '../services/categoryCorrections';
 
 interface Props {
   items: InventoryItem[];
@@ -194,6 +194,11 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       .filter((i) => i.id !== formData.id && i.name.toLowerCase().includes(q))
       .slice(0, 8);
   }, [items, formData.name, formData.id]);
+
+  const learnedCategory = useMemo(
+    () => (formData.name?.trim() ? suggestCategoryFromCorrections(formData.name) : null),
+    [formData.name]
+  );
 
   const applyItemFromHistory = useCallback((template: InventoryItem) => {
     setFormData((prev) => ({
@@ -395,6 +400,11 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     }
 
     onSave(itemsToSave);
+
+    const prevCategory = initialData?.category;
+    if (formData.category && prevCategory && formData.category !== prevCategory && formData.name) {
+      recordCategoryCorrection(formData.name, formData.category);
+    }
     
     // When creating multiple new items, stay on the form so the user can keep adding
     if (!isEditingExisting && quantityToCreate > 1) {
@@ -665,6 +675,15 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                                 </ul>
                               )}
                             </div>
+                            {learnedCategory && learnedCategory !== formData.category && (
+                              <button
+                                type="button"
+                                onClick={() => setFormData((prev) => ({ ...prev, category: learnedCategory }))}
+                                className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg hover:bg-indigo-100"
+                              >
+                                Learned category: {learnedCategory}
+                              </button>
+                            )}
                             {/* Quick AI specs parse from name */}
                             <button
                               type="button"
@@ -997,6 +1016,15 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                                 <span className="text-sm font-bold text-slate-700">IO Blende</span>
                              </label>
                           )}
+                          <label className="flex items-center gap-2 cursor-pointer">
+                             <input
+                                type="checkbox"
+                                checked={!!formData.usesDifferentialVat}
+                                onChange={e => setFormData({ ...formData, usesDifferentialVat: e.target.checked })}
+                                className="w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                             />
+                             <span className="text-sm font-bold text-slate-700">§25a Differenzbesteuerung (Gebrauchtware)</span>
+                          </label>
                        </div>
                     </div>
 

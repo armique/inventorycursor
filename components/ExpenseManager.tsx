@@ -10,6 +10,7 @@ import {
 import { useSearchParams } from 'react-router-dom';
 import { Expense, ExpenseCategory, RecurringExpense } from '../types';
 import { uploadExpenseAttachment } from '../services/firebaseService';
+import { VirtualList } from './VirtualList';
 
 interface Props {
   expenses: Expense[];
@@ -376,9 +377,13 @@ const ExpenseManager: React.FC<Props> = ({
             </div>
          </div>
 
-         <div className="space-y-3">
-            {filteredExpenses.length > 0 ? filteredExpenses.map(expense => (
-               <div key={expense.id} className="flex items-center justify-between p-4 hover:bg-slate-50 rounded-2xl transition-colors border border-transparent hover:border-slate-100 group">
+         <VirtualList
+            className="space-y-3 max-h-[min(70vh,720px)]"
+            items={filteredExpenses}
+            estimateSize={76}
+            getKey={(expense) => expense.id}
+            renderItem={(expense) => (
+               <div className="flex items-center justify-between p-4 hover:bg-slate-50 rounded-2xl transition-colors border border-transparent hover:border-slate-100 group mb-3">
                   <div className="flex items-center gap-4">
                      {getCategoryIcon(expense.category)}
                      <div>
@@ -449,13 +454,14 @@ const ExpenseManager: React.FC<Props> = ({
                      </button>
                   </div>
                </div>
-            )) : (
+            )}
+         />
+         {filteredExpenses.length === 0 && (
                <div className="py-20 text-center opacity-40">
                   <Wallet size={48} className="mx-auto mb-3 text-slate-300"/>
                   <p className="font-bold text-slate-400">No expenses found</p>
                </div>
-            )}
-         </div>
+         )}
       </div>
 
       {isModalOpen && (
