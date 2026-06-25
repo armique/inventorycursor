@@ -3,6 +3,11 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "rewrites": [
+    { "source": "/api/deal-search", "destination": "/api/gemini?route=deal-search" },
+    { "source": "/api/parse-ebay-order-screenshot", "destination": "/api/gemini?route=ebay-screenshot" },
+    { "source": "/api/parse-kleinanzeigen-chat-screenshot", "destination": "/api/gemini?route=ka-screenshot" },
+    { "source": "/api/ebay-order", "destination": "/api/ebay?route=order" },
+    { "source": "/api/ebay-orders", "destination": "/api/ebay?route=orders" },
     { "source": "/sitemap.xml", "destination": "/api/sitemap.xml" },
     { "source": "/(.*)", "has": [{ "type": "header", "key": "accept", "value": ".*text/html.*" }], "destination": "/index.html" }
   ],

@@ -26,7 +26,7 @@ See [API_KEYS_GUIDE.md](./API_KEYS_GUIDE.md) and [.env.example](./.env.example).
 
 ## Deploy
 
-- **Vercel** (recommended for API routes): connect repo, set env vars, deploy.
+- **Vercel** (recommended for API routes): connect repo, set env vars, deploy. Hobby plan allows **12 serverless functions max** — this repo uses **4** (`gemini`, `ebay`, `sitemap.xml`, `github-oauth`). Legacy API URLs are rewritten in `vercel.json`.
 - **Firebase Hosting**: `npm run deploy` (static build; API routes need Vercel or separate backend).
 
 ## Main features
