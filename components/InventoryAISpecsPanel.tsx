@@ -1,5 +1,6 @@
-import React, { useState, useCallback, useMemo } from 'react';
-import { Sparkles, Loader2, AlertCircle, Info, AlertTriangle, ChevronDown } from 'lucide-react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { Sparkles, Loader2, AlertCircle, Info, AlertTriangle, X } from 'lucide-react';
 import { InventoryItem } from '../types';
 import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
 
@@ -12,6 +13,8 @@ interface Props {
   selectedIds: string[];
   categoryFields: Record<string, string[]>;
   onUpdate: (items: InventoryItem[]) => void;
+  open: boolean;
+  onClose: () => void;
 }
 
 const EMPTY_ITEMS: InventoryItem[] = [];
@@ -21,13 +24,14 @@ const InventoryAISpecsPanelInner: React.FC<Props> = ({
   selectedIds,
   categoryFields,
   onUpdate,
+  open,
+  onClose,
 }) => {
   const [analyzing, setAnalyzing] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [rateLimitWaiting, setRateLimitWaiting] = useState(false);
   const [waitSecondsLeft, setWaitSecondsLeft] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState(true);
 
   const provider = getSpecsAIProvider();
   const itemsById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
@@ -43,6 +47,16 @@ const InventoryAISpecsPanelInner: React.FC<Props> = ({
   const canParseCount = selectedItems.length;
   const selectedAllDefective = selectedItems.length > 0 && selectedItems.every((i) => i.isDefective);
   const defectiveLabel = selectedAllDefective ? 'Mark OK' : 'Mark defective';
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !analyzing) onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, analyzing, onClose]);
+
   const toggleDefective = useCallback(() => {
     if (selectedItems.length === 0) return;
     const newValue = !selectedAllDefective;
@@ -85,7 +99,7 @@ const InventoryAISpecsPanelInner: React.FC<Props> = ({
   const runParse = useCallback(async () => {
     const toParse = selectedItems;
     if (toParse.length === 0) {
-      setError('Select items in the table above, then click Parse specs.');
+      setError('Select items in the table, then click Parse specs.');
       return;
     }
     setAnalyzing(true);
@@ -130,7 +144,7 @@ const InventoryAISpecsPanelInner: React.FC<Props> = ({
           setProgress((p) => ({ ...p, current: Math.min(i + BATCH_SIZE, toParse.length) }));
           setRateLimitWaiting(false);
           batchDone = true;
-        } catch (e) {
+        } catch {
           retryCount += 1;
           setRateLimitWaiting(true);
           setError(`Rate limit hit. Waiting 2 min then retry #${retryCount}…`);
@@ -153,105 +167,105 @@ const InventoryAISpecsPanelInner: React.FC<Props> = ({
     setError(null);
   }, [selectedItems, items, categoryFields, onUpdate, mergeSpecsResult, waitWithCountdown]);
 
-  return (
-    <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 shadow-sm">
-      <button
-        type="button"
-        className="flex w-full flex-wrap items-center justify-between gap-3 text-left cursor-pointer"
-        onClick={() => setCollapsed((v) => !v)}
-        title={collapsed ? 'Expand AI specs panel' : 'Collapse AI specs panel'}
+  if (!open) return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4"
+      onClick={() => !analyzing && onClose()}
+    >
+      <div
+        className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
-            <Sparkles size={18} className="text-amber-500" />
-            Parse specs with AI
-          </h2>
+        <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-2 bg-slate-50/80">
+          <div className="flex items-center gap-2 min-w-0">
+            <Sparkles size={16} className="text-amber-500 shrink-0" />
+            <h2 className="text-sm font-black text-slate-900 truncate">Parse specs with AI</h2>
+            {provider && (
+              <span className="text-[9px] font-bold text-slate-400 uppercase shrink-0">{provider}</span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={analyzing}
+            className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-700 disabled:opacity-40"
+            aria-label="Close"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-3 max-h-[min(70vh,420px)] overflow-y-auto">
+          {!provider && (
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-2">
+              <AlertCircle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+              <div className="text-xs text-amber-900">
+                <p className="font-bold">No AI configured</p>
+                <p className="mt-0.5 text-amber-800">
+                  Add <code className="bg-amber-100 px-1 rounded">VITE_GROQ_API_KEY</code> to{' '}
+                  <code className="bg-amber-100 px-1 rounded">.env</code>.
+                </p>
+              </div>
+            </div>
+          )}
+
           {provider && (
-            <span className="text-[10px] font-bold text-slate-500 uppercase">
-              {provider}
-            </span>
+            <>
+              <div className="flex items-start gap-2 text-[11px] text-slate-600">
+                <Info size={13} className="shrink-0 mt-0.5" />
+                <p>Select rows in the table, then run. Batches pause 1 min between groups for rate limits.</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={runParse}
+                  disabled={analyzing || canParseCount === 0}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 disabled:opacity-50"
+                >
+                  {analyzing ? (
+                    <>
+                      <Loader2 size={14} className={rateLimitWaiting ? '' : 'animate-spin'} />
+                      {rateLimitWaiting && waitSecondsLeft != null
+                        ? `Wait ${Math.floor(waitSecondsLeft / 60)}:${String(waitSecondsLeft % 60).padStart(2, '0')}`
+                        : rateLimitWaiting
+                          ? `Waiting… ${progress.current}/${progress.total}`
+                          : `${progress.current}/${progress.total}`}
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={14} />
+                      Parse {canParseCount} selected
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleDefective}
+                  disabled={canParseCount === 0}
+                  className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold disabled:opacity-50 ${selectedAllDefective ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' : 'bg-red-100 text-red-800 hover:bg-red-200'}`}
+                >
+                  <AlertTriangle size={14} />
+                  {defectiveLabel}
+                </button>
+              </div>
+              {canParseCount === 0 && (
+                <p className="text-[11px] text-slate-500">Select items in the inventory table first.</p>
+              )}
+            </>
+          )}
+
+          {error && (
+            <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-center gap-2">
+              <AlertCircle size={14} className="shrink-0" />
+              <p className="font-bold">{error}</p>
+            </div>
           )}
         </div>
-        <ChevronDown
-          size={16}
-          className={`text-slate-500 transition-transform ${collapsed ? '-rotate-90' : ''}`}
-        />
-      </button>
-
-      {!collapsed && !provider && (
-        <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-2">
-          <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
-          <div>
-            <p className="font-bold text-amber-900 text-sm">No AI configured</p>
-            <p className="text-xs text-amber-800 mt-0.5">
-              Add <code className="bg-amber-100 px-1 rounded">VITE_GROQ_API_KEY</code> or another key to <code className="bg-amber-100 px-1 rounded">.env</code> (same as Category suggestions). Groq free tier is generous.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {!collapsed && provider && (
-        <>
-          <div className="mt-2 flex items-start gap-2 text-xs text-slate-600">
-            <Info size={14} className="shrink-0 mt-0.5" />
-            <p>
-              Select items in the table, then run. One request per item; batches with 1 min pause to respect rate limits. Same API keys and fallback order as Category suggestions.
-            </p>
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={runParse}
-              disabled={analyzing || canParseCount === 0}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600 disabled:opacity-50"
-            >
-              {analyzing ? (
-                <>
-                  <Loader2 size={16} className={rateLimitWaiting ? '' : 'animate-spin'} />
-                  {rateLimitWaiting && waitSecondsLeft != null
-                    ? `Waiting ${Math.floor(waitSecondsLeft / 60)}:${String(waitSecondsLeft % 60).padStart(2, '0')}…`
-                    : rateLimitWaiting
-                      ? `Waiting… ${progress.current}/${progress.total}`
-                      : `Parsing ${progress.current}/${progress.total}…`}
-                </>
-              ) : (
-                <>
-                  <Sparkles size={16} />
-                  Parse specs for {canParseCount} selected
-                </>
-              )}
-            </button>
-            {canParseCount === 0 && (
-              <span className="text-xs text-slate-500">Select items above first</span>
-            )}
-            <button
-              type="button"
-              onClick={toggleDefective}
-              disabled={canParseCount === 0}
-              title={selectedAllDefective ? 'Clear defective flag (item is OK)' : 'Mark selected as defective (excluded from PC/bundle builds)'}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold disabled:opacity-50 ${selectedAllDefective ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' : 'bg-red-100 text-red-800 hover:bg-red-200'}`}
-            >
-              <AlertTriangle size={16} />
-              {defectiveLabel}
-            </button>
-          </div>
-        </>
-      )}
-
-      {!collapsed && error && (
-        <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-900 flex items-center gap-2">
-          <AlertCircle size={18} className="shrink-0" />
-          <div>
-            <p className="font-bold">{error}</p>
-            {waitSecondsLeft != null && (
-              <p className="mt-0.5 font-mono text-xs text-amber-700">
-                Time remaining: {Math.floor(waitSecondsLeft / 60)}:{String(waitSecondsLeft % 60).padStart(2, '0')}
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
+      </div>
+    </div>,
+    document.body
   );
 };
 

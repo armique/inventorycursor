@@ -29,13 +29,14 @@ const PanelBreadcrumbs: React.FC = () => {
   if (!pathname.startsWith('/panel')) return null;
 
   const segments = pathname.replace(/^\/panel\/?/, '').split('/').filter(Boolean);
+  const isDensePage = /^\/panel\/(inventory|trash)(\/|$)/.test(pathname);
   const crumbs = [{ path: '/panel/dashboard', label: 'Panel' }, ...segments.map((seg, i) => ({
     path: `/panel/${segments.slice(0, i + 1).join('/')}`,
     label: LABELS[seg] || seg,
   }))];
 
   return (
-    <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3 flex-wrap">
+    <nav aria-label="Breadcrumb" className={`flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-slate-400 flex-wrap ${isDensePage ? 'mb-0' : 'mb-3'}`}>
       <Link to="/panel/dashboard" className="hover:text-slate-700 flex items-center gap-1">
         <Home size={12} />
       </Link>

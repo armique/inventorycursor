@@ -165,7 +165,13 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
         </div>
       </aside>
       {/* MAIN AREA */}
-      <main className="flex-1 flex flex-col min-h-0 overflow-hidden p-4 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:p-8 lg:p-8 xl:p-10 2xl:p-12 md:pb-8 relative">
+      <main
+        className={`flex-1 flex flex-col min-h-0 overflow-hidden relative ${
+          isDockedPanelPage
+            ? 'p-1.5 md:p-2 pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:pb-2'
+            : 'p-4 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:p-8 lg:p-8 xl:p-10 2xl:p-12 md:pb-8'
+        }`}
+      >
         {/* eBay sync on load */}
         {onUpdateItems && (
           <EbaySyncBanner items={items} onUpdate={onUpdateItems} />
@@ -213,7 +219,11 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
         <div
           className={`flex-1 min-h-0 flex flex-col ${isDockedPanelPage ? 'overflow-hidden' : 'overflow-y-auto'}`}
         >
-          <div className="px-4 md:px-8 pt-4 shrink-0 flex items-center justify-between gap-3">
+          <div
+            className={`shrink-0 flex items-center justify-between gap-2 ${
+              isDockedPanelPage ? 'py-0 mb-0.5' : 'px-4 md:px-8 pt-4'
+            }`}
+          >
             <PanelBreadcrumbs />
             <div className="flex rounded-lg border border-slate-200 bg-white p-0.5 text-[10px] font-black uppercase">
               <button type="button" onClick={() => setLocale('en')} className={`px-2 py-1 rounded ${locale === 'en' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>EN</button>

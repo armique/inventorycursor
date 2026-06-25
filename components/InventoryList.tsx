@@ -417,6 +417,7 @@ const InventoryList: React.FC<Props> = ({
   type ListDensity = 'comfortable' | 'compact';
   const [listDensity, setListDensity] = useState<ListDensity>(() => loadState<ListDensity>('list_density', 'compact'));
   useEffect(() => localStorage.setItem(`${persistenceKey}_list_density`, JSON.stringify(listDensity)), [listDensity, persistenceKey]);
+  const [showAISpecsModal, setShowAISpecsModal] = useState(false);
 
   // -- INLINE EDITING STATE --
   const [editingCell, setEditingCell] = useState<{ itemId: string, field: ColumnId } | null>(null);
@@ -2373,12 +2374,129 @@ const InventoryList: React.FC<Props> = ({
   const bulkSelectionCount = deferredSelectedIds.length;
 
   return (
-    <div className="h-full min-h-0 flex flex-col gap-2 overflow-hidden animate-in fade-in relative">
-      <header className="shrink-0 space-y-2">
-         {/* Compact bar: title + count + search + status + category + time + sales + filters + undo/redo */}
-         <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-xl font-black text-slate-900 tracking-tight mr-2">{pageTitle}</h1>
-            <span className="text-slate-500 text-sm font-medium py-1">
+    <div className="h-full min-h-0 flex flex-col gap-1 overflow-hidden animate-in fade-in relative">
+      {showFinancials && financialStats && (
+        <div className="shrink-0 flex flex-wrap items-center gap-x-3 gap-y-0.5 px-2 py-1 rounded-lg border border-slate-200 bg-white text-[11px]">
+          <span className="inline-flex items-baseline gap-1">
+            <span className="text-[9px] font-black uppercase text-slate-400">Gross</span>
+            <span className="font-black text-slate-900">€{formatEUR(financialStats.totalGross)}</span>
+          </span>
+          <span className="inline-flex items-baseline gap-1">
+            <span className="text-[9px] font-black uppercase text-slate-400">VAT</span>
+            <span className="font-black text-red-500">-€{formatEUR(financialStats.totalTax)}</span>
+          </span>
+          <span className="inline-flex items-baseline gap-1">
+            <span className="text-[9px] font-black uppercase text-slate-400">Net</span>
+            <span className="font-black text-blue-600">€{formatEUR(financialStats.totalNetRevenue)}</span>
+          </span>
+          <span className="inline-flex items-baseline gap-1">
+            <span className="text-[9px] font-black uppercase text-slate-400">Profit</span>
+            <span className={`font-black ${financialStats.totalProfit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+              {financialStats.totalProfit >= 0 ? '+' : ''}€{formatEUR(financialStats.totalProfit)}
+            </span>
+          </span>
+          <div className="ml-auto flex rounded-md border border-slate-200 bg-slate-50 p-0.5">
+            <button
+              type="button"
+              onClick={() => onBusinessSettingsChange({ ...businessSettings, taxMode: 'SmallBusiness' })}
+              className={`px-2 py-0.5 rounded text-[9px] font-black uppercase transition-all ${businessSettings.taxMode === 'SmallBusiness' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+            >
+              Kleinunt.
+            </button>
+            <button
+              type="button"
+              onClick={() => onBusinessSettingsChange({ ...businessSettings, taxMode: 'DifferentialVAT' })}
+              className={`px-2 py-0.5 rounded text-[9px] font-black uppercase transition-all ${businessSettings.taxMode === 'DifferentialVAT' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+            >
+              Diff.
+            </button>
+            <button
+              type="button"
+              onClick={() => onBusinessSettingsChange({ ...businessSettings, taxMode: 'RegularVAT' })}
+              className={`px-2 py-0.5 rounded text-[9px] font-black uppercase transition-all ${businessSettings.taxMode === 'RegularVAT' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+            >
+              VAT
+            </button>
+          </div>
+        </div>
+      )}
+
+      <header className="shrink-0 space-y-1">
+         <div className="flex flex-wrap items-center gap-1">
+            {(statusFilter === 'DRAFTS' || statusFilter === 'ALL') && !splitView ? (
+              <>
+                <span className="text-[10px] font-black uppercase text-slate-600 px-0.5">
+                  {statusFilter === 'DRAFTS' ? 'Drafts' : 'All'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('ACTIVE')}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 bg-white text-[10px] font-bold text-slate-600 hover:bg-slate-50"
+                >
+                  <Package size={12} /> Active / Sold
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="flex rounded-lg border border-slate-200 bg-white p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => { setStatusFilter('ACTIVE'); setSplitView(false); }}
+                    className={`inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black uppercase transition-all ${
+                      !splitView && statusFilter === 'ACTIVE' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Package size={12} className="shrink-0" />
+                    Active
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setStatusFilter('SOLD'); setSplitView(false); }}
+                    className={`inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black uppercase transition-all ${
+                      !splitView && statusFilter === 'SOLD' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <ShoppingBag size={12} className="shrink-0" />
+                    Sold
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSplitView((v) => {
+                      const next = !v;
+                      if (next && statusFilter !== 'ACTIVE' && statusFilter !== 'SOLD') {
+                        setStatusFilter('ACTIVE');
+                      }
+                      return next;
+                    });
+                  }}
+                  className={`inline-flex items-center justify-center gap-1 px-2 py-1 rounded-lg border text-[10px] font-black uppercase transition-all ${
+                    splitView ? 'bg-slate-900 text-white border-slate-900' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                  title="Show active and sold lists side by side"
+                >
+                  <Columns2 size={12} className="shrink-0" />
+                  Split
+                </button>
+                {!splitView && (
+                  <select
+                    value={statusFilter === 'DRAFTS' || statusFilter === 'ALL' ? statusFilter : ''}
+                    onChange={(e) => {
+                      const v = e.target.value as StatusFilter;
+                      if (v) { setStatusFilter(v); setSplitView(false); }
+                    }}
+                    className="py-1 pl-2 pr-6 rounded-lg border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 outline-none focus:ring-2 focus:ring-slate-900/20 appearance-none bg-no-repeat bg-right"
+                    style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.25rem center' }}
+                  >
+                    <option value="">More…</option>
+                    <option value="DRAFTS">Drafts</option>
+                    <option value="ALL">All items</option>
+                  </select>
+                )}
+              </>
+            )}
+            <span className="text-slate-500 text-xs font-medium">
               {splitView
                 ? `${sortedActiveItems.length} active · ${sortedSoldItems.length} sold${timeFilter !== 'ALL' ? ' · period' : ''}`
                 : `${sortedItems.length} items${timeFilter !== 'ALL' ? ' · period' : ''}`}
@@ -2617,7 +2735,19 @@ const InventoryList: React.FC<Props> = ({
                   </div>
                )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
+               <button
+                 type="button"
+                 onClick={() => setShowAISpecsModal(true)}
+                 className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-amber-700 hover:border-amber-300 flex items-center gap-1"
+                 title="Parse specs with AI for selected items"
+               >
+                 <Sparkles size={14} className="text-amber-500" />
+                 <span className="text-[10px] font-bold uppercase hidden sm:inline">AI</span>
+                 {bulkSelectionCount > 0 && (
+                   <span className="text-[9px] font-black bg-amber-100 text-amber-800 rounded px-1 min-w-[14px] text-center">{bulkSelectionCount}</span>
+                 )}
+               </button>
                <button
                  type="button"
                  onClick={() => setListDensity((d) => (d === 'compact' ? 'comfortable' : 'compact'))}
@@ -2652,81 +2782,6 @@ const InventoryList: React.FC<Props> = ({
                <button type="button" onClick={clearAllFilters} className="text-[10px] font-bold uppercase text-slate-500 hover:text-red-600">Reset all</button>
             )}
          </div>
-
-         {/* Active / Sold tabs + split view */}
-         {(statusFilter === 'DRAFTS' || statusFilter === 'ALL') && !splitView ? (
-           <div className="flex flex-wrap items-center gap-2">
-             <span className="text-xs font-black uppercase tracking-wide text-slate-600 px-1">
-               {statusFilter === 'DRAFTS' ? 'Drafts' : 'All items'}
-             </span>
-             <button
-               type="button"
-               onClick={() => setStatusFilter('ACTIVE')}
-               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-50"
-             >
-               <Package size={14} /> Back to Active / Sold
-             </button>
-           </div>
-         ) : (
-         <div className="flex flex-wrap items-center gap-2">
-           <div className="flex rounded-xl lg:rounded-2xl border border-slate-200 bg-white p-1 lg:p-1.5 w-full sm:w-auto">
-             <button
-               type="button"
-               onClick={() => { setStatusFilter('ACTIVE'); setSplitView(false); }}
-               className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 lg:px-6 py-2 lg:py-2.5 rounded-lg lg:rounded-xl text-xs lg:text-sm font-black uppercase tracking-wide transition-all min-h-[40px] ${
-                 !splitView && statusFilter === 'ACTIVE' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
-               }`}
-             >
-               <Package size={16} className="shrink-0" />
-               Active
-             </button>
-             <button
-               type="button"
-               onClick={() => { setStatusFilter('SOLD'); setSplitView(false); }}
-               className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 lg:px-6 py-2 lg:py-2.5 rounded-lg lg:rounded-xl text-xs lg:text-sm font-black uppercase tracking-wide transition-all min-h-[40px] ${
-                 !splitView && statusFilter === 'SOLD' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
-               }`}
-             >
-               <ShoppingBag size={16} className="shrink-0" />
-               Sold
-             </button>
-           </div>
-           <button
-             type="button"
-             onClick={() => {
-               setSplitView((v) => {
-                 const next = !v;
-                 if (next && statusFilter !== 'ACTIVE' && statusFilter !== 'SOLD') {
-                   setStatusFilter('ACTIVE');
-                 }
-                 return next;
-               });
-             }}
-             className={`inline-flex items-center justify-center gap-2 px-4 lg:px-5 py-2 lg:py-2.5 rounded-xl lg:rounded-2xl border text-xs lg:text-sm font-black uppercase tracking-wide transition-all min-h-[40px] ${
-               splitView ? 'bg-slate-900 text-white border-slate-900 shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-             }`}
-             title="Show active and sold lists side by side"
-           >
-             <Columns2 size={16} className="shrink-0" />
-             Split view
-           </button>
-           {!splitView && (
-             <select
-               value={statusFilter === 'DRAFTS' || statusFilter === 'ALL' ? statusFilter : ''}
-               onChange={(e) => {
-                 const v = e.target.value as StatusFilter;
-                 if (v) { setStatusFilter(v); setSplitView(false); }
-               }}
-               className="py-2 pl-2.5 pr-7 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-600 outline-none focus:ring-2 focus:ring-slate-900/20 appearance-none bg-no-repeat bg-right"
-               style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.35rem center' }}
-             >
-               <option value="">More…</option>
-               <option value="DRAFTS">Drafts</option>
-               <option value="ALL">All items</option>
-             </select>
-           )}
-         </div>
-         )}
 
          {/* Active filter chips */}
          {hasActiveFilters && (
@@ -2771,24 +2826,21 @@ const InventoryList: React.FC<Props> = ({
          )}
 
          {(statusFilter === 'SOLD' || splitView) && missingPlatformSoldCount > 0 && (
-            <div className="flex flex-wrap items-center gap-2 mt-2 px-3 py-2 rounded-xl border border-amber-200 bg-amber-50 text-xs text-amber-950">
-              <AlertTriangle size={14} className="text-amber-600 shrink-0" />
-              <span>
-                <strong>{missingPlatformSoldCount}</strong> sold item{missingPlatformSoldCount === 1 ? '' : 's'} without a platform — use the <strong>Sold on</strong> column or filter below.
-              </span>
+            <div className="flex flex-wrap items-center gap-1.5 px-2 py-1 rounded-lg border border-amber-200 bg-amber-50 text-[10px] text-amber-950">
+              <AlertTriangle size={12} className="text-amber-600 shrink-0" />
+              <span><strong>{missingPlatformSoldCount}</strong> sold without platform</span>
               <button
                 type="button"
                 onClick={() => setSalePlatformFilter(MISSING_PLATFORM_FILTER)}
-                className="ml-auto px-2.5 py-1 rounded-lg bg-amber-200/80 font-bold hover:bg-amber-300/80"
+                className="ml-auto px-1.5 py-0.5 rounded bg-amber-200/80 font-bold hover:bg-amber-300/80"
               >
-                Show only missing
+                Show
               </button>
             </div>
          )}
 
-         {/* Quick category shortcuts */}
-         <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-200/60 mt-2">
-            <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider shrink-0 mr-0.5">Categories</span>
+         <div className="flex flex-wrap items-center gap-1">
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider shrink-0">Cat</span>
             {quickCategoryPins.map((pin) => {
               const active = isQuickCategoryPinActive(pin);
               return (
@@ -2796,7 +2848,7 @@ const InventoryList: React.FC<Props> = ({
                   key={pin.id}
                   type="button"
                   onClick={() => applyQuickCategoryPin(pin)}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                  className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all border ${
                     active
                       ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
                       : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200 hover:border-slate-300'
@@ -2810,52 +2862,23 @@ const InventoryList: React.FC<Props> = ({
             <button
               type="button"
               onClick={() => setShowQuickCategoryPicker(true)}
-              className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-dashed border-slate-300 bg-white text-slate-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-all"
+              className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-dashed border-slate-300 bg-white text-slate-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-all"
               title="Add category shortcut"
               aria-label="Add category shortcut"
             >
               <Plus size={14} />
             </button>
          </div>
-
-         {/* Quick spec filters: dropdowns for top spec keys when category has specs */}
-         {specOptions.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200/60 mt-2">
-               <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Specs</span>
-               {specOptions.slice(0, 8).filter(o => !o.isNumeric || (o.values.length <= 20)).map(({ key, values }) => (
-                  <select
-                     key={key}
-                     value={specFilters[key]?.[0] ?? ''}
-                     onChange={(e) => {
-                        const v = e.target.value;
-                        setSpecFilters(prev => {
-                           const n = { ...prev };
-                           if (v === '') { delete n[key]; return n; }
-                           n[key] = [v];
-                           return n;
-                        });
-                     }}
-                     className="py-1.5 pl-2 pr-7 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-slate-900/20 appearance-none bg-no-repeat bg-right min-w-[90px]"
-                     style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.35rem center' }}
-                  >
-                     <option value="">{key}: All</option>
-                     {values.map((val) => (
-                        <option key={String(val)} value={String(val)}>{String(val)}</option>
-                     ))}
-                  </select>
-               ))}
-            </div>
-         )}
       </header>
 
-      <div className="shrink-0">
-        <InventoryAISpecsPanel
-          items={items}
-          selectedIds={deferredSelectedIds}
-          categoryFields={categoryFields ?? {}}
-          onUpdate={(updated) => onUpdate(updated)}
-        />
-      </div>
+      <InventoryAISpecsPanel
+        open={showAISpecsModal}
+        onClose={() => setShowAISpecsModal(false)}
+        items={items}
+        selectedIds={deferredSelectedIds}
+        categoryFields={categoryFields ?? {}}
+        onUpdate={(updated) => onUpdate(updated)}
+      />
 
       {/* Toast notification for quick actions (e.g. copy listing text) */}
       {toast && (
@@ -2865,56 +2888,6 @@ const InventoryList: React.FC<Props> = ({
             <span>{toast}</span>
           </div>
         </div>
-      )}
-
-      {/* FINANCIAL STATS DASHBOARD - Only visible in Sold/All View */}
-      {showFinancials && financialStats && (
-         <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm mb-2 flex flex-col xl:flex-row gap-6 items-center justify-between animate-in slide-in-from-top-4 shrink-0">
-            <div className="flex flex-wrap justify-center gap-8">
-               <div className="text-center xl:text-left">
-                  <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Total Sales (Gross)</p>
-                  <p className="text-2xl font-black text-slate-900">€{formatEUR(financialStats.totalGross)}</p>
-               </div>
-               <div className="w-px bg-slate-100 hidden xl:block"></div>
-               <div className="text-center xl:text-left">
-                  <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Taxes Paid (VAT)</p>
-                  <p className="text-2xl font-black text-red-500">-€{formatEUR(financialStats.totalTax)}</p>
-               </div>
-               <div className="w-px bg-slate-100 hidden xl:block"></div>
-               <div className="text-center xl:text-left">
-                  <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Sold Before Tax</p>
-                  <p className="text-2xl font-black text-blue-600">€{formatEUR(financialStats.totalNetRevenue)}</p>
-               </div>
-               <div className="w-px bg-slate-100 hidden xl:block"></div>
-               <div className="text-center xl:text-left">
-                  <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Total Net Profit</p>
-                  <p className={`text-2xl font-black ${financialStats.totalProfit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                     {financialStats.totalProfit >= 0 ? '+' : ''}€{formatEUR(financialStats.totalProfit)}
-                  </p>
-               </div>
-            </div>
-
-            <div className="bg-slate-50 p-1.5 rounded-2xl flex items-center shadow-inner">
-                <button
-                    onClick={() => onBusinessSettingsChange({ ...businessSettings, taxMode: 'SmallBusiness' })}
-                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${businessSettings.taxMode === 'SmallBusiness' ? 'bg-white shadow text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
-                >
-                    Kleinunternehmer
-                </button>
-                <button
-                    onClick={() => onBusinessSettingsChange({ ...businessSettings, taxMode: 'DifferentialVAT' })}
-                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${businessSettings.taxMode === 'DifferentialVAT' ? 'bg-white shadow text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
-                >
-                    Diff. Tax
-                </button>
-                <button
-                    onClick={() => onBusinessSettingsChange({ ...businessSettings, taxMode: 'RegularVAT' })}
-                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${businessSettings.taxMode === 'RegularVAT' ? 'bg-white shadow text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
-                >
-                    Regular VAT
-                </button>
-            </div>
-         </div>
       )}
 
       {/* Mobile-friendly sold list (phones) */}
@@ -3685,7 +3658,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
 
   return (
     <div
-      className={`flex flex-col min-h-0 min-w-0 rounded-[2.5rem] border border-slate-100 shadow-sm bg-white overflow-hidden ${className}`}
+      className={`flex flex-col min-h-0 min-w-0 rounded-xl border border-slate-100 shadow-sm bg-white overflow-hidden ${className}`}
     >
       {paneLabel && (
         <div className="shrink-0 flex items-center justify-between px-4 lg:px-6 py-2.5 border-b border-slate-100 bg-slate-50/60">
