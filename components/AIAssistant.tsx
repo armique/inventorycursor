@@ -21,9 +21,12 @@ interface Props {
   items: InventoryItem[];
   onUpdate?: (toSave: InventoryItem[]) => void;
   defaultTab?: 'MARKET' | 'BUNDLES' | 'SOURCING';
+  /** Compact panel inside Deal Hunter (no page header / tabs). */
+  variant?: 'full' | 'embedded';
 }
 
-const AIAssistant: React.FC<Props> = ({ items, onUpdate, defaultTab = 'MARKET' }) => {
+const AIAssistant: React.FC<Props> = ({ items, onUpdate, defaultTab = 'MARKET', variant = 'full' }) => {
+  const isEmbedded = variant === 'embedded';
   const [activeTab, setActiveTab] = useState<'MARKET' | 'BUNDLES' | 'SOURCING'>(defaultTab);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -155,7 +158,8 @@ const AIAssistant: React.FC<Props> = ({ items, onUpdate, defaultTab = 'MARKET' }
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8 pb-20">
+    <div className={isEmbedded ? 'h-full flex flex-col min-h-0 overflow-hidden' : 'max-w-6xl mx-auto space-y-8 pb-20'}>
+      {!isEmbedded && (
       <header className="flex flex-col md:flex-row justify-between items-end gap-6">
         <div>
           <h1 className="text-4xl font-black text-slate-900 tracking-tight">AI Command Center</h1>
@@ -182,18 +186,19 @@ const AIAssistant: React.FC<Props> = ({ items, onUpdate, defaultTab = 'MARKET' }
            </button>
         </div>
       </header>
+      )}
 
-      {activeTab === 'BUNDLES' && (
+      {!isEmbedded && activeTab === 'BUNDLES' && (
         <SmartBundleSuggester items={items} onCreateBundle={handleCreateBundle} />
       )}
 
-      {activeTab === 'SOURCING' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in slide-in-from-right-4">
+      {(isEmbedded || activeTab === 'SOURCING') && (
+        <div className={`${isEmbedded ? 'flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-0' : 'grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in slide-in-from-right-4'}`}>
            
            {/* SIDEBAR: HISTORY */}
-           <div className="lg:col-span-3 space-y-4">
-              <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden h-full max-h-[600px] flex flex-col">
-                 <div className="p-5 border-b border-slate-100 bg-slate-50/50">
+           <div className={`${isEmbedded ? 'lg:col-span-3 border-r border-slate-100 bg-slate-50/40 min-h-0 flex flex-col' : 'lg:col-span-3 space-y-4'}`}>
+              <div className={`bg-white overflow-hidden flex flex-col ${isEmbedded ? 'h-full rounded-none border-0 shadow-none' : 'rounded-[2rem] border border-slate-200 shadow-sm h-full max-h-[600px]'}`}>
+                 <div className={`border-b border-slate-100 bg-slate-50/50 ${isEmbedded ? 'p-3' : 'p-5'}`}>
                     <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
                        <History size={14}/> Search History
                     </h3>
@@ -232,27 +237,33 @@ const AIAssistant: React.FC<Props> = ({ items, onUpdate, defaultTab = 'MARKET' }
            </div>
 
            {/* MAIN CONTENT */}
-           <div className="lg:col-span-9 space-y-6">
+           <div className={`lg:col-span-9 ${isEmbedded ? 'min-h-0 overflow-y-auto custom-scrollbar p-4 space-y-4' : 'space-y-6'}`}>
               {/* Header Area */}
-              <div className="bg-gradient-to-br from-emerald-900 to-teal-900 p-8 rounded-[3rem] text-white shadow-2xl relative overflow-hidden">
+              <div className={`bg-gradient-to-br from-emerald-900 to-teal-900 text-white relative overflow-hidden ${isEmbedded ? 'p-4 rounded-xl' : 'p-8 rounded-[3rem] shadow-2xl'}`}>
                  <div className="relative z-10 max-w-3xl">
-                    <h2 className="text-3xl font-black tracking-tight mb-4 flex items-center gap-3"><Radar size={32} className="text-emerald-400"/> AI Sourcing Agent</h2>
+                    <h2 className={`font-black tracking-tight flex items-center gap-2 ${isEmbedded ? 'text-lg mb-2' : 'text-3xl mb-4 gap-3'}`}>
+                      <Radar size={isEmbedded ? 20 : 32} className="text-emerald-400"/> AI Sourcing Agent
+                    </h2>
+                    {!isEmbedded && (
                     <p className="text-emerald-100 text-sm font-medium mb-8 leading-relaxed max-w-xl">
                        I analyze your entire sales history to identify multiple winning strategies. Select a "Golden Niche" below to start hunting for live deals on eBay.de and Kleinanzeigen.
                     </p>
+                    )}
                     
                     <button 
                        onClick={handleGenerateStrategies} 
                        disabled={loading}
-                       className="px-8 py-4 bg-white text-emerald-900 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-emerald-50 transition-all shadow-xl disabled:opacity-50 flex items-center gap-3"
+                       className={`bg-white text-emerald-900 rounded-xl font-black uppercase tracking-widest hover:bg-emerald-50 transition-all disabled:opacity-50 flex items-center gap-2 ${isEmbedded ? 'px-4 py-2.5 text-[10px]' : 'px-8 py-4 rounded-2xl text-xs shadow-xl gap-3'}`}
                     >
                        {loading ? <RefreshCcw className="animate-spin" size={16}/> : <Sparkles size={16}/>}
-                       {loading ? 'Analyzing Sales History...' : 'Generate New Strategies'}
+                       {loading ? 'Analyzing…' : 'Generate strategies'}
                     </button>
                  </div>
+                 {!isEmbedded && (
                  <div className="absolute -right-10 -bottom-20 opacity-10">
                     <ShoppingCart size={300} />
                  </div>
+                 )}
               </div>
 
               {/* STRATEGY SELECTION GRID */}
@@ -261,12 +272,12 @@ const AIAssistant: React.FC<Props> = ({ items, onUpdate, defaultTab = 'MARKET' }
                     <div className="flex justify-between items-center px-4">
                        <h3 className="text-lg font-black text-slate-900">Recommended Niches</h3>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                        {strategies.map((strat, idx) => (
                           <button 
                              key={idx} 
                              onClick={() => handleSelectStrategy(strat)}
-                             className="text-left bg-white p-6 rounded-[2rem] border border-slate-100 shadow-lg hover:shadow-xl hover:scale-[1.02] hover:border-emerald-200 transition-all group flex flex-col h-full"
+                             className={`text-left bg-white border border-slate-100 shadow-sm hover:shadow-md hover:border-emerald-200 transition-all group flex flex-col h-full ${isEmbedded ? 'p-4 rounded-xl' : 'p-6 rounded-[2rem] shadow-lg hover:shadow-xl hover:scale-[1.02]'}`}
                           >
                              <div className="flex justify-between items-start mb-4">
                                 <div className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${strat.difficulty === 'Easy' ? 'bg-green-100 text-green-700' : strat.difficulty === 'Medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
@@ -390,7 +401,7 @@ const AIAssistant: React.FC<Props> = ({ items, onUpdate, defaultTab = 'MARKET' }
         </div>
       )}
 
-      {activeTab === 'MARKET' && (
+      {!isEmbedded && activeTab === 'MARKET' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in slide-in-from-left-4">
           <div className="lg:col-span-2 space-y-4">
             {slowAdvice && items.some(i => i.status === 'In Stock') && (

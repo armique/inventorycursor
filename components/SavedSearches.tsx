@@ -23,6 +23,11 @@ interface Props {
   searches?: SavedSearch[];
   onUpdate?: (searches: SavedSearch[]) => void;
   embedded?: boolean;
+  /** Use full parent height (Deal Hunter panel). */
+  fillHeight?: boolean;
+  /** Pre-fill new alert form when navigating from Insights. */
+  seedQuery?: string | null;
+  onSeedQueryConsumed?: () => void;
 }
 
 const PLATFORM_OPTIONS: { id: DealSearchPlatform; label: string }[] = [
@@ -38,7 +43,14 @@ const platformLabel = (search: SavedSearch): string => {
   return 'KA + eBay';
 };
 
-const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate, embedded = false }) => {
+const SavedSearches: React.FC<Props> = ({
+  searches = [],
+  onUpdate,
+  embedded = false,
+  fillHeight = false,
+  seedQuery,
+  onSeedQueryConsumed,
+}) => {
   // Use props, default to empty array if undefined
   
   // Background Check State
@@ -71,6 +83,13 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate, embedded = fa
   useEffect(() => {
     if (lastAutoCheck) localStorage.setItem('last_auto_check', lastAutoCheck);
   }, [lastAutoCheck]);
+
+  useEffect(() => {
+    if (!seedQuery?.trim()) return;
+    setNewQuery(seedQuery.trim());
+    setIsCreating(true);
+    onSeedQueryConsumed?.();
+  }, [seedQuery, onSeedQueryConsumed]);
 
   // --- AUTOMATIC BACKGROUND CHECKER ---
   useEffect(() => {
@@ -275,8 +294,14 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate, embedded = fa
     }
   }, [selectedId]);
 
+  const shellHeight = fillHeight
+    ? 'h-full min-h-0'
+    : embedded
+      ? 'h-[min(720px,70vh)]'
+      : 'h-[calc(100vh-100px)]';
+
   return (
-    <div className={`max-w-[1600px] mx-auto flex flex-col animate-in fade-in ${embedded ? 'h-[min(720px,70vh)]' : 'h-[calc(100vh-100px)]'}`}>
+    <div className={`max-w-none mx-auto flex flex-col animate-in fade-in ${shellHeight}`}>
       {!embedded && (
       <header className="flex justify-between items-center mb-6 shrink-0 px-4">
         <div>
@@ -304,20 +329,62 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate, embedded = fa
       </header>
       )}
 
-      <div className={`flex flex-1 gap-6 overflow-hidden ${embedded ? '' : 'px-4'}`}>
+      <div className={`flex flex-1 min-h-0 gap-0 overflow-hidden ${embedded ? '' : 'px-4'}`}>
         
         {/* LEFT SIDEBAR: SEARCH LIST */}
-        <div className="w-[350px] flex flex-col gap-4 shrink-0">
+        <div className="w-[min(100%,280px)] sm:w-[300px] flex flex-col gap-3 shrink-0 border-r border-slate-100 bg-slate-50/40 p-3 min-h-0">
           
-          {/* Create Button */}
-          {!isCreating ? (
+          {/* Embedded toolbar: auto-check + new alert */}
+          {embedded && (
+            <div className="flex items-center gap-2 shrink-0">
+              {!isCreating ? (
+                <button
+                  type="button"
+                  onClick={() => setIsCreating(true)}
+                  className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-emerald-700 transition-all flex items-center justify-center gap-1.5"
+                >
+                  <Plus size={14} /> New alert
+                </button>
+              ) : null}
+              <div
+                className={`flex items-center gap-2 px-2.5 py-2 rounded-xl border shrink-0 ${
+                  isAutoCheckActive ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'
+                }`}
+                title="Auto-check every 30 minutes"
+              >
+                <button
+                  type="button"
+                  onClick={() => setIsAutoCheckActive(!isAutoCheckActive)}
+                  className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${
+                    isAutoCheckActive ? 'bg-emerald-500' : 'bg-slate-300'
+                  }`}
+                >
+                  <div
+                    className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${
+                      isAutoCheckActive ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+                <span className="text-[9px] font-bold text-slate-500 whitespace-nowrap hidden lg:inline">
+                  {isAutoCheckActive
+                    ? loadingSearchId === 'AUTO'
+                      ? 'Scan…'
+                      : `${autoCheckCountdown}m`
+                    : 'Auto'}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Create Button (standalone page only) */}
+          {!embedded && !isCreating ? (
             <button 
               onClick={() => setIsCreating(true)}
               className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-all flex items-center justify-center gap-2"
             >
               <Plus size={16}/> New Alert
             </button>
-          ) : (
+          ) : !embedded ? (
             <form onSubmit={handleCreate} className="bg-white p-5 rounded-[2rem] border border-emerald-200 shadow-lg space-y-4 animate-in slide-in-from-left-4">
                <div>
                   <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Search Term</label>
@@ -393,7 +460,63 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate, embedded = fa
                   <button type="submit" className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-bold text-xs shadow-md">Save</button>
                </div>
             </form>
-          )}
+          ) : embedded && isCreating ? (
+            <form onSubmit={handleCreate} className="bg-white p-4 rounded-xl border border-emerald-200 shadow-sm space-y-3 animate-in slide-in-from-left-4 shrink-0 max-h-[45vh] overflow-y-auto custom-scrollbar">
+               <div>
+                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Search Term</label>
+                  <input 
+                    autoFocus
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-sm outline-none focus:border-emerald-500"
+                    placeholder="e.g. RTX 4070"
+                    value={newQuery}
+                    onChange={e => setNewQuery(e.target.value)}
+                  />
+               </div>
+               <div>
+                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Max €</label>
+                  <input 
+                    type="number"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-sm outline-none focus:border-emerald-500"
+                    placeholder="Any"
+                    value={newMaxPrice}
+                    onChange={e => setNewMaxPrice(e.target.value)}
+                  />
+               </div>
+               <div>
+                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Platforms</label>
+                  <div className="flex gap-1 mt-1">
+                    {PLATFORM_OPTIONS.map(opt => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setPlatformFilter(opt.id)}
+                        className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase border transition-all ${
+                          platformFilter === opt.id
+                            ? 'bg-emerald-600 text-white border-emerald-600'
+                            : 'bg-slate-50 text-slate-500 border-slate-200'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+               </div>
+               <div className="grid grid-cols-2 gap-2 text-[11px] font-bold text-slate-600">
+                  <label className="flex items-center gap-1.5">
+                    <input type="checkbox" checked={excludeVB} onChange={(e) => setExcludeVB(e.target.checked)} className="accent-emerald-500" />
+                    No VB
+                  </label>
+                  <label className="flex items-center gap-1.5">
+                    <input type="checkbox" checked={excludeTausch} onChange={(e) => setExcludeTausch(e.target.checked)} className="accent-emerald-500" />
+                    No Tausch
+                  </label>
+               </div>
+               <div className="flex gap-2 pt-1">
+                  <button type="button" onClick={() => setIsCreating(false)} className="flex-1 py-2 bg-slate-100 text-slate-500 rounded-lg font-bold text-xs">Cancel</button>
+                  <button type="submit" className="flex-1 py-2 bg-emerald-600 text-white rounded-lg font-bold text-xs">Save</button>
+               </div>
+            </form>
+          ) : null}
 
           {/* List */}
           <div className="flex-1 overflow-y-auto space-y-2 pr-1 scrollbar-hide">
@@ -449,7 +572,7 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate, embedded = fa
         </div>
 
         {/* RIGHT: RESULTS AREA */}
-        <div className="flex-1 bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden flex flex-col relative">
+        <div className={`flex-1 min-w-0 bg-white overflow-hidden flex flex-col relative ${embedded ? '' : 'rounded-[2.5rem] border border-slate-200 shadow-xl'}`}>
            {selectedSearch ? (
               <>
                  <header className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
