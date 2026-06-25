@@ -86,10 +86,10 @@ interface SortConfig {
   direction: 'asc' | 'desc';
 }
 
-/** Inv column: 4 icon buttons in one row (28px each + 6px gaps + cell padding). */
+/** Inv column: 5 icon buttons in one row (28px each + 6px gaps + cell padding). */
 const PRESENCE_ICON_SIZE_PX = 28;
 const PRESENCE_ICON_GAP_PX = 6;
-const PRESENCE_ICON_COUNT = 4;
+const PRESENCE_ICON_COUNT = 5;
 const PRESENCE_COL_WIDTH =
   PRESENCE_ICON_COUNT * PRESENCE_ICON_SIZE_PX +
   (PRESENCE_ICON_COUNT - 1) * PRESENCE_ICON_GAP_PX +
@@ -421,6 +421,7 @@ const InventoryList: React.FC<Props> = ({
   useEffect(() => localStorage.setItem(`${persistenceKey}_list_density`, JSON.stringify(listDensity)), [listDensity, persistenceKey]);
   const [showAISpecsModal, setShowAISpecsModal] = useState(false);
   const [showBulkAddPhotosModal, setShowBulkAddPhotosModal] = useState(false);
+  const [addPhotosTargetIds, setAddPhotosTargetIds] = useState<string[]>([]);
 
   // -- INLINE EDITING STATE --
   const [editingCell, setEditingCell] = useState<{ itemId: string, field: ColumnId } | null>(null);
@@ -1447,7 +1448,7 @@ const InventoryList: React.FC<Props> = ({
         return (
           <td key={id} className="inv-col-icons border-r border-slate-100/90 align-middle" style={style} onClick={(e) => e.stopPropagation()}>
             <div
-              className={`grid grid-cols-4 ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-items-center mx-auto shrink-0`}
+              className={`grid grid-cols-5 ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-items-center mx-auto shrink-0`}
               style={{ width: PRESENCE_ICON_COUNT * PRESENCE_ICON_SIZE_PX + (PRESENCE_ICON_COUNT - 1) * PRESENCE_ICON_GAP_PX }}
             >
               {/* Physical presence: present → lost → defective → unknown */}
@@ -1492,6 +1493,20 @@ const InventoryList: React.FC<Props> = ({
               </button>
                 );
               })()}
+
+              {/* Add photos (replaces former defective quick button slot) */}
+              <button
+                type="button"
+                onClick={() => openAddPhotosModal([item.id])}
+                className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors ${
+                  getItemUserPhotoCount(item) > 0
+                    ? 'border-blue-300 bg-blue-50 text-blue-600 hover:bg-blue-100'
+                    : 'border-slate-200 bg-white text-slate-500 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50/50'
+                }`}
+                title="Add photos (upload, URL, or Imgur album)"
+              >
+                <Camera size={13} strokeWidth={2.25} />
+              </button>
 
               {/* Listed on Kleinanzeigen (same style as Parse K icon) */}
               <button
@@ -2320,6 +2335,17 @@ const InventoryList: React.FC<Props> = ({
     setQuickCategoryPins(DEFAULT_QUICK_CATEGORY_PINS);
   }, []);
 
+  const openAddPhotosModal = useCallback((ids: string[]) => {
+    if (!ids.length) return;
+    setAddPhotosTargetIds(ids);
+    setShowBulkAddPhotosModal(true);
+  }, []);
+
+  const closeAddPhotosModal = useCallback(() => {
+    setShowBulkAddPhotosModal(false);
+    setAddPhotosTargetIds([]);
+  }, []);
+
   const selectedHasSoldOrTraded = useMemo(
     () =>
       deferredSelectedIds.some((id) => {
@@ -2331,10 +2357,10 @@ const InventoryList: React.FC<Props> = ({
 
   const handleBulkAddPhotos = useCallback(
     async (urls: string[]) => {
-      if (!urls.length || deferredSelectedIds.length === 0) return;
+      if (!urls.length || addPhotosTargetIds.length === 0) return;
       const prepared = await prepareInventoryImagesForStorage(urls);
       if (!prepared.length) return;
-      const idSet = new Set(deferredSelectedIds);
+      const idSet = new Set(addPhotosTargetIds);
       const updated = items
         .filter((i) => idSet.has(i.id))
         .map((item) => {
@@ -2350,9 +2376,9 @@ const InventoryList: React.FC<Props> = ({
         onUpdate(updated);
         setToast(`Added ${prepared.length} photo${prepared.length === 1 ? '' : 's'} to ${updated.length} item${updated.length === 1 ? '' : 's'}`);
       }
-      setShowBulkAddPhotosModal(false);
+      closeAddPhotosModal();
     },
-    [deferredSelectedIds, items, onUpdate]
+    [addPhotosTargetIds, items, onUpdate, closeAddPhotosModal]
   );
 
   const bulkActions = useMemo((): BulkAction[] => {
@@ -2381,7 +2407,7 @@ const InventoryList: React.FC<Props> = ({
       exportInventoryToExcel(selected);
     };
     return [
-      { id: 'photos', label: 'Add photos', icon: <Camera size={16} />, onClick: () => setShowBulkAddPhotosModal(true), variant: 'primary' },
+      { id: 'photos', label: 'Add photos', icon: <Camera size={16} />, onClick: () => openAddPhotosModal(deferredSelectedIds), variant: 'primary' },
       { id: 'compose', label: 'Compose Bundle', icon: <Monitor size={16} />, onClick: handleBuildFromSelection, variant: 'primary' },
       { id: 'lot', label: 'Lot Bundle', icon: <Package size={16} />, onClick: handleCreateLotBundleFromSelection, variant: 'violet' },
       { id: 'category', label: 'Set category', icon: <Layers size={16} />, onClick: () => setShowBulkCategoryEdit(true), variant: 'primary' },
@@ -2420,6 +2446,7 @@ const InventoryList: React.FC<Props> = ({
     handleCreateLotBundleFromSelection,
     handleBulkStoreVisible,
     handleBulkGenerateDescriptions,
+    openAddPhotosModal,
   ]);
 
   const bulkSelectionCount = deferredSelectedIds.length;
@@ -2933,9 +2960,9 @@ const InventoryList: React.FC<Props> = ({
 
       <AddPhotosModal
         open={showBulkAddPhotosModal}
-        onClose={() => setShowBulkAddPhotosModal(false)}
+        onClose={closeAddPhotosModal}
         onApply={handleBulkAddPhotos}
-        itemCount={bulkSelectionCount}
+        itemCount={addPhotosTargetIds.length}
       />
 
       {/* Toast notification for quick actions (e.g. copy listing text) */}
