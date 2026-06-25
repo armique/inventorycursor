@@ -19,6 +19,7 @@ import { getCompatibleItemsForItem } from '../services/compatibility';
 import { getEssentialSpecFieldKeys } from '../services/essentialSpecFields';
 import { getCompatibilityWarnings } from '../utils/compatibilityWarnings';
 import { recordCategoryCorrection, suggestCategoryFromCorrections } from '../services/categoryCorrections';
+import { filesToDataUrls, prepareInventoryImagesForStorage } from '../utils/imageImport';
 
 interface Props {
   items: InventoryItem[];
@@ -314,8 +315,9 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     [formData.imageUrl, formData.imageUrls]
   );
 
-  const addImageUrls = (urls: string[]) => {
-    const merged = normalizeImageList([...itemImageList, ...urls]);
+  const addImageUrls = async (urls: string[]) => {
+    const prepared = await prepareInventoryImagesForStorage(urls);
+    const merged = normalizeImageList([...itemImageList, ...prepared]);
     if (!merged.length) return;
     setFormData((prev) => ({ ...prev, imageUrl: merged[0], imageUrls: merged }));
   };
@@ -337,16 +339,9 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   const handleMultiImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
-    const toDataUrl = (file: File) =>
-      new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(String(reader.result || ''));
-        reader.onerror = () => reject(new Error('Failed to read image file'));
-        reader.readAsDataURL(file);
-      });
     try {
-      const urls = (await Promise.all(files.map(toDataUrl))).filter(Boolean);
-      addImageUrls(urls);
+      const urls = await filesToDataUrls(files);
+      await addImageUrls(urls);
     } catch {
       alert('Could not process one or more images.');
     } finally {
@@ -354,7 +349,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     }
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name) return;
 
@@ -365,6 +360,12 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
 
     const normalizedImages = normalizeImageList([formData.imageUrl, ...(formData.imageUrls || [])]);
     const fallbackImage = CATEGORY_IMAGES[formData.subCategory || formData.category || 'Components'];
+    let storedImages = normalizedImages;
+    try {
+      storedImages = await prepareInventoryImagesForStorage(normalizedImages);
+    } catch {
+      storedImages = normalizedImages;
+    }
 
     const specsOut =
       isRamItem(formData.category, formData.subCategory) && formData.specs
@@ -380,8 +381,8 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       ...formData as InventoryItem,
       buyPrice: buyPriceResolved,
       id: formData.id || `item-${Date.now()}`,
-      imageUrl: normalizedImages[0] || fallbackImage,
-      imageUrls: normalizedImages.length ? normalizedImages : [fallbackImage],
+      imageUrl: storedImages[0] || fallbackImage,
+      imageUrls: storedImages.length ? storedImages : [fallbackImage],
       specs: specsOut ?? {},
       specsAiSuggested: aiSuggested,
     };
@@ -821,13 +822,13 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                       <input
                         className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-xs outline-none focus:border-blue-500 focus:bg-white transition-all"
                         placeholder="Paste image URL and press Enter"
-                        onKeyDown={(e) => {
+                        onKeyDown={async (e) => {
                           if (e.key !== 'Enter') return;
                           e.preventDefault();
                           const el = e.currentTarget;
                           const value = el.value.trim();
                           if (!value) return;
-                          addImageUrls([value]);
+                          await addImageUrls([value]);
                           el.value = '';
                         }}
                       />

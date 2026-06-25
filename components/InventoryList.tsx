@@ -15,7 +15,7 @@ import { generateKleinanzeigenCSV, generateEbayCSV } from '../services/ebayCsvSe
 import { searchInventory } from '../utils/inventorySearchIndex';
 import { copyKleinanzeigenListing } from '../utils/copyKleinanzeigenListing';
 import { bundleComponentBreakdown } from '../utils/bundleProfitBreakdown';
-import { cycleInventoryItemPresence, getItemPresenceCycleState, getItemUserPhotoCount, normalizeImageList } from '../utils/imageImport';
+import { cycleInventoryItemPresence, getItemPresenceCycleState, getItemUserPhotoCount, normalizeImageList, prepareInventoryImagesForStorage } from '../utils/imageImport';
 import { exportInventoryToExcel } from '../services/excelExportService';
 import { getRecentItemIds, addRecentItemId } from '../services/recentItemsService';
 import { generateStoreDescription } from '../services/specsAI';
@@ -2330,14 +2330,16 @@ const InventoryList: React.FC<Props> = ({
   );
 
   const handleBulkAddPhotos = useCallback(
-    (urls: string[]) => {
+    async (urls: string[]) => {
       if (!urls.length || deferredSelectedIds.length === 0) return;
+      const prepared = await prepareInventoryImagesForStorage(urls);
+      if (!prepared.length) return;
       const idSet = new Set(deferredSelectedIds);
       const updated = items
         .filter((i) => idSet.has(i.id))
         .map((item) => {
           const existing = normalizeImageList([item.imageUrl, ...(item.imageUrls || [])]);
-          const merged = normalizeImageList([...existing, ...urls]);
+          const merged = normalizeImageList([...existing, ...prepared]);
           return {
             ...item,
             imageUrl: merged[0],
@@ -2346,7 +2348,7 @@ const InventoryList: React.FC<Props> = ({
         });
       if (updated.length) {
         onUpdate(updated);
-        setToast(`Added ${urls.length} photo${urls.length === 1 ? '' : 's'} to ${updated.length} item${updated.length === 1 ? '' : 's'}`);
+        setToast(`Added ${prepared.length} photo${prepared.length === 1 ? '' : 's'} to ${updated.length} item${updated.length === 1 ? '' : 's'}`);
       }
       setShowBulkAddPhotosModal(false);
     },

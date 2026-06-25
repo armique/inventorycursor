@@ -15,6 +15,7 @@ import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { CATEGORY_IMAGES, searchAllHardware, HardwareMetadata } from '../services/hardwareDB';
 import { generateItemSpecs, getSpecsAIProvider, requestAIJson } from '../services/specsAI';
 import { correctGpuVramInSpecs, shouldApplyGpuVramCorrection } from '../services/gpuVramCorrection';
+import { filesToDataUrls, prepareInventoryImagesForStorage } from '../utils/imageImport';
 
 interface Props {
   onSave: (newItems: InventoryItem[]) => void;
@@ -536,15 +537,8 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
   const handleItemImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
-    const toDataUrl = (file: File) =>
-      new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(String(reader.result || ''));
-        reader.onerror = () => reject(new Error('Failed to read image file'));
-        reader.readAsDataURL(file);
-      });
     try {
-      const urls = (await Promise.all(files.map(toDataUrl))).filter(Boolean);
+      const urls = await filesToDataUrls(files);
       setItemImageUrls((prev) => normalizeImageList([...prev, ...urls]));
     } catch {
       alert('Could not process one or more item images.');
@@ -573,6 +567,15 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
     }
 
     let itemsToImport = [...items];
+
+    let galleryUrls = itemImageUrls;
+    if (galleryUrls.length > 0) {
+      try {
+        galleryUrls = await prepareInventoryImagesForStorage(galleryUrls);
+      } catch {
+        galleryUrls = itemImageUrls;
+      }
+    }
 
     // Parse tech specs with AI for items that don't have specs yet
     if (parseSpecsBeforeImport && aiAvailable) {
@@ -632,9 +635,9 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
         buyPaymentType: payment,
         kleinanzeigenBuyChatUrl: chatUrl,
         kleinanzeigenBuyChatImage: chatImage,
-        imageUrl: itemImageUrls[0] || CATEGORY_IMAGES[draft.subCategory || draft.category] || CATEGORY_IMAGES[draft.category],
-        imageUrls: itemImageUrls.length
-          ? itemImageUrls
+        imageUrl: galleryUrls[0] || CATEGORY_IMAGES[draft.subCategory || draft.category] || CATEGORY_IMAGES[draft.category],
+        imageUrls: galleryUrls.length
+          ? galleryUrls
           : [CATEGORY_IMAGES[draft.subCategory || draft.category] || CATEGORY_IMAGES[draft.category]]
       };
     });

@@ -11,7 +11,7 @@ import {
 interface Props {
   open: boolean;
   onClose: () => void;
-  onApply: (urls: string[]) => void;
+  onApply: (urls: string[]) => void | Promise<void>;
   itemCount: number;
 }
 
@@ -90,12 +90,20 @@ const AddPhotosModal: React.FC<Props> = ({ open, onClose, onApply, itemCount }) 
     }
   };
 
-  const handleApply = () => {
+  const handleApply = async () => {
     if (!pendingUrls.length) {
       setError('Add at least one photo first.');
       return;
     }
-    onApply(pendingUrls);
+    setLoading(true);
+    setError(null);
+    try {
+      await onApply(pendingUrls);
+    } catch {
+      setError('Could not add photos. Try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (!open) return null;
@@ -140,6 +148,7 @@ const AddPhotosModal: React.FC<Props> = ({ open, onClose, onApply, itemCount }) 
               Choose images
               <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} disabled={loading} />
             </label>
+            <p className="text-[10px] text-slate-400">Uploads are resized and compressed before saving.</p>
           </div>
 
           <div className="space-y-2">
@@ -227,7 +236,7 @@ const AddPhotosModal: React.FC<Props> = ({ open, onClose, onApply, itemCount }) 
             className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-black uppercase tracking-wide hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {loading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
-            Add to items
+            {loading ? 'Saving…' : 'Add to items'}
           </button>
         </div>
       </div>

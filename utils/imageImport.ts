@@ -2,6 +2,7 @@ import { normalizeImgurImageUrl } from '../services/ebayOrderScreenshotAI';
 import { CATEGORY_IMAGES } from '../services/hardwareDB';
 import { filterUsableImageUrls } from '../services/storefrontImageUtils';
 import type { InventoryItem } from '../types';
+import { compressImageFile, prepareInventoryPhotoUrls } from './imageCompress';
 
 export function normalizeImageList(urls: (string | undefined | null)[]): string[] {
   const seen = new Set<string>();
@@ -103,16 +104,16 @@ export async function resolveImageUrlsFromInput(input: string): Promise<string[]
   return normalizeImageList(out);
 }
 
+/** Compress file uploads, then dedupe. Remote https URLs are unchanged. */
 export async function filesToDataUrls(files: File[]): Promise<string[]> {
-  const toDataUrl = (file: File) =>
-    new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(String(reader.result || ''));
-      reader.onerror = () => reject(new Error('Failed to read image file'));
-      reader.readAsDataURL(file);
-    });
-  const urls = await Promise.all(files.map(toDataUrl));
+  const urls = await Promise.all(files.map((file) => compressImageFile(file)));
   return normalizeImageList(urls);
+}
+
+/** Normalize URL list and compress any large embedded data URLs before save. */
+export async function prepareInventoryImagesForStorage(urls: string[]): Promise<string[]> {
+  const normalized = normalizeImageList(urls);
+  return prepareInventoryPhotoUrls(normalized);
 }
 
 export type ItemPresenceCycleState = 'unknown' | 'present' | 'lost' | 'defective';
