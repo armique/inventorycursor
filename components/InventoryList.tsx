@@ -60,6 +60,24 @@ type ColumnId = 'select' | 'item' | 'presence' | 'parseSpecs' | 'category' | 'st
 type TimeFilter = 'ALL' | 'THIS_WEEK' | 'LAST_WEEK' | 'THIS_MONTH' | 'LAST_MONTH' | 'LAST_30' | 'LAST_90' | 'THIS_YEAR' | 'LAST_YEAR';
 type StatusFilter = 'ACTIVE' | 'SOLD' | 'DRAFTS' | 'ALL';
 
+type QuickCategoryPin = {
+  id: string;
+  label: string;
+  category: string;
+  subCategory: string;
+};
+
+function quickCategoryPinId(category: string, subCategory: string): string {
+  return `${category}::${subCategory}`;
+}
+
+const DEFAULT_QUICK_CATEGORY_PINS: QuickCategoryPin[] = [
+  { id: quickCategoryPinId('Components', 'Processors'), label: 'CPU', category: 'Components', subCategory: 'Processors' },
+  { id: quickCategoryPinId('Components', 'Graphics Cards'), label: 'GPU', category: 'Components', subCategory: 'Graphics Cards' },
+  { id: quickCategoryPinId('Components', 'Motherboards'), label: 'Motherboards', category: 'Components', subCategory: 'Motherboards' },
+  { id: quickCategoryPinId('Components', 'Storage (SSD/HDD)'), label: 'SSD/HDD', category: 'Components', subCategory: 'Storage (SSD/HDD)' },
+];
+
 interface SortConfig {
   key: string;
   direction: 'asc' | 'desc';
@@ -136,6 +154,154 @@ const PAYMENT_METHODS: PaymentType[] = [
   'Other'
 ];
 
+type InventoryListFilterParams = {
+  items: InventoryItem[];
+  statusFilter: StatusFilter;
+  deferredSearchTerm: string;
+  categoryFilter: string;
+  subCategoryFilter: string;
+  sortConfig: SortConfig;
+  timeFilter: TimeFilter;
+  dateRange: { start: Date; end: Date };
+  salePlatformFilter: string;
+  salePaymentFilter: string;
+  specFilters: Record<string, (string | number)[]>;
+  specRangeFilters: Record<string, { min?: number; max?: number }>;
+  showInComposition: boolean;
+  timeGaugeSortKeyMap: Map<string, number>;
+};
+
+function filterAndSortInventoryItems(params: InventoryListFilterParams): InventoryItem[] {
+  const {
+    items,
+    statusFilter,
+    deferredSearchTerm,
+    categoryFilter,
+    subCategoryFilter,
+    sortConfig,
+    timeFilter,
+    dateRange,
+    salePlatformFilter,
+    salePaymentFilter,
+    specFilters,
+    specRangeFilters,
+    showInComposition,
+    timeGaugeSortKeyMap,
+  } = params;
+
+  const searchLower = deferredSearchTerm.toLowerCase();
+  const indexedIds =
+    searchLower.trim().length >= 2
+      ? new Set(searchInventory(items, searchLower, 500).map((h) => h.item.id))
+      : null;
+
+  const filtered = items.filter((item) => {
+    let matchesStatus = false;
+    if (statusFilter === 'ACTIVE') {
+      matchesStatus =
+        item.status === ItemStatus.IN_STOCK ||
+        item.status === ItemStatus.ORDERED ||
+        item.status === ItemStatus.IN_COMPOSITION;
+    } else if (statusFilter === 'SOLD') {
+      matchesStatus = item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED;
+    } else if (statusFilter === 'DRAFTS') {
+      matchesStatus = item.isDraft === true;
+    } else {
+      matchesStatus = true;
+    }
+    if (!matchesStatus) return false;
+    if (item.parentContainerId) return false;
+    if (!showInComposition && item.status === ItemStatus.IN_COMPOSITION) return false;
+
+    if (categoryFilter !== 'ALL' || subCategoryFilter) {
+      const matchParentAndSub =
+        categoryFilter !== 'ALL' &&
+        item.category === categoryFilter &&
+        (!subCategoryFilter || item.subCategory === subCategoryFilter);
+      const matchSubAsTopLevel = subCategoryFilter && item.category === subCategoryFilter;
+      if (!matchParentAndSub && !matchSubAsTopLevel) return false;
+    }
+
+    if (searchLower) {
+      const matchesSearch = indexedIds
+        ? indexedIds.has(item.id)
+        : item.name.toLowerCase().includes(searchLower) ||
+          item.category.toLowerCase().includes(searchLower) ||
+          (item.vendor?.toLowerCase().includes(searchLower) ?? false);
+      if (!matchesSearch) return false;
+    }
+
+    if (timeFilter !== 'ALL') {
+      const isSalesItem = item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED;
+      const dateStr = isSalesItem ? item.sellDate : item.buyDate;
+      if (!dateStr) return true;
+      const itemDate = new Date(dateStr);
+      if (itemDate < dateRange.start || itemDate > dateRange.end) return false;
+    }
+
+    if (statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS') {
+      if (salePlatformFilter !== 'ALL') {
+        if (salePlatformFilter === MISSING_PLATFORM_FILTER) {
+          if (!isMissingExplicitSalePlatform(item)) return false;
+        } else if (!itemMatchesSalePlatformFilter(item, salePlatformFilter as Platform)) return false;
+      }
+      if (salePaymentFilter !== 'ALL' && item.paymentType !== salePaymentFilter) return false;
+    }
+
+    for (const key of Object.keys(specFilters)) {
+      const allowed = specFilters[key];
+      if (!allowed || allowed.length === 0) continue;
+      const v = item.specs?.[key];
+      if (v === undefined || v === null) return false;
+      const match = allowed.some((a) => {
+        if (typeof v === 'number' && typeof a === 'number') return v === a;
+        return String(v).trim().toLowerCase() === String(a).trim().toLowerCase();
+      });
+      if (!match) return false;
+    }
+
+    for (const key of Object.keys(specRangeFilters)) {
+      const { min, max } = specRangeFilters[key] || {};
+      if (min === undefined && max === undefined) continue;
+      const v = item.specs?.[key];
+      const num = typeof v === 'number' ? v : typeof v === 'string' ? parseFloat(String(v)) : NaN;
+      if (Number.isNaN(num)) return false;
+      if (min !== undefined && num < min) return false;
+      if (max !== undefined && num > max) return false;
+    }
+
+    return true;
+  });
+
+  filtered.sort((a, b) => {
+    const key = sortConfig.key === 'item' ? 'name' : sortConfig.key;
+    const dir = sortConfig.direction === 'asc' ? 1 : -1;
+
+    if (sortConfig.key === 'timeGauge') {
+      return ((timeGaugeSortKeyMap.get(a.id) ?? -1) - (timeGaugeSortKeyMap.get(b.id) ?? -1)) * dir;
+    }
+
+    let valA: unknown = (a as Record<string, unknown>)[key];
+    let valB: unknown = (b as Record<string, unknown>)[key];
+
+    if (key === 'buyDate' || key === 'sellDate') {
+      const tA = valA ? new Date(valA as string).getTime() : 0;
+      const tB = valB ? new Date(valB as string).getTime() : 0;
+      return (tA - tB) * dir;
+    }
+
+    if (typeof valA === 'number' || typeof valB === 'number') {
+      return (((valA as number) || 0) - ((valB as number) || 0)) * dir;
+    }
+
+    const strA = valA ? String(valA).toLowerCase() : '';
+    const strB = valB ? String(valB).toLowerCase() : '';
+    return strA.localeCompare(strB) * dir;
+  });
+
+  return filtered;
+}
+
 const InventoryList: React.FC<Props> = ({ 
   items, 
   totalCount, 
@@ -169,6 +335,12 @@ const InventoryList: React.FC<Props> = ({
   });
   const [timeFilter, setTimeFilter] = useState<TimeFilter>(() => loadState<TimeFilter>('time', 'ALL'));
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => loadState<StatusFilter>('status_filter', 'ACTIVE'));
+  const [splitView, setSplitView] = useState<boolean>(() => loadState<boolean>('split_view', false));
+  const [quickCategoryPins, setQuickCategoryPins] = useState<QuickCategoryPin[]>(() => {
+    const saved = loadState<QuickCategoryPin[] | null>('quick_category_pins', null);
+    return saved && saved.length > 0 ? saved : DEFAULT_QUICK_CATEGORY_PINS;
+  });
+  const [showQuickCategoryPicker, setShowQuickCategoryPicker] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>(() => loadState<string>('category_filter', 'ALL'));
   const [subCategoryFilter, setSubCategoryFilter] = useState<string>(() => loadState<string>('subcategory_filter', ''));
   
@@ -278,6 +450,8 @@ const InventoryList: React.FC<Props> = ({
       localStorage.setItem(`${k}_show_in_composition`, JSON.stringify(showInComposition));
       localStorage.setItem(`${k}_column_order`, JSON.stringify(columnOrder));
       localStorage.setItem(`${k}_hidden_columns`, JSON.stringify(hiddenColumnIds));
+      localStorage.setItem(`${k}_split_view`, JSON.stringify(splitView));
+      localStorage.setItem(`${k}_quick_category_pins`, JSON.stringify(quickCategoryPins));
     }, 200);
     return () => {
       if (listPrefsPersistRef.current) clearTimeout(listPrefsPersistRef.current);
@@ -285,7 +459,7 @@ const InventoryList: React.FC<Props> = ({
   }, [
     searchTerm, timeFilter, statusFilter, categoryFilter, subCategoryFilter, sortConfig, columnWidths,
     salePlatformFilter, salePaymentFilter, specFilters, specRangeFilters, showInComposition, columnOrder,
-    hiddenColumnIds, persistenceKey,
+    hiddenColumnIds, splitView, quickCategoryPins, persistenceKey,
   ]);
 
   // Close spec filters panel when clicking outside
@@ -696,143 +870,64 @@ const InventoryList: React.FC<Props> = ({
   }, [specOptions]);
 
   // Filtering & Sorting
-  const sortedItems = useMemo(() => {
-    const searchLower = deferredSearchTerm.toLowerCase();
-    const indexedIds =
-      searchLower.trim().length >= 2
-        ? new Set(searchInventory(items, searchLower, 500).map((h) => h.item.id))
-        : null;
-    let filtered = items.filter(item => {
-      // 1. Status Filter
-      let matchesStatus = false;
-      if (statusFilter === 'ACTIVE') {
-         // Include drafts in active too, but Drafts tab is specific
-         matchesStatus = item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED || item.status === ItemStatus.IN_COMPOSITION;
-      } else if (statusFilter === 'SOLD') {
-         matchesStatus = item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED;
-      } else if (statusFilter === 'DRAFTS') {
-         matchesStatus = item.isDraft === true;
-      } else {
-         matchesStatus = true; // ALL
-      }
-      
-      if (!matchesStatus) return false;
+  const listFilterParams = useMemo(
+    (): Omit<InventoryListFilterParams, 'statusFilter'> => ({
+      items,
+      deferredSearchTerm,
+      categoryFilter,
+      subCategoryFilter,
+      sortConfig,
+      timeFilter,
+      dateRange,
+      salePlatformFilter,
+      salePaymentFilter,
+      specFilters,
+      specRangeFilters,
+      showInComposition,
+      timeGaugeSortKeyMap,
+    }),
+    [
+      items,
+      deferredSearchTerm,
+      categoryFilter,
+      subCategoryFilter,
+      sortConfig,
+      timeFilter,
+      dateRange,
+      salePlatformFilter,
+      salePaymentFilter,
+      specFilters,
+      specRangeFilters,
+      showInComposition,
+      timeGaugeSortKeyMap,
+    ]
+  );
 
-      // Hide child items (components of bundles/PCs) from the main list — they only appear in the parent's expanded section
-      if (item.parentContainerId) return false;
+  const sortedItems = useMemo(
+    () => filterAndSortInventoryItems({ ...listFilterParams, statusFilter }),
+    [listFilterParams, statusFilter]
+  );
 
-      // Optional visibility toggle for "In Composition" items
-      if (!showInComposition && item.status === ItemStatus.IN_COMPOSITION) return false;
+  const sortedActiveItems = useMemo(
+    () => (splitView ? filterAndSortInventoryItems({ ...listFilterParams, statusFilter: 'ACTIVE' }) : []),
+    [listFilterParams, splitView]
+  );
 
-      // 2. Category Filter (align with PC Builder: e.g. "Processors" shows both category=Components+subCategory=Processors AND category=Processors)
-      if (categoryFilter !== 'ALL' || subCategoryFilter) {
-         const matchParentAndSub = categoryFilter !== 'ALL' && item.category === categoryFilter && (!subCategoryFilter || item.subCategory === subCategoryFilter);
-         const matchSubAsTopLevel = subCategoryFilter && item.category === subCategoryFilter; // items stored with Processors as category
-         if (!matchParentAndSub && !matchSubAsTopLevel) return false;
-      }
-
-      // 3. Search Filter
-      if (searchLower) {
-        const matchesSearch = indexedIds
-          ? indexedIds.has(item.id)
-          : item.name.toLowerCase().includes(searchLower) ||
-            item.category.toLowerCase().includes(searchLower) ||
-            (item.vendor?.toLowerCase().includes(searchLower) ?? false);
-        if (!matchesSearch) return false;
-      }
-
-      // 4. Time Filter
-      if (timeFilter !== 'ALL') {
-        const isSalesItem = item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED;
-        const dateStr = isSalesItem ? item.sellDate : item.buyDate;
-        if (!dateStr) return true; // Include items without date (e.g. PC/bundle containers) — don't hide them
-        const itemDate = new Date(dateStr);
-        if (itemDate < dateRange.start || itemDate > dateRange.end) return false;
-      }
-
-      // 5. Sales Info Filters (Only apply if we are looking at Sold items or All)
-      if (statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS') {
-         if (salePlatformFilter !== 'ALL') {
-            if (salePlatformFilter === MISSING_PLATFORM_FILTER) {
-               if (!isMissingExplicitSalePlatform(item)) return false;
-            } else if (!itemMatchesSalePlatformFilter(item, salePlatformFilter as Platform)) return false;
-         }
-         if (salePaymentFilter !== 'ALL') {
-            if (item.paymentType !== salePaymentFilter) return false;
-         }
-      }
-
-      // 6. Spec value filters (multi-select: item must match one of selected values per key)
-      for (const key of Object.keys(specFilters)) {
-        const allowed = specFilters[key];
-        if (!allowed || allowed.length === 0) continue;
-        const v = item.specs?.[key];
-        if (v === undefined || v === null) return false;
-        const match = allowed.some(a => {
-          if (typeof v === 'number' && typeof a === 'number') return v === a;
-          return String(v).trim().toLowerCase() === String(a).trim().toLowerCase();
-        });
-        if (!match) return false;
-      }
-
-      // 7. Spec range filters (numeric min/max)
-      for (const key of Object.keys(specRangeFilters)) {
-        const { min, max } = specRangeFilters[key] || {};
-        if (min === undefined && max === undefined) continue;
-        const v = item.specs?.[key];
-        const num = typeof v === 'number' ? v : (typeof v === 'string' ? parseFloat(String(v)) : NaN);
-        if (isNaN(num)) return false;
-        if (min !== undefined && num < min) return false;
-        if (max !== undefined && num > max) return false;
-      }
-
-      return true;
-    });
-
-    // Sorting Logic
-    filtered.sort((a, b) => {
-      const key = sortConfig.key === 'item' ? 'name' : sortConfig.key;
-      const dir = sortConfig.direction === 'asc' ? 1 : -1;
-
-      if (sortConfig.key === 'timeGauge') {
-        return (
-          ((timeGaugeSortKeyMap.get(a.id) ?? -1) - (timeGaugeSortKeyMap.get(b.id) ?? -1)) * dir
-        );
-      }
-
-      let valA: any = (a as any)[key];
-      let valB: any = (b as any)[key];
-
-      // Handle Dates (Parse to timestamp)
-      if (key === 'buyDate' || key === 'sellDate') {
-         valA = valA ? new Date(valA).getTime() : 0;
-         valB = valB ? new Date(valB).getTime() : 0;
-         return (valA - valB) * dir;
-      }
-
-      // Handle Numbers
-      if (typeof valA === 'number' || typeof valB === 'number') {
-         valA = valA || 0;
-         valB = valB || 0;
-         return (valA - valB) * dir;
-      }
-
-      // Handle Strings
-      valA = valA ? valA.toString().toLowerCase() : '';
-      valB = valB ? valB.toString().toLowerCase() : '';
-      
-      return valA.localeCompare(valB) * dir;
-    });
-
-    return filtered;
-  }, [items, deferredSearchTerm, statusFilter, categoryFilter, subCategoryFilter, sortConfig, timeFilter, dateRange, salePlatformFilter, salePaymentFilter, specFilters, specRangeFilters, showInComposition, timeGaugeSortKeyMap]);
+  const sortedSoldItems = useMemo(
+    () => (splitView ? filterAndSortInventoryItems({ ...listFilterParams, statusFilter: 'SOLD' }) : []),
+    [listFilterParams, splitView]
+  );
 
   const tableContainerRef = useRef<HTMLDivElement>(null);
+  const activeTableRef = useRef<HTMLDivElement>(null);
+  const soldTableRef = useRef<HTMLDivElement>(null);
   const rowHeightEstimate = listDensity === 'compact' ? 76 : 118;
 
   useEffect(() => {
     if (tableContainerRef.current) tableContainerRef.current.scrollTop = 0;
-  }, [searchTerm, timeFilter, sortConfig, statusFilter, categoryFilter, subCategoryFilter, salePlatformFilter, salePaymentFilter, specFilters, specRangeFilters]);
+    if (activeTableRef.current) activeTableRef.current.scrollTop = 0;
+    if (soldTableRef.current) soldTableRef.current.scrollTop = 0;
+  }, [searchTerm, timeFilter, sortConfig, statusFilter, categoryFilter, subCategoryFilter, salePlatformFilter, salePaymentFilter, specFilters, specRangeFilters, splitView]);
 
   const getRowActivityKey = useCallback(
     (item: InventoryItem) =>
@@ -840,25 +935,26 @@ const InventoryList: React.FC<Props> = ({
     [editingCell, listingGenId, parsingSingleId, priceSuggestId, expandedBundles]
   );
 
-  const showFinancials = statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS';
+  const showFinancials = splitView || (statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS');
 
-  const missingPlatformSoldCount = useMemo(
-    () => sortedItems.filter((i) => isMissingExplicitSalePlatform(i)).length,
-    [sortedItems]
-  );
+  const missingPlatformSoldCount = useMemo(() => {
+    const list = splitView ? sortedSoldItems : sortedItems;
+    return list.filter((i) => isMissingExplicitSalePlatform(i)).length;
+  }, [splitView, sortedSoldItems, sortedItems]);
 
   const compatibleCountByItemId = useMemo(() => {
-    if (statusFilter !== 'ACTIVE') return EMPTY_COMPAT_COUNT_MAP;
+    if (!splitView && statusFilter !== 'ACTIVE') return EMPTY_COMPAT_COUNT_MAP;
+    const source = splitView ? sortedActiveItems : sortedItems;
     const map = new Map<string, number>();
     const partTypes = new Set(['Processors', 'Motherboards', 'RAM']);
-    for (const item of sortedItems.slice(0, 120)) {
+    for (const item of source.slice(0, 120)) {
       if (!partTypes.has(item.subCategory || '') && !partTypes.has(item.category || '')) continue;
       const groups = getCompatibleItemsForItem(item, items);
       const total = groups.reduce((sum, g) => sum + g.items.length, 0);
       if (total > 0) map.set(item.id, total);
     }
     return map;
-  }, [sortedItems, items, statusFilter]);
+  }, [sortedItems, sortedActiveItems, items, statusFilter, splitView]);
 
   // Active filter count (for badge) — category/subcategory + spec keys
   const activeSpecFilterCount = useMemo(() => {
@@ -878,7 +974,7 @@ const InventoryList: React.FC<Props> = ({
     let totalNetRevenue = 0;
     let totalProfit = 0;
 
-    const soldItems = sortedItems.filter(i => i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED);
+    const soldItems = (splitView ? sortedSoldItems : sortedItems).filter(i => i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED);
     // For financial stats we only want to count *real* items once.
     // PC builds / Bundles are just containers whose economics live in their child items,
     // so we ignore rows where isPC / isBundle is true to avoid double-counting revenue & profit.
@@ -933,7 +1029,7 @@ const InventoryList: React.FC<Props> = ({
     });
 
     return { totalGross, totalTax, totalNetRevenue, totalProfit };
-  }, [sortedItems, businessSettings.taxMode, showFinancials]);
+  }, [sortedItems, sortedSoldItems, splitView, businessSettings.taxMode, showFinancials]);
 
   // -- HANDLERS --
 
@@ -1027,6 +1123,19 @@ const InventoryList: React.FC<Props> = ({
       });
     });
   }, [sortedItems]);
+
+  const handleSelectAllFor = useCallback((list: InventoryItem[]) => {
+    startTransition(() => {
+      setSelectedIds((prev) => {
+        const listIds = list.map((i) => i.id);
+        const allInPaneSelected = listIds.length > 0 && listIds.every((id) => prev.includes(id));
+        if (allInPaneSelected) {
+          return prev.filter((id) => !listIds.includes(id));
+        }
+        return [...new Set([...prev, ...listIds])];
+      });
+    });
+  }, []);
 
   const toggleSelect = useCallback((id: string) => {
     startTransition(() => {
@@ -2135,6 +2244,41 @@ const InventoryList: React.FC<Props> = ({
     setShowInComposition(true);
   };
 
+  const isQuickCategoryPinActive = useCallback(
+    (pin: QuickCategoryPin) => categoryFilter === pin.category && subCategoryFilter === pin.subCategory,
+    [categoryFilter, subCategoryFilter]
+  );
+
+  const applyQuickCategoryPin = useCallback(
+    (pin: QuickCategoryPin) => {
+      if (isQuickCategoryPinActive(pin)) {
+        setCategoryFilter('ALL');
+        setSubCategoryFilter('');
+      } else {
+        setCategoryFilter(pin.category);
+        setSubCategoryFilter(pin.subCategory);
+      }
+    },
+    [isQuickCategoryPinActive]
+  );
+
+  const addQuickCategoryPin = useCallback((category: string, subCategory: string, label: string) => {
+    const id = quickCategoryPinId(category, subCategory);
+    const trimmedLabel = label.trim() || subCategory;
+    setQuickCategoryPins((prev) => {
+      if (prev.some((p) => p.id === id)) return prev;
+      return [...prev, { id, label: trimmedLabel, category, subCategory }];
+    });
+  }, []);
+
+  const removeQuickCategoryPin = useCallback((id: string) => {
+    setQuickCategoryPins((prev) => prev.filter((p) => p.id !== id));
+  }, []);
+
+  const resetQuickCategoryPins = useCallback(() => {
+    setQuickCategoryPins(DEFAULT_QUICK_CATEGORY_PINS);
+  }, []);
+
   const selectedHasSoldOrTraded = useMemo(
     () =>
       deferredSelectedIds.some((id) => {
@@ -2218,7 +2362,11 @@ const InventoryList: React.FC<Props> = ({
          {/* Compact bar: title + count + search + status + category + time + sales + filters + undo/redo */}
          <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-xl font-black text-slate-900 tracking-tight mr-2">{pageTitle}</h1>
-            <span className="text-slate-500 text-sm font-medium py-1">{sortedItems.length} items{timeFilter !== 'ALL' ? ' · period' : ''}</span>
+            <span className="text-slate-500 text-sm font-medium py-1">
+              {splitView
+                ? `${sortedActiveItems.length} active · ${sortedSoldItems.length} sold${timeFilter !== 'ALL' ? ' · period' : ''}`
+                : `${sortedItems.length} items${timeFilter !== 'ALL' ? ' · period' : ''}`}
+            </span>
             <div className="flex-1 min-w-0 max-w-[200px] sm:max-w-[220px] relative" ref={searchSuggestionsRef}>
                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                <input
@@ -2278,17 +2426,6 @@ const InventoryList: React.FC<Props> = ({
                )}
             </div>
             <select
-               value={statusFilter}
-               onChange={e => setStatusFilter(e.target.value as StatusFilter)}
-               className="py-1.5 pl-2.5 pr-7 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-slate-900/20 appearance-none bg-no-repeat bg-right"
-               style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.35rem center' }}
-            >
-               <option value="ACTIVE">Active</option>
-               <option value="SOLD">Sold</option>
-               <option value="DRAFTS">Drafts</option>
-               <option value="ALL">All</option>
-            </select>
-            <select
                value={categoryFilter}
                onChange={e => { setCategoryFilter(e.target.value); setSubCategoryFilter(''); }}
                className="py-1.5 pl-2.5 pr-7 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-slate-900/20 appearance-none bg-no-repeat bg-right min-w-[100px]"
@@ -2337,7 +2474,7 @@ const InventoryList: React.FC<Props> = ({
                <Hourglass size={11} />
                {showInComposition ? 'In composition: shown' : 'In composition: hidden'}
             </button>
-            {statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS' && (
+            {(splitView || (statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS')) && (
                <>
                   <select value={salePlatformFilter} onChange={e => setSalePlatformFilter(e.target.value)} className="py-1.5 pl-2.5 pr-7 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-slate-900/20 appearance-none bg-no-repeat bg-right min-w-[100px]" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.35rem center' }}>
                       <option value="ALL">Platform</option>
@@ -2500,6 +2637,81 @@ const InventoryList: React.FC<Props> = ({
             )}
          </div>
 
+         {/* Active / Sold tabs + split view */}
+         {(statusFilter === 'DRAFTS' || statusFilter === 'ALL') && !splitView ? (
+           <div className="flex flex-wrap items-center gap-2">
+             <span className="text-xs font-black uppercase tracking-wide text-slate-600 px-1">
+               {statusFilter === 'DRAFTS' ? 'Drafts' : 'All items'}
+             </span>
+             <button
+               type="button"
+               onClick={() => setStatusFilter('ACTIVE')}
+               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-50"
+             >
+               <Package size={14} /> Back to Active / Sold
+             </button>
+           </div>
+         ) : (
+         <div className="flex flex-wrap items-center gap-2">
+           <div className="flex rounded-xl lg:rounded-2xl border border-slate-200 bg-white p-1 lg:p-1.5 w-full sm:w-auto">
+             <button
+               type="button"
+               onClick={() => { setStatusFilter('ACTIVE'); setSplitView(false); }}
+               className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 lg:px-6 py-2 lg:py-2.5 rounded-lg lg:rounded-xl text-xs lg:text-sm font-black uppercase tracking-wide transition-all min-h-[40px] ${
+                 !splitView && statusFilter === 'ACTIVE' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
+               }`}
+             >
+               <Package size={16} className="shrink-0" />
+               Active
+             </button>
+             <button
+               type="button"
+               onClick={() => { setStatusFilter('SOLD'); setSplitView(false); }}
+               className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 lg:px-6 py-2 lg:py-2.5 rounded-lg lg:rounded-xl text-xs lg:text-sm font-black uppercase tracking-wide transition-all min-h-[40px] ${
+                 !splitView && statusFilter === 'SOLD' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
+               }`}
+             >
+               <ShoppingBag size={16} className="shrink-0" />
+               Sold
+             </button>
+           </div>
+           <button
+             type="button"
+             onClick={() => {
+               setSplitView((v) => {
+                 const next = !v;
+                 if (next && statusFilter !== 'ACTIVE' && statusFilter !== 'SOLD') {
+                   setStatusFilter('ACTIVE');
+                 }
+                 return next;
+               });
+             }}
+             className={`inline-flex items-center justify-center gap-2 px-4 lg:px-5 py-2 lg:py-2.5 rounded-xl lg:rounded-2xl border text-xs lg:text-sm font-black uppercase tracking-wide transition-all min-h-[40px] ${
+               splitView ? 'bg-slate-900 text-white border-slate-900 shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+             }`}
+             title="Show active and sold lists side by side"
+           >
+             <Columns2 size={16} className="shrink-0" />
+             Split view
+           </button>
+           {!splitView && (
+             <select
+               value={statusFilter === 'DRAFTS' || statusFilter === 'ALL' ? statusFilter : ''}
+               onChange={(e) => {
+                 const v = e.target.value as StatusFilter;
+                 if (v) { setStatusFilter(v); setSplitView(false); }
+               }}
+               className="py-2 pl-2.5 pr-7 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-600 outline-none focus:ring-2 focus:ring-slate-900/20 appearance-none bg-no-repeat bg-right"
+               style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.35rem center' }}
+             >
+               <option value="">More…</option>
+               <option value="DRAFTS">Drafts</option>
+               <option value="ALL">All items</option>
+             </select>
+           )}
+         </div>
+         )}
+
          {/* Active filter chips */}
          {hasActiveFilters && (
             <div className="flex flex-wrap items-center gap-1.5">
@@ -2542,7 +2754,7 @@ const InventoryList: React.FC<Props> = ({
             </div>
          )}
 
-         {statusFilter === 'SOLD' && missingPlatformSoldCount > 0 && (
+         {(statusFilter === 'SOLD' || splitView) && missingPlatformSoldCount > 0 && (
             <div className="flex flex-wrap items-center gap-2 mt-2 px-3 py-2 rounded-xl border border-amber-200 bg-amber-50 text-xs text-amber-950">
               <AlertTriangle size={14} className="text-amber-600 shrink-0" />
               <span>
@@ -2557,6 +2769,38 @@ const InventoryList: React.FC<Props> = ({
               </button>
             </div>
          )}
+
+         {/* Quick category shortcuts */}
+         <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-200/60 mt-2">
+            <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider shrink-0 mr-0.5">Categories</span>
+            {quickCategoryPins.map((pin) => {
+              const active = isQuickCategoryPinActive(pin);
+              return (
+                <button
+                  key={pin.id}
+                  type="button"
+                  onClick={() => applyQuickCategoryPin(pin)}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                    active
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                      : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200 hover:border-slate-300'
+                  }`}
+                  title={`${pin.category} › ${pin.subCategory}`}
+                >
+                  {pin.label}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => setShowQuickCategoryPicker(true)}
+              className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-dashed border-slate-300 bg-white text-slate-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-all"
+              title="Add category shortcut"
+              aria-label="Add category shortcut"
+            >
+              <Plus size={14} />
+            </button>
+         </div>
 
          {/* Quick spec filters: dropdowns for top spec keys when category has specs */}
          {specOptions.length > 0 && (
@@ -2658,7 +2902,7 @@ const InventoryList: React.FC<Props> = ({
       )}
 
       {/* Mobile-friendly sold list (phones) */}
-      {statusFilter === 'SOLD' && (
+      {statusFilter === 'SOLD' && !splitView && (
         <div className="lg:hidden flex-1 min-h-0 overflow-y-auto custom-scrollbar px-3 pb-4 space-y-3">
           {sortedItems.length === 0 ? (
             <div className="py-16 text-center opacity-40">
@@ -2725,125 +2969,75 @@ const InventoryList: React.FC<Props> = ({
       )}
 
       {/* Table scrolls in remaining height; bulk bar is a separate row below (never overlays rows) */}
-      <div className={`flex flex-col flex-1 min-h-0 min-w-0 rounded-[2.5rem] border border-slate-100 shadow-sm bg-white overflow-hidden ${statusFilter === 'SOLD' ? 'hidden lg:flex' : 'flex'}`}>
-      <div 
-        ref={tableContainerRef}
-        className="flex-1 min-h-0 overflow-x-auto overflow-y-auto custom-scrollbar pb-3"
-      >
-         <style>{`
-           [data-inventory-table] tbody > tr > td { padding: 0.45rem 0.4rem !important; }
-           [data-inventory-table] tbody > tr > td.inv-col-icons { padding: 0.5rem 0.55rem !important; }
-           [data-inventory-table] thead th > div:first-of-type { padding: 0.45rem 0.4rem !important; min-height: 2rem !important; }
-           [data-inventory-table] thead th { font-size: 0.625rem; letter-spacing: 0.04em; }
-           [data-density="compact"][data-inventory-table] tbody > tr > td { padding: 0.28rem 0.22rem !important; }
-           [data-density="compact"][data-inventory-table] thead th > div:first-of-type { padding: 0.28rem 0.22rem !important; min-height: 1.65rem !important; }
-           [data-density="compact"] .text-sm { font-size: 0.7rem; }
-           [data-density="compact"] .text-xs { font-size: 0.65rem; }
-         `}</style>
-         <table className="w-full text-left border-collapse min-w-[1160px] table-fixed" data-inventory-table data-density={listDensity}>
-            <thead className="sticky top-0 z-10 bg-white">
-               <tr className="bg-slate-50/80 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-widest backdrop-blur-sm">
-                  {visibleColumns.map((colId) => {
-                     const w = columnWidths[colId] || DEFAULT_WIDTHS[colId];
-                     const sortable = !['actions', 'select', 'parseSpecs'].includes(colId);
-                     const stickyActions = colId === 'actions';
-                     return (
-                        <th
-                           key={colId}
-                           className={`relative p-0 align-middle bg-slate-50/80 ${stickyActions ? 'sticky right-0 z-[40] shadow-[-8px_0_14px_-6px_rgba(15,23,42,0.1)] border-l border-slate-200/90' : ''}`}
-                           style={{ width: w, minWidth: w, maxWidth: w }}
-                        >
-                           <div
-                              role={sortable ? 'button' : undefined}
-                              tabIndex={sortable ? 0 : undefined}
-                              onClick={() => handleHeaderSort(colId)}
-                              onKeyDown={
-                                 sortable
-                                    ? (ev) => {
-                                         if (ev.key === 'Enter' || ev.key === ' ') {
-                                            ev.preventDefault();
-                                            handleHeaderSort(colId);
-                                         }
-                                      }
-                                    : undefined
-                              }
-                              className={`p-5 pr-2 flex items-center min-h-[3rem] ${sortable ? 'cursor-pointer hover:bg-slate-100/90' : ''} ${['buyPrice', 'sellPrice', 'profit', 'buyDate', 'sellDate', 'actions'].includes(colId) ? 'justify-end' : colId === 'parseSpecs' || colId === 'timeGauge' ? 'justify-center' : ''}`}
-                           >
-                              {colId === 'select' ? (
-                                 <div
-                                    onClick={(e) => {
-                                       e.stopPropagation();
-                                       handleSelectAll();
-                                    }}
-                                    onKeyDown={(e) => e.stopPropagation()}
-                                    className="w-5 h-5 mx-auto border-2 border-slate-300 rounded-lg flex items-center justify-center cursor-pointer hover:border-blue-400"
-                                 >
-                                    {selectedIds.length > 0 &&
-                                       (selectedIds.length === sortedItems.length ? (
-                                          <Check size={12} className="text-blue-500" />
-                                       ) : (
-                                          <Minus size={12} className="text-blue-500" />
-                                       ))}
-                                 </div>
-                              ) : colId === 'parseSpecs' ? (
-                                 <span className="flex items-center gap-1" title="Parse tech specs with AI">
-                                    <Sparkles size={12} className="text-amber-500" /> Parse
-                                 </span>
-                              ) : colId === 'timeGauge' ? (
-                                 <span
-                                    className="flex items-center justify-center gap-1 w-full"
-                                    title={
-                                       statusFilter === 'SOLD'
-                                          ? 'Buy → sell: green = quick, red = slow'
-                                          : 'Days in stock: green = recent, red = aging'
-                                    }
-                                 >
-                                    <Clock size={12} className="text-slate-400 shrink-0" />
-                                    <span className="truncate">{timeGaugeColumnTitle}</span>
-                                    {sortConfig.key === 'timeGauge' && (
-                                       <span className="text-blue-500 shrink-0">
-                                          {sortConfig.direction === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                                       </span>
-                                    )}
-                                 </span>
-                              ) : (
-                                 <>
-                                    {ALL_COLUMNS.find((c) => c.id === colId)?.label}
-                                    {(sortConfig.key === colId || (colId === 'item' && sortConfig.key === 'name')) && (
-                                       <span className="text-blue-500">
-                                          {sortConfig.direction === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                                       </span>
-                                    )}
-                                 </>
-                              )}
-                           </div>
-                           <div
-                              role="separator"
-                              aria-orientation="vertical"
-                              aria-label={`Resize ${ALL_COLUMNS.find((c) => c.id === colId)?.label || colId} column`}
-                              title="Drag to resize column"
-                              className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize z-20 shrink-0 hover:bg-blue-500/35 active:bg-blue-500/50 border-r border-transparent hover:border-blue-400/40"
-                              onMouseDown={(e) => handleColumnResizeStart(e, colId)}
-                              onClick={(e) => e.stopPropagation()}
-                           />
-                        </th>
-                     );
-                  })}
-               </tr>
-            </thead>
-            <InventoryTableBody
-              sortedItems={sortedItems}
-              selectedIdSet={selectedIdSet}
-              visibleColumns={visibleColumns}
-              renderRowCells={renderRowCells}
-              getRowActivityKey={getRowActivityKey}
-              scrollRef={tableContainerRef}
-              rowHeightEstimate={rowHeightEstimate}
-              bulkBarSpacer={selectedIds.length > 0}
-            />
-         </table>
-      </div>
-      </div>
+      <style>{`
+        [data-inventory-table] tbody > tr > td { padding: 0.45rem 0.4rem !important; }
+        [data-inventory-table] tbody > tr > td.inv-col-icons { padding: 0.5rem 0.55rem !important; }
+        [data-inventory-table] thead th > div:first-of-type { padding: 0.45rem 0.4rem !important; min-height: 2rem !important; }
+        [data-inventory-table] thead th { font-size: 0.625rem; letter-spacing: 0.04em; }
+        [data-density="compact"][data-inventory-table] tbody > tr > td { padding: 0.28rem 0.22rem !important; }
+        [data-density="compact"][data-inventory-table] thead th > div:first-of-type { padding: 0.28rem 0.22rem !important; min-height: 1.65rem !important; }
+        [data-density="compact"] .text-sm { font-size: 0.7rem; }
+        [data-density="compact"] .text-xs { font-size: 0.65rem; }
+      `}</style>
+      {splitView ? (
+        <div className="flex flex-1 min-h-0 gap-2 flex-col lg:flex-row">
+          <InventoryListTablePane
+            paneItems={sortedActiveItems}
+            paneStatus="ACTIVE"
+            paneLabel="Active"
+            scrollRef={activeTableRef}
+            visibleColumns={visibleColumns}
+            columnWidths={columnWidths}
+            listDensity={listDensity}
+            sortConfig={sortConfig}
+            handleHeaderSort={handleHeaderSort}
+            handleColumnResizeStart={handleColumnResizeStart}
+            onSelectAll={() => handleSelectAllFor(sortedActiveItems)}
+            selectedIdSet={selectedIdSet}
+            renderRowCells={renderRowCells}
+            getRowActivityKey={getRowActivityKey}
+            rowHeightEstimate={rowHeightEstimate}
+            bulkBarSpacer={selectedIds.length > 0}
+          />
+          <InventoryListTablePane
+            paneItems={sortedSoldItems}
+            paneStatus="SOLD"
+            paneLabel="Sold"
+            scrollRef={soldTableRef}
+            visibleColumns={visibleColumns}
+            columnWidths={columnWidths}
+            listDensity={listDensity}
+            sortConfig={sortConfig}
+            handleHeaderSort={handleHeaderSort}
+            handleColumnResizeStart={handleColumnResizeStart}
+            onSelectAll={() => handleSelectAllFor(sortedSoldItems)}
+            selectedIdSet={selectedIdSet}
+            renderRowCells={renderRowCells}
+            getRowActivityKey={getRowActivityKey}
+            rowHeightEstimate={rowHeightEstimate}
+            bulkBarSpacer={selectedIds.length > 0}
+          />
+        </div>
+      ) : (
+        <InventoryListTablePane
+          paneItems={sortedItems}
+          paneStatus={statusFilter}
+          scrollRef={tableContainerRef}
+          visibleColumns={visibleColumns}
+          columnWidths={columnWidths}
+          listDensity={listDensity}
+          sortConfig={sortConfig}
+          handleHeaderSort={handleHeaderSort}
+          handleColumnResizeStart={handleColumnResizeStart}
+          onSelectAll={handleSelectAll}
+          selectedIdSet={selectedIdSet}
+          renderRowCells={renderRowCells}
+          getRowActivityKey={getRowActivityKey}
+          rowHeightEstimate={rowHeightEstimate}
+          bulkBarSpacer={selectedIds.length > 0}
+          className={statusFilter === 'SOLD' ? 'hidden lg:flex flex-1' : 'flex flex-1'}
+        />
+      )}
 
       <div className="shrink-0 w-full">
         <BulkSelectionBar
@@ -2867,6 +3061,19 @@ const InventoryList: React.FC<Props> = ({
             categoryFields={categoryFields} // Pass prop
             onAddCategory={() => {}} 
          />
+      )}
+
+      {showQuickCategoryPicker && (
+        <QuickCategoryPinPickerModal
+          categories={categories}
+          pins={quickCategoryPins}
+          onAdd={(category, subCategory, label) => {
+            addQuickCategoryPin(category, subCategory, label);
+          }}
+          onRemove={removeQuickCategoryPin}
+          onReset={resetQuickCategoryPins}
+          onClose={() => setShowQuickCategoryPicker(false)}
+        />
       )}
 
       {showNewItemModal && (
@@ -3343,6 +3550,291 @@ const InventoryTableRow = React.memo(
     prev.renderRowCells === next.renderRowCells &&
     prev.rowTranslateY === next.rowTranslateY
 );
+
+type InventoryListTablePaneProps = {
+  paneItems: InventoryItem[];
+  paneStatus: StatusFilter;
+  paneLabel?: string;
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+  visibleColumns: ColumnId[];
+  columnWidths: Record<string, number>;
+  listDensity: 'comfortable' | 'compact';
+  sortConfig: SortConfig;
+  handleHeaderSort: (columnId: ColumnId) => void;
+  handleColumnResizeStart: (e: React.MouseEvent, colId: ColumnId) => void;
+  onSelectAll: () => void;
+  selectedIdSet: Set<string>;
+  renderRowCells: (item: InventoryItem, isSelected: boolean) => React.ReactNode;
+  getRowActivityKey: (item: InventoryItem) => string;
+  rowHeightEstimate: number;
+  bulkBarSpacer: boolean;
+  className?: string;
+};
+
+const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
+  paneItems,
+  paneStatus,
+  paneLabel,
+  scrollRef,
+  visibleColumns,
+  columnWidths,
+  listDensity,
+  sortConfig,
+  handleHeaderSort,
+  handleColumnResizeStart,
+  onSelectAll,
+  selectedIdSet,
+  renderRowCells,
+  getRowActivityKey,
+  rowHeightEstimate,
+  bulkBarSpacer,
+  className = 'flex flex-1',
+}) => {
+  const timeGaugeTitle =
+    paneStatus === 'SOLD' ? 'Sale speed' : paneStatus === 'ACTIVE' ? 'Stock age' : 'Hold / sale';
+  const paneSelectedCount = paneItems.filter((i) => selectedIdSet.has(i.id)).length;
+  const allPaneSelected = paneItems.length > 0 && paneSelectedCount === paneItems.length;
+
+  return (
+    <div
+      className={`flex flex-col min-h-0 min-w-0 rounded-[2.5rem] border border-slate-100 shadow-sm bg-white overflow-hidden ${className}`}
+    >
+      {paneLabel && (
+        <div className="shrink-0 flex items-center justify-between px-4 lg:px-6 py-2.5 border-b border-slate-100 bg-slate-50/60">
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">{paneLabel}</span>
+          <span className="text-[10px] font-bold text-slate-400">{paneItems.length} items</span>
+        </div>
+      )}
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-x-auto overflow-y-auto custom-scrollbar pb-3">
+        <table className="w-full text-left border-collapse min-w-[1160px] table-fixed" data-inventory-table data-density={listDensity}>
+          <thead className="sticky top-0 z-10 bg-white">
+            <tr className="bg-slate-50/80 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-widest backdrop-blur-sm">
+              {visibleColumns.map((colId) => {
+                const w = columnWidths[colId] || DEFAULT_WIDTHS[colId];
+                const sortable = !['actions', 'select', 'parseSpecs'].includes(colId);
+                const stickyActions = colId === 'actions';
+                return (
+                  <th
+                    key={colId}
+                    className={`relative p-0 align-middle bg-slate-50/80 ${stickyActions ? 'sticky right-0 z-[40] shadow-[-8px_0_14px_-6px_rgba(15,23,42,0.1)] border-l border-slate-200/90' : ''}`}
+                    style={{ width: w, minWidth: w, maxWidth: w }}
+                  >
+                    <div
+                      role={sortable ? 'button' : undefined}
+                      tabIndex={sortable ? 0 : undefined}
+                      onClick={() => handleHeaderSort(colId)}
+                      onKeyDown={
+                        sortable
+                          ? (ev) => {
+                              if (ev.key === 'Enter' || ev.key === ' ') {
+                                ev.preventDefault();
+                                handleHeaderSort(colId);
+                              }
+                            }
+                          : undefined
+                      }
+                      className={`p-5 pr-2 flex items-center min-h-[3rem] ${sortable ? 'cursor-pointer hover:bg-slate-100/90' : ''} ${['buyPrice', 'sellPrice', 'profit', 'buyDate', 'sellDate', 'actions'].includes(colId) ? 'justify-end' : colId === 'parseSpecs' || colId === 'timeGauge' ? 'justify-center' : ''}`}
+                    >
+                      {colId === 'select' ? (
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectAll();
+                          }}
+                          onKeyDown={(e) => e.stopPropagation()}
+                          className="w-5 h-5 mx-auto border-2 border-slate-300 rounded-lg flex items-center justify-center cursor-pointer hover:border-blue-400"
+                        >
+                          {paneSelectedCount > 0 &&
+                            (allPaneSelected ? (
+                              <Check size={12} className="text-blue-500" />
+                            ) : (
+                              <Minus size={12} className="text-blue-500" />
+                            ))}
+                        </div>
+                      ) : colId === 'parseSpecs' ? (
+                        <span className="flex items-center gap-1" title="Parse tech specs with AI">
+                          <Sparkles size={12} className="text-amber-500" /> Parse
+                        </span>
+                      ) : colId === 'timeGauge' ? (
+                        <span
+                          className="flex items-center justify-center gap-1 w-full"
+                          title={
+                            paneStatus === 'SOLD'
+                              ? 'Buy → sell: green = quick, red = slow'
+                              : 'Days in stock: green = recent, red = aging'
+                          }
+                        >
+                          <Clock size={12} className="text-slate-400 shrink-0" />
+                          <span className="truncate">{timeGaugeTitle}</span>
+                          {sortConfig.key === 'timeGauge' && (
+                            <span className="text-blue-500 shrink-0">
+                              {sortConfig.direction === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        <>
+                          {ALL_COLUMNS.find((c) => c.id === colId)?.label}
+                          {(sortConfig.key === colId || (colId === 'item' && sortConfig.key === 'name')) && (
+                            <span className="text-blue-500">
+                              {sortConfig.direction === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    <div
+                      role="separator"
+                      aria-orientation="vertical"
+                      aria-label={`Resize ${ALL_COLUMNS.find((c) => c.id === colId)?.label || colId} column`}
+                      title="Drag to resize column"
+                      className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize z-20 shrink-0 hover:bg-blue-500/35 active:bg-blue-500/50 border-r border-transparent hover:border-blue-400/40"
+                      onMouseDown={(e) => handleColumnResizeStart(e, colId)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <InventoryTableBody
+            sortedItems={paneItems}
+            selectedIdSet={selectedIdSet}
+            visibleColumns={visibleColumns}
+            renderRowCells={renderRowCells}
+            getRowActivityKey={getRowActivityKey}
+            scrollRef={scrollRef}
+            rowHeightEstimate={rowHeightEstimate}
+            bulkBarSpacer={bulkBarSpacer}
+          />
+        </table>
+      </div>
+    </div>
+  );
+};
+
+const QuickCategoryPinPickerModal: React.FC<{
+  categories: Record<string, string[]>;
+  pins: QuickCategoryPin[];
+  onAdd: (category: string, subCategory: string, label: string) => void;
+  onRemove: (id: string) => void;
+  onReset: () => void;
+  onClose: () => void;
+}> = ({ categories, pins, onAdd, onRemove, onReset, onClose }) => {
+  const categoryKeys = Object.keys(categories);
+  const [pickCategory, setPickCategory] = useState(() => categoryKeys[0] ?? 'Components');
+  const [pickSub, setPickSub] = useState(() => (categories[pickCategory]?.[0] ?? ''));
+  const [pickLabel, setPickLabel] = useState('');
+
+  useEffect(() => {
+    const subs = categories[pickCategory] ?? [];
+    const nextSub = subs[0] ?? '';
+    setPickSub(nextSub);
+    setPickLabel(nextSub);
+  }, [pickCategory, categories]);
+
+  const pickId = pickSub ? quickCategoryPinId(pickCategory, pickSub) : '';
+  const alreadyPinned = pickId ? pins.some((p) => p.id === pickId) : false;
+
+  const handleAdd = () => {
+    if (!pickCategory || !pickSub || alreadyPinned) return;
+    onAdd(pickCategory, pickSub, pickLabel.trim() || pickSub);
+    setPickLabel('');
+  };
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in">
+      <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+        <div className="p-4 border-b border-slate-100 flex items-center justify-between gap-2">
+          <div>
+            <h3 className="text-lg font-black text-slate-900">Category shortcuts</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Add buttons for quick filtering in inventory.</p>
+          </div>
+          <button type="button" onClick={onClose} className="p-2 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-3 border-b border-slate-100">
+          <div className="space-y-1">
+            <label className="text-[10px] font-black uppercase text-slate-400 ml-0.5">Category</label>
+            <select
+              value={pickCategory}
+              onChange={(e) => setPickCategory(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-400/30"
+            >
+              {categoryKeys.map((cat) => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-black uppercase text-slate-400 ml-0.5">Subcategory</label>
+            <select
+              value={pickSub}
+              onChange={(e) => setPickSub(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-400/30"
+            >
+              {(categories[pickCategory] ?? []).map((sub) => (
+                <option key={sub} value={sub}>{sub}</option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-black uppercase text-slate-400 ml-0.5">Button label</label>
+            <input
+              type="text"
+              value={pickLabel}
+              onChange={(e) => setPickLabel(e.target.value)}
+              placeholder={pickSub || 'Short label'}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-400/30"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={handleAdd}
+            disabled={!pickSub || alreadyPinned}
+            className="w-full py-2.5 rounded-xl bg-slate-900 text-white text-sm font-black uppercase tracking-wide hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {alreadyPinned ? 'Already in quick list' : 'Add shortcut'}
+          </button>
+        </div>
+
+        <div className="p-4 max-h-52 overflow-y-auto">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Your shortcuts</span>
+            <button type="button" onClick={onReset} className="text-[10px] font-bold text-slate-400 hover:text-slate-700">
+              Reset defaults
+            </button>
+          </div>
+          {pins.length === 0 ? (
+            <p className="text-xs text-slate-400 py-2">No shortcuts yet.</p>
+          ) : (
+            <ul className="space-y-1.5">
+              {pins.map((pin) => (
+                <li key={pin.id} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-50 border border-slate-100">
+                  <span className="flex-1 min-w-0">
+                    <span className="text-sm font-bold text-slate-900">{pin.label}</span>
+                    <span className="block text-[10px] text-slate-500 truncate">{pin.category} › {pin.subCategory}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onRemove(pin.id)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50"
+                    title="Remove shortcut"
+                    aria-label={`Remove ${pin.label}`}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const CategoryPickerModal: React.FC<{
   initialCategory?: string;
