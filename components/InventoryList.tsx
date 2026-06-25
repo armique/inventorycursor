@@ -415,7 +415,7 @@ const InventoryList: React.FC<Props> = ({
   }, [statusFilter]);
 
   type ListDensity = 'comfortable' | 'compact';
-  const [listDensity, setListDensity] = useState<ListDensity>(() => loadState<ListDensity>('list_density', 'comfortable'));
+  const [listDensity, setListDensity] = useState<ListDensity>(() => loadState<ListDensity>('list_density', 'compact'));
   useEffect(() => localStorage.setItem(`${persistenceKey}_list_density`, JSON.stringify(listDensity)), [listDensity, persistenceKey]);
 
   // -- INLINE EDITING STATE --
@@ -922,7 +922,7 @@ const InventoryList: React.FC<Props> = ({
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const activeTableRef = useRef<HTMLDivElement>(null);
   const soldTableRef = useRef<HTMLDivElement>(null);
-  const rowHeightEstimate = listDensity === 'compact' ? 76 : 118;
+  const rowHeightEstimate = listDensity === 'compact' ? 52 : 68;
 
   useEffect(() => {
     if (tableContainerRef.current) tableContainerRef.current.scrollTop = 0;
@@ -1447,28 +1447,31 @@ const InventoryList: React.FC<Props> = ({
   const renderCell = (item: InventoryItem, id: ColumnId, isSelected: boolean) => {
     const width = columnWidths[id] || DEFAULT_WIDTHS[id];
     const style = { width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px` };
+    const dense = listDensity === 'compact';
+    const iconBtn = dense ? 'h-6 w-6' : 'h-7 w-7';
+    const thumbPx = dense ? 32 : 36;
 
     switch (id) {
       case 'select':
         return (
-          <td key={id} className="p-5 text-center" style={style}>
-             <div onClick={(e) => { e.stopPropagation(); toggleSelect(item.id); }} className={`w-6 h-6 sm:w-5 sm:h-5 mx-auto border-2 rounded-lg flex items-center justify-center cursor-pointer transition-all touch-manipulation ${isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 hover:border-blue-400'}`}>
-                {isSelected && <Check size={12}/>}
+          <td key={id} className="text-center" style={style}>
+             <div onClick={(e) => { e.stopPropagation(); toggleSelect(item.id); }} className={`w-5 h-5 mx-auto border-2 rounded-md flex items-center justify-center cursor-pointer transition-all touch-manipulation ${isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 hover:border-blue-400'}`}>
+                {isSelected && <Check size={11}/>}
              </div>
           </td>
         );
       case 'presence':
         return (
-          <td key={id} className="p-2 inv-col-icons border-r border-slate-100/90 align-middle" style={style} onClick={(e) => e.stopPropagation()}>
+          <td key={id} className="inv-col-icons border-r border-slate-100/90 align-middle" style={style} onClick={(e) => e.stopPropagation()}>
             <div
-              className="grid grid-cols-5 gap-1.5 items-center justify-items-center mx-auto shrink-0"
+              className={`grid grid-cols-5 ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-items-center mx-auto shrink-0`}
               style={{ width: PRESENCE_ICON_COUNT * PRESENCE_ICON_SIZE_PX + (PRESENCE_ICON_COUNT - 1) * PRESENCE_ICON_GAP_PX }}
             >
               {/* Physical presence: present / lost / unknown */}
               <button
                 type="button"
                 onClick={() => togglePresence(item)}
-                className={`h-7 w-7 shrink-0 flex items-center justify-center rounded-xl border transition-colors ${
+                className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors ${
                   item.presence === 'present'
                     ? 'border-emerald-300 bg-emerald-50'
                   : item.presence === 'lost'
@@ -1498,7 +1501,7 @@ const InventoryList: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => toggleDefective(item)}
-                className={`h-7 w-7 shrink-0 flex items-center justify-center rounded-xl text-[10px] font-bold transition-colors ${
+                className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg text-[10px] font-bold transition-colors ${
                   item.isDefective
                     ? 'bg-red-100 text-red-700'
                     : 'bg-slate-100 text-slate-500 hover:bg-amber-50 hover:text-amber-700'
@@ -1516,7 +1519,7 @@ const InventoryList: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => toggleListedKleinanzeigen(item)}
-                className={`h-7 w-7 shrink-0 flex items-center justify-center rounded-xl border text-emerald-700 ${
+                className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border text-emerald-700 ${
                   item.listedOnKleinanzeigen
                     ? 'border-emerald-200 bg-emerald-50'
                     : 'border-emerald-200 bg-white'
@@ -1540,7 +1543,7 @@ const InventoryList: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => toggleListedEbay(item)}
-                className={`h-7 w-7 shrink-0 flex items-center justify-center rounded-xl border text-blue-700 ${
+                className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border text-blue-700 ${
                   item.listedOnEbay
                     ? 'border-blue-200 bg-blue-50'
                     : 'border-blue-200 bg-white'
@@ -1563,7 +1566,7 @@ const InventoryList: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => toggleStoreVisible(item)}
-                className={`h-7 w-7 shrink-0 flex items-center justify-center rounded-xl border text-violet-700 ${
+                className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border text-violet-700 ${
                   item.storeVisible === true ? 'border-violet-200 bg-violet-50' : 'border-violet-200 bg-white'
                 }`}
                 title={
@@ -1604,9 +1607,9 @@ const InventoryList: React.FC<Props> = ({
         const isEditingName = editingCell?.itemId === item.id && editingCell?.field === 'item';
         const canExpandBundle = (item.isPC || item.isBundle) && childItems.length > 0;
         return (
-          <td key={id} className="p-5" style={style} onClick={() => handleRowClick(item, isEditingName)}>
-             <div className="flex items-start gap-2 cursor-pointer group/cell w-full">
-                <ItemThumbnail item={item} className="w-10 h-10 rounded-lg object-cover shadow-sm border border-slate-100 shrink-0" size={40} />
+          <td key={id} style={style} onClick={() => handleRowClick(item, isEditingName)}>
+             <div className="flex items-center gap-1.5 cursor-pointer group/cell w-full">
+                <ItemThumbnail item={item} className={`${dense ? 'w-8 h-8' : 'w-9 h-9'} rounded-md object-cover border border-slate-100 shrink-0`} size={thumbPx} />
                 <div className="flex-1 min-w-0">
                    <div className="flex items-center gap-2 w-full min-w-0">
                       {isEditingName ? (
@@ -1624,7 +1627,7 @@ const InventoryList: React.FC<Props> = ({
                         />
                       ) : (
                         <p
-                          className="text-sm font-black text-slate-900 truncate group-hover/cell:text-blue-600 transition-colors flex-1 min-w-0"
+                      className={`${dense ? 'text-xs' : 'text-sm'} font-black text-slate-900 truncate group-hover/cell:text-blue-600 transition-colors flex-1 min-w-0`}
                           title="Double click to rename"
                           onDoubleClick={(e) => {
                             e.stopPropagation();
@@ -1779,8 +1782,8 @@ const InventoryList: React.FC<Props> = ({
         );
       case 'parseSpecs':
         return (
-          <td key={id} className="p-3 inv-col-icons text-center border-r border-slate-100/90" style={style} onClick={(e) => e.stopPropagation()}>
-            <div className="flex flex-row flex-wrap items-center justify-center gap-2">
+          <td key={id} className="inv-col-icons text-center border-r border-slate-100/90" style={style} onClick={(e) => e.stopPropagation()}>
+            <div className={`flex flex-row flex-wrap items-center justify-center ${dense ? 'gap-1' : 'gap-1.5'}`}>
               {/* Visual indicator if AI listing text already exists */}
               {item.marketDescription && (
                 <span
@@ -1887,10 +1890,10 @@ const InventoryList: React.FC<Props> = ({
         );
       case 'category':
         return (
-          <td key={id} className="p-3 pl-4" style={style}>
+          <td key={id} style={style}>
              <div 
                onClick={(e) => { e.stopPropagation(); setItemToEditCategory(item); }}
-               className="group/cat cursor-pointer hover:bg-slate-100 rounded-lg px-2 py-1.5 -mx-1 transition-colors"
+               className="group/cat cursor-pointer hover:bg-slate-100 rounded-md px-1 py-0.5 -mx-0.5 transition-colors"
                title="Click to reclassify"
              >
                 <p className="text-[11px] font-black text-slate-500 uppercase tracking-tight group-hover/cat:text-blue-600 flex items-center gap-1.5 leading-snug">
@@ -1910,7 +1913,6 @@ const InventoryList: React.FC<Props> = ({
         return (
           <td 
              key={id} 
-             className="p-5" 
              style={style}
              onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, 'status', item.status); }}
           >
@@ -1949,7 +1951,7 @@ const InventoryList: React.FC<Props> = ({
         return (
           <td 
             key={id} 
-            className="p-5 text-right font-black text-slate-900 cursor-pointer hover:bg-blue-50/30 transition-colors" 
+            className="text-right font-black text-slate-900 cursor-pointer hover:bg-blue-50/30 transition-colors" 
             style={style}
             title="Double click to edit"
             onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, 'buyPrice', item.buyPrice); }}
@@ -1976,7 +1978,7 @@ const InventoryList: React.FC<Props> = ({
         return (
           <td 
             key={id} 
-            className="p-5 text-right font-bold text-slate-600 cursor-pointer hover:bg-blue-50/30 transition-colors" 
+            className="text-right font-bold text-slate-600 cursor-pointer hover:bg-blue-50/30 transition-colors" 
             style={style}
             title="Double click to edit"
             onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, 'sellPrice', item.sellPrice || 0); }}
@@ -2002,13 +2004,13 @@ const InventoryList: React.FC<Props> = ({
         // Bundles/PCs don't have profit - profit is only in child items
         if (item.isPC || item.isBundle) {
           return (
-            <td key={id} className="p-5 text-right text-xs font-bold text-slate-300" style={style} title="Bundles/PCs don't have profit. Expand to see component margins.">
+            <td key={id} className="text-right text-xs font-bold text-slate-300" style={style} title="Bundles/PCs don't have profit. Expand to see component margins.">
               -
             </td>
           );
         }
         return (
-          <td key={id} className={`p-5 text-right font-black ${item.profit && item.profit > 0 ? 'text-emerald-600' : item.profit && item.profit < 0 ? 'text-red-500' : 'text-slate-300'}`} style={style}>
+          <td key={id} className={`text-right font-black ${item.profit && item.profit > 0 ? 'text-emerald-600' : item.profit && item.profit < 0 ? 'text-red-500' : 'text-slate-300'}`} style={style}>
              {item.profit ? `€${formatEUR(item.profit)}` : '-'}
           </td>
         );
@@ -2017,14 +2019,14 @@ const InventoryList: React.FC<Props> = ({
         const row = getTimeGaugeRow(item, now, items);
         if (!row) {
           return (
-            <td key={id} className="p-5 text-center text-[10px] text-slate-300" style={style} title="Set acquisition date (or add components to bundle)">
+            <td key={id} className="text-center text-[10px] text-slate-300" style={style} title="Set acquisition date (or add components to bundle)">
               —
             </td>
           );
         }
         if (row.missingSellDate) {
           return (
-            <td key={id} className="p-5 align-middle" style={style}>
+            <td key={id} className="align-middle" style={style}>
               <div className="flex flex-col items-stretch gap-0.5 min-w-0" title={row.title}>
                 <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden" />
                 <span className="text-[8px] font-bold text-slate-400 text-center leading-none">—</span>
@@ -2035,7 +2037,7 @@ const InventoryList: React.FC<Props> = ({
         const fillPct = Math.max(8, Math.min(100, Math.round(row.t * 100)));
         const barColor = stressToRgb(row.t);
         return (
-          <td key={id} className="p-5 align-middle" style={style}>
+          <td key={id} className="align-middle" style={style}>
             <div
               className="flex flex-col items-stretch gap-0.5 min-w-0 max-w-[4.25rem] mx-auto"
               title={row.title + (row.fromComponents ? ' (from components)' : '')}
@@ -2059,7 +2061,7 @@ const InventoryList: React.FC<Props> = ({
       case 'buyDate':
         if ((item.isPC || item.isBundle)) {
           return (
-            <td key={id} className="p-5 text-right text-xs font-bold text-slate-300" style={style} title="Bundles/PCs don't have buy dates. Expand to see component buy dates.">
+            <td key={id} className="text-right text-xs font-bold text-slate-300" style={style} title="Bundles/PCs don't have buy dates. Expand to see component buy dates.">
               -
             </td>
           );
@@ -2067,7 +2069,7 @@ const InventoryList: React.FC<Props> = ({
         return (
            <td 
              key={id} 
-             className="p-5 text-right text-xs font-bold text-slate-500 cursor-pointer hover:bg-blue-50/30 transition-colors" 
+             className="text-right text-xs font-bold text-slate-500 cursor-pointer hover:bg-blue-50/30 transition-colors" 
              style={style}
              title="Double click to edit"
              onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, id, (item as any)[id] || ''); }}
@@ -2101,7 +2103,7 @@ const InventoryList: React.FC<Props> = ({
         return (
            <td 
              key={id} 
-             className="p-5 text-right text-xs font-bold text-slate-500 cursor-pointer hover:bg-blue-50/30 transition-colors" 
+             className="text-right text-xs font-bold text-slate-500 cursor-pointer hover:bg-blue-50/30 transition-colors" 
              style={style}
              title={buyerTitle || "Double click to edit"}
              onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, id, (item as any)[id] || ''); }}
@@ -2134,13 +2136,13 @@ const InventoryList: React.FC<Props> = ({
         const isSoldOrTraded = item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED;
         if (!isSoldOrTraded) {
           return (
-            <td key={id} className="p-5 text-xs text-slate-300 text-center" style={style}>—</td>
+            <td key={id} className="text-xs text-slate-300 text-center" style={style}>—</td>
           );
         }
         const missing = isMissingExplicitSalePlatform(item);
         const inferred = missing ? formatItemSalePlatform(item) : null;
         return (
-          <td key={id} className="p-3" style={style} onClick={(e) => e.stopPropagation()}>
+          <td key={id} style={style} onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-1 min-w-0">
               {missing && (
                 <span title={`Platform not set${inferred && inferred !== 'Unknown' ? ` (detected: ${inferred})` : ''}`}>
@@ -2178,7 +2180,7 @@ const InventoryList: React.FC<Props> = ({
         return (
           <td
             key={id}
-            className="p-5 text-right relative sticky right-0 z-[18] bg-white group-hover/row:bg-slate-50/98 border-l border-slate-200/90 shadow-[-6px_0_12px_-4px_rgba(15,23,42,0.07)]"
+            className="text-right relative sticky right-0 z-[18] bg-white group-hover/row:bg-slate-50/98 border-l border-slate-200/90 shadow-[-6px_0_12px_-4px_rgba(15,23,42,0.07)]"
             style={style}
           >
             <div className="flex flex-wrap justify-end gap-0.5 opacity-100 sm:opacity-0 sm:group-hover/row:opacity-100 transition-opacity max-w-[7.5rem] ml-auto">
@@ -2612,7 +2614,7 @@ const InventoryList: React.FC<Props> = ({
                  type="button"
                  onClick={() => setListDensity((d) => (d === 'compact' ? 'comfortable' : 'compact'))}
                  className={`p-1.5 rounded-lg border flex items-center gap-1 ${listDensity === 'compact' ? 'bg-slate-900 text-white border-slate-900' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
-                 title={listDensity === 'compact' ? 'Switch to comfortable view' : 'Compact view – denser list'}
+                 title={listDensity === 'compact' ? 'Switch to comfortable view (more spacing)' : 'Compact view – denser list'}
                >
                  <List size={14} /> <span className="text-[10px] font-bold uppercase">Compact</span>
                </button>
@@ -2976,14 +2978,16 @@ const InventoryList: React.FC<Props> = ({
 
       {/* Table scrolls in remaining height; bulk bar is a separate row below (never overlays rows) */}
       <style>{`
-        [data-inventory-table] tbody > tr > td { padding: 0.45rem 0.4rem !important; }
-        [data-inventory-table] tbody > tr > td.inv-col-icons { padding: 0.5rem 0.55rem !important; }
-        [data-inventory-table] thead th > div:first-of-type { padding: 0.45rem 0.4rem !important; min-height: 2rem !important; }
+        [data-inventory-table] tbody > tr > td { padding: 0.28rem 0.32rem !important; vertical-align: middle !important; }
+        [data-inventory-table] tbody > tr > td.inv-col-icons { padding: 0.25rem 0.38rem !important; }
+        [data-inventory-table] thead th > div:first-of-type { padding: 0.28rem 0.32rem !important; min-height: 1.65rem !important; }
         [data-inventory-table] thead th { font-size: 0.625rem; letter-spacing: 0.04em; }
-        [data-density="compact"][data-inventory-table] tbody > tr > td { padding: 0.28rem 0.22rem !important; }
-        [data-density="compact"][data-inventory-table] thead th > div:first-of-type { padding: 0.28rem 0.22rem !important; min-height: 1.65rem !important; }
-        [data-density="compact"] .text-sm { font-size: 0.7rem; }
-        [data-density="compact"] .text-xs { font-size: 0.65rem; }
+        [data-density="compact"][data-inventory-table] tbody > tr > td { padding: 0.16rem 0.22rem !important; }
+        [data-density="compact"][data-inventory-table] tbody > tr > td.inv-col-icons { padding: 0.14rem 0.28rem !important; }
+        [data-density="compact"][data-inventory-table] thead th > div:first-of-type { padding: 0.16rem 0.22rem !important; min-height: 1.35rem !important; }
+        [data-density="compact"] .text-sm { font-size: 0.6875rem; line-height: 1.2; }
+        [data-density="compact"] .text-xs { font-size: 0.625rem; line-height: 1.2; }
+        [data-density="comfortable"] .text-sm { line-height: 1.25; }
       `}</style>
       {splitView ? (
         <div className="flex flex-1 min-h-0 gap-2 flex-col lg:flex-row">
@@ -3664,7 +3668,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
                             }
                           : undefined
                       }
-                      className={`p-5 pr-2 flex items-center min-h-[3rem] ${sortable ? 'cursor-pointer hover:bg-slate-100/90' : ''} ${['buyPrice', 'sellPrice', 'profit', 'buyDate', 'sellDate', 'actions'].includes(colId) ? 'justify-end' : colId === 'parseSpecs' || colId === 'timeGauge' ? 'justify-center' : ''}`}
+                      className={`flex items-center ${listDensity === 'compact' ? 'min-h-[1.35rem]' : 'min-h-[1.65rem]'} ${sortable ? 'cursor-pointer hover:bg-slate-100/90' : ''} ${['buyPrice', 'sellPrice', 'profit', 'buyDate', 'sellDate', 'actions'].includes(colId) ? 'justify-end' : colId === 'parseSpecs' || colId === 'timeGauge' ? 'justify-center' : ''}`}
                     >
                       {colId === 'select' ? (
                         <div
