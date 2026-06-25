@@ -5,7 +5,7 @@ import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSort
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions } from '../types';
 import { itemMatchesSalePlatformFilter, isMissingExplicitSalePlatform, MISSING_PLATFORM_FILTER, SALE_PLATFORM_OPTIONS, formatItemSalePlatform, formatSalePlatformLabel } from '../utils/salePlatform';
@@ -3447,8 +3447,8 @@ const SalePlatformQuickPickButtons: React.FC<{
   onPick: (platform: Platform) => void;
 }> = ({ dense, onPick }) => {
   const btn = dense ? 'h-6 w-6' : 'h-7 w-7';
-  const badge = dense ? 'h-3.5 w-3.5 text-[7px]' : 'h-4 w-4 text-[8px]';
-  const handSize = dense ? 11 : 13;
+  const iconSize = dense ? 11 : 13;
+  const stroke = 2.25;
 
   return (
     <div className="flex items-center gap-0.5" role="group" aria-label="Quick set sale platform">
@@ -3457,26 +3457,18 @@ const SalePlatformQuickPickButtons: React.FC<{
         title="eBay"
         aria-label="Mark sold on eBay"
         onClick={() => onPick('ebay.de')}
-        className={`${btn} flex items-center justify-center rounded-lg border border-blue-300 bg-gradient-to-b from-blue-50 to-blue-100/90 hover:from-blue-100 hover:to-blue-200 shadow-sm transition-colors`}
+        className={`${btn} flex items-center justify-center rounded-lg border border-blue-300 bg-gradient-to-b from-blue-50 to-blue-100/90 hover:from-blue-100 hover:to-blue-200 shadow-sm transition-colors text-[#0064D2]`}
       >
-        <span
-          className={`${badge} rounded-full bg-[#0064D2] text-white flex items-center justify-center font-black leading-none shadow-inner`}
-        >
-          e
-        </span>
+        <Gavel size={iconSize} strokeWidth={stroke} aria-hidden />
       </button>
       <button
         type="button"
         title="Kleinanzeigen"
         aria-label="Mark sold on Kleinanzeigen"
         onClick={() => onPick('kleinanzeigen.de')}
-        className={`${btn} flex items-center justify-center rounded-lg border border-emerald-400 bg-gradient-to-b from-emerald-50 to-lime-50 hover:from-emerald-100 hover:to-lime-100 shadow-sm transition-colors`}
+        className={`${btn} flex items-center justify-center rounded-lg border border-emerald-400 bg-gradient-to-b from-emerald-50 to-lime-50 hover:from-emerald-100 hover:to-lime-100 shadow-sm transition-colors text-emerald-700`}
       >
-        <span
-          className={`${badge} rounded-full bg-emerald-600 text-white flex items-center justify-center font-black leading-none shadow-inner`}
-        >
-          K
-        </span>
+        <Megaphone size={iconSize} strokeWidth={stroke} aria-hidden />
       </button>
       <button
         type="button"
@@ -3485,7 +3477,7 @@ const SalePlatformQuickPickButtons: React.FC<{
         onClick={() => onPick('In Person')}
         className={`${btn} flex items-center justify-center rounded-lg border border-slate-300 bg-gradient-to-b from-slate-50 to-slate-100 hover:from-slate-100 hover:to-slate-200 shadow-sm transition-colors text-slate-700`}
       >
-        <Handshake size={handSize} strokeWidth={2.25} aria-hidden />
+        <Handshake size={iconSize} strokeWidth={stroke} aria-hidden />
       </button>
     </div>
   );
