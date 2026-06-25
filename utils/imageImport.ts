@@ -1,4 +1,6 @@
 import { normalizeImgurImageUrl } from '../services/ebayOrderScreenshotAI';
+import { CATEGORY_IMAGES } from '../services/hardwareDB';
+import { filterUsableImageUrls } from '../services/storefrontImageUtils';
 import type { InventoryItem } from '../types';
 
 export function normalizeImageList(urls: (string | undefined | null)[]): string[] {
@@ -11,6 +13,27 @@ export function normalizeImageList(urls: (string | undefined | null)[]): string[
     out.push(u);
   }
   return out;
+}
+
+const CATEGORY_PLACEHOLDER_IMAGES = new Set(Object.values(CATEGORY_IMAGES));
+
+export function isCategoryPlaceholderImage(url: string): boolean {
+  return CATEGORY_PLACEHOLDER_IMAGES.has(url.trim());
+}
+
+/** Real item photos only — excludes empty URLs and category SVG placeholders. */
+export function getItemUserPhotoUrls(item: Pick<InventoryItem, 'imageUrl' | 'imageUrls'>): string[] {
+  return filterUsableImageUrls([item.imageUrl, ...(item.imageUrls || [])]).filter(
+    (u) => !isCategoryPlaceholderImage(u)
+  );
+}
+
+export function itemHasUserPhotos(item: Pick<InventoryItem, 'imageUrl' | 'imageUrls'>): boolean {
+  return getItemUserPhotoUrls(item).length > 0;
+}
+
+export function getItemUserPhotoCount(item: Pick<InventoryItem, 'imageUrl' | 'imageUrls'>): number {
+  return getItemUserPhotoUrls(item).length;
 }
 
 export function isImgurAlbumOrGalleryUrl(url: string): boolean {

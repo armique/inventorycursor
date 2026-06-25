@@ -5,7 +5,7 @@ import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSort
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone, Camera
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone, Camera
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions } from '../types';
 import { itemMatchesSalePlatformFilter, isMissingExplicitSalePlatform, MISSING_PLATFORM_FILTER, SALE_PLATFORM_OPTIONS, formatItemSalePlatform, formatSalePlatformLabel } from '../utils/salePlatform';
@@ -15,7 +15,7 @@ import { generateKleinanzeigenCSV, generateEbayCSV } from '../services/ebayCsvSe
 import { searchInventory } from '../utils/inventorySearchIndex';
 import { copyKleinanzeigenListing } from '../utils/copyKleinanzeigenListing';
 import { bundleComponentBreakdown } from '../utils/bundleProfitBreakdown';
-import { cycleInventoryItemPresence, getItemPresenceCycleState, normalizeImageList } from '../utils/imageImport';
+import { cycleInventoryItemPresence, getItemPresenceCycleState, getItemUserPhotoCount, normalizeImageList } from '../utils/imageImport';
 import { exportInventoryToExcel } from '../services/excelExportService';
 import { getRecentItemIds, addRecentItemId } from '../services/recentItemsService';
 import { generateStoreDescription } from '../services/specsAI';
@@ -1584,10 +1584,43 @@ const InventoryList: React.FC<Props> = ({
         };
         const isEditingName = editingCell?.itemId === item.id && editingCell?.field === 'item';
         const canExpandBundle = (item.isPC || item.isBundle) && childItems.length > 0;
+        const userPhotoCount = getItemUserPhotoCount(item);
+        const hasUserPhotos = userPhotoCount > 0;
         return (
           <td key={id} style={style} onClick={() => handleRowClick(item, isEditingName)}>
              <div className="flex items-center gap-1.5 cursor-pointer group/cell w-full">
-                <ItemThumbnail item={item} className={`${dense ? 'w-8 h-8' : 'w-9 h-9'} rounded-md object-cover border border-slate-100 shrink-0`} size={thumbPx} />
+                <div
+                  className={`relative shrink-0 rounded-md ${
+                    hasUserPhotos
+                      ? 'ring-2 ring-emerald-500/45'
+                      : 'ring-1 ring-dashed ring-amber-400/80 bg-amber-50/40'
+                  }`}
+                  title={
+                    hasUserPhotos
+                      ? `${userPhotoCount} item photo${userPhotoCount === 1 ? '' : 's'}`
+                      : 'No item photos — select row and use Add photos'
+                  }
+                >
+                  <ItemThumbnail item={item} className={`${dense ? 'w-8 h-8' : 'w-9 h-9'} rounded-md object-cover border border-slate-100 shrink-0`} size={thumbPx} />
+                  <span
+                    className={`absolute -bottom-0.5 -right-0.5 min-w-[14px] h-3.5 px-0.5 rounded-full flex items-center justify-center shadow-sm ${
+                      hasUserPhotos
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-amber-100 text-amber-700 border border-amber-300'
+                    }`}
+                    aria-hidden
+                  >
+                    {hasUserPhotos ? (
+                      userPhotoCount > 1 ? (
+                        <span className="text-[8px] font-black leading-none">{userPhotoCount}</span>
+                      ) : (
+                        <Camera size={8} strokeWidth={2.5} />
+                      )
+                    ) : (
+                      <ImageOff size={8} strokeWidth={2.5} />
+                    )}
+                  </span>
+                </div>
                 <div className="flex-1 min-w-0">
                    <div className="flex items-center gap-2 w-full min-w-0">
                       {isEditingName ? (
@@ -1633,6 +1666,23 @@ const InventoryList: React.FC<Props> = ({
                       )}
                    </div>
                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      {hasUserPhotos ? (
+                        <span
+                          className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/80"
+                          title={`${userPhotoCount} photo${userPhotoCount === 1 ? '' : 's'}`}
+                        >
+                          <Camera size={9} className="shrink-0" />
+                          {userPhotoCount > 1 ? `${userPhotoCount} photos` : 'Photo'}
+                        </span>
+                      ) : (
+                        <span
+                          className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/80"
+                          title="No item photos yet"
+                        >
+                          <ImageOff size={9} className="shrink-0" />
+                          No photo
+                        </span>
+                      )}
                       {item.specs && Object.keys(item.specs).length > 0 && (
                          <span className="inline-flex items-center gap-1 text-emerald-600" title="Tech specs filled — open to edit or re-parse">
                             <ListChecks size={12} className="shrink-0" />
@@ -2905,14 +2955,37 @@ const InventoryList: React.FC<Props> = ({
               <p className="font-bold text-slate-400 text-sm">No sold items match filters</p>
             </div>
           ) : (
-            sortedItems.map((item) => (
+            sortedItems.map((item) => {
+              const userPhotoCount = getItemUserPhotoCount(item);
+              const hasUserPhotos = userPhotoCount > 0;
+              return (
               <div key={item.id} className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm space-y-3">
                 <div className="flex gap-3 items-start">
-                  <ItemThumbnail item={item} className="w-12 h-12 rounded-xl object-cover border border-slate-100 shrink-0" size={48} />
+                  <div
+                    className={`relative shrink-0 rounded-xl ${
+                      hasUserPhotos ? 'ring-2 ring-emerald-500/45' : 'ring-1 ring-dashed ring-amber-400/80'
+                    }`}
+                  >
+                    <ItemThumbnail item={item} className="w-12 h-12 rounded-xl object-cover border border-slate-100 shrink-0" size={48} />
+                    <span
+                      className={`absolute -bottom-0.5 -right-0.5 min-w-[14px] h-3.5 px-0.5 rounded-full flex items-center justify-center ${
+                        hasUserPhotos ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-700 border border-amber-300'
+                      }`}
+                    >
+                      {hasUserPhotos ? (userPhotoCount > 1 ? <span className="text-[8px] font-black">{userPhotoCount}</span> : <Camera size={8} />) : <ImageOff size={8} />}
+                    </span>
+                  </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-black text-slate-900 text-sm leading-snug">{item.name}</p>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Sold {item.sellDate || '—'} · €{item.sellPrice != null ? formatEUR(item.sellPrice) : '—'}
+                    <p className="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-1.5">
+                      <span
+                        className={`inline-flex items-center gap-0.5 text-[9px] font-bold uppercase px-1 py-0.5 rounded ${
+                          hasUserPhotos ? 'text-emerald-700 bg-emerald-50' : 'text-amber-700 bg-amber-50'
+                        }`}
+                      >
+                        {hasUserPhotos ? <><Camera size={8} /> {userPhotoCount > 1 ? `${userPhotoCount} photos` : 'Photo'}</> : <><ImageOff size={8} /> No photo</>}
+                      </span>
+                      <span>Sold {item.sellDate || '—'} · €{item.sellPrice != null ? formatEUR(item.sellPrice) : '—'}</span>
                       {item.profit != null && (
                         <span className={item.profit >= 0 ? ' text-emerald-600' : ' text-red-600'}>
                           {' '}· {item.profit >= 0 ? '+' : ''}€{formatEUR(item.profit)}
@@ -2962,7 +3035,8 @@ const InventoryList: React.FC<Props> = ({
                   </button>
                 </div>
               </div>
-            ))
+              );
+            })
           )}
         </div>
       )}
