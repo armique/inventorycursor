@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { formatEUR } from '../utils/formatMoney';
 import { Send, Sparkles, TrendingUp, AlertTriangle, RefreshCcw, Info, Globe, Package, Radar, ArrowRight, ExternalLink, ShoppingCart, Target, ArrowLeft, History, Clock, Trash2, ChevronRight } from 'lucide-react';
-import { analyzeMarket, getSlowSellingAdvice, analyzeSourcingStrategy, findLiveDeals, SourcingStrategy, LiveDeal } from '../services/geminiService';
+import { analyzeMarket, getSlowSellingAdvice, analyzeSourcingStrategy, findLiveDeals, SourcingStrategy, LiveDeal, DealSearchPlatform } from '../services/geminiService';
 import { InventoryItem, ItemStatus } from '../types';
 import SmartBundleSuggester from './SmartBundleSuggester';
 
@@ -35,6 +35,8 @@ const AIAssistant: React.FC<Props> = ({ items, onUpdate, defaultTab = 'MARKET' }
   const [selectedStrategy, setSelectedStrategy] = useState<SourcingStrategy | null>(null);
   const [liveDeals, setLiveDeals] = useState<LiveDeal[]>([]);
   const [isFindingDeals, setIsFindingDeals] = useState(false);
+  const [dealPlatform, setDealPlatform] = useState<DealSearchPlatform>('both');
+  const [dealError, setDealError] = useState<string | null>(null);
   
   // Sourcing History State
   const [sourcingHistory, setSourcingHistory] = useState<SourcingSession[]>(() => {
@@ -123,9 +125,14 @@ const AIAssistant: React.FC<Props> = ({ items, onUpdate, defaultTab = 'MARKET' }
   const handleFindDeals = async () => {
     if (!selectedStrategy) return;
     setIsFindingDeals(true);
+    setDealError(null);
     try {
-      const deals = await findLiveDeals(selectedStrategy);
+      const deals = await findLiveDeals(selectedStrategy, dealPlatform);
       setLiveDeals(deals);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Deal search failed.';
+      setDealError(msg);
+      setLiveDeals([]);
     } finally {
       setIsFindingDeals(false);
     }
@@ -307,7 +314,23 @@ const AIAssistant: React.FC<Props> = ({ items, onUpdate, defaultTab = 'MARKET' }
                                 <span className="bg-white px-3 py-1 rounded-lg border">Max Buy: €{formatEUR(Number(selectedStrategy.maxBuyPrice))}</span>
                              </div>
                           </div>
-                          <div className="flex items-center">
+                          <div className="flex flex-col items-stretch md:items-end gap-3">
+                             <div className="flex gap-1.5 bg-white p-1 rounded-xl border border-slate-200">
+                                {(['kleinanzeigen', 'ebay', 'both'] as DealSearchPlatform[]).map(p => (
+                                   <button
+                                      key={p}
+                                      type="button"
+                                      onClick={() => setDealPlatform(p)}
+                                      className={`px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all ${
+                                         dealPlatform === p
+                                            ? 'bg-emerald-600 text-white'
+                                            : 'text-slate-500 hover:text-slate-700'
+                                      }`}
+                                   >
+                                      {p === 'kleinanzeigen' ? 'KA' : p === 'ebay' ? 'eBay' : 'Both'}
+                                   </button>
+                                ))}
+                             </div>
                              <button 
                                 onClick={handleFindDeals}
                                 disabled={isFindingDeals}
@@ -318,6 +341,12 @@ const AIAssistant: React.FC<Props> = ({ items, onUpdate, defaultTab = 'MARKET' }
                              </button>
                           </div>
                        </div>
+
+                       {dealError && (
+                          <div className="mx-8 mt-4 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold">
+                             {dealError}
+                          </div>
+                       )}
 
                        {liveDeals.length > 0 && (
                           <div className="p-8 bg-slate-50/50">

@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { formatEUR } from '../utils/formatMoney';
 
 import { Search, Plus, Trash2, ExternalLink, RefreshCcw, Bell, ArrowRight, X, Clock, MapPin, Euro, Loader2, Link as LinkIcon, Power, Play } from 'lucide-react';
-import { executeSavedSearch, SavedSearchCriteria, LiveDeal } from '../services/geminiService';
+import { executeSavedSearch, SavedSearchCriteria, LiveDeal, DealSearchPlatform, resolveSearchPlatform } from '../services/geminiService';
 
 interface SavedSearch extends SavedSearchCriteria {
   id: string; // Ensure ID is present
@@ -14,9 +14,23 @@ interface SavedSearch extends SavedSearchCriteria {
 interface Props {
   searches?: SavedSearch[];
   onUpdate?: (searches: SavedSearch[]) => void;
+  embedded?: boolean;
 }
 
-const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate }) => {
+const PLATFORM_OPTIONS: { id: DealSearchPlatform; label: string }[] = [
+  { id: 'kleinanzeigen', label: 'Kleinanzeigen' },
+  { id: 'ebay', label: 'eBay' },
+  { id: 'both', label: 'Both' },
+];
+
+const platformLabel = (search: SavedSearch): string => {
+  const p = resolveSearchPlatform(search);
+  if (p === 'kleinanzeigen') return 'KA only';
+  if (p === 'ebay') return 'eBay only';
+  return 'KA + eBay';
+};
+
+const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate, embedded = false }) => {
   // Use props, default to empty array if undefined
   
   // Background Check State
@@ -33,7 +47,8 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate }) => {
   const [newQuery, setNewQuery] = useState('');
   const [newMaxPrice, setNewMaxPrice] = useState<string>('');
   const [newCustomUrl, setNewCustomUrl] = useState('');
-  const [includeEbay, setIncludeEbay] = useState(false);
+  const [platformFilter, setPlatformFilter] = useState<DealSearchPlatform>('kleinanzeigen');
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   useEffect(() => {
     localStorage.setItem('auto_check_active', String(isAutoCheckActive));
@@ -124,19 +139,22 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate }) => {
       id: `search-${Date.now()}`,
       query: newQuery.trim(),
       maxPrice: parseFloat(newMaxPrice) || 0,
-      includeEbay,
+      platform: platformFilter,
+      includeEbay: platformFilter !== 'kleinanzeigen',
       customUrl: newCustomUrl.trim(),
       results: [],
       newResultCount: 0
     };
 
-    updateSearches([newSearch, ...searches]);
+    const nextList = [newSearch, ...searches];
+    updateSearches(nextList);
     setSelectedId(newSearch.id);
     setIsCreating(false);
     setNewQuery('');
     setNewMaxPrice('');
     setNewCustomUrl('');
-    setIncludeEbay(false);
+    setPlatformFilter('kleinanzeigen');
+    void runSearch(newSearch, nextList);
   };
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
@@ -147,12 +165,14 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate }) => {
     }
   };
 
-  const runSearch = async (search: SavedSearch) => {
+  const runSearch = async (search: SavedSearch, searchList?: SavedSearch[]) => {
+    const list = searchList ?? searches;
     setLoadingSearchId(search.id);
+    setSearchError(null);
     try {
       const results = await executeSavedSearch(search);
       
-      const updated = searches.map(s => {
+      const updated = list.map(s => {
         if (s.id === search.id) {
           const oldUrls = s.results.map(r => r.url);
           const newItems = results.filter(r => !oldUrls.includes(r.url));
@@ -167,6 +187,9 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate }) => {
         return s;
       });
       updateSearches(updated);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Search failed. Check your Gemini API key.';
+      setSearchError(msg);
     } finally {
       setLoadingSearchId(null);
     }
@@ -188,7 +211,8 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate }) => {
   }, [selectedId]);
 
   return (
-    <div className="max-w-[1600px] mx-auto h-[calc(100vh-100px)] flex flex-col animate-in fade-in">
+    <div className={`max-w-[1600px] mx-auto flex flex-col animate-in fade-in ${embedded ? 'h-[min(720px,70vh)]' : 'h-[calc(100vh-100px)]'}`}>
+      {!embedded && (
       <header className="flex justify-between items-center mb-6 shrink-0 px-4">
         <div>
           <h1 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
@@ -213,8 +237,9 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate }) => {
            </button>
         </div>
       </header>
+      )}
 
-      <div className="flex flex-1 gap-6 overflow-hidden px-4">
+      <div className={`flex flex-1 gap-6 overflow-hidden ${embedded ? '' : 'px-4'}`}>
         
         {/* LEFT SIDEBAR: SEARCH LIST */}
         <div className="w-[350px] flex flex-col gap-4 shrink-0">
@@ -261,10 +286,25 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate }) => {
                   />
                   <p className="text-[9px] text-slate-400 mt-1 ml-1">Use a pre-filtered URL for best results.</p>
                </div>
-               <label className="flex items-center gap-2 px-1 cursor-pointer">
-                  <input type="checkbox" checked={includeEbay} onChange={e => setIncludeEbay(e.target.checked)} className="accent-emerald-500 w-4 h-4"/>
-                  <span className="text-xs font-bold text-slate-600">Include eBay.de</span>
-               </label>
+               <div>
+                  <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Platforms</label>
+                  <div className="flex gap-1.5 mt-1">
+                    {PLATFORM_OPTIONS.map(opt => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setPlatformFilter(opt.id)}
+                        className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wide border transition-all ${
+                          platformFilter === opt.id
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                            : 'bg-slate-50 text-slate-500 border-slate-200 hover:border-emerald-200'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+               </div>
                <div className="flex gap-2 pt-2">
                   <button type="button" onClick={() => setIsCreating(false)} className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-xl font-bold text-xs">Cancel</button>
                   <button type="submit" className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-bold text-xs shadow-md">Save</button>
@@ -297,7 +337,7 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate }) => {
                    <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest flex-wrap">
                       {search.maxPrice > 0 ? <span>&lt; €{formatEUR(Number(search.maxPrice))}</span> : <span>Any Price</span>}
                       <span>•</span>
-                      {search.customUrl ? <span className="text-blue-500 flex items-center gap-1"><LinkIcon size={8}/> URL</span> : <span>{search.includeEbay ? 'All Sites' : 'KA Only'}</span>}
+                      {search.customUrl ? <span className="text-blue-500 flex items-center gap-1"><LinkIcon size={8}/> URL</span> : <span>{platformLabel(search)}</span>}
                    </div>
                    
                    <div className="mt-3 flex items-center justify-between">
@@ -363,12 +403,22 @@ const SavedSearches: React.FC<Props> = ({ searches = [], onUpdate }) => {
                     </button>
                  </header>
 
+                 {searchError && (
+                    <div className="mx-6 mt-4 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold">
+                       {searchError}
+                    </div>
+                 )}
+
                  <div className="flex-1 overflow-y-auto p-6 bg-slate-50/30">
                     {selectedSearch.results.length === 0 ? (
                        <div className="h-full flex flex-col items-center justify-center text-center opacity-40">
                           <Search size={64} className="mb-4 text-slate-300"/>
-                          <p className="font-bold text-slate-400">No active listings found</p>
-                          <p className="text-xs text-slate-400 mt-1">Try refreshing the search</p>
+                          <p className="font-bold text-slate-400">
+                            {loadingSearchId === selectedSearch.id ? 'Scanning markets…' : 'No active listings found'}
+                          </p>
+                          <p className="text-xs text-slate-400 mt-1">
+                            {loadingSearchId === selectedSearch.id ? 'This can take 10–30 seconds' : 'Click Check Now to search'}
+                          </p>
                        </div>
                     ) : (
                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

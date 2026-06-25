@@ -3,13 +3,14 @@ import { Radar } from 'lucide-react';
 import { InventoryItem } from '../types';
 import AIAssistant from './AIAssistant';
 import SavedSearches from './SavedSearches';
-import type { LiveDeal } from '../services/geminiService';
+import type { LiveDeal, DealSearchPlatform } from '../services/geminiService';
 
 export type SavedDealSearch = {
   id: string;
   query: string;
   maxPrice?: number;
   includeEbay?: boolean;
+  platform?: DealSearchPlatform;
   customUrl?: string;
   lastRun?: string;
   results: LiveDeal[];
@@ -56,7 +57,7 @@ const DealHunterPage: React.FC<Props> = ({ items, onUpdate }) => {
 
       <section className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-6">
         <h2 className="text-sm font-black uppercase tracking-widest text-slate-400 mb-4">Saved searches</h2>
-        <SavedSearches searches={searches} onUpdate={setSearches} />
+        <SavedSearches searches={searches} onUpdate={setSearches} embedded />
       </section>
 
       <section className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">

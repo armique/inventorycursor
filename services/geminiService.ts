@@ -48,11 +48,20 @@ const updateModelStatus = (model: string, update: Partial<ModelStatus>) => {
 
 // --- AI SETUP ---
 
+const clientGeminiKey = (): string => {
+  const gemini = import.meta.env.VITE_GEMINI_API_KEY;
+  const legacy = import.meta.env.VITE_API_KEY;
+  const g = typeof gemini === 'string' ? gemini.trim() : '';
+  const l = typeof legacy === 'string' ? legacy.trim() : '';
+  return g || l;
+};
+
 const getAI = () => {
-  const apiKey = typeof process !== 'undefined' && process.env ? process.env.API_KEY : '';
+  const apiKey = clientGeminiKey();
   if (!apiKey) {
-    console.error("API_KEY_MISSING: Ensure process.env.API_KEY is available.");
-    throw new Error("API_KEY_MISSING");
+    throw new Error(
+      'VITE_GEMINI_API_KEY not set. Add it to .env / .env.local and restart the dev server.'
+    );
   }
   return new GoogleGenAI({ apiKey });
 };
@@ -172,14 +181,45 @@ export interface CrossPostContent {
   facebook: { title: string; description: string };
 }
 
+export type DealSearchPlatform = 'kleinanzeigen' | 'ebay' | 'both';
+
 export interface SavedSearchCriteria {
   id: string;
   query: string;
   maxPrice: number;
-  includeEbay: boolean;
+  /** @deprecated use `platform` */
+  includeEbay?: boolean;
+  platform?: DealSearchPlatform;
   customUrl?: string;
   lastRun?: string;
 }
+
+export const resolveSearchPlatform = (criteria: SavedSearchCriteria): DealSearchPlatform => {
+  if (criteria.platform) return criteria.platform;
+  return criteria.includeEbay ? 'both' : 'kleinanzeigen';
+};
+
+const buildSiteFilter = (platform: DealSearchPlatform): string => {
+  switch (platform) {
+    case 'ebay':
+      return 'site:ebay.de';
+    case 'both':
+      return '(site:ebay.de OR site:kleinanzeigen.de)';
+    default:
+      return 'site:kleinanzeigen.de';
+  }
+};
+
+const matchesSearchPlatform = (deal: LiveDeal, platform: DealSearchPlatform): boolean => {
+  const url = deal.url.toLowerCase();
+  if (platform === 'kleinanzeigen') {
+    return deal.platform === 'Kleinanzeigen' || url.includes('kleinanzeigen');
+  }
+  if (platform === 'ebay') {
+    return deal.platform === 'eBay' || url.includes('ebay');
+  }
+  return deal.platform === 'Kleinanzeigen' || deal.platform === 'eBay' || url.includes('kleinanzeigen') || url.includes('ebay');
+};
 
 // ... Implementation
 
@@ -252,16 +292,27 @@ const parseGermanPrice = (priceStr: string): number => {
 export const executeSavedSearch = async (criteria: SavedSearchCriteria): Promise<LiveDeal[]> => {
   try {
     return await withAI(async (ai, model) => {
-        const siteFilter = criteria.includeEbay ? "(site:ebay.de OR site:kleinanzeigen.de)" : "site:kleinanzeigen.de";
+        const platform = resolveSearchPlatform(criteria);
+        const siteFilter = buildSiteFilter(platform);
         
         // IMPROVEMENT: Remove price filter from Google Query. 
         // Strict price operators (e.g. €1..€500) often break Kleinanzeigen results if price isn't indexed perfectly.
         // We filter in JS later.
         const negativeFilters = '-suche -kaufe -"sucht" -"suche grafikkarte"'; 
         const googleQuery = `${criteria.query} ${siteFilter} ${negativeFilters} -intitle:Anzeige`;
+        const customNote = criteria.customUrl?.trim()
+          ? `\nPrefer listings from this page when possible: ${criteria.customUrl.trim()}`
+          : '';
+        const platformNote =
+          platform === 'kleinanzeigen'
+            ? 'Only include Kleinanzeigen.de listings.'
+            : platform === 'ebay'
+              ? 'Only include eBay.de listings.'
+              : 'Include listings from both Kleinanzeigen.de and eBay.de.';
 
         const prompt = `
           Perform a Google Search: ${googleQuery}
+          ${platformNote}${customNote}
           
           Extract sales listings. 
           Important: Look for Price in the snippet (e.g. "50 €", "50€", "50 EUR", "VB").
@@ -317,6 +368,8 @@ export const executeSavedSearch = async (criteria: SavedSearchCriteria): Promise
            });
         }
 
+        deals = deals.filter(d => matchesSearchPlatform(d, platform));
+
         // FILTERING logic
         if (criteria.maxPrice > 0) {
            deals = deals.filter(d => {
@@ -336,7 +389,11 @@ export const executeSavedSearch = async (criteria: SavedSearchCriteria): Promise
     });
   } catch (error: any) {
     console.error("Saved Search Error", error);
-    return [];
+    const msg = error?.message || String(error);
+    if (msg.includes('VITE_GEMINI_API_KEY')) throw error;
+    throw new Error(msg.includes('429') || msg.includes('exhausted')
+      ? 'AI quota exceeded. Try again later or check your Gemini API key.'
+      : `Search failed: ${msg}`);
   }
 };
 
@@ -469,13 +526,17 @@ export const analyzeSourcingStrategy = async (items: InventoryItem[]): Promise<S
   }
 };
 
-export const findLiveDeals = async (strategy: SourcingStrategy): Promise<LiveDeal[]> => {
+export const findLiveDeals = async (
+  strategy: SourcingStrategy,
+  platform: DealSearchPlatform = 'both'
+): Promise<LiveDeal[]> => {
   const query = [strategy.targetCategory, strategy.title].filter(Boolean).join(' ').trim() || strategy.targetCategory;
   return executeSavedSearch({
     id: 'temp',
     query,
     maxPrice: strategy.maxBuyPrice,
-    includeEbay: true,
+    platform,
+    includeEbay: platform !== 'kleinanzeigen',
   });
 };
 
