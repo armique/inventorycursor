@@ -1502,7 +1502,7 @@ const InventoryList: React.FC<Props> = ({
                         <button
                           type="button"
                           onClick={toggleExpand}
-                          className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
+                          className="p-1 mr-3 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
                           title={isExpanded ? 'Collapse components' : 'Expand to show components'}
                           aria-expanded={isExpanded}
                           aria-label={isExpanded ? 'Collapse bundle components' : 'Expand bundle components'}
