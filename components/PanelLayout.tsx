@@ -1,8 +1,8 @@
 import React, { Suspense } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
-  Package, PlusCircle, Settings, RefreshCw, Briefcase, Trash2, CloudUpload, LayoutDashboard, BarChart3,
-  Layers, Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe, Tag, Sparkles, AlertCircle, Radar, Activity, Swords,
+  Package, PlusCircle, Settings, RefreshCw, Briefcase, Trash2, CloudUpload, LayoutDashboard,
+  Layers, Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe, Tag, Radar, Activity,
 } from 'lucide-react';
 import PanelBreadcrumbs from './PanelBreadcrumbs';
 import { usePanelLocale } from '../context/PanelLocaleContext';
@@ -114,16 +114,12 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
 
   const nav = [
     { to: '/panel/dashboard', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
-    { to: '/panel/analytics', icon: <BarChart3 size={20} />, label: 'Category analytics' },
-    { to: '/panel/category-suggestions', icon: <Sparkles size={20} />, label: 'Category suggestions' },
-    { to: '/panel/missing-specs', icon: <AlertCircle size={20} />, label: 'Missing specs' },
     { to: '/panel/inventory', icon: <Package size={20} />, label: 'Inventory' },
     { to: '/panel/add', icon: <PlusCircle size={20} />, label: 'Add Item' },
     { to: '/panel/add-bulk', icon: <Layers size={20} />, label: 'Bulk Entry' },
     { to: '/panel/builder', icon: <Briefcase size={20} />, label: 'PC Builder' },
     { to: '/panel/pricing', icon: <Tag size={20} />, label: 'Price check' },
     { to: '/panel/deal-hunter', icon: <Radar size={20} />, label: 'Deal hunter' },
-    { to: '/panel/competitors', icon: <Swords size={20} />, label: 'Competitors' },
     { to: '/panel/health-check', icon: <Activity size={20} />, label: 'Health check' },
     { to: '/panel/invoices', icon: <Receipt size={20} />, label: 'Invoice Manager' },
     { to: '/panel/action-history', icon: <History size={20} />, label: 'Action history' },
@@ -267,10 +263,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             )
             .map(({ to, icon, label }) => {
               const isActive = location.pathname === to;
-              const short =
-                label === 'Category analytics'
-                  ? 'Analytics'
-                  : label;
               return (
                 <Link
                   key={to}
@@ -286,7 +278,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
                   >
                     {icon}
                   </span>
-                  <span className="truncate">{short}</span>
+                  <span className="truncate">{label}</span>
                 </Link>
               );
             })}

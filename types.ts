@@ -219,16 +219,6 @@ export interface StoreCatalogItem {
   quantity?: number;
 }
 
-export interface Competitor {
-  id: string;
-  name: string;
-  platform: Platform;
-  lastCheck?: string;
-  notes?: string;
-  aiAnalysis?: string;
-  observedItems?: { title: string; price: string }[];
-}
-
 export interface BackupEntry {
   id: string;
   date: string;

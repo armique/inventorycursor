@@ -17,11 +17,7 @@ const LABELS: Record<string, string> = {
   trash: 'Trash',
   'store-management': 'Store',
   settings: 'Settings',
-  analytics: 'Analytics',
-  'category-suggestions': 'Category suggestions',
-  'missing-specs': 'Missing specs',
   'health-check': 'Health check',
-  competitors: 'Competitors',
 };
 
 const PanelBreadcrumbs: React.FC = () => {

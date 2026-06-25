@@ -662,19 +662,6 @@ export const generateCrossPostingContent = async (item: InventoryItem): Promise<
   } catch { return null; }
 };
 
-export const analyzeCompetitor = async (sellerName: string): Promise<any> => {
-  try {
-    return await withAI(async (ai, model) => {
-       const response = await ai.models.generateContent({
-          model: model,
-          contents: `Analyze eBay seller "${sellerName}". JSON Output with inventory analysis.`,
-          config: { responseMimeType: "application/json", tools: [{ googleSearch: {} }] }
-       });
-       return JSON.parse(response.text || '{}');
-    });
-  } catch { return null; }
-};
-
 export const analyzeMarket = async (query: string, context: string) => { 
   try {
     return await withAI(async (ai, model) => {
