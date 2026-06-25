@@ -11,6 +11,7 @@ import { signInWithGooglePopup, logOut } from '../services/firebaseService';
 import QuotaMonitor from './QuotaMonitor';
 import GlobalSearch from './GlobalSearch';
 import EbaySyncBanner from './EbaySyncBanner';
+import OnboardingWizard, { isOnboardingComplete } from './OnboardingWizard';
 import { InventoryItem, Expense, BusinessSettings } from '../types';
 
 interface SyncState {
@@ -41,6 +42,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   const { locale, setLocale } = usePanelLocale();
   usePanelKeyboardShortcuts();
   const [signingIn, setSigningIn] = React.useState(false);
+  const [showOnboarding, setShowOnboarding] = React.useState(() => !isOnboardingComplete());
   /** Inventory/trash use internal scroll + docked bulk bar; other pages scroll normally. */
   const isDockedPanelPage = /^\/panel\/(inventory|trash)(\/|$)/.test(location.pathname);
 
@@ -134,6 +136,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
 
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 font-sans">
+      {showOnboarding && <OnboardingWizard onComplete={() => setShowOnboarding(false)} />}
       {/* DESKTOP SIDEBAR */}
       <aside className="w-64 bg-gradient-to-b from-slate-900 to-slate-800 text-white flex flex-col hidden md:flex border-r border-slate-700/50">
         <div className="p-6 space-y-4">

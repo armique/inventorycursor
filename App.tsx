@@ -48,7 +48,6 @@ import { generateExpensesFromRecurring } from './services/recurringExpenseServic
 import { Analytics } from '@vercel/analytics/react';
 import { PanelLocaleProvider } from './context/PanelLocaleContext';
 import { UndoToastProvider, useUndoToastContext } from './context/UndoToastContext';
-import OnboardingWizard, { isOnboardingComplete } from './components/OnboardingWizard';
 import { appendUndoHistory } from './utils/appendUndoHistory';
 import { persistSnapshotToLocalStorage, scheduleBackgroundWork } from './services/backgroundPersistence';
 
@@ -1006,8 +1005,6 @@ const App: React.FC = () => {
   }, [handleUpdate]);
 
   const showUndoRef = useRef<(msg: string, onUndo: () => void) => void>(() => {});
-  const [showOnboarding, setShowOnboarding] = useState(() => !isOnboardingComplete());
-
   const handleDelete = useCallback((id: string) => {
     const item = items.find((i) => i.id === id);
     if (!item) return;
@@ -1328,7 +1325,6 @@ const App: React.FC = () => {
       <UndoToastProvider>
       <UndoToastBridge showUndoRef={showUndoRef} />
       <PanelLocaleProvider>
-      {showOnboarding && <OnboardingWizard onComplete={() => setShowOnboarding(false)} />}
       <Routes>
         <Route path="/" element={<StorefrontPage />} />
         <Route path="/item/:id" element={<StorefrontPage />} />
