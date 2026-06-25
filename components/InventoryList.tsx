@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect, useRef, useDeferredValue, startTransition } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useLayoutEffect, useRef, useDeferredValue, startTransition } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { formatEUR, parseLocaleMoney, parseLocaleNumber } from '../utils/formatMoney';
 import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSortKey, buildTimeGaugeSortKeyMap } from '../utils/inventoryTimeGauge';
@@ -2988,6 +2988,7 @@ const InventoryList: React.FC<Props> = ({
       {splitView ? (
         <div className="flex flex-1 min-h-0 gap-2 flex-col lg:flex-row">
           <InventoryListTablePane
+            key="split-active"
             paneItems={sortedActiveItems}
             paneStatus="ACTIVE"
             paneLabel="Active"
@@ -3006,6 +3007,7 @@ const InventoryList: React.FC<Props> = ({
             bulkBarSpacer={selectedIds.length > 0}
           />
           <InventoryListTablePane
+            key="split-sold"
             paneItems={sortedSoldItems}
             paneStatus="SOLD"
             paneLabel="Sold"
@@ -3025,7 +3027,9 @@ const InventoryList: React.FC<Props> = ({
           />
         </div>
       ) : (
+        <div className="flex flex-1 min-h-0 min-w-0 flex-col">
         <InventoryListTablePane
+          key={`single-${statusFilter}`}
           paneItems={sortedItems}
           paneStatus={statusFilter}
           scrollRef={tableContainerRef}
@@ -3043,6 +3047,7 @@ const InventoryList: React.FC<Props> = ({
           bulkBarSpacer={selectedIds.length > 0}
           className={statusFilter === 'SOLD' ? 'hidden lg:flex flex-1' : 'flex flex-1'}
         />
+        </div>
       )}
 
       <div className="shrink-0 w-full">
@@ -3427,7 +3432,7 @@ type InventoryTableBodyProps = {
   visibleColumns: ColumnId[];
   renderRowCells: (item: InventoryItem, isSelected: boolean) => React.ReactNode;
   getRowActivityKey: (item: InventoryItem) => string;
-  scrollRef: React.RefObject<HTMLDivElement | null>;
+  scrollElement: HTMLDivElement | null;
   rowHeightEstimate: number;
   bulkBarSpacer: boolean;
 };
@@ -3438,7 +3443,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
   visibleColumns,
   renderRowCells,
   getRowActivityKey,
-  scrollRef,
+  scrollElement,
   rowHeightEstimate,
   bulkBarSpacer,
 }: InventoryTableBodyProps) {
@@ -3446,11 +3451,19 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
 
   const rowVirtualizer = useVirtualizer({
     count: sortedItems.length,
-    getScrollElement: () => scrollRef.current,
+    getScrollElement: () => scrollElement,
     estimateSize: () => rowHeightEstimate,
     overscan: 5,
     getItemKey: (index) => sortedItems[index]?.id ?? index,
   });
+
+  useLayoutEffect(() => {
+    if (!useVirtual || !scrollElement) return;
+    rowVirtualizer.measure();
+    const ro = new ResizeObserver(() => rowVirtualizer.measure());
+    ro.observe(scrollElement);
+    return () => ro.disconnect();
+  }, [scrollElement, useVirtual, sortedItems.length, rowVirtualizer]);
 
   if (sortedItems.length === 0) {
     return (
@@ -3596,6 +3609,18 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
   bulkBarSpacer,
   className = 'flex flex-1',
 }) => {
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
+
+  const attachScrollRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      setScrollElement(node);
+      if (scrollRef) {
+        (scrollRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+      }
+    },
+    [scrollRef]
+  );
+
   const timeGaugeTitle =
     paneStatus === 'SOLD' ? 'Sale speed' : paneStatus === 'ACTIVE' ? 'Stock age' : 'Hold / sale';
   const paneSelectedCount = paneItems.filter((i) => selectedIdSet.has(i.id)).length;
@@ -3611,7 +3636,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
           <span className="text-[10px] font-bold text-slate-400">{paneItems.length} items</span>
         </div>
       )}
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-x-auto overflow-y-auto custom-scrollbar pb-3">
+      <div ref={attachScrollRef} className="flex-1 min-h-0 overflow-x-auto overflow-y-auto custom-scrollbar pb-3">
         <table className="w-full text-left border-collapse min-w-[1160px] table-fixed" data-inventory-table data-density={listDensity}>
           <thead className="sticky top-0 z-10 bg-white">
             <tr className="bg-slate-50/80 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-widest backdrop-blur-sm">
@@ -3709,7 +3734,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
             visibleColumns={visibleColumns}
             renderRowCells={renderRowCells}
             getRowActivityKey={getRowActivityKey}
-            scrollRef={scrollRef}
+            scrollElement={scrollElement}
             rowHeightEstimate={rowHeightEstimate}
             bulkBarSpacer={bulkBarSpacer}
           />
