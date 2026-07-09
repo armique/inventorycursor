@@ -131,7 +131,6 @@ const ALL_COLUMNS: { id: ColumnId; label: string }[] = [
   { id: 'select', label: '' },
   { id: 'item', label: 'Asset Name' },
   { id: 'presence', label: 'Inv' },
-  { id: 'parseSpecs', label: 'Parse' },
   { id: 'category', label: 'Category' },
   { id: 'status', label: 'Status' },
   { id: 'buyPrice', label: 'Buy Price' },
@@ -140,7 +139,6 @@ const ALL_COLUMNS: { id: ColumnId; label: string }[] = [
   { id: 'buyDate', label: 'Acquired' },
   { id: 'timeGauge', label: 'Time' },
   { id: 'sellDate', label: 'Sold Date' },
-  { id: 'salePlatform', label: 'Sold on' },
   { id: 'actions', label: 'Actions' }
 ];
 
@@ -284,8 +282,8 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
       return ((timeGaugeSortKeyMap.get(a.id) ?? -1) - (timeGaugeSortKeyMap.get(b.id) ?? -1)) * dir;
     }
 
-    let valA: unknown = (a as Record<string, unknown>)[key];
-    let valB: unknown = (b as Record<string, unknown>)[key];
+    let valA: unknown = (a as unknown as Record<string, unknown>)[key];
+    let valB: unknown = (b as unknown as Record<string, unknown>)[key];
 
     if (key === 'buyDate' || key === 'sellDate') {
       const tA = valA ? new Date(valA as string).getTime() : 0;
@@ -376,7 +374,7 @@ const InventoryList: React.FC<Props> = ({
     return merged;
   });
 
-  const defaultColumnOrder: ColumnId[] = ['select', 'item', 'presence', 'parseSpecs', 'category', 'status', 'buyPrice', 'sellPrice', 'profit', 'buyDate', 'timeGauge', 'sellDate', 'salePlatform', 'actions'];
+  const defaultColumnOrder: ColumnId[] = ['select', 'item', 'presence', 'category', 'status', 'buyPrice', 'sellPrice', 'profit', 'buyDate', 'timeGauge', 'sellDate', 'actions'];
   const [columnOrder, setColumnOrder] = useState<ColumnId[]>(() => {
     const saved = loadState<ColumnId[]>('column_order', defaultColumnOrder);
     const base = saved && saved.length > 0 ? saved : defaultColumnOrder;
@@ -386,11 +384,8 @@ const InventoryList: React.FC<Props> = ({
       if (buy >= 0) next.splice(buy + 1, 0, 'timeGauge');
       else next.splice(Math.max(0, next.length - 1), 0, 'timeGauge');
     }
-    if (!next.includes('salePlatform')) {
-      const sell = next.indexOf('sellDate');
-      if (sell >= 0) next.splice(sell + 1, 0, 'salePlatform');
-      else next.splice(Math.max(0, next.length - 1), 0, 'salePlatform');
-    }
+    // Remove any legacy salePlatform or parseSpecs entries from saved order
+    next = next.filter(id => id !== 'salePlatform' && id !== 'parseSpecs');
     return next;
   });
   const [hiddenColumnIds, setHiddenColumnIds] = useState<ColumnId[]>(() => loadState<ColumnId[]>('hidden_columns', []));
@@ -398,6 +393,17 @@ const InventoryList: React.FC<Props> = ({
   const columnsPanelRef = useRef<HTMLDivElement>(null);
   const columnWidthsRef = useRef(columnWidths);
   const columnResizeRef = useRef<{ colId: ColumnId; startX: number; startW: number } | null>(null);
+
+  // Migration: strip any legacy ghost columns (salePlatform, parseSpecs) that may
+  // still be present in an already-mounted component's state (e.g. after HMR).
+  useEffect(() => {
+    const LEGACY_COLS = ['salePlatform', 'parseSpecs'] as string[];
+    if (columnOrder.some(id => LEGACY_COLS.includes(id))) {
+      setColumnOrder(prev => prev.filter(id => !LEGACY_COLS.includes(id)));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     columnWidthsRef.current = columnWidths;
   }, [columnWidths]);
@@ -427,6 +433,7 @@ const InventoryList: React.FC<Props> = ({
   const [editingCell, setEditingCell] = useState<{ itemId: string, field: ColumnId } | null>(null);
   const [editValue, setEditValue] = useState<string | number>('');
   const [parsingSingleId, setParsingSingleId] = useState<string | null>(null);
+  const [activeAiDropdownId, setActiveAiDropdownId] = useState<string | null>(null);
   const rowClickTimeoutRef = useRef<number | null>(null);
 
   // Sync search from URL ?q= (e.g. from global search)
@@ -502,6 +509,21 @@ const InventoryList: React.FC<Props> = ({
     document.addEventListener('mousedown', handle);
     return () => document.removeEventListener('mousedown', handle);
   }, [showRecentDropdown]);
+
+  // Close AI actions dropdown when clicking outside
+  useEffect(() => {
+    if (!activeAiDropdownId) return;
+    const handle = () => {
+      setActiveAiDropdownId(null);
+    };
+    const timer = setTimeout(() => {
+      document.addEventListener('click', handle);
+    }, 50);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('click', handle);
+    };
+  }, [activeAiDropdownId]);
 
   const toggleColumnVisibility = (id: ColumnId) => {
     const visible = visibleColumns.length;
@@ -711,10 +733,17 @@ const InventoryList: React.FC<Props> = ({
   };
 
   // Visible Columns (from order, excluding hidden) — memoized so row renders are not invalidated every parent render
-  const visibleColumns = useMemo(
-    () => columnOrder.filter((id) => !hiddenColumnIds.includes(id)),
-    [columnOrder, hiddenColumnIds]
-  );
+  const visibleColumns = useMemo(() => {
+    const ALWAYS_HIDDEN = ['parseSpecs', 'salePlatform'];
+    return columnOrder.filter((id) => {
+      if (hiddenColumnIds.includes(id) || ALWAYS_HIDDEN.includes(id)) return false;
+      // In pure ACTIVE mode: hide SOLD DATE (always empty — items haven't been sold yet)
+      if (id === 'sellDate' && !splitView && statusFilter === 'ACTIVE') return false;
+      // In pure SOLD mode: hide STOCK AGE gauge (irrelevant once item is sold)
+      if (id === 'timeGauge' && !splitView && statusFilter === 'SOLD') return false;
+      return true;
+    });
+  }, [columnOrder, hiddenColumnIds, statusFilter, splitView]);
 
   // Calculate Date Range based on filter
   const dateRange = useMemo(() => {
@@ -1708,6 +1737,11 @@ const InventoryList: React.FC<Props> = ({
                       {item.isBundle && <span className="text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-black uppercase">Bundle</span>}
                       {item.isPC && <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-black uppercase">PC Build</span>}
                       {item.isDefective && <span className="text-[9px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-black uppercase">Defective</span>}
+                      {item.quantity != null && item.quantity > 1 && (
+                        <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-black uppercase">
+                          Qty: {item.quantity}
+                        </span>
+                      )}
                       {showFinancials && isMissingExplicitSalePlatform(item) && (
                         <span
                           className="inline-flex items-center gap-0.5 text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-black uppercase"
@@ -1821,114 +1855,6 @@ const InventoryList: React.FC<Props> = ({
                    )}
                 </div>
              </div>
-          </td>
-        );
-      case 'parseSpecs':
-        return (
-          <td key={id} className="inv-col-icons text-center border-r border-slate-100/90" style={style} onClick={(e) => e.stopPropagation()}>
-            <div className={`flex flex-row flex-wrap items-center justify-center ${dense ? 'gap-1' : 'gap-1.5'}`}>
-              {/* Visual indicator if AI listing text already exists */}
-              {item.marketDescription && (
-                <span
-                  className="w-2 h-2 rounded-full bg-emerald-500"
-                  title="AI listing text already generated – use copy button to reuse"
-                />
-              )}
-
-              {/* Tech specs parse (same as before) */}
-              <button
-                type="button"
-                onClick={() => handleParseSingleItem(item)}
-                disabled={parsingSingleId !== null}
-                title="Parse tech specs with AI (can correct name)"
-                className={`h-6 w-6 flex items-center justify-center rounded-lg text-slate-600 transition-colors ${
-                  parsingSingleId === item.id
-                    ? 'bg-amber-100 text-amber-700'
-                    : 'bg-slate-100 hover:bg-amber-100 hover:text-amber-700'
-                }`}
-              >
-                {parsingSingleId === item.id ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-              </button>
-
-              {/* Suggested price from sold history (eBay/Kleinanzeigen) */}
-              <button
-                type="button"
-                onClick={() => handleSuggestPrice(item)}
-                disabled={priceSuggestId === item.id}
-                className={`h-6 w-6 flex items-center justify-center rounded-lg border text-amber-700 ${
-                  item.sellPrice
-                    ? 'border-amber-200 bg-amber-50'
-                    : 'border-amber-200 bg-white'
-                } ${priceSuggestId === item.id ? 'opacity-70 cursor-wait' : 'hover:bg-amber-100'}`}
-                title="AI: Preisvorschlag auf Basis verkaufter Angebote (eBay.de, Kleinanzeigen)"
-              >
-                <Tag size={11} />
-              </button>
-
-              {/* Kleinanzeigen listing (green K) */}
-              <button
-                type="button"
-                onClick={() => handleGenerateListingDescription(item)}
-                disabled={listingGenId === item.id}
-                className={`h-6 w-6 flex items-center justify-center rounded-lg border text-emerald-700 ${
-                  item.marketDescription
-                    ? 'border-emerald-200 bg-emerald-50'
-                    : 'border-emerald-200 bg-white'
-                } ${listingGenId === item.id ? 'opacity-70 cursor-wait' : 'hover:bg-emerald-100'}`}
-                title={
-                  item.marketDescription
-                    ? 'AI: Kleinanzeigen Beschreibung ist bereits gespeichert – Klick generiert eine neue Version'
-                    : 'AI: Kleinanzeigen Beschreibung auf Deutsch generieren'
-                }
-              >
-                <span className="w-3.5 h-3.5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[8px]">K</span>
-              </button>
-
-              {/* eBay listing (blue E – same style, German text) */}
-              <button
-                type="button"
-                onClick={() => handleGenerateListingDescription(item)}
-                disabled={listingGenId === item.id}
-                className={`h-6 w-6 flex items-center justify-center rounded-lg border text-blue-700 ${
-                  item.marketDescription
-                    ? 'border-blue-200 bg-blue-50'
-                    : 'border-blue-200 bg-white'
-                } ${listingGenId === item.id ? 'opacity-70 cursor-wait' : 'hover:bg-blue-100'}`}
-                title={
-                  item.marketDescription
-                    ? 'AI: eBay Beschreibung ist bereits gespeichert – Klick generiert eine neue Version'
-                    : 'AI: eBay Beschreibung auf Deutsch generieren'
-                }
-              >
-                <span className="w-3.5 h-3.5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[8px]">E</span>
-              </button>
-
-              {/* Copy generated listing text */}
-              {item.marketDescription && (
-                <button
-                  type="button"
-                  onClick={() => handleCopyListingDescription(item)}
-                  className="h-6 w-6 flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                  title="Copy generated listing text (German) to clipboard"
-                >
-                  <Copy size={10} />
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    await copyKleinanzeigenListing(item);
-                  } catch {
-                    alert('Copy failed');
-                  }
-                }}
-                className="h-6 px-1.5 flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-[8px] font-black"
-                title="Copy Kleinanzeigen listing (title + description + price)"
-              >
-                KA
-              </button>
-            </div>
           </td>
         );
       case 'category':
@@ -2143,6 +2069,10 @@ const InventoryList: React.FC<Props> = ({
           item.ebayOrderId ? `Order ID: ${item.ebayOrderId}` : null,
         ].filter(Boolean).join(' • ') : undefined;
         const isEditingDate = editingCell?.itemId === item.id && editingCell?.field === id;
+        
+        const missing = isSoldOrTraded ? isMissingExplicitSalePlatform(item) : false;
+        const inferred = missing ? formatItemSalePlatform(item) : null;
+
         return (
            <td 
              key={id} 
@@ -2165,77 +2095,157 @@ const InventoryList: React.FC<Props> = ({
               ) : (
                  <div className="flex flex-col items-end gap-1">
                    <span>{(item as any)[id] || '-'}</span>
-                   {isSoldOrTraded && hasBuyerData && (
-                     <span className="text-[9px] font-medium text-slate-600 truncate max-w-full" title={buyerTitle}>
-                       {item.customer?.name || item.ebayUsername || `#${item.ebayOrderId}`}
-                     </span>
+                   {isSoldOrTraded && (
+                     <>
+                       {missing ? (
+                         <div className="flex flex-col items-end gap-1 mt-1" onClick={e => e.stopPropagation()}>
+                           <div className="flex items-center gap-1 scale-90 origin-right">
+                             <span title="Platform not set — pick where this was sold">
+                               <AlertTriangle size={12} className="text-amber-500 shrink-0" />
+                             </span>
+                             <SalePlatformQuickPickButtons
+                               dense={true}
+                               onPick={(platform) => handleQuickPlatformChange(item, platform)}
+                             />
+                           </div>
+                           {inferred && inferred !== 'Unknown' && (
+                             <p className="text-[8px] text-amber-700 truncate pl-4" title="Inferred from order ID / payment">
+                               Detect: {inferred}
+                             </p>
+                           )}
+                         </div>
+                       ) : (
+                         <div className="flex flex-col items-end gap-0.5 mt-0.5" onClick={e => e.stopPropagation()}>
+                           <select
+                             value={item.platformSold || ''}
+                             onChange={(e) => handleQuickPlatformChange(item, e.target.value as Platform | '')}
+                             className="py-0.5 pl-1 pr-4 rounded border border-slate-200 bg-white text-[9px] font-black text-blue-600 uppercase tracking-tight outline-none focus:ring-1 focus:ring-blue-400/40 appearance-none bg-no-repeat bg-right"
+                             style={{
+                               backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' fill='%232563eb' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`,
+                               backgroundPosition: 'right 0.15rem center',
+                             }}
+                           >
+                             <option value="">— Sold On —</option>
+                             {SALE_PLATFORM_OPTIONS.map((opt) => (
+                               <option key={opt.value} value={opt.value}>{opt.label}</option>
+                             ))}
+                           </select>
+                           {item.paymentType && (
+                             <span className="text-[8px] font-medium text-slate-400 mt-0.5 leading-none">
+                               {item.paymentType}
+                             </span>
+                           )}
+                         </div>
+                       )}
+                       
+                       {hasBuyerData && (
+                         <span className="text-[9px] font-medium text-slate-600 truncate max-w-full" title={buyerTitle}>
+                           {item.customer?.name || item.ebayUsername || `#${item.ebayOrderId}`}
+                         </span>
+                       )}
+                     </>
                    )}
                  </div>
               )}
            </td>
         );
       }
-      case 'salePlatform': {
-        const isSoldOrTraded = item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED;
-        if (!isSoldOrTraded) {
-          return (
-            <td key={id} className="text-xs text-slate-300 text-center" style={style}>—</td>
-          );
-        }
-        const missing = isMissingExplicitSalePlatform(item);
-        const inferred = missing ? formatItemSalePlatform(item) : null;
-        return (
-          <td key={id} style={style} onClick={(e) => e.stopPropagation()}>
-            {missing ? (
-              <div className="flex flex-col gap-1 min-w-0">
-                <div className="flex items-center gap-1">
-                  <span title="Platform not set — pick where this was sold">
-                    <AlertTriangle size={13} className="text-amber-500 shrink-0" />
-                  </span>
-                  <SalePlatformQuickPickButtons
-                    dense={dense}
-                    onPick={(platform) => handleQuickPlatformChange(item, platform)}
-                  />
-                </div>
-                {inferred && inferred !== 'Unknown' && (
-                  <p className="text-[9px] text-amber-700 truncate pl-4" title="Inferred from order ID / payment">
-                    Detected: {inferred}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <div className="flex items-center gap-1 min-w-0">
-                <select
-                  value={item.platformSold || ''}
-                  onChange={(e) => handleQuickPlatformChange(item, e.target.value as Platform | '')}
-                  className="w-full min-w-0 py-1.5 pl-2 pr-6 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-400/40 appearance-none bg-no-repeat bg-right"
-                  style={{
-                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`,
-                    backgroundPosition: 'right 0.35rem center',
-                  }}
-                >
-                  <option value="">— Select —</option>
-                  {SALE_PLATFORM_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </td>
-        );
-      }
       case 'actions':
         return (
           <td
             key={id}
-            className="text-right relative sticky right-0 z-[18] bg-white group-hover/row:bg-slate-50/98 border-l border-slate-200/90 shadow-[-6px_0_12px_-4px_rgba(15,23,42,0.07)]"
+            className="text-right relative sticky right-0 z-[18] bg-white group-hover/row:bg-slate-50 border-l border-slate-200/90 shadow-[-6px_0_12px_-4px_rgba(15,23,42,0.07)]"
             style={style}
           >
-            <div className="flex flex-wrap justify-end gap-0.5 opacity-100 sm:opacity-0 sm:group-hover/row:opacity-100 transition-opacity max-w-[7.5rem] ml-auto">
+            <div className={`flex flex-wrap justify-end gap-0.5 transition-opacity max-w-[7.5rem] ml-auto ${activeAiDropdownId === item.id ? 'opacity-100' : 'opacity-100 sm:opacity-0 sm:group-hover/row:opacity-100'}`}>
               {item.status === ItemStatus.IN_STOCK && (
                  <>
                    <button onClick={(e) => { e.stopPropagation(); navigate('/panel/pricing', { state: { query: item.name } }); }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md shrink-0" title="Check Market Price"><Tag size={14}/></button>
                    <button onClick={(e) => { e.stopPropagation(); setItemToCrossPost(item); }} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-md shrink-0" title="Cross-Post"><Share2 size={14}/></button>
+                   
+                   {/* Sparkles button (AI tools dropdown toggle) */}
+                   <div className="relative inline-block" onClick={e => e.stopPropagation()}>
+                     <button
+                       type="button"
+                       onClick={(e) => {
+                         e.stopPropagation();
+                         setActiveAiDropdownId(prev => prev === item.id ? null : item.id);
+                       }}
+                       className={`p-1.5 rounded-md shrink-0 transition-colors ${
+                         activeAiDropdownId === item.id 
+                           ? 'bg-amber-100 text-amber-700' 
+                           : 'text-amber-600 hover:bg-amber-50'
+                       }`}
+                       title="AI Assistant & Listing Tools"
+                     >
+                       {parsingSingleId === item.id ? (
+                         <Loader2 size={14} className="animate-spin text-amber-600" />
+                       ) : (
+                         <Sparkles size={14} />
+                       )}
+                     </button>
+                     
+                     {activeAiDropdownId === item.id && (
+                       <div 
+                         onClick={(e) => e.stopPropagation()} 
+                         className="absolute right-0 bottom-full mb-1 z-[150] w-56 rounded-xl border border-slate-200 bg-white shadow-xl p-1.5 text-left animate-in fade-in slide-in-from-bottom-2 duration-150"
+                       >
+                         <div className="px-2 py-1 border-b border-slate-100 flex items-center justify-between mb-1">
+                           <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">AI Listing Tools</span>
+                           {item.marketDescription && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Text generated" />}
+                         </div>
+                         <div className="space-y-0.5">
+                           <button
+                             type="button"
+                             onClick={() => { setActiveAiDropdownId(null); handleParseSingleItem(item); }}
+                             disabled={parsingSingleId !== null}
+                             className="w-full text-left px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50 rounded-lg flex items-center gap-2"
+                           >
+                             <Sparkles size={12} className="text-amber-500" /> Parse Specs (AI)
+                           </button>
+                           <button
+                             type="button"
+                             onClick={() => { setActiveAiDropdownId(null); handleSuggestPrice(item); }}
+                             disabled={priceSuggestId === item.id}
+                             className="w-full text-left px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50 rounded-lg flex items-center gap-2"
+                           >
+                             <Tag size={12} className="text-amber-500" /> Suggest Price (AI)
+                           </button>
+                           <button
+                             type="button"
+                             onClick={() => { setActiveAiDropdownId(null); handleGenerateListingDescription(item); }}
+                             disabled={listingGenId === item.id}
+                             className="w-full text-left px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50 rounded-lg flex items-center gap-2"
+                           >
+                             <FileText size={12} className="text-emerald-500" /> Generate Desc (AI)
+                           </button>
+                           {item.marketDescription && (
+                             <button
+                               type="button"
+                               onClick={() => { setActiveAiDropdownId(null); handleCopyListingDescription(item); }}
+                               className="w-full text-left px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50 rounded-lg flex items-center gap-2"
+                             >
+                               <Copy size={12} className="text-slate-500" /> Copy AI Text
+                             </button>
+                           )}
+                           <button
+                             type="button"
+                             onClick={async () => {
+                               setActiveAiDropdownId(null);
+                               try {
+                                 await copyKleinanzeigenListing(item);
+                               } catch {
+                                 alert('Copy failed');
+                               }
+                             }}
+                             className="w-full text-left px-2 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-50 rounded-lg flex items-center gap-2"
+                           >
+                             <span className="w-3 h-3 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[7px] font-bold">K</span> Copy Kleinanzeigen List
+                           </button>
+                         </div>
+                       </div>
+                     )}
+                   </div>
                  </>
               )}
               <button onClick={(e) => { e.stopPropagation(); handleEditClick(item); }} className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-md shrink-0" title="Edit">
@@ -3361,7 +3371,7 @@ const InventoryList: React.FC<Props> = ({
          <SaleModal 
             item={itemToSell} 
             taxMode={businessSettings.taxMode}
-            onSave={(updated) => { 
+            onSave={(updated, splitOff) => { 
                // When selling a PC or bundle, also stamp all child components
                // with the container's sale date. Child items keep their original buyDate.
                const childComponents =
@@ -3416,6 +3426,8 @@ const InventoryList: React.FC<Props> = ({
                  };
                  
                  onUpdate([updatedContainer, ...updatedChildren]);
+               } else if (splitOff) {
+                 onUpdate([updated, splitOff]);
                } else {
                  onUpdate([updated]); 
                }
@@ -3803,7 +3815,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
                 return (
                   <th
                     key={colId}
-                    className={`relative p-0 align-middle bg-slate-50/80 ${stickyActions ? 'sticky right-0 z-[40] shadow-[-8px_0_14px_-6px_rgba(15,23,42,0.1)] border-l border-slate-200/90' : ''}`}
+                    className={`relative p-0 align-middle ${stickyActions ? 'sticky right-0 z-[40] bg-slate-50 shadow-[-8px_0_14px_-6px_rgba(15,23,42,0.1)] border-l border-slate-200/90' : 'bg-slate-50/80'}`}
                     style={{ width: w, minWidth: w, maxWidth: w }}
                   >
                     <div

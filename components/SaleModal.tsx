@@ -10,7 +10,7 @@ import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 interface Props {
   item: InventoryItem;
   taxMode?: TaxMode;
-  onSave: (updatedItem: InventoryItem) => void;
+  onSave: (updatedItem: InventoryItem, splitOffItem?: InventoryItem) => void;
   onClose: () => void;
 }
 
@@ -34,6 +34,13 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
   const [hasFee, setHasFee] = useState(item.hasFee || false);
   const [feeAmount, setFeeAmount] = useState(item.feeAmount || 0);
   const [comment, setComment] = useState(item.comment2 || '');
+
+  const [quantityToSell, setQuantityToSell] = useState<number>(item.quantity || 1);
+  const [unitPrice, setUnitPrice] = useState<string>(
+    item.sellPrice != null
+      ? String(item.quantity && item.quantity > 0 ? Math.round((item.sellPrice / item.quantity) * 100) / 100 : item.sellPrice)
+      : ''
+  );
 
   const [ebayUsername, setEbayUsername] = useState(item.ebayUsername || '');
   const [ebayOrderId, setEbayOrderId] = useState(item.ebayOrderId || '');
@@ -149,7 +156,9 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
         ...(data.phone && { phone: data.phone }),
       }));
       if (data.amountReceivedNetEur != null && Number.isFinite(data.amountReceivedNetEur)) {
-        setSalePrice(formatEUR(data.amountReceivedNetEur));
+        const fmtPrice = formatEUR(data.amountReceivedNetEur);
+        setSalePrice(fmtPrice);
+        setUnitPrice(fmtPrice);
         setHasFee(false);
         setFeeAmount(0);
       }
@@ -177,7 +186,9 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
         setCustomer((prev) => ({ ...prev, name: data.buyerName! }));
       }
       if (data.agreedPriceEur != null && Number.isFinite(data.agreedPriceEur)) {
-        setSalePrice(formatEUR(data.agreedPriceEur));
+        const fmtPrice = formatEUR(data.agreedPriceEur);
+        setSalePrice(fmtPrice);
+        setUnitPrice(fmtPrice);
         setHasFee(false);
         setFeeAmount(0);
       }
@@ -206,28 +217,74 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
 
   const handleSave = () => {
     const finalFee = hasFee ? feeAmount : 0;
-    const parsedPrice = parseLocaleNumber(salePrice);
-    const priceNum = salePrice.trim() === '' || !Number.isFinite(parsedPrice) ? undefined : parsedPrice;
-    const profit = priceNum != null ? calculateProfit(priceNum, item.buyPrice, finalFee) : undefined;
+    
+    const isBatchItem = item.quantity != null && item.quantity > 1;
+    const qtySold = isBatchItem ? quantityToSell : 1;
+    
+    const rawPriceText = isBatchItem ? unitPrice : salePrice;
+    const parsedUnitPrice = parseLocaleNumber(rawPriceText);
+    const unitPriceNum = rawPriceText.trim() === '' || !Number.isFinite(parsedUnitPrice) ? undefined : parsedUnitPrice;
+    
+    const totalSellPrice = unitPriceNum != null ? unitPriceNum * qtySold : undefined;
+    const totalBuyPrice = item.buyPrice * qtySold;
+    
+    const profit = totalSellPrice != null ? calculateProfit(totalSellPrice, totalBuyPrice, finalFee) : undefined;
 
-    onSave({
-      ...item,
-      sellPrice: priceNum,
-      sellDate: saleDate,
-      paymentType,
-      platformSold,
-      hasFee,
-      feeAmount: finalFee,
-      comment2: comment,
-      customer,
-      status: ItemStatus.SOLD,
-      storeVisible: false,
-      profit: profit != null ? parseFloat(profit.toFixed(2)) : undefined,
-      ebayUsername,
-      ebayOrderId,
-      kleinanzeigenChatUrl,
-      kleinanzeigenChatImage
-    });
+    if (isBatchItem && qtySold < item.quantity!) {
+      // Split: remaining stock stays in original item
+      const updatedOriginal: InventoryItem = {
+        ...item,
+        quantity: item.quantity! - qtySold,
+      };
+
+      // Split off: sold part gets created as a new SOLD item
+      const splitOffSold: InventoryItem = {
+        ...item,
+        id: `${item.id}-sold-${Date.now()}`,
+        name: `${item.name} (Sold x${qtySold})`,
+        status: ItemStatus.SOLD,
+        quantity: qtySold,
+        buyPrice: totalBuyPrice,
+        sellPrice: totalSellPrice,
+        sellDate: saleDate,
+        paymentType,
+        platformSold,
+        hasFee,
+        feeAmount: finalFee,
+        comment2: comment,
+        customer,
+        profit: profit != null ? parseFloat(profit.toFixed(2)) : undefined,
+        ebayUsername,
+        ebayOrderId,
+        kleinanzeigenChatUrl,
+        kleinanzeigenChatImage,
+        storeVisible: false,
+      };
+
+      onSave(updatedOriginal, splitOffSold);
+    } else {
+      // Full sale of single item or entire batch
+      onSave({
+        ...item,
+        buyPrice: isBatchItem ? totalBuyPrice : item.buyPrice,
+        sellPrice: totalSellPrice,
+        sellDate: saleDate,
+        paymentType,
+        platformSold,
+        hasFee,
+        feeAmount: finalFee,
+        comment2: comment,
+        customer,
+        status: ItemStatus.SOLD,
+        storeVisible: false,
+        profit: profit != null ? parseFloat(profit.toFixed(2)) : undefined,
+        ebayUsername,
+        ebayOrderId,
+        kleinanzeigenChatUrl,
+        kleinanzeigenChatImage,
+        quantity: qtySold,
+      });
+    }
     onClose();
   };
 
@@ -257,16 +314,55 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
         <div className="p-8 space-y-8 overflow-y-auto scrollbar-hide flex-1">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="space-y-6">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Price & Date</label>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Euro className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                    <input type="text" inputMode="decimal" placeholder="0.00" className="w-full pl-10 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-lg" value={salePrice} onChange={(e) => setSalePrice(e.target.value)} />
+              {item.quantity != null && item.quantity > 1 ? (
+                <>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Quantity & Unit Price</label>
+                    <div className="flex gap-3">
+                      <div className="w-28">
+                        <input
+                          type="number"
+                          min="1"
+                          max={item.quantity}
+                          className="w-full px-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-lg text-center"
+                          value={quantityToSell}
+                          onChange={(e) => setQuantityToSell(Math.max(1, Math.min(item.quantity || 1, parseInt(e.target.value) || 1)))}
+                        />
+                        <span className="text-[9px] text-slate-400 font-bold block text-center mt-1">of {item.quantity} in stock</span>
+                      </div>
+                      <div className="relative flex-1">
+                        <Euro className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          className="w-full pl-10 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-lg"
+                          value={unitPrice}
+                          onChange={(e) => setUnitPrice(e.target.value)}
+                        />
+                        <span className="text-[9px] text-slate-400 font-bold block mt-1 ml-1">
+                          Total Revenue: €{((quantityToSell * (parseFloat(unitPrice) || 0))).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <input type="date" className="flex-1 px-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} />
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Sale Date</label>
+                    <input type="date" className="w-full px-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} />
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Price & Date</label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Euro className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                      <input type="text" inputMode="decimal" placeholder="0.00" className="w-full pl-10 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-lg" value={salePrice} onChange={(e) => setSalePrice(e.target.value)} />
+                    </div>
+                    <input type="date" className="flex-1 px-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} />
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="space-y-3">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2"><Globe size={12}/> Sold On</label>
