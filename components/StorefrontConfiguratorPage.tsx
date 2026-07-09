@@ -65,12 +65,18 @@ const StorefrontConfiguratorPage: React.FC = () => {
   const [uploadingAdId, setUploadingAdId] = useState<string | null>(null);
   const [showArchivedAds, setShowArchivedAds] = useState(false);
   const [showArchivedTrust, setShowArchivedTrust] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsub = subscribeToStorefrontConfig((data) => {
+    const unsub = subscribeToStorefrontConfig((data, error) => {
       const resolved = data ?? DEFAULT_STOREFRONT_CONFIG;
       setConfig(cloneConfig(resolved));
       setSavedConfig(cloneConfig(resolved));
+      setLoadError(
+        error
+          ? 'Could not load the live config (permission error) — showing defaults. Make sure the Firestore rules have been deployed (firebase deploy --only firestore:rules).'
+          : null
+      );
       setLoading(false);
     });
     return () => unsub();
@@ -264,6 +270,12 @@ const StorefrontConfiguratorPage: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {loadError && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 text-amber-800 text-sm px-4 py-3">
+          {loadError}
+        </div>
+      )}
 
       {/* Blocks: order + visibility + section text */}
       <SectionCard title="Page blocks" subtitle="Show/hide, reorder (align), and edit each section's heading text.">

@@ -837,7 +837,9 @@ export const DEFAULT_STOREFRONT_CONFIG: StorefrontConfig = {
  * Subscribe to the public storefront configurator settings (no auth required).
  * Used by the storefront page to render blocks in the admin-chosen order/visibility.
  */
-export function subscribeToStorefrontConfig(onData: (data: StorefrontConfig | null) => void): Unsubscribe {
+export function subscribeToStorefrontConfig(
+  onData: (data: StorefrontConfig | null, error?: Error) => void
+): Unsubscribe {
   const ctx = init();
   if (!ctx?.db) {
     onData(null);
@@ -851,6 +853,10 @@ export function subscribeToStorefrontConfig(onData: (data: StorefrontConfig | nu
     },
     (err) => {
       console.error("Storefront config snapshot error:", err);
+      // Unlike storeCatalog, this must still call back on error — otherwise a caller
+      // waiting on the first snapshot (e.g. the configurator's loading state) would
+      // hang forever if Firestore rules for this collection aren't deployed yet.
+      onData(null, err instanceof Error ? err : new Error(String(err)));
     }
   );
 }
