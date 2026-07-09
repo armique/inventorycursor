@@ -757,6 +757,165 @@ export async function writeStoreCatalog(payload: StoreCatalogPayload): Promise<v
   await setDoc(docRef, data);
 }
 
+// --- STOREFRONT CONFIG (public read) ---
+// Powers the "Storefront Configurator" panel page: block order/visibility, editable
+// section text, featured PC ads (with archive/restore), and trust-row items
+// (with archive/restore). Mirrors the storeCatalog singleton-doc pattern.
+
+const STOREFRONT_CONFIG_COLLECTION = "storefrontConfig";
+const STOREFRONT_CONFIG_DOC_ID = "public";
+
+export type StorefrontBlockId = 'hero' | 'categoryGrid' | 'promoAds' | 'bestSellers' | 'trustRow';
+
+export interface StorefrontBlockConfig {
+  id: StorefrontBlockId;
+  visible: boolean;
+  order: number;
+}
+
+export interface StorefrontPromoAd {
+  id: string;
+  name: string;
+  specLine: string;
+  price: number;
+  imageUrl?: string;
+  ctaLabel?: string;
+  visible: boolean;
+  archived: boolean;
+}
+
+export interface StorefrontTrustItem {
+  id: string;
+  icon: string;
+  title: string;
+  description: string;
+  visible: boolean;
+  archived: boolean;
+}
+
+export interface StorefrontConfig {
+  blocks: StorefrontBlockConfig[];
+  hero: { subtitle?: string; ctaLabel?: string; ctaSaleLabel?: string };
+  categoryGrid: { heading?: string; subheading?: string };
+  bestSellers: { heading?: string; subheading?: string };
+  promoAds: StorefrontPromoAd[];
+  trustItems: StorefrontTrustItem[];
+  updatedAt?: string;
+}
+
+export const DEFAULT_STOREFRONT_CONFIG: StorefrontConfig = {
+  blocks: [
+    { id: 'hero', visible: true, order: 0 },
+    { id: 'categoryGrid', visible: true, order: 1 },
+    { id: 'promoAds', visible: true, order: 2 },
+    { id: 'bestSellers', visible: true, order: 3 },
+    { id: 'trustRow', visible: true, order: 4 },
+  ],
+  hero: {},
+  categoryGrid: {},
+  bestSellers: {},
+  promoAds: [
+    {
+      id: 'default-promo',
+      name: 'ArmikTech Ultra Gaming PC',
+      specLine: 'Ryzen 9 · RTX 4080 · 32GB DDR5 · 2TB NVMe',
+      price: 2499,
+      ctaLabel: undefined,
+      visible: true,
+      archived: false,
+    },
+  ],
+  trustItems: [
+    { id: 'trust-checked', icon: 'ShieldCheck', title: '', description: '', visible: true, archived: false },
+    { id: 'trust-direct', icon: 'MessageSquare', title: '', description: '', visible: true, archived: false },
+    { id: 'trust-fair', icon: 'Tag', title: '', description: '', visible: true, archived: false },
+    { id: 'trust-support', icon: 'LifeBuoy', title: '', description: '', visible: true, archived: false },
+  ],
+};
+
+/**
+ * Subscribe to the public storefront configurator settings (no auth required).
+ * Used by the storefront page to render blocks in the admin-chosen order/visibility.
+ */
+export function subscribeToStorefrontConfig(onData: (data: StorefrontConfig | null) => void): Unsubscribe {
+  const ctx = init();
+  if (!ctx?.db) {
+    onData(null);
+    return () => {};
+  }
+  const docRef = doc(ctx.db, STOREFRONT_CONFIG_COLLECTION, STOREFRONT_CONFIG_DOC_ID);
+  return onSnapshot(
+    docRef,
+    (snap) => {
+      onData(snap.exists() ? (snap.data() as StorefrontConfig) : null);
+    },
+    (err) => {
+      console.error("Storefront config snapshot error:", err);
+    }
+  );
+}
+
+/** Write the storefront configurator settings. Requires auth. */
+export async function writeStorefrontConfig(payload: StorefrontConfig): Promise<void> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) throw new Error("Not signed in");
+  const docRef = doc(ctx.db, STOREFRONT_CONFIG_COLLECTION, STOREFRONT_CONFIG_DOC_ID);
+  const data = stripUndefined({
+    ...payload,
+    updatedAt: new Date().toISOString(),
+  });
+  await setDoc(docRef, data);
+}
+
+/**
+ * Upload an image for a storefront configurator asset (e.g. a featured PC ad photo)
+ * to Firebase Storage and return its public download URL. Requires auth.
+ *
+ * Path convention: storefrontAssets/{uid}/{assetId}/{timestamp}-{filename}
+ */
+export async function uploadStorefrontAsset(
+  file: File,
+  assetId: string,
+  onProgress?: (percent: number) => void
+): Promise<string> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.storage || !user) {
+    throw new Error("Not signed in or Firebase Storage not configured. Please sign in with Google first.");
+  }
+
+  const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+  const path = `storefrontAssets/${user.uid}/${assetId || "unknown"}/${Date.now()}-${safeName}`;
+  const ref = storageRef(ctx.storage, path);
+
+  const timeoutMs = 90_000;
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(
+      "Upload timed out after 90s. Enable Storage in Firebase Console → Build → Storage, then set Rules to allow writes for signed-in users."
+    )), timeoutMs)
+  );
+
+  try {
+    if (onProgress) onProgress(10);
+    const snapshot = await Promise.race([uploadBytes(ref, file), timeoutPromise]);
+    if (onProgress) onProgress(90);
+    const url = await Promise.race([getDownloadURL(snapshot.ref), timeoutPromise]);
+    if (onProgress) onProgress(100);
+    return url;
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    if (msg.includes("storage/unauthorized") || msg.includes("403") || msg.includes("does not have permission")) {
+      throw new Error(
+        "Firebase Storage permission denied. In Firebase Console go to Build → Storage → Rules (not Firestore) and set:\n" +
+        "  allow read, write: if request.auth != null;\n" +
+        "Then deploy rules and try uploading again."
+      );
+    }
+    throw err;
+  }
+}
+
 // --- STORE INQUIRIES ---
 
 const STORE_INQUIRIES_COLLECTION = "storeInquiries";

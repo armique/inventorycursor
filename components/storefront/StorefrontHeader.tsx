@@ -10,6 +10,8 @@ interface Props {
   onDarkModeToggle: () => void;
   wishlistCount: number;
   onHome: () => void;
+  categories?: string[];
+  onCategoryClick?: (category: string) => void;
 }
 
 const StorefrontHeader: React.FC<Props> = ({
@@ -20,12 +22,20 @@ const StorefrontHeader: React.FC<Props> = ({
   onDarkModeToggle,
   wishlistCount,
   onHome,
+  categories = [],
+  onCategoryClick,
 }) => (
   <header
     className={`sticky top-0 z-50 border-b backdrop-blur-xl ${
       darkMode ? 'bg-zinc-950/80 border-zinc-800' : 'bg-white/80 border-zinc-200/70'
     }`}
   >
+    <div className={`hidden sm:block text-[11px] ${darkMode ? 'bg-zinc-900 text-zinc-400' : 'bg-zinc-950 text-zinc-300'}`}>
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 h-8 flex items-center justify-center">
+        <span>{texts.tagline}</span>
+      </div>
+    </div>
+
     <div className="mx-auto max-w-7xl px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
       <button
         type="button"
@@ -36,16 +46,30 @@ const StorefrontHeader: React.FC<Props> = ({
           <span className="text-white font-black text-sm tracking-tight">AT</span>
         </div>
         <div className="min-w-0 text-left hidden sm:block">
-          <p className={`font-display font-bold text-base tracking-tight truncate ${darkMode ? 'text-white' : 'text-zinc-900'}`}>
+          <p className={`font-bold text-base tracking-tight truncate ${darkMode ? 'text-white' : 'text-zinc-900'}`}>
             {texts.title}
-          </p>
-          <p className={`text-[10px] font-medium truncate ${darkMode ? 'text-zinc-500' : 'text-zinc-500'}`}>
-            {texts.tagline}
           </p>
         </div>
       </button>
 
-      <nav className="flex items-center gap-1.5 sm:gap-2">
+      {categories.length > 0 && onCategoryClick && (
+        <nav className="hidden lg:flex items-center gap-5 flex-1 justify-center">
+          {categories.slice(0, 6).map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => onCategoryClick(c)}
+              className={`text-[13px] font-medium whitespace-nowrap transition-colors ${
+                darkMode ? 'text-zinc-300 hover:text-brand-400' : 'text-zinc-600 hover:text-brand-600'
+              }`}
+            >
+              {c}
+            </button>
+          ))}
+        </nav>
+      )}
+
+      <nav className="flex items-center gap-1.5 sm:gap-2 shrink-0">
         {wishlistCount > 0 && (
           <span
             className={`hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${

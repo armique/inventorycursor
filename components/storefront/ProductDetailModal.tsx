@@ -171,7 +171,7 @@ const ProductDetailModal: React.FC<Props> = ({
                 )}
               </div>
 
-              <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight leading-tight">{item.name}</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight leading-tight">{item.name}</h1>
 
               <div className="mt-5 flex items-baseline gap-3 flex-wrap">
                 {hasPrice ? (
@@ -258,7 +258,7 @@ const ProductDetailModal: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={onContact}
-                className="w-full py-4 rounded-2xl bg-brand-600 text-white font-bold text-sm hover:bg-brand-700 transition-colors inline-flex items-center justify-center gap-2 shadow-lg shadow-brand-600/20"
+                className="w-full py-4 rounded-full bg-brand-600 text-white font-bold text-sm hover:bg-brand-700 transition-colors inline-flex items-center justify-center gap-2 shadow-lg shadow-brand-600/20"
               >
                 <MessageCircle size={18} />
                 {texts.contact}

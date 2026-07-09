@@ -3,6 +3,7 @@ import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
   Package, PlusCircle, Settings, RefreshCw, Briefcase, Trash2, CloudUpload, LayoutDashboard,
   Layers, Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe, Tag, Radar, Activity,
+  Printer, LayoutTemplate,
 } from 'lucide-react';
 import PanelBreadcrumbs from './PanelBreadcrumbs';
 import { usePanelLocale } from '../context/PanelLocaleContext';
@@ -117,6 +118,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     { to: '/panel/inventory', icon: <Package size={20} />, label: 'Inventory' },
     { to: '/panel/add', icon: <PlusCircle size={20} />, label: 'Add Item' },
     { to: '/panel/add-bulk', icon: <Layers size={20} />, label: 'Bulk Entry' },
+    { to: '/panel/3d-print', icon: <Printer size={20} />, label: '3D Print' },
     { to: '/panel/builder', icon: <Briefcase size={20} />, label: 'PC Builder' },
     { to: '/panel/pricing', icon: <Tag size={20} />, label: 'Price check' },
     { to: '/panel/deal-hunter', icon: <Radar size={20} />, label: 'Deal hunter' },
@@ -127,6 +129,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     { to: '/panel/import', icon: <CloudUpload size={20} />, label: 'Import CSV' },
     { to: '/panel/trash', icon: <Trash2 size={20} />, label: 'Trash' },
     { to: '/panel/store-management', icon: <Globe size={20} />, label: 'Store management' },
+    { to: '/panel/storefront-configurator', icon: <LayoutTemplate size={20} />, label: 'Storefront configurator' },
     { to: '/panel/settings', icon: <Settings size={20} />, label: 'Settings', alert: !isCloudEnabled },
   ];
 

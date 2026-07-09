@@ -11,6 +11,9 @@ interface Props {
   onTabChange: (tab: 'all' | 'sale') => void;
   itemCount: number;
   saleCount: number;
+  subtitleOverride?: string;
+  ctaLabelOverride?: string;
+  ctaSaleLabelOverride?: string;
 }
 
 const StorefrontHero: React.FC<Props> = ({
@@ -22,40 +25,71 @@ const StorefrontHero: React.FC<Props> = ({
   onTabChange,
   itemCount,
   saleCount,
+  subtitleOverride,
+  ctaLabelOverride,
+  ctaSaleLabelOverride,
 }) => (
   <section className={`relative overflow-hidden border-b ${darkMode ? 'border-zinc-800' : 'border-zinc-200/80'}`}>
     <div
       className={`absolute inset-0 ${
         darkMode
-          ? 'bg-[radial-gradient(ellipse_80%_60%_at_50%_-20%,rgba(20,184,166,0.18),transparent),radial-gradient(ellipse_60%_40%_at_100%_0%,rgba(99,102,241,0.08),transparent)]'
-          : 'bg-[radial-gradient(ellipse_80%_60%_at_50%_-20%,rgba(20,184,166,0.12),transparent),radial-gradient(ellipse_60%_40%_at_100%_0%,rgba(99,102,241,0.06),transparent)]'
+          ? 'bg-[radial-gradient(ellipse_80%_60%_at_50%_-20%,rgba(10,132,255,0.18),transparent),radial-gradient(ellipse_60%_40%_at_100%_0%,rgba(10,132,255,0.08),transparent)]'
+          : 'bg-gradient-to-b from-white to-zinc-50'
       }`}
     />
-    <div
-      className="absolute inset-0 opacity-[0.35]"
-      style={{
-        backgroundImage: `url("data:image/svg+xml,%3Csvg width='32' height='32' viewBox='0 0 32 32' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 32V0h1v32H0zm31 0V0h1v32h-1zM0 0h32v1H0V0zm0 31h32v1H0v-1z' fill='%2394a3b8' fill-opacity='0.12'/%3E%3C/svg%3E")`,
-      }}
-    />
 
-    <div className="relative mx-auto max-w-7xl px-4 sm:px-6 py-10 sm:py-14">
-      <div className="max-w-2xl">
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider mb-4 border bg-white/60 dark:bg-zinc-900/60 backdrop-blur border-zinc-200/80 dark:border-zinc-700 text-brand-700 dark:text-brand-400">
-          <Sparkles size={12} />
-          {itemCount > 0 ? `${itemCount} ${texts.itemsAvailable}` : texts.tagline}
-        </div>
-        <h1 className={`font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight leading-[1.1] ${darkMode ? 'text-white' : 'text-zinc-900'}`}>
-          {texts.title}
-          <span className="block mt-1 text-lg sm:text-xl font-medium text-brand-600 dark:text-brand-400">
-            {texts.tagline}
-          </span>
-        </h1>
-        <p className={`mt-4 text-sm sm:text-base leading-relaxed max-w-xl ${darkMode ? 'text-zinc-400' : 'text-zinc-600'}`}>
-          {texts.heroSubtitle}
-        </p>
+    <div className="relative mx-auto max-w-3xl px-4 sm:px-6 py-16 sm:py-24 text-center flex flex-col items-center">
+      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider mb-5 border bg-white/60 dark:bg-zinc-900/60 backdrop-blur border-zinc-200/80 dark:border-zinc-700 text-brand-700 dark:text-brand-400">
+        <Sparkles size={12} />
+        {itemCount > 0 ? `${itemCount} ${texts.itemsAvailable}` : texts.tagline}
+      </div>
+      <h1 className={`text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05] ${darkMode ? 'text-white' : 'text-zinc-900'}`}>
+        {texts.title}
+      </h1>
+      <p className={`mt-3 text-lg sm:text-xl font-medium text-brand-600 dark:text-brand-400`}>
+        {texts.tagline}
+      </p>
+      <p className={`mt-4 text-sm sm:text-base leading-relaxed max-w-xl ${darkMode ? 'text-zinc-400' : 'text-zinc-600'}`}>
+        {subtitleOverride || texts.heroSubtitle}
+      </p>
+
+      <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <a
+          href="#bestsellers"
+          className="inline-flex items-center px-6 py-3 rounded-full bg-brand-600 text-white text-sm font-bold hover:bg-brand-700 transition-colors shadow-sm"
+        >
+          {ctaLabelOverride || texts.heroCta}
+        </a>
+        <button
+          type="button"
+          onClick={() => onTabChange('sale')}
+          className={`inline-flex items-center px-6 py-3 rounded-full text-sm font-bold transition-colors ${
+            darkMode ? 'text-brand-400 hover:bg-zinc-800' : 'text-brand-600 hover:bg-brand-50'
+          }`}
+        >
+          {ctaSaleLabelOverride || texts.heroCtaSale} &rsaquo;
+        </button>
       </div>
 
-      <div className="mt-8 flex flex-col sm:flex-row gap-3 max-w-2xl">
+      <div className="mt-12 mb-2">
+        <svg width="360" height="188" viewBox="0 0 440 230" aria-hidden="true">
+          <defs>
+            <linearGradient id="storefrontHeroGpu" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={darkMode ? '#52525b' : '#3a3a3c'} />
+              <stop offset="100%" stopColor={darkMode ? '#18181b' : '#1d1d1f'} />
+            </linearGradient>
+          </defs>
+          <rect x="60" y="60" width="320" height="110" rx="16" fill="url(#storefrontHeroGpu)" />
+          <circle cx="130" cy="115" r="42" fill="#0a0a0a" stroke="#3a3a3c" strokeWidth="2" />
+          <circle cx="130" cy="115" r="30" fill="none" stroke="#0a84ff" strokeWidth="2" />
+          <circle cx="240" cy="115" r="42" fill="#0a0a0a" stroke="#3a3a3c" strokeWidth="2" />
+          <circle cx="240" cy="115" r="30" fill="none" stroke="#0a84ff" strokeWidth="2" />
+          <rect x="340" y="80" width="10" height="70" rx="3" fill="#0a84ff" />
+          <rect x="60" y="176" width="320" height="10" rx="4" fill={darkMode ? '#3f3f46' : '#d2d2d7'} />
+        </svg>
+      </div>
+
+      <div className="mt-4 flex flex-col sm:flex-row gap-3 w-full max-w-2xl">
         <div className="relative flex-1">
           <Search size={18} className={`absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`} />
           <input

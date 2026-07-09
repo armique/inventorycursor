@@ -89,7 +89,7 @@ const ContactInquiryModal: React.FC<Props> = ({
             type="button"
             onClick={onSend}
             disabled={sending}
-            className="w-full py-3.5 rounded-xl bg-brand-600 text-white text-sm font-bold flex items-center justify-center gap-2 hover:bg-brand-700 disabled:opacity-60 transition-colors"
+            className="w-full py-3.5 rounded-full bg-brand-600 text-white text-sm font-bold flex items-center justify-center gap-2 hover:bg-brand-700 disabled:opacity-60 transition-colors"
           >
             {sending ? <Loader2 size={18} className="animate-spin" /> : <Send size={16} />}
             {texts.send}

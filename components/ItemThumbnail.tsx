@@ -1,93 +1,10 @@
 import React, { useState } from 'react';
-import {
-  Cpu, Monitor, HardDrive, Zap, Wind, Laptop, Smartphone, Tablet, Watch,
-  Gamepad2, Camera, Headphones, Keyboard, Mouse, Mic, Webcam, Router, Network,
-  Cable, Wrench, Gift, Package, Disc, Server, Database,
-  CircuitBoard, PcCase, Layers, Puzzle, Component,
-  type LucideIcon,
-} from 'lucide-react';
 import { InventoryItem } from '../types';
 import { CATEGORY_IMAGES } from '../services/hardwareDB';
+import { getCategoryIconForItem, type IconComponent } from './categoryIcons';
 
-/** Minimalistic icon per subcategory (then category fallback). Covers DEFAULT_CATEGORIES + Optical Drives, Fans, etc. */
-const SUBCATEGORY_ICON: Record<string, LucideIcon> = {
-  // Components
-  'Graphics Cards': Monitor,
-  'Processors': Cpu,
-  'Motherboards': CircuitBoard,
-  'RAM': Database,
-  'Storage (SSD/HDD)': HardDrive,
-  'Power Supplies': Zap,
-  'Cases': PcCase,
-  'Cooling': Wind,
-  'Optical Drives': Disc,
-  'Fans': Wind,
-  // PC
-  'Custom Built PC': Cpu,
-  'Pre-Built PC': Laptop,
-  'Server': Server,
-  'Workstation': Monitor,
-  // Laptops
-  'Gaming Laptop': Laptop,
-  'Ultrabook': Laptop,
-  'MacBook': Laptop,
-  'Chromebook': Laptop,
-  'Office Laptop': Laptop,
-  // Gadgets
-  'Smartphones': Smartphone,
-  'Tablets': Tablet,
-  'Smartwatches': Watch,
-  'Consoles': Gamepad2,
-  'Cameras': Camera,
-  'Audio': Headphones,
-  // Peripherals
-  'Monitors': Monitor,
-  'Keyboards': Keyboard,
-  'Mice': Mouse,
-  'Headsets': Headphones,
-  'Microphones': Mic,
-  'Webcams': Webcam,
-  // Network
-  'Routers': Router,
-  'Switches': Network,
-  'NAS': HardDrive,
-  'Cables': Cable,
-  // Software
-  'OS Licenses': Database,
-  'Office': Database,
-  'Antivirus': Database,
-  // Bundle
-  'PC Bundle': Gift,
-  'Peripheral Bundle': Gift,
-  'Component Set': Layers,
-  // Misc
-  'Cables': Cable,
-  'Adapters': Cable,
-  'Tools': Wrench,
-  'Merchandise': Gift,
-  'Spare Parts': Puzzle,
-};
-
-const CATEGORY_ICON: Record<string, LucideIcon> = {
-  'Components': Component,
-  'PC': Cpu,
-  'Laptops': Laptop,
-  'Gadgets': Smartphone,
-  'Peripherals': Keyboard,
-  'Network': Router,
-  'Software': Database,
-  'Bundle': Gift,
-  'Misc': Package,
-  'Unknown': Package,
-};
-
-function getIconForItem(item: { category?: string; subCategory?: string }): LucideIcon {
-  const sub = item.subCategory?.trim();
-  const cat = item.category?.trim();
-  if (sub && SUBCATEGORY_ICON[sub]) return SUBCATEGORY_ICON[sub];
-  if (cat && SUBCATEGORY_ICON[cat]) return SUBCATEGORY_ICON[cat];
-  if (cat && CATEGORY_ICON[cat]) return CATEGORY_ICON[cat];
-  return Package;
+function getIconForItem(item: { category?: string; subCategory?: string }): IconComponent {
+  return getCategoryIconForItem(item);
 }
 
 /** Returns a placeholder image URL for the item (subcategory/category) or null if none. */
@@ -164,4 +81,4 @@ export function CategoryIconBox({
 }
 
 export default ItemThumbnail;
-export { getIconForItem, SUBCATEGORY_ICON, CATEGORY_ICON };
+export { getIconForItem };

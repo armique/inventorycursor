@@ -17,11 +17,13 @@ const TrashPage = lazy(() => import('./components/TrashPage'));
 const PCBuilderWizard = lazy(() => import('./components/PCBuilderWizard'));
 const PriceCheck = lazy(() => import('./components/PriceCheck'));
 const StoreManagementPage = lazy(() => import('./components/StoreManagementPage'));
+const StorefrontConfiguratorPage = lazy(() => import('./components/StorefrontConfiguratorPage'));
 const LegalPage = lazy(() => import('./components/LegalPage'));
 const InvoiceManager = lazy(() => import('./components/InvoiceManager'));
 const ActionHistoryPage = lazy(() => import('./components/ActionHistoryPage'));
 const DealHunterPage = lazy(() => import('./components/DealHunterPage'));
 const HealthCheckPage = lazy(() => import('./components/HealthCheckPage'));
+const ThreeDPrintPage = lazy(() => import('./components/ThreeDPrintPage'));
 
 import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense, DashboardPreferences, ActionHistoryEntry, TaxMode, ItemUpdateOptions } from './types';
 import {
@@ -1371,6 +1373,7 @@ const App: React.FC = () => {
           <Route path="add-bulk" element={<BulkItemForm onSave={handleUpdate} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="edit/:id" element={<ItemForm onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="builder" element={<PCBuilderWizard items={items} onSave={handleUpdate} />} />
+          <Route path="3d-print" element={<ThreeDPrintPage items={items} onSave={handleUpdate} categories={categories} />} />
           <Route path="pricing" element={<PriceCheck />} />
           <Route path="deal-hunter" element={<DealHunterPage items={items} onUpdate={handleUpdate} />} />
           <Route path="health-check" element={<HealthCheckPage />} />
@@ -1405,6 +1408,7 @@ const App: React.FC = () => {
           <Route path="import" element={<SheetsImport onImport={handleImportBatch} onClearData={handleWipeData} />} />
           <Route path="trash" element={<TrashPage items={trash} onRestore={handleRestoreFromTrash} onPermanentDelete={handlePermanentDelete} />} />
           <Route path="store-management" element={<StoreManagementPage items={items} categories={categories} categoryFields={categoryFields} onUpdate={handleUpdate} onPublishCatalog={async () => { await writeStoreCatalog(buildStoreCatalog(items, categoryFields)); }} />} />
+          <Route path="storefront-configurator" element={<StorefrontConfiguratorPage />} />
           <Route path="settings" element={<SettingsPage items={items} trash={trash} expenses={expenses} monthlyGoal={monthlyGoal} dashboardPreferences={dashboardPrefs} actionHistory={actionHistory} onForcePush={handleForcePush} onRestoreItems={setItems} onRestoreBackup={handleRestoreBackup} onFixEncoding={handleFixEncoding} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} onUpdateCategoryStructure={handleUpdateCategoryStructure} onUpdateCategoryFields={handleUpdateCategoryFields} onRenameCategory={() => {}} onRenameSubCategory={() => {}} />} />
         </Route>
         <Route path="/auth/github/callback" element={<GitHubOAuthCallback />} />
