@@ -3654,7 +3654,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
   return (
     <tbody
       className="divide-y divide-slate-50"
-      style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative' }}
+      style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}
     >
       {rowVirtualizer.getVirtualItems().map((virtualRow) => {
         const item = sortedItems[virtualRow.index]!;
