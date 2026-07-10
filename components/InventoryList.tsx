@@ -746,7 +746,7 @@ const InventoryList: React.FC<Props> = ({
   };
 
   const toggleStoreVisible = (item: InventoryItem) => {
-    const currentlyVisible = item.storeVisible === true;
+    const currentlyVisible = item.storeVisible !== false; // opt-out: visible unless explicitly hidden
     const updated: InventoryItem = {
       ...item,
       storeVisible: !currentlyVisible,
@@ -1734,17 +1734,17 @@ const InventoryList: React.FC<Props> = ({
                 type="button"
                 onClick={() => toggleStoreVisible(item)}
                 className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border text-violet-700 ${
-                  item.storeVisible === true ? 'border-violet-200 bg-violet-50' : 'border-violet-200 bg-white'
+                  item.storeVisible !== false ? 'border-violet-200 bg-violet-50' : 'border-violet-200 bg-white'
                 }`}
                 title={
-                  item.storeVisible === true
+                  item.storeVisible !== false
                     ? 'Visible on storefront (click to hide)'
                     : 'Hidden from storefront (click to show)'
                 }
               >
                 <span
                   className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black ${
-                    item.storeVisible === true ? 'bg-violet-600 text-white' : 'bg-slate-200 text-violet-700'
+                    item.storeVisible !== false ? 'bg-violet-600 text-white' : 'bg-slate-200 text-violet-700'
                   }`}
                 >
                   S

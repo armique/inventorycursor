@@ -105,7 +105,7 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
   );
   const isCategoryFullyVisible = (cat: string) => {
     const catItems = storeVisibleItems.filter((i) => i.category === cat);
-    return catItems.length > 0 && catItems.every((i) => i.storeVisible === true);
+    return catItems.length > 0 && catItems.every((i) => i.storeVisible !== false);
   };
   const toggleCategoryVisibility = (cat: string) => {
     const shouldShow = !isCategoryFullyVisible(cat);
@@ -114,7 +114,7 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
     );
     onUpdate(next);
   };
-  const isAllVisible = storeVisibleItems.length > 0 && storeVisibleItems.every((i) => i.storeVisible === true);
+  const isAllVisible = storeVisibleItems.length > 0 && storeVisibleItems.every((i) => i.storeVisible !== false);
   const toggleAllVisibility = () => {
     const shouldShow = !isAllVisible;
     const next = items.map((it) => (it.status === IN_STOCK ? { ...it, storeVisible: shouldShow } : it));
@@ -144,7 +144,7 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
   };
 
   const handleExportCatalog = () => {
-    const visible = storeVisibleItems.filter((i) => i.storeVisible === true);
+    const visible = storeVisibleItems.filter((i) => i.storeVisible !== false);
     const headers = ['Name', 'Category', 'SubCategory', 'Price', 'SalePrice', 'OnSale', 'Visible', 'Description'];
     const rows = visible.map((i) => [
       (i.name || '').replace(/"/g, '""'),
@@ -153,7 +153,7 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
       i.sellPrice ?? '',
       i.storeSalePrice ?? '',
       i.storeOnSale ? '1' : '0',
-      i.storeVisible === true ? '1' : '0',
+      i.storeVisible !== false ? '1' : '0',
       (i.storeDescription || '').replace(/"/g, '""').replace(/\n/g, ' '),
     ]);
     const csv = [headers.join(','), ...rows.map((r) => r.map((c) => `"${c}"`).join(','))].join('\n');
@@ -182,8 +182,8 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
   }, [inquiries]);
 
   const totalInStock = storeVisibleItems.length;
-  const visibleCount = storeVisibleItems.filter((i) => i.storeVisible === true).length;
-  const onSaleCount = storeVisibleItems.filter((i) => i.storeVisible === true && i.storeOnSale).length;
+  const visibleCount = storeVisibleItems.filter((i) => i.storeVisible !== false).length;
+  const onSaleCount = storeVisibleItems.filter((i) => i.storeVisible !== false && i.storeOnSale).length;
 
   const [search, setSearch] = useState(() => localStorage.getItem('store_mgmt_search') || '');
   const [statusFilter, setStatusFilter] = useState<'all' | 'visible' | 'hidden'>(() => {
@@ -203,8 +203,8 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
   const filteredItems = storeVisibleItems
     .filter((item) => {
       if (categoryFilter !== 'all' && item.category !== categoryFilter) return false;
-      if (statusFilter === 'visible' && item.storeVisible !== true) return false;
-      if (statusFilter === 'hidden' && item.storeVisible === true) return false;
+      if (statusFilter === 'visible' && item.storeVisible === false) return false;
+      if (statusFilter === 'hidden' && item.storeVisible !== false) return false;
       if (saleFilter === 'sale' && !item.storeOnSale) return false;
       if (saleFilter === 'regular' && item.storeOnSale) return false;
       if (search.trim()) {
@@ -499,7 +499,7 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
                             />
                           </td>
                           <td className="px-2 py-3 align-top">
-                            {item.storeVisible === true ? (
+                            {item.storeVisible !== false ? (
                               <button
                                 type="button"
                                 onClick={() => setVisibility(item, false)}
@@ -738,7 +738,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
   const [sellPrice, setSellPriceState] = useState<string>(item.sellPrice != null ? String(item.sellPrice) : '');
   const [storeOnSale, setStoreOnSale] = useState(!!item.storeOnSale);
   const [storeSalePrice, setStoreSalePriceState] = useState<string>(item.storeSalePrice != null ? String(item.storeSalePrice) : '');
-  const [storeVisible, setStoreVisible] = useState<boolean>(item.storeVisible === true);
+  const [storeVisible, setStoreVisible] = useState<boolean>(item.storeVisible !== false);
   const [storeBadge, setStoreBadge] = useState<'auto' | 'New' | 'Price reduced' | 'none'>(item.storeBadge ?? 'auto');
   const [storeMetaTitle, setStoreMetaTitle] = useState(item.storeMetaTitle ?? '');
   const [storeMetaDescription, setStoreMetaDescription] = useState(item.storeMetaDescription ?? '');

@@ -172,7 +172,7 @@ const StorefrontPage: React.FC = () => {
     descEl.setAttribute('content', description);
   }, [galleryItem, lang]);
 
-  const items = useMemo(() => (catalog?.items ?? []).filter((i) => i.storeVisible === true), [catalog]);
+  const items = useMemo(() => (catalog?.items ?? []).filter((i) => i.storeVisible !== false), [catalog]);
   const saleCount = useMemo(() => items.filter((i) => i.storeOnSale).length, [items]);
 
   useEffect(() => {
