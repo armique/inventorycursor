@@ -1101,8 +1101,11 @@ const InventoryList: React.FC<Props> = ({
 
   const getRowActivityKey = useCallback(
     (item: InventoryItem) =>
-      `${editingCell?.itemId === item.id ? editingCell.field : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${expandedBundles.has(item.id) ? 'open' : 'shut'}`,
-    [editingCell, listingGenId, parsingSingleId, priceSuggestId, expandedBundles]
+      // Include editValue (not just which field is being edited) while this row is the one being
+      // edited — otherwise the key stays identical across every keystroke, the row's React.memo
+      // sees "no change," and the input silently stops updating after the very first keystroke.
+      `${editingCell?.itemId === item.id ? `${editingCell.field}:${editValue}` : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${expandedBundles.has(item.id) ? 'open' : 'shut'}`,
+    [editingCell, editValue, listingGenId, parsingSingleId, priceSuggestId, expandedBundles]
   );
 
   const showFinancials = splitView || (statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS');
