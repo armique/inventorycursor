@@ -922,37 +922,54 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                     <div className="space-y-2">
                       <div className="flex items-center justify-between gap-2 flex-wrap">
                         <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Item Photos</label>
-                        <div className="flex items-center gap-1.5">
-                          {imageProviders.length > 0 && (
-                            <select
-                              value={selectedProvider}
-                              onChange={(e) => setSelectedProvider(e.target.value)}
-                              title="Which photo search provider to use"
-                              className="px-2 py-1 bg-white border border-slate-200 rounded-lg text-[10px] font-black uppercase tracking-widest text-slate-600 outline-none focus:border-blue-500"
+                        {imageProviders.length > 0 && (
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedProvider('')}
+                              title="Try every configured provider until one returns results"
+                              className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border transition-colors ${
+                                selectedProvider === ''
+                                  ? 'bg-slate-900 text-white border-slate-900'
+                                  : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                              }`}
                             >
-                              <option value="">Auto (try all)</option>
-                              {imageProviders.map((p) => (
-                                <option key={p.name} value={p.name} disabled={!p.configured}>
-                                  {p.label}{!p.configured ? ' (not set up)' : ''}
-                                </option>
-                              ))}
-                            </select>
-                          )}
-                          <button
-                            type="button"
-                            onClick={handleFindRealPhotos}
-                            disabled={photoSearching || !formData.name}
-                            title="Search real product photos for this item name and use one as the default photo"
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            <Search size={12} className={photoSearching ? 'animate-spin' : ''} />
-                            {photoSearching ? 'Searching…' : 'Find real photos'}
-                          </button>
-                          <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-600 cursor-pointer hover:bg-slate-50">
-                            <Upload size={12} /> Add images
-                            <input type="file" accept="image/*" multiple className="hidden" onChange={handleMultiImageUpload} />
-                          </label>
-                        </div>
+                              Auto
+                            </button>
+                            {imageProviders.map((p) => (
+                              <button
+                                key={p.name}
+                                type="button"
+                                disabled={!p.configured}
+                                onClick={() => setSelectedProvider(p.name)}
+                                title={p.configured ? `Only use ${p.label}` : `${p.label} is not set up (missing API key on Vercel)`}
+                                className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                                  selectedProvider === p.name
+                                    ? 'bg-blue-600 text-white border-blue-600'
+                                    : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                                }`}
+                              >
+                                {p.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={handleFindRealPhotos}
+                          disabled={photoSearching || !formData.name}
+                          title="Search real product photos for this item name and use one as the default photo"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <Search size={12} className={photoSearching ? 'animate-spin' : ''} />
+                          {photoSearching ? 'Searching…' : 'Find real photos'}
+                        </button>
+                        <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-600 cursor-pointer hover:bg-slate-50">
+                          <Upload size={12} /> Add images
+                          <input type="file" accept="image/*" multiple className="hidden" onChange={handleMultiImageUpload} />
+                        </label>
                       </div>
 
                       {photoSearchError && (
