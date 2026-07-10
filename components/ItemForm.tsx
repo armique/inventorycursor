@@ -118,6 +118,13 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     vendor: ''
   });
 
+  // Mirrors formData so async callbacks (photo search) can read the truly-latest state after an
+  // `await`, instead of the stale snapshot closed over when the callback started.
+  const formDataRef = React.useRef(formData);
+  useEffect(() => {
+    formDataRef.current = formData;
+  }, [formData]);
+
   const [configStep, setConfigStep] = useState<'CATEGORY' | 'DETAILS' | 'DONE'>('CATEGORY');
   const [generatingSpecs, setGeneratingSpecs] = useState(false);
   const [showSpecs, setShowSpecs] = useState(true);
@@ -406,7 +413,10 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       }
       // No real photo yet: auto-apply the top match as the default so it "just works" with one
       // click, while still showing the rest of the results in case you'd rather pick a different one.
-      if (!hasUserPhotos) {
+      // Re-check freshly rather than trusting the `hasUserPhotos` captured when the button was
+      // clicked — the cached-photo auto-fill effect can assign one while this search is in flight.
+      const stillNoPhoto = getItemUserPhotoCount(formDataRef.current as InventoryItem) === 0;
+      if (stillNoPhoto) {
         await handlePickSearchedPhoto(results[0], results.slice(1));
       } else {
         setPhotoSearchResults(results);
@@ -418,18 +428,26 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     }
   };
 
-  /** Adds a searched photo, makes it the default/main image, and caches it for other items with the same name. */
+  /** Adds a searched photo, makes it the default/main image, and caches it for other items with the same name.
+   * Recomputes the merge against the freshest state inside the updater (not the `itemImageList`
+   * closure) so a concurrent update — e.g. the cached-photo auto-fill effect — can't get clobbered
+   * or duplicated by a race. */
   const handlePickSearchedPhoto = async (result: ImageSearchResult, remaining?: ImageSearchResult[]) => {
     const prepared = await prepareInventoryImagesForStorage([result.url]);
     if (!prepared.length) return;
     const stored = prepared[0];
-    const merged = normalizeImageList([stored, ...itemImageList.filter((u) => u !== stored)]);
-    setFormData((prev) => ({ ...prev, imageUrl: merged[0], imageUrls: merged }));
+    setFormData((prev) => {
+      const currentList = normalizeImageList([prev.imageUrl, ...(prev.imageUrls || [])]).filter(
+        (u) => !isCategoryPlaceholderImage(u)
+      );
+      const merged = normalizeImageList([stored, ...currentList.filter((u) => u !== stored)]);
+      return { ...prev, imageUrl: merged[0], imageUrls: merged };
+    });
     setPhotoSearchResults(
       remaining !== undefined ? remaining : (prev) => (prev ? prev.filter((r) => r.url !== result.url) : prev)
     );
-    if (formData.name) {
-      void setCachedProductPhoto(formData.name, stored);
+    if (formDataRef.current.name) {
+      void setCachedProductPhoto(formDataRef.current.name, stored);
     }
   };
 
