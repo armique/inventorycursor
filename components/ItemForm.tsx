@@ -439,21 +439,15 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     }
   };
 
-  /** Adds a searched photo, makes it the default/main image, and caches it for other items with the same name.
-   * Recomputes the merge against the freshest state inside the updater (not the `itemImageList`
-   * closure) so a concurrent update — e.g. the cached-photo auto-fill effect — can't get clobbered
-   * or duplicated by a race. */
+  /** Picking a photo from search results replaces the current default entirely — search results
+   * are alternatives for THE photo, not additions to a gallery, so ending up with the picked photo
+   * plus whatever was there before (auto-picked, cached, or a prior search pick) would be wrong.
+   * Use "Add images" separately if you want to keep multiple real photos. */
   const handlePickSearchedPhoto = async (result: ImageSearchResult, remaining?: ImageSearchResult[]) => {
     const prepared = await prepareInventoryImagesForStorage([result.url]);
     if (!prepared.length) return;
     const stored = prepared[0];
-    setFormData((prev) => {
-      const currentList = normalizeImageList([prev.imageUrl, ...(prev.imageUrls || [])]).filter(
-        (u) => !isCategoryPlaceholderImage(u)
-      );
-      const merged = normalizeImageList([stored, ...currentList.filter((u) => u !== stored)]);
-      return { ...prev, imageUrl: merged[0], imageUrls: merged };
-    });
+    setFormData((prev) => ({ ...prev, imageUrl: stored, imageUrls: [stored] }));
     setPhotoSearchResults(
       remaining !== undefined ? remaining : (prev) => (prev ? prev.filter((r) => r.url !== result.url) : prev)
     );
