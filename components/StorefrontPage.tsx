@@ -250,6 +250,16 @@ const StorefrontPage: React.FC = () => {
     return list;
   }, [filtered, filters.sortBy]);
 
+  // Live search dropdown under the hero search box — matches name/category regardless of the
+  // active category/price/tab filters, so you always see results for what you're typing.
+  const liveSearchResults = useMemo(() => {
+    const q = filters.search.trim().toLowerCase();
+    if (!q) return [];
+    return items
+      .filter((i) => i.name.toLowerCase().includes(q) || (i.category || '').toLowerCase().includes(q) || (i.subCategory || '').toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [items, filters.search]);
+
   const filterProps = {
     texts: TEXTS,
     darkMode,
@@ -352,6 +362,8 @@ const StorefrontPage: React.FC = () => {
             subtitleOverride={storefrontConfig.hero.subtitle}
             ctaLabelOverride={storefrontConfig.hero.ctaLabel}
             ctaSaleLabelOverride={storefrontConfig.hero.ctaSaleLabel}
+            liveResults={liveSearchResults}
+            onSelectResult={handleOpenDetails}
           />
         );
       case 'categoryGrid':

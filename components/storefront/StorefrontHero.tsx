@@ -1,6 +1,9 @@
-import React from 'react';
-import { Search, Sparkles, Tag } from 'lucide-react';
+import React, { useState } from 'react';
+import { Search, Sparkles, Tag, ImageOff } from 'lucide-react';
 import type { StorefrontTexts } from './storefrontTexts';
+import type { StoreItem } from './storefrontUtils';
+import { catalogItemImageList } from './storefrontUtils';
+import { formatEUR } from '../../utils/formatMoney';
 
 interface Props {
   texts: StorefrontTexts;
@@ -14,6 +17,9 @@ interface Props {
   subtitleOverride?: string;
   ctaLabelOverride?: string;
   ctaSaleLabelOverride?: string;
+  /** Top matches for the current search text, shown live below the input as you type. */
+  liveResults?: StoreItem[];
+  onSelectResult?: (item: StoreItem) => void;
 }
 
 const StorefrontHero: React.FC<Props> = ({
@@ -28,7 +34,13 @@ const StorefrontHero: React.FC<Props> = ({
   subtitleOverride,
   ctaLabelOverride,
   ctaSaleLabelOverride,
-}) => (
+  liveResults = [],
+  onSelectResult,
+}) => {
+  const [searchFocused, setSearchFocused] = useState(false);
+  const showLiveResults = searchFocused && search.trim().length > 0;
+
+  return (
   <section className={`relative overflow-hidden border-b ${darkMode ? 'border-zinc-800' : 'border-zinc-200/80'}`}>
     <div
       className={`absolute inset-0 ${
@@ -91,18 +103,72 @@ const StorefrontHero: React.FC<Props> = ({
 
       <div className="mt-4 flex flex-col sm:flex-row gap-3 w-full max-w-2xl">
         <div className="relative flex-1">
-          <Search size={18} className={`absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`} />
+          <Search size={18} className={`absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none z-10 ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`} />
           <input
             type="search"
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
             placeholder={texts.searchHero}
-            className={`w-full pl-11 pr-4 py-3.5 rounded-2xl text-sm font-medium outline-none transition-shadow focus:ring-2 focus:ring-brand-500/30 ${
+            className={`relative w-full pl-11 pr-4 py-3.5 rounded-2xl text-sm font-medium outline-none transition-shadow focus:ring-2 focus:ring-brand-500/30 ${
               darkMode
                 ? 'bg-zinc-900/90 border border-zinc-700 text-zinc-100 placeholder:text-zinc-500'
                 : 'bg-white border border-zinc-200/90 text-zinc-900 placeholder:text-zinc-400 shadow-sm'
             }`}
           />
+
+          {showLiveResults && (
+            <div
+              className={`absolute left-0 right-0 top-full mt-2 rounded-2xl border shadow-xl overflow-hidden z-20 text-left ${
+                darkMode ? 'bg-zinc-900 border-zinc-700' : 'bg-white border-zinc-200'
+              }`}
+            >
+              {liveResults.length === 0 ? (
+                <p className={`px-4 py-4 text-sm text-center ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                  No matching items.
+                </p>
+              ) : (
+                <ul className="max-h-96 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800">
+                  {liveResults.map((item) => {
+                    const img = catalogItemImageList(item)[0];
+                    const price = item.storeOnSale ? item.storeSalePrice : item.sellPrice;
+                    return (
+                      <li key={item.id}>
+                        <button
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => onSelectResult?.(item)}
+                          className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
+                            darkMode ? 'hover:bg-zinc-800' : 'hover:bg-zinc-50'
+                          }`}
+                        >
+                          <div className={`w-11 h-11 rounded-lg overflow-hidden shrink-0 flex items-center justify-center ${darkMode ? 'bg-zinc-800' : 'bg-zinc-100'}`}>
+                            {img ? (
+                              <img src={img} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <ImageOff size={16} className={darkMode ? 'text-zinc-600' : 'text-zinc-400'} />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className={`text-sm font-semibold truncate ${darkMode ? 'text-zinc-100' : 'text-zinc-900'}`}>{item.name}</p>
+                            <p className={`text-xs truncate ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                              {item.category}{item.subCategory ? ` · ${item.subCategory}` : ''}
+                            </p>
+                          </div>
+                          {price != null && (
+                            <span className={`text-sm font-bold shrink-0 ${darkMode ? 'text-brand-400' : 'text-brand-600'}`}>
+                              {formatEUR(Number(price))} €
+                            </span>
+                          )}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex gap-2 shrink-0">
           <button
@@ -143,6 +209,7 @@ const StorefrontHero: React.FC<Props> = ({
       </div>
     </div>
   </section>
-);
+  );
+};
 
 export default StorefrontHero;
