@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { InventoryItem } from '../types';
 import { CATEGORY_IMAGES } from '../services/hardwareDB';
 import { getCategoryIconForItem, type IconComponent } from './categoryIcons';
@@ -35,9 +35,14 @@ const ItemThumbnail: React.FC<ItemThumbnailProps> = ({
   useCategoryImage = false,
 }) => {
   const [imageError, setImageError] = useState(false);
-  const imgSrc = !imageError
-    ? item.imageUrl || item.imageUrls?.[0] || (useCategoryImage ? getCategoryImageUrl(item) : null) || undefined
-    : undefined;
+  const resolvedSrc = item.imageUrl || item.imageUrls?.[0] || (useCategoryImage ? getCategoryImageUrl(item) : null) || undefined;
+  // Reset the error flag whenever the underlying photo changes (e.g. after picking a new one and
+  // saving) — otherwise a row that once failed to load stays stuck on the fallback icon forever,
+  // even once the item has a working photo, since the component doesn't remount for an update.
+  useEffect(() => {
+    setImageError(false);
+  }, [resolvedSrc]);
+  const imgSrc = !imageError ? resolvedSrc : undefined;
   const Icon = getIconForItem(item);
 
   if (imgSrc) {
