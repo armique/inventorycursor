@@ -300,11 +300,9 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
         if (formData.subCategory === 'Storage (SSD/HDD)' && k.toLowerCase() === 'type' && !definedFields.some((df) => df.toLowerCase() === 'type')) {
           keyToUse = 'Drive Type';
         }
-        // Only keep the curated "important" fields for this category — discard anything extra
-        // the AI adds on top, so parsing only ever produces the fields buyers actually ask about.
-        if (definedFields.length > 0 && !findCuratedMatch(keyToUse)) {
-          return;
-        }
+        // Store whatever the AI returns (even fields beyond the curated list) so nothing is ever
+        // silently lost to an imperfect name match — the compact editor only *displays* the
+        // curated fields (see renderSpecsEditor), it doesn't need parsing itself to discard data.
         newSpecs[keyToUse] = v;
         nextAi[keyToUse] = v;
       });
