@@ -68,10 +68,14 @@ type AppSyncSnapshot = {
   actionHistory: ActionHistoryEntry[];
 };
 
-/** When merging an update into an existing item, preserve these from the old item if the update doesn't provide them (so renames/edits from inventory don't wipe store data). */
+/** When merging an update into an existing item, preserve these from the old item if the update
+ * doesn't provide them (so renames/edits from inventory don't wipe store data). Deliberately
+ * excludes sellPrice/storePrice — those are actively user-editable numeric fields with real
+ * "clear to remove" semantics (e.g. clearing a price in the inline table editor); restoring the
+ * old value whenever the new one is undefined made it impossible to ever actually clear them. */
 const PRESERVE_FROM_OLD_IF_UPDATE_MISSING: (keyof InventoryItem)[] = [
   'imageUrl', 'imageUrls', 'storeGalleryUrls', 'storeDescription', 'storeVisible', 'storeOnSale', 'storeSalePrice',
-  'storePrice', 'specs', 'componentIds', 'comment1', 'comment2', 'vendor', 'sellPrice', 'hasOVP', 'hasIOShield',
+  'specs', 'componentIds', 'comment1', 'comment2', 'vendor', 'hasOVP', 'hasIOShield',
 ];
 
 function GitHubOAuthCallback() {
