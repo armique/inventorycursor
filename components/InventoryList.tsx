@@ -332,7 +332,10 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
     if (item.parentContainerId) return false;
     if (!showInComposition && item.status === ItemStatus.IN_COMPOSITION) return false;
 
-    if (categoryFilter !== 'ALL' || subCategoryFilter) {
+    // While actively searching, ignore the category filter entirely so search is always global —
+    // otherwise a category filter left active from earlier browsing (e.g. a quick-category pin)
+    // silently hides matching items in other categories with no indication why.
+    if (!searchLower && (categoryFilter !== 'ALL' || subCategoryFilter)) {
       const matchParentAndSub =
         categoryFilter !== 'ALL' &&
         item.category === categoryFilter &&
