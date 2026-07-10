@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { 
-  ArrowLeft, Save, Plus, Trash2, Calendar, Globe, CreditCard, 
+  ArrowLeft, Save, Trash2, Calendar, Globe, CreditCard,
   ShoppingBag, Calculator, Layers, Box, ChevronDown, 
   MessageCircle, Link as LinkIcon, Upload, Search, Database, 
   Cpu, Monitor, HardDrive, Zap, Wind, AlertCircle, CheckCircle2, Copy,
@@ -130,7 +130,6 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   const [showSpecs, setShowSpecs] = useState(true);
   const [nameSuggestionsOpen, setNameSuggestionsOpen] = useState(false);
   const [quantityToCreate, setQuantityToCreate] = useState<number>(1);
-  const [showExtraSpecs, setShowExtraSpecs] = useState(false);
   /** Spec fields the user explicitly switched from the AI-filled preset dropdown to manual typing. */
   const [customSpecKeys, setCustomSpecKeys] = useState<Set<string>>(new Set());
 
@@ -176,7 +175,6 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   }, [formData.buyPrice, formData.id]);
 
   useEffect(() => {
-    setShowExtraSpecs(false);
     setCustomSpecKeys(new Set());
   }, [id, initialData?.id]);
 
@@ -291,6 +289,11 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
         if (formData.subCategory === 'Storage (SSD/HDD)' && k.toLowerCase() === 'type' && !definedFields.some((df) => df.toLowerCase() === 'type')) {
           keyToUse = 'Drive Type';
         }
+        // Only keep the curated "important" fields for this category — discard anything extra
+        // the AI adds on top, so parsing only ever produces the fields buyers actually ask about.
+        if (definedFields.length > 0 && !definedFields.some((df) => df.toLowerCase() === keyToUse.toLowerCase())) {
+          return;
+        }
         newSpecs[keyToUse] = v;
         nextAi[keyToUse] = v;
       });
@@ -309,9 +312,6 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       }
 
       setFormData((prev) => ({ ...prev, ...updates }));
-      if (Object.keys(returnedSpecs).length > 6) {
-        setShowExtraSpecs(true);
-      }
     } catch (e: any) {
       console.error(e);
       const msg = e?.message || 'Failed to look up specs.';
@@ -540,14 +540,6 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       formData.specs
     );
 
-    const specObj = formData.specs || {};
-    const extraKeys = filterRamDuplicateSpecKeys(
-      Object.keys(specObj).filter((k) => !primaryKeys.includes(k)),
-      formData.category,
-      formData.subCategory,
-      formData.specs
-    );
-
     const CUSTOM_OPTION = '__custom__';
 
     const renderSpecInputs = (keys: string[]) =>
@@ -643,41 +635,6 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
           Blue = AI-filled · pick a different option to override, or "Other" to type a custom value
         </p>
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5">{renderSpecInputs(primaryKeys)}</div>
-
-        {extraKeys.length > 0 && (
-          <>
-            <button
-              type="button"
-              onClick={() => setShowExtraSpecs((v) => !v)}
-              className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors"
-            >
-              <ChevronDown size={14} className={showExtraSpecs ? 'rotate-180 transition-transform' : 'transition-transform'} />
-              {showExtraSpecs ? 'Hide' : 'Show'} extra fields ({extraKeys.length})
-            </button>
-            {showExtraSpecs && (
-              <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1 border-t border-slate-200">
-                {renderSpecInputs(extraKeys)}
-              </div>
-            )}
-          </>
-        )}
-
-        <button
-          type="button"
-          onClick={() => {
-            const newKey = prompt('New Spec Field Name:');
-            if (newKey) {
-              setShowExtraSpecs(true);
-              setFormData((prev) => ({
-                ...prev,
-                specs: { ...prev.specs, [newKey]: '' },
-              }));
-            }
-          }}
-          className="flex items-center justify-center gap-1.5 border-2 border-dashed border-slate-200 rounded-lg py-1.5 px-3 text-xs font-bold text-slate-400 hover:border-blue-300 hover:text-blue-500 transition-all w-full lg:w-auto"
-        >
-          <Plus size={13} /> Add Field
-        </button>
       </div>
     );
   };
