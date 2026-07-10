@@ -312,10 +312,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
         specsAiSuggested: Object.keys(nextAi).length ? nextAi : undefined,
       };
 
-      if (result.standardizedName) {
-         updates.name = result.standardizedName;
-      }
-      
+      // Parsing specs should never rename the item — the name you typed stays exactly as-is.
       if (result.vendor) {
          updates.vendor = result.vendor;
       }
@@ -533,8 +530,15 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       categoryFields[`${cat}:${sub}`] || categoryFields[cat] || [];
 
     const essential = getEssentialSpecFieldKeys(cat, sub);
+    // Fall back to whatever specs actually exist (parsed or manually entered) if this category has
+    // neither a curated list nor a legacy template — otherwise real data could end up with nowhere
+    // to render and look like parsing "did nothing" even though it succeeded.
     const basePrimary =
-      essential.length > 0 ? [...essential] : [...legacyTemplate.slice(0, 8)];
+      essential.length > 0
+        ? [...essential]
+        : legacyTemplate.length > 0
+          ? [...legacyTemplate.slice(0, 8)]
+          : Object.keys(formData.specs || {});
 
     const primaryKeys = filterRamDuplicateSpecKeys(
       Array.from(new Set(basePrimary)),
