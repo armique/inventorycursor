@@ -1163,7 +1163,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                       </div>
                       {(formData.priceHistory || []).slice().sort((a, b) => a.date.localeCompare(b.date)).map((entry, i) => (
                         <div key={`${entry.date}-${entry.type}-${i}`} className="flex items-center gap-2 text-slate-600 pl-3.5 border-l-2 border-slate-200 ml-0.5">
-                          <span className="font-medium">{entry.type === 'buy' ? 'Cost' : 'Sell price'} updated</span>
+                          <span className="font-medium">{entry.type === 'buy' ? 'Cost' : entry.type === 'storePrice' ? 'Storefront price' : 'Sell price'} updated</span>
                           <span className="text-slate-400">{new Date(entry.date).toLocaleDateString()}</span>
                           {entry.previousPrice != null && (
                             <span className="text-slate-400">€{formatEUR(entry.previousPrice)} →</span>

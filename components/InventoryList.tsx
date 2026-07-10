@@ -58,7 +58,7 @@ interface Props {
 const EMPTY_TIME_GAUGE_SORT_MAP = new Map<string, number>();
 const EMPTY_COMPAT_COUNT_MAP = new Map<string, number>();
 
-type ColumnId = 'select' | 'item' | 'presence' | 'parseSpecs' | 'category' | 'status' | 'buyPrice' | 'sellPrice' | 'profit' | 'buyDate' | 'timeGauge' | 'sellDate' | 'salePlatform' | 'actions';
+type ColumnId = 'select' | 'item' | 'presence' | 'parseSpecs' | 'category' | 'status' | 'buyPrice' | 'sellPrice' | 'storePrice' | 'profit' | 'buyDate' | 'timeGauge' | 'sellDate' | 'salePlatform' | 'actions';
 type TimeFilter = 'ALL' | 'THIS_WEEK' | 'LAST_WEEK' | 'THIS_MONTH' | 'LAST_MONTH' | 'LAST_30' | 'LAST_90' | 'THIS_YEAR' | 'LAST_YEAR';
 type StatusFilter = 'ACTIVE' | 'SOLD' | 'DRAFTS' | 'ALL';
 
@@ -104,6 +104,7 @@ const DEFAULT_WIDTHS: Record<string, number> = {
   status: 82,
   buyPrice: 76,
   sellPrice: 76,
+  storePrice: 84,
   profit: 76,
   buyDate: 90,
   timeGauge: 72,
@@ -134,6 +135,7 @@ const AUTO_SIZE_COLUMN_IDS: ColumnId[] = [
   'status',
   'buyPrice',
   'sellPrice',
+  'storePrice',
   'profit',
   'buyDate',
   'sellDate',
@@ -181,6 +183,7 @@ function computeAutoColumnWidths(items: InventoryItem[]): Partial<Record<ColumnI
   let statusW = 0;
   let buyPriceW = 0;
   let sellPriceW = 0;
+  let storePriceW = 0;
   let profitW = 0;
   let buyDateW = 0;
   let sellDateW = 0;
@@ -203,6 +206,9 @@ function computeAutoColumnWidths(items: InventoryItem[]): Partial<Record<ColumnI
     buyPriceW = Math.max(buyPriceW, measureTextWidth(ctx, `€${formatEUR(item.buyPrice)}`, '900 13px Inter, sans-serif'));
     if (item.sellPrice) {
       sellPriceW = Math.max(sellPriceW, measureTextWidth(ctx, `€${formatEUR(item.sellPrice)}`, '700 13px Inter, sans-serif'));
+    }
+    if (item.storePrice) {
+      storePriceW = Math.max(storePriceW, measureTextWidth(ctx, `€${formatEUR(item.storePrice)}`, '700 13px Inter, sans-serif'));
     }
     if (item.profit && !item.isPC && !item.isBundle) {
       profitW = Math.max(profitW, measureTextWidth(ctx, `€${formatEUR(item.profit)}`, '900 13px Inter, sans-serif'));
@@ -230,6 +236,7 @@ function computeAutoColumnWidths(items: InventoryItem[]): Partial<Record<ColumnI
     status: clampInventoryColumnWidth('status', Math.ceil(statusW) + 46),
     buyPrice: clampInventoryColumnWidth('buyPrice', Math.ceil(buyPriceW) + 20),
     sellPrice: clampInventoryColumnWidth('sellPrice', Math.ceil(sellPriceW) + 20),
+    storePrice: clampInventoryColumnWidth('storePrice', Math.ceil(storePriceW) + 20),
     profit: clampInventoryColumnWidth('profit', Math.ceil(profitW) + 20),
     buyDate: clampInventoryColumnWidth('buyDate', Math.ceil(buyDateW) + 20),
     sellDate: clampInventoryColumnWidth('sellDate', Math.ceil(sellDateW) + 20),
@@ -245,6 +252,7 @@ const ALL_COLUMNS: { id: ColumnId; label: string }[] = [
   { id: 'status', label: 'State' },
   { id: 'buyPrice', label: 'Buy Price' },
   { id: 'sellPrice', label: 'Sell Price' },
+  { id: 'storePrice', label: 'Storefront Price' },
   { id: 'profit', label: 'Margin' },
   { id: 'buyDate', label: 'Acquired' },
   { id: 'timeGauge', label: 'Time' },
@@ -488,7 +496,7 @@ const InventoryList: React.FC<Props> = ({
     () => new Set(loadState<ColumnId[]>('manual_width_cols', []))
   );
 
-  const defaultColumnOrder: ColumnId[] = ['select', 'item', 'presence', 'category', 'status', 'buyPrice', 'sellPrice', 'profit', 'buyDate', 'timeGauge', 'sellDate', 'actions'];
+  const defaultColumnOrder: ColumnId[] = ['select', 'item', 'presence', 'category', 'status', 'buyPrice', 'sellPrice', 'storePrice', 'profit', 'buyDate', 'timeGauge', 'sellDate', 'actions'];
   const [columnOrder, setColumnOrder] = useState<ColumnId[]>(() => {
     const saved = loadState<ColumnId[]>('column_order', defaultColumnOrder);
     const base = saved && saved.length > 0 ? saved : defaultColumnOrder;
@@ -497,6 +505,11 @@ const InventoryList: React.FC<Props> = ({
       const buy = next.indexOf('buyDate');
       if (buy >= 0) next.splice(buy + 1, 0, 'timeGauge');
       else next.splice(Math.max(0, next.length - 1), 0, 'timeGauge');
+    }
+    if (!next.includes('storePrice')) {
+      const sell = next.indexOf('sellPrice');
+      if (sell >= 0) next.splice(sell + 1, 0, 'storePrice');
+      else next.splice(Math.max(0, next.length - 1), 0, 'storePrice');
     }
     // Remove any legacy salePlatform or parseSpecs entries from saved order
     next = next.filter(id => id !== 'salePlatform' && id !== 'parseSpecs');
@@ -1247,7 +1260,7 @@ const InventoryList: React.FC<Props> = ({
 
     let newValue: any = editValue;
 
-    if (targetField === 'buyPrice' || targetField === 'sellPrice') {
+    if (targetField === 'buyPrice' || targetField === 'sellPrice' || targetField === 'storePrice') {
        newValue = parseLocaleMoney(editValue, 0);
     }
 
@@ -2098,7 +2111,7 @@ const InventoryList: React.FC<Props> = ({
             onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, 'sellPrice', item.sellPrice || 0); }}
           >
             {isEditingSell ? (
-               <input 
+               <input
                  autoFocus
                  type="text"
                  inputMode="decimal"
@@ -2114,6 +2127,36 @@ const InventoryList: React.FC<Props> = ({
             )}
           </td>
         );
+      case 'storePrice': {
+        // Public asking price shown on the storefront — deliberately separate from Sell Price
+        // (which is your internal target/realized sale price used for profit tracking).
+        const isEditingStorePrice = editingCell?.itemId === item.id && editingCell?.field === 'storePrice';
+        return (
+          <td
+            key={id}
+            className="text-right font-bold text-violet-700 cursor-pointer hover:bg-violet-50/40 transition-colors"
+            style={style}
+            title="Storefront asking price. Double click to edit — separate from Sell Price."
+            onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, 'storePrice', item.storePrice || 0); }}
+          >
+            {isEditingStorePrice ? (
+               <input
+                 autoFocus
+                 type="text"
+                 inputMode="decimal"
+                 className="w-20 bg-white border-2 border-violet-500 rounded-lg px-2 py-1 text-right outline-none text-xs font-bold shadow-lg"
+                 value={editValue}
+                 onChange={e => setEditValue(e.target.value)}
+                 onBlur={saveEdit}
+                 onKeyDown={e => { if(e.key === 'Enter') saveEdit(); if(e.key === 'Escape') setEditingCell(null); }}
+                 onClick={e => e.stopPropagation()}
+               />
+            ) : (
+               item.storePrice ? `€${formatEUR(item.storePrice)}` : '-'
+            )}
+          </td>
+        );
+      }
       case 'profit':
         // Bundles/PCs don't have profit - profit is only in child items
         if (item.isPC || item.isBundle) {
@@ -3976,7 +4019,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
                             }
                           : undefined
                       }
-                      className={`flex items-center ${listDensity === 'compact' ? 'min-h-[1.35rem]' : 'min-h-[1.65rem]'} ${sortable ? 'cursor-pointer hover:bg-slate-100/90' : ''} ${['buyPrice', 'sellPrice', 'profit', 'buyDate', 'sellDate', 'actions'].includes(colId) ? 'justify-end' : colId === 'parseSpecs' || colId === 'timeGauge' ? 'justify-center' : ''}`}
+                      className={`flex items-center ${listDensity === 'compact' ? 'min-h-[1.35rem]' : 'min-h-[1.65rem]'} ${sortable ? 'cursor-pointer hover:bg-slate-100/90' : ''} ${['buyPrice', 'sellPrice', 'storePrice', 'profit', 'buyDate', 'sellDate', 'actions'].includes(colId) ? 'justify-end' : colId === 'parseSpecs' || colId === 'timeGauge' ? 'justify-center' : ''}`}
                     >
                       {colId === 'select' ? (
                         <div

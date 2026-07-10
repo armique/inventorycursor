@@ -53,7 +53,7 @@ export interface CustomerInfo {
 /** Single entry in an item's price / sale history. */
 export interface PriceHistoryEntry {
   date: string;       // ISO date or datetime
-  type: 'buy' | 'sell';
+  type: 'buy' | 'sell' | 'storePrice';
   price: number;
   previousPrice?: number;
 }
@@ -63,6 +63,10 @@ export interface InventoryItem {
   name: string;
   buyPrice: number;
   sellPrice?: number;
+  /** Public asking price shown on the storefront — separate from sellPrice, which is your
+   * internal target/realized sale price used for profit, tax, and dashboard calculations.
+   * Editing the storefront listing price never touches sellPrice. */
+  storePrice?: number;
   profit?: number;
   buyDate: string;
   sellDate?: string;

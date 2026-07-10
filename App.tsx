@@ -71,7 +71,7 @@ type AppSyncSnapshot = {
 /** When merging an update into an existing item, preserve these from the old item if the update doesn't provide them (so renames/edits from inventory don't wipe store data). */
 const PRESERVE_FROM_OLD_IF_UPDATE_MISSING: (keyof InventoryItem)[] = [
   'imageUrl', 'imageUrls', 'storeGalleryUrls', 'storeDescription', 'storeVisible', 'storeOnSale', 'storeSalePrice',
-  'specs', 'componentIds', 'comment1', 'comment2', 'vendor', 'sellPrice', 'hasOVP', 'hasIOShield',
+  'storePrice', 'specs', 'componentIds', 'comment1', 'comment2', 'vendor', 'sellPrice', 'hasOVP', 'hasIOShield',
 ];
 
 function GitHubOAuthCallback() {
@@ -127,7 +127,7 @@ export { DEFAULT_CATEGORIES, HIERARCHY_CATEGORIES } from './services/constants';
 const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const PRICE_DROP_DAYS = 30;
 
-/** Derive store badge: New (added in last 7 days), Price reduced (sell price dropped in last 30 days). */
+/** Derive store badge: New (added in last 7 days), Price reduced (storefront price dropped in last 30 days). */
 function computeStoreBadge(item: InventoryItem): 'New' | 'Price reduced' | null {
   const override = item.storeBadge;
   if (override === 'none') return null;
@@ -138,11 +138,12 @@ function computeStoreBadge(item: InventoryItem): 'New' | 'Price reduced' | null 
   const buyDate = item.buyDate ? new Date(item.buyDate).getTime() : 0;
   if (now - buyDate <= ONE_WEEK_MS) return 'New';
 
-  const currentSell = item.storeOnSale && item.storeSalePrice != null ? item.storeSalePrice : (item.sellPrice ?? 0);
+  const listedPrice = item.storePrice ?? item.sellPrice ?? 0;
+  const currentSell = item.storeOnSale && item.storeSalePrice != null ? item.storeSalePrice : listedPrice;
   const history = item.priceHistory || [];
   for (let i = history.length - 1; i >= 0; i--) {
     const e = history[i];
-    if (e.type !== 'sell' || e.previousPrice == null) continue;
+    if ((e.type !== 'storePrice' && e.type !== 'sell') || e.previousPrice == null) continue;
     const entryDate = new Date(e.date).getTime();
     if (now - entryDate > PRICE_DROP_DAYS * 24 * 60 * 60 * 1000) break;
     if (e.previousPrice > currentSell) return 'Price reduced';
@@ -233,7 +234,9 @@ function buildStoreCatalog(items: InventoryItem[], categoryFields: Record<string
         name: i.name,
         category: i.category,
         subCategory: i.subCategory,
-        sellPrice: i.sellPrice,
+        // Public listing price: storePrice if set (via Store Management), else fall back to
+        // sellPrice so items published before storePrice existed keep showing a price.
+        sellPrice: i.storePrice ?? i.sellPrice,
         storeSalePrice: i.storeSalePrice,
         storeOnSale: i.storeOnSale,
         storeVisible: true,

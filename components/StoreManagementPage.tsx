@@ -38,7 +38,7 @@ const TEXTS = {
   published: 'Published',
   showOnStore: 'Show',
   hideFromStore: 'Hide',
-  priceEur: 'Price €',
+  priceEur: 'Storefront Price €',
   editStoreItem: 'Edit store listing',
   storeDescription: 'Store description',
   galleryUrls: 'Inventory images',
@@ -91,8 +91,11 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
     const next = items.map((it) => (it.id === item.id ? { ...it, storeSalePrice: value === '' ? undefined : value } : it));
     onUpdate(next);
   };
-  const setSellPrice = (item: InventoryItem, value: number | '') => {
-    const next = items.map((it) => (it.id === item.id ? { ...it, sellPrice: value === '' ? undefined : value } : it));
+  // Storefront asking price — deliberately separate from item.sellPrice (your internal
+  // target/realized sale price used for profit, tax, and dashboard calculations). Editing the
+  // price here must never touch sellPrice, or storefront pricing silently corrupts those numbers.
+  const setStorePrice = (item: InventoryItem, value: number | '') => {
+    const next = items.map((it) => (it.id === item.id ? { ...it, storePrice: value === '' ? undefined : value } : it));
     onUpdate(next);
   };
 
@@ -124,7 +127,7 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [generateDescriptionWhenOpen, setGenerateDescriptionWhenOpen] = useState(false);
   /** Raw strings while typing so decimals like "17." are not stripped by immediate parse. */
-  const [sellPriceDraft, setSellPriceDraft] = useState<Record<string, string>>({});
+  const [storePriceDraft, setStorePriceDraft] = useState<Record<string, string>>({});
   const [storeSalePriceDraft, setStoreSalePriceDraft] = useState<Record<string, string>>({});
   const applyEdit = (updates: Partial<InventoryItem>) => {
     if (!editingItem) return;
@@ -150,7 +153,7 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
       (i.name || '').replace(/"/g, '""'),
       i.category || '',
       i.subCategory || '',
-      i.sellPrice ?? '',
+      i.storePrice ?? i.sellPrice ?? '',
       i.storeSalePrice ?? '',
       i.storeOnSale ? '1' : '0',
       i.storeVisible !== false ? '1' : '0',
@@ -215,8 +218,8 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
       return true;
     })
     .sort((a, b) => {
-      const priceA = a.storeOnSale ? (a.storeSalePrice ?? a.sellPrice ?? 0) : (a.sellPrice ?? 0);
-      const priceB = b.storeOnSale ? (b.storeSalePrice ?? b.sellPrice ?? 0) : (b.sellPrice ?? 0);
+      const priceA = a.storeOnSale ? (a.storeSalePrice ?? a.storePrice ?? a.sellPrice ?? 0) : (a.storePrice ?? a.sellPrice ?? 0);
+      const priceB = b.storeOnSale ? (b.storeSalePrice ?? b.storePrice ?? b.sellPrice ?? 0) : (b.storePrice ?? b.sellPrice ?? 0);
       if (sortBy === 'priceAsc') return priceA - priceB;
       if (sortBy === 'priceDesc') return priceB - priceA;
       if (sortBy === 'nameAsc') return a.name.localeCompare(b.name);
@@ -477,18 +480,19 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
                             <input
                               type="text"
                               inputMode="decimal"
-                              value={sellPriceDraft[item.id] !== undefined ? sellPriceDraft[item.id]! : String(item.sellPrice ?? '')}
-                              onChange={(e) => setSellPriceDraft((d) => ({ ...d, [item.id]: e.target.value }))}
+                              title="Storefront asking price — separate from Sell Price in Inventory"
+                              value={storePriceDraft[item.id] !== undefined ? storePriceDraft[item.id]! : String(item.storePrice ?? item.sellPrice ?? '')}
+                              onChange={(e) => setStorePriceDraft((d) => ({ ...d, [item.id]: e.target.value }))}
                               onBlur={() => {
-                                const raw = sellPriceDraft[item.id];
+                                const raw = storePriceDraft[item.id];
                                 if (raw === undefined) return;
                                 const n = parseLocaleNumber(raw);
                                 if (raw.trim() === '') {
-                                  setSellPrice(item, '');
+                                  setStorePrice(item, '');
                                 } else if (Number.isFinite(n)) {
-                                  setSellPrice(item, n);
+                                  setStorePrice(item, n);
                                 }
-                                setSellPriceDraft((d) => {
+                                setStorePriceDraft((d) => {
                                   const next = { ...d };
                                   delete next[item.id];
                                   return next;
@@ -601,7 +605,7 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2">
                             <p className="font-semibold text-slate-900 text-sm truncate">{item.name}</p>
-                            <span className="text-[11px] text-slate-400">{formatEUR(item.sellPrice ?? 0)} €</span>
+                            <span className="text-[11px] text-slate-400">{formatEUR(item.storePrice ?? item.sellPrice ?? 0)} €</span>
                           </div>
                           <p className="text-[11px] text-slate-500 truncate">
                             {item.category}{item.subCategory ? ` • ${item.subCategory}` : ''}
@@ -735,7 +739,9 @@ interface EditPanelProps {
 const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, runGenerateDescriptionOnce, onClearGenerateFlag, texts }) => {
   const [name, setName] = useState(item.name);
   const [storeDescription, setStoreDescription] = useState(item.storeDescription ?? '');
-  const [sellPrice, setSellPriceState] = useState<string>(item.sellPrice != null ? String(item.sellPrice) : '');
+  const [storePriceState, setStorePriceState] = useState<string>(
+    item.storePrice != null ? String(item.storePrice) : item.sellPrice != null ? String(item.sellPrice) : ''
+  );
   const [storeOnSale, setStoreOnSale] = useState(!!item.storeOnSale);
   const [storeSalePrice, setStoreSalePriceState] = useState<string>(item.storeSalePrice != null ? String(item.storeSalePrice) : '');
   const [storeVisible, setStoreVisible] = useState<boolean>(item.storeVisible !== false);
@@ -775,8 +781,8 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
     onSave({
       name: name.trim() || item.name,
       storeDescription: storeDescription.trim() || undefined,
-      sellPrice: (() => {
-        const v = parseLocaleNumber(sellPrice);
+      storePrice: (() => {
+        const v = parseLocaleNumber(storePriceState);
         return Number.isFinite(v) ? v : undefined;
       })(),
       storeVisible,
@@ -870,7 +876,8 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">{texts.priceEur}</label>
-              <input type="text" inputMode="decimal" value={sellPrice} onChange={(e) => setSellPriceState(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400" />
+              <input type="text" inputMode="decimal" value={storePriceState} onChange={(e) => setStorePriceState(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400" />
+              <p className="mt-1 text-[11px] text-slate-500">The price shown to customers — separate from Sell Price in Inventory, so this never affects your profit tracking.</p>
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">On sale</label>

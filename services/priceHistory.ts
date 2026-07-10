@@ -35,6 +35,17 @@ export function appendPriceHistoryIfChanged(
     });
   }
 
+  const oldStore = oldItem.storePrice != null ? Number(oldItem.storePrice) : undefined;
+  const newStore = newItem.storePrice != null ? Number(newItem.storePrice) : undefined;
+  if (oldStore !== newStore && (newStore != null || oldStore != null)) {
+    entries.push({
+      date: now,
+      type: 'storePrice',
+      price: newStore ?? 0,
+      previousPrice: oldStore,
+    });
+  }
+
   if (entries.length === (newItem.priceHistory || []).length) return newItem;
   return { ...newItem, priceHistory: entries };
 }
