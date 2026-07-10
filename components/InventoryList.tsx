@@ -1264,7 +1264,14 @@ const InventoryList: React.FC<Props> = ({
     let newValue: any = editValue;
 
     if (targetField === 'buyPrice' || targetField === 'sellPrice' || targetField === 'storePrice') {
-       newValue = parseLocaleMoney(editValue, 0);
+       // Clearing the field should actually clear it (undefined), not silently reset to 0 — buyPrice
+       // still defaults to 0 (it's required), but sellPrice/storePrice are optional and should be
+       // erasable, otherwise "empty" ends up as a fake €0 value polluting profit/dashboard math.
+       if (String(editValue).trim() === '' && targetField !== 'buyPrice') {
+         newValue = undefined;
+       } else {
+         newValue = parseLocaleMoney(editValue, 0);
+       }
     }
 
     const updates: Partial<InventoryItem> = { [targetField]: newValue };

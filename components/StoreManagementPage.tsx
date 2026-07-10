@@ -105,17 +105,13 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
   const itemsWithFakeSellPrice = items.filter(
     (i) => i.status !== ItemStatus.SOLD && i.status !== ItemStatus.TRADED && i.sellPrice != null
   );
-  const handleCleanupFakeSellPrices = () => {
-    if (itemsWithFakeSellPrice.length === 0) return;
-    const ok = window.confirm(
-      `Clear Sell Price on ${itemsWithFakeSellPrice.length} active item(s)?\n\n` +
-        `These are not-yet-sold items that have a Sell Price set — likely left over from before ` +
-        `the storefront price was a separate field. This won't touch Storefront Price or anything ` +
-        `on already-sold items. You can Undo (Ctrl+Z) right after if something looks wrong.`
-    );
-    if (!ok) return;
+  // In-page confirm instead of window.confirm() — some browser setups silently block native
+  // dialogs, which would make the cleanup button appear to do nothing when clicked.
+  const [showCleanupConfirm, setShowCleanupConfirm] = useState(false);
+  const runCleanupFakeSellPrices = () => {
     const next = itemsWithFakeSellPrice.map((i) => ({ ...i, sellPrice: undefined }));
     onUpdate(next);
+    setShowCleanupConfirm(false);
   };
 
   // Bulk show/hide — one toggle button per category (plus a whole-inventory one). Toggling a
@@ -261,7 +257,7 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
           </p>
           <button
             type="button"
-            onClick={handleCleanupFakeSellPrices}
+            onClick={() => setShowCleanupConfirm(true)}
             className="shrink-0 px-4 py-2 rounded-xl bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 transition-colors"
           >
             Clean up now
@@ -757,6 +753,37 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
           onClearGenerateFlag={() => setGenerateDescriptionWhenOpen(false)}
           texts={TEXTS}
         />
+      )}
+
+      {showCleanupConfirm && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4" onClick={() => setShowCleanupConfirm(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-black text-slate-900">
+              Clear Sell Price on {itemsWithFakeSellPrice.length} active item{itemsWithFakeSellPrice.length === 1 ? '' : 's'}?
+            </h3>
+            <p className="text-sm text-slate-600">
+              These are not-yet-sold items that have a Sell Price set — likely left over from before Storefront Price
+              existed as its own field. This won't touch Storefront Price or anything on already-sold items. You can
+              Undo (Ctrl+Z) right after if something looks wrong.
+            </p>
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowCleanupConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={runCleanupFakeSellPrices}
+                className="flex-1 py-2.5 rounded-xl bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700"
+              >
+                Clear {itemsWithFakeSellPrice.length} item{itemsWithFakeSellPrice.length === 1 ? '' : 's'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
