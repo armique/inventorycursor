@@ -99,6 +99,25 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
     onUpdate(next);
   };
 
+  // One-time cleanup for the old bug: before storePrice existed, the storefront price editor
+  // wrote directly into sellPrice, so active (not-yet-sold) items can carry a "fake" sellPrice
+  // that was never a real target/sale price — it was just what got typed as the storefront price.
+  const itemsWithFakeSellPrice = items.filter(
+    (i) => i.status !== ItemStatus.SOLD && i.status !== ItemStatus.TRADED && i.sellPrice != null
+  );
+  const handleCleanupFakeSellPrices = () => {
+    if (itemsWithFakeSellPrice.length === 0) return;
+    const ok = window.confirm(
+      `Clear Sell Price on ${itemsWithFakeSellPrice.length} active item(s)?\n\n` +
+        `These are not-yet-sold items that have a Sell Price set — likely left over from before ` +
+        `the storefront price was a separate field. This won't touch Storefront Price or anything ` +
+        `on already-sold items. You can Undo (Ctrl+Z) right after if something looks wrong.`
+    );
+    if (!ok) return;
+    const next = itemsWithFakeSellPrice.map((i) => ({ ...i, sellPrice: undefined }));
+    onUpdate(next);
+  };
+
   // Bulk show/hide — one toggle button per category (plus a whole-inventory one). Toggling a
   // category shows/hides every in-stock item in it at once; per-item Show/Hide buttons in the
   // table below still work individually afterward, so you can bulk-set a category then fine-tune it.
@@ -234,6 +253,22 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
 
   return (
     <div className="space-y-8">
+      {itemsWithFakeSellPrice.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <p className="text-sm text-amber-900">
+            <span className="font-bold">{itemsWithFakeSellPrice.length} active item{itemsWithFakeSellPrice.length === 1 ? '' : 's'}</span> still
+            {' '}{itemsWithFakeSellPrice.length === 1 ? 'has' : 'have'} a Sell Price left over from before Storefront Price existed as its own field.
+          </p>
+          <button
+            type="button"
+            onClick={handleCleanupFakeSellPrices}
+            className="shrink-0 px-4 py-2 rounded-xl bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 transition-colors"
+          >
+            Clean up now
+          </button>
+        </div>
+      )}
+
       {/* Header + stats + publish */}
       <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col lg:flex-row gap-6 items-start lg:items-center justify-between">
         <div>
