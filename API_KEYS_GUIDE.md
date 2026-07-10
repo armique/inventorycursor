@@ -113,25 +113,43 @@ Requires a paid account (or temporary free credits if offered).
 
 ---
 
-## 8. Google Custom Search (real product photos for the item editor)
+## 8. Real product photos for the item editor ("Find real photos" button)
 
-**Env vars (server-side — set on Vercel, not in the client `.env`):** `GOOGLE_SEARCH_API_KEY`, `GOOGLE_SEARCH_CX`
+Powers the "Find real photos" button in the item editor — searches real product images and lets you set one as the item's default photo. This tries providers in order (same fallback pattern as the AI spec-parsing providers): **Google Custom Search → Bing Image Search → Pixabay**, using whichever you've configured. You only need to set up one to make the button work; add more for reliability. All keys are **server-side** (set on Vercel, not your local `.env` — the button calls `/api/images`, which only runs when deployed on Vercel or via `vercel dev`).
 
-Powers the "Find real photos" button in the item editor (searches real product images and lets you set one as the item's default photo). This uses Google's official, quota-metered Custom Search API — not scraping, which Google blocks and disallows.
+### 8a. Google Custom Search (best match accuracy, but the most setup)
 
-1. **Get an API key**: go to **https://console.cloud.google.com/apis/credentials**, create/select a project, click **Create Credentials → API key**. Then enable the **Custom Search API** for that project at **https://console.cloud.google.com/apis/library/customsearch.googleapis.com**.
-2. **Create a Programmable Search Engine**: go to **https://programmablesearchengine.google.com/controlpanel/create**.
-   - Under "What to search", choose **Search the entire web**.
-   - After creating it, open its settings and turn on **Image search**.
-   - Copy the **Search engine ID** (this is your `cx` value).
-3. Set both on Vercel (**Project → Settings → Environment Variables**), not in your local `.env`:
-   ```
-   GOOGLE_SEARCH_API_KEY=your_api_key_here
-   GOOGLE_SEARCH_CX=your_search_engine_id_here
-   ```
-4. Redeploy. This only works when deployed on Vercel (or via `vercel dev`) — like the other `/api/*` routes, it doesn't run under a plain local `vite dev` server.
+**Env vars:** `GOOGLE_SEARCH_API_KEY`, `GOOGLE_SEARCH_CX`
 
-Free tier: 100 searches/day, then billed per 1,000 queries if you enable billing on the Custom Search API.
+1. **API key**: go to **https://console.cloud.google.com/apis/credentials**, create/select a project, **Create Credentials → API key**. Enable the **Custom Search API** at **https://console.cloud.google.com/apis/library/customsearch.googleapis.com**.
+2. **Billing**: this API requires an active billing account linked to the project (free tier is still free, billing is just required to exist). Check/link one at **https://console.cloud.google.com/billing**.
+3. **Search Engine ID**: go to **https://programmablesearchengine.google.com/controlpanel/create**.
+   - Google has deprecated "Search the entire web" for new engines — it can no longer be enabled. Instead, add specific retailer/tech sites to search under "Sites to search" (e.g. `www.amazon.com/*`, `www.ebay.com/*`, `www.newegg.com/*`, `www.bestbuy.com/*`, `www.mediamarkt.de/*`, `geizhals.de/*`, `www.cyberport.de/*` — add whatever fits your market). Product photos are almost always hosted on sites like these anyway.
+   - Turn on **Image search** in its settings.
+   - Copy the **Search engine ID** — that's your `cx`.
+4. Set both on Vercel, redeploy.
+
+Free tier: 100 searches/day, then billed per 1,000 queries.
+
+### 8b. Bing Image Search (fallback — similar quality, Azure account)
+
+**Env var:** `BING_SEARCH_API_KEY`
+
+1. Go to **https://portal.azure.com**, create a **"Bing Search v7"** resource (search for it in "Create a resource").
+2. Once created, open it → **Keys and Endpoint** → copy **Key 1**.
+3. Set `BING_SEARCH_API_KEY` on Vercel, redeploy.
+
+Free (F1) tier available with a request-per-second/month cap.
+
+### 8c. Pixabay (fallback — free, no billing account needed at all)
+
+**Env var:** `PIXABAY_API_KEY`
+
+1. Go to **https://pixabay.com/api/docs/**, sign up / log in.
+2. Your API key is shown right on that docs page once logged in.
+3. Set `PIXABAY_API_KEY` on Vercel, redeploy.
+
+No credit card required, generous free tier. Results are more "stock photo" than exact product shots, so it's the weakest match quality of the three — good as a last-resort fallback so the button always returns *something* even if Google/Bing aren't set up.
 
 ---
 
