@@ -96,6 +96,31 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
     onUpdate(next);
   };
 
+  // Bulk show/hide — one toggle button per category (plus a whole-inventory one). Toggling a
+  // category shows/hides every in-stock item in it at once; per-item Show/Hide buttons in the
+  // table below still work individually afterward, so you can bulk-set a category then fine-tune it.
+  const storeCategories = React.useMemo(
+    () => Array.from(new Set(storeVisibleItems.map((i) => i.category))).sort(),
+    [storeVisibleItems]
+  );
+  const isCategoryFullyVisible = (cat: string) => {
+    const catItems = storeVisibleItems.filter((i) => i.category === cat);
+    return catItems.length > 0 && catItems.every((i) => i.storeVisible === true);
+  };
+  const toggleCategoryVisibility = (cat: string) => {
+    const shouldShow = !isCategoryFullyVisible(cat);
+    const next = items.map((it) =>
+      it.status === IN_STOCK && it.category === cat ? { ...it, storeVisible: shouldShow } : it
+    );
+    onUpdate(next);
+  };
+  const isAllVisible = storeVisibleItems.length > 0 && storeVisibleItems.every((i) => i.storeVisible === true);
+  const toggleAllVisibility = () => {
+    const shouldShow = !isAllVisible;
+    const next = items.map((it) => (it.status === IN_STOCK ? { ...it, storeVisible: shouldShow } : it));
+    onUpdate(next);
+  };
+
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [generateDescriptionWhenOpen, setGenerateDescriptionWhenOpen] = useState(false);
   /** Raw strings while typing so decimals like "17." are not stripped by immediate parse. */
@@ -307,6 +332,45 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
         {/* LEFT: Items & filters */}
         <div className="flex-1 w-full space-y-4">
           <div className="bg-white border border-slate-200 rounded-3xl shadow-sm p-5 space-y-4">
+            <div className="space-y-2 pb-4 border-b border-slate-100">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                Bulk show/hide on storefront
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={toggleAllVisibility}
+                  title={isAllVisible ? 'Hide the whole inventory from the storefront' : 'Show the whole inventory on the storefront'}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold transition-colors ${
+                    isAllVisible ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-white hover:bg-slate-700'
+                  }`}
+                >
+                  {isAllVisible ? <Eye size={11} /> : <EyeOff size={11} />}
+                  All ({storeVisibleItems.length})
+                </button>
+                {storeCategories.map((cat) => {
+                  const catCount = storeVisibleItems.filter((i) => i.category === cat).length;
+                  const active = isCategoryFullyVisible(cat);
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => toggleCategoryVisibility(cat)}
+                      title={active ? `Hide all ${cat} items from the storefront` : `Show all ${cat} items on the storefront`}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors ${
+                        active ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      {active ? <Eye size={11} /> : <EyeOff size={11} />}
+                      {cat} ({catCount})
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-slate-400">
+                Click a category to show/hide all its items at once. Use the per-item {TEXTS.showOnStore}/{TEXTS.hideFromStore} buttons below to fine-tune individual items afterward.
+              </p>
+            </div>
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Filter size={16} className="text-slate-400" />
