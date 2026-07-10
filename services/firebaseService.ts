@@ -998,3 +998,52 @@ export async function updateStoreInquiryStatus(inquiryId: string, status: StoreI
   const docRef = doc(ctx.db, STORE_INQUIRIES_COLLECTION, inquiryId);
   await updateDoc(docRef, { status });
 }
+
+// --- PRODUCT PHOTO CACHE ---
+// Reuses the same real-world photo across every item that shares a product name, so "Find real
+// photos" only needs to run once per distinct product (saves Custom Search API quota) and repeat
+// items (e.g. 5x the same RAM stick) get a matching default photo automatically.
+const PRODUCT_PHOTO_CACHE_COLLECTION = "productPhotoCache";
+
+/** Firestore doc ids can't contain "/", so fold the product name into a safe, stable key. */
+function productPhotoCacheKey(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[\/#\[\]*]/g, " ")
+    .replace(/\s+/g, " ")
+    .slice(0, 300);
+}
+
+/** Looks up a previously-saved real photo for this product name. Returns null if none cached. */
+export async function getCachedProductPhoto(name: string): Promise<string | null> {
+  const key = productPhotoCacheKey(name);
+  const ctx = init();
+  if (!key || !ctx?.db) return null;
+  try {
+    const snap = await getDoc(doc(ctx.db, PRODUCT_PHOTO_CACHE_COLLECTION, key));
+    if (!snap.exists()) return null;
+    const url = (snap.data() as { imageUrl?: string }).imageUrl;
+    return typeof url === "string" && url ? url : null;
+  } catch (e) {
+    console.warn("getCachedProductPhoto failed:", e);
+    return null;
+  }
+}
+
+/** Saves the chosen real photo for this product name so future items with the same name reuse it. */
+export async function setCachedProductPhoto(name: string, imageUrl: string): Promise<void> {
+  const key = productPhotoCacheKey(name);
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!key || !imageUrl || !ctx?.db || !user) return;
+  try {
+    await setDoc(doc(ctx.db, PRODUCT_PHOTO_CACHE_COLLECTION, key), {
+      imageUrl,
+      productName: name,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.warn("setCachedProductPhoto failed:", e);
+  }
+}

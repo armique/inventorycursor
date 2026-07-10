@@ -19,7 +19,9 @@ import { getCompatibleItemsForItem } from '../services/compatibility';
 import { getEssentialSpecFieldKeys } from '../services/essentialSpecFields';
 import { getCompatibilityWarnings } from '../utils/compatibilityWarnings';
 import { recordCategoryCorrection, suggestCategoryFromCorrections } from '../services/categoryCorrections';
-import { filesToDataUrls, prepareInventoryImagesForStorage } from '../utils/imageImport';
+import { filesToDataUrls, prepareInventoryImagesForStorage, getItemUserPhotoCount } from '../utils/imageImport';
+import { searchProductPhotos, ImageSearchResult } from '../services/imageSearchService';
+import { getCachedProductPhoto, setCachedProductPhoto } from '../services/firebaseService';
 
 interface Props {
   items: InventoryItem[];
@@ -122,6 +124,12 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   const [nameSuggestionsOpen, setNameSuggestionsOpen] = useState(false);
   const [quantityToCreate, setQuantityToCreate] = useState<number>(1);
   const [showExtraSpecs, setShowExtraSpecs] = useState(false);
+  /** Spec fields the user explicitly switched from the AI-filled preset dropdown to manual typing. */
+  const [customSpecKeys, setCustomSpecKeys] = useState<Set<string>>(new Set());
+
+  const [photoSearchResults, setPhotoSearchResults] = useState<ImageSearchResult[] | null>(null);
+  const [photoSearching, setPhotoSearching] = useState(false);
+  const [photoSearchError, setPhotoSearchError] = useState<string | null>(null);
 
   /** Controlled string so partial decimals like "17." work (parsing on each keystroke strips the dot). */
   const [buyPriceText, setBuyPriceText] = useState('');
@@ -155,6 +163,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
 
   useEffect(() => {
     setShowExtraSpecs(false);
+    setCustomSpecKeys(new Set());
   }, [id, initialData?.id]);
 
   useEffect(() => {
@@ -349,6 +358,72 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     }
   };
 
+  /** True once the item has a real photo (not just the category SVG placeholder). */
+  const hasUserPhotos = getItemUserPhotoCount(formData as InventoryItem) > 0;
+
+  // Reuse a previously-found photo automatically: if this item has no real photo yet and another
+  // item with the same product name already got a photo assigned, apply it here too — no re-search,
+  // no re-clicking, until the user adds their own photos to the gallery.
+  const cacheCheckedForNameRef = React.useRef<string | null>(null);
+  useEffect(() => {
+    const name = (formData.name || '').trim();
+    if (!name || hasUserPhotos) return;
+    if (cacheCheckedForNameRef.current === name) return;
+    const timer = setTimeout(async () => {
+      cacheCheckedForNameRef.current = name;
+      const cached = await getCachedProductPhoto(name);
+      if (!cached) return;
+      // Re-check current state at resolve time — name or photos may have changed while awaiting.
+      setFormData((prev) => {
+        if ((prev.name || '').trim() !== name) return prev;
+        if (getItemUserPhotoCount(prev as InventoryItem) > 0) return prev;
+        const merged = normalizeImageList([cached, ...(prev.imageUrls || [])]);
+        return { ...prev, imageUrl: merged[0], imageUrls: merged };
+      });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [formData.name, hasUserPhotos]);
+
+  const handleFindRealPhotos = async () => {
+    if (!formData.name) return alert('Please enter an item name first.');
+    setPhotoSearching(true);
+    setPhotoSearchError(null);
+    setPhotoSearchResults(null);
+    try {
+      const results = await searchProductPhotos(formData.name);
+      if (results.length === 0) {
+        setPhotoSearchError('No photos found for that name.');
+        return;
+      }
+      // No real photo yet: auto-apply the top match as the default so it "just works" with one
+      // click, while still showing the rest of the results in case you'd rather pick a different one.
+      if (!hasUserPhotos) {
+        await handlePickSearchedPhoto(results[0], results.slice(1));
+      } else {
+        setPhotoSearchResults(results);
+      }
+    } catch (e: any) {
+      setPhotoSearchError(e?.message || 'Photo search failed.');
+    } finally {
+      setPhotoSearching(false);
+    }
+  };
+
+  /** Adds a searched photo, makes it the default/main image, and caches it for other items with the same name. */
+  const handlePickSearchedPhoto = async (result: ImageSearchResult, remaining?: ImageSearchResult[]) => {
+    const prepared = await prepareInventoryImagesForStorage([result.url]);
+    if (!prepared.length) return;
+    const stored = prepared[0];
+    const merged = normalizeImageList([stored, ...itemImageList.filter((u) => u !== stored)]);
+    setFormData((prev) => ({ ...prev, imageUrl: merged[0], imageUrls: merged }));
+    setPhotoSearchResults(
+      remaining !== undefined ? remaining : (prev) => (prev ? prev.filter((r) => r.url !== result.url) : prev)
+    );
+    if (formData.name) {
+      void setCachedProductPhoto(formData.name, stored);
+    }
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name) return;
@@ -446,6 +521,8 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       formData.specs
     );
 
+    const CUSTOM_OPTION = '__custom__';
+
     const renderSpecInputs = (keys: string[]) =>
       keys.map((key) => {
         const options = getSpecOptions(key).map(String);
@@ -454,30 +531,50 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
         const value = rawVal === undefined || rawVal === null ? '' : String(rawVal);
         const aiRaw = formData.specsAiSuggested?.[key];
         const aiSuggested = aiRaw === undefined || aiRaw === null ? '' : String(aiRaw);
-        const selectValue = options.includes(value) ? value : '';
-        const showAiBadge = aiSuggested !== '' && String(value) === String(aiSuggested);
+        // AI-filled fields get a visibly distinct blue-tinted input, not just a small badge,
+        // so they're easy to scan at a glance rather than having to read every label.
+        const isAiFilled = aiSuggested !== '' && String(value) === String(aiSuggested);
+        const matchedOption = options.find((o) => o.toLowerCase() === value.toLowerCase());
+        const manualMode = customSpecKeys.has(key) || !hasPresets;
+
+        const toggleManual = (on: boolean) => {
+          setCustomSpecKeys((prev) => {
+            const next = new Set(prev);
+            if (on) next.add(key);
+            else next.delete(key);
+            return next;
+          });
+        };
 
         return (
           <div key={key} className="space-y-1">
             <div className="flex items-center justify-between gap-2 min-h-[14px]">
-              <label className="text-[10px] font-bold uppercase text-slate-400">{key}</label>
-              {showAiBadge && (
-                <span className="text-[9px] font-black uppercase text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md shrink-0">
-                  AI
+              <label className="text-[10px] font-bold uppercase text-slate-400 truncate">{key}</label>
+              {isAiFilled && (
+                <span className="flex items-center gap-0.5 text-[9px] font-black uppercase text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded shrink-0">
+                  <Wand2 size={9} /> AI
                 </span>
               )}
             </div>
-            {hasPresets && (
+
+            {!manualMode ? (
+              // Single control: AI already filled this in — pick a different option to override,
+              // no separate "choose a preset" step needed.
               <select
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
-                value={selectValue}
+                className={`w-full px-2.5 py-1.5 border rounded-lg text-xs font-bold outline-none focus:border-blue-500 ${isAiFilled ? 'bg-blue-50/70 border-blue-200' : 'bg-slate-50 border-slate-200'}`}
+                value={matchedOption ?? (value ? CUSTOM_OPTION : '')}
                 onChange={(e) => {
-                  const v = e.target.value;
-                  if (!v) return;
-                  updateSpecField(key, v);
+                  if (e.target.value === CUSTOM_OPTION) {
+                    toggleManual(true);
+                    return;
+                  }
+                  updateSpecField(key, e.target.value);
                 }}
               >
-                <option value="">Choose preset…</option>
+                <option value="">— Select —</option>
+                {value && !matchedOption && (
+                  <option value={CUSTOM_OPTION}>{value} (current)</option>
+                )}
                 {options.map((opt) => {
                   const isAiPick = aiSuggested !== '' && String(aiSuggested) === String(opt);
                   return (
@@ -486,37 +583,52 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                     </option>
                   );
                 })}
+                <option value={CUSTOM_OPTION}>Other (type manually)…</option>
               </select>
+            ) : (
+              <div className="flex gap-1">
+                <input
+                  autoFocus={hasPresets}
+                  className={`w-full px-2.5 py-1.5 border rounded-lg text-xs font-bold outline-none focus:border-blue-500 ${isAiFilled ? 'bg-blue-50/70 border-blue-200 text-blue-900' : 'bg-white border-slate-200'}`}
+                  value={value}
+                  onChange={(e) => updateSpecField(key, e.target.value)}
+                  placeholder="Enter value…"
+                />
+                {hasPresets && (
+                  <button
+                    type="button"
+                    title="Back to preset list"
+                    onClick={() => toggleManual(false)}
+                    className="shrink-0 px-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-400 hover:text-blue-600 hover:border-blue-300 text-xs"
+                  >
+                    <ChevronDown size={13} />
+                  </button>
+                )}
+              </div>
             )}
-            <input
-              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
-              value={value}
-              onChange={(e) => updateSpecField(key, e.target.value)}
-              placeholder={hasPresets ? 'Type any value (overrides preset)' : 'Enter value…'}
-            />
           </div>
         );
       });
 
     return (
-      <div className="space-y-3">
-        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">
-          Main fields (≤10) — presets show ✨ when they match the last AI fill; edit the text field to override
+      <div className="space-y-2.5">
+        <p className="text-[10px] font-bold text-slate-400">
+          Blue = AI-filled · pick a different option to override, or "Other" to type a custom value
         </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{renderSpecInputs(primaryKeys)}</div>
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5">{renderSpecInputs(primaryKeys)}</div>
 
         {extraKeys.length > 0 && (
           <>
             <button
               type="button"
               onClick={() => setShowExtraSpecs((v) => !v)}
-              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors"
+              className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors"
             >
-              <ChevronDown size={16} className={showExtraSpecs ? 'rotate-180 transition-transform' : 'transition-transform'} />
+              <ChevronDown size={14} className={showExtraSpecs ? 'rotate-180 transition-transform' : 'transition-transform'} />
               {showExtraSpecs ? 'Hide' : 'Show'} extra fields ({extraKeys.length})
             </button>
             {showExtraSpecs && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1 border-t border-slate-100">
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1 border-t border-slate-200">
                 {renderSpecInputs(extraKeys)}
               </div>
             )}
@@ -535,9 +647,9 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
               }));
             }
           }}
-          className="flex items-center justify-center border-2 border-dashed border-slate-200 rounded-xl p-2 text-xs font-bold text-slate-400 hover:border-blue-300 hover:text-blue-500 transition-all w-full md:w-auto"
+          className="flex items-center justify-center gap-1.5 border-2 border-dashed border-slate-200 rounded-lg py-1.5 px-3 text-xs font-bold text-slate-400 hover:border-blue-300 hover:text-blue-500 transition-all w-full lg:w-auto"
         >
-          <Plus size={14} /> Add Field
+          <Plus size={13} /> Add Field
         </button>
       </div>
     );
@@ -621,10 +733,10 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       )}
 
       {isModal && configStep === 'DONE' && (
-         <div className="mb-4 shrink-0">
-            <h2 className="text-xl font-black text-slate-900">Editing Asset</h2>
+         <div className="mb-3 shrink-0">
+            <h2 className="text-base font-black text-slate-900">Editing Asset</h2>
             <p
-              className="text-xs text-slate-500 break-words whitespace-normal max-h-20 overflow-y-auto pr-1"
+              className="text-xs text-slate-500 truncate"
               title={formData.name}
             >
               {formData.name}
@@ -634,18 +746,18 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
 
       <div className={`flex-1 ${isModal ? 'overflow-y-auto scrollbar-hide -mx-4 px-4' : ''}`}>
         {configStep === 'CATEGORY' ? renderCategorySelection() : (
-           <form onSubmit={handleSave} className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full">
-              <div className="lg:col-span-7 space-y-5">
-                 <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 space-y-5">
+           <form onSubmit={handleSave} className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+              <div className="lg:col-span-7 space-y-4">
+                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 space-y-4">
                     {/* Basic Info */}
-                   <div className="space-y-4">
-                      <div className="space-y-2">
-                          <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Item Name</label>
+                   <div className="space-y-3">
+                      <div className="space-y-1.5">
+                          <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Item Name</label>
                           <div className="flex gap-2 items-stretch">
                             <div className="relative flex-1">
-                              <input 
+                              <input
                                  autoFocus={!id && !initialData}
-                                 className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-lg outline-none focus:border-blue-500 focus:bg-white transition-all"
+                                 className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-base outline-none focus:border-blue-500 focus:bg-white transition-all"
                                  placeholder="e.g. MSI GeForce RTX 3060 Gaming X — type to suggest from history"
                                  value={formData.name}
                                  onChange={e => setFormData({ ...formData, name: e.target.value })}
@@ -653,7 +765,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                                  onBlur={() => setTimeout(() => setNameSuggestionsOpen(false), 180)}
                               />
                               {nameSuggestionsOpen && nameSuggestions.length > 0 && (
-                                <ul className="absolute z-20 left-0 right-0 mt-1 py-2 bg-white border border-slate-200 rounded-2xl shadow-xl max-h-56 overflow-y-auto">
+                                <ul className="absolute z-20 left-0 right-0 mt-1 py-2 bg-white border border-slate-200 rounded-xl shadow-xl max-h-56 overflow-y-auto">
                                   <li className="px-4 py-2 text-[10px] font-black uppercase text-slate-400 border-b border-slate-100">
                                     Pick from history to copy category, specs & more
                                   </li>
@@ -680,31 +792,20 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                               <button
                                 type="button"
                                 onClick={() => setFormData((prev) => ({ ...prev, category: learnedCategory }))}
-                                className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg hover:bg-indigo-100"
+                                className="shrink-0 text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg hover:bg-indigo-100 self-center"
                               >
-                                Learned category: {learnedCategory}
+                                Learned: {learnedCategory}
                               </button>
                             )}
-                            {/* Quick AI specs parse from name */}
-                            <button
-                              type="button"
-                              onClick={handleAutoFillSpecs}
-                              disabled={generatingSpecs || !formData.name}
-                              title="AI: parse tech specs from item name and fill the fields below"
-                              className="shrink-0 px-4 py-3 rounded-2xl border border-blue-100 bg-white text-xs font-black uppercase tracking-widest text-blue-600 flex items-center gap-1 hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              {generatingSpecs ? <Wand2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
-                              <span>AI Specs</span>
-                            </button>
                           </div>
                        </div>
-            <div className="grid grid-cols-3 gap-3">
-                          <div className="space-y-2">
-                             <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Buy Price (€)</label>
-                             <input 
+                       <div className="grid grid-cols-3 gap-2.5">
+                          <div className="space-y-1.5">
+                             <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Buy Price (€)</label>
+                             <input
                                 type="text"
                                 inputMode="decimal"
-                                className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-lg outline-none focus:border-blue-500 focus:bg-white transition-all"
+                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-base outline-none focus:border-blue-500 focus:bg-white transition-all"
                                 value={buyPriceText}
                                 onChange={(e) => setBuyPriceText(e.target.value)}
                                 onBlur={() => {
@@ -723,22 +824,22 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                                 }}
                              />
                           </div>
-                          <div className="space-y-2">
-                             <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Buy Date</label>
-                             <input 
+                          <div className="space-y-1.5">
+                             <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Buy Date</label>
+                             <input
                                 type="date"
-                                className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm outline-none focus:border-blue-500 focus:bg-white transition-all"
+                                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-blue-500 focus:bg-white transition-all"
                                 value={formData.buyDate}
                                 onChange={e => setFormData({ ...formData, buyDate: e.target.value })}
                              />
                           </div>
                           {!initialData && !id && (
-                            <div className="space-y-2">
-                              <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Quantity</label>
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Quantity</label>
                               <input
                                 type="number"
                                 min={1}
-                                className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-sm outline-none focus:border-blue-500 focus:bg-white transition-all"
+                                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-sm outline-none focus:border-blue-500 focus:bg-white transition-all"
                                 value={quantityToCreate}
                                 onChange={e => setQuantityToCreate(Number(e.target.value) || 1)}
                               />
@@ -748,33 +849,33 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                     </div>
 
                     {/* Specs & AI */}
-                    <div className="p-5 bg-slate-50 rounded-[2rem] border border-slate-200 space-y-4">
-                      <div className="flex justify-between items-center">
+                    <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                      <div className="flex justify-between items-center gap-2 flex-wrap">
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
                             onClick={() => setShowSpecs((v) => !v)}
-                            className="w-7 h-7 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100"
+                            className="w-6 h-6 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100 shrink-0"
                             title={showSpecs ? 'Hide specs' : 'Show specs'}
                           >
                             <ChevronDown
-                              size={14}
+                              size={13}
                               className={`transition-transform ${showSpecs ? '' : '-rotate-90'}`}
                             />
                           </button>
-                          <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                            <Sliders size={16} /> Tech Specs
+                          <h3 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
+                            <Sliders size={15} /> Tech Specs
                           </h3>
                         </div>
-                         <button 
+                         <button
                             type="button"
                             onClick={handleAutoFillSpecs}
-                            disabled={generatingSpecs}
+                            disabled={generatingSpecs || !formData.name}
                             title="Look up this product (e.g. i7-12700K) and fill in specs from the web — cores, threads, clock, TDP, etc. Adds new spec fields if needed."
-                            className="text-[10px] font-black uppercase bg-white border border-blue-100 text-blue-600 px-3 py-1.5 rounded-lg flex items-center gap-1 hover:bg-blue-50 transition-all disabled:opacity-50"
+                            className="text-[10px] font-black uppercase bg-blue-600 text-white px-3 py-1.5 rounded-lg flex items-center gap-1.5 hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
                          >
                             {generatingSpecs ? <Wand2 size={12} className="animate-spin"/> : <Wand2 size={12}/>}
-                            {generatingSpecs ? 'Looking up specs…' : `Parse specs from web${getSpecsAIProvider() ? ` (${getSpecsAIProvider()})` : ''}`}
+                            {generatingSpecs ? 'Looking up specs…' : `Parse AI specs${getSpecsAIProvider() ? ` (${getSpecsAIProvider()})` : ''}`}
                          </button>
                       </div>
                       {showSpecs && renderSpecsEditor()}
@@ -782,25 +883,23 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
 
                     {/* Compatible with (CPU / Motherboard / RAM) — beyond PC Builder */}
                     {compatibleGroups.length > 0 && (
-                      <div className="p-6 bg-slate-50 rounded-[2rem] border border-slate-200 space-y-4">
-                        <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                          <LinkIcon size={16} className="text-blue-500" />
+                      <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
+                        <h3 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
+                          <LinkIcon size={15} className="text-blue-500" />
                           Compatible with
                         </h3>
-                        <p className="text-xs text-slate-500">Other inventory items that match this part’s socket or memory type.</p>
-                        <div className="space-y-4">
+                        <div className="space-y-2.5">
                           {compatibleGroups.map((group) => (
                             <div key={group.label}>
-                              <p className="text-[10px] font-black uppercase text-slate-400 mb-2">{group.label}</p>
-                              <ul className="flex flex-wrap gap-2">
+                              <p className="text-[10px] font-black uppercase text-slate-400 mb-1.5">{group.label}</p>
+                              <ul className="flex flex-wrap gap-1.5">
                                 {group.items.map((i) => (
                                   <li key={i.id}>
                                     <Link
                                       to={`/panel/edit/${i.id}`}
-                                      className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 hover:border-blue-300 hover:text-blue-600 transition-all"
+                                      className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 hover:border-blue-300 hover:text-blue-600 transition-all"
                                     >
                                       {i.name}
-                                      <ChevronDown size={12} className="rotate-[-90deg] text-slate-400" />
                                     </Link>
                                   </li>
                                 ))}
@@ -811,16 +910,61 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                       </div>
                     )}
 
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Item Photos</label>
-                        <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-600 cursor-pointer hover:bg-slate-50">
-                          <Upload size={12} /> Add images
-                          <input type="file" accept="image/*" multiple className="hidden" onChange={handleMultiImageUpload} />
-                        </label>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Item Photos</label>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={handleFindRealPhotos}
+                            disabled={photoSearching || !formData.name}
+                            title="Search real product photos for this item name and use one as the default photo"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <Search size={12} className={photoSearching ? 'animate-spin' : ''} />
+                            {photoSearching ? 'Searching…' : 'Find real photos'}
+                          </button>
+                          <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-600 cursor-pointer hover:bg-slate-50">
+                            <Upload size={12} /> Add images
+                            <input type="file" accept="image/*" multiple className="hidden" onChange={handleMultiImageUpload} />
+                          </label>
+                        </div>
                       </div>
+
+                      {photoSearchError && (
+                        <p className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                          {photoSearchError}
+                        </p>
+                      )}
+                      {photoSearchResults && photoSearchResults.length > 0 && (
+                        <div className="p-2 bg-blue-50/50 border border-blue-100 rounded-xl space-y-1.5">
+                          <p className="text-[10px] font-bold text-blue-700 px-0.5">Click a photo to use it as the default image</p>
+                          <div className="grid grid-cols-4 md:grid-cols-8 gap-1.5">
+                            {photoSearchResults.map((r) => (
+                              <button
+                                key={r.url}
+                                type="button"
+                                title={r.title}
+                                onClick={() => handlePickSearchedPhoto(r)}
+                                className="group relative rounded-lg overflow-hidden border border-slate-200 bg-white hover:border-blue-400 transition-all"
+                              >
+                                <img
+                                  src={r.thumbnail}
+                                  alt=""
+                                  className="w-full h-14 object-cover"
+                                  onError={(e) => {
+                                    (e.currentTarget as HTMLImageElement).style.display = 'none';
+                                  }}
+                                />
+                                <span className="absolute inset-0 bg-blue-600/0 group-hover:bg-blue-600/20 transition-colors" />
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       <input
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-xs outline-none focus:border-blue-500 focus:bg-white transition-all"
+                        className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-xs outline-none focus:border-blue-500 focus:bg-white transition-all"
                         placeholder="Paste image URL and press Enter"
                         onKeyDown={async (e) => {
                           if (e.key !== 'Enter') return;
@@ -833,24 +977,24 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                         }}
                       />
                       {itemImageList.length > 0 && (
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
                           {itemImageList.map((url) => {
                             const isMain = formData.imageUrl === url;
                             return (
-                              <div key={url} className={`p-2 rounded-xl border ${isMain ? 'border-blue-300 bg-blue-50/60' : 'border-slate-200 bg-white'}`}>
-                                <img src={url} alt="" className="w-full h-24 object-cover rounded-lg border border-slate-200 bg-slate-100" />
-                                <div className="flex items-center justify-between mt-2 gap-1">
+                              <div key={url} className={`p-1.5 rounded-lg border ${isMain ? 'border-blue-300 bg-blue-50/60' : 'border-slate-200 bg-white'}`}>
+                                <img src={url} alt="" className="w-full h-16 object-cover rounded-md border border-slate-200 bg-slate-100" />
+                                <div className="flex items-center justify-between mt-1.5 gap-1">
                                   <button
                                     type="button"
                                     onClick={() => setMainImage(url)}
-                                    className={`text-[9px] font-black uppercase px-2 py-1 rounded ${isMain ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                                    className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${isMain ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                                   >
-                                    {isMain ? 'Main' : 'Set main'}
+                                    {isMain ? 'Main' : 'Set'}
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => removeImage(url)}
-                                    className="text-[9px] font-black uppercase px-2 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100"
+                                    className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded bg-red-50 text-red-600 hover:bg-red-100"
                                   >
                                     Remove
                                   </button>
@@ -862,115 +1006,117 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                       )}
                     </div>
 
-                    {/* Description / Notes */}
-                    <div className="space-y-2">
-                       <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Notes / Condition</label>
-                       <textarea 
-                          className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-medium text-sm outline-none focus:border-blue-500 focus:bg-white transition-all h-32 resize-none"
-                          placeholder="e.g. Minor scratches, box included..."
-                          value={formData.comment1}
-                          onChange={e => setFormData({ ...formData, comment1: e.target.value })}
-                       />
-                    </div>
-
-                    {/* AI Listing Text (Kleinanzeigen / eBay, DE) */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">
-                          AI Listing Text (DE)
-                        </label>
-                        {formData.marketDescription && (
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              if (!formData.marketDescription) return;
-                              try {
-                                await navigator.clipboard.writeText(formData.marketDescription);
-                                // lightweight inline feedback
-                                const el = document.createElement('div');
-                                el.textContent = 'Copied';
-                                el.className = 'ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200';
-                                const parent = (event?.currentTarget as HTMLElement)?.parentElement;
-                                if (parent) {
-                                  parent.appendChild(el);
-                                  setTimeout(() => parent.removeChild(el), 900);
-                                }
-                              } catch (e) {
-                                console.error('Copy AI listing text failed', e);
-                                alert('Could not copy AI listing text.');
-                              }
-                            }}
-                            className="mr-2 text-[10px] font-bold uppercase tracking-widest text-blue-600 hover:text-blue-800"
-                          >
-                            Copy
-                          </button>
-                        )}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {/* Description / Notes */}
+                      <div className="space-y-1.5">
+                         <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Notes / Condition</label>
+                         <textarea
+                            className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-xs outline-none focus:border-blue-500 focus:bg-white transition-all h-20 resize-none"
+                            placeholder="e.g. Minor scratches, box included..."
+                            value={formData.comment1}
+                            onChange={e => setFormData({ ...formData, comment1: e.target.value })}
+                         />
                       </div>
-                      <textarea
-                        className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-medium text-sm outline-none focus:border-blue-500 focus:bg-white transition-all h-32 resize-y"
-                        placeholder="AI generated Kleinanzeigen / eBay Beschreibung erscheint hier, nachdem du im Inventar auf die K/E-Icons geklickt hast..."
-                        value={formData.marketDescription || ''}
-                        onChange={e => setFormData({ ...formData, marketDescription: e.target.value })}
-                      />
-                      <p className="text-[10px] text-slate-400 ml-2">
-                        Wird im Inventar über die grünen/blauen KI-Buttons (K / E) generiert. Du kannst den Text hier manuell anpassen.
-                      </p>
+
+                      {/* AI Listing Text (Kleinanzeigen / eBay, DE) */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">
+                            AI Listing Text (DE)
+                          </label>
+                          {formData.marketDescription && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (!formData.marketDescription) return;
+                                try {
+                                  await navigator.clipboard.writeText(formData.marketDescription);
+                                  // lightweight inline feedback
+                                  const el = document.createElement('div');
+                                  el.textContent = 'Copied';
+                                  el.className = 'ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200';
+                                  const parent = (event?.currentTarget as HTMLElement)?.parentElement;
+                                  if (parent) {
+                                    parent.appendChild(el);
+                                    setTimeout(() => parent.removeChild(el), 900);
+                                  }
+                                } catch (e) {
+                                  console.error('Copy AI listing text failed', e);
+                                  alert('Could not copy AI listing text.');
+                                }
+                              }}
+                              className="mr-1 text-[10px] font-bold uppercase tracking-widest text-blue-600 hover:text-blue-800"
+                            >
+                              Copy
+                            </button>
+                          )}
+                        </div>
+                        <textarea
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-xs outline-none focus:border-blue-500 focus:bg-white transition-all h-20 resize-y"
+                          placeholder="AI generated Kleinanzeigen / eBay Beschreibung erscheint hier, nachdem du im Inventar auf die K/E-Icons geklickt hast..."
+                          value={formData.marketDescription || ''}
+                          onChange={e => setFormData({ ...formData, marketDescription: e.target.value })}
+                        />
+                      </div>
                     </div>
                  </div>
               </div>
 
-              <div className="lg:col-span-5 space-y-5">
-                 {/* Context Info */}
-                 <div className="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-100 space-y-4">
+              <div className="lg:col-span-5 space-y-4">
+                 {/* Category / source / payment */}
+                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 space-y-3">
                     <h3 className="font-black text-xs uppercase tracking-widest text-slate-400">Purchase Info</h3>
-                    
-                    <div className="space-y-1">
-                       <label className="text-[10px] font-bold text-slate-400">Category</label>
-                       <button type="button" onClick={() => setConfigStep('CATEGORY')} className="w-full text-left px-4 py-3 bg-slate-50 rounded-xl font-bold text-sm flex justify-between items-center group hover:bg-slate-100">
-                          <span>{formData.category} / {formData.subCategory}</span>
-                          <ChevronDown size={14} className="text-slate-400 group-hover:text-slate-600"/>
-                       </button>
-                    </div>
 
-                    <div className="space-y-1">
-                       <label className="text-[10px] font-bold text-slate-400">Source Platform</label>
-                       <select 
-                          className="w-full px-4 py-3 bg-slate-50 rounded-xl font-bold text-xs outline-none"
-                          value={formData.platformBought}
-                          onChange={e => setFormData({ ...formData, platformBought: e.target.value as Platform })}
-                       >
-                          <option value="kleinanzeigen.de">Kleinanzeigen</option>
-                          <option value="ebay.de">eBay</option>
-                          <option value="Amazon">Amazon</option>
-                          <option value="Other">Other</option>
-                       </select>
-                    </div>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div className="col-span-2 space-y-1">
+                         <label className="text-[10px] font-bold text-slate-400">Category</label>
+                         <button type="button" onClick={() => setConfigStep('CATEGORY')} className="w-full text-left px-3 py-2.5 bg-slate-50 rounded-xl font-bold text-sm flex justify-between items-center group hover:bg-slate-100">
+                            <span className="truncate">{formData.category} / {formData.subCategory}</span>
+                            <ChevronDown size={14} className="text-slate-400 group-hover:text-slate-600 shrink-0 ml-1"/>
+                         </button>
+                      </div>
 
-                    <div className="space-y-1">
-                       <label className="text-[10px] font-bold text-slate-400">Payment Sent</label>
-                       <select 
-                          className="w-full px-4 py-3 bg-slate-50 rounded-xl font-bold text-xs outline-none"
-                          value={formData.buyPaymentType}
-                          onChange={e => setFormData({ ...formData, buyPaymentType: e.target.value as PaymentType })}
-                       >
-                          {PAYMENT_METHODS.map(p => <option key={p} value={p}>{p}</option>)}
-                       </select>
-                    </div>
+                      <div className="space-y-1">
+                         <label className="text-[10px] font-bold text-slate-400">Source Platform</label>
+                         <select
+                            className="w-full px-3 py-2.5 bg-slate-50 rounded-xl font-bold text-xs outline-none"
+                            value={formData.platformBought}
+                            onChange={e => setFormData({ ...formData, platformBought: e.target.value as Platform })}
+                         >
+                            <option value="kleinanzeigen.de">Kleinanzeigen</option>
+                            <option value="ebay.de">eBay</option>
+                            <option value="Amazon">Amazon</option>
+                            <option value="Other">Other</option>
+                         </select>
+                      </div>
 
-                    {/* Price & sale history */}
-                 <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 space-y-4">
-                    <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 flex items-center gap-2">
-                      <History size={14} /> Price & sale history
+                      <div className="space-y-1">
+                         <label className="text-[10px] font-bold text-slate-400">Payment Sent</label>
+                         <select
+                            className="w-full px-3 py-2.5 bg-slate-50 rounded-xl font-bold text-xs outline-none"
+                            value={formData.buyPaymentType}
+                            onChange={e => setFormData({ ...formData, buyPaymentType: e.target.value as PaymentType })}
+                         >
+                            {PAYMENT_METHODS.map(p => <option key={p} value={p}>{p}</option>)}
+                         </select>
+                      </div>
+                    </div>
+                 </div>
+
+                 {/* Price & sale history */}
+                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 space-y-2.5">
+                    <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+                      <History size={13} /> Price & sale history
                     </h3>
-                    <div className="space-y-3 text-xs">
+                    <div className="space-y-2 text-xs">
                       <div className="flex items-center gap-2 text-slate-700">
-                        <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
                         <span className="font-bold">Acquired</span>
                         <span className="text-slate-500">{formData.buyDate ? new Date(formData.buyDate).toLocaleDateString() : '—'}</span>
                         <span className="font-black text-slate-900">€{formatEUR(Number(formData.buyPrice || 0))}</span>
                       </div>
                       {(formData.priceHistory || []).slice().sort((a, b) => a.date.localeCompare(b.date)).map((entry, i) => (
-                        <div key={`${entry.date}-${entry.type}-${i}`} className="flex items-center gap-2 text-slate-600 pl-4 border-l-2 border-slate-200 ml-0.5">
+                        <div key={`${entry.date}-${entry.type}-${i}`} className="flex items-center gap-2 text-slate-600 pl-3.5 border-l-2 border-slate-200 ml-0.5">
                           <span className="font-medium">{entry.type === 'buy' ? 'Cost' : 'Sell price'} updated</span>
                           <span className="text-slate-400">{new Date(entry.date).toLocaleDateString()}</span>
                           {entry.previousPrice != null && (
@@ -981,7 +1127,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                       ))}
                       {(formData.status === ItemStatus.SOLD || formData.status === ItemStatus.TRADED) && formData.sellDate && (
                         <div className="flex items-center gap-2 text-emerald-700 font-bold pt-1">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                           <span>Sold</span>
                           <span className="text-slate-500 font-medium">{new Date(formData.sellDate).toLocaleDateString()}</span>
                           <span>€{formatEUR(formData.sellPrice ?? 0)}</span>
@@ -993,83 +1139,86 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                     </div>
                  </div>
 
-                    {/* OVP & IO Blende – used by AI description generator */}
-                    <div className="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-100 space-y-4">
-                       <h3 className="font-black text-xs uppercase tracking-widest text-slate-400">AI Description Hints</h3>
-                       <div className="flex flex-wrap gap-4">
+                 {/* OVP & IO Blende – used by AI description generator */}
+                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 space-y-2.5">
+                    <h3 className="font-black text-xs uppercase tracking-widest text-slate-400">AI Description Hints</h3>
+                    <div className="flex flex-col gap-2">
+                       <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                             type="checkbox"
+                             checked={!!formData.hasOVP}
+                             onChange={e => setFormData({ ...formData, hasOVP: e.target.checked })}
+                             className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-xs font-bold text-slate-700">OVP (Original Packaging)</span>
+                       </label>
+                       {(formData.isBundle || formData.subCategory === 'Motherboards' || formData.category === 'Motherboards') && (
                           <label className="flex items-center gap-2 cursor-pointer">
                              <input
                                 type="checkbox"
-                                checked={!!formData.hasOVP}
-                                onChange={e => setFormData({ ...formData, hasOVP: e.target.checked })}
+                                checked={!!formData.hasIOShield}
+                                onChange={e => setFormData({ ...formData, hasIOShield: e.target.checked })}
                                 className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                              />
-                             <span className="text-sm font-bold text-slate-700">OVP (Original Packaging)</span>
+                             <span className="text-xs font-bold text-slate-700">IO Blende</span>
                           </label>
-                          {(formData.isBundle || formData.subCategory === 'Motherboards' || formData.category === 'Motherboards') && (
-                             <label className="flex items-center gap-2 cursor-pointer">
-                                <input
-                                   type="checkbox"
-                                   checked={!!formData.hasIOShield}
-                                   onChange={e => setFormData({ ...formData, hasIOShield: e.target.checked })}
-                                   className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                                />
-                                <span className="text-sm font-bold text-slate-700">IO Blende</span>
-                             </label>
-                          )}
-                          <label className="flex items-center gap-2 cursor-pointer">
-                             <input
-                                type="checkbox"
-                                checked={!!formData.usesDifferentialVat}
-                                onChange={e => setFormData({ ...formData, usesDifferentialVat: e.target.checked })}
-                                className="w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
-                             />
-                             <span className="text-sm font-bold text-slate-700">§25a Differenzbesteuerung (Gebrauchtware)</span>
-                          </label>
-                       </div>
+                       )}
+                       <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                             type="checkbox"
+                             checked={!!formData.usesDifferentialVat}
+                             onChange={e => setFormData({ ...formData, usesDifferentialVat: e.target.checked })}
+                             className="w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                          />
+                          <span className="text-xs font-bold text-slate-700">§25a Differenzbesteuerung (Gebrauchtware)</span>
+                       </label>
                     </div>
-
-                    {isSold && (
-                        <div className="animate-in slide-in-from-bottom-2 fade-in space-y-4 border-t border-slate-100 pt-4 mt-2">
-                           <h3 className="font-black text-xs uppercase tracking-widest text-emerald-500">Sales Info</h3>
-                           
-                           <div className="space-y-1">
-                              <label className="text-[10px] font-bold text-slate-400">Sold On</label>
-                              <select 
-                                 className="w-full px-4 py-3 bg-emerald-50 text-emerald-900 border border-emerald-100 rounded-xl font-bold text-xs outline-none"
-                                 value={formData.platformSold || ''}
-                                 onChange={e => setFormData({ ...formData, platformSold: (e.target.value || undefined) as Platform | undefined })}
-                              >
-                                 <option value="">— Select platform —</option>
-                                 {SALE_PLATFORM_OPTIONS.map((p) => (
-                                   <option key={p.value} value={p.value}>{p.label}</option>
-                                 ))}
-                              </select>
-                           </div>
-
-                           <div className="space-y-1">
-                              <label className="text-[10px] font-bold text-slate-400">Payment Received</label>
-                              <select 
-                                 className="w-full px-4 py-3 bg-emerald-50 text-emerald-900 border border-emerald-100 rounded-xl font-bold text-xs outline-none"
-                                 value={formData.paymentType}
-                                 onChange={e => setFormData({ ...formData, paymentType: e.target.value as PaymentType })}
-                              >
-                                 {PAYMENT_METHODS.map(p => <option key={p} value={p}>{p}</option>)}
-                              </select>
-                           </div>
-                        </div>
-                    )}
                  </div>
 
-                 <button type="submit" className="w-full py-5 bg-slate-900 text-white rounded-[2rem] font-black uppercase text-xs tracking-widest shadow-xl hover:bg-black transition-all flex items-center justify-center gap-2">
-                    <Save size={18}/> Save Asset
-                 </button>
-                 
+                 {isSold && (
+                    <div className="bg-emerald-50/60 p-4 rounded-2xl border border-emerald-100 space-y-2.5 animate-in slide-in-from-bottom-2 fade-in">
+                       <h3 className="font-black text-xs uppercase tracking-widest text-emerald-600">Sales Info</h3>
+
+                       <div className="grid grid-cols-2 gap-2.5">
+                         <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-emerald-700/70">Sold On</label>
+                            <select
+                               className="w-full px-3 py-2.5 bg-white text-emerald-900 border border-emerald-200 rounded-xl font-bold text-xs outline-none"
+                               value={formData.platformSold || ''}
+                               onChange={e => setFormData({ ...formData, platformSold: (e.target.value || undefined) as Platform | undefined })}
+                            >
+                               <option value="">— Select platform —</option>
+                               {SALE_PLATFORM_OPTIONS.map((p) => (
+                                 <option key={p.value} value={p.value}>{p.label}</option>
+                               ))}
+                            </select>
+                         </div>
+
+                         <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-emerald-700/70">Payment Received</label>
+                            <select
+                               className="w-full px-3 py-2.5 bg-white text-emerald-900 border border-emerald-200 rounded-xl font-bold text-xs outline-none"
+                               value={formData.paymentType}
+                               onChange={e => setFormData({ ...formData, paymentType: e.target.value as PaymentType })}
+                            >
+                               {PAYMENT_METHODS.map(p => <option key={p} value={p}>{p}</option>)}
+                            </select>
+                         </div>
+                       </div>
+                    </div>
+                 )}
+              </div>
+
+              {/* Sticky action bar — always visible, no scrolling needed to Save/Cancel */}
+              <div className="lg:col-span-12 sticky bottom-0 -mx-4 px-4 pt-3 pb-1 mt-1 bg-gradient-to-t from-slate-50 via-slate-50/95 to-transparent flex gap-2.5">
                  {isModal && (
-                    <button type="button" onClick={onClose} className="w-full py-4 bg-slate-100 text-slate-500 rounded-[2rem] font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-all">
+                    <button type="button" onClick={onClose} className="px-6 py-3 bg-white border border-slate-200 text-slate-500 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-slate-100 transition-all">
                        Cancel
                     </button>
                  )}
+                 <button type="submit" className="flex-1 py-3 bg-slate-900 text-white rounded-xl font-black uppercase text-xs tracking-widest shadow-lg hover:bg-black transition-all flex items-center justify-center gap-2">
+                    <Save size={16}/> Save Asset
+                 </button>
               </div>
            </form>
         )}

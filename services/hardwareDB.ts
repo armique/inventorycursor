@@ -87,6 +87,7 @@ export const getSpecOptions = (fieldName: string): (string | number)[] => {
 
   if (lower.includes('gpu series') || lower.includes('product line')) return HARDWARE_OPTIONS.gpu.product_lines;
 
+  if (lower.includes('family') || (lower.includes('series') && !lower.includes('gpu'))) return HARDWARE_OPTIONS.cpu.series;
   if (lower.includes('socket')) return HARDWARE_OPTIONS.cpu.sockets;
   if (lower.includes('thread')) return HARDWARE_OPTIONS.cpu.threads;
   if (lower === 'cores' || (lower.includes('core') && !lower.includes('score'))) return HARDWARE_OPTIONS.cpu.cores;

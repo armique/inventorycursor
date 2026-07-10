@@ -21,24 +21,13 @@ export const ESSENTIAL_SPEC_FIELDS: Record<string, string[]> = {
 
   // Components — CPU / GPU / RAM per user workflow (≤10 each)
   'Components:Processors': [
-    'Generation',
-    'Base Clock',
-    'Boost Clock',
-    'Cores',
-    'Threads',
     'Socket',
-    'DDR Support',
-  ],
-  'Components:Graphics Cards': [
-    'VRAM',
-    'GPU Series',
-    'Model',
+    'Family',
+    'Processor',
     'Base Clock',
-    'Boost Clock',
-    'Memory Type',
-    'TDP',
   ],
-  'Components:RAM': ['Kit Capacity', 'Memory Type', 'Speed', 'Latency', 'Modules', 'GB per Stick'],
+  'Components:Graphics Cards': ['VRAM', 'GPU Series', 'Boost Clock', 'TDP'],
+  'Components:RAM': ['Memory Type', 'Speed', 'Latency', 'Modules', 'GB per Stick', 'Kit Capacity'],
   'Components:Motherboards': ['Socket', 'Form Factor', 'Chipset'],
   'Components:Storage (SSD/HDD)': ['Drive Type', 'Capacity', 'Interface'],
   'Components:Power Supplies': ['Wattage', 'Efficiency', 'Modularity'],

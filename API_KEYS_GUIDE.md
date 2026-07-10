@@ -113,6 +113,28 @@ Requires a paid account (or temporary free credits if offered).
 
 ---
 
+## 8. Google Custom Search (real product photos for the item editor)
+
+**Env vars (server-side — set on Vercel, not in the client `.env`):** `GOOGLE_SEARCH_API_KEY`, `GOOGLE_SEARCH_CX`
+
+Powers the "Find real photos" button in the item editor (searches real product images and lets you set one as the item's default photo). This uses Google's official, quota-metered Custom Search API — not scraping, which Google blocks and disallows.
+
+1. **Get an API key**: go to **https://console.cloud.google.com/apis/credentials**, create/select a project, click **Create Credentials → API key**. Then enable the **Custom Search API** for that project at **https://console.cloud.google.com/apis/library/customsearch.googleapis.com**.
+2. **Create a Programmable Search Engine**: go to **https://programmablesearchengine.google.com/controlpanel/create**.
+   - Under "What to search", choose **Search the entire web**.
+   - After creating it, open its settings and turn on **Image search**.
+   - Copy the **Search engine ID** (this is your `cx` value).
+3. Set both on Vercel (**Project → Settings → Environment Variables**), not in your local `.env`:
+   ```
+   GOOGLE_SEARCH_API_KEY=your_api_key_here
+   GOOGLE_SEARCH_CX=your_search_engine_id_here
+   ```
+4. Redeploy. This only works when deployed on Vercel (or via `vercel dev`) — like the other `/api/*` routes, it doesn't run under a plain local `vite dev` server.
+
+Free tier: 100 searches/day, then billed per 1,000 queries if you enable billing on the Custom Search API.
+
+---
+
 ## Quick checklist for `.env`
 
 Copy `.env.example` to `.env` and fill in what you have:

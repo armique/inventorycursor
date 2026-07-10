@@ -86,14 +86,14 @@ interface SortConfig {
   direction: 'asc' | 'desc';
 }
 
-/** Inv column: 5 icon buttons in one row (28px each + 6px gaps + cell padding). */
+/** Inv column: 5 icon buttons in one row (28px each + 4px gaps, matching the actual `gap-1` grid + cell padding). */
 const PRESENCE_ICON_SIZE_PX = 28;
-const PRESENCE_ICON_GAP_PX = 6;
+const PRESENCE_ICON_GAP_PX = 4;
 const PRESENCE_ICON_COUNT = 5;
 const PRESENCE_COL_WIDTH =
   PRESENCE_ICON_COUNT * PRESENCE_ICON_SIZE_PX +
   (PRESENCE_ICON_COUNT - 1) * PRESENCE_ICON_GAP_PX +
-  20;
+  12;
 
 const DEFAULT_WIDTHS: Record<string, number> = {
   select: 36,
@@ -127,12 +127,122 @@ function clampInventoryColumnWidth(colId: ColumnId, w: number): number {
   return Math.round(Math.min(max, Math.max(min, w)));
 }
 
+/** Column ids whose width auto-fits the longest currently-rendered value (narrow by default, grows only for long content like a huge price). */
+const AUTO_SIZE_COLUMN_IDS: ColumnId[] = [
+  'presence',
+  'category',
+  'status',
+  'buyPrice',
+  'sellPrice',
+  'profit',
+  'buyDate',
+  'sellDate',
+  'actions',
+];
+
+const ACTIONS_BUTTON_PX = 28;
+const ACTIONS_GAP_PX = 2;
+
+/** Number of action buttons rendered for a given item — must mirror the conditions in the 'actions' cell below. */
+function countActionButtons(item: InventoryItem): number {
+  let n = 2; // Edit, Duplicate (always shown)
+  if (item.status === ItemStatus.IN_STOCK) n += 5; // Check price, Cross-post, AI tools, Mark sold, Trade
+  if (item.isPC || item.isBundle) n += 1; // Unbundle
+  if (item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED) n += 1; // Invoice
+  if (item.status === ItemStatus.SOLD) n += 1; // Mark unsold/return
+  n += 1; // Delete (always shown)
+  return n;
+}
+
+let measureCanvasCtx: CanvasRenderingContext2D | null | undefined;
+function getMeasureCtx(): CanvasRenderingContext2D | null {
+  if (measureCanvasCtx !== undefined) return measureCanvasCtx;
+  try {
+    measureCanvasCtx = document.createElement('canvas').getContext('2d');
+  } catch {
+    measureCanvasCtx = null;
+  }
+  return measureCanvasCtx;
+}
+
+/** Rough text width in px, padding out for letter-spacing (tracking) that measureText ignores. */
+function measureTextWidth(ctx: CanvasRenderingContext2D, text: string, font: string, trackingPx = 0): number {
+  ctx.font = font;
+  return ctx.measureText(text).width + trackingPx * Math.max(0, text.length - 1);
+}
+
+/** Computes a "just wide enough" width per auto-size column from the full item list, so columns stay
+ * narrow by default and only expand when content demands it (e.g. a very large price). */
+function computeAutoColumnWidths(items: InventoryItem[]): Partial<Record<ColumnId, number>> {
+  const ctx = getMeasureCtx();
+  if (!ctx) return {};
+
+  let categoryW = 0;
+  let statusW = 0;
+  let buyPriceW = 0;
+  let sellPriceW = 0;
+  let profitW = 0;
+  let buyDateW = 0;
+  let sellDateW = 0;
+  let maxActionButtons = 0;
+
+  for (const item of items) {
+    maxActionButtons = Math.max(maxActionButtons, countActionButtons(item));
+    // Measure the .toUpperCase() form to match the `uppercase` CSS class actually applied —
+    // canvas measureText does not apply text-transform, and capitalized glyphs run wider.
+    if (item.category) {
+      categoryW = Math.max(categoryW, measureTextWidth(ctx, item.category.toUpperCase(), '900 11px Inter, sans-serif'));
+    }
+    if (item.subCategory) {
+      categoryW = Math.max(categoryW, measureTextWidth(ctx, item.subCategory, '700 9px Inter, sans-serif'));
+    }
+
+    const statusLabel = item.status === ItemStatus.IN_COMPOSITION ? 'In Composition' : item.status;
+    statusW = Math.max(statusW, measureTextWidth(ctx, String(statusLabel).toUpperCase(), '900 10px Inter, sans-serif', 2.2));
+
+    buyPriceW = Math.max(buyPriceW, measureTextWidth(ctx, `€${formatEUR(item.buyPrice)}`, '900 13px Inter, sans-serif'));
+    if (item.sellPrice) {
+      sellPriceW = Math.max(sellPriceW, measureTextWidth(ctx, `€${formatEUR(item.sellPrice)}`, '700 13px Inter, sans-serif'));
+    }
+    if (item.profit && !item.isPC && !item.isBundle) {
+      profitW = Math.max(profitW, measureTextWidth(ctx, `€${formatEUR(item.profit)}`, '900 13px Inter, sans-serif'));
+    }
+    if (item.buyDate && !item.isPC && !item.isBundle) {
+      buyDateW = Math.max(buyDateW, measureTextWidth(ctx, item.buyDate, '700 12px Inter, sans-serif'));
+    }
+    if (item.sellDate) {
+      sellDateW = Math.max(sellDateW, measureTextWidth(ctx, item.sellDate, '700 12px Inter, sans-serif'));
+    }
+  }
+
+  const actionsW =
+    maxActionButtons > 0
+      ? maxActionButtons * ACTIONS_BUTTON_PX + Math.max(0, maxActionButtons - 1) * ACTIONS_GAP_PX + 18
+      : DEFAULT_WIDTHS.actions;
+
+  return {
+    // Fixed icon-button count, not data-driven — included here so a stale, over-sized saved
+    // width (e.g. from before this column was tightened) gets corrected automatically.
+    presence: PRESENCE_COL_WIDTH,
+    category: clampInventoryColumnWidth('category', Math.ceil(categoryW) + 34),
+    // Status renders as a pill with its own px-3 (24px) horizontal padding on top of cell padding,
+    // so it needs a much bigger buffer than a plain text cell or the badge clips into the next column.
+    status: clampInventoryColumnWidth('status', Math.ceil(statusW) + 46),
+    buyPrice: clampInventoryColumnWidth('buyPrice', Math.ceil(buyPriceW) + 20),
+    sellPrice: clampInventoryColumnWidth('sellPrice', Math.ceil(sellPriceW) + 20),
+    profit: clampInventoryColumnWidth('profit', Math.ceil(profitW) + 20),
+    buyDate: clampInventoryColumnWidth('buyDate', Math.ceil(buyDateW) + 20),
+    sellDate: clampInventoryColumnWidth('sellDate', Math.ceil(sellDateW) + 20),
+    actions: clampInventoryColumnWidth('actions', actionsW),
+  };
+}
+
 const ALL_COLUMNS: { id: ColumnId; label: string }[] = [
   { id: 'select', label: '' },
   { id: 'item', label: 'Asset Name' },
-  { id: 'presence', label: 'Inv' },
+  { id: 'presence', label: 'Flags' },
   { id: 'category', label: 'Category' },
-  { id: 'status', label: 'Status' },
+  { id: 'status', label: 'State' },
   { id: 'buyPrice', label: 'Buy Price' },
   { id: 'sellPrice', label: 'Sell Price' },
   { id: 'profit', label: 'Margin' },
@@ -373,6 +483,10 @@ const InventoryList: React.FC<Props> = ({
     if ((merged.category ?? 0) < DEFAULT_WIDTHS.category) merged.category = DEFAULT_WIDTHS.category;
     return merged;
   });
+  // Columns the user has explicitly drag-resized; these opt out of auto-sizing until reset.
+  const [manualWidthColumns, setManualWidthColumns] = useState<Set<ColumnId>>(
+    () => new Set(loadState<ColumnId[]>('manual_width_cols', []))
+  );
 
   const defaultColumnOrder: ColumnId[] = ['select', 'item', 'presence', 'category', 'status', 'buyPrice', 'sellPrice', 'profit', 'buyDate', 'timeGauge', 'sellDate', 'actions'];
   const [columnOrder, setColumnOrder] = useState<ColumnId[]>(() => {
@@ -456,6 +570,7 @@ const InventoryList: React.FC<Props> = ({
       localStorage.setItem(`${k}_subcategory_filter`, JSON.stringify(subCategoryFilter));
       localStorage.setItem(`${k}_sort_config`, JSON.stringify(sortConfig));
       localStorage.setItem(`${k}_widths`, JSON.stringify(columnWidths));
+      localStorage.setItem(`${k}_manual_width_cols`, JSON.stringify(Array.from(manualWidthColumns)));
       localStorage.setItem(`${k}_sale_platform`, JSON.stringify(salePlatformFilter));
       localStorage.setItem(`${k}_sale_payment`, JSON.stringify(salePaymentFilter));
       localStorage.setItem(`${k}_spec_filters`, JSON.stringify(specFilters));
@@ -471,8 +586,8 @@ const InventoryList: React.FC<Props> = ({
     };
   }, [
     searchTerm, timeFilter, statusFilter, categoryFilter, subCategoryFilter, sortConfig, columnWidths,
-    salePlatformFilter, salePaymentFilter, specFilters, specRangeFilters, showInComposition, columnOrder,
-    hiddenColumnIds, splitView, quickCategoryPins, persistenceKey,
+    manualWidthColumns, salePlatformFilter, salePaymentFilter, specFilters, specRangeFilters, showInComposition,
+    columnOrder, hiddenColumnIds, splitView, quickCategoryPins, persistenceKey,
   ]);
 
   // Close spec filters panel when clicking outside
@@ -744,6 +859,34 @@ const InventoryList: React.FC<Props> = ({
       return true;
     });
   }, [columnOrder, hiddenColumnIds, statusFilter, splitView]);
+
+  // Bumped once web fonts finish loading so the canvas measurement below re-runs with the real
+  // font metrics instead of whatever fallback font was active during the first paint.
+  const [fontsReadyTick, setFontsReadyTick] = useState(0);
+  useEffect(() => {
+    const fonts = (document as any).fonts;
+    if (fonts?.ready) {
+      fonts.ready.then(() => setFontsReadyTick((t) => t + 1));
+    }
+  }, []);
+
+  // Narrow-by-default column widths: computed from the actual data so category/status/price
+  // columns fit their content, only growing when a value (e.g. a very large price) needs it.
+  const autoColumnWidths = useMemo(() => computeAutoColumnWidths(items), [items, fontsReadyTick]);
+
+  const effectiveColumnWidths = useMemo(() => {
+    const merged: Record<string, number> = { ...columnWidths };
+    for (const colId of AUTO_SIZE_COLUMN_IDS) {
+      if (!manualWidthColumns.has(colId) && autoColumnWidths[colId] != null) {
+        merged[colId] = autoColumnWidths[colId]!;
+      }
+    }
+    return merged;
+  }, [columnWidths, autoColumnWidths, manualWidthColumns]);
+  const effectiveColumnWidthsRef = useRef(effectiveColumnWidths);
+  useEffect(() => {
+    effectiveColumnWidthsRef.current = effectiveColumnWidths;
+  }, [effectiveColumnWidths]);
 
   // Calculate Date Range based on filter
   const dateRange = useMemo(() => {
@@ -1060,7 +1203,9 @@ const InventoryList: React.FC<Props> = ({
   const handleColumnResizeStart = useCallback((e: React.MouseEvent, colId: ColumnId) => {
     e.preventDefault();
     e.stopPropagation();
-    const startW = columnWidthsRef.current[colId] ?? DEFAULT_WIDTHS[colId];
+    // Dragging a column takes it out of auto-sizing from this point on.
+    setManualWidthColumns((prev) => (prev.has(colId) ? prev : new Set(prev).add(colId)));
+    const startW = effectiveColumnWidthsRef.current[colId] ?? columnWidthsRef.current[colId] ?? DEFAULT_WIDTHS[colId];
     columnResizeRef.current = { colId, startX: e.clientX, startW };
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
@@ -1458,7 +1603,7 @@ const InventoryList: React.FC<Props> = ({
   };
 
   const renderCell = (item: InventoryItem, id: ColumnId, isSelected: boolean) => {
-    const width = columnWidths[id] || DEFAULT_WIDTHS[id];
+    const width = effectiveColumnWidths[id] || columnWidths[id] || DEFAULT_WIDTHS[id];
     const style = { width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px` };
     const dense = listDensity === 'compact';
     const iconBtn = dense ? 'h-6 w-6' : 'h-7 w-7';
@@ -2157,7 +2302,7 @@ const InventoryList: React.FC<Props> = ({
             className="text-right relative sticky right-0 z-[18] bg-white group-hover/row:bg-slate-50 border-l border-slate-200/90 shadow-[-6px_0_12px_-4px_rgba(15,23,42,0.07)]"
             style={style}
           >
-            <div className={`flex flex-wrap justify-end gap-0.5 transition-opacity max-w-[7.5rem] ml-auto ${activeAiDropdownId === item.id ? 'opacity-100' : 'opacity-100 sm:opacity-0 sm:group-hover/row:opacity-100'}`}>
+            <div className={`flex flex-nowrap justify-end items-center gap-0.5 transition-opacity ml-auto ${activeAiDropdownId === item.id ? 'opacity-100' : 'opacity-100 sm:opacity-0 sm:group-hover/row:opacity-100'}`}>
               {item.status === ItemStatus.IN_STOCK && (
                  <>
                    <button onClick={(e) => { e.stopPropagation(); navigate('/panel/pricing', { state: { query: item.name } }); }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md shrink-0" title="Check Market Price"><Tag size={14}/></button>
@@ -2278,7 +2423,7 @@ const InventoryList: React.FC<Props> = ({
   const renderRowCells = useCallback(
     (item: InventoryItem, isSelected: boolean) =>
       visibleColumns.map((colId) => renderCellRef.current(item, colId, isSelected)),
-    [visibleColumns, columnWidths]
+    [visibleColumns, effectiveColumnWidths]
   );
 
   const handleDeleteItem = (item: InventoryItem) => {
@@ -2729,7 +2874,7 @@ const InventoryList: React.FC<Props> = ({
                         <span className="text-[10px] font-black uppercase tracking-wider text-slate-600">Columns</span>
                         <div className="flex items-center gap-1.5">
                            <button type="button" title="Reset column order and visibility" onClick={() => { setColumnOrder(defaultColumnOrder); setHiddenColumnIds([]); }} className="text-[10px] font-bold text-slate-500 hover:text-blue-600">Reset</button>
-                           <button type="button" title="Reset column widths to defaults" onClick={() => setColumnWidths({ ...DEFAULT_WIDTHS })} className="text-[10px] font-bold text-slate-500 hover:text-blue-600">Widths</button>
+                           <button type="button" title="Reset column widths to defaults" onClick={() => { setColumnWidths({ ...DEFAULT_WIDTHS }); setManualWidthColumns(new Set()); }} className="text-[10px] font-bold text-slate-500 hover:text-blue-600">Widths</button>
                         </div>
                      </div>
                      <div className="p-2 space-y-0.5 max-h-72 overflow-y-auto">
@@ -3102,7 +3247,7 @@ const InventoryList: React.FC<Props> = ({
             paneLabel="Active"
             scrollRef={activeTableRef}
             visibleColumns={visibleColumns}
-            columnWidths={columnWidths}
+            columnWidths={effectiveColumnWidths}
             listDensity={listDensity}
             sortConfig={sortConfig}
             handleHeaderSort={handleHeaderSort}
@@ -3121,7 +3266,7 @@ const InventoryList: React.FC<Props> = ({
             paneLabel="Sold"
             scrollRef={soldTableRef}
             visibleColumns={visibleColumns}
-            columnWidths={columnWidths}
+            columnWidths={effectiveColumnWidths}
             listDensity={listDensity}
             sortConfig={sortConfig}
             handleHeaderSort={handleHeaderSort}
@@ -3142,7 +3287,7 @@ const InventoryList: React.FC<Props> = ({
           paneStatus={statusFilter}
           scrollRef={tableContainerRef}
           visibleColumns={visibleColumns}
-          columnWidths={columnWidths}
+          columnWidths={effectiveColumnWidths}
           listDensity={listDensity}
           sortConfig={sortConfig}
           handleHeaderSort={handleHeaderSort}
@@ -3197,14 +3342,14 @@ const InventoryList: React.FC<Props> = ({
 
       {showNewItemModal && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in">
-          <div className="bg-slate-50 w-full max-w-4xl rounded-[2.5rem] shadow-2xl border border-white/20 overflow-hidden flex flex-col h-[80vh] relative">
+          <div className="bg-slate-50 w-full max-w-6xl rounded-3xl shadow-2xl border border-white/20 overflow-hidden flex flex-col h-[min(88vh,820px)] relative">
             <button
               onClick={() => setShowNewItemModal(false)}
-              className="absolute top-6 right-6 z-50 p-2 bg-white rounded-full shadow-lg text-slate-400 hover:text-slate-900 hover:scale-110 transition-all"
+              className="absolute top-4 right-4 z-50 p-2 bg-white rounded-full shadow-lg text-slate-400 hover:text-slate-900 hover:scale-110 transition-all"
             >
-              <X size={20} />
+              <X size={18} />
             </button>
-            <div className="flex-1 overflow-hidden p-8">
+            <div className="flex-1 overflow-hidden p-4 md:p-5">
               <ItemForm
                 items={items}
                 onSave={(created) => {
@@ -3663,12 +3808,21 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
     );
   }
 
+  const virtualItems = rowVirtualizer.getVirtualItems();
+  const topSpacer = virtualItems.length > 0 ? virtualItems[0].start : 0;
+  const bottomSpacer =
+    virtualItems.length > 0
+      ? rowVirtualizer.getTotalSize() - virtualItems[virtualItems.length - 1].end
+      : 0;
+
   return (
-    <tbody
-      className="divide-y divide-slate-50"
-      style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative' }}
-    >
-      {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+    <tbody className="divide-y divide-slate-50">
+      {topSpacer > 0 && (
+        <tr aria-hidden="true" className="pointer-events-none border-0">
+          <td colSpan={visibleColumns.length} className="!p-0 !border-0" style={{ height: `${topSpacer}px` }} />
+        </tr>
+      )}
+      {virtualItems.map((virtualRow) => {
         const item = sortedItems[virtualRow.index]!;
         return (
           <InventoryTableRow
@@ -3678,12 +3832,16 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
             visibleColumns={visibleColumns}
             renderRowCells={renderRowCells}
             rowActivityKey={getRowActivityKey(item)}
-            rowTranslateY={virtualRow.start}
             virtualIndex={virtualRow.index}
             measureRef={rowVirtualizer.measureElement}
           />
         );
       })}
+      {bottomSpacer > 0 && (
+        <tr aria-hidden="true" className="pointer-events-none border-0">
+          <td colSpan={visibleColumns.length} className="!p-0 !border-0" style={{ height: `${bottomSpacer}px` }} />
+        </tr>
+      )}
       {bulkBarSpacer && (
         <tr aria-hidden="true" className="pointer-events-none border-0">
           <td colSpan={visibleColumns.length} className="!p-0 !border-0 h-24 lg:h-28" />
@@ -3700,29 +3858,16 @@ type InventoryTableRowProps = {
   renderRowCells: (item: InventoryItem, isSelected: boolean) => React.ReactNode;
   /** Bumps when inline edit / AI spinners affect this row so memo does not skip updates. */
   rowActivityKey: string;
-  rowTranslateY?: number;
   virtualIndex?: number;
   measureRef?: (node: Element | null) => void;
 };
 
 const InventoryTableRow = React.memo(
-  function InventoryTableRow({ item, isSelected, renderRowCells, rowTranslateY, virtualIndex, measureRef }: InventoryTableRowProps) {
-    const virtualized = rowTranslateY !== undefined;
+  function InventoryTableRow({ item, isSelected, renderRowCells, virtualIndex, measureRef }: InventoryTableRowProps) {
     return (
       <tr
         ref={measureRef}
         data-index={virtualIndex}
-        style={
-          virtualized
-            ? {
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                transform: `translate3d(0, ${rowTranslateY}px, 0)`,
-              }
-            : undefined
-        }
         className={`hover:bg-slate-50/50 group/row ${isSelected ? 'bg-blue-50/20' : ''}`}
       >
         {renderRowCells(item, isSelected)}
@@ -3734,8 +3879,7 @@ const InventoryTableRow = React.memo(
     prev.isSelected === next.isSelected &&
     prev.visibleColumns === next.visibleColumns &&
     prev.rowActivityKey === next.rowActivityKey &&
-    prev.renderRowCells === next.renderRowCells &&
-    prev.rowTranslateY === next.rowTranslateY
+    prev.renderRowCells === next.renderRowCells
 );
 
 type InventoryListTablePaneProps = {
