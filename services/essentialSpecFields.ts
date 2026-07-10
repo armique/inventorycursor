@@ -20,10 +20,12 @@ export const ESSENTIAL_SPEC_FIELDS: Record<string, string[]> = {
   'Laptops:Office Laptop': ['Screen Size', 'CPU', 'RAM', 'Storage'],
 
   // Components — CPU / GPU / RAM per user workflow (≤10 each)
+  // "Series" and "Model" instead of "Family"/"Processor" — standard tech-spec vocabulary the AI
+  // naturally uses, so its output reliably lands under these exact keys.
   'Components:Processors': [
     'Socket',
-    'Family',
-    'Processor',
+    'Series',
+    'Model',
     'Base Clock',
   ],
   'Components:Graphics Cards': ['VRAM', 'GPU Series', 'Boost Clock', 'TDP'],
