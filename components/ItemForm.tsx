@@ -978,26 +978,41 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                         </p>
                       )}
                       {photoSearchResults && photoSearchResults.length > 0 && (
-                        <div className="p-2 bg-blue-50/50 border border-blue-100 rounded-xl space-y-1.5">
-                          <p className="text-[10px] font-bold text-blue-700 px-0.5">Click a photo to preview it larger, then confirm</p>
-                          <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
+                        <div className="rounded-2xl border border-slate-200 bg-white p-3 space-y-2.5 shadow-sm">
+                          <div className="flex items-center justify-between px-0.5">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                              {photoSearchResults.length} photo{photoSearchResults.length === 1 ? '' : 's'} found
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => setPhotoSearchResults(null)}
+                              className="text-[10px] font-bold text-slate-400 hover:text-slate-700"
+                            >
+                              Dismiss
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-3 md:grid-cols-5 gap-2.5">
                             {photoSearchResults.map((r) => (
                               <button
                                 key={r.url}
                                 type="button"
                                 title={r.title}
                                 onClick={() => setPreviewPhoto(r)}
-                                className="group relative rounded-lg overflow-hidden border border-slate-200 bg-white hover:border-blue-400 hover:shadow-lg hover:z-10 hover:scale-125 transition-all duration-150"
+                                className="group relative aspect-square rounded-xl overflow-hidden bg-slate-100 ring-1 ring-slate-200 hover:ring-2 hover:ring-blue-400 hover:shadow-md transition-all duration-150"
                               >
                                 <img
                                   src={r.thumbnail}
                                   alt=""
-                                  className="w-full h-20 object-cover"
+                                  className="w-full h-full object-cover"
                                   onError={(e) => {
                                     (e.currentTarget as HTMLImageElement).style.display = 'none';
                                   }}
                                 />
-                                <span className="absolute inset-0 bg-blue-600/0 group-hover:bg-blue-600/10 transition-colors" />
+                                <span className="absolute inset-0 bg-slate-900/0 group-hover:bg-slate-900/30 transition-colors flex items-center justify-center">
+                                  <span className="opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 rounded-full p-1.5 shadow">
+                                    <Search size={13} className="text-slate-700" />
+                                  </span>
+                                </span>
                               </button>
                             ))}
                           </div>
@@ -1021,9 +1036,17 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                         <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
                           {itemImageList.map((url) => {
                             const isMain = formData.imageUrl === url;
+                            // A picked photo's external URL can go dead later (hotlink protection, source
+                            // deleted it, etc.) — auto-drop it here rather than leaving a permanent broken tile.
+                            // Only URLs that actually fail to load are removed; everything else stays untouched.
                             return (
                               <div key={url} className={`p-1.5 rounded-lg border ${isMain ? 'border-blue-300 bg-blue-50/60' : 'border-slate-200 bg-white'}`}>
-                                <img src={url} alt="" className="w-full h-16 object-cover rounded-md border border-slate-200 bg-slate-100" />
+                                <img
+                                  src={url}
+                                  alt=""
+                                  className="w-full h-16 object-cover rounded-md border border-slate-200 bg-slate-100"
+                                  onError={() => removeImage(url)}
+                                />
                                 <div className="flex items-center justify-between mt-1.5 gap-1">
                                   <button
                                     type="button"

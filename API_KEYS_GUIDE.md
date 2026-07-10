@@ -115,9 +115,9 @@ Requires a paid account (or temporary free credits if offered).
 
 ## 8. Real product photos for the item editor ("Find real photos" button)
 
-Powers the "Find real photos" button in the item editor — searches real product images and lets you set one as the item's default photo. By default it tries providers in order (same fallback pattern as the AI spec-parsing providers): **Google Custom Search → Bing Image Search → Pixabay → Unsplash → Pexels**, using whichever you've configured. A dropdown next to the button also lets you force a specific provider instead of "Auto." You only need to set up one to make the button work; add more for reliability/comparison. All keys are **server-side** (set on Vercel, not your local `.env` — the button calls `/api/images`, which only runs when deployed on Vercel or via `vercel dev`).
+Powers the "Find real photos" button in the item editor — searches real product images and lets you set one as the item's default photo. By default it tries providers in order (same fallback pattern as the AI spec-parsing providers): **Google Custom Search → Bing Image Search → eBay → Pixabay → Unsplash → Pexels**, using whichever you've configured. A row of standalone buttons next to "Find real photos" also lets you force one specific provider instead of "Auto" — click it once to switch. You only need to set up one to make the button work; add more for reliability/comparison. All keys are **server-side** (set on Vercel, not your local `.env` — the button calls `/api/images`, which only runs when deployed on Vercel or via `vercel dev`).
 
-**On match accuracy:** Google and Bing index real retailer/tech listing pages, so they're far better at matching an *exact* model number (e.g. "i3-6300" vs "i3-9400F"). Pixabay, Unsplash, and Pexels are general stock-photo libraries matched by loose tags/description, not product catalogs — they can return a similar-looking but wrong item. Good as free, no-setup fallbacks, not as the primary source for precise part photos.
+**On match accuracy:** Google, Bing, and eBay index real retailer/listing pages, so they're far better at matching an *exact* model number (e.g. "i3-6300" vs "i3-9400F"). Pixabay, Unsplash, and Pexels are general stock-photo libraries matched by loose tags/description, not product catalogs — they can return a similar-looking but wrong item. Good as free, no-setup fallbacks, not as the primary source for precise part photos.
 
 ### 8a. Google Custom Search (best match accuracy, but the most setup)
 
@@ -143,7 +143,21 @@ Free tier: 100 searches/day, then billed per 1,000 queries.
 
 Free (F1) tier available with a request-per-second/month cap.
 
-### 8c. Pixabay (fallback — free, no billing account needed at all)
+### 8c. eBay Browse API (good accuracy — matches real listing titles, free)
+
+**Env vars:** `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`, optional `EBAY_MARKETPLACE_ID` (defaults to `EBAY_DE`)
+
+Searches real eBay listings by keyword and uses their photos — since your item names often match real eBay listing titles closely (you sell there too), this tends to match exact models much better than a stock-photo library.
+
+1. Go to **https://developer.ebay.com/my/keys**, sign up / log in with your eBay account.
+2. Click **"Create a keyset"** (choose **Production** keys, not Sandbox).
+3. Copy the **App ID (Client ID)** and **Cert ID (Client Secret)** shown there.
+4. Set `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET` on Vercel. If you mainly want US listings instead of German, also set `EBAY_MARKETPLACE_ID=EBAY_US`.
+5. Redeploy.
+
+No app review needed for the Browse API's public search endpoint — works as soon as the keys are set. Free tier: 5,000 calls/day.
+
+### 8d. Pixabay (fallback — free, no billing account needed at all)
 
 **Env var:** `PIXABAY_API_KEY`
 
@@ -153,7 +167,7 @@ Free (F1) tier available with a request-per-second/month cap.
 
 No credit card required, generous free tier. Results are more "stock photo" than exact product shots — good as a fallback so the button always returns *something* even if Google/Bing aren't set up.
 
-### 8d. Unsplash (fallback — free, no billing account needed)
+### 8e. Unsplash (fallback — free, no billing account needed)
 
 **Env var:** `UNSPLASH_ACCESS_KEY`
 
@@ -164,7 +178,7 @@ No credit card required, generous free tier. Results are more "stock photo" than
 
 Free tier: 50 requests/hour on the default demo tier (enough for occasional use; apply for production access later if you need more).
 
-### 8e. Pexels (fallback — free, no billing account needed)
+### 8f. Pexels (fallback — free, no billing account needed)
 
 **Env var:** `PEXELS_API_KEY`
 
