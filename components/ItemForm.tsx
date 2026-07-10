@@ -277,12 +277,23 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       const returnedSpecs = result.specs || {};
       const nextAi: Record<string, string | number> = { ...(formData.specsAiSuggested || {}) };
 
+      // Loose match so AI phrasing variants (e.g. "CPU Socket" / "Base Clock Speed") still count
+      // as the curated field rather than being rejected outright for not matching verbatim.
+      const normKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const findCuratedMatch = (k: string) => {
+        const nk = normKey(k);
+        return (
+          definedFields.find((df) => normKey(df) === nk) ||
+          definedFields.find((df) => {
+            const nd = normKey(df);
+            return nk.includes(nd) || nd.includes(nk);
+          })
+        );
+      };
+
       Object.entries(returnedSpecs).forEach(([k, v]) => {
         if (v === undefined || v === null || v === '') return;
-        let keyToUse =
-          definedFields.length > 0
-            ? definedFields.find((df) => df.toLowerCase() === k.toLowerCase()) || k
-            : k;
+        let keyToUse = definedFields.length > 0 ? findCuratedMatch(k) || k : k;
         if (formData.subCategory === 'RAM' && k.toLowerCase() === 'capacity' && !definedFields.some((df) => df.toLowerCase() === 'capacity')) {
           keyToUse = 'Kit Capacity';
         }
@@ -291,7 +302,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
         }
         // Only keep the curated "important" fields for this category — discard anything extra
         // the AI adds on top, so parsing only ever produces the fields buyers actually ask about.
-        if (definedFields.length > 0 && !definedFields.some((df) => df.toLowerCase() === keyToUse.toLowerCase())) {
+        if (definedFields.length > 0 && !findCuratedMatch(keyToUse)) {
           return;
         }
         newSpecs[keyToUse] = v;
