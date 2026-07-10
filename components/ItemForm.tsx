@@ -19,8 +19,8 @@ import { getCompatibleItemsForItem } from '../services/compatibility';
 import { getEssentialSpecFieldKeys } from '../services/essentialSpecFields';
 import { getCompatibilityWarnings } from '../utils/compatibilityWarnings';
 import { recordCategoryCorrection, suggestCategoryFromCorrections } from '../services/categoryCorrections';
-import { filesToDataUrls, prepareInventoryImagesForStorage, getItemUserPhotoCount } from '../utils/imageImport';
-import { searchProductPhotos, ImageSearchResult } from '../services/imageSearchService';
+import { filesToDataUrls, prepareInventoryImagesForStorage, getItemUserPhotoCount, isCategoryPlaceholderImage } from '../utils/imageImport';
+import { searchProductPhotos, getImageSearchProviders, ImageSearchResult, ImageSearchProvider } from '../services/imageSearchService';
 import { getCachedProductPhoto, setCachedProductPhoto } from '../services/firebaseService';
 
 interface Props {
@@ -130,6 +130,13 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   const [photoSearchResults, setPhotoSearchResults] = useState<ImageSearchResult[] | null>(null);
   const [photoSearching, setPhotoSearching] = useState(false);
   const [photoSearchError, setPhotoSearchError] = useState<string | null>(null);
+  const [previewPhoto, setPreviewPhoto] = useState<ImageSearchResult | null>(null);
+  const [imageProviders, setImageProviders] = useState<ImageSearchProvider[]>([]);
+  const [selectedProvider, setSelectedProvider] = useState<string>(''); // '' = auto (try all configured)
+
+  useEffect(() => {
+    getImageSearchProviders().then(setImageProviders);
+  }, []);
 
   /** Controlled string so partial decimals like "17." work (parsing on each keystroke strips the dot). */
   const [buyPriceText, setBuyPriceText] = useState('');
@@ -319,8 +326,10 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     return out;
   };
 
+  // Excludes the category placeholder SVG (used as a fallback when an item has no real photo) —
+  // it's not a real photo, and its data URI doesn't render as an <img>, showing a broken-image icon.
   const itemImageList = useMemo(
-    () => normalizeImageList([formData.imageUrl, ...(formData.imageUrls || [])]),
+    () => normalizeImageList([formData.imageUrl, ...(formData.imageUrls || [])]).filter((u) => !isCategoryPlaceholderImage(u)),
     [formData.imageUrl, formData.imageUrls]
   );
 
@@ -390,7 +399,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     setPhotoSearchError(null);
     setPhotoSearchResults(null);
     try {
-      const results = await searchProductPhotos(formData.name);
+      const results = await searchProductPhotos(formData.name, 8, selectedProvider || undefined);
       if (results.length === 0) {
         setPhotoSearchError('No photos found for that name.');
         return;
@@ -914,6 +923,21 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                       <div className="flex items-center justify-between gap-2 flex-wrap">
                         <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Item Photos</label>
                         <div className="flex items-center gap-1.5">
+                          {imageProviders.length > 0 && (
+                            <select
+                              value={selectedProvider}
+                              onChange={(e) => setSelectedProvider(e.target.value)}
+                              title="Which photo search provider to use"
+                              className="px-2 py-1 bg-white border border-slate-200 rounded-lg text-[10px] font-black uppercase tracking-widest text-slate-600 outline-none focus:border-blue-500"
+                            >
+                              <option value="">Auto (try all)</option>
+                              {imageProviders.map((p) => (
+                                <option key={p.name} value={p.name} disabled={!p.configured}>
+                                  {p.label}{!p.configured ? ' (not set up)' : ''}
+                                </option>
+                              ))}
+                            </select>
+                          )}
                           <button
                             type="button"
                             onClick={handleFindRealPhotos}
@@ -938,25 +962,25 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                       )}
                       {photoSearchResults && photoSearchResults.length > 0 && (
                         <div className="p-2 bg-blue-50/50 border border-blue-100 rounded-xl space-y-1.5">
-                          <p className="text-[10px] font-bold text-blue-700 px-0.5">Click a photo to use it as the default image</p>
-                          <div className="grid grid-cols-4 md:grid-cols-8 gap-1.5">
+                          <p className="text-[10px] font-bold text-blue-700 px-0.5">Click a photo to preview it larger, then confirm</p>
+                          <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
                             {photoSearchResults.map((r) => (
                               <button
                                 key={r.url}
                                 type="button"
                                 title={r.title}
-                                onClick={() => handlePickSearchedPhoto(r)}
-                                className="group relative rounded-lg overflow-hidden border border-slate-200 bg-white hover:border-blue-400 transition-all"
+                                onClick={() => setPreviewPhoto(r)}
+                                className="group relative rounded-lg overflow-hidden border border-slate-200 bg-white hover:border-blue-400 hover:shadow-lg hover:z-10 hover:scale-125 transition-all duration-150"
                               >
                                 <img
                                   src={r.thumbnail}
                                   alt=""
-                                  className="w-full h-14 object-cover"
+                                  className="w-full h-20 object-cover"
                                   onError={(e) => {
                                     (e.currentTarget as HTMLImageElement).style.display = 'none';
                                   }}
                                 />
-                                <span className="absolute inset-0 bg-blue-600/0 group-hover:bg-blue-600/20 transition-colors" />
+                                <span className="absolute inset-0 bg-blue-600/0 group-hover:bg-blue-600/10 transition-colors" />
                               </button>
                             ))}
                           </div>
@@ -1223,6 +1247,51 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
            </form>
         )}
       </div>
+
+      {previewPhoto && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-6 animate-in fade-in"
+          onClick={() => setPreviewPhoto(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex-1 min-h-0 bg-slate-100 flex items-center justify-center">
+              <img
+                src={previewPhoto.url}
+                alt={previewPhoto.title}
+                className="max-w-full max-h-[60vh] object-contain"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src = previewPhoto.thumbnail;
+                }}
+              />
+            </div>
+            <div className="p-4 space-y-3 shrink-0">
+              {previewPhoto.title && <p className="text-xs font-bold text-slate-600 truncate">{previewPhoto.title}</p>}
+              <div className="flex gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setPreviewPhoto(null)}
+                  className="px-5 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-all"
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handlePickSearchedPhoto(previewPhoto);
+                    setPreviewPhoto(null);
+                  }}
+                  className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl font-black uppercase text-xs tracking-widest hover:bg-blue-700 transition-all"
+                >
+                  Use this photo
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

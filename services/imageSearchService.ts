@@ -1,8 +1,9 @@
 /**
  * Real product photo search — calls the server-side /api/images endpoint, which tries a
- * provider chain (Google Custom Search → Bing Image Search → Pixabay, whichever are configured)
- * the same way the spec-parsing AI falls through providers. Only works when deployed on Vercel
- * (or `vercel dev`), same limitation as the other /api/* AI routes in this app; keys stay server-side.
+ * provider chain (Google Custom Search → Bing → Pixabay → Unsplash → Pexels, whichever are
+ * configured) the same way the spec-parsing AI falls through providers — or, if a specific
+ * `provider` is passed, uses only that one. Only works when deployed on Vercel (or `vercel dev`),
+ * same limitation as the other /api/* AI routes in this app; keys stay server-side.
  */
 
 export interface ImageSearchResult {
@@ -12,11 +13,34 @@ export interface ImageSearchResult {
   contextLink: string;
 }
 
-export async function searchProductPhotos(query: string, count = 8): Promise<ImageSearchResult[]> {
+export interface ImageSearchProvider {
+  name: string;
+  label: string;
+  configured: boolean;
+}
+
+export async function getImageSearchProviders(): Promise<ImageSearchProvider[]> {
+  try {
+    const res = await fetch('/api/images?route=providers');
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data?.providers) ? data.providers : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function searchProductPhotos(
+  query: string,
+  count = 8,
+  provider?: string
+): Promise<ImageSearchResult[]> {
   const q = query.trim();
   if (!q) return [];
 
-  const url = `/api/images?route=search&q=${encodeURIComponent(q)}&num=${count}`;
+  let url = `/api/images?route=search&q=${encodeURIComponent(q)}&num=${count}`;
+  if (provider) url += `&provider=${encodeURIComponent(provider)}`;
+
   const res = await fetch(url);
   let data: any = null;
   try {

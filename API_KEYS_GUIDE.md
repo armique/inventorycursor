@@ -115,7 +115,9 @@ Requires a paid account (or temporary free credits if offered).
 
 ## 8. Real product photos for the item editor ("Find real photos" button)
 
-Powers the "Find real photos" button in the item editor — searches real product images and lets you set one as the item's default photo. This tries providers in order (same fallback pattern as the AI spec-parsing providers): **Google Custom Search → Bing Image Search → Pixabay**, using whichever you've configured. You only need to set up one to make the button work; add more for reliability. All keys are **server-side** (set on Vercel, not your local `.env` — the button calls `/api/images`, which only runs when deployed on Vercel or via `vercel dev`).
+Powers the "Find real photos" button in the item editor — searches real product images and lets you set one as the item's default photo. By default it tries providers in order (same fallback pattern as the AI spec-parsing providers): **Google Custom Search → Bing Image Search → Pixabay → Unsplash → Pexels**, using whichever you've configured. A dropdown next to the button also lets you force a specific provider instead of "Auto." You only need to set up one to make the button work; add more for reliability/comparison. All keys are **server-side** (set on Vercel, not your local `.env` — the button calls `/api/images`, which only runs when deployed on Vercel or via `vercel dev`).
+
+**On match accuracy:** Google and Bing index real retailer/tech listing pages, so they're far better at matching an *exact* model number (e.g. "i3-6300" vs "i3-9400F"). Pixabay, Unsplash, and Pexels are general stock-photo libraries matched by loose tags/description, not product catalogs — they can return a similar-looking but wrong item. Good as free, no-setup fallbacks, not as the primary source for precise part photos.
 
 ### 8a. Google Custom Search (best match accuracy, but the most setup)
 
@@ -149,7 +151,28 @@ Free (F1) tier available with a request-per-second/month cap.
 2. Your API key is shown right on that docs page once logged in.
 3. Set `PIXABAY_API_KEY` on Vercel, redeploy.
 
-No credit card required, generous free tier. Results are more "stock photo" than exact product shots, so it's the weakest match quality of the three — good as a last-resort fallback so the button always returns *something* even if Google/Bing aren't set up.
+No credit card required, generous free tier. Results are more "stock photo" than exact product shots — good as a fallback so the button always returns *something* even if Google/Bing aren't set up.
+
+### 8d. Unsplash (fallback — free, no billing account needed)
+
+**Env var:** `UNSPLASH_ACCESS_KEY`
+
+1. Go to **https://unsplash.com/developers**, sign up / log in, click **"New Application"**.
+2. Accept the API terms, give it a name/description.
+3. Copy the **Access Key** shown on the app's page.
+4. Set `UNSPLASH_ACCESS_KEY` on Vercel, redeploy.
+
+Free tier: 50 requests/hour on the default demo tier (enough for occasional use; apply for production access later if you need more).
+
+### 8e. Pexels (fallback — free, no billing account needed)
+
+**Env var:** `PEXELS_API_KEY`
+
+1. Go to **https://www.pexels.com/api/**, sign up / log in, click **"Get Started"**.
+2. Your API key is shown right on the dashboard.
+3. Set `PEXELS_API_KEY` on Vercel, redeploy.
+
+Generous free tier (200 requests/hour, 20,000/month), no credit card required.
 
 ---
 
