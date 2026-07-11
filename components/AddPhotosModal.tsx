@@ -234,7 +234,7 @@ const AddPhotosModal: React.FC<Props> = ({
       onClick={() => !loading && onClose()}
     >
       <div
-        className="bg-white w-full max-w-xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[min(92vh,720px)]"
+        className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[min(92vh,720px)]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-2 bg-slate-50/80 shrink-0">
@@ -493,21 +493,27 @@ const AddPhotosModal: React.FC<Props> = ({
           )}
 
           {pendingUrls.length > 0 && (
-            <div className="space-y-2">
+            <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3 -mx-1">
               <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">
                 Preview ({pendingUrls.length})
               </p>
-              <div className="grid grid-cols-4 gap-2 max-h-40 overflow-y-auto">
+              <div className="flex gap-3 overflow-x-auto pb-1 snap-x snap-mandatory">
                 {pendingUrls.map((url) => (
-                  <div key={url} className="relative group">
-                    <img src={url} alt="" className="w-full h-16 object-cover rounded-lg border border-slate-200 bg-slate-100" />
+                  <div key={url} className="relative shrink-0 w-32 sm:w-36 snap-start">
+                    <div className="aspect-[4/3] rounded-xl border border-slate-200 bg-white flex items-center justify-center overflow-hidden p-1">
+                      <img
+                        src={url}
+                        alt=""
+                        className="max-w-full max-h-full w-full h-full object-contain"
+                      />
+                    </div>
                     <button
                       type="button"
                       onClick={() => setPendingUrls((prev) => prev.filter((u) => u !== url))}
-                      className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                      aria-label="Remove"
+                      className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-red-500 text-white flex items-center justify-center shadow-md ring-2 ring-white hover:bg-red-600 active:scale-95 z-10"
+                      aria-label="Remove photo"
                     >
-                      <X size={10} />
+                      <X size={14} />
                     </button>
                   </div>
                 ))}
