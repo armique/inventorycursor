@@ -26,6 +26,7 @@ import { formatEUR } from '../utils/formatMoney';
 import { normalizeImageList, prepareInventoryImagesForStorage } from '../utils/imageImport';
 import EbayStorePullImportTab from './EbayStorePullImportTab';
 import EbayStorePullSoldTab from './EbayStorePullSoldTab';
+import EbayToolProgressBar, { type EbayToolProgress } from './EbayToolProgressBar';
 
 type PhotoMode = 'none' | 'all' | 'pick';
 type PullTab = 'sync' | 'import' | 'sold';
@@ -107,6 +108,7 @@ const EbayStorePullPage: React.FC<Props> = ({
   const [plan, setPlan] = useState<EbayStorePullPlan | null>(null);
   const [rowState, setRowState] = useState<Record<string, RowState>>({});
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
+  const [progress, setProgress] = useState<EbayToolProgress | null>(null);
 
   const rowKey = (match: EbayStorePullMatch) => `${match.item.id}:${match.listing.listingId}`;
 
@@ -116,13 +118,27 @@ const EbayStorePullPage: React.FC<Props> = ({
     setApplyMessage(null);
     setPlan(null);
     setRowState({});
+    setProgress({ label: 'Fetching active eBay listings…', done: 0, total: 3 });
     try {
       const listings = await fetchMyEbayListings();
+      setProgress({
+        label: 'Fetching active eBay listings…',
+        done: 1,
+        total: 3,
+        detail: `${listings.length} listing${listings.length === 1 ? '' : 's'}`,
+      });
       if (!listings.length) {
         setError(`No active eBay listings found for seller ${getEbayUsername()}.`);
         return;
       }
+      setProgress({ label: 'Matching inventory to listings…', done: 2, total: 3 });
       const nextPlan = buildEbayStorePullPlan(items, listings);
+      setProgress({
+        label: 'Preparing results…',
+        done: 3,
+        total: 3,
+        detail: `${nextPlan.matches.length} match${nextPlan.matches.length === 1 ? '' : 'es'}`,
+      });
       setPlan(nextPlan);
       const initial: Record<string, RowState> = {};
       for (const match of nextPlan.matches) {
@@ -133,6 +149,7 @@ const EbayStorePullPage: React.FC<Props> = ({
       setError((e as Error)?.message || 'Failed to load eBay listings.');
     } finally {
       setLoading(false);
+      setTimeout(() => setProgress(null), 900);
     }
   }, [items]);
 
@@ -206,12 +223,22 @@ const EbayStorePullPage: React.FC<Props> = ({
     setApplying(true);
     setApplyMessage(null);
     setError(null);
+    const total = selectedMatches.length;
+    setProgress({ label: 'Applying eBay sync…', done: 0, total });
     try {
       const updates: InventoryItem[] = [];
-      for (const match of selectedMatches) {
+      for (let i = 0; i < selectedMatches.length; i++) {
+        const match = selectedMatches[i];
         const key = rowKey(match);
         const row = rowState[key];
         if (!row) continue;
+
+        setProgress({
+          label: 'Applying eBay sync…',
+          done: i,
+          total,
+          detail: match.item.name,
+        });
 
         let updated: InventoryItem = { ...match.item };
         const listing = match.listing;
@@ -255,6 +282,12 @@ const EbayStorePullPage: React.FC<Props> = ({
         if (listing.offerId) updated.ebayOfferId = updated.ebayOfferId || listing.offerId;
 
         updates.push(updated);
+        setProgress({
+          label: 'Applying eBay sync…',
+          done: i + 1,
+          total,
+          detail: match.item.name,
+        });
       }
 
       if (updates.length) {
@@ -268,6 +301,7 @@ const EbayStorePullPage: React.FC<Props> = ({
       setError((e as Error)?.message || 'Failed to apply changes.');
     } finally {
       setApplying(false);
+      setTimeout(() => setProgress(null), 900);
     }
   };
 
@@ -316,6 +350,10 @@ const EbayStorePullPage: React.FC<Props> = ({
           </button>
         ))}
       </div>
+
+      {tab === 'sync' && progress && (
+        <EbayToolProgressBar {...progress} tone="blue" />
+      )}
 
       {tab === 'import' ? (
         <EbayStorePullImportTab

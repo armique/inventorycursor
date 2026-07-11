@@ -7,11 +7,13 @@ import {
   MAX_CHECKS_PER_DAY,
   runAutoEbayListingReminderCheck,
   type EbayReminderPending,
+  type EbayReminderProgress,
 } from '../services/ebayListingReminder';
 
 export function useEbayListingReminder(items: InventoryItem[], enabled: boolean) {
   const [reminder, setReminder] = useState<EbayReminderPending | null>(() => getActiveReminderForDisplay());
   const [checking, setChecking] = useState(false);
+  const [checkProgress, setCheckProgress] = useState<EbayReminderProgress | null>(null);
   const hasAutoRun = useRef(false);
 
   const refreshReminder = useCallback(() => {
@@ -38,8 +40,9 @@ export function useEbayListingReminder(items: InventoryItem[], enabled: boolean)
 
     (async () => {
       setChecking(true);
+      setCheckProgress({ label: 'Starting eBay sold check…', done: 0, total: 4 });
       try {
-        await runAutoEbayListingReminderCheck(items);
+        await runAutoEbayListingReminderCheck(items, setCheckProgress);
         if (!cancelled) {
           setReminder(getActiveReminderForDisplay());
           if (typeof window !== 'undefined') {
@@ -47,7 +50,10 @@ export function useEbayListingReminder(items: InventoryItem[], enabled: boolean)
           }
         }
       } finally {
-        if (!cancelled) setChecking(false);
+        if (!cancelled) {
+          setChecking(false);
+          setTimeout(() => setCheckProgress(null), 1200);
+        }
       }
     })();
 
@@ -61,6 +67,7 @@ export function useEbayListingReminder(items: InventoryItem[], enabled: boolean)
   return {
     reminder,
     checking,
+    checkProgress,
     dismiss,
     refreshReminder,
     checksRemaining: Math.max(0, checksRemaining),

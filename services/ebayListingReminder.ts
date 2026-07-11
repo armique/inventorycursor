@@ -34,6 +34,13 @@ export interface EbayReminderCheckResult {
   pending?: EbayReminderPending | null;
 }
 
+export type EbayReminderProgress = {
+  label: string;
+  done: number;
+  total: number;
+  detail?: string;
+};
+
 function todayKey(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -100,7 +107,8 @@ function notifyReminderUpdated(): void {
 
 /** Auto-check eBay listings vs last snapshot (max 3× per calendar day). */
 export async function runAutoEbayListingReminderCheck(
-  items: InventoryItem[]
+  items: InventoryItem[],
+  onProgress?: (p: EbayReminderProgress) => void
 ): Promise<EbayReminderCheckResult> {
   if (!canRunAutoReminderCheck()) {
     const pending = loadPendingReminder();
@@ -115,11 +123,20 @@ export async function runAutoEbayListingReminderCheck(
   incrementTodayReminderCheckCount();
 
   try {
+    onProgress?.({ label: 'Fetching active eBay listings…', done: 0, total: 4 });
     const listings = await fetchMyEbayListings();
+    onProgress?.({
+      label: 'Fetching active eBay listings…',
+      done: 1,
+      total: 4,
+      detail: `${listings.length} listing${listings.length === 1 ? '' : 's'}`,
+    });
     const prev = loadEbayListingSnapshot();
 
     if (!prev) {
+      onProgress?.({ label: 'Saving baseline snapshot…', done: 3, total: 4 });
       saveEbayListingSnapshot(listings, getEbayUsername());
+      onProgress?.({ label: 'Baseline saved', done: 4, total: 4 });
       return {
         ran: true,
         reason: 'baseline_saved',
@@ -128,11 +145,13 @@ export async function runAutoEbayListingReminderCheck(
       };
     }
 
+    onProgress?.({ label: 'Comparing to last snapshot…', done: 2, total: 4 });
     const { disappeared } = compareEbayListingSnapshots(prev.entries, listings);
     saveEbayListingSnapshot(listings, getEbayUsername());
 
     if (!disappeared.length) {
       clearPendingReminder();
+      onProgress?.({ label: 'No listing changes', done: 4, total: 4 });
       return {
         ran: true,
         reason: 'no_changes',
@@ -140,6 +159,12 @@ export async function runAutoEbayListingReminderCheck(
       };
     }
 
+    onProgress?.({
+      label: 'Matching ended listings to inventory…',
+      done: 3,
+      total: 4,
+      detail: `${disappeared.length} ended`,
+    });
     const plan = buildEbaySoldDetectionPlan(items, disappeared);
 
     if (plan.matches.length === 0 && disappeared.length === 0) {
@@ -158,6 +183,7 @@ export async function runAutoEbayListingReminderCheck(
     savePendingReminder(pending);
 
     notifyReminderUpdated();
+    onProgress?.({ label: 'Check complete', done: 4, total: 4 });
 
     return {
       ran: true,

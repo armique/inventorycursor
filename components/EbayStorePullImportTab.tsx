@@ -26,6 +26,7 @@ import { formatEUR } from '../utils/formatMoney';
 import { normalizeImageList, prepareInventoryImagesForStorage } from '../utils/imageImport';
 import { CATEGORY_IMAGES } from '../services/hardwareDB';
 import { getSpecsAIProvider } from '../services/specsAI';
+import EbayToolProgressBar, { type EbayToolProgress } from './EbayToolProgressBar';
 
 type PhotoMode = 'none' | 'all' | 'pick';
 
@@ -71,7 +72,7 @@ const EbayStorePullImportTab: React.FC<Props> = ({
   onPublishCatalog,
 }) => {
   const [loading, setLoading] = useState(false);
-  const [enrichProgress, setEnrichProgress] = useState<string | null>(null);
+  const [progress, setProgress] = useState<EbayToolProgress | null>(null);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
@@ -90,27 +91,46 @@ const EbayStorePullImportTab: React.FC<Props> = ({
     setDrafts([]);
     setRowState({});
     setOrphanStats(null);
-    setEnrichProgress(null);
+    setProgress({ label: 'Fetching active eBay listings…', done: 0, total: 1 });
     try {
       const listings = await fetchMyEbayListings();
       if (!listings.length) {
         setError(`No active eBay listings found for seller ${getEbayUsername()}.`);
         return;
       }
+      setProgress({
+        label: 'Finding listings missing from inventory…',
+        done: 1,
+        total: 1,
+        detail: `${listings.length} active listing${listings.length === 1 ? '' : 's'}`,
+      });
       const plan = buildEbayOrphanListingsPlan(items, listings);
       setOrphanStats({ activeInventory: plan.activeInventoryCount, listings: plan.activeListingCount });
 
       if (!plan.orphans.length) {
+        setProgress({ label: 'No missing listings', done: 1, total: 1, detail: 'All listings matched' });
         setApplyMessage('Every active listing already has a matching in-stock inventory item.');
         return;
       }
 
       const nextDrafts: EbayOrphanListingDraft[] = [];
       const nextRows: Record<string, ImportRowState> = {};
+      const total = 1 + plan.orphans.length;
+      setProgress({
+        label: 'Found listings to import',
+        done: 1,
+        total,
+        detail: `${plan.orphans.length} missing`,
+      });
 
       for (let i = 0; i < plan.orphans.length; i++) {
         const listing = plan.orphans[i];
-        setEnrichProgress(`Analyzing ${i + 1} / ${plan.orphans.length}…`);
+        setProgress({
+          label: 'AI analyzing listing…',
+          done: 1 + i,
+          total,
+          detail: listing.title,
+        });
         const draft = await enrichOrphanListingDraft(listing, categories, categoryFields, {
           parseSpecs: true,
         });
@@ -118,13 +138,19 @@ const EbayStorePullImportTab: React.FC<Props> = ({
         nextRows[rowKey(listing.listingId)] = defaultImportRowState(draft);
       }
 
+      setProgress({
+        label: 'Analysis complete',
+        done: total,
+        total,
+        detail: `${plan.orphans.length} listing${plan.orphans.length === 1 ? '' : 's'}`,
+      });
       setDrafts(nextDrafts);
       setRowState(nextRows);
     } catch (e: unknown) {
       setError((e as Error)?.message || 'Failed to analyze eBay listings.');
     } finally {
       setLoading(false);
-      setEnrichProgress(null);
+      setTimeout(() => setProgress(null), 900);
     }
   }, [items, categories, categoryFields]);
 
@@ -206,6 +232,8 @@ const EbayStorePullImportTab: React.FC<Props> = ({
     setApplying(true);
     setError(null);
     setApplyMessage(null);
+    const total = selectedDrafts.length;
+    setProgress({ label: 'Importing items from eBay…', done: 0, total });
     try {
       const timestamp = Date.now();
       const today = new Date().toISOString().split('T')[0];
@@ -216,6 +244,13 @@ const EbayStorePullImportTab: React.FC<Props> = ({
         const key = rowKey(draft.listing.listingId);
         const row = rowState[key];
         if (!row) continue;
+
+        setProgress({
+          label: 'Importing items from eBay…',
+          done: i,
+          total,
+          detail: row.name.trim() || draft.parsedName,
+        });
 
         const id = `item-${timestamp}-ebay-${i}`;
         const listing = draft.listing;
@@ -256,6 +291,12 @@ const EbayStorePullImportTab: React.FC<Props> = ({
         };
 
         newItems.push(item);
+        setProgress({
+          label: 'Importing items from eBay…',
+          done: i + 1,
+          total,
+          detail: item.name,
+        });
       }
 
       if (newItems.length) {
@@ -270,6 +311,7 @@ const EbayStorePullImportTab: React.FC<Props> = ({
       setError((e as Error)?.message || 'Failed to add items.');
     } finally {
       setApplying(false);
+      setTimeout(() => setProgress(null), 900);
     }
   };
 
@@ -294,8 +336,9 @@ const EbayStorePullImportTab: React.FC<Props> = ({
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-black uppercase tracking-widest hover:bg-indigo-700 disabled:opacity-50"
         >
           {loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-          {loading ? enrichProgress || 'Analyzing…' : 'Find missing listings'}
+          {loading ? 'Analyzing…' : 'Find missing listings'}
         </button>
+        {progress && <EbayToolProgressBar {...progress} tone="indigo" />}
       </div>
 
       {error && (

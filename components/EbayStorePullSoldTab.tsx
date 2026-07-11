@@ -25,6 +25,7 @@ import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 import { computeItemProfitBeforeOverhead } from '../services/financialAggregation';
 import type { ParsedEbayOrderScreenshot } from '../services/ebayOrderScreenshotAI';
 import EbayOrderScreenshotInline from './EbayOrderScreenshotInline';
+import EbayToolProgressBar, { type EbayToolProgress } from './EbayToolProgressBar';
 
 interface SoldRowState {
   selected: boolean;
@@ -71,6 +72,7 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
   const [unmatched, setUnmatched] = useState<EbayListingSnapshotEntry[]>([]);
   const [snapshotMeta, setSnapshotMeta] = useState<{ previousAt: string; disappeared: number } | null>(null);
   const [rowState, setRowState] = useState<Record<string, SoldRowState>>({});
+  const [progress, setProgress] = useState<EbayToolProgress | null>(null);
 
   const rowKey = (match: EbaySoldDetectionMatch) => match.item.id;
 
@@ -85,30 +87,53 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
     setUnmatched([]);
     setSnapshotMeta(null);
     setRowState({});
+    setProgress({ label: 'Fetching active eBay listings…', done: 0, total: 4 });
 
     try {
       const listings = await fetchMyEbayListings();
+      setProgress({
+        label: 'Fetching active eBay listings…',
+        done: 1,
+        total: 4,
+        detail: `${listings.length} listing${listings.length === 1 ? '' : 's'}`,
+      });
       const prev = loadEbayListingSnapshot();
 
       if (!prev) {
+        setProgress({ label: 'Saving baseline snapshot…', done: 3, total: 4 });
         saveEbayListingSnapshot(listings, getEbayUsername());
+        setProgress({ label: 'Baseline saved', done: 4, total: 4 });
         setInfo(
           `Saved baseline snapshot of ${listings.length} active listing${listings.length === 1 ? '' : 's'}. Run this check again after listings disappear to detect likely sales.`
         );
         return;
       }
 
+      setProgress({ label: 'Comparing to last snapshot…', done: 2, total: 4 });
       const { disappeared } = compareEbayListingSnapshots(prev.entries, listings);
       saveEbayListingSnapshot(listings, getEbayUsername());
 
       if (!disappeared.length) {
+        setProgress({ label: 'No listing changes', done: 4, total: 4 });
         setInfo(
           `No listings disappeared since ${new Date(prev.meta.capturedAt).toLocaleString()}. Snapshot updated (${listings.length} active).`
         );
         return;
       }
 
+      setProgress({
+        label: 'Matching ended listings to inventory…',
+        done: 3,
+        total: 4,
+        detail: `${disappeared.length} ended`,
+      });
       const plan = buildEbaySoldDetectionPlan(items, disappeared);
+      setProgress({
+        label: 'Check complete',
+        done: 4,
+        total: 4,
+        detail: `${plan.matches.length} likely sale${plan.matches.length === 1 ? '' : 's'}`,
+      });
       setMatches(plan.matches);
       setUnmatched(plan.unmatchedDisappeared);
       setSnapshotMeta({
@@ -125,6 +150,7 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
       setError((e as Error)?.message || 'Failed to check eBay listings.');
     } finally {
       setLoading(false);
+      setTimeout(() => setProgress(null), 900);
     }
   }, [items]);
 
@@ -159,13 +185,23 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
     if (!readyToApply.length) return;
     setApplying(true);
     setError(null);
+    const total = readyToApply.length;
+    setProgress({ label: 'Marking items as sold…', done: 0, total });
     try {
       const updates: InventoryItem[] = [];
 
-      for (const match of readyToApply) {
+      for (let i = 0; i < readyToApply.length; i++) {
+        const match = readyToApply[i];
         const key = rowKey(match);
         const row = rowState[key];
         if (!row) continue;
+
+        setProgress({
+          label: 'Marking items as sold…',
+          done: i,
+          total,
+          detail: match.item.name,
+        });
 
         const sellParsed = parseLocaleNumber(row.sellPrice);
         const sellPrice =
@@ -202,6 +238,12 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
             : undefined;
 
         updates.push(draft);
+        setProgress({
+          label: 'Marking items as sold…',
+          done: i + 1,
+          total,
+          detail: match.item.name,
+        });
       }
 
       if (updates.length) {
@@ -218,6 +260,7 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
       setError((e as Error)?.message || 'Failed to mark items as sold.');
     } finally {
       setApplying(false);
+      setTimeout(() => setProgress(null), 900);
     }
   };
 
@@ -225,9 +268,17 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
     void (async () => {
       setLoading(true);
       setError(null);
+      setProgress({ label: 'Fetching active eBay listings…', done: 0, total: 2 });
       try {
         const listings = await fetchMyEbayListings();
+        setProgress({
+          label: 'Saving baseline snapshot…',
+          done: 1,
+          total: 2,
+          detail: `${listings.length} listing${listings.length === 1 ? '' : 's'}`,
+        });
         saveEbayListingSnapshot(listings, getEbayUsername());
+        setProgress({ label: 'Baseline reset', done: 2, total: 2 });
         setInfo(`Baseline reset — ${listings.length} active listings saved.`);
         setMatches([]);
         setUnmatched([]);
@@ -237,6 +288,7 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
         setError((e as Error)?.message || 'Could not reset baseline.');
       } finally {
         setLoading(false);
+        setTimeout(() => setProgress(null), 900);
       }
     })();
   };
@@ -276,6 +328,7 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
             Reset baseline
           </button>
         </div>
+        {progress && <EbayToolProgressBar {...progress} tone="rose" />}
       </div>
 
       {error && (
