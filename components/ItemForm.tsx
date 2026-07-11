@@ -554,12 +554,14 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     setEbayImportingId(listing.listingId);
     try {
       const merged = await addImageUrls(urls);
+      const priceMatch = ebayListingToPriceMatch(listing);
       setFormData((prev) => ({
         ...prev,
         listedOnEbay: true,
         ebayListingId: listing.listingId,
         ...(listing.sku ? { ebaySku: listing.sku } : {}),
         ...(listing.offerId ? { ebayOfferId: listing.offerId } : {}),
+        ...(priceMatch ? { storePrice: priceMatch.roundedPrice } : {}),
       }));
       setEbayListingMatches(null);
       setExpandedEbayListingId(null);

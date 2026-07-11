@@ -33,7 +33,7 @@ import ItemForm from './ItemForm';
 import ItemThumbnail from './ItemThumbnail';
 import InvoiceView from './InvoiceView';
 import InventoryAISpecsPanel from './InventoryAISpecsPanel';
-import AddPhotosModal from './AddPhotosModal';
+import AddPhotosModal, { type AddPhotosApplyOptions } from './AddPhotosModal';
 import BulkSelectionBar, { type BulkAction } from './BulkSelectionBar';
 import { generateItemSpecs } from '../services/specsAI';
 import { getStorefrontHiddenReason, isPublishedOnStorefront } from '../utils/storefrontCatalog';
@@ -2652,9 +2652,9 @@ const InventoryList: React.FC<Props> = ({
   );
 
   const handleBulkAddPhotos = useCallback(
-    async (urls: string[]) => {
+    async (urls: string[], options?: AddPhotosApplyOptions) => {
       if (!urls.length || addPhotosTargetIds.length === 0) return;
-      const prepared = await prepareInventoryImagesForStorage(urls, { itemId: 'shared' });
+      const prepared = urls;
       if (!prepared.length) return;
       const idSet = new Set(addPhotosTargetIds);
       const updated = items
@@ -2662,39 +2662,34 @@ const InventoryList: React.FC<Props> = ({
         .map((item) => {
           const existing = normalizeImageList([item.imageUrl, ...(item.imageUrls || [])]);
           const merged = normalizeImageList([...existing, ...prepared]);
+          const match = options?.ebayMatch;
           return {
             ...item,
             imageUrl: merged[0],
             imageUrls: merged,
+            ...(match
+              ? {
+                  storePrice: match.roundedPrice,
+                  listedOnEbay: true,
+                  ebayListingId: match.listingId,
+                  ebaySku: item.ebaySku || match.sku,
+                }
+              : {}),
+            ...(options?.offerId ? { ebayOfferId: options.offerId } : {}),
           };
         });
       if (updated.length) {
         onUpdate(updated);
-        setToast(`Added ${prepared.length} photo${prepared.length === 1 ? '' : 's'} to ${updated.length} item${updated.length === 1 ? '' : 's'}`);
+        const priceNote = options?.ebayMatch
+          ? ` · storefront €${formatEUR(options.ebayMatch.roundedPrice)} from eBay`
+          : '';
+        setToast(
+          `Added ${prepared.length} photo${prepared.length === 1 ? '' : 's'} to ${updated.length} item${updated.length === 1 ? '' : 's'}${priceNote}`
+        );
       }
       closeAddPhotosModal();
     },
     [addPhotosTargetIds, items, onUpdate, closeAddPhotosModal]
-  );
-
-  const handleAddPhotosApplyEbayPrice = useCallback(
-    (price: number, match: EbayListingPriceMatch) => {
-      if (addPhotosTargetIds.length !== 1) return;
-      const item = itemsById.get(addPhotosTargetIds[0]);
-      if (!item) return;
-      onUpdate([
-        {
-          ...item,
-          storePrice: price,
-          listedOnEbay: true,
-          ebayListingId: match.listingId,
-          ebaySku: item.ebaySku || match.sku,
-        },
-      ]);
-      setToast(`Storefront price set to €${formatEUR(price)} from eBay`);
-      setTimeout(() => setToast((prev) => (prev?.startsWith('Storefront price set') ? null : prev)), 2000);
-    },
-    [addPhotosTargetIds, itemsById, onUpdate]
   );
 
   const bulkActions = useMemo((): BulkAction[] => {
@@ -3291,8 +3286,6 @@ const InventoryList: React.FC<Props> = ({
         searchName={addPhotosTargetItems[0]?.name ?? ''}
         ebaySku={addPhotosTargetItems.length === 1 ? addPhotosTargetItems[0]?.ebaySku : undefined}
         storageItemId={addPhotosTargetItems.length === 1 ? addPhotosTargetItems[0]?.id : 'shared'}
-        currentStorePrice={addPhotosTargetItems.length === 1 ? addPhotosTargetItems[0]?.storePrice : undefined}
-        onApplyPrice={addPhotosTargetItems.length === 1 ? handleAddPhotosApplyEbayPrice : undefined}
       />
 
       {/* Toast notification for quick actions (e.g. copy listing text) */}
