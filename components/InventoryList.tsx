@@ -2625,6 +2625,11 @@ const InventoryList: React.FC<Props> = ({
     setQuickCategoryPins(DEFAULT_QUICK_CATEGORY_PINS);
   }, []);
 
+  const addPhotosTargetItems = useMemo(
+    () => addPhotosTargetIds.map((id) => itemsById.get(id)).filter(Boolean) as InventoryItem[],
+    [addPhotosTargetIds, itemsById]
+  );
+
   const openAddPhotosModal = useCallback((ids: string[]) => {
     if (!ids.length) return;
     setAddPhotosTargetIds(ids);
@@ -3262,6 +3267,9 @@ const InventoryList: React.FC<Props> = ({
         onClose={closeAddPhotosModal}
         onApply={handleBulkAddPhotos}
         itemCount={addPhotosTargetIds.length}
+        searchName={addPhotosTargetItems[0]?.name ?? ''}
+        ebaySku={addPhotosTargetItems.length === 1 ? addPhotosTargetItems[0]?.ebaySku : undefined}
+        storageItemId={addPhotosTargetItems.length === 1 ? addPhotosTargetItems[0]?.id : 'shared'}
       />
 
       {/* Toast notification for quick actions (e.g. copy listing text) */}
