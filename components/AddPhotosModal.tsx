@@ -13,8 +13,10 @@ import {
   type ImageSearchProvider,
   type ImageSearchResult,
 } from '../services/imageSearchService';
-import { fetchMyEbayListings, getEbayUsername, type EbayMyListing } from '../services/ebayService';
+import { fetchMyEbayListings, getEbayUsername, ebayListingToPriceMatch, type EbayMyListing, type EbayListingPriceMatch } from '../services/ebayService';
 import { matchEbayListingsForItem } from '../utils/ebayListingMatch';
+import { formatEUR } from '../utils/formatMoney';
+import EbayListingPriceModal from './EbayListingPriceModal';
 
 interface Props {
   open: boolean;
@@ -26,6 +28,8 @@ interface Props {
   ebaySku?: string;
   /** Firebase Storage folder when uploading files (single item id or "shared"). */
   storageItemId?: string;
+  currentSellPrice?: number;
+  onApplyPrice?: (price: number, match: EbayListingPriceMatch) => void | Promise<void>;
 }
 
 const AddPhotosModal: React.FC<Props> = ({
@@ -36,6 +40,8 @@ const AddPhotosModal: React.FC<Props> = ({
   searchName = '',
   ebaySku,
   storageItemId = 'shared',
+  currentSellPrice,
+  onApplyPrice,
 }) => {
   const [urlInput, setUrlInput] = useState('');
   const [imgurInput, setImgurInput] = useState('');
@@ -56,6 +62,11 @@ const AddPhotosModal: React.FC<Props> = ({
   const [ebayListingError, setEbayListingError] = useState<string | null>(null);
   const [expandedEbayListingId, setExpandedEbayListingId] = useState<string | null>(null);
   const [selectedEbayPhotosByListing, setSelectedEbayPhotosByListing] = useState<Record<string, string[]>>({});
+  const [ebayPriceModalMatch, setEbayPriceModalMatch] = useState<EbayListingPriceMatch | null>(null);
+  const [ebayPriceModalOpen, setEbayPriceModalOpen] = useState(false);
+  const [ebayPriceModalError, setEbayPriceModalError] = useState<string | null>(null);
+
+  const canFetchPrice = itemCount === 1 && Boolean(onApplyPrice);
 
   const storageOptions = { itemId: storageItemId };
   const canSearch = Boolean(searchName.trim());
@@ -76,6 +87,9 @@ const AddPhotosModal: React.FC<Props> = ({
     setEbayListingError(null);
     setExpandedEbayListingId(null);
     setSelectedEbayPhotosByListing({});
+    setEbayPriceModalOpen(false);
+    setEbayPriceModalMatch(null);
+    setEbayPriceModalError(null);
   }, [open]);
 
   useEffect(() => {
@@ -209,6 +223,46 @@ const AddPhotosModal: React.FC<Props> = ({
     setExpandedEbayListingId(null);
     setSelectedEbayPhotosByListing({});
   };
+
+  const selectAllEbayPhotos = (listing: EbayMyListing) => {
+    setSelectedEbayPhotosByListing((prev) => ({
+      ...prev,
+      [listing.listingId]: [...listing.imageUrls],
+    }));
+  };
+
+  const clearEbayPhotoSelection = (listingId: string) => {
+    setSelectedEbayPhotosByListing((prev) => ({ ...prev, [listingId]: [] }));
+  };
+
+  const closeEbayPriceModal = () => {
+    setEbayPriceModalOpen(false);
+    setEbayPriceModalMatch(null);
+    setEbayPriceModalError(null);
+  };
+
+  const handleFetchPriceFromEbayListing = (listing: EbayMyListing & { matchScore: number }) => {
+    if (!canFetchPrice) return;
+    const match = ebayListingToPriceMatch(listing);
+    if (!match) {
+      setEbayPriceModalMatch(null);
+      setEbayPriceModalError('This listing has no price on eBay.');
+      setEbayPriceModalOpen(true);
+      return;
+    }
+    setEbayPriceModalError(null);
+    setEbayPriceModalMatch(match);
+    setEbayPriceModalOpen(true);
+  };
+
+  const applyEbayListingPriceFromModal = async (match: EbayListingPriceMatch) => {
+    if (!onApplyPrice) return;
+    await onApplyPrice(match.roundedPrice, match);
+    closeEbayPriceModal();
+  };
+
+  const ebayFetchPriceButtonClass =
+    'px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[9px] font-black uppercase disabled:opacity-50';
 
   const handleApply = async () => {
     if (!pendingUrls.length) {
@@ -392,11 +446,53 @@ const AddPhotosModal: React.FC<Props> = ({
                             >
                               {expanded ? 'Hide' : 'Pick'}
                             </button>
+                            {canFetchPrice && (
+                              <button
+                                type="button"
+                                onClick={() => handleFetchPriceFromEbayListing(listing)}
+                                className={ebayFetchPriceButtonClass}
+                              >
+                                + Fetch price
+                              </button>
+                            )}
                           </div>
+                          {listing.price != null && listing.price > 0 && (
+                            <p className="text-[10px] text-slate-500 mt-1">€{formatEUR(listing.price)} on eBay</p>
+                          )}
                         </div>
                       </div>
                       {expanded && (
                         <div className="space-y-2 border-t border-slate-100 pt-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-[10px] font-bold text-slate-500">
+                              {selected.length} selected
+                            </p>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => selectAllEbayPhotos(listing)}
+                                className="text-[10px] font-bold text-blue-600 hover:underline"
+                              >
+                                Select all
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => clearEbayPhotoSelection(listing.listingId)}
+                                className="text-[10px] font-bold text-slate-400 hover:text-slate-700"
+                              >
+                                Clear
+                              </button>
+                              {canFetchPrice && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleFetchPriceFromEbayListing(listing)}
+                                  className="text-[10px] font-bold text-amber-700 hover:underline"
+                                >
+                                  + Fetch price
+                                </button>
+                              )}
+                            </div>
+                          </div>
                           <div className="grid grid-cols-4 gap-1.5">
                             {listing.imageUrls.map((url) => {
                               const isSelected = selectedSet.has(url);
@@ -542,6 +638,16 @@ const AddPhotosModal: React.FC<Props> = ({
           </button>
         </div>
       </div>
+
+      <EbayListingPriceModal
+        open={ebayPriceModalOpen}
+        itemName={searchName.trim() || 'Item'}
+        currentSellPrice={currentSellPrice}
+        error={ebayPriceModalError}
+        match={ebayPriceModalMatch}
+        onClose={closeEbayPriceModal}
+        onApply={(match) => void applyEbayListingPriceFromModal(match)}
+      />
     </div>,
     document.body
   );

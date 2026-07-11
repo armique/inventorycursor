@@ -2676,6 +2676,26 @@ const InventoryList: React.FC<Props> = ({
     [addPhotosTargetIds, items, onUpdate, closeAddPhotosModal]
   );
 
+  const handleAddPhotosApplyEbayPrice = useCallback(
+    (price: number, match: EbayListingPriceMatch) => {
+      if (addPhotosTargetIds.length !== 1) return;
+      const item = itemsById.get(addPhotosTargetIds[0]);
+      if (!item) return;
+      onUpdate([
+        {
+          ...item,
+          sellPrice: price,
+          listedOnEbay: true,
+          ebayListingId: match.listingId,
+          ebaySku: item.ebaySku || match.sku,
+        },
+      ]);
+      setToast(`Sell price set to €${formatEUR(price)} from eBay`);
+      setTimeout(() => setToast((prev) => (prev?.startsWith('Sell price set') ? null : prev)), 2000);
+    },
+    [addPhotosTargetIds, itemsById, onUpdate]
+  );
+
   const bulkActions = useMemo((): BulkAction[] => {
     const exportKleinanzeigen = () => {
       const selected = deferredSelectedIds.map((id) => itemsById.get(id)).filter(Boolean) as InventoryItem[];
@@ -3270,6 +3290,8 @@ const InventoryList: React.FC<Props> = ({
         searchName={addPhotosTargetItems[0]?.name ?? ''}
         ebaySku={addPhotosTargetItems.length === 1 ? addPhotosTargetItems[0]?.ebaySku : undefined}
         storageItemId={addPhotosTargetItems.length === 1 ? addPhotosTargetItems[0]?.id : 'shared'}
+        currentSellPrice={addPhotosTargetItems.length === 1 ? addPhotosTargetItems[0]?.sellPrice : undefined}
+        onApplyPrice={addPhotosTargetItems.length === 1 ? handleAddPhotosApplyEbayPrice : undefined}
       />
 
       {/* Toast notification for quick actions (e.g. copy listing text) */}

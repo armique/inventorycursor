@@ -1,0 +1,81 @@
+import type { EbayMyListing } from '../services/ebayService';
+import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
+import { detectItemCategory } from './itemCategoryDetect';
+import { cleanEbayListingTitle } from './ebayBulkSyncPlan';
+
+export interface EbayOrphanListingDraft {
+  listing: EbayMyListing;
+  parsedName: string;
+  category: string;
+  subCategory: string;
+  categorySource: string;
+  specs: Record<string, string | number>;
+  specsAiSuggested?: Record<string, string | number>;
+  vendor?: string;
+  enrichError?: string;
+}
+
+export async function enrichOrphanListingDraft(
+  listing: EbayMyListing,
+  categories: Record<string, string[]>,
+  categoryFields: Record<string, string[]>,
+  options: { parseSpecs: boolean }
+): Promise<EbayOrphanListingDraft> {
+  const cleaned = cleanEbayListingTitle(listing.title);
+  let parsedName = cleaned || listing.title.trim();
+  let category = 'Misc';
+  let subCategory = 'Spare Parts';
+  let categorySource = 'heuristic';
+  let specs: Record<string, string | number> = {};
+  let specsAiSuggested: Record<string, string | number> | undefined;
+  let vendor: string | undefined;
+  let enrichError: string | undefined;
+
+  try {
+    const catResult = await detectItemCategory(parsedName, categories);
+    category = catResult.category;
+    subCategory = catResult.subCategory;
+    categorySource = catResult.source;
+    if (catResult.standardizedName) {
+      parsedName = catResult.standardizedName;
+    }
+  } catch (e) {
+    enrichError = (e as Error)?.message || 'Category detection failed.';
+  }
+
+  if (options.parseSpecs && getSpecsAIProvider()) {
+    try {
+      const categoryContext = `${category}${subCategory ? ` / ${subCategory}` : ''}`;
+      const activeKey = `${category}:${subCategory || ''}`;
+      const knownKeys = categoryFields[activeKey] || categoryFields[category] || [];
+      const result = await generateItemSpecs(parsedName, categoryContext, knownKeys);
+      if (result.standardizedName?.trim()) {
+        parsedName = result.standardizedName.trim();
+      }
+      if (result.vendor) vendor = result.vendor;
+      if (result.specs && Object.keys(result.specs).length > 0) {
+        specs = result.specs;
+        specsAiSuggested = { ...result.specs };
+      }
+    } catch (e) {
+      const msg = (e as Error)?.message || 'AI spec parse failed.';
+      enrichError = enrichError ? `${enrichError} ${msg}` : msg;
+    }
+  } else if (options.parseSpecs && !getSpecsAIProvider()) {
+    enrichError = enrichError
+      ? enrichError
+      : 'No AI provider configured — name and category only.';
+  }
+
+  return {
+    listing,
+    parsedName,
+    category,
+    subCategory,
+    categorySource,
+    specs,
+    specsAiSuggested,
+    vendor,
+    enrichError,
+  };
+}

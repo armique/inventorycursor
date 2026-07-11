@@ -10,6 +10,7 @@ const LABELS: Record<string, string> = {
   builder: 'PC builder',
   pricing: 'Price check',
   'deal-hunter': 'Deal hunter',
+  'ebay-store-pull': 'eBay Store Pull',
   invoices: 'Invoices',
   'action-history': 'Action history',
   expenses: 'Expenses',

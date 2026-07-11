@@ -257,6 +257,24 @@ export async function fetchEbayListingPriceForItem(
   };
 }
 
+/** Build a price match from an already-loaded eBay listing row (e.g. My eBay photos picker). */
+export function ebayListingToPriceMatch(
+  listing: EbayMyListing & { matchScore?: number }
+): EbayListingPriceMatch | null {
+  if (listing.price == null || listing.price <= 0) return null;
+  const rawPrice = listing.price;
+  return {
+    listingId: listing.listingId,
+    title: listing.title,
+    listingUrl: listing.listingUrl,
+    sku: listing.sku,
+    rawPrice,
+    roundedPrice: roundPriceCentsTo99(rawPrice),
+    currency: listing.currency,
+    matchScore: listing.matchScore ?? 100,
+  };
+}
+
 /** Fetch active eBay listings from the seller store (Browse API) plus optional OAuth inventory. */
 export async function fetchMyEbayListings(): Promise<EbayMyListing[]> {
   const token = getEbayToken();

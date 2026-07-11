@@ -101,6 +101,8 @@ export interface InventoryItem {
   // eBay API Tracking
   ebaySku?: string;
   ebayOfferId?: string;
+  /** Active eBay listing ID last synced via Store Pull (avoids re-matching sold/relisted duplicates). */
+  ebayListingId?: string;
 
   // Platform Specific Buy Data
   kleinanzeigenBuyChatUrl?: string;

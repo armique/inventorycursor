@@ -19,11 +19,13 @@ import { getCompatibleItemsForItem } from '../services/compatibility';
 import { getEssentialSpecFieldKeys } from '../services/essentialSpecFields';
 import { getCompatibilityWarnings } from '../utils/compatibilityWarnings';
 import { recordCategoryCorrection, suggestCategoryFromCorrections } from '../services/categoryCorrections';
+import { detectItemCategory, searchInventoryItemsForAdd } from '../utils/itemCategoryDetect';
 import { filesToDataUrls, prepareInventoryImagesForStorage, getItemUserPhotoCount, isCategoryPlaceholderImage } from '../utils/imageImport';
 import { searchProductPhotos, getImageSearchProviders, ImageSearchResult, ImageSearchProvider } from '../services/imageSearchService';
 import { getCachedProductPhoto, setCachedProductPhoto } from '../services/firebaseService';
-import { fetchMyEbayListings, getEbayUsername, type EbayMyListing } from '../services/ebayService';
+import { fetchMyEbayListings, getEbayUsername, ebayListingToPriceMatch, type EbayMyListing, type EbayListingPriceMatch } from '../services/ebayService';
 import { matchEbayListingsForItem } from '../utils/ebayListingMatch';
+import EbayListingPriceModal from './EbayListingPriceModal';
 
 interface Props {
   items: InventoryItem[];
@@ -135,6 +137,10 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   const [generatingSpecs, setGeneratingSpecs] = useState(false);
   const [showSpecs, setShowSpecs] = useState(true);
   const [nameSuggestionsOpen, setNameSuggestionsOpen] = useState(false);
+  const [categorySearchOpen, setCategorySearchOpen] = useState(false);
+  const [aiDetecting, setAiDetecting] = useState(false);
+  const [aiDetectMessage, setAiDetectMessage] = useState<string | null>(null);
+  const [aiDetectError, setAiDetectError] = useState<string | null>(null);
   const [quantityToCreate, setQuantityToCreate] = useState<number>(1);
   /** Spec fields the user explicitly switched from the AI-filled preset dropdown to manual typing. */
   const [customSpecKeys, setCustomSpecKeys] = useState<Set<string>>(new Set());
@@ -148,6 +154,9 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   const [ebayImportingId, setEbayImportingId] = useState<string | null>(null);
   const [expandedEbayListingId, setExpandedEbayListingId] = useState<string | null>(null);
   const [selectedEbayPhotosByListing, setSelectedEbayPhotosByListing] = useState<Record<string, string[]>>({});
+  const [ebayPriceModalMatch, setEbayPriceModalMatch] = useState<EbayListingPriceMatch | null>(null);
+  const [ebayPriceModalOpen, setEbayPriceModalOpen] = useState(false);
+  const [ebayPriceModalError, setEbayPriceModalError] = useState<string | null>(null);
   const [previewPhoto, setPreviewPhoto] = useState<ImageSearchResult | null>(null);
   const [imageProviders, setImageProviders] = useState<ImageSearchProvider[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<string>(''); // '' = auto (try all configured)
@@ -229,6 +238,11 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       .slice(0, 8);
   }, [items, formData.name, formData.id]);
 
+  const inventorySearchMatches = useMemo(
+    () => searchInventoryItemsForAdd(items, formData.name || '', formData.id, 8),
+    [items, formData.name, formData.id]
+  );
+
   const learnedCategory = useMemo(
     () => (formData.name?.trim() ? suggestCategoryFromCorrections(formData.name) : null),
     [formData.name]
@@ -249,7 +263,38 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     }));
     setConfigStep('DONE');
     setNameSuggestionsOpen(false);
+    setCategorySearchOpen(false);
+    setAiDetectMessage(`Loaded from inventory: ${template.category} / ${template.subCategory || '—'}`);
+    setAiDetectError(null);
   }, []);
+
+  const handleAiDetectCategory = async () => {
+    const name = (formData.name || '').trim();
+    if (!name) {
+      setAiDetectError('Type an item name in the search box first.');
+      return;
+    }
+    setAiDetecting(true);
+    setAiDetectError(null);
+    setAiDetectMessage(null);
+    try {
+      const result = await detectItemCategory(name, categories);
+      setFormData((prev) => ({
+        ...prev,
+        name: result.standardizedName || name,
+        category: result.category,
+        subCategory: result.subCategory,
+      }));
+      setConfigStep('DONE');
+      const sourceLabel =
+        result.source === 'ai' ? 'AI' : result.source === 'learned' ? 'learned from your past edits' : 'smart guess';
+      setAiDetectMessage(`Detected (${sourceLabel}): ${result.category} / ${result.subCategory}`);
+    } catch (e: unknown) {
+      setAiDetectError((e as Error)?.message || 'Could not detect category.');
+    } finally {
+      setAiDetecting(false);
+    }
+  };
 
   const updateSpecField = useCallback((key: string, value: string) => {
     setFormData((prev) => {
@@ -512,6 +557,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       setFormData((prev) => ({
         ...prev,
         listedOnEbay: true,
+        ebayListingId: listing.listingId,
         ...(listing.sku ? { ebaySku: listing.sku } : {}),
         ...(listing.offerId ? { ebayOfferId: listing.offerId } : {}),
       }));
@@ -540,6 +586,39 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     }
     void finalizeEbayListingImport(listing, selected);
   };
+
+  const closeEbayPriceModal = () => {
+    setEbayPriceModalOpen(false);
+    setEbayPriceModalMatch(null);
+    setEbayPriceModalError(null);
+  };
+
+  const handleFetchPriceFromEbayListing = (listing: EbayMyListing & { matchScore: number }) => {
+    const match = ebayListingToPriceMatch(listing);
+    if (!match) {
+      setEbayPriceModalMatch(null);
+      setEbayPriceModalError('This listing has no price on eBay.');
+      setEbayPriceModalOpen(true);
+      return;
+    }
+    setEbayPriceModalError(null);
+    setEbayPriceModalMatch(match);
+    setEbayPriceModalOpen(true);
+  };
+
+  const applyEbayListingPriceFromModal = (match: EbayListingPriceMatch) => {
+    setFormData((prev) => ({
+      ...prev,
+      sellPrice: match.roundedPrice,
+      listedOnEbay: true,
+      ebayListingId: match.listingId,
+      ebaySku: prev.ebaySku || match.sku,
+    }));
+    closeEbayPriceModal();
+  };
+
+  const ebayFetchPriceButtonClass =
+    'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-black uppercase tracking-widest hover:bg-amber-100 disabled:opacity-50';
 
   /** Picking a photo from search results replaces the current default entirely — search results
    * are alternatives for THE photo, not additions to a gallery, so ending up with the picked photo
@@ -757,7 +836,87 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
 
   const renderCategorySelection = () => (
      <div className="space-y-6 animate-in slide-in-from-right-4">
-        <h2 className="text-2xl font-black text-slate-900">Select Category</h2>
+        <div className="bg-white border border-slate-200 rounded-[2rem] p-5 md:p-6 shadow-sm space-y-3">
+           <div>
+              <h2 className="text-xl font-black text-slate-900">Find or name your item</h2>
+              <p className="text-sm text-slate-500 mt-1">
+                 Search items already in inventory, or type a new name and let AI pick category & subcategory.
+              </p>
+           </div>
+           <div className="flex flex-col sm:flex-row gap-2 sm:items-stretch">
+              <div className="relative flex-1 min-w-0">
+                 <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                 <input
+                    autoFocus={!id && !initialData}
+                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm outline-none focus:border-violet-400 focus:bg-white transition-all"
+                    placeholder="Search inventory or type new item name…"
+                    value={formData.name || ''}
+                    onChange={(e) => {
+                      setFormData({ ...formData, name: e.target.value });
+                      setCategorySearchOpen(true);
+                      setAiDetectError(null);
+                    }}
+                    onFocus={() => setCategorySearchOpen(true)}
+                    onBlur={() => setTimeout(() => setCategorySearchOpen(false), 200)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        void handleAiDetectCategory();
+                      }
+                    }}
+                 />
+                 {categorySearchOpen && inventorySearchMatches.length > 0 && (
+                    <ul className="absolute z-30 left-0 right-0 mt-1 py-2 bg-white border border-slate-200 rounded-2xl shadow-xl max-h-60 overflow-y-auto">
+                       <li className="px-4 py-2 text-[10px] font-black uppercase text-slate-400 border-b border-slate-100">
+                          Already in inventory — pick to copy details
+                       </li>
+                       {inventorySearchMatches.map((item) => (
+                          <li
+                             key={item.id}
+                             className="px-4 py-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0"
+                             onMouseDown={(e) => {
+                                e.preventDefault();
+                                applyItemFromHistory(item as InventoryItem);
+                             }}
+                          >
+                             <p className="font-bold text-slate-900 text-sm">{item.name}</p>
+                             <p className="text-xs text-slate-500 mt-0.5">
+                                {item.category} / {item.subCategory || '—'}
+                                {item.vendor ? ` · ${item.vendor}` : ''}
+                             </p>
+                          </li>
+                       ))}
+                    </ul>
+                 )}
+              </div>
+              <button
+                 type="button"
+                 onClick={() => void handleAiDetectCategory()}
+                 disabled={aiDetecting || !(formData.name || '').trim()}
+                 className="shrink-0 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-full bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-[11px] font-black uppercase tracking-widest shadow-lg shadow-violet-500/25 hover:from-violet-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              >
+                 <Wand2 size={14} className={aiDetecting ? 'animate-spin' : ''} />
+                 {aiDetecting ? 'Detecting…' : 'AI Detect'}
+              </button>
+           </div>
+           {aiDetectError && (
+              <p className="text-xs font-bold text-red-700 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+                 {aiDetectError}
+              </p>
+           )}
+           {aiDetectMessage && (
+              <p className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
+                 {aiDetectMessage}
+              </p>
+           )}
+           {learnedCategory && (
+              <p className="text-[10px] font-bold text-indigo-700">
+                 Tip: past edits suggest category <span className="font-black">{learnedCategory}</span> for similar names.
+              </p>
+           )}
+        </div>
+
+        <h2 className="text-2xl font-black text-slate-900">Or select category manually</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
            {Object.keys(categories).map(cat => (
               <button 
@@ -1123,6 +1282,9 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                                     <p className="text-xs font-bold text-slate-900 leading-snug line-clamp-2">{listing.title}</p>
                                     <p className="text-[10px] text-slate-500 mt-0.5">
                                       {listing.imageUrls.length} photo{listing.imageUrls.length === 1 ? '' : 's'}
+                                      {listing.price != null && listing.price > 0 ? (
+                                        <> · €{formatEUR(listing.price)} on eBay</>
+                                      ) : null}
                                       {listing.listingUrl ? (
                                         <>
                                           {' · '}
@@ -1155,6 +1317,14 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                                       >
                                         {expanded ? 'Hide photos' : 'Pick photos'}
                                       </button>
+                                      <button
+                                        type="button"
+                                        disabled={importing}
+                                        onClick={() => handleFetchPriceFromEbayListing(listing)}
+                                        className={ebayFetchPriceButtonClass}
+                                      >
+                                        + Fetch price
+                                      </button>
                                     </div>
                                   </div>
                                 </div>
@@ -1179,6 +1349,14 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                                           className="text-[10px] font-bold text-slate-400 hover:text-slate-700"
                                         >
                                           Clear
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={importing}
+                                          onClick={() => handleFetchPriceFromEbayListing(listing)}
+                                          className="text-[10px] font-bold text-amber-700 hover:underline disabled:opacity-50"
+                                        >
+                                          + Fetch price
                                         </button>
                                       </div>
                                     </div>
@@ -1588,6 +1766,16 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
           </div>
         </div>
       )}
+
+      <EbayListingPriceModal
+        open={ebayPriceModalOpen}
+        itemName={formData.name || 'Item'}
+        currentSellPrice={formData.sellPrice}
+        error={ebayPriceModalError}
+        match={ebayPriceModalMatch}
+        onClose={closeEbayPriceModal}
+        onApply={applyEbayListingPriceFromModal}
+      />
     </div>
   );
 };

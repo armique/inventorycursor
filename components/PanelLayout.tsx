@@ -3,7 +3,7 @@ import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
   Package, PlusCircle, Settings, RefreshCw, Briefcase, Trash2, CloudUpload, LayoutDashboard,
   Layers, Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe, Tag, Radar, Activity,
-  Printer, LayoutTemplate,
+  Printer, LayoutTemplate, PackageSearch,
 } from 'lucide-react';
 import PanelBreadcrumbs from './PanelBreadcrumbs';
 import { usePanelLocale } from '../context/PanelLocaleContext';
@@ -126,6 +126,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     { to: '/panel/builder', icon: <Briefcase size={20} />, label: 'PC Builder' },
     { to: '/panel/pricing', icon: <Tag size={20} />, label: 'Price check' },
     { to: '/panel/deal-hunter', icon: <Radar size={20} />, label: 'Deal hunter' },
+    { to: '/panel/ebay-store-pull', icon: <PackageSearch size={20} />, label: 'eBay Store Pull' },
     { to: '/panel/health-check', icon: <Activity size={20} />, label: 'Health check' },
     { to: '/panel/invoices', icon: <Receipt size={20} />, label: 'Invoice Manager' },
     { to: '/panel/action-history', icon: <History size={20} />, label: 'Action history' },
