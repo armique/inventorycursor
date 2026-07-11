@@ -28,7 +28,7 @@ interface Props {
   ebaySku?: string;
   /** Firebase Storage folder when uploading files (single item id or "shared"). */
   storageItemId?: string;
-  currentSellPrice?: number;
+  currentStorePrice?: number;
   onApplyPrice?: (price: number, match: EbayListingPriceMatch) => void | Promise<void>;
 }
 
@@ -40,7 +40,7 @@ const AddPhotosModal: React.FC<Props> = ({
   searchName = '',
   ebaySku,
   storageItemId = 'shared',
-  currentSellPrice,
+  currentStorePrice,
   onApplyPrice,
 }) => {
   const [urlInput, setUrlInput] = useState('');
@@ -642,7 +642,7 @@ const AddPhotosModal: React.FC<Props> = ({
       <EbayListingPriceModal
         open={ebayPriceModalOpen}
         itemName={searchName.trim() || 'Item'}
-        currentSellPrice={currentSellPrice}
+        currentStorePrice={currentStorePrice}
         error={ebayPriceModalError}
         match={ebayPriceModalMatch}
         onClose={closeEbayPriceModal}

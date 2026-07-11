@@ -12,7 +12,9 @@ import { signInWithGoogle, logOut, completeGoogleRedirectSignIn, getAuthErrorMes
 import QuotaMonitor from './QuotaMonitor';
 import GlobalSearch from './GlobalSearch';
 import EbaySyncBanner from './EbaySyncBanner';
+import EbaySoldReminderWidget from './EbaySoldReminderWidget';
 import OnboardingWizard, { isOnboardingComplete } from './OnboardingWizard';
+import { useEbayListingReminder } from '../hooks/useEbayListingReminder';
 import { InventoryItem, Expense, BusinessSettings } from '../types';
 
 interface SyncState {
@@ -44,6 +46,10 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   usePanelKeyboardShortcuts();
   const [signingIn, setSigningIn] = React.useState(false);
   const [showOnboarding, setShowOnboarding] = React.useState(() => !isOnboardingComplete());
+  const { reminder: ebayReminder, dismiss: dismissEbayReminder, checksRemaining } = useEbayListingReminder(
+    items,
+    Boolean(onUpdateItems)
+  );
 
   React.useEffect(() => {
     void completeGoogleRedirectSignIn().catch(() => {});
@@ -138,6 +144,10 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     { to: '/panel/settings', icon: <Settings size={20} />, label: 'Settings', alert: !isCloudEnabled },
   ];
 
+  const navWithAlerts = nav.map((entry) =>
+    entry.to === '/panel/ebay-store-pull' && ebayReminder ? { ...entry, alert: true } : entry
+  );
+
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 font-sans">
       {showOnboarding && <OnboardingWizard onComplete={() => setShowOnboarding(false)} />}
@@ -150,7 +160,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
           <GlobalSearch items={items} expenses={expenses} businessSettings={businessSettings} />
         </div>
         <nav className="flex-1 px-4 space-y-2 overflow-y-auto scrollbar-hide">
-          {nav.map(({ to, icon, label, alert }) => {
+          {navWithAlerts.map(({ to, icon, label, alert }) => {
             const isActive = location.pathname === to;
             return (
               <Link
@@ -165,6 +175,13 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
           })}
         </nav>
         <div className="p-4 border-t border-slate-800">
+          {ebayReminder && (
+            <EbaySoldReminderWidget
+              reminder={ebayReminder}
+              onDismiss={dismissEbayReminder}
+              variant="sidebar"
+            />
+          )}
           <QuotaMonitor />
         </div>
       </aside>
@@ -179,6 +196,16 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
         {/* eBay sync on load */}
         {onUpdateItems && (
           <EbaySyncBanner items={items} onUpdate={onUpdateItems} />
+        )}
+        {ebayReminder && (
+          <div className="md:hidden">
+            <EbaySoldReminderWidget
+              reminder={ebayReminder}
+              onDismiss={dismissEbayReminder}
+              variant="float"
+              checksRemaining={checksRemaining}
+            />
+          </div>
         )}
         {/* Mobile global search (sidebar search hidden on mobile) */}
         <div className="md:hidden mb-4">

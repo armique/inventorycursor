@@ -7,7 +7,7 @@ import { formatEUR } from '../utils/formatMoney';
 interface Props {
   open: boolean;
   itemName: string;
-  currentSellPrice?: number;
+  currentStorePrice?: number;
   loading?: boolean;
   error?: string | null;
   match: EbayListingPriceMatch | null;
@@ -18,7 +18,7 @@ interface Props {
 const EbayListingPriceModal: React.FC<Props> = ({
   open,
   itemName,
-  currentSellPrice,
+  currentStorePrice,
   loading = false,
   error = null,
   match,
@@ -39,7 +39,7 @@ const EbayListingPriceModal: React.FC<Props> = ({
         <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
           <div className="flex items-center gap-2 min-w-0">
             <ShoppingBag size={18} className="text-blue-600 shrink-0" />
-            <h3 className="font-black text-slate-900 text-sm truncate">eBay live price • {itemName}</h3>
+            <h3 className="font-black text-slate-900 text-sm truncate">eBay storefront price • {itemName}</h3>
           </div>
           <button
             type="button"
@@ -62,6 +62,10 @@ const EbayListingPriceModal: React.FC<Props> = ({
             </div>
           ) : match ? (
             <div className="space-y-4">
+              <p className="text-[11px] text-slate-500">
+                Sets your public listing price (eBay / storefront). Sell price is only for when the item is
+                actually sold.
+              </p>
               <div>
                 <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Matched listing</p>
                 {match.listingUrl ? (
@@ -87,10 +91,10 @@ const EbayListingPriceModal: React.FC<Props> = ({
                   <p className="text-xl font-black text-emerald-700">€{formatEUR(match.roundedPrice)}</p>
                 </div>
               </div>
-              {currentSellPrice != null && (
+              {currentStorePrice != null && (
                 <p className="text-xs text-slate-500">
-                  Current sell price:{' '}
-                  <span className="font-bold text-slate-800">€{formatEUR(currentSellPrice)}</span>
+                  Current storefront price:{' '}
+                  <span className="font-bold text-slate-800">€{formatEUR(currentStorePrice)}</span>
                 </p>
               )}
               {match.rawPrice !== match.roundedPrice && (
@@ -104,7 +108,7 @@ const EbayListingPriceModal: React.FC<Props> = ({
                   onClick={() => onApply(match)}
                   className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-black hover:bg-emerald-700"
                 >
-                  Apply €{formatEUR(match.roundedPrice)} as sell price
+                  Apply €{formatEUR(match.roundedPrice)} as storefront price
                 </button>
                 <button
                   type="button"

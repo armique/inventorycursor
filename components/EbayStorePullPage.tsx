@@ -1,4 +1,5 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
@@ -11,8 +12,9 @@ import {
   RefreshCw,
   ShoppingBag,
   Tag,
+  TrendingDown,
 } from 'lucide-react';
-import { InventoryItem } from '../types';
+import { InventoryItem, TaxMode } from '../types';
 import { fetchMyEbayListings, getEbayUsername } from '../services/ebayService';
 import {
   buildEbayStorePullPlan,
@@ -23,14 +25,16 @@ import {
 import { formatEUR } from '../utils/formatMoney';
 import { normalizeImageList, prepareInventoryImagesForStorage } from '../utils/imageImport';
 import EbayStorePullImportTab from './EbayStorePullImportTab';
+import EbayStorePullSoldTab from './EbayStorePullSoldTab';
 
 type PhotoMode = 'none' | 'all' | 'pick';
-type PullTab = 'sync' | 'import';
+type PullTab = 'sync' | 'import' | 'sold';
 
 interface Props {
   items: InventoryItem[];
   categories: Record<string, string[]>;
   categoryFields: Record<string, string[]>;
+  taxMode: TaxMode;
   onUpdate: (items: InventoryItem[]) => void;
   onPublishCatalog?: () => void | Promise<void>;
 }
@@ -74,16 +78,29 @@ const TABS: { id: PullTab; label: string; icon: React.ReactNode; hint: string }[
     icon: <PlusCircle size={14} />,
     hint: 'Add new inventory items from eBay listings',
   },
+  {
+    id: 'sold',
+    label: 'Detect sold',
+    icon: <TrendingDown size={14} />,
+    hint: 'Ended listings since last check → mark inventory as sold',
+  },
 ];
 
 const EbayStorePullPage: React.FC<Props> = ({
   items,
   categories,
   categoryFields,
+  taxMode,
   onUpdate,
   onPublishCatalog,
 }) => {
   const [tab, setTab] = useState<PullTab>('sync');
+  const [searchParams] = useSearchParams();
+
+  useEffect(() => {
+    const t = searchParams.get('tab');
+    if (t === 'sync' || t === 'import' || t === 'sold') setTab(t);
+  }, [searchParams]);
   const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -305,6 +322,13 @@ const EbayStorePullPage: React.FC<Props> = ({
           items={items}
           categories={categories}
           categoryFields={categoryFields}
+          onUpdate={onUpdate}
+          onPublishCatalog={onPublishCatalog}
+        />
+      ) : tab === 'sold' ? (
+        <EbayStorePullSoldTab
+          items={items}
+          taxMode={taxMode}
           onUpdate={onUpdate}
           onPublishCatalog={onPublishCatalog}
         />

@@ -609,7 +609,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   const applyEbayListingPriceFromModal = (match: EbayListingPriceMatch) => {
     setFormData((prev) => ({
       ...prev,
-      sellPrice: match.roundedPrice,
+      storePrice: match.roundedPrice,
       listedOnEbay: true,
       ebayListingId: match.listingId,
       ebaySku: prev.ebaySku || match.sku,
@@ -1770,7 +1770,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       <EbayListingPriceModal
         open={ebayPriceModalOpen}
         itemName={formData.name || 'Item'}
-        currentSellPrice={formData.sellPrice}
+        currentStorePrice={formData.storePrice}
         error={ebayPriceModalError}
         match={ebayPriceModalMatch}
         onClose={closeEbayPriceModal}

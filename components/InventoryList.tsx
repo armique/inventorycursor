@@ -931,13 +931,14 @@ const InventoryList: React.FC<Props> = ({
     onUpdate([
       {
         ...item,
-        sellPrice: price,
+        storePrice: price,
         listedOnEbay: true,
+        ebayListingId: match.listingId,
         ebaySku: item.ebaySku || match.sku,
       },
     ]);
-    setToast(`Sell price set to €${formatEUR(price)} from eBay`);
-    setTimeout(() => setToast((prev) => (prev?.startsWith('Sell price set') ? null : prev)), 2000);
+    setToast(`Storefront price set to €${formatEUR(price)} from eBay`);
+    setTimeout(() => setToast((prev) => (prev?.startsWith('Storefront price set') ? null : prev)), 2000);
     closeEbayPriceModal();
   };
 
@@ -1801,7 +1802,7 @@ const InventoryList: React.FC<Props> = ({
                     ? 'border-amber-300 bg-amber-50'
                     : 'border-amber-200 bg-white hover:bg-amber-50'
                 }`}
-                title="Fetch live price from your eBay listing (rounded to .99)"
+                title="Fetch live storefront price from your eBay listing (rounded to .99)"
               >
                 <span
                   className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black ${
@@ -2684,14 +2685,14 @@ const InventoryList: React.FC<Props> = ({
       onUpdate([
         {
           ...item,
-          sellPrice: price,
+          storePrice: price,
           listedOnEbay: true,
           ebayListingId: match.listingId,
           ebaySku: item.ebaySku || match.sku,
         },
       ]);
-      setToast(`Sell price set to €${formatEUR(price)} from eBay`);
-      setTimeout(() => setToast((prev) => (prev?.startsWith('Sell price set') ? null : prev)), 2000);
+      setToast(`Storefront price set to €${formatEUR(price)} from eBay`);
+      setTimeout(() => setToast((prev) => (prev?.startsWith('Storefront price set') ? null : prev)), 2000);
     },
     [addPhotosTargetIds, itemsById, onUpdate]
   );
@@ -3290,7 +3291,7 @@ const InventoryList: React.FC<Props> = ({
         searchName={addPhotosTargetItems[0]?.name ?? ''}
         ebaySku={addPhotosTargetItems.length === 1 ? addPhotosTargetItems[0]?.ebaySku : undefined}
         storageItemId={addPhotosTargetItems.length === 1 ? addPhotosTargetItems[0]?.id : 'shared'}
-        currentSellPrice={addPhotosTargetItems.length === 1 ? addPhotosTargetItems[0]?.sellPrice : undefined}
+        currentStorePrice={addPhotosTargetItems.length === 1 ? addPhotosTargetItems[0]?.storePrice : undefined}
         onApplyPrice={addPhotosTargetItems.length === 1 ? handleAddPhotosApplyEbayPrice : undefined}
       />
 
@@ -3744,9 +3745,9 @@ const InventoryList: React.FC<Props> = ({
                               <p className="text-xl font-black text-emerald-700">€{formatEUR(ebayPriceMatch.roundedPrice)}</p>
                            </div>
                         </div>
-                        {ebayPriceModalItem.sellPrice != null && (
+                        {ebayPriceModalItem.storePrice != null && (
                            <p className="text-xs text-slate-500">
-                              Current sell price: <span className="font-bold text-slate-800">€{formatEUR(ebayPriceModalItem.sellPrice)}</span>
+                              Current storefront price: <span className="font-bold text-slate-800">€{formatEUR(ebayPriceModalItem.storePrice)}</span>
                            </p>
                         )}
                         {ebayPriceMatch.rawPrice !== ebayPriceMatch.roundedPrice && (
@@ -3760,7 +3761,7 @@ const InventoryList: React.FC<Props> = ({
                               onClick={() => applyEbayListingPrice(ebayPriceModalItem, ebayPriceMatch.roundedPrice, ebayPriceMatch)}
                               className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-black hover:bg-emerald-700"
                            >
-                              Apply €{formatEUR(ebayPriceMatch.roundedPrice)} as sell price
+                              Apply €{formatEUR(ebayPriceMatch.roundedPrice)} as storefront price
                            </button>
                            <button
                               type="button"

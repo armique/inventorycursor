@@ -1319,7 +1319,7 @@ const App: React.FC = () => {
           <Route path="3d-print" element={<ThreeDPrintPage items={items} onSave={handleUpdate} categories={categories} />} />
           <Route path="pricing" element={<PriceCheck />} />
           <Route path="deal-hunter" element={<DealHunterPage items={items} onUpdate={handleUpdate} />} />
-          <Route path="ebay-store-pull" element={<EbayStorePullPage items={items} categories={categories} categoryFields={categoryFields} onUpdate={handleUpdate} onPublishCatalog={publishStoreCatalogNow} />} />
+          <Route path="ebay-store-pull" element={<EbayStorePullPage items={items} categories={categories} categoryFields={categoryFields} taxMode={businessSettings.taxMode} onUpdate={handleUpdate} onPublishCatalog={publishStoreCatalogNow} />} />
           <Route path="health-check" element={<HealthCheckPage />} />
           <Route path="invoices" element={<InvoiceManager items={items} businessSettings={businessSettings} />} />
           <Route

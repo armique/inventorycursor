@@ -10,6 +10,12 @@ import {
   Settings2, ChevronUp, ChevronDown, ChevronRight, Download, Sparkles, BarChart3, LayoutDashboard,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
+import {
+  dismissPendingReminder,
+  getActiveReminderForDisplay,
+  type EbayReminderPending,
+} from '../services/ebayListingReminder';
+import EbaySoldReminderWidget from './EbaySoldReminderWidget';
 import { InventoryItem, ItemStatus, Expense, BusinessSettings, TaxMode, DashboardPreferences, DashboardTask } from '../types';
 import { DEFAULT_DASHBOARD_WIDGET_IDS } from '../services/constants';
 import { calculateTaxSummary, generateTaxReportCSV } from '../services/taxService';
@@ -210,6 +216,13 @@ const Dashboard: React.FC<Props> = ({
     });
   };
   const [showWidgetModal, setShowWidgetModal] = useState(false);
+  const [ebayReminder, setEbayReminder] = useState<EbayReminderPending | null>(() => getActiveReminderForDisplay());
+
+  useEffect(() => {
+    const sync = () => setEbayReminder(getActiveReminderForDisplay());
+    window.addEventListener('ebay-reminder-updated', sync);
+    return () => window.removeEventListener('ebay-reminder-updated', sync);
+  }, []);
   const [mainTab, setMainTab] = useState<DashboardMainTab>('overview');
   const [profitTab, setProfitTab] = useState<'month' | 'category'>('month');
   const [showMoreSections, setShowMoreSections] = useState(false);
@@ -865,6 +878,16 @@ const Dashboard: React.FC<Props> = ({
   return (
     <>
     <div className="h-full min-h-0 w-full overflow-y-auto space-y-3 sm:space-y-4 lg:space-y-6 xl:space-y-7 animate-in fade-in pb-8 lg:pb-10 xl:px-1">
+      {ebayReminder && (
+        <EbaySoldReminderWidget
+          reminder={ebayReminder}
+          onDismiss={() => {
+            dismissPendingReminder();
+            setEbayReminder(null);
+          }}
+          variant="banner"
+        />
+      )}
       {/* Header + period filters */}
       <header className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
