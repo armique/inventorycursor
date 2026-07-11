@@ -560,7 +560,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
                         <p className={`text-slate-500 font-bold ${compact ? 'text-xs' : 'text-[9px]'} mt-0.5`}>
                           {item.subCategory || item.category} • {item.status}
                         </p>
-                        <p className={`inline-flex items-center gap-1 mt-1.5 text-amber-900 font-bold ${compact ? 'text-xs' : 'text-[10px]}`}>
+                        <p className={`inline-flex items-center gap-1 mt-1.5 text-amber-900 font-bold ${compact ? 'text-xs' : 'text-[10px]'}`}>
                           <Lock size={12} className="shrink-0" />
                           {reason}
                         </p>
