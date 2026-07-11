@@ -12,7 +12,7 @@ import { itemMatchesSalePlatformFilter, isMissingExplicitSalePlatform, MISSING_P
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { getCompatibleItemsForItem } from '../services/compatibility';
 import { generateKleinanzeigenCSV, generateEbayCSV } from '../services/ebayCsvService';
-import { searchInventory } from '../utils/inventorySearchIndex';
+import { matchesInventorySearch } from '../utils/inventorySearchIndex';
 import { copyKleinanzeigenListing } from '../utils/copyKleinanzeigenListing';
 import { bundleComponentBreakdown } from '../utils/bundleProfitBreakdown';
 import { cycleInventoryItemPresence, getItemPresenceCycleState, getItemUserPhotoCount, normalizeImageList, prepareInventoryImagesForStorage } from '../utils/imageImport';
@@ -310,12 +310,8 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
     timeGaugeSortKeyMap,
   } = params;
 
-  const searchLower = searchTerm.toLowerCase();
-  const searchActive = searchLower.trim().length >= 2;
-  const indexedIds =
-    searchActive
-      ? new Set(searchInventory(items, searchLower, 500).map((h) => h.item.id))
-      : null;
+  const query = searchTerm.trim();
+  const searchActive = query.length >= 2;
 
   const filtered = items.filter((item) => {
     let matchesStatus = false;
@@ -334,7 +330,7 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
     if (!matchesStatus) return false;
     // While searching, show items even if nested inside a PC/bundle — user explicitly looked them up.
     if (item.parentContainerId && !searchActive) return false;
-    if (!showInComposition && item.status === ItemStatus.IN_COMPOSITION) return false;
+    if (!searchActive && !showInComposition && item.status === ItemStatus.IN_COMPOSITION) return false;
 
     // While actively searching, ignore the category filter entirely so search is always global —
     // otherwise a category filter left active from earlier browsing (e.g. a quick-category pin)
@@ -348,14 +344,7 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
       if (!matchParentAndSub && !matchSubAsTopLevel) return false;
     }
 
-    if (searchActive) {
-      const matchesSearch = indexedIds
-        ? indexedIds.has(item.id)
-        : item.name.toLowerCase().includes(searchLower) ||
-          item.category.toLowerCase().includes(searchLower) ||
-          (item.vendor?.toLowerCase().includes(searchLower) ?? false);
-      if (!matchesSearch) return false;
-    }
+    if (searchActive && !matchesInventorySearch(item, query)) return false;
 
     // Spec and date filters are browsing aids — skip them during search so a suggestion click always reveals the row.
     if (!searchActive && timeFilter !== 'ALL') {

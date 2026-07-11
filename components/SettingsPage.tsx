@@ -10,7 +10,7 @@ import { buildElsterChecklist } from '../services/elsterChecklist';
 import { buildSteuerberaterBundle, downloadSteuerberaterBundle } from '../services/steuerberaterExport';
 import { buildGdprExportBlob, downloadGdprExport } from '../services/gdprExport';
 import { encryptBackupJson } from '../services/encryptedBackup';
-import { isCloudEnabled, saveFirebaseConfig, getFirebaseConfig, signInWithGooglePopup, logOut, onAuthChange } from '../services/firebaseService';
+import { isCloudEnabled, saveFirebaseConfig, getFirebaseConfig, signInWithGoogle, logOut, onAuthChange, getAuthErrorMessage } from '../services/firebaseService';
 import {
   getStoredConfig,
   getStoredToken,
@@ -217,15 +217,14 @@ const SettingsPage: React.FC<Props> = ({
   const handleSignInPopup = async () => {
     setIsSigningInPopup(true);
     try {
-      await signInWithGooglePopup();
-      showToast("Signed in successfully", "success");
-    } catch (e: any) {
-      let msg = e?.message || "Unknown error";
-      if (msg.includes('popup-blocked')) msg = "Popup was blocked. Allow popups for this site.";
-      if (msg.includes('unauthorized-domain') || msg.includes('auth/operation-not-allowed')) {
-        msg = "Domain blocked: add this host to Firebase Authorized domains.";
+      const user = await signInWithGoogle();
+      if (user) {
+        showToast("Signed in successfully", "success");
+      } else {
+        showToast("Redirecting to Google sign-in…", "success");
       }
-      showToast(msg, "error");
+    } catch (e: unknown) {
+      showToast(getAuthErrorMessage(e), "error");
     } finally {
       setIsSigningInPopup(false);
     }

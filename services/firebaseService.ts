@@ -29,6 +29,8 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut,
   onAuthStateChanged,
   setPersistence,
@@ -124,6 +126,25 @@ function init(): { db: Firestore; auth: Auth; storage: FirebaseStorage } | null 
 
 // --- AUTH ---
 
+export function getAuthErrorMessage(err: unknown): string {
+  const code = (err as { code?: string })?.code || '';
+  const message = (err as { message?: string })?.message || String(err);
+  if (code === 'auth/unauthorized-domain') {
+    const host = typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+    return `Sign-in blocked for ${host}. In Firebase Console → Authentication → Settings → Authorized domains, add ${host}.`;
+  }
+  if (code === 'auth/popup-blocked') {
+    return 'Popup blocked by the browser. Trying redirect sign-in…';
+  }
+  if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+    return 'Sign-in popup was closed before completing.';
+  }
+  if (code === 'auth/network-request-failed') {
+    return 'Network error during sign-in. Check your connection and try again.';
+  }
+  return message || 'Sign-in failed.';
+}
+
 /**
  * Sign in with Google via popup. Returns the user when complete.
  */
@@ -134,6 +155,43 @@ export async function signInWithGooglePopup(): Promise<User> {
   const provider = new GoogleAuthProvider();
   const result = await signInWithPopup(ctx.auth, provider);
   return result.user;
+}
+
+/** Popup first; falls back to full-page redirect when popups are blocked. */
+export async function signInWithGoogle(): Promise<User | null> {
+  const ctx = init();
+  if (!ctx?.auth) throw new Error("Firebase not configured. Check Settings.");
+  await setPersistence(ctx.auth, browserLocalPersistence);
+  const provider = new GoogleAuthProvider();
+  try {
+    const result = await signInWithPopup(ctx.auth, provider);
+    return result.user;
+  } catch (err: unknown) {
+    const code = (err as { code?: string })?.code || '';
+    if (code === 'auth/unauthorized-domain') throw err;
+    if (
+      code === 'auth/popup-blocked' ||
+      code === 'auth/popup-closed-by-user' ||
+      code === 'auth/cancelled-popup-request'
+    ) {
+      await signInWithRedirect(ctx.auth, provider);
+      return null;
+    }
+    throw err;
+  }
+}
+
+/** Call once on app boot to finish a redirect sign-in flow. */
+export async function completeGoogleRedirectSignIn(): Promise<User | null> {
+  const ctx = init();
+  if (!ctx?.auth) return null;
+  try {
+    const result = await getRedirectResult(ctx.auth);
+    return result?.user ?? null;
+  } catch (err) {
+    console.error('Redirect sign-in failed', err);
+    return null;
+  }
 }
 
 export async function logOut(): Promise<void> {

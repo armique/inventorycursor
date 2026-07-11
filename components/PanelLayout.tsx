@@ -8,7 +8,7 @@ import {
 import PanelBreadcrumbs from './PanelBreadcrumbs';
 import { usePanelLocale } from '../context/PanelLocaleContext';
 import { usePanelKeyboardShortcuts } from '../hooks/usePanelKeyboardShortcuts';
-import { signInWithGooglePopup, logOut } from '../services/firebaseService';
+import { signInWithGoogle, logOut, completeGoogleRedirectSignIn, getAuthErrorMessage } from '../services/firebaseService';
 import QuotaMonitor from './QuotaMonitor';
 import GlobalSearch from './GlobalSearch';
 import EbaySyncBanner from './EbaySyncBanner';
@@ -44,6 +44,10 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   usePanelKeyboardShortcuts();
   const [signingIn, setSigningIn] = React.useState(false);
   const [showOnboarding, setShowOnboarding] = React.useState(() => !isOnboardingComplete());
+
+  React.useEffect(() => {
+    void completeGoogleRedirectSignIn().catch(() => {});
+  }, []);
   /** Inventory/trash use internal scroll + docked bulk bar; other pages scroll normally. */
   const isDockedPanelPage = /^\/panel\/(inventory|trash)(\/|$)/.test(location.pathname);
 
@@ -94,10 +98,10 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             onClick={async () => {
               setSigningIn(true);
               try {
-                await signInWithGooglePopup();
+                await signInWithGoogle();
               } catch (e) {
                 console.error(e);
-                alert('Sign-in failed.');
+                alert(getAuthErrorMessage(e));
               } finally {
                 setSigningIn(false);
               }
