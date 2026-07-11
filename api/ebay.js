@@ -30,6 +30,13 @@ function pickEnv(name) {
   return process.env[name] || '';
 }
 
+function parseListingPrice(raw) {
+  if (raw == null || raw === '') return undefined;
+  const n = parseFloat(String(raw).replace(',', '.'));
+  if (!Number.isFinite(n) || n <= 0) return undefined;
+  return n;
+}
+
 function ebayAppConfig() {
   return {
     clientId: pickEnv('EBAY_CLIENT_ID'),
@@ -136,12 +143,15 @@ async function fetchSellerStoreListings(sellerUsername) {
       if (item.image?.imageUrl) imageUrls = [item.image.imageUrl];
     }
     if (!imageUrls.length && item.image?.imageUrl) imageUrls = [item.image.imageUrl];
+    const price = parseListingPrice(item.price?.value);
     return {
       listingId: String(legacyId || itemId),
       title: item.title || '',
       thumbnail: imageUrls[0] || item.image?.imageUrl,
       imageUrls,
       listingUrl: item.itemWebUrl || (legacyId ? `https://www.ebay.de/itm/${legacyId}` : undefined),
+      price,
+      currency: item.price?.currency || 'EUR',
       source: 'seller_store',
     };
   });
@@ -215,6 +225,11 @@ async function fetchInventoryListings(token) {
         const product = inv.product || {};
         const imageUrls = Array.isArray(product.imageUrls) ? product.imageUrls.filter(Boolean) : [];
         const listingId = String(offer.listing?.listingId || offer.offerId || sku);
+        const price = parseListingPrice(
+          offer.pricingSummary?.price?.value ??
+            offer.pricingSummary?.originalPrice?.value ??
+            offer.price?.value
+        );
         listings.push({
           sku,
           offerId: offer.offerId,
@@ -225,6 +240,12 @@ async function fetchInventoryListings(token) {
           listingUrl: offer.listing?.listingId
             ? `https://www.ebay.de/itm/${offer.listing.listingId}`
             : undefined,
+          price,
+          currency:
+            offer.pricingSummary?.price?.currency ||
+            offer.pricingSummary?.originalPrice?.currency ||
+            offer.price?.currency ||
+            'EUR',
           source: 'inventory',
         });
       } catch {
@@ -271,12 +292,20 @@ function parseTradingActiveListings(xml) {
       .match(/<ViewItemURL>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/ViewItemURL>/i)?.[1]
       ?.trim();
 
+    const priceStr =
+      block.match(/<CurrentPrice[^>]*>([\d.,]+)<\/CurrentPrice>/i)?.[1] ||
+      block.match(/<BuyItNowPrice[^>]*>([\d.,]+)<\/BuyItNowPrice>/i)?.[1] ||
+      block.match(/<StartPrice[^>]*>([\d.,]+)<\/StartPrice>/i)?.[1];
+    const price = parseListingPrice(priceStr);
+
     listings.push({
       listingId: itemId,
       title,
       thumbnail: imageUrls[0],
       imageUrls,
       listingUrl: viewUrl || `https://www.ebay.de/itm/${itemId}`,
+      price,
+      currency: 'EUR',
       source: 'trading',
     });
   }

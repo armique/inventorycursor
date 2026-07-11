@@ -1,8 +1,10 @@
-
 /**
  * eBay Integration Service
  * Uses local Node.js backend proxy to handle CORS and requests.
  */
+
+import { matchEbayListingsForItem } from '../utils/ebayListingMatch';
+import { roundPriceCentsTo99 } from '../utils/ebayPrice';
 
 // We point to our own server route. The server handles the actual call to api.ebay.com
 const PROXY_BASE = '/api/ebay'; 
@@ -203,21 +205,76 @@ export interface EbayMyListing {
   thumbnail?: string;
   imageUrls: string[];
   listingUrl?: string;
+  price?: number;
+  currency?: string;
   source: 'inventory' | 'trading' | 'seller_store';
+}
+
+export interface EbayListingPriceMatch {
+  listingId: string;
+  title: string;
+  listingUrl?: string;
+  sku?: string;
+  rawPrice: number;
+  roundedPrice: number;
+  currency?: string;
+  matchScore: number;
+}
+
+let listingsCache: { at: number; listings: EbayMyListing[] } | null = null;
+const LISTINGS_CACHE_MS = 90_000;
+
+async function getCachedMyEbayListings(): Promise<EbayMyListing[]> {
+  if (listingsCache && Date.now() - listingsCache.at < LISTINGS_CACHE_MS) {
+    return listingsCache.listings;
+  }
+  const listings = await fetchMyEbayListings();
+  listingsCache = { at: Date.now(), listings };
+  return listings;
+}
+
+/** Match an inventory item to a live eBay listing price from the seller store / account. */
+export async function fetchEbayListingPriceForItem(
+  itemName: string,
+  itemSku?: string
+): Promise<EbayListingPriceMatch | null> {
+  const listings = await getCachedMyEbayListings();
+  const priced = listings.filter((l) => l.price != null && l.price > 0);
+  const matches = matchEbayListingsForItem(itemName, priced, itemSku);
+  if (!matches.length || matches[0].price == null) return null;
+
+  const best = matches[0];
+  const rawPrice = best.price!;
+  return {
+    listingId: best.listingId,
+    title: best.title,
+    listingUrl: best.listingUrl,
+    sku: best.sku,
+    rawPrice,
+    roundedPrice: roundPriceCentsTo99(rawPrice),
+    currency: best.currency,
+    matchScore: best.matchScore,
+  };
 }
 
 /** Fetch active eBay listings from the seller store (Browse API) plus optional OAuth inventory. */
 export async function fetchMyEbayListings(): Promise<EbayMyListing[]> {
   const token = getEbayToken();
   const username = getEbayUsername();
-  const res = await fetch('/api/ebay?route=listings', {
+  const res = await fetch('/api/ebay-listings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ token: token || undefined, username }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data.error || `Failed to fetch eBay listings: ${res.status}`);
+    const hint =
+      res.status === 404
+        ? 'eBay listings API not available. Restart `npm run dev` (local) or deploy the latest build (Vercel).'
+        : typeof data.error === 'string'
+          ? data.error
+          : undefined;
+    throw new Error(hint || `Failed to fetch eBay listings: ${res.status}`);
   }
   return data.listings || [];
 }

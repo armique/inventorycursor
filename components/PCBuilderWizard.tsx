@@ -357,7 +357,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
       <div
         key={slot.id}
         onClick={() => { setSelectedSlot(slot.id); setSearchQuery(''); }}
-        className={`${compact ? 'p-2.5 rounded-xl' : 'p-4 rounded-[2rem]'} border-2 cursor-pointer transition-all ${
+        className={`${compact ? 'p-4 rounded-xl' : 'p-4 rounded-[2rem]'} border-2 cursor-pointer transition-all ${
           selectedSlot === slot.id
             ? 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-200'
             : 'bg-white border-slate-100 hover:border-indigo-200'
@@ -365,11 +365,11 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
       >
         <div className="flex items-center gap-2 mb-1">
           <div className={`${compact ? 'p-1.5 rounded-lg' : 'p-2 rounded-xl'} ${hasItems ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-50 text-slate-400'}`}>
-            {React.cloneElement(slot.icon as React.ReactElement, { size: compact ? 16 : 20 })}
+            {React.cloneElement(slot.icon as React.ReactElement, { size: compact ? 23 : 20 })}
           </div>
           <div className="flex-1 min-w-0">
-            <p className={`font-black text-slate-900 truncate ${compact ? 'text-xs' : 'text-sm'}`}>{slot.label}</p>
-            <p className="text-[9px] text-slate-400 font-bold uppercase">
+            <p className={`font-black text-slate-900 truncate ${compact ? 'text-base' : 'text-sm'}`}>{slot.label}</p>
+            <p className={`text-slate-400 font-bold uppercase ${compact ? 'text-xs' : 'text-[9px]'}`}>
               {assigned.length} selected {slot.required && !hasItems && <span className="text-red-400">*Req</span>}
             </p>
           </div>
@@ -380,17 +380,17 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
               title="Remove all parts from this slot"
               className="p-0.5 rounded-full hover:bg-emerald-100 transition-colors"
             >
-              <CheckCircle2 size={compact ? 16 : 20} className="text-emerald-500 hover:text-emerald-700" />
+              <CheckCircle2 size={compact ? 23 : 20} className="text-emerald-500 hover:text-emerald-700" />
             </button>
           ) : (
-            <Plus size={compact ? 16 : 20} className="text-slate-300 shrink-0" />
+            <Plus size={compact ? 23 : 20} className="text-slate-300 shrink-0" />
           )}
         </div>
 
         {hasItems && (
-          <div className={`space-y-0.5 ${compact ? 'pl-8' : 'pl-12'}`}>
+          <div className={`space-y-0.5 ${compact ? 'pl-9' : 'pl-12'}`}>
             {assigned.map((item) => (
-              <div key={item.id} className="text-[10px] font-bold text-slate-600 truncate flex justify-between items-center gap-1 group/part">
+              <div key={item.id} className={`font-bold text-slate-600 truncate flex justify-between items-center gap-1 group/part ${compact ? 'text-sm' : 'text-[10px]'}`}>
                 <span className="truncate">{item.name}</span>
                 <div className="flex items-center gap-1 shrink-0">
                   <span className="text-slate-400">€{formatEUR(Number(item.buyPrice))}</span>
@@ -414,32 +414,32 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
   const renderPartPicker = (compact = false) => {
     if (!selectedSlot) {
       return (
-        <div className={`flex-1 bg-slate-50 border border-dashed border-slate-300 flex flex-col items-center justify-center text-center opacity-60 ${compact ? 'rounded-xl min-h-[180px]' : 'rounded-[2.5rem]'}`}>
-          <Hammer size={compact ? 36 : 64} className="mb-3 text-slate-300"/>
-          <h3 className={`font-black text-slate-400 ${compact ? 'text-sm' : 'text-2xl'}`}>Select a slot</h3>
-          <p className="text-[10px] font-bold text-slate-400 max-w-xs mt-1 px-4">Pick a component slot to add or remove parts.</p>
+        <div className={`flex-1 bg-slate-50 border border-dashed border-slate-300 flex flex-col items-center justify-center text-center opacity-60 ${compact ? 'rounded-xl min-h-[260px]' : 'rounded-[2.5rem]'}`}>
+          <Hammer size={compact ? 52 : 64} className="mb-3 text-slate-300"/>
+          <h3 className={`font-black text-slate-400 ${compact ? 'text-lg' : 'text-2xl'}`}>Select a slot</h3>
+          <p className={`font-bold text-slate-400 max-w-xs mt-1 px-4 ${compact ? 'text-sm' : 'text-[10px]'}`}>Pick a component slot to add or remove parts.</p>
         </div>
       );
     }
 
     return (
       <div className={`flex-1 bg-white border border-slate-200 shadow-sm flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 ${compact ? 'rounded-xl' : 'rounded-[2.5rem] shadow-lg'}`}>
-        <div className={`${compact ? 'p-3' : 'p-6'} border-b border-slate-100 bg-slate-50/50 flex justify-between items-center gap-2`}>
+        <div className={`${compact ? 'p-5' : 'p-6'} border-b border-slate-100 bg-slate-50/50 flex justify-between items-center gap-2`}>
           <div className="min-w-0">
-            <h3 className={`font-black text-slate-900 truncate ${compact ? 'text-sm' : 'text-xl'}`}>
+            <h3 className={`font-black text-slate-900 truncate ${compact ? 'text-lg' : 'text-xl'}`}>
               {SLOTS.find(s => s.id === selectedSlot)?.label}
             </h3>
-            <p className="text-[10px] text-slate-500 font-bold">Click ✓ to remove · compatible items only</p>
+            <p className={`text-slate-500 font-bold ${compact ? 'text-sm' : 'text-[10px]'}`}>Click ✓ to remove · compatible items only</p>
           </div>
-          <button type="button" onClick={() => setSelectedSlot(null)} className="p-1.5 hover:bg-slate-200 rounded-full shrink-0"><X size={16}/></button>
+          <button type="button" onClick={() => setSelectedSlot(null)} className="p-1.5 hover:bg-slate-200 rounded-full shrink-0"><X size={compact ? 22 : 20}/></button>
         </div>
 
-        <div className={`${compact ? 'p-2' : 'p-4'} border-b border-slate-100`}>
+        <div className={`${compact ? 'p-4' : 'p-4'} border-b border-slate-100`}>
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14}/>
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={compact ? 18 : 14}/>
             <input
               autoFocus
-              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs outline-none focus:ring-2 focus:ring-blue-50"
+              className={`w-full pl-11 pr-3 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-50 ${compact ? 'py-3 text-base' : 'py-2 text-xs'}`}
               placeholder={`Search ${SLOTS.find(s => s.id === selectedSlot)?.label}…`}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
@@ -447,7 +447,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
           </div>
         </div>
 
-        <div className={`flex-1 overflow-y-auto ${compact ? 'p-2 space-y-1' : 'p-4 space-y-2'}`}>
+        <div className={`flex-1 overflow-y-auto ${compact ? 'p-4 space-y-2' : 'p-4 space-y-2'}`}>
           {availableItems.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center opacity-40 py-8">
               <Box size={32} className="mb-2 text-slate-300"/>
@@ -465,21 +465,21 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
                     key={item.id}
                     onClick={() => togglePart(item)}
                     title={isSelected ? 'Click to remove from build' : 'Click to add to build'}
-                    className={`flex items-center gap-2 ${compact ? 'p-2 rounded-xl' : 'p-4 rounded-2xl'} border-2 transition-all cursor-pointer ${
+                    className={`flex items-center gap-3 ${compact ? 'p-3 rounded-xl' : 'p-4 rounded-2xl'} border-2 transition-all cursor-pointer ${
                       isSelected
                         ? 'bg-blue-50 border-blue-500 shadow-sm'
                         : 'bg-white border-slate-100 hover:border-blue-200'
                     }`}
                   >
-                    <ItemThumbnail item={item} className={`${compact ? 'w-9 h-9' : 'w-12 h-12'} rounded-lg object-cover bg-slate-100 shrink-0`} size={compact ? 36 : 48} useCategoryImage />
+                    <ItemThumbnail item={item} className={`${compact ? 'w-14 h-14' : 'w-12 h-12'} rounded-lg object-cover bg-slate-100 shrink-0`} size={compact ? 53 : 48} useCategoryImage />
                     <div className="flex-1 min-w-0">
-                      <p className="font-black text-xs truncate text-slate-900">{item.name}</p>
-                      <p className="text-[9px] text-slate-400 font-bold uppercase">{item.category} • €{formatEUR(Number(item.buyPrice))}</p>
+                      <p className={`font-black truncate text-slate-900 ${compact ? 'text-base' : 'text-xs'}`}>{item.name}</p>
+                      <p className={`text-slate-400 font-bold uppercase ${compact ? 'text-xs' : 'text-[9px]'}`}>{item.category} • €{formatEUR(Number(item.buyPrice))}</p>
                     </div>
                     {isSelected ? (
-                      <CheckCircle2 size={compact ? 18 : 24} className="text-blue-600 shrink-0" />
+                      <CheckCircle2 size={compact ? 26 : 24} className="text-blue-600 shrink-0" />
                     ) : (
-                      <div className={`${compact ? 'w-5 h-5' : 'w-6 h-6'} rounded-full border-2 border-slate-200 shrink-0`}/>
+                      <div className={`${compact ? 'w-7 h-7' : 'w-6 h-6'} rounded-full border-2 border-slate-200 shrink-0`}/>
                     )}
                   </div>
                 );
@@ -517,50 +517,50 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
           </button>
         </div>
       )}
-      <div className={`text-right ${isCompactEdit ? 'px-3 py-1.5 rounded-xl' : 'px-6 py-2 rounded-2xl shadow-lg'} bg-slate-900 text-white`}>
-        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total</p>
-        <p className={`font-black ${isCompactEdit ? 'text-lg' : 'text-2xl'}`}>€{formatEUR(currentTotal)}</p>
+      <div className={`text-right ${isCompactEdit ? 'px-5 py-2.5 rounded-xl' : 'px-6 py-2 rounded-2xl shadow-lg'} bg-slate-900 text-white`}>
+        <p className="text-xs font-black uppercase tracking-widest text-slate-400">Total</p>
+        <p className={`font-black ${isCompactEdit ? 'text-2xl' : 'text-2xl'}`}>€{formatEUR(currentTotal)}</p>
       </div>
       <button
         onClick={handleSave}
-        className={`flex items-center gap-2 bg-blue-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 transition-all ${
-          isCompactEdit ? 'px-4 py-2' : 'px-8 py-4 rounded-2xl shadow-xl text-xs'
+        className={`flex items-center gap-2 bg-blue-600 text-white rounded-xl font-black uppercase tracking-widest hover:bg-blue-700 transition-all ${
+          isCompactEdit ? 'px-6 py-3 text-sm' : 'px-8 py-4 rounded-2xl shadow-xl text-xs'
         }`}
       >
-        <Save size={isCompactEdit ? 14 : 18}/> Save
+        <Save size={isCompactEdit ? 18 : 18}/> Save
       </button>
     </div>
   );
 
   if (isCompactEdit) {
     return (
-      <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-3 animate-in fade-in">
-        <div className="bg-slate-50 w-full max-w-5xl rounded-2xl shadow-2xl border border-white/20 overflow-hidden flex flex-col h-[min(92vh,760px)]">
-          <header className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-200 bg-white shrink-0">
-            <div className="flex items-center gap-3 min-w-0">
+      <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-2 animate-in fade-in">
+        <div className="bg-slate-50 w-full max-w-[1464px] rounded-2xl shadow-2xl border border-white/20 overflow-hidden flex flex-col h-[min(96vh,1094px)]">
+          <header className="flex items-center justify-between gap-4 px-6 py-4 border-b border-slate-200 bg-white shrink-0">
+            <div className="flex items-center gap-4 min-w-0">
               <button
                 type="button"
                 onClick={() => navigate('/panel/inventory')}
-                className="p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-400 hover:text-slate-900 shrink-0"
+                className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-400 hover:text-slate-900 shrink-0"
               >
-                <ArrowLeft size={18}/>
+                <ArrowLeft size={22}/>
               </button>
               <div className="min-w-0">
-                <h1 className="text-lg font-black text-slate-900 truncate">
+                <h1 className="text-2xl font-black text-slate-900 truncate">
                   {mode === 'bundle' ? 'Edit Bundle' : 'Edit Build'}
                 </h1>
-                <p className="text-[10px] text-slate-500 font-bold truncate">Photos + parts in one place</p>
+                <p className="text-sm text-slate-500 font-bold truncate">Photos + parts in one place</p>
               </div>
             </div>
             {headerActions}
           </header>
 
-          <div className="flex-1 grid grid-cols-[220px_1fr] overflow-hidden min-h-0">
-            <aside className="border-r border-slate-200 bg-white p-3 flex flex-col gap-3 min-h-0 overflow-hidden">
+          <div className="flex-1 grid grid-cols-[320px_1fr] overflow-hidden min-h-0">
+            <aside className="border-r border-slate-200 bg-white p-5 flex flex-col gap-4 min-h-0 overflow-hidden">
               <div>
-                <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Build name</label>
+                <label className="text-xs font-black uppercase text-slate-400 tracking-widest">Build name</label>
                 <input
-                  className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-slate-100"
+                  className="w-full mt-2 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-lg outline-none focus:ring-2 focus:ring-slate-100"
                   value={buildName}
                   onChange={(e) => setBuildName(e.target.value)}
                 />
@@ -570,8 +570,8 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
               </div>
             </aside>
 
-            <div className="flex flex-col min-h-0 overflow-hidden p-3 gap-3">
-              <div className="grid grid-cols-2 xl:grid-cols-3 gap-2 max-h-[42%] overflow-y-auto shrink-0 pr-1">
+            <div className="flex flex-col min-h-0 overflow-hidden p-5 gap-4">
+              <div className="grid grid-cols-2 xl:grid-cols-3 gap-3 max-h-[42%] overflow-y-auto shrink-0 pr-1">
                 {SLOTS.map((slot) => renderSlotRow(slot, true))}
               </div>
               <div className="flex-1 min-h-0 flex flex-col">

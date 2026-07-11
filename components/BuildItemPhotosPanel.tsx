@@ -113,49 +113,49 @@ const BuildItemPhotosPanel: React.FC<Props> = ({ name, photos, onChange }) => {
 
   return (
     <div className="flex flex-col gap-2 h-full min-h-0">
-      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Build photos</p>
+      <p className="text-sm font-black uppercase tracking-widest text-slate-400">Build photos</p>
 
-      <div className="flex flex-wrap gap-1">
+      <div className="flex flex-wrap gap-2">
         <button
           type="button"
           onClick={handleFindPhotos}
           disabled={photoSearching || !name.trim()}
-          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-600 text-white text-[9px] font-black uppercase tracking-widest hover:bg-blue-700 disabled:opacity-50"
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-black uppercase tracking-widest hover:bg-blue-700 disabled:opacity-50"
         >
-          <Search size={10} className={photoSearching ? 'animate-spin' : ''} />
+          <Search size={14} className={photoSearching ? 'animate-spin' : ''} />
           {photoSearching ? '…' : 'Find photos'}
         </button>
         <button
           type="button"
           onClick={handleEbayPhotos}
           disabled={ebayLoading || !name.trim()}
-          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-blue-200 text-blue-700 text-[9px] font-black uppercase tracking-widest hover:bg-blue-50 disabled:opacity-50"
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-blue-200 text-blue-700 text-xs font-black uppercase tracking-widest hover:bg-blue-50 disabled:opacity-50"
         >
-          <ShoppingBag size={10} />
+          <ShoppingBag size={14} />
           {ebayLoading ? '…' : 'eBay'}
         </button>
-        <label className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-slate-200 text-[9px] font-black uppercase tracking-widest text-slate-600 cursor-pointer hover:bg-slate-50">
-          <Upload size={10} /> Upload
+        <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-xs font-black uppercase tracking-widest text-slate-600 cursor-pointer hover:bg-slate-50">
+          <Upload size={14} /> Upload
           <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} />
         </label>
       </div>
 
       {photoSearchError && (
-        <p className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
+        <p className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
           {photoSearchError}
         </p>
       )}
       {ebayError && (
-        <p className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
+        <p className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
           {ebayError}
         </p>
       )}
 
       {photoSearchResults && photoSearchResults.length > 0 && (
-        <div className="rounded-xl border border-slate-200 bg-white p-2 space-y-1.5">
+        <div className="rounded-xl border border-slate-200 bg-white p-2.5 space-y-2">
           <div className="flex justify-between items-center">
-            <p className="text-[9px] font-black uppercase text-slate-400">Search results</p>
-            <button type="button" onClick={() => setPhotoSearchResults(null)} className="text-[9px] text-slate-400 hover:text-slate-700">
+            <p className="text-xs font-black uppercase text-slate-400">Search results</p>
+            <button type="button" onClick={() => setPhotoSearchResults(null)} className="text-xs text-slate-400 hover:text-slate-700">
               Dismiss
             </button>
           </div>
@@ -175,18 +175,18 @@ const BuildItemPhotosPanel: React.FC<Props> = ({ name, photos, onChange }) => {
       )}
 
       {ebayMatches && ebayMatches.length > 0 && (
-        <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-2 space-y-1.5 max-h-28 overflow-y-auto">
+        <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-3 space-y-2 max-h-36 overflow-y-auto">
           {ebayMatches.map((listing) => (
-            <div key={listing.listingId} className="flex items-center gap-2 bg-white rounded-lg p-1.5 border border-slate-100">
+            <div key={listing.listingId} className="flex items-center gap-2.5 bg-white rounded-lg p-2.5 border border-slate-100">
               {listing.thumbnail && (
-                <img src={listing.thumbnail} alt="" className="w-8 h-8 rounded object-cover shrink-0" />
+                <img src={listing.thumbnail} alt="" className="w-12 h-12 rounded object-cover shrink-0" />
               )}
-              <p className="text-[9px] font-bold text-slate-700 truncate flex-1">{listing.title}</p>
+              <p className="text-xs font-bold text-slate-700 truncate flex-1">{listing.title}</p>
               <button
                 type="button"
                 disabled={ebayImportingId === listing.listingId}
                 onClick={() => importEbayListing(listing)}
-                className="shrink-0 px-2 py-0.5 rounded bg-slate-900 text-white text-[8px] font-black uppercase disabled:opacity-50"
+                className="shrink-0 px-3 py-1.5 rounded bg-slate-900 text-white text-xs font-black uppercase disabled:opacity-50"
               >
                 {ebayImportingId === listing.listingId ? '…' : 'Import'}
               </button>
@@ -197,8 +197,8 @@ const BuildItemPhotosPanel: React.FC<Props> = ({ name, photos, onChange }) => {
 
       <div className="flex-1 min-h-0 overflow-y-auto">
         {photos.length === 0 ? (
-          <div className="h-24 rounded-xl border border-dashed border-amber-300 bg-amber-50/50 flex items-center justify-center">
-            <p className="text-[9px] font-bold text-amber-700 text-center px-2">No photos yet — search, upload, or import from eBay</p>
+          <div className="h-32 rounded-xl border border-dashed border-amber-300 bg-amber-50/50 flex items-center justify-center">
+            <p className="text-xs font-bold text-amber-700 text-center px-3">No photos yet — search, upload, or import from eBay</p>
           </div>
         ) : (
           <div className="grid grid-cols-3 gap-1.5">

@@ -37,6 +37,7 @@ import AddPhotosModal from './AddPhotosModal';
 import BulkSelectionBar, { type BulkAction } from './BulkSelectionBar';
 import { generateItemSpecs } from '../services/specsAI';
 import { getStorefrontHiddenReason, isPublishedOnStorefront } from '../utils/storefrontCatalog';
+import { fetchEbayListingPriceForItem, type EbayListingPriceMatch } from '../services/ebayService';
 
 interface Props {
   items: InventoryItem[];
@@ -88,10 +89,10 @@ interface SortConfig {
   direction: 'asc' | 'desc';
 }
 
-/** Inv column: 5 icon buttons in one row (28px each + 4px gaps, matching the actual `gap-1` grid + cell padding). */
+/** Inv column: icon buttons in one row (28px each + 4px gaps, matching the actual `gap-1` grid + cell padding). */
 const PRESENCE_ICON_SIZE_PX = 28;
 const PRESENCE_ICON_GAP_PX = 4;
-const PRESENCE_ICON_COUNT = 5;
+const PRESENCE_ICON_COUNT = 4;
 const PRESENCE_COL_WIDTH =
   PRESENCE_ICON_COUNT * PRESENCE_ICON_SIZE_PX +
   (PRESENCE_ICON_COUNT - 1) * PRESENCE_ICON_GAP_PX +
@@ -115,6 +116,22 @@ const DEFAULT_WIDTHS: Record<string, number> = {
   actions: 104,
 };
 
+const ALL_COLUMNS: { id: ColumnId; label: string }[] = [
+  { id: 'select', label: '' },
+  { id: 'item', label: 'Asset Name' },
+  { id: 'presence', label: 'Flags' },
+  { id: 'category', label: 'Category' },
+  { id: 'status', label: 'State' },
+  { id: 'buyPrice', label: 'Buy Price' },
+  { id: 'sellPrice', label: 'Sell Price' },
+  { id: 'storePrice', label: 'Storefront Price' },
+  { id: 'profit', label: 'Margin' },
+  { id: 'buyDate', label: 'Acquired' },
+  { id: 'timeGauge', label: 'Time' },
+  { id: 'sellDate', label: 'Sold Date' },
+  { id: 'actions', label: 'Actions' },
+];
+
 function clampInventoryColumnWidth(colId: ColumnId, w: number): number {
   const def = DEFAULT_WIDTHS[colId];
   const floor =
@@ -126,8 +143,43 @@ function clampInventoryColumnWidth(colId: ColumnId, w: number): number {
           ? 96
           : Math.max(40, Math.floor(def * 0.35));
   const min = floor;
-  const max = Math.min(900, Math.ceil(def * 3.5));
+  const max = colId === 'item' ? Math.min(1200, Math.ceil(def * 6)) : Math.min(900, Math.ceil(def * 3.5));
   return Math.round(Math.min(max, Math.max(min, w)));
+}
+
+/** Auto-sized columns: fit header label + widest cell value; grow only when content requires it. */
+function clampAutoColumnWidth(colId: ColumnId, w: number): number {
+  const absoluteMin =
+    colId === 'presence'
+      ? PRESENCE_COL_WIDTH
+      : colId === 'category'
+        ? 80
+        : colId === 'timeGauge'
+          ? 72
+          : colId === 'actions'
+            ? 96
+            : 52;
+  const absoluteMax = ['buyPrice', 'sellPrice', 'storePrice', 'profit'].includes(colId)
+    ? 1600
+    : colId === 'actions'
+      ? 960
+      : 720;
+  return Math.round(Math.min(absoluteMax, Math.max(absoluteMin, w)));
+}
+
+const HEADER_MEASURE_FONT = '900 10px Inter, sans-serif';
+const HEADER_MEASURE_TRACKING = 2.2;
+/** Horizontal padding in cells + room for sort chevron (matches thead/tbody CSS). */
+const AUTO_COL_HPAD = 28;
+
+function getColumnHeaderLabel(colId: ColumnId): string {
+  return ALL_COLUMNS.find((c) => c.id === colId)?.label || '';
+}
+
+function measureColumnHeader(ctx: CanvasRenderingContext2D, colId: ColumnId): number {
+  const label = getColumnHeaderLabel(colId);
+  if (!label) return 0;
+  return measureTextWidth(ctx, label.toUpperCase(), HEADER_MEASURE_FONT, HEADER_MEASURE_TRACKING);
 }
 
 /** Column ids whose width auto-fits the longest currently-rendered value (narrow by default, grows only for long content like a huge price). */
@@ -140,6 +192,7 @@ const AUTO_SIZE_COLUMN_IDS: ColumnId[] = [
   'storePrice',
   'profit',
   'buyDate',
+  'timeGauge',
   'sellDate',
   'actions',
 ];
@@ -175,26 +228,31 @@ function measureTextWidth(ctx: CanvasRenderingContext2D, text: string, font: str
   return ctx.measureText(text).width + trackingPx * Math.max(0, text.length - 1);
 }
 
-/** Computes a "just wide enough" width per auto-size column from the full item list, so columns stay
- * narrow by default and only expand when content demands it (e.g. a very large price). */
+/** Computes a "just wide enough" width per auto-size column from header labels + cell content. */
 function computeAutoColumnWidths(items: InventoryItem[]): Partial<Record<ColumnId, number>> {
   const ctx = getMeasureCtx();
   if (!ctx) return {};
 
-  let categoryW = 0;
-  let statusW = 0;
-  let buyPriceW = 0;
-  let sellPriceW = 0;
-  let storePriceW = 0;
-  let profitW = 0;
-  let buyDateW = 0;
-  let sellDateW = 0;
+  let categoryW = measureColumnHeader(ctx, 'category');
+  let statusW = measureColumnHeader(ctx, 'status');
+  let buyPriceW = measureColumnHeader(ctx, 'buyPrice');
+  let sellPriceW = measureColumnHeader(ctx, 'sellPrice');
+  let storePriceW = measureColumnHeader(ctx, 'storePrice');
+  let profitW = measureColumnHeader(ctx, 'profit');
+  let buyDateW = measureColumnHeader(ctx, 'buyDate');
+  let sellDateW = measureColumnHeader(ctx, 'sellDate');
+  let timeGaugeW = measureColumnHeader(ctx, 'timeGauge');
+  let actionsW = measureColumnHeader(ctx, 'actions');
+
+  const emptyCellW = measureTextWidth(ctx, '-', '700 13px Inter, sans-serif');
+  sellPriceW = Math.max(sellPriceW, emptyCellW);
+  storePriceW = Math.max(storePriceW, emptyCellW);
+  profitW = Math.max(profitW, emptyCellW);
+
   let maxActionButtons = 0;
 
   for (const item of items) {
     maxActionButtons = Math.max(maxActionButtons, countActionButtons(item));
-    // Measure the .toUpperCase() form to match the `uppercase` CSS class actually applied —
-    // canvas measureText does not apply text-transform, and capitalized glyphs run wider.
     if (item.category) {
       categoryW = Math.max(categoryW, measureTextWidth(ctx, item.category.toUpperCase(), '900 11px Inter, sans-serif'));
     }
@@ -206,13 +264,15 @@ function computeAutoColumnWidths(items: InventoryItem[]): Partial<Record<ColumnI
     statusW = Math.max(statusW, measureTextWidth(ctx, String(statusLabel).toUpperCase(), '900 10px Inter, sans-serif', 2.2));
 
     buyPriceW = Math.max(buyPriceW, measureTextWidth(ctx, `€${formatEUR(item.buyPrice)}`, '900 13px Inter, sans-serif'));
-    if (item.sellPrice) {
-      sellPriceW = Math.max(sellPriceW, measureTextWidth(ctx, `€${formatEUR(item.sellPrice)}`, '700 13px Inter, sans-serif'));
-    }
-    if (item.storePrice) {
-      storePriceW = Math.max(storePriceW, measureTextWidth(ctx, `€${formatEUR(item.storePrice)}`, '700 13px Inter, sans-serif'));
-    }
-    if (item.profit && !item.isPC && !item.isBundle) {
+    sellPriceW = Math.max(
+      sellPriceW,
+      measureTextWidth(ctx, item.sellPrice ? `€${formatEUR(item.sellPrice)}` : '-', '700 13px Inter, sans-serif')
+    );
+    storePriceW = Math.max(
+      storePriceW,
+      measureTextWidth(ctx, item.storePrice ? `€${formatEUR(item.storePrice)}` : '-', '700 13px Inter, sans-serif')
+    );
+    if (item.profit != null && !item.isPC && !item.isBundle) {
       profitW = Math.max(profitW, measureTextWidth(ctx, `€${formatEUR(item.profit)}`, '900 13px Inter, sans-serif'));
     }
     if (item.buyDate && !item.isPC && !item.isBundle) {
@@ -223,44 +283,28 @@ function computeAutoColumnWidths(items: InventoryItem[]): Partial<Record<ColumnI
     }
   }
 
-  const actionsW =
+  const actionsButtonsW =
     maxActionButtons > 0
-      ? maxActionButtons * ACTIONS_BUTTON_PX + Math.max(0, maxActionButtons - 1) * ACTIONS_GAP_PX + 18
-      : DEFAULT_WIDTHS.actions;
+      ? maxActionButtons * ACTIONS_BUTTON_PX + Math.max(0, maxActionButtons - 1) * ACTIONS_GAP_PX
+      : 0;
+  actionsW = Math.max(actionsW, actionsButtonsW);
+
+  timeGaugeW = Math.max(timeGaugeW, 68);
 
   return {
-    // Fixed icon-button count, not data-driven — included here so a stale, over-sized saved
-    // width (e.g. from before this column was tightened) gets corrected automatically.
     presence: PRESENCE_COL_WIDTH,
-    category: clampInventoryColumnWidth('category', Math.ceil(categoryW) + 34),
-    // Status renders as a pill with its own px-3 (24px) horizontal padding on top of cell padding,
-    // so it needs a much bigger buffer than a plain text cell or the badge clips into the next column.
-    status: clampInventoryColumnWidth('status', Math.ceil(statusW) + 46),
-    buyPrice: clampInventoryColumnWidth('buyPrice', Math.ceil(buyPriceW) + 20),
-    sellPrice: clampInventoryColumnWidth('sellPrice', Math.ceil(sellPriceW) + 20),
-    storePrice: clampInventoryColumnWidth('storePrice', Math.ceil(storePriceW) + 20),
-    profit: clampInventoryColumnWidth('profit', Math.ceil(profitW) + 20),
-    buyDate: clampInventoryColumnWidth('buyDate', Math.ceil(buyDateW) + 20),
-    sellDate: clampInventoryColumnWidth('sellDate', Math.ceil(sellDateW) + 20),
-    actions: clampInventoryColumnWidth('actions', actionsW),
+    category: clampAutoColumnWidth('category', Math.ceil(categoryW) + AUTO_COL_HPAD + 8),
+    status: clampAutoColumnWidth('status', Math.ceil(statusW) + AUTO_COL_HPAD + 28),
+    buyPrice: clampAutoColumnWidth('buyPrice', Math.ceil(buyPriceW) + AUTO_COL_HPAD),
+    sellPrice: clampAutoColumnWidth('sellPrice', Math.ceil(sellPriceW) + AUTO_COL_HPAD),
+    storePrice: clampAutoColumnWidth('storePrice', Math.ceil(storePriceW) + AUTO_COL_HPAD),
+    profit: clampAutoColumnWidth('profit', Math.ceil(profitW) + AUTO_COL_HPAD),
+    buyDate: clampAutoColumnWidth('buyDate', Math.ceil(buyDateW) + AUTO_COL_HPAD),
+    timeGauge: clampAutoColumnWidth('timeGauge', Math.ceil(timeGaugeW) + AUTO_COL_HPAD),
+    sellDate: clampAutoColumnWidth('sellDate', Math.ceil(sellDateW) + AUTO_COL_HPAD),
+    actions: clampAutoColumnWidth('actions', Math.ceil(actionsW) + AUTO_COL_HPAD),
   };
 }
-
-const ALL_COLUMNS: { id: ColumnId; label: string }[] = [
-  { id: 'select', label: '' },
-  { id: 'item', label: 'Asset Name' },
-  { id: 'presence', label: 'Flags' },
-  { id: 'category', label: 'Category' },
-  { id: 'status', label: 'State' },
-  { id: 'buyPrice', label: 'Buy Price' },
-  { id: 'sellPrice', label: 'Sell Price' },
-  { id: 'storePrice', label: 'Storefront Price' },
-  { id: 'profit', label: 'Margin' },
-  { id: 'buyDate', label: 'Acquired' },
-  { id: 'timeGauge', label: 'Time' },
-  { id: 'sellDate', label: 'Sold Date' },
-  { id: 'actions', label: 'Actions' }
-];
 
 const PAYMENT_METHODS: PaymentType[] = [
   'ebay.de',
@@ -493,7 +537,7 @@ const InventoryList: React.FC<Props> = ({
   });
   // Columns the user has explicitly drag-resized; these opt out of auto-sizing until reset.
   const [manualWidthColumns, setManualWidthColumns] = useState<Set<ColumnId>>(
-    () => new Set(loadState<ColumnId[]>('manual_width_cols', []))
+    () => new Set(loadState<ColumnId[]>('manual_width_cols', []).filter((id) => id === 'item'))
   );
 
   const defaultColumnOrder: ColumnId[] = ['select', 'item', 'presence', 'category', 'status', 'buyPrice', 'sellPrice', 'storePrice', 'profit', 'buyDate', 'timeGauge', 'sellDate', 'actions'];
@@ -739,23 +783,6 @@ const InventoryList: React.FC<Props> = ({
     onUpdate([cycleInventoryItemPresence(item)]);
   };
 
-  // --- MARKETPLACE LISTING FLAGS (Kleinanzeigen / eBay) ---
-  const toggleListedKleinanzeigen = (item: InventoryItem) => {
-    const updated: InventoryItem = {
-      ...item,
-      listedOnKleinanzeigen: !item.listedOnKleinanzeigen,
-    };
-    onUpdate([updated]);
-  };
-
-  const toggleListedEbay = (item: InventoryItem) => {
-    const updated: InventoryItem = {
-      ...item,
-      listedOnEbay: !item.listedOnEbay,
-    };
-    onUpdate([updated]);
-  };
-
   const toggleStoreVisible = (item: InventoryItem) => {
     const hiddenReason = getStorefrontHiddenReason(item);
     if (hiddenReason && item.storeVisible !== false) {
@@ -779,6 +806,10 @@ const InventoryList: React.FC<Props> = ({
   const [priceSuggestModalItem, setPriceSuggestModalItem] = useState<InventoryItem | null>(null);
   const [priceSuggestResult, setPriceSuggestResult] = useState<SoldPriceSuggestion | null>(null);
   const [priceSuggestError, setPriceSuggestError] = useState<string | null>(null);
+  const [ebayPriceModalItem, setEbayPriceModalItem] = useState<InventoryItem | null>(null);
+  const [ebayPriceLoading, setEbayPriceLoading] = useState(false);
+  const [ebayPriceError, setEbayPriceError] = useState<string | null>(null);
+  const [ebayPriceMatch, setEbayPriceMatch] = useState<EbayListingPriceMatch | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   const handleGenerateListingDescription = async (item: InventoryItem) => {
@@ -866,6 +897,50 @@ const InventoryList: React.FC<Props> = ({
     closePriceSuggestModal();
   };
 
+  const closeEbayPriceModal = () => {
+    setEbayPriceModalItem(null);
+    setEbayPriceError(null);
+    setEbayPriceMatch(null);
+    setEbayPriceLoading(false);
+  };
+
+  const handleFetchEbayListingPrice = async (item: InventoryItem) => {
+    if (!item.name?.trim()) {
+      alert('Enter an item name first.');
+      return;
+    }
+    setEbayPriceModalItem(item);
+    setEbayPriceError(null);
+    setEbayPriceMatch(null);
+    setEbayPriceLoading(true);
+    try {
+      const match = await fetchEbayListingPriceForItem(item.name, item.ebaySku);
+      if (!match) {
+        setEbayPriceError(`No matching live eBay listing with a price found for "${item.name}".`);
+        return;
+      }
+      setEbayPriceMatch(match);
+    } catch (e: unknown) {
+      setEbayPriceError((e as Error)?.message || 'Failed to fetch eBay listing price.');
+    } finally {
+      setEbayPriceLoading(false);
+    }
+  };
+
+  const applyEbayListingPrice = (item: InventoryItem, price: number, match: EbayListingPriceMatch) => {
+    onUpdate([
+      {
+        ...item,
+        sellPrice: price,
+        listedOnEbay: true,
+        ebaySku: item.ebaySku || match.sku,
+      },
+    ]);
+    setToast(`Sell price set to €${formatEUR(price)} from eBay`);
+    setTimeout(() => setToast((prev) => (prev?.startsWith('Sell price set') ? null : prev)), 2000);
+    closeEbayPriceModal();
+  };
+
   // Visible Columns (from order, excluding hidden) — memoized so row renders are not invalidated every parent render
   const visibleColumns = useMemo(() => {
     const ALWAYS_HIDDEN = ['parseSpecs', 'salePlatform'];
@@ -896,12 +971,12 @@ const InventoryList: React.FC<Props> = ({
   const effectiveColumnWidths = useMemo(() => {
     const merged: Record<string, number> = { ...columnWidths };
     for (const colId of AUTO_SIZE_COLUMN_IDS) {
-      if (!manualWidthColumns.has(colId) && autoColumnWidths[colId] != null) {
+      if (autoColumnWidths[colId] != null) {
         merged[colId] = autoColumnWidths[colId]!;
       }
     }
     return merged;
-  }, [columnWidths, autoColumnWidths, manualWidthColumns]);
+  }, [columnWidths, autoColumnWidths]);
   const effectiveColumnWidthsRef = useRef(effectiveColumnWidths);
   useEffect(() => {
     effectiveColumnWidthsRef.current = effectiveColumnWidths;
@@ -1223,9 +1298,9 @@ const InventoryList: React.FC<Props> = ({
   };
 
   const handleColumnResizeStart = useCallback((e: React.MouseEvent, colId: ColumnId) => {
+    if (colId !== 'item') return;
     e.preventDefault();
     e.stopPropagation();
-    // Dragging a column takes it out of auto-sizing from this point on.
     setManualWidthColumns((prev) => (prev.has(colId) ? prev : new Set(prev).add(colId)));
     const startW = effectiveColumnWidthsRef.current[colId] ?? columnWidthsRef.current[colId] ?? DEFAULT_WIDTHS[colId];
     columnResizeRef.current = { colId, startX: e.clientX, startW };
@@ -1654,7 +1729,7 @@ const InventoryList: React.FC<Props> = ({
         return (
           <td key={id} className="inv-col-icons border-r border-slate-100/90 align-middle" style={style} onClick={(e) => e.stopPropagation()}>
             <div
-              className={`grid grid-cols-5 ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-items-center mx-auto shrink-0`}
+              className={`grid grid-cols-4 ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-items-start shrink-0`}
               style={{ width: PRESENCE_ICON_COUNT * PRESENCE_ICON_SIZE_PX + (PRESENCE_ICON_COUNT - 1) * PRESENCE_ICON_GAP_PX }}
             >
               {/* Physical presence: present → lost → defective → unknown */}
@@ -1714,51 +1789,28 @@ const InventoryList: React.FC<Props> = ({
                 <Camera size={13} strokeWidth={2.25} />
               </button>
 
-              {/* Listed on Kleinanzeigen (same style as Parse K icon) */}
+              {/* Live eBay listing price (seller store / account) */}
               <button
                 type="button"
-                onClick={() => toggleListedKleinanzeigen(item)}
-                className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border text-emerald-700 ${
-                  item.listedOnKleinanzeigen
-                    ? 'border-emerald-200 bg-emerald-50'
-                    : 'border-emerald-200 bg-white'
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleFetchEbayListingPrice(item);
+                }}
+                className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border text-amber-700 ${
+                  ebayPriceLoading && ebayPriceModalItem?.id === item.id
+                    ? 'border-amber-300 bg-amber-50'
+                    : 'border-amber-200 bg-white hover:bg-amber-50'
                 }`}
-                title={
-                  item.listedOnKleinanzeigen
-                    ? 'Listed on Kleinanzeigen (click to mark as not listed)'
-                    : 'Not listed on Kleinanzeigen (click to mark as listed)'
-                }
+                title="Fetch live price from your eBay listing (rounded to .99)"
               >
                 <span
                   className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black ${
-                    item.listedOnKleinanzeigen ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-emerald-700'
+                    ebayPriceLoading && ebayPriceModalItem?.id === item.id
+                      ? 'bg-amber-500 text-white'
+                      : 'bg-slate-200 text-amber-700'
                   }`}
                 >
-                  K
-                </span>
-              </button>
-
-              {/* Listed on eBay (same style as Parse E icon) */}
-              <button
-                type="button"
-                onClick={() => toggleListedEbay(item)}
-                className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border text-blue-700 ${
-                  item.listedOnEbay
-                    ? 'border-blue-200 bg-blue-50'
-                    : 'border-blue-200 bg-white'
-                }`}
-                title={
-                  item.listedOnEbay
-                    ? 'Listed on eBay (click to mark as not listed)'
-                    : 'Not listed on eBay (click to mark as listed)'
-                }
-              >
-                <span
-                  className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black ${
-                    item.listedOnEbay ? 'bg-blue-600 text-white' : 'bg-slate-200 text-blue-700'
-                  }`}
-                >
-                  E
+                  €
                 </span>
               </button>
 
@@ -2102,7 +2154,7 @@ const InventoryList: React.FC<Props> = ({
         return (
           <td 
             key={id} 
-            className="text-right font-black text-slate-900 cursor-pointer hover:bg-blue-50/30 transition-colors" 
+            className="text-left font-black text-slate-900 cursor-pointer hover:bg-blue-50/30 transition-colors" 
             style={style}
             title="Double click to edit"
             onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, 'buyPrice', item.buyPrice); }}
@@ -2112,7 +2164,7 @@ const InventoryList: React.FC<Props> = ({
                  autoFocus
                  type="text"
                  inputMode="decimal"
-                 className="w-20 bg-white border-2 border-blue-500 rounded-lg px-2 py-1 text-right outline-none text-xs font-bold shadow-lg"
+                 className="w-20 bg-white border-2 border-blue-500 rounded-lg px-2 py-1 text-left outline-none text-xs font-bold shadow-lg"
                  value={editValue}
                  onChange={e => setEditValue(e.target.value)}
                  onBlur={saveEdit}
@@ -2129,7 +2181,7 @@ const InventoryList: React.FC<Props> = ({
         return (
           <td 
             key={id} 
-            className="text-right font-bold text-slate-600 cursor-pointer hover:bg-blue-50/30 transition-colors" 
+            className="text-left font-bold text-slate-600 cursor-pointer hover:bg-blue-50/30 transition-colors" 
             style={style}
             title="Double click to edit"
             onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, 'sellPrice', item.sellPrice || 0); }}
@@ -2139,7 +2191,7 @@ const InventoryList: React.FC<Props> = ({
                  autoFocus
                  type="text"
                  inputMode="decimal"
-                 className="w-20 bg-white border-2 border-blue-500 rounded-lg px-2 py-1 text-right outline-none text-xs font-bold shadow-lg"
+                 className="w-20 bg-white border-2 border-blue-500 rounded-lg px-2 py-1 text-left outline-none text-xs font-bold shadow-lg"
                  value={editValue}
                  onChange={e => setEditValue(e.target.value)}
                  onBlur={saveEdit}
@@ -2158,7 +2210,7 @@ const InventoryList: React.FC<Props> = ({
         return (
           <td
             key={id}
-            className="text-right font-bold text-violet-700 cursor-pointer hover:bg-violet-50/40 transition-colors"
+            className="text-left font-bold text-violet-700 cursor-pointer hover:bg-violet-50/40 transition-colors"
             style={style}
             title="Storefront asking price. Double click to edit — separate from Sell Price."
             onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, 'storePrice', item.storePrice || 0); }}
@@ -2168,7 +2220,7 @@ const InventoryList: React.FC<Props> = ({
                  autoFocus
                  type="text"
                  inputMode="decimal"
-                 className="w-20 bg-white border-2 border-violet-500 rounded-lg px-2 py-1 text-right outline-none text-xs font-bold shadow-lg"
+                 className="w-20 bg-white border-2 border-violet-500 rounded-lg px-2 py-1 text-left outline-none text-xs font-bold shadow-lg"
                  value={editValue}
                  onChange={e => setEditValue(e.target.value)}
                  onBlur={saveEdit}
@@ -2185,13 +2237,13 @@ const InventoryList: React.FC<Props> = ({
         // Bundles/PCs don't have profit - profit is only in child items
         if (item.isPC || item.isBundle) {
           return (
-            <td key={id} className="text-right text-xs font-bold text-slate-300" style={style} title="Bundles/PCs don't have profit. Expand to see component margins.">
+            <td key={id} className="text-left text-xs font-bold text-slate-300" style={style} title="Bundles/PCs don't have profit. Expand to see component margins.">
               -
             </td>
           );
         }
         return (
-          <td key={id} className={`text-right font-black ${item.profit && item.profit > 0 ? 'text-emerald-600' : item.profit && item.profit < 0 ? 'text-red-500' : 'text-slate-300'}`} style={style}>
+          <td key={id} className={`text-left font-black ${item.profit && item.profit > 0 ? 'text-emerald-600' : item.profit && item.profit < 0 ? 'text-red-500' : 'text-slate-300'}`} style={style}>
              {item.profit ? `€${formatEUR(item.profit)}` : '-'}
           </td>
         );
@@ -2200,7 +2252,7 @@ const InventoryList: React.FC<Props> = ({
         const row = getTimeGaugeRow(item, now, items);
         if (!row) {
           return (
-            <td key={id} className="text-center text-[10px] text-slate-300" style={style} title="Set acquisition date (or add components to bundle)">
+            <td key={id} className="text-left text-[10px] text-slate-300" style={style} title="Set acquisition date (or add components to bundle)">
               —
             </td>
           );
@@ -2220,7 +2272,7 @@ const InventoryList: React.FC<Props> = ({
         return (
           <td key={id} className="align-middle" style={style}>
             <div
-              className="flex flex-col items-stretch gap-0.5 min-w-0 max-w-[4.25rem] mx-auto"
+              className="flex flex-col items-stretch gap-0.5 min-w-0 max-w-[4.25rem]"
               title={row.title + (row.fromComponents ? ' (from components)' : '')}
             >
               <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden ring-1 ring-slate-200/70">
@@ -2232,7 +2284,7 @@ const InventoryList: React.FC<Props> = ({
                   }}
                 />
               </div>
-              <span className="text-[8px] font-bold text-slate-500 text-center tabular-nums leading-none">
+              <span className="text-[8px] font-bold text-slate-500 text-left tabular-nums leading-none">
                 {row.shortLabel}
               </span>
             </div>
@@ -2242,7 +2294,7 @@ const InventoryList: React.FC<Props> = ({
       case 'buyDate':
         if ((item.isPC || item.isBundle)) {
           return (
-            <td key={id} className="text-right text-xs font-bold text-slate-300" style={style} title="Bundles/PCs don't have buy dates. Expand to see component buy dates.">
+            <td key={id} className="text-left text-xs font-bold text-slate-300" style={style} title="Bundles/PCs don't have buy dates. Expand to see component buy dates.">
               -
             </td>
           );
@@ -2250,7 +2302,7 @@ const InventoryList: React.FC<Props> = ({
         return (
            <td 
              key={id} 
-             className="text-right text-xs font-bold text-slate-500 cursor-pointer hover:bg-blue-50/30 transition-colors" 
+             className="text-left text-xs font-bold text-slate-500 cursor-pointer hover:bg-blue-50/30 transition-colors" 
              style={style}
              title="Double click to edit"
              onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, id, (item as any)[id] || ''); }}
@@ -2259,7 +2311,7 @@ const InventoryList: React.FC<Props> = ({
                  <input 
                    autoFocus
                    type="date"
-                   className="w-24 bg-white border-2 border-blue-500 rounded-lg px-2 py-1 text-right outline-none text-xs font-bold shadow-lg"
+                   className="w-24 bg-white border-2 border-blue-500 rounded-lg px-2 py-1 text-left outline-none text-xs font-bold shadow-lg"
                    value={editValue}
                    onChange={e => setEditValue(e.target.value)}
                    onBlur={saveEdit}
@@ -2288,7 +2340,7 @@ const InventoryList: React.FC<Props> = ({
         return (
            <td 
              key={id} 
-             className="text-right text-xs font-bold text-slate-500 cursor-pointer hover:bg-blue-50/30 transition-colors" 
+             className="text-left text-xs font-bold text-slate-500 cursor-pointer hover:bg-blue-50/30 transition-colors" 
              style={style}
              title={buyerTitle || "Double click to edit"}
              onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, id, (item as any)[id] || ''); }}
@@ -2297,7 +2349,7 @@ const InventoryList: React.FC<Props> = ({
                  <input 
                    autoFocus
                    type="date"
-                   className="w-24 bg-white border-2 border-blue-500 rounded-lg px-2 py-1 text-right outline-none text-xs font-bold shadow-lg"
+                   className="w-24 bg-white border-2 border-blue-500 rounded-lg px-2 py-1 text-left outline-none text-xs font-bold shadow-lg"
                    value={editValue}
                    onChange={e => setEditValue(e.target.value)}
                    onBlur={saveEdit}
@@ -2366,10 +2418,10 @@ const InventoryList: React.FC<Props> = ({
         return (
           <td
             key={id}
-            className="text-right relative sticky right-0 z-[18] bg-white group-hover/row:bg-slate-50 border-l border-slate-200/90 shadow-[-6px_0_12px_-4px_rgba(15,23,42,0.07)]"
+            className="text-left relative sticky right-0 z-[18] bg-white group-hover/row:bg-slate-50 border-l border-slate-200/90 shadow-[-6px_0_12px_-4px_rgba(15,23,42,0.07)]"
             style={style}
           >
-            <div className={`flex flex-nowrap justify-end items-center gap-0.5 transition-opacity ml-auto ${activeAiDropdownId === item.id ? 'opacity-100' : 'opacity-100 sm:opacity-0 sm:group-hover/row:opacity-100'}`}>
+            <div className={`flex flex-nowrap justify-start items-center gap-0.5 transition-opacity ${activeAiDropdownId === item.id ? 'opacity-100' : 'opacity-100 sm:opacity-0 sm:group-hover/row:opacity-100'}`}>
               {item.status === ItemStatus.IN_STOCK && (
                  <>
                    <button onClick={(e) => { e.stopPropagation(); navigate('/panel/pricing', { state: { query: item.name } }); }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md shrink-0" title="Check Market Price"><Tag size={14}/></button>
@@ -3319,13 +3371,13 @@ const InventoryList: React.FC<Props> = ({
 
       {/* Table scrolls in remaining height; bulk bar is a separate row below (never overlays rows) */}
       <style>{`
-        [data-inventory-table] tbody > tr > td { padding: 0.28rem 0.32rem !important; vertical-align: top !important; }
-        [data-inventory-table] tbody > tr > td.inv-col-icons { padding: 0.25rem 0.38rem !important; }
-        [data-inventory-table] thead th > div:first-of-type { padding: 0.28rem 0.32rem !important; min-height: 1.65rem !important; }
-        [data-inventory-table] thead th { font-size: 0.625rem; letter-spacing: 0.04em; }
-        [data-density="compact"][data-inventory-table] tbody > tr > td { padding: 0.16rem 0.22rem !important; }
-        [data-density="compact"][data-inventory-table] tbody > tr > td.inv-col-icons { padding: 0.14rem 0.28rem !important; }
-        [data-density="compact"][data-inventory-table] thead th > div:first-of-type { padding: 0.16rem 0.22rem !important; min-height: 1.35rem !important; }
+        [data-inventory-table] tbody > tr > td { padding: 0.28rem 0.75rem !important; vertical-align: top !important; text-align: left !important; }
+        [data-inventory-table] tbody > tr > td.inv-col-icons { padding: 0.25rem 0.5rem !important; }
+        [data-inventory-table] thead th > div:first-of-type { padding: 0.28rem 0.75rem !important; min-height: 1.65rem !important; }
+        [data-inventory-table] thead th { font-size: 0.625rem; letter-spacing: 0.04em; text-align: left; }
+        [data-density="compact"][data-inventory-table] tbody > tr > td { padding: 0.16rem 0.625rem !important; }
+        [data-density="compact"][data-inventory-table] tbody > tr > td.inv-col-icons { padding: 0.14rem 0.45rem !important; }
+        [data-density="compact"][data-inventory-table] thead th > div:first-of-type { padding: 0.16rem 0.625rem !important; min-height: 1.35rem !important; }
         [data-density="compact"] .text-sm { font-size: 0.6875rem; line-height: 1.2; }
         [data-density="compact"] .text-xs { font-size: 0.625rem; line-height: 1.2; }
         [data-density="comfortable"] .text-sm { line-height: 1.25; }
@@ -3601,6 +3653,91 @@ const InventoryList: React.FC<Props> = ({
                               className="py-2.5 px-4 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-200"
                            >
                               Save as note
+                           </button>
+                        </div>
+                     </div>
+                  ) : null}
+               </div>
+            </div>
+         </div>,
+         document.body
+      )}
+
+      {ebayPriceModalItem && createPortal(
+         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4" onClick={closeEbayPriceModal}>
+            <div
+               className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden"
+               onClick={(e) => e.stopPropagation()}
+            >
+               <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                  <div className="flex items-center gap-2 min-w-0">
+                     <ShoppingBag size={18} className="text-blue-600 shrink-0"/>
+                     <h3 className="font-black text-slate-900 text-sm truncate">eBay live price • {ebayPriceModalItem.name}</h3>
+                  </div>
+                  <button onClick={closeEbayPriceModal} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl shrink-0"><X size={18}/></button>
+               </div>
+               <div className="p-4 max-h-[70vh] overflow-y-auto">
+                  {ebayPriceLoading ? (
+                     <div className="py-8 flex flex-col items-center justify-center gap-3 text-slate-500">
+                        <Loader2 size={32} className="animate-spin text-blue-600"/>
+                        <p className="text-xs font-bold">Matching your eBay listings…</p>
+                     </div>
+                  ) : ebayPriceError ? (
+                     <div className="py-4 flex items-start gap-3">
+                        <AlertCircle size={20} className="text-red-500 shrink-0 mt-0.5"/>
+                        <p className="text-sm text-red-700">{ebayPriceError}</p>
+                     </div>
+                  ) : ebayPriceMatch ? (
+                     <div className="space-y-4">
+                        <div>
+                           <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Matched listing</p>
+                           {ebayPriceMatch.listingUrl ? (
+                              <a
+                                 href={ebayPriceMatch.listingUrl}
+                                 target="_blank"
+                                 rel="noopener noreferrer"
+                                 className="text-sm font-bold text-blue-600 hover:underline line-clamp-2"
+                              >
+                                 {ebayPriceMatch.title}
+                              </a>
+                           ) : (
+                              <p className="text-sm font-bold text-slate-800 line-clamp-2">{ebayPriceMatch.title}</p>
+                           )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                           <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
+                              <p className="text-[10px] font-black uppercase text-slate-400">eBay price</p>
+                              <p className="text-xl font-black text-slate-700">€{formatEUR(ebayPriceMatch.rawPrice)}</p>
+                           </div>
+                           <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3">
+                              <p className="text-[10px] font-black uppercase text-emerald-600">Rounded to .99</p>
+                              <p className="text-xl font-black text-emerald-700">€{formatEUR(ebayPriceMatch.roundedPrice)}</p>
+                           </div>
+                        </div>
+                        {ebayPriceModalItem.sellPrice != null && (
+                           <p className="text-xs text-slate-500">
+                              Current sell price: <span className="font-bold text-slate-800">€{formatEUR(ebayPriceModalItem.sellPrice)}</span>
+                           </p>
+                        )}
+                        {ebayPriceMatch.rawPrice !== ebayPriceMatch.roundedPrice && (
+                           <p className="text-[11px] text-amber-700 bg-amber-50 px-2 py-1.5 rounded border border-amber-200">
+                              Cents adjusted from {formatEUR(ebayPriceMatch.rawPrice).replace('.', ',')} to ,99
+                           </p>
+                        )}
+                        <div className="flex gap-2 pt-1">
+                           <button
+                              type="button"
+                              onClick={() => applyEbayListingPrice(ebayPriceModalItem, ebayPriceMatch.roundedPrice, ebayPriceMatch)}
+                              className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-black hover:bg-emerald-700"
+                           >
+                              Apply €{formatEUR(ebayPriceMatch.roundedPrice)} as sell price
+                           </button>
+                           <button
+                              type="button"
+                              onClick={closeEbayPriceModal}
+                              className="py-2.5 px-4 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-200"
+                           >
+                              Cancel
                            </button>
                         </div>
                      </div>
@@ -4075,7 +4212,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
                             }
                           : undefined
                       }
-                      className={`flex items-center ${listDensity === 'compact' ? 'min-h-[1.35rem]' : 'min-h-[1.65rem]'} ${sortable ? 'cursor-pointer hover:bg-slate-100/90' : ''} ${['buyPrice', 'sellPrice', 'storePrice', 'profit', 'buyDate', 'sellDate', 'actions'].includes(colId) ? 'justify-end' : colId === 'parseSpecs' || colId === 'timeGauge' ? 'justify-center' : ''}`}
+                      className={`flex items-center justify-start gap-1 w-full ${listDensity === 'compact' ? 'min-h-[1.35rem]' : 'min-h-[1.65rem]'} ${sortable ? 'cursor-pointer hover:bg-slate-100/90' : ''} ${colId === 'select' ? 'justify-center' : ''}`}
                     >
                       {colId === 'select' ? (
                         <div
@@ -4094,12 +4231,12 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
                             ))}
                         </div>
                       ) : colId === 'parseSpecs' ? (
-                        <span className="flex items-center gap-1" title="Parse tech specs with AI">
+                        <span className="flex items-center justify-start gap-1 truncate" title="Parse tech specs with AI">
                           <Sparkles size={12} className="text-amber-500" /> Parse
                         </span>
                       ) : colId === 'timeGauge' ? (
                         <span
-                          className="flex items-center justify-center gap-1 w-full"
+                          className="flex items-center justify-start gap-1 w-full truncate"
                           title={
                             paneStatus === 'SOLD'
                               ? 'Buy → sell: green = quick, red = slow'
@@ -4116,24 +4253,26 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
                         </span>
                       ) : (
                         <>
-                          {ALL_COLUMNS.find((c) => c.id === colId)?.label}
+                          <span className="truncate">{ALL_COLUMNS.find((c) => c.id === colId)?.label}</span>
                           {(sortConfig.key === colId || (colId === 'item' && sortConfig.key === 'name')) && (
-                            <span className="text-blue-500">
+                            <span className="text-blue-500 shrink-0">
                               {sortConfig.direction === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                             </span>
                           )}
                         </>
                       )}
                     </div>
-                    <div
-                      role="separator"
-                      aria-orientation="vertical"
-                      aria-label={`Resize ${ALL_COLUMNS.find((c) => c.id === colId)?.label || colId} column`}
-                      title="Drag to resize column"
-                      className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize z-20 shrink-0 hover:bg-blue-500/35 active:bg-blue-500/50 border-r border-transparent hover:border-blue-400/40"
-                      onMouseDown={(e) => handleColumnResizeStart(e, colId)}
-                      onClick={(e) => e.stopPropagation()}
-                    />
+                    {colId === 'item' && (
+                      <div
+                        role="separator"
+                        aria-orientation="vertical"
+                        aria-label={`Resize ${ALL_COLUMNS.find((c) => c.id === colId)?.label || colId} column`}
+                        title="Drag to resize column"
+                        className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize z-20 shrink-0 hover:bg-blue-500/35 active:bg-blue-500/50 border-r border-transparent hover:border-blue-400/40"
+                        onMouseDown={(e) => handleColumnResizeStart(e, colId)}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    )}
                   </th>
                 );
               })}
