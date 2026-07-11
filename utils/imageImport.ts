@@ -1,8 +1,14 @@
 import { normalizeImgurImageUrl } from '../services/ebayOrderScreenshotAI';
 import { CATEGORY_IMAGES } from '../services/hardwareDB';
+import {
+  persistInventoryImageFiles,
+  persistInventoryImages,
+  type PersistInventoryImagesOptions,
+} from '../services/inventoryImageStorage';
 import { filterUsableImageUrls } from '../services/storefrontImageUtils';
 import type { InventoryItem } from '../types';
-import { compressImageFile, prepareInventoryPhotoUrls } from './imageCompress';
+
+export type { PersistInventoryImagesOptions };
 
 export function normalizeImageList(urls: (string | undefined | null)[]): string[] {
   const seen = new Set<string>();
@@ -104,16 +110,26 @@ export async function resolveImageUrlsFromInput(input: string): Promise<string[]
   return normalizeImageList(out);
 }
 
-/** Compress file uploads, then dedupe. Remote https URLs are unchanged. */
-export async function filesToDataUrls(files: File[]): Promise<string[]> {
-  const urls = await Promise.all(files.map((file) => compressImageFile(file)));
+/** Compress + persist file uploads to Firebase Storage (or local fallback). */
+export async function filesToDataUrls(
+  files: File[],
+  options?: PersistInventoryImagesOptions
+): Promise<string[]> {
+  const urls = await persistInventoryImageFiles(files, options);
   return normalizeImageList(urls);
 }
 
-/** Normalize URL list and compress any large embedded data URLs before save. */
-export async function prepareInventoryImagesForStorage(urls: string[]): Promise<string[]> {
+/**
+ * Download remote photos, compress, and save durable copies to Firebase Storage.
+ * Pass itemId so photos are grouped under that inventory item.
+ */
+export async function prepareInventoryImagesForStorage(
+  urls: string[],
+  options?: PersistInventoryImagesOptions
+): Promise<string[]> {
   const normalized = normalizeImageList(urls);
-  return prepareInventoryPhotoUrls(normalized);
+  const persisted = await persistInventoryImages(normalized, options);
+  return normalizeImageList(persisted);
 }
 
 export type ItemPresenceCycleState = 'unknown' | 'present' | 'lost' | 'defective';

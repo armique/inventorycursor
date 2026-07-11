@@ -571,7 +571,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
     let galleryUrls = itemImageUrls;
     if (galleryUrls.length > 0) {
       try {
-        galleryUrls = await prepareInventoryImagesForStorage(galleryUrls);
+        galleryUrls = await prepareInventoryImagesForStorage(galleryUrls, { itemId: 'shared' });
       } catch {
         galleryUrls = itemImageUrls;
       }

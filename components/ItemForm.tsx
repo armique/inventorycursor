@@ -127,6 +127,10 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     formDataRef.current = formData;
   }, [formData]);
 
+  const photoItemIdRef = React.useRef(initialData?.id || id || `item-draft-${Date.now()}`);
+  const getPhotoItemId = () =>
+    formDataRef.current.id || initialData?.id || id || photoItemIdRef.current;
+
   const [configStep, setConfigStep] = useState<'CATEGORY' | 'DETAILS' | 'DONE'>('CATEGORY');
   const [generatingSpecs, setGeneratingSpecs] = useState(false);
   const [showSpecs, setShowSpecs] = useState(true);
@@ -354,11 +358,12 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     [formData.imageUrl, formData.imageUrls]
   );
 
-  const addImageUrls = async (urls: string[]) => {
-    const prepared = await prepareInventoryImagesForStorage(urls);
+  const addImageUrls = async (urls: string[]): Promise<string[]> => {
+    const prepared = await prepareInventoryImagesForStorage(urls, { itemId: getPhotoItemId() });
     const merged = normalizeImageList([...itemImageList, ...prepared]);
-    if (!merged.length) return;
+    if (!merged.length) return [];
     setFormData((prev) => ({ ...prev, imageUrl: merged[0], imageUrls: merged }));
+    return merged;
   };
 
   const setMainImage = (url: string) => {
@@ -379,7 +384,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
     try {
-      const urls = await filesToDataUrls(files);
+      const urls = await filesToDataUrls(files, { itemId: getPhotoItemId() });
       await addImageUrls(urls);
     } catch {
       alert('Could not process one or more images.');
@@ -503,7 +508,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     if (!urls.length) return;
     setEbayImportingId(listing.listingId);
     try {
-      await addImageUrls(urls);
+      const merged = await addImageUrls(urls);
       setFormData((prev) => ({
         ...prev,
         listedOnEbay: true,
@@ -513,8 +518,8 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       setEbayListingMatches(null);
       setExpandedEbayListingId(null);
       setSelectedEbayPhotosByListing({});
-      if (formDataRef.current.name && urls[0]) {
-        void setCachedProductPhoto(formDataRef.current.name, urls[0]);
+      if (formDataRef.current.name && merged[0]) {
+        void setCachedProductPhoto(formDataRef.current.name, merged[0]);
       }
     } catch {
       alert('Could not import photos from this listing.');
@@ -541,7 +546,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
    * plus whatever was there before (auto-picked, cached, or a prior search pick) would be wrong.
    * Use "Add images" separately if you want to keep multiple real photos. */
   const handlePickSearchedPhoto = async (result: ImageSearchResult, remaining?: ImageSearchResult[]) => {
-    const prepared = await prepareInventoryImagesForStorage([result.url]);
+    const prepared = await prepareInventoryImagesForStorage([result.url], { itemId: getPhotoItemId() });
     if (!prepared.length) return;
     const stored = prepared[0];
     setFormData((prev) => ({ ...prev, imageUrl: stored, imageUrls: [stored] }));
@@ -564,12 +569,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
 
     const normalizedImages = normalizeImageList([formData.imageUrl, ...(formData.imageUrls || [])]);
     const fallbackImage = CATEGORY_IMAGES[formData.subCategory || formData.category || 'Components'];
-    let storedImages = normalizedImages;
-    try {
-      storedImages = await prepareInventoryImagesForStorage(normalizedImages);
-    } catch {
-      storedImages = normalizedImages;
-    }
+    const saveItemId = formData.id || `item-${Date.now()}`;
 
     const specsOut =
       isRamItem(formData.category, formData.subCategory) && formData.specs
@@ -581,10 +581,17 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
         ? formData.specsAiSuggested
         : undefined;
 
+    let storedImages = normalizedImages;
+    try {
+      storedImages = await prepareInventoryImagesForStorage(normalizedImages, { itemId: saveItemId });
+    } catch {
+      storedImages = normalizedImages;
+    }
+
     const base: InventoryItem = {
       ...formData as InventoryItem,
       buyPrice: buyPriceResolved,
-      id: formData.id || `item-${Date.now()}`,
+      id: saveItemId,
       imageUrl: storedImages[0] || fallbackImage,
       imageUrls: storedImages.length ? storedImages : [fallbackImage],
       specs: specsOut ?? {},

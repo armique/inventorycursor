@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   Cloud, Building2, Layers, Wrench, ShoppingBag, Sparkles, Shield,
-  CheckCircle2, AlertTriangle, ArrowUp, RefreshCw, Save, LogIn, LogOut, User as UserIcon, Download, Upload, FileText, Github, History, ArchiveRestore, Rocket, Copy, ExternalLink, Plus, FolderPlus, FileSpreadsheet
+  CheckCircle2, AlertTriangle, ArrowUp, RefreshCw, Save, LogIn, LogOut, User as UserIcon, Download, Upload, FileText, Github, History, ArchiveRestore, Rocket, Copy, ExternalLink, Plus, FolderPlus, FileSpreadsheet, Images, Loader2
 } from 'lucide-react';
 import { fixItemsEncoding } from '../services/encodingFix';
 import { InventoryItem, BusinessSettings, Expense, ItemStatus, DashboardPreferences, ActionHistoryEntry } from '../types';
@@ -11,6 +11,13 @@ import { buildSteuerberaterBundle, downloadSteuerberaterBundle } from '../servic
 import { buildGdprExportBlob, downloadGdprExport } from '../services/gdprExport';
 import { encryptBackupJson } from '../services/encryptedBackup';
 import { isCloudEnabled, saveFirebaseConfig, getFirebaseConfig, signInWithGoogle, logOut, onAuthChange, getAuthErrorMessage } from '../services/firebaseService';
+import {
+  analyzeInventoryPhotoArchive,
+  bulkArchiveInventoryPhotos,
+  canArchivePhotosToCloud,
+  type PhotoArchiveProgress,
+  type PhotoArchiveResult,
+} from '../services/inventoryImageStorage';
 import {
   getStoredConfig,
   getStoredToken,
@@ -67,6 +74,7 @@ interface Props {
   onRenameSubCategory?: (category: string, oldSubName: string, newSubName: string) => void;
   dashboardPreferences?: DashboardPreferences;
   actionHistory?: ActionHistoryEntry[];
+  onApplyArchivedPhotos?: (items: InventoryItem[], trash: InventoryItem[]) => void;
 }
 
 const SETTINGS_TABS = [
@@ -130,6 +138,7 @@ const SettingsPage: React.FC<Props> = ({
   onUpdateCategoryFields
   ,
   actionHistory = [],
+  onApplyArchivedPhotos,
 }) => {
   const [activeTab, setActiveTab] = useState<typeof SETTINGS_TABS[number]['id']>('BUSINESS');
   const [aiSettings, setAiSettings] = useState<AISettings>(() => loadAISettings());
@@ -140,6 +149,14 @@ const SettingsPage: React.FC<Props> = ({
   const [isPushing, setIsPushing] = useState(false);
   const [isSigningInPopup, setIsSigningInPopup] = useState(false);
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
+  const [photoArchiveRunning, setPhotoArchiveRunning] = useState(false);
+  const [photoArchiveProgress, setPhotoArchiveProgress] = useState<PhotoArchiveProgress | null>(null);
+  const [photoArchiveResult, setPhotoArchiveResult] = useState<PhotoArchiveResult | null>(null);
+
+  const photoArchiveAnalysis = useMemo(
+    () => analyzeInventoryPhotoArchive(items, trash),
+    [items, trash]
+  );
 
   const [githubRepo, setGitHubRepo] = useState(() => getStoredConfig()?.repo || 'armique/inventorycursor');
   const [githubTokenInput, setGitHubTokenInput] = useState('');
@@ -215,6 +232,45 @@ const SettingsPage: React.FC<Props> = ({
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleBulkArchivePhotos = async () => {
+    if (!canArchivePhotosToCloud()) {
+      showToast('Sign in with Google and save Firebase config first.', 'error');
+      return;
+    }
+    if (photoArchiveAnalysis.uniquePhotosToArchive === 0) {
+      showToast('No remote photos to archive — everything is already on Firebase Storage.', 'success');
+      return;
+    }
+    const ok = window.confirm(
+      `Archive ${photoArchiveAnalysis.uniquePhotosToArchive} unique photo${photoArchiveAnalysis.uniquePhotosToArchive === 1 ? '' : 's'} ` +
+        `from ${photoArchiveAnalysis.itemsAffected} item${photoArchiveAnalysis.itemsAffected === 1 ? '' : 's'} to Firebase Storage?\n\n` +
+        'This downloads each linked image once, compresses it, and saves your own copy. Original eBay/search links will be replaced.'
+    );
+    if (!ok) return;
+
+    setPhotoArchiveRunning(true);
+    setPhotoArchiveResult(null);
+    setPhotoArchiveProgress({ done: 0, total: photoArchiveAnalysis.uniquePhotosToArchive });
+    try {
+      const { items: archivedItems, trash: archivedTrash, result } = await bulkArchiveInventoryPhotos(items, {
+        trash,
+        onProgress: setPhotoArchiveProgress,
+      });
+      onApplyArchivedPhotos?.(archivedItems, archivedTrash);
+      setPhotoArchiveResult(result);
+      showToast(
+        `Archived ${result.photosArchived} photo${result.photosArchived === 1 ? '' : 's'} to Firebase Storage` +
+          (result.photosFailed ? ` (${result.photosFailed} failed)` : ''),
+        result.photosArchived > 0 ? 'success' : 'error'
+      );
+    } catch (e: unknown) {
+      showToast((e as Error)?.message || 'Photo archive failed.', 'error');
+    } finally {
+      setPhotoArchiveRunning(false);
+      setPhotoArchiveProgress(null);
+    }
   };
 
   const handleSaveFirebase = () => {
@@ -766,6 +822,98 @@ const SettingsPage: React.FC<Props> = ({
                       Your inventory is stored in Firestore and syncs in real time. When you edit a price here, the change is written to the database immediately and anyone with the app open (another tab or device) sees the update. No request limits for normal daily use.
                    </p>
                    <p className="text-xs text-emerald-600 mt-2 font-bold uppercase tracking-wider">Status: {isCloudEnabled() && user ? 'Live' : isCloudEnabled() ? 'Sign in required' : 'Not configured'}</p>
+                </div>
+
+                {/* Photo archive → Firebase Storage */}
+                <div className="bg-white p-6 rounded-[3rem] border border-slate-200 shadow-sm space-y-4">
+                   <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                      <Images size={22} className="text-blue-600" /> Photo archive (Firebase Storage)
+                   </h3>
+                   <p className="text-sm text-slate-500 leading-relaxed">
+                      Turn existing eBay, search, and pasted image links into permanent copies in Firebase Storage.
+                      You do <strong>not</strong> need to refetch from eBay — the app downloads from the URL already on each item.
+                   </p>
+
+                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="bg-slate-50 rounded-2xl px-4 py-3 border border-slate-100">
+                         <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">To archive</p>
+                         <p className="text-2xl font-black text-slate-900">{photoArchiveAnalysis.uniquePhotosToArchive}</p>
+                         <p className="text-xs text-slate-500">unique photos</p>
+                      </div>
+                      <div className="bg-slate-50 rounded-2xl px-4 py-3 border border-slate-100">
+                         <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Items affected</p>
+                         <p className="text-2xl font-black text-slate-900">{photoArchiveAnalysis.itemsAffected}</p>
+                         <p className="text-xs text-slate-500">inventory + trash</p>
+                      </div>
+                      <div className="bg-slate-50 rounded-2xl px-4 py-3 border border-slate-100">
+                         <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Already archived</p>
+                         <p className="text-2xl font-black text-emerald-700">{photoArchiveAnalysis.alreadyArchivedSlots}</p>
+                         <p className="text-xs text-slate-500">on Storage</p>
+                      </div>
+                   </div>
+
+                   {photoArchiveRunning && photoArchiveProgress && (
+                      <div className="space-y-2">
+                         <div className="flex justify-between text-xs font-bold text-slate-600">
+                            <span>Archiving photos…</span>
+                            <span>{photoArchiveProgress.done} / {photoArchiveProgress.total}</span>
+                         </div>
+                         <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                            <div
+                               className="h-full bg-blue-600 transition-all duration-300"
+                               style={{
+                                  width: photoArchiveProgress.total
+                                    ? `${Math.round((photoArchiveProgress.done / photoArchiveProgress.total) * 100)}%`
+                                    : '0%',
+                               }}
+                            />
+                         </div>
+                         {photoArchiveProgress.currentUrl && (
+                            <p className="text-[10px] text-slate-400 truncate font-mono">{photoArchiveProgress.currentUrl}</p>
+                         )}
+                      </div>
+                   )}
+
+                   {photoArchiveResult && !photoArchiveRunning && (
+                      <p className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2">
+                         Last run: {photoArchiveResult.photosArchived} archived, {photoArchiveResult.photosFailed} failed, {photoArchiveResult.itemsUpdated} items updated.
+                      </p>
+                   )}
+
+                   <button
+                      type="button"
+                      onClick={handleBulkArchivePhotos}
+                      disabled={photoArchiveRunning || !canArchivePhotosToCloud() || photoArchiveAnalysis.uniquePhotosToArchive === 0}
+                      className="px-5 py-3 bg-blue-600 text-white rounded-xl font-bold text-xs uppercase hover:bg-blue-700 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                   >
+                      {photoArchiveRunning ? <Loader2 size={16} className="animate-spin" /> : <Images size={16} />}
+                      Archive all photos to Storage
+                   </button>
+
+                   {!isCloudEnabled() && (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2">
+                         Add Firebase config below and sign in before archiving.
+                      </p>
+                   )}
+                   {isCloudEnabled() && !user && (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2">
+                         Sign in with Google (below) to upload photos to your Storage bucket.
+                      </p>
+                   )}
+
+                   <details className="bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm text-slate-600">
+                      <summary className="font-black text-slate-800 cursor-pointer text-xs uppercase tracking-wider">
+                         How to check if Firebase Storage is enabled
+                      </summary>
+                      <ol className="mt-3 space-y-2 list-decimal list-inside text-xs leading-relaxed">
+                         <li>Open <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-blue-600 font-bold hover:underline">Firebase Console</a> → your project (<code className="bg-slate-200 px-1 rounded">{firebaseConfig.projectId || 'project-id'}</code>).</li>
+                         <li>Go to <strong>Build → Storage</strong> in the left menu.</li>
+                         <li>If you see <strong>Get started</strong>, click it and choose a bucket location (EU if you are in Germany). That enables Storage.</li>
+                         <li>Under <strong>Rules</strong>, allow signed-in uploads, e.g. <code className="bg-slate-200 px-1 rounded text-[10px]">allow read, write: if request.auth != null;</code> for paths under <code className="bg-slate-200 px-1 rounded text-[10px]">items/&#123;userId&#125;/</code>. Deploy rules with <code className="bg-slate-200 px-1 rounded text-[10px]">firebase deploy --only storage</code> if you use the CLI.</li>
+                         <li>Back in this app: sign in, then import or archive one photo. If it works, thumbnails switch to <code className="bg-slate-200 px-1 rounded text-[10px]">firebasestorage.googleapis.com</code> URLs.</li>
+                         <li>In Firebase Console → Storage → <strong>Files</strong>, you should see folders like <code className="bg-slate-200 px-1 rounded text-[10px]">items/your-uid/…</code>.</li>
+                      </ol>
+                   </details>
                 </div>
 
                 {/* Backup & restore */}

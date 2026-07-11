@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { formatEUR } from '../utils/formatMoney';
 
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
@@ -12,7 +12,7 @@ import { estimatePCPerformance, PerformanceEstimate } from '../services/geminiSe
 import ItemThumbnail, { getCategoryImageUrl } from './ItemThumbnail';
 import { isCompatibleWithBuild } from '../services/compatibility';
 import BuildItemPhotosPanel from './BuildItemPhotosPanel';
-import { getItemUserPhotoUrls } from '../utils/imageImport';
+import { getItemUserPhotoUrls, prepareInventoryImagesForStorage } from '../utils/imageImport';
 
 interface Props {
   items: InventoryItem[];
@@ -97,6 +97,10 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const editId = searchParams.get('editId');
+  const photoItemIdRef = useRef(
+    editId || `${searchParams.get('mode') === 'bundle' ? 'bundle' : 'pc'}-draft-${Date.now()}`
+  );
+  const photoStorageItemId = editId || photoItemIdRef.current;
 
   const [mode, setMode] = useState<'pc' | 'bundle'>('pc');
   const [buildName, setBuildName] = useState('New Gaming PC');
@@ -179,7 +183,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
      }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
      if (!buildName) return alert("Enter a name for the build.");
      
      const allParts = Object.values(parts).flat() as InventoryItem[];
@@ -198,7 +202,14 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
        mode === 'bundle'
          ? allParts[0]?.imageUrl || getCategoryImageUrl({ category: allParts[0]?.category || 'Components' }) || undefined
          : parts['CASE']?.[0]?.imageUrl || getCategoryImageUrl({ category: 'Cases' }) || undefined;
-     const userPhotos = buildPhotos.length > 0 ? buildPhotos : getItemUserPhotoUrls(existingParent || {});
+     let userPhotos = buildPhotos.length > 0 ? buildPhotos : getItemUserPhotoUrls(existingParent || {});
+     if (userPhotos.length) {
+       try {
+         userPhotos = await prepareInventoryImagesForStorage(userPhotos, { itemId: parentId });
+       } catch {
+         /* keep existing URLs */
+       }
+     }
      const imageUrl = userPhotos[0] || autoImageUrl || existingParent?.imageUrl;
      const imageUrls = userPhotos.length ? userPhotos : existingParent?.imageUrls;
 
@@ -566,7 +577,12 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
                 />
               </div>
               <div className="flex-1 min-h-0 overflow-hidden">
-                <BuildItemPhotosPanel name={buildName} photos={buildPhotos} onChange={setBuildPhotos} />
+                <BuildItemPhotosPanel
+                  name={buildName}
+                  photos={buildPhotos}
+                  onChange={setBuildPhotos}
+                  itemId={photoStorageItemId}
+                />
               </div>
             </aside>
 

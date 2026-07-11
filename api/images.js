@@ -1,6 +1,7 @@
 /**
  * Image search API (product photo lookup for the item editor).
  */
+import { handleImageFetch } from '../lib/apiHandlers/imageFetchHandler.js';
 import { handleImageSearch, handleImageSearchProviders } from '../lib/apiHandlers/imageSearchHandler.js';
 
 function cors(res) {
@@ -23,7 +24,9 @@ export default async function handler(req, res) {
       return handleImageSearch(req, res);
     case 'providers':
       return handleImageSearchProviders(req, res);
+    case 'fetch':
+      return handleImageFetch(req, res);
     default:
-      return res.status(400).json({ error: 'Unknown route. Use ?route=search or ?route=providers' });
+      return res.status(400).json({ error: 'Unknown route. Use ?route=search, ?route=providers, or ?route=fetch' });
   }
 }

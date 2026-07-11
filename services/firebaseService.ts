@@ -264,6 +264,17 @@ export async function uploadItemImage(
   }
 }
 
+/** Upload a compressed JPEG/blob for an inventory item; returns a durable download URL. */
+export async function uploadItemImageBlob(
+  blob: Blob,
+  itemId: string,
+  fileName?: string
+): Promise<string> {
+  const name = (fileName || `photo-${Date.now()}.jpg`).replace(/[^a-zA-Z0-9.\-_]/g, "_");
+  const file = new File([blob], name, { type: blob.type || "image/jpeg" });
+  return uploadItemImage(file, itemId);
+}
+
 /**
  * Upload an invoice / receipt file (image or PDF) for an expense to Firebase Storage
  * and return its public download URL. Optional onProgress(0-100) for UI.
@@ -373,12 +384,25 @@ function shouldOmitString(s: string, minLen: number): boolean {
   return false;
 }
 
+/** Firebase Storage download URLs must never be stripped from Firestore sync. */
+function isPersistedFirebaseStorageUrl(s: string): boolean {
+  const t = s.trim();
+  if (!t.startsWith("https://")) return false;
+  if (!t.includes("firebasestorage.googleapis.com") && !t.includes("firebasestorage.app")) return false;
+  return t.includes("/items%2F") || t.includes("/items/");
+}
+
+function shouldOmitImageFieldValue(s: string, minLen: number): boolean {
+  if (isPersistedFirebaseStorageUrl(s)) return false;
+  return shouldOmitString(s, minLen);
+}
+
 function trimItemForSize(item: unknown): unknown {
   if (!item || typeof item !== "object") return item;
   const o = { ...(item as Record<string, unknown>) };
   for (const key of LARGE_ITEM_FIELDS) {
     const v = o[key];
-    if (typeof v === "string" && shouldOmitString(v, 400)) {
+    if (typeof v === "string" && shouldOmitImageFieldValue(v, 400)) {
       o[key] = CLOUD_OMITTED_PLACEHOLDER;
     }
   }
@@ -386,7 +410,7 @@ function trimItemForSize(item: unknown): unknown {
     const arr = o[arrKey];
     if (Array.isArray(arr)) {
       o[arrKey] = arr.map((x) =>
-        typeof x === "string" && shouldOmitString(x, 400) ? CLOUD_OMITTED_PLACEHOLDER : x
+        typeof x === "string" && shouldOmitImageFieldValue(x, 400) ? CLOUD_OMITTED_PLACEHOLDER : x
       );
     }
   }

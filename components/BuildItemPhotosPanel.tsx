@@ -13,9 +13,10 @@ interface Props {
   name: string;
   photos: string[];
   onChange: (photos: string[]) => void;
+  itemId?: string;
 }
 
-const BuildItemPhotosPanel: React.FC<Props> = ({ name, photos, onChange }) => {
+const BuildItemPhotosPanel: React.FC<Props> = ({ name, photos, onChange, itemId = 'shared' }) => {
   const [photoSearching, setPhotoSearching] = useState(false);
   const [photoSearchError, setPhotoSearchError] = useState<string | null>(null);
   const [photoSearchResults, setPhotoSearchResults] = useState<ImageSearchResult[] | null>(null);
@@ -25,11 +26,19 @@ const BuildItemPhotosPanel: React.FC<Props> = ({ name, photos, onChange }) => {
     Array<{ listingId: string; title: string; thumbnail?: string; imageUrls: string[]; matchScore: number }> | null
   >(null);
   const [ebayImportingId, setEbayImportingId] = useState<string | null>(null);
+  const [persistingPhotos, setPersistingPhotos] = useState(false);
+
+  const storageOptions = { itemId };
 
   const addPhotos = async (urls: string[]) => {
-    const prepared = await prepareInventoryImagesForStorage(urls);
-    const merged = normalizeImageList([...photos, ...prepared]);
-    if (merged.length) onChange(merged);
+    setPersistingPhotos(true);
+    try {
+      const prepared = await prepareInventoryImagesForStorage(urls, storageOptions);
+      const merged = normalizeImageList([...photos, ...prepared]);
+      if (merged.length) onChange(merged);
+    } finally {
+      setPersistingPhotos(false);
+    }
   };
 
   const setMainPhoto = (url: string) => {
@@ -44,7 +53,7 @@ const BuildItemPhotosPanel: React.FC<Props> = ({ name, photos, onChange }) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
     try {
-      await addPhotos(await filesToDataUrls(files));
+      await addPhotos(await filesToDataUrls(files, storageOptions));
     } catch {
       alert('Could not process one or more images.');
     } finally {
@@ -119,7 +128,7 @@ const BuildItemPhotosPanel: React.FC<Props> = ({ name, photos, onChange }) => {
         <button
           type="button"
           onClick={handleFindPhotos}
-          disabled={photoSearching || !name.trim()}
+          disabled={photoSearching || persistingPhotos || !name.trim()}
           className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-black uppercase tracking-widest hover:bg-blue-700 disabled:opacity-50"
         >
           <Search size={14} className={photoSearching ? 'animate-spin' : ''} />
@@ -128,13 +137,13 @@ const BuildItemPhotosPanel: React.FC<Props> = ({ name, photos, onChange }) => {
         <button
           type="button"
           onClick={handleEbayPhotos}
-          disabled={ebayLoading || !name.trim()}
+          disabled={ebayLoading || persistingPhotos || !name.trim()}
           className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-blue-200 text-blue-700 text-xs font-black uppercase tracking-widest hover:bg-blue-50 disabled:opacity-50"
         >
           <ShoppingBag size={14} />
           {ebayLoading ? '…' : 'eBay'}
         </button>
-        <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-xs font-black uppercase tracking-widest text-slate-600 cursor-pointer hover:bg-slate-50">
+        <label className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-xs font-black uppercase tracking-widest text-slate-600 cursor-pointer hover:bg-slate-50 ${persistingPhotos ? 'opacity-50 pointer-events-none' : ''}`}>
           <Upload size={14} /> Upload
           <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} />
         </label>

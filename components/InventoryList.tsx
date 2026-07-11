@@ -2648,7 +2648,7 @@ const InventoryList: React.FC<Props> = ({
   const handleBulkAddPhotos = useCallback(
     async (urls: string[]) => {
       if (!urls.length || addPhotosTargetIds.length === 0) return;
-      const prepared = await prepareInventoryImagesForStorage(urls);
+      const prepared = await prepareInventoryImagesForStorage(urls, { itemId: 'shared' });
       if (!prepared.length) return;
       const idSet = new Set(addPhotosTargetIds);
       const updated = items
