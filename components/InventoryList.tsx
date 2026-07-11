@@ -276,7 +276,7 @@ const PAYMENT_METHODS: PaymentType[] = [
 type InventoryListFilterParams = {
   items: InventoryItem[];
   statusFilter: StatusFilter;
-  deferredSearchTerm: string;
+  searchTerm: string;
   categoryFilter: string;
   subCategoryFilter: string;
   sortConfig: SortConfig;
@@ -294,7 +294,7 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
   const {
     items,
     statusFilter,
-    deferredSearchTerm,
+    searchTerm,
     categoryFilter,
     subCategoryFilter,
     sortConfig,
@@ -308,7 +308,7 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
     timeGaugeSortKeyMap,
   } = params;
 
-  const searchLower = deferredSearchTerm.toLowerCase();
+  const searchLower = searchTerm.toLowerCase();
   const searchActive = searchLower.trim().length >= 2;
   const indexedIds =
     searchActive
@@ -707,11 +707,9 @@ const InventoryList: React.FC<Props> = ({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchSuggestionsRef = useRef<HTMLDivElement>(null);
 
-  const deferredSearchTerm = useDeferredValue(searchTerm);
-
   const searchSuggestions = useMemo(() => {
     if (!searchSuggestionsOpen) return [];
-    const q = deferredSearchTerm.trim().toLowerCase();
+    const q = searchTerm.trim().toLowerCase();
     if (q.length < 2) return [];
     const seen = new Set<string>();
     const out: { text: string; type: 'name' | 'category' | 'vendor' }[] = [];
@@ -731,7 +729,7 @@ const InventoryList: React.FC<Props> = ({
       if (i.vendor) add(i.vendor, 'vendor');
     }
     return out;
-  }, [items, deferredSearchTerm, searchSuggestionsOpen]);
+  }, [items, searchTerm, searchSuggestionsOpen]);
 
   const hasActiveSpecFilters = useMemo(() => {
     if (Object.values(specFilters).some((v) => v?.length)) return true;
@@ -965,7 +963,7 @@ const InventoryList: React.FC<Props> = ({
   // Base-filtered items (no spec filters) — used to build available spec options in the Filters panel
   const baseFilteredForSpecs = useMemo(() => {
     if (!showSpecFiltersPanel && !hasActiveSpecFilters) return [];
-    const searchLower = deferredSearchTerm.toLowerCase();
+    const searchLower = searchTerm.toLowerCase();
     return items.filter(item => {
       let matchesStatus = false;
       if (statusFilter === 'ACTIVE') matchesStatus = item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED || item.status === ItemStatus.IN_COMPOSITION;
@@ -1000,7 +998,7 @@ const InventoryList: React.FC<Props> = ({
       }
       return true;
     });
-  }, [items, deferredSearchTerm, statusFilter, categoryFilter, subCategoryFilter, timeFilter, dateRange, salePlatformFilter, salePaymentFilter, showInComposition, showSpecFiltersPanel, hasActiveSpecFilters]);
+  }, [items, searchTerm, statusFilter, categoryFilter, subCategoryFilter, timeFilter, dateRange, salePlatformFilter, salePaymentFilter, showInComposition, showSpecFiltersPanel, hasActiveSpecFilters]);
 
   // Available spec keys and unique values (from base-filtered items) for the Filters panel
   const specOptions = useMemo(() => {
@@ -1048,7 +1046,7 @@ const InventoryList: React.FC<Props> = ({
   const listFilterParams = useMemo(
     (): Omit<InventoryListFilterParams, 'statusFilter'> => ({
       items,
-      deferredSearchTerm,
+      searchTerm,
       categoryFilter,
       subCategoryFilter,
       sortConfig,
@@ -1063,7 +1061,7 @@ const InventoryList: React.FC<Props> = ({
     }),
     [
       items,
-      deferredSearchTerm,
+      searchTerm,
       categoryFilter,
       subCategoryFilter,
       sortConfig,
@@ -2819,7 +2817,7 @@ const InventoryList: React.FC<Props> = ({
                   className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-slate-900/20"
                   placeholder="Search..."
                   value={searchTerm}
-                  onChange={(e) => startTransition(() => setSearchTerm(e.target.value))}
+                  onChange={(e) => setSearchTerm(e.target.value)}
                   onFocus={() => setSearchSuggestionsOpen(true)}
                   onBlur={() => setTimeout(() => setSearchSuggestionsOpen(false), 180)}
                />
