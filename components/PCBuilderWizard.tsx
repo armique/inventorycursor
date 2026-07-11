@@ -34,6 +34,11 @@ const SLOTS = [
   { id: 'MISC', label: 'Accessories', category: 'Misc', icon: <Plus size={20}/>, required: false, multiple: true },
 ];
 
+/** PC builds keep single-item slots; bundles allow any number per slot (e.g. lot of motherboards). */
+function slotAllowsMultiple(slot: (typeof SLOTS)[number], mode: 'pc' | 'bundle'): boolean {
+  return Boolean(slot.multiple) || mode === 'bundle';
+}
+
 const MAX_NAME_LENGTH = 52;
 
 /** Shorten a part name for the build/bundle title. */
@@ -189,7 +194,10 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
      const allParts = Object.values(parts).flat() as InventoryItem[];
      if (allParts.length === 0) return alert("Build is empty.");
 
-     if (mode === 'bundle' && allParts.length > 12) {
+     const existingParent = editId ? items.find((i) => i.id === editId) : undefined;
+     const isLotBundle = existingParent?.subCategory === 'Lot Bundle';
+
+     if (mode === 'bundle' && !isLotBundle && allParts.length > 12) {
        return alert("Bundles in this builder are limited to 12 items. Remove some parts or use a full PC build instead.");
      }
 
@@ -197,7 +205,6 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
      
      const parentId = editId || (mode === 'bundle' ? `bundle-${Date.now()}` : `pc-${Date.now()}`);
      
-     const existingParent = editId ? items.find((i) => i.id === editId) : undefined;
      const autoImageUrl =
        mode === 'bundle'
          ? allParts[0]?.imageUrl || getCategoryImageUrl({ category: allParts[0]?.category || 'Components' }) || undefined
@@ -219,7 +226,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
         id: parentId,
         name: buildName,
         category: mode === 'bundle' ? 'Bundle' : 'PC',
-        subCategory: mode === 'bundle' ? 'Custom Bundle' : 'Custom Built PC',
+        subCategory: mode === 'bundle' ? (existingParent?.subCategory || 'Custom Bundle') : 'Custom Built PC',
         status: ItemStatus.IN_STOCK,
         buyPrice: totalCost,
         // No buyDate - containers don't have buy dates, only their components do
@@ -312,15 +319,18 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
   // Only show items compatible with current build (e.g. Intel CPU → only Intel motherboards)
   const availableWithCompatibility = useMemo(() => {
     if (!selectedSlot) return [];
+    if (mode === 'bundle') {
+      return availableItems.map((item) => ({ item, compatible: true as const }));
+    }
     return availableItems
       .map(item => ({ item, ...isCompatibleWithBuild(item, selectedSlot, parts) }))
       .filter(x => x.compatible)
       .map(x => ({ item: x.item, compatible: true as const }));
-  }, [availableItems, selectedSlot, parts]);
+  }, [availableItems, selectedSlot, parts, mode]);
   const hiddenIncompatibleCount = useMemo(() => {
-    if (!selectedSlot) return 0;
+    if (!selectedSlot || mode === 'bundle') return 0;
     return availableItems.filter(item => !isCompatibleWithBuild(item, selectedSlot, parts).compatible).length;
-  }, [availableItems, selectedSlot, parts]);
+  }, [availableItems, selectedSlot, parts, mode]);
 
   const togglePart = (item: InventoryItem) => {
      if (!selectedSlot) return;
@@ -335,11 +345,11 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
            // Remove
            return { ...prev, [selectedSlot]: current.filter(i => i.id !== item.id) };
         } else {
-           // Add
-           if (slotDef.multiple) {
+           // Add — bundles allow multiple items per slot (e.g. lot of motherboards)
+           if (slotAllowsMultiple(slotDef, mode)) {
               return { ...prev, [selectedSlot]: [...current, item] };
            } else {
-              // Replace single slot
+              // Replace single slot (PC build only)
               return { ...prev, [selectedSlot]: [item] };
            }
         }
@@ -440,7 +450,11 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
             <h3 className={`font-black text-slate-900 truncate ${compact ? 'text-lg' : 'text-xl'}`}>
               {SLOTS.find(s => s.id === selectedSlot)?.label}
             </h3>
-            <p className={`text-slate-500 font-bold ${compact ? 'text-sm' : 'text-[10px]'}`}>Click ✓ to remove · compatible items only</p>
+            <p className={`text-slate-500 font-bold ${compact ? 'text-sm' : 'text-[10px]'}`}>
+              {mode === 'bundle'
+                ? 'Click to add or remove items'
+                : 'Click ✓ to remove · compatible items only'}
+            </p>
           </div>
           <button type="button" onClick={() => setSelectedSlot(null)} className="p-1.5 hover:bg-slate-200 rounded-full shrink-0"><X size={compact ? 22 : 20}/></button>
         </div>
@@ -618,7 +632,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
                 </h1>
                 <p className="text-sm text-slate-500 font-bold">
                   {mode === 'bundle'
-                    ? 'Group parts into a sellable bundle (up to 12 items)'
+                    ? 'Group parts into a sellable bundle — add as many items as you need per slot'
                     : 'Assemble & Track Custom PCs'}
                 </p>
              </div>
