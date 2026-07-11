@@ -309,8 +309,9 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
   } = params;
 
   const searchLower = deferredSearchTerm.toLowerCase();
+  const searchActive = searchLower.trim().length >= 2;
   const indexedIds =
-    searchLower.trim().length >= 2
+    searchActive
       ? new Set(searchInventory(items, searchLower, 500).map((h) => h.item.id))
       : null;
 
@@ -329,13 +330,14 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
       matchesStatus = true;
     }
     if (!matchesStatus) return false;
-    if (item.parentContainerId) return false;
+    // While searching, show items even if nested inside a PC/bundle — user explicitly looked them up.
+    if (item.parentContainerId && !searchActive) return false;
     if (!showInComposition && item.status === ItemStatus.IN_COMPOSITION) return false;
 
     // While actively searching, ignore the category filter entirely so search is always global —
     // otherwise a category filter left active from earlier browsing (e.g. a quick-category pin)
     // silently hides matching items in other categories with no indication why.
-    if (!searchLower && (categoryFilter !== 'ALL' || subCategoryFilter)) {
+    if (!searchActive && (categoryFilter !== 'ALL' || subCategoryFilter)) {
       const matchParentAndSub =
         categoryFilter !== 'ALL' &&
         item.category === categoryFilter &&
@@ -344,7 +346,7 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
       if (!matchParentAndSub && !matchSubAsTopLevel) return false;
     }
 
-    if (searchLower) {
+    if (searchActive) {
       const matchesSearch = indexedIds
         ? indexedIds.has(item.id)
         : item.name.toLowerCase().includes(searchLower) ||
@@ -353,7 +355,8 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
       if (!matchesSearch) return false;
     }
 
-    if (timeFilter !== 'ALL') {
+    // Spec and date filters are browsing aids — skip them during search so a suggestion click always reveals the row.
+    if (!searchActive && timeFilter !== 'ALL') {
       const isSalesItem = item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED;
       const dateStr = isSalesItem ? item.sellDate : item.buyDate;
       if (!dateStr) return true;
@@ -370,26 +373,28 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
       if (salePaymentFilter !== 'ALL' && item.paymentType !== salePaymentFilter) return false;
     }
 
-    for (const key of Object.keys(specFilters)) {
-      const allowed = specFilters[key];
-      if (!allowed || allowed.length === 0) continue;
-      const v = item.specs?.[key];
-      if (v === undefined || v === null) return false;
-      const match = allowed.some((a) => {
-        if (typeof v === 'number' && typeof a === 'number') return v === a;
-        return String(v).trim().toLowerCase() === String(a).trim().toLowerCase();
-      });
-      if (!match) return false;
-    }
+    if (!searchActive) {
+      for (const key of Object.keys(specFilters)) {
+        const allowed = specFilters[key];
+        if (!allowed || allowed.length === 0) continue;
+        const v = item.specs?.[key];
+        if (v === undefined || v === null) return false;
+        const match = allowed.some((a) => {
+          if (typeof v === 'number' && typeof a === 'number') return v === a;
+          return String(v).trim().toLowerCase() === String(a).trim().toLowerCase();
+        });
+        if (!match) return false;
+      }
 
-    for (const key of Object.keys(specRangeFilters)) {
-      const { min, max } = specRangeFilters[key] || {};
-      if (min === undefined && max === undefined) continue;
-      const v = item.specs?.[key];
-      const num = typeof v === 'number' ? v : typeof v === 'string' ? parseFloat(String(v)) : NaN;
-      if (Number.isNaN(num)) return false;
-      if (min !== undefined && num < min) return false;
-      if (max !== undefined && num > max) return false;
+      for (const key of Object.keys(specRangeFilters)) {
+        const { min, max } = specRangeFilters[key] || {};
+        if (min === undefined && max === undefined) continue;
+        const v = item.specs?.[key];
+        const num = typeof v === 'number' ? v : typeof v === 'string' ? parseFloat(String(v)) : NaN;
+        if (Number.isNaN(num)) return false;
+        if (min !== undefined && num < min) return false;
+        if (max !== undefined && num > max) return false;
+      }
     }
 
     return true;
@@ -2506,6 +2511,22 @@ const InventoryList: React.FC<Props> = ({
     setShowInComposition(true);
   };
 
+  const revealItemInList = useCallback((item: InventoryItem) => {
+    setSpecFilters({});
+    setSpecRangeFilters({});
+    setTimeFilter('ALL');
+    setCategoryFilter('ALL');
+    setSubCategoryFilter('');
+    setShowInComposition(true);
+    if (item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED) {
+      setStatusFilter('SOLD');
+    } else if (item.isDraft) {
+      setStatusFilter('DRAFTS');
+    } else {
+      setStatusFilter('ACTIVE');
+    }
+  }, []);
+
   const isQuickCategoryPinActive = useCallback(
     (pin: QuickCategoryPin) => {
       if (categoryFilter !== pin.category) return false;
@@ -2809,7 +2830,16 @@ const InventoryList: React.FC<Props> = ({
                        key={`${s.type}-${s.text}-${idx}`}
                        type="button"
                        className="w-full px-3 py-2 text-left text-xs hover:bg-slate-50 flex items-center gap-2"
-                       onMouseDown={(e) => { e.preventDefault(); setSearchTerm(s.text); setSearchSuggestionsOpen(false); searchInputRef.current?.focus(); }}
+                       onMouseDown={(e) => {
+                         e.preventDefault();
+                         setSearchTerm(s.text);
+                         setSearchSuggestionsOpen(false);
+                         if (s.type === 'name') {
+                           const match = items.find((i) => i.name === s.text);
+                           if (match) revealItemInList(match);
+                         }
+                         searchInputRef.current?.focus();
+                       }}
                      >
                        <span className="text-slate-900 font-medium truncate">{s.text}</span>
                        <span className="text-[10px] text-slate-400 shrink-0">{s.type}</span>
@@ -3411,6 +3441,13 @@ const InventoryList: React.FC<Props> = ({
                 onSave={(created) => {
                   onUpdate(created);
                   setShowNewItemModal(false);
+                  const first = created[0];
+                  if (first) {
+                    revealItemInList(first);
+                    setCategoryFilter(first.category);
+                    setSubCategoryFilter(first.subCategory ?? '');
+                    setSearchTerm('');
+                  }
                 }}
                 categories={categories}
                 categoryFields={categoryFields}
