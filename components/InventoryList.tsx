@@ -36,6 +36,7 @@ import InventoryAISpecsPanel from './InventoryAISpecsPanel';
 import AddPhotosModal from './AddPhotosModal';
 import BulkSelectionBar, { type BulkAction } from './BulkSelectionBar';
 import { generateItemSpecs } from '../services/specsAI';
+import { getStorefrontHiddenReason, isPublishedOnStorefront } from '../utils/storefrontCatalog';
 
 interface Props {
   items: InventoryItem[];
@@ -52,7 +53,8 @@ interface Props {
   onBusinessSettingsChange: (settings: BusinessSettings) => void;
   categories: Record<string, string[]>;
   categoryFields?: Record<string, string[]>; 
-  persistenceKey?: string; 
+  persistenceKey?: string;
+  onPublishStoreCatalog?: () => void | Promise<void>;
 }
 
 const EMPTY_TIME_GAUGE_SORT_MAP = new Map<string, number>();
@@ -444,7 +446,8 @@ const InventoryList: React.FC<Props> = ({
   onBusinessSettingsChange,
   categories = HIERARCHY_CATEGORIES,
   categoryFields = {}, 
-  persistenceKey = 'default_inv'
+  persistenceKey = 'default_inv',
+  onPublishStoreCatalog,
 }) => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -765,12 +768,20 @@ const InventoryList: React.FC<Props> = ({
   };
 
   const toggleStoreVisible = (item: InventoryItem) => {
-    const currentlyVisible = item.storeVisible !== false; // opt-out: visible unless explicitly hidden
+    const hiddenReason = getStorefrontHiddenReason(item);
+    if (hiddenReason && item.storeVisible !== false) {
+      return;
+    }
+    if (item.status !== ItemStatus.IN_STOCK) {
+      return;
+    }
+    const currentlyPublished = isPublishedOnStorefront(item);
     const updated: InventoryItem = {
       ...item,
-      storeVisible: !currentlyVisible,
+      storeVisible: currentlyPublished ? false : true,
     };
     onUpdate([updated]);
+    void onPublishStoreCatalog?.();
   };
 
   // --- AI LISTING DESCRIPTION (Kleinanzeigen / eBay style, same as store description style) ---
@@ -1586,10 +1597,13 @@ const InventoryList: React.FC<Props> = ({
   };
 
   const handleBulkStoreVisible = (visible: boolean) => {
-     const updates = items.filter(i => selectedIds.includes(i.id)).map(i => ({ ...i, storeVisible: visible }));
+     const updates = items
+       .filter((i) => selectedIds.includes(i.id) && i.status === ItemStatus.IN_STOCK && !i.parentContainerId)
+       .map((i) => ({ ...i, storeVisible: visible }));
      onUpdate(updates);
      setShowBulkStoreVisible(false);
      setSelectedIds([]);
+     void onPublishStoreCatalog?.();
   };
 
   const handleBulkSalePct = (pct: number) => {
@@ -1762,18 +1776,19 @@ const InventoryList: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => toggleStoreVisible(item)}
+                disabled={Boolean(getStorefrontHiddenReason(item) && item.storeVisible !== false)}
                 className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border text-violet-700 ${
-                  item.storeVisible !== false ? 'border-violet-200 bg-violet-50' : 'border-violet-200 bg-white'
-                }`}
+                  isPublishedOnStorefront(item) ? 'border-violet-200 bg-violet-50' : 'border-violet-200 bg-white opacity-80'
+                } disabled:cursor-not-allowed disabled:opacity-50`}
                 title={
-                  item.storeVisible !== false
-                    ? 'Visible on storefront (click to hide)'
-                    : 'Hidden from storefront (click to show)'
+                  isPublishedOnStorefront(item)
+                    ? 'Live on storefront (click to hide)'
+                    : getStorefrontHiddenReason(item) || 'Hidden from storefront (click to show)'
                 }
               >
                 <span
                   className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black ${
-                    item.storeVisible !== false ? 'bg-violet-600 text-white' : 'bg-slate-200 text-violet-700'
+                    isPublishedOnStorefront(item) ? 'bg-violet-600 text-white' : 'bg-slate-200 text-violet-700'
                   }`}
                 >
                   S

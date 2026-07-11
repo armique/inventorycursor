@@ -5,6 +5,7 @@ import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 import { subscribeToStoreInquiries, markStoreInquiryRead, updateStoreInquiryStatus, type StoreInquiryStatus } from '../services/firebaseService';
 import { generateStoreDescription } from '../services/specsAI';
 import ItemThumbnail from './ItemThumbnail';
+import { isPublishedOnStorefront } from '../utils/storefrontCatalog';
 
 const TEXTS = {
   title: 'Store management',
@@ -33,7 +34,7 @@ const TEXTS = {
   replyTemplateThanks: 'Danke für Ihre Anfrage. Wir melden uns in Kürze.',
   replyTemplateReserved: 'Der Artikel ist für Sie reserviert. Wir kontaktieren Sie zur Abwicklung.',
   replyTemplateSold: 'Leider ist der Artikel bereits verkauft. Gerne informieren wir Sie über ähnliche Angebote.',
-  catalogNote: 'Only "In Stock" items appear below. "Show" = on storefront; "Hide" = hidden. Catalog updates ~1s after changes, or click Publish to store now. Only “In Stock” items with “Visible on store” appear on the storefront.',
+  catalogNote: 'Standalone in-stock items appear below. Purple “live” = on the public storefront. Items inside bundles/PCs are hidden automatically; only the bundle/PC is published. Catalog syncs ~1.5s after changes, or click Publish to store now.',
   publishNow: 'Publish to store now',
   published: 'Published',
   showOnStore: 'Show',
@@ -77,11 +78,16 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
     return () => unsub();
   }, []);
 
-  // Show all in-stock items (simple: no category filtering)
-  const storeVisibleItems = items.filter((i) => i.status === IN_STOCK);
+  // Standalone in-stock items (bundle/PC parts are managed via their container)
+  const storeVisibleItems = items.filter((i) => i.status === IN_STOCK && !i.parentContainerId);
+  const publishAfterVisibilityChange = () => {
+    void onPublishCatalog?.();
+  };
   const setVisibility = (item: InventoryItem, visible: boolean) => {
+    if (item.parentContainerId || item.status !== IN_STOCK) return;
     const next = items.map((it) => (it.id === item.id ? { ...it, storeVisible: visible } : it));
     onUpdate(next);
+    publishAfterVisibilityChange();
   };
   const toggleSale = (item: InventoryItem) => {
     const next = items.map((it) => (it.id === item.id ? { ...it, storeOnSale: !it.storeOnSale } : it));
@@ -123,20 +129,24 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
   );
   const isCategoryFullyVisible = (cat: string) => {
     const catItems = storeVisibleItems.filter((i) => i.category === cat);
-    return catItems.length > 0 && catItems.every((i) => i.storeVisible !== false);
+    return catItems.length > 0 && catItems.every((i) => isPublishedOnStorefront(i));
   };
   const toggleCategoryVisibility = (cat: string) => {
     const shouldShow = !isCategoryFullyVisible(cat);
     const next = items.map((it) =>
-      it.status === IN_STOCK && it.category === cat ? { ...it, storeVisible: shouldShow } : it
+      it.status === IN_STOCK && !it.parentContainerId && it.category === cat ? { ...it, storeVisible: shouldShow } : it
     );
     onUpdate(next);
+    publishAfterVisibilityChange();
   };
-  const isAllVisible = storeVisibleItems.length > 0 && storeVisibleItems.every((i) => i.storeVisible !== false);
+  const isAllVisible = storeVisibleItems.length > 0 && storeVisibleItems.every((i) => isPublishedOnStorefront(i));
   const toggleAllVisibility = () => {
     const shouldShow = !isAllVisible;
-    const next = items.map((it) => (it.status === IN_STOCK ? { ...it, storeVisible: shouldShow } : it));
+    const next = items.map((it) =>
+      it.status === IN_STOCK && !it.parentContainerId ? { ...it, storeVisible: shouldShow } : it
+    );
     onUpdate(next);
+    publishAfterVisibilityChange();
   };
 
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
@@ -162,7 +172,7 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
   };
 
   const handleExportCatalog = () => {
-    const visible = storeVisibleItems.filter((i) => i.storeVisible !== false);
+    const visible = storeVisibleItems.filter((i) => isPublishedOnStorefront(i));
     const headers = ['Name', 'Category', 'SubCategory', 'Price', 'SalePrice', 'OnSale', 'Visible', 'Description'];
     const rows = visible.map((i) => [
       (i.name || '').replace(/"/g, '""'),
@@ -171,7 +181,7 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
       i.storePrice ?? i.sellPrice ?? '',
       i.storeSalePrice ?? '',
       i.storeOnSale ? '1' : '0',
-      i.storeVisible !== false ? '1' : '0',
+      isPublishedOnStorefront(i) ? '1' : '0',
       (i.storeDescription || '').replace(/"/g, '""').replace(/\n/g, ' '),
     ]);
     const csv = [headers.join(','), ...rows.map((r) => r.map((c) => `"${c}"`).join(','))].join('\n');
@@ -200,8 +210,8 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
   }, [inquiries]);
 
   const totalInStock = storeVisibleItems.length;
-  const visibleCount = storeVisibleItems.filter((i) => i.storeVisible !== false).length;
-  const onSaleCount = storeVisibleItems.filter((i) => i.storeVisible !== false && i.storeOnSale).length;
+  const visibleCount = storeVisibleItems.filter((i) => isPublishedOnStorefront(i)).length;
+  const onSaleCount = storeVisibleItems.filter((i) => isPublishedOnStorefront(i) && i.storeOnSale).length;
 
   const [search, setSearch] = useState(() => localStorage.getItem('store_mgmt_search') || '');
   const [statusFilter, setStatusFilter] = useState<'all' | 'visible' | 'hidden'>(() => {
@@ -221,8 +231,8 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
   const filteredItems = storeVisibleItems
     .filter((item) => {
       if (categoryFilter !== 'all' && item.category !== categoryFilter) return false;
-      if (statusFilter === 'visible' && item.storeVisible === false) return false;
-      if (statusFilter === 'hidden' && item.storeVisible !== false) return false;
+      if (statusFilter === 'visible' && !isPublishedOnStorefront(item)) return false;
+      if (statusFilter === 'hidden' && isPublishedOnStorefront(item)) return false;
       if (saleFilter === 'sale' && !item.storeOnSale) return false;
       if (saleFilter === 'regular' && item.storeOnSale) return false;
       if (search.trim()) {
@@ -494,10 +504,10 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
                               {item.category}{item.subCategory ? ` • ${item.subCategory}` : ''}
                             </div>
                             <div className="flex flex-wrap gap-1 mt-1">
-                              {item.storeVisible === false ? (
-                                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold uppercase tracking-widest">Hidden</span>
+                              {isPublishedOnStorefront(item) ? (
+                                <span className="px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 text-[10px] font-bold uppercase tracking-widest">Live</span>
                               ) : (
-                                <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-widest">Visible</span>
+                                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold uppercase tracking-widest">Hidden</span>
                               )}
                               {item.storeOnSale && (
                                 <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-bold uppercase tracking-widest">Sale</span>
@@ -534,11 +544,11 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
                             />
                           </td>
                           <td className="px-2 py-3 align-top">
-                            {item.storeVisible !== false ? (
+                            {isPublishedOnStorefront(item) ? (
                               <button
                                 type="button"
                                 onClick={() => setVisibility(item, false)}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-violet-100 text-violet-800 hover:bg-violet-200"
                                 title="Click to hide from store"
                               >
                                 <Eye size={12} /> {TEXTS.hideFromStore}
@@ -642,10 +652,10 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
                             {item.category}{item.subCategory ? ` • ${item.subCategory}` : ''}
                           </p>
                           <div className="flex flex-wrap gap-1 mt-1">
-                            {item.storeVisible === false ? (
-                              <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold uppercase tracking-widest">Hidden</span>
+                            {isPublishedOnStorefront(item) ? (
+                              <span className="px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 text-[10px] font-bold uppercase tracking-widest">Live</span>
                             ) : (
-                              <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-widest">Visible</span>
+                              <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold uppercase tracking-widest">Hidden</span>
                             )}
                             {item.storeOnSale && (
                               <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-bold uppercase tracking-widest">Sale</span>

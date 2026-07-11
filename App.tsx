@@ -40,7 +40,6 @@ import { syncContainerBuyTotalsFromComponents } from './services/containerAggreg
 import { applyTradeRevert } from './services/tradeRevert';
 import { applySaleRevert } from './services/saleRevert';
 import { pruneActionHistory } from './services/saleRevert';
-import { filterUsableImageUrls, isUsableProductImageUrl } from './services/storefrontImageUtils';
 import { saveOAuthResult } from './services/githubBackupService';
 import { generateExpensesFromRecurring } from './services/recurringExpenseService';
 import { Analytics } from '@vercel/analytics/react';
@@ -48,10 +47,11 @@ import { PanelLocaleProvider } from './context/PanelLocaleContext';
 import { UndoToastProvider, useUndoToastContext } from './context/UndoToastContext';
 import { appendUndoHistory } from './utils/appendUndoHistory';
 import { persistSnapshotToLocalStorage, scheduleBackgroundWork } from './services/backgroundPersistence';
+import { buildStoreCatalog } from './utils/storefrontCatalog';
 
 const WRITE_DEBOUNCE_MS = 5000;
 const LOCAL_PERSIST_DEBOUNCE_MS = 900;
-const STORE_CATALOG_DEBOUNCE_MS = 8000;
+const STORE_CATALOG_DEBOUNCE_MS = 1500;
 const REMOTE_APPLY_SUPPRESS_MS = 1500;
 const ACTION_HISTORY_LIMIT = 400;
 
@@ -128,33 +128,6 @@ function GitHubOAuthCallback() {
 
 export { DEFAULT_CATEGORIES, HIERARCHY_CATEGORIES } from './services/constants';
 
-const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-const PRICE_DROP_DAYS = 30;
-
-/** Derive store badge: New (added in last 7 days), Price reduced (storefront price dropped in last 30 days). */
-function computeStoreBadge(item: InventoryItem): 'New' | 'Price reduced' | null {
-  const override = item.storeBadge;
-  if (override === 'none') return null;
-  if (override === 'New') return 'New';
-  if (override === 'Price reduced') return 'Price reduced';
-
-  const now = Date.now();
-  const buyDate = item.buyDate ? new Date(item.buyDate).getTime() : 0;
-  if (now - buyDate <= ONE_WEEK_MS) return 'New';
-
-  const listedPrice = item.storePrice ?? item.sellPrice ?? 0;
-  const currentSell = item.storeOnSale && item.storeSalePrice != null ? item.storeSalePrice : listedPrice;
-  const history = item.priceHistory || [];
-  for (let i = history.length - 1; i >= 0; i--) {
-    const e = history[i];
-    if ((e.type !== 'storePrice' && e.type !== 'sell') || e.previousPrice == null) continue;
-    const entryDate = new Date(e.date).getTime();
-    if (now - entryDate > PRICE_DROP_DAYS * 24 * 60 * 60 * 1000) break;
-    if (e.previousPrice > currentSell) return 'Price reduced';
-  }
-  return null;
-}
-
 function recomputeRealizedProfit(item: InventoryItem, taxMode: TaxMode): InventoryItem {
   // Keep container-style bookkeeping untouched; their profit is handled separately.
   if (item.isBundle || item.isPC) return item;
@@ -219,44 +192,6 @@ function mergeTradeActionEntries(entries: ActionHistoryEntry[], updatedItems: In
   });
 
   return [summary, ...filtered];
-}
-
-function buildStoreCatalog(items: InventoryItem[], categoryFields: Record<string, string[]>): { items: { id: string; name: string; category: string; subCategory?: string; sellPrice?: number; storeSalePrice?: number; storeOnSale?: boolean; storeVisible?: boolean; imageUrl?: string; storeGalleryUrls?: string[]; storeDescription?: string; specs?: Record<string, string | number>; categoryFields?: string[]; badge?: 'New' | 'Price reduced'; storeMetaTitle?: string; storeMetaDescription?: string; storeDescriptionEn?: string; quantity?: number }[] } {
-  // Opt-out visibility: every in-stock item is public by default; storeVisible === false hides it.
-  const list = items.filter((i) => i.status === ItemStatus.IN_STOCK && i.storeVisible !== false);
-  return {
-    items: list.map((i) => {
-      const badge = computeStoreBadge(i);
-      const inventoryGallery = filterUsableImageUrls(i.imageUrls);
-      const storeGallery = filterUsableImageUrls(i.storeGalleryUrls);
-      const gallery = filterUsableImageUrls([...inventoryGallery, ...storeGallery]);
-      let imageUrl: string | undefined = isUsableProductImageUrl(i.imageUrl) ? i.imageUrl!.trim() : undefined;
-      if (!imageUrl && gallery.length) imageUrl = gallery[0];
-      const restGallery = gallery.filter((u) => u !== imageUrl);
-      return {
-        id: i.id,
-        name: i.name,
-        category: i.category,
-        subCategory: i.subCategory,
-        // Public listing price: storePrice if set (via Store Management), else fall back to
-        // sellPrice so items published before storePrice existed keep showing a price.
-        sellPrice: i.storePrice ?? i.sellPrice,
-        storeSalePrice: i.storeSalePrice,
-        storeOnSale: i.storeOnSale,
-        storeVisible: true,
-        ...(imageUrl ? { imageUrl } : {}),
-        ...(restGallery.length ? { storeGalleryUrls: restGallery } : {}),
-        storeDescription: i.storeDescription,
-        specs: i.specs,
-        categoryFields: categoryFields[`${i.category}:${i.subCategory || ''}`] || [],
-        ...(badge ? { badge } : {}),
-        ...(i.storeMetaTitle ? { storeMetaTitle: i.storeMetaTitle } : {}),
-        ...(i.storeMetaDescription ? { storeMetaDescription: i.storeMetaDescription } : {}),
-        ...(i.storeDescriptionEn ? { storeDescriptionEn: i.storeDescriptionEn } : {}),
-        quantity: i.quantity ?? 1,
-      };
-    }),
-  };
 }
 
 interface SyncState {
@@ -402,15 +337,7 @@ const App: React.FC = () => {
     return true;
   }, []);
 
-  // One-time hard reset of public storefront catalog.
-  // Ensures legacy published items are cleared and storefront starts empty.
-  useEffect(() => {
-    if (!isCloudEnabled() || !authUser) return;
-    const key = 'storefront_catalog_hard_reset_v1';
-    if (localStorage.getItem(key) === '1') return;
-    writeStoreCatalog({ items: [] }).catch((e) => console.warn('Storefront hard reset failed', e));
-    localStorage.setItem(key, '1');
-  }, [authUser]);
+  // Public storefront catalog is rebuilt from inventory via debounced publishStoreCatalog / writeStoreCatalog.
 
   const saveToLocalStorage = (
     newItems: InventoryItem[],
@@ -816,6 +743,14 @@ const App: React.FC = () => {
     } finally {
       cloudSyncInFlightRef.current = false;
     }
+  }, [authUser, getSyncSnapshot]);
+
+  const publishStoreCatalogNow = useCallback(async () => {
+    if (!isCloudEnabled() || !authUser) return;
+    const snap = getSyncSnapshot();
+    await writeStoreCatalog(buildStoreCatalog(snap.items, snap.categoryFields)).catch((e) =>
+      console.warn('Store catalog update failed', e)
+    );
   }, [authUser, getSyncSnapshot]);
 
   // 2. Local persistence (debounced, chunked) + silent background Firestore write
@@ -1375,7 +1310,7 @@ const App: React.FC = () => {
               />
             }
           />
-          <Route path="inventory" element={<InventoryList key="inventory-main" items={items} totalCount={items.length} onUpdate={handleUpdate} onDelete={handleDelete} onUndo={handleUndo} onRedo={handleRedo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} pageTitle="Inventory" allowedStatuses={ALL_STATUSES} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} persistenceKey="inventory_main"/>} />
+          <Route path="inventory" element={<InventoryList key="inventory-main" items={items} totalCount={items.length} onUpdate={handleUpdate} onDelete={handleDelete} onUndo={handleUndo} onRedo={handleRedo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} pageTitle="Inventory" allowedStatuses={ALL_STATUSES} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} persistenceKey="inventory_main" onPublishStoreCatalog={publishStoreCatalogNow} />} />
           <Route path="add" element={<ItemForm onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="add-bulk" element={<BulkItemForm onSave={handleUpdate} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="edit/:id" element={<ItemForm onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
@@ -1414,7 +1349,7 @@ const App: React.FC = () => {
           />
           <Route path="import" element={<SheetsImport onImport={handleImportBatch} onClearData={handleWipeData} />} />
           <Route path="trash" element={<TrashPage items={trash} onRestore={handleRestoreFromTrash} onPermanentDelete={handlePermanentDelete} />} />
-          <Route path="store-management" element={<StoreManagementPage items={items} categories={categories} categoryFields={categoryFields} onUpdate={handleUpdate} onPublishCatalog={async () => { await writeStoreCatalog(buildStoreCatalog(items, categoryFields)); }} />} />
+          <Route path="store-management" element={<StoreManagementPage items={items} categories={categories} categoryFields={categoryFields} onUpdate={handleUpdate} onPublishCatalog={publishStoreCatalogNow} />} />
           <Route path="storefront-configurator" element={<StorefrontConfiguratorPage />} />
           <Route path="settings" element={<SettingsPage items={items} trash={trash} expenses={expenses} monthlyGoal={monthlyGoal} dashboardPreferences={dashboardPrefs} actionHistory={actionHistory} onForcePush={handleForcePush} onRestoreItems={setItems} onRestoreBackup={handleRestoreBackup} onFixEncoding={handleFixEncoding} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} onUpdateCategoryStructure={handleUpdateCategoryStructure} onUpdateCategoryFields={handleUpdateCategoryFields} onRenameCategory={() => {}} onRenameSubCategory={() => {}} />} />
         </Route>
