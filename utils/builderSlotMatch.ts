@@ -1,0 +1,109 @@
+import { InventoryItem, ItemStatus } from '../types';
+
+const MOTHERBOARD_NAME_PATTERN =
+  /\b(mainboard|motherboard|mobo|chipset|form\s*factor|io[\s-]*shield|(?:a|b|h|x|z)\d{2,4}[a-z0-9-]*)\b/i;
+
+export type BuilderSlotDef = {
+  id: string;
+  category: string;
+};
+
+export function isMotherboardItem(item: InventoryItem): boolean {
+  return (
+    item.subCategory === 'Motherboards' ||
+    item.category === 'Motherboards' ||
+    MOTHERBOARD_NAME_PATTERN.test(item.name || '')
+  );
+}
+
+export function isProcessorItem(item: InventoryItem): boolean {
+  return (
+    item.subCategory === 'Processors' ||
+    item.category === 'Processors' ||
+    /\b(intel core|ryzen|threadripper|xeon|pentium|celeron|cpu|prozessor)\b/i.test(item.name || '')
+  );
+}
+
+export function isGraphicsCardItem(item: InventoryItem): boolean {
+  return (
+    item.subCategory === 'Graphics Cards' ||
+    item.category === 'Graphics Cards' ||
+    /\b(rtx|gtx|radeon|rx\s?\d{3,5}|graphics card|grafikkarte)\b/i.test(item.name || '')
+  );
+}
+
+export function isEligibleForBuilderPicker(
+  item: InventoryItem,
+  opts: { editId: string | null; bundleMode: boolean }
+): boolean {
+  if (item.isDefective) return false;
+  if ((item.category === 'Bundle' && item.subCategory === 'PC Bundle') || item.category === 'PC Bundle') {
+    return false;
+  }
+  if (item.isPC || item.isBundle) return false;
+
+  if (item.status === ItemStatus.IN_STOCK) return true;
+  if (opts.editId && item.parentContainerId === opts.editId) return true;
+  if (opts.bundleMode && item.status === ItemStatus.ORDERED) return true;
+  return false;
+}
+
+export function itemMatchesBuilderSlot(
+  item: InventoryItem,
+  slot: BuilderSlotDef,
+  opts: {
+    bundleMode: boolean;
+    assignedInSlot?: InventoryItem[];
+  }
+): boolean {
+  if (slot.id === 'FANS') {
+    const isExplicitFan =
+      item.category === 'Fans' || item.subCategory === 'Fans' || item.subCategory === 'Case Fans';
+    const isCooling = item.category === 'Cooling' || item.subCategory === 'Cooling';
+    return isExplicitFan || isCooling;
+  }
+
+  if (slot.id === 'MISC') return true;
+
+  const slotCat = slot.category;
+  if (item.category === slotCat || item.subCategory === slotCat) return true;
+
+  if (opts.bundleMode) {
+    if (slot.id === 'MOBO' && isMotherboardItem(item)) return true;
+    if (slot.id === 'CPU' && isProcessorItem(item)) return true;
+    if (slot.id === 'GPU' && isGraphicsCardItem(item)) return true;
+
+    const assigned = opts.assignedInSlot || [];
+    if (assigned.length > 0) {
+      const ref = assigned[0];
+      if (ref.subCategory && item.subCategory === ref.subCategory) return true;
+      if (ref.category === item.category && ref.subCategory === item.subCategory) return true;
+    }
+  }
+
+  return false;
+}
+
+export function findBuilderSlotForComponent(
+  comp: InventoryItem,
+  slots: BuilderSlotDef[]
+): BuilderSlotDef | undefined {
+  const direct = slots.find((s) => s.category === comp.category || s.category === comp.subCategory);
+  if (direct) return direct;
+
+  if (isMotherboardItem(comp)) return slots.find((s) => s.id === 'MOBO');
+  if (isProcessorItem(comp)) return slots.find((s) => s.id === 'CPU');
+  if (isGraphicsCardItem(comp)) return slots.find((s) => s.id === 'GPU');
+
+  return undefined;
+}
+
+export function itemMatchesBuilderSearch(item: InventoryItem, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const haystack = [item.name, item.category, item.subCategory, item.vendor, item.comment1, item.comment2]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return haystack.includes(q);
+}

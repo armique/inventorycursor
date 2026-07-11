@@ -13,6 +13,12 @@ import ItemThumbnail, { getCategoryImageUrl } from './ItemThumbnail';
 import { isCompatibleWithBuild } from '../services/compatibility';
 import BuildItemPhotosPanel from './BuildItemPhotosPanel';
 import { getItemUserPhotoUrls, prepareInventoryImagesForStorage } from '../utils/imageImport';
+import {
+  findBuilderSlotForComponent,
+  isEligibleForBuilderPicker,
+  itemMatchesBuilderSearch,
+  itemMatchesBuilderSlot,
+} from '../utils/builderSlotMatch';
 
 interface Props {
   items: InventoryItem[];
@@ -102,12 +108,20 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const editId = searchParams.get('editId');
+  const editingContainer = editId ? items.find((i) => i.id === editId) : undefined;
   const photoItemIdRef = useRef(
     editId || `${searchParams.get('mode') === 'bundle' ? 'bundle' : 'pc'}-draft-${Date.now()}`
   );
   const photoStorageItemId = editId || photoItemIdRef.current;
 
-  const [mode, setMode] = useState<'pc' | 'bundle'>('pc');
+  const [mode, setMode] = useState<'pc' | 'bundle'>(() => {
+    if (searchParams.get('mode') === 'bundle') return 'bundle';
+    return 'pc';
+  });
+  /** When editing, always follow the container type — avoids PC compatibility rules on lot bundles. */
+  const resolvedMode: 'pc' | 'bundle' =
+    editingContainer != null ? (editingContainer.isBundle ? 'bundle' : 'pc') : mode;
+  const isLotBundle = editingContainer?.subCategory === 'Lot Bundle';
   const [buildName, setBuildName] = useState('New Gaming PC');
   const [parts, setParts] = useState<Record<string, InventoryItem[]>>({});
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
@@ -134,14 +148,11 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
         );
 
         components.forEach(comp => {
-           // Try to slot them automatically
-           const slot = SLOTS.find(s => s.category === comp.category || s.category === comp.subCategory);
-           // Special handling for Fans/Misc/Cooling if needed
+           const slot = findBuilderSlotForComponent(comp, SLOTS);
            if (slot) {
               if (!existingParts[slot.id]) existingParts[slot.id] = [];
               existingParts[slot.id].push(comp);
            } else {
-              // Fallback to Misc
               if (!existingParts['MISC']) existingParts['MISC'] = [];
               existingParts['MISC'].push(comp);
            }
@@ -154,7 +165,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
        const initial: InventoryItem[] = location.state.initialParts;
        const newParts: Record<string, InventoryItem[]> = {};
        initial.forEach(comp => {
-           const slot = SLOTS.find(s => s.category === comp.category || s.category === comp.subCategory);
+           const slot = findBuilderSlotForComponent(comp, SLOTS);
            if (slot) {
               if (!newParts[slot.id]) newParts[slot.id] = [];
               newParts[slot.id].push(comp);
@@ -197,16 +208,16 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
      const existingParent = editId ? items.find((i) => i.id === editId) : undefined;
      const isLotBundle = existingParent?.subCategory === 'Lot Bundle';
 
-     if (mode === 'bundle' && !isLotBundle && allParts.length > 12) {
+     if (resolvedMode === 'bundle' && !isLotBundle && allParts.length > 12) {
        return alert("Bundles in this builder are limited to 12 items. Remove some parts or use a full PC build instead.");
      }
 
      const totalCost = allParts.reduce((sum, i) => sum + i.buyPrice, 0);
      
-     const parentId = editId || (mode === 'bundle' ? `bundle-${Date.now()}` : `pc-${Date.now()}`);
+     const parentId = editId || (resolvedMode === 'bundle' ? `bundle-${Date.now()}` : `pc-${Date.now()}`);
      
      const autoImageUrl =
-       mode === 'bundle'
+       resolvedMode === 'bundle'
          ? allParts[0]?.imageUrl || getCategoryImageUrl({ category: allParts[0]?.category || 'Components' }) || undefined
          : parts['CASE']?.[0]?.imageUrl || getCategoryImageUrl({ category: 'Cases' }) || undefined;
      let userPhotos = buildPhotos.length > 0 ? buildPhotos : getItemUserPhotoUrls(existingParent || {});
@@ -225,17 +236,17 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
         ...(existingParent || {}),
         id: parentId,
         name: buildName,
-        category: mode === 'bundle' ? 'Bundle' : 'PC',
-        subCategory: mode === 'bundle' ? (existingParent?.subCategory || 'Custom Bundle') : 'Custom Built PC',
+        category: resolvedMode === 'bundle' ? 'Bundle' : 'PC',
+        subCategory: resolvedMode === 'bundle' ? (existingParent?.subCategory || 'Custom Bundle') : 'Custom Built PC',
         status: ItemStatus.IN_STOCK,
         buyPrice: totalCost,
         // No buyDate - containers don't have buy dates, only their components do
-        isPC: mode !== 'bundle',
-        isBundle: mode === 'bundle',
+        isPC: resolvedMode !== 'bundle',
+        isBundle: resolvedMode === 'bundle',
         componentIds: allParts.map(i => i.id),
-        comment1: `${mode === 'bundle' ? 'Bundle Contents' : 'Custom Build Specs'}:\n${allParts.map(i => `- ${i.name}`).join('\n')}`,
-        comment2: !mode && performance ? `AI Performance Estimate:\n${performance.summary}` : performance && mode !== 'bundle' ? `AI Performance Estimate:\n${performance.summary}` : '',
-        vendor: mode === 'bundle' ? 'Custom Bundle' : 'Custom Build',
+        comment1: `${resolvedMode === 'bundle' ? 'Bundle Contents' : 'Custom Build Specs'}:\n${allParts.map(i => `- ${i.name}`).join('\n')}`,
+        comment2: !resolvedMode && performance ? `AI Performance Estimate:\n${performance.summary}` : performance && resolvedMode !== 'bundle' ? `AI Performance Estimate:\n${performance.summary}` : '',
+        vendor: resolvedMode === 'bundle' ? 'Custom Bundle' : 'Custom Build',
         imageUrl,
         imageUrls: imageUrls?.length ? imageUrls : undefined,
      };
@@ -269,68 +280,37 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
      if (!selectedSlot) return [];
      const slotDef = SLOTS.find(s => s.id === selectedSlot);
      if (!slotDef) return [];
+     const bundleMode = resolvedMode === 'bundle';
 
      return items.filter(i => {
-        // PC Bundle items are full builds/bundles, not single parts — exclude from part selection
-        if ((i.category === 'Bundle' && i.subCategory === 'PC Bundle') || i.category === 'PC Bundle') return false;
-        // Defective items are not eligible for PC builds
-        if (i.isDefective) return false;
+        if (!isEligibleForBuilderPicker(i, { editId, bundleMode })) return false;
 
-        // Must be in stock or (if editing) potentially the item itself if already selected
-        if (i.status !== ItemStatus.IN_STOCK) {
-           // Allow if it belongs to this build
-           if (editId && i.parentContainerId === editId) {
-              // ok
-           } else {
-              return false; 
-           }
+        if (!itemMatchesBuilderSlot(i, slotDef, {
+          bundleMode,
+          assignedInSlot: parts[selectedSlot],
+        })) {
+          return false;
         }
 
-        // Logic from snippet provided by user
-        let isCategoryMatch = false;
-        if (selectedSlot === 'FANS') {
-             // Specific logic for Fans slot
-             // Allow items explicitly categorized as 'Fans'
-             const isExplicitFan = i.category === 'Fans' || i.subCategory === 'Fans' || i.subCategory === 'Case Fans';
-             
-             // Also allow ALL items in 'Cooling' category.
-             // Previously we filtered by name ('fan'/'lüfter'), but this hid items like "Arctic P12" or "Noctua NF-A12".
-             // Showing all cooling items allows the user to decide what is a fan.
-             const isCooling = i.category === 'Cooling' || i.subCategory === 'Cooling';
-             
-             isCategoryMatch = isExplicitFan || isCooling;
-        } else if (slotDef.id === 'MISC') {
-             isCategoryMatch = true; 
-        } else {
-             // Standard match for other slots
-             isCategoryMatch = i.category === slotDef.category || i.subCategory === slotDef.category;
-        }
-
-        if (!isCategoryMatch) return false;
-
-        // Search Query
-        if (searchQuery) {
-           return i.name.toLowerCase().includes(searchQuery.toLowerCase());
-        }
-        return true;
+        return itemMatchesBuilderSearch(i, searchQuery);
      });
-  }, [items, selectedSlot, searchQuery, editId]);
+  }, [items, selectedSlot, searchQuery, editId, resolvedMode, parts]);
 
   // Only show items compatible with current build (e.g. Intel CPU → only Intel motherboards)
   const availableWithCompatibility = useMemo(() => {
     if (!selectedSlot) return [];
-    if (mode === 'bundle') {
+    if (resolvedMode === 'bundle') {
       return availableItems.map((item) => ({ item, compatible: true as const }));
     }
     return availableItems
       .map(item => ({ item, ...isCompatibleWithBuild(item, selectedSlot, parts) }))
       .filter(x => x.compatible)
       .map(x => ({ item: x.item, compatible: true as const }));
-  }, [availableItems, selectedSlot, parts, mode]);
+  }, [availableItems, selectedSlot, parts, resolvedMode]);
   const hiddenIncompatibleCount = useMemo(() => {
-    if (!selectedSlot || mode === 'bundle') return 0;
+    if (!selectedSlot || resolvedMode === 'bundle') return 0;
     return availableItems.filter(item => !isCompatibleWithBuild(item, selectedSlot, parts).compatible).length;
-  }, [availableItems, selectedSlot, parts, mode]);
+  }, [availableItems, selectedSlot, parts, resolvedMode]);
 
   const togglePart = (item: InventoryItem) => {
      if (!selectedSlot) return;
@@ -346,7 +326,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
            return { ...prev, [selectedSlot]: current.filter(i => i.id !== item.id) };
         } else {
            // Add — bundles allow multiple items per slot (e.g. lot of motherboards)
-           if (slotAllowsMultiple(slotDef, mode)) {
+           if (slotAllowsMultiple(slotDef, resolvedMode)) {
               return { ...prev, [selectedSlot]: [...current, item] };
            } else {
               // Replace single slot (PC build only)
@@ -451,7 +431,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
               {SLOTS.find(s => s.id === selectedSlot)?.label}
             </h3>
             <p className={`text-slate-500 font-bold ${compact ? 'text-sm' : 'text-[10px]'}`}>
-              {mode === 'bundle'
+              {resolvedMode === 'bundle'
                 ? 'Click to add or remove items'
                 : 'Click ✓ to remove · compatible items only'}
             </p>
@@ -572,7 +552,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
               </button>
               <div className="min-w-0">
                 <h1 className="text-2xl font-black text-slate-900 truncate">
-                  {mode === 'bundle' ? 'Edit Bundle' : 'Edit Build'}
+                  {resolvedMode === 'bundle' ? 'Edit Bundle' : 'Edit Build'}
                 </h1>
                 <p className="text-sm text-slate-500 font-bold truncate">Photos + parts in one place</p>
               </div>
@@ -623,16 +603,18 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
              <div>
                 <h1 className="text-3xl font-black text-slate-900 tracking-tight">
                   {editId
-                    ? mode === 'bundle'
+                    ? resolvedMode === 'bundle'
                       ? 'Edit Bundle'
                       : 'Edit Build'
-                    : mode === 'bundle'
+                    : resolvedMode === 'bundle'
                       ? 'Bundle Builder'
                       : 'PC Builder'}
                 </h1>
                 <p className="text-sm text-slate-500 font-bold">
-                  {mode === 'bundle'
-                    ? 'Group parts into a sellable bundle — add as many items as you need per slot'
+                  {resolvedMode === 'bundle'
+                    ? isLotBundle
+                      ? 'Lot bundle — add as many items as you need per slot'
+                      : 'Group parts into a sellable bundle — add as many items as you need per slot'
                     : 'Assemble & Track Custom PCs'}
                 </p>
              </div>
