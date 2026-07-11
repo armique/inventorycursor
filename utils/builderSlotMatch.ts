@@ -101,9 +101,82 @@ export function findBuilderSlotForComponent(
 export function itemMatchesBuilderSearch(item: InventoryItem, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
-  const haystack = [item.name, item.category, item.subCategory, item.vendor, item.comment1, item.comment2]
+  const specText = item.specs ? Object.values(item.specs).filter(Boolean).join(' ') : '';
+  const haystack = [
+    item.name,
+    item.category,
+    item.subCategory,
+    item.vendor,
+    item.comment1,
+    item.comment2,
+    item.ebaySku,
+    specText,
+  ]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
   return haystack.includes(q);
+}
+
+export function getBuilderPickerBlockReason(
+  item: InventoryItem,
+  opts: {
+    editId: string | null;
+    bundleMode: boolean;
+    containersById: Map<string, InventoryItem>;
+  }
+): string | null {
+  if (item.isDefective) return 'Marked defective';
+
+  if ((item.category === 'Bundle' && item.subCategory === 'PC Bundle') || item.category === 'PC Bundle') {
+    return 'PC bundle — cannot add as a part';
+  }
+  if (item.isPC) return 'PC build — cannot add as a part';
+  if (item.isBundle) return 'Bundle container — cannot add as a part';
+
+  if (opts.editId && item.parentContainerId === opts.editId) return null;
+  if (item.status === ItemStatus.IN_STOCK) return null;
+  if (opts.bundleMode && item.status === ItemStatus.ORDERED) return null;
+
+  if (item.status === ItemStatus.IN_COMPOSITION && item.parentContainerId) {
+    const parent = opts.containersById.get(item.parentContainerId);
+    const label = parent?.name?.trim() || 'Another build/bundle';
+    if (parent?.isBundle && parent.subCategory === 'Lot Bundle') {
+      return `Already in lot bundle: ${label}`;
+    }
+    if (parent?.isBundle) return `Already in bundle: ${label}`;
+    if (parent?.isPC) return `Already in PC build: ${label}`;
+    return `Already in use: ${label}`;
+  }
+
+  if (item.status === ItemStatus.SOLD) return 'Sold — revert the sale first';
+  if (item.status === ItemStatus.TRADED) return 'Traded away';
+  if (item.status === ItemStatus.IN_COMPOSITION) return 'Already in another build/bundle';
+
+  return `Not available (${item.status})`;
+}
+
+/** Whether an item belongs in the picker for this slot (with optional search broadening). */
+export function itemRelevantToBuilderSlot(
+  item: InventoryItem,
+  slot: BuilderSlotDef,
+  opts: {
+    bundleMode: boolean;
+    isLotBundle: boolean;
+    searching: boolean;
+    assignedInSlot?: InventoryItem[];
+    slotId: string;
+  }
+): boolean {
+  const slotMatch = itemMatchesBuilderSlot(item, slot, {
+    bundleMode: opts.bundleMode,
+    assignedInSlot: opts.assignedInSlot,
+  });
+  if (slotMatch) return true;
+  if (!opts.searching || !opts.bundleMode) return false;
+
+  if (opts.slotId === 'MOBO' && isMotherboardItem(item)) return true;
+  if (opts.isLotBundle) return true;
+
+  return false;
 }

@@ -5,7 +5,7 @@ import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { 
   Cpu, Monitor, HardDrive, Zap, Box, Wind, 
   Save, ArrowLeft, Plus, X, Search, CheckCircle2,
-  AlertTriangle, Hammer, Info
+  AlertTriangle, Hammer, Info, Lock
 } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
 import { estimatePCPerformance, PerformanceEstimate } from '../services/geminiService';
@@ -15,9 +15,11 @@ import BuildItemPhotosPanel from './BuildItemPhotosPanel';
 import { getItemUserPhotoUrls, prepareInventoryImagesForStorage } from '../utils/imageImport';
 import {
   findBuilderSlotForComponent,
+  getBuilderPickerBlockReason,
   isEligibleForBuilderPicker,
   itemMatchesBuilderSearch,
   itemMatchesBuilderSlot,
+  itemRelevantToBuilderSlot,
 } from '../utils/builderSlotMatch';
 
 interface Props {
@@ -276,25 +278,69 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
      navigate('/panel/inventory');
   };
 
-  const availableItems = useMemo(() => {
-     if (!selectedSlot) return [];
-     const slotDef = SLOTS.find(s => s.id === selectedSlot);
-     if (!slotDef) return [];
-     const bundleMode = resolvedMode === 'bundle';
+  const containersById = useMemo(() => {
+    const map = new Map<string, InventoryItem>();
+    for (const i of items) {
+      if (i.isBundle || i.isPC) map.set(i.id, i);
+    }
+    return map;
+  }, [items]);
 
-     return items.filter(i => {
-        if (!isEligibleForBuilderPicker(i, { editId, bundleMode })) return false;
+  const pickerResults = useMemo(() => {
+    if (!selectedSlot) return { available: [] as InventoryItem[], blocked: [] as { item: InventoryItem; reason: string }[] };
+    const slotDef = SLOTS.find((s) => s.id === selectedSlot);
+    if (!slotDef) return { available: [], blocked: [] };
 
-        if (!itemMatchesBuilderSlot(i, slotDef, {
-          bundleMode,
-          assignedInSlot: parts[selectedSlot],
-        })) {
-          return false;
+    const bundleMode = resolvedMode === 'bundle';
+    const searching = searchQuery.trim().length > 0;
+    const available: InventoryItem[] = [];
+    const blocked: { item: InventoryItem; reason: string }[] = [];
+    const seen = new Set<string>();
+
+    for (const item of items) {
+      if ((item.category === 'Bundle' && item.subCategory === 'PC Bundle') || item.category === 'PC Bundle') {
+        continue;
+      }
+
+      if (!itemMatchesBuilderSearch(item, searchQuery)) continue;
+
+      const relevant = itemRelevantToBuilderSlot(item, slotDef, {
+        bundleMode,
+        isLotBundle,
+        searching,
+        assignedInSlot: parts[selectedSlot],
+        slotId: selectedSlot,
+      });
+      if (!relevant) continue;
+
+      const blockReason = getBuilderPickerBlockReason(item, { editId, bundleMode, containersById });
+      if (blockReason) {
+        if (!seen.has(item.id)) {
+          blocked.push({ item, reason: blockReason });
+          seen.add(item.id);
         }
+        continue;
+      }
 
-        return itemMatchesBuilderSearch(i, searchQuery);
-     });
-  }, [items, selectedSlot, searchQuery, editId, resolvedMode, parts]);
+      if (!isEligibleForBuilderPicker(item, { editId, bundleMode })) {
+        if (!seen.has(item.id)) {
+          blocked.push({ item, reason: getBuilderPickerBlockReason(item, { editId, bundleMode, containersById }) || 'Not available' });
+          seen.add(item.id);
+        }
+        continue;
+      }
+
+      if (!seen.has(item.id)) {
+        available.push(item);
+        seen.add(item.id);
+      }
+    }
+
+    return { available, blocked };
+  }, [items, selectedSlot, searchQuery, editId, resolvedMode, parts, isLotBundle, containersById]);
+
+  const availableItems = pickerResults.available;
+  const blockedPickerItems = pickerResults.blocked;
 
   // Only show items compatible with current build (e.g. Intel CPU → only Intel motherboards)
   const availableWithCompatibility = useMemo(() => {
@@ -453,10 +499,15 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
         </div>
 
         <div className={`flex-1 overflow-y-auto ${compact ? 'p-4 space-y-2' : 'p-4 space-y-2'}`}>
-          {availableItems.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center opacity-40 py-8">
+          {availableItems.length === 0 && blockedPickerItems.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-center opacity-40 py-8 px-4">
               <Box size={32} className="mb-2 text-slate-300"/>
               <p className="font-bold text-slate-400 text-xs">No items found</p>
+              {searchQuery.trim() && (
+                <p className="text-[10px] text-slate-400 mt-2 max-w-xs">
+                  Try a shorter search, or check inventory — the item may be sold or in another bundle.
+                </p>
+              )}
             </div>
           ) : (
             <>
@@ -479,7 +530,9 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
                     <ItemThumbnail item={item} className={`${compact ? 'w-14 h-14' : 'w-12 h-12'} rounded-lg object-cover bg-slate-100 shrink-0`} size={compact ? 53 : 48} useCategoryImage />
                     <div className="flex-1 min-w-0">
                       <p className={`font-black truncate text-slate-900 ${compact ? 'text-base' : 'text-xs'}`}>{item.name}</p>
-                      <p className={`text-slate-400 font-bold uppercase ${compact ? 'text-xs' : 'text-[9px]'}`}>{item.category} • €{formatEUR(Number(item.buyPrice))}</p>
+                      <p className={`text-slate-400 font-bold uppercase ${compact ? 'text-xs' : 'text-[9px]'}`}>
+                        {item.subCategory || item.category} • {item.status} • €{formatEUR(Number(item.buyPrice))}
+                      </p>
                     </div>
                     {isSelected ? (
                       <CheckCircle2 size={compact ? 26 : 24} className="text-blue-600 shrink-0" />
@@ -489,6 +542,33 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
                   </div>
                 );
               })}
+
+              {blockedPickerItems.length > 0 && (
+                <div className="pt-3 mt-2 border-t border-slate-200 space-y-2">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-amber-700 px-1">
+                    Cannot add ({blockedPickerItems.length})
+                  </p>
+                  {blockedPickerItems.map(({ item, reason }) => (
+                    <div
+                      key={`blocked-${item.id}`}
+                      className={`flex items-start gap-3 ${compact ? 'p-3 rounded-xl' : 'p-4 rounded-2xl'} border border-amber-200/80 bg-amber-50/60 opacity-90`}
+                      title={reason}
+                    >
+                      <ItemThumbnail item={item} className={`${compact ? 'w-14 h-14' : 'w-12 h-12'} rounded-lg object-cover bg-slate-100 shrink-0 grayscale`} size={compact ? 53 : 48} useCategoryImage />
+                      <div className="flex-1 min-w-0">
+                        <p className={`font-black text-slate-800 ${compact ? 'text-base' : 'text-xs'} leading-snug`}>{item.name}</p>
+                        <p className={`text-slate-500 font-bold ${compact ? 'text-xs' : 'text-[9px]'} mt-0.5`}>
+                          {item.subCategory || item.category} • {item.status}
+                        </p>
+                        <p className={`inline-flex items-center gap-1 mt-1.5 text-amber-900 font-bold ${compact ? 'text-xs' : 'text-[10px]}`}>
+                          <Lock size={12} className="shrink-0" />
+                          {reason}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </>
           )}
         </div>
