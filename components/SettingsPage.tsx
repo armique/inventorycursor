@@ -13,8 +13,11 @@ import { encryptBackupJson } from '../services/encryptedBackup';
 import { isCloudEnabled, saveFirebaseConfig, getFirebaseConfig, signInWithGoogle, logOut, onAuthChange, getAuthErrorMessage } from '../services/firebaseService';
 import {
   analyzeInventoryPhotoArchive,
+  archiveSinglePhotoUrl,
   bulkArchiveInventoryPhotos,
   canArchivePhotosToCloud,
+  listUnarchivedPhotoEntries,
+  type PhotoArchiveFailure,
   type PhotoArchiveProgress,
   type PhotoArchiveResult,
 } from '../services/inventoryImageStorage';
@@ -152,9 +155,16 @@ const SettingsPage: React.FC<Props> = ({
   const [photoArchiveRunning, setPhotoArchiveRunning] = useState(false);
   const [photoArchiveProgress, setPhotoArchiveProgress] = useState<PhotoArchiveProgress | null>(null);
   const [photoArchiveResult, setPhotoArchiveResult] = useState<PhotoArchiveResult | null>(null);
+  const [photoArchiveFailures, setPhotoArchiveFailures] = useState<PhotoArchiveFailure[]>([]);
+  const [retryingPhotoUrl, setRetryingPhotoUrl] = useState<string | null>(null);
 
   const photoArchiveAnalysis = useMemo(
     () => analyzeInventoryPhotoArchive(items, trash),
+    [items, trash]
+  );
+
+  const unarchivedPhotoEntries = useMemo(
+    () => listUnarchivedPhotoEntries(items, trash),
     [items, trash]
   );
 
@@ -260,6 +270,7 @@ const SettingsPage: React.FC<Props> = ({
       });
       onApplyArchivedPhotos?.(archivedItems, archivedTrash);
       setPhotoArchiveResult(result);
+      setPhotoArchiveFailures(result.failures || []);
       showToast(
         `Archived ${result.photosArchived} photo${result.photosArchived === 1 ? '' : 's'} to Firebase Storage` +
           (result.photosFailed ? ` (${result.photosFailed} failed)` : ''),
@@ -270,6 +281,28 @@ const SettingsPage: React.FC<Props> = ({
     } finally {
       setPhotoArchiveRunning(false);
       setPhotoArchiveProgress(null);
+    }
+  };
+
+  const handleRetrySinglePhoto = async (url: string) => {
+    if (!canArchivePhotosToCloud()) {
+      showToast('Sign in with Google first.', 'error');
+      return;
+    }
+    setRetryingPhotoUrl(url);
+    try {
+      const result = await archiveSinglePhotoUrl(url, items, trash);
+      if (result.success) {
+        onApplyArchivedPhotos?.(result.items, result.trash);
+        setPhotoArchiveFailures((prev) => prev.filter((f) => f.url !== url));
+        showToast('Photo archived to Firebase Storage.', 'success');
+      } else {
+        showToast(result.error || 'Retry failed.', 'error');
+      }
+    } catch (e: unknown) {
+      showToast((e as Error)?.message || 'Retry failed.', 'error');
+    } finally {
+      setRetryingPhotoUrl(null);
     }
   };
 
@@ -878,6 +911,69 @@ const SettingsPage: React.FC<Props> = ({
                       <p className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2">
                          Last run: {photoArchiveResult.photosArchived} archived, {photoArchiveResult.photosFailed} failed, {photoArchiveResult.itemsUpdated} items updated.
                       </p>
+                   )}
+
+                   {(unarchivedPhotoEntries.length > 0 || photoArchiveFailures.length > 0) && (
+                      <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 space-y-3">
+                         <div className="flex items-start gap-2">
+                            <AlertTriangle size={18} className="text-amber-700 shrink-0 mt-0.5" />
+                            <div>
+                               <p className="text-sm font-black text-amber-900">
+                                  {unarchivedPhotoEntries.length} photo{unarchivedPhotoEntries.length === 1 ? '' : 's'} still not on Firebase Storage
+                               </p>
+                               <p className="text-xs text-amber-800 mt-1">
+                                  These items still use eBay/search links or local data URLs. Retry below, or edit the item and re-import from eBay.
+                               </p>
+                            </div>
+                         </div>
+                         <ul className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                            {(unarchivedPhotoEntries.length ? unarchivedPhotoEntries : photoArchiveFailures.map((f) => ({ url: f.url, items: f.items }))).map((entry) => {
+                               const failure = photoArchiveFailures.find((f) => f.url === entry.url);
+                               return (
+                                  <li key={entry.url} className="bg-white border border-amber-100 rounded-xl p-3 space-y-2">
+                                     <div className="flex gap-3">
+                                        <img
+                                           src={entry.url}
+                                           alt=""
+                                           className="w-14 h-14 rounded-lg object-cover bg-slate-100 border border-slate-200 shrink-0"
+                                           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                        />
+                                        <div className="min-w-0 flex-1">
+                                           <p className="text-sm font-bold text-slate-900 truncate">
+                                              {entry.items.map((i) => i.name).join(' · ')}
+                                           </p>
+                                           <p className="text-[10px] text-slate-500 font-mono truncate mt-1" title={entry.url}>{entry.url}</p>
+                                           {failure?.error && (
+                                              <p className="text-[10px] text-red-700 font-bold mt-1">{failure.error}</p>
+                                           )}
+                                           <p className="text-[10px] text-slate-400 mt-1">
+                                              {entry.items.map((i) => `${i.name}${i.inTrash ? ' (trash)' : ''}`).join(', ')}
+                                           </p>
+                                        </div>
+                                     </div>
+                                     <div className="flex flex-wrap gap-2">
+                                        <button
+                                           type="button"
+                                           onClick={() => handleRetrySinglePhoto(entry.url)}
+                                           disabled={photoArchiveRunning || retryingPhotoUrl === entry.url || !canArchivePhotosToCloud()}
+                                           className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-blue-700 disabled:opacity-50"
+                                        >
+                                           {retryingPhotoUrl === entry.url ? 'Retrying…' : 'Retry archive'}
+                                        </button>
+                                        <a
+                                           href={entry.url}
+                                           target="_blank"
+                                           rel="noopener noreferrer"
+                                           className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-slate-50"
+                                        >
+                                           Open URL
+                                        </a>
+                                     </div>
+                                  </li>
+                               );
+                            })}
+                         </ul>
+                      </div>
                    )}
 
                    <button

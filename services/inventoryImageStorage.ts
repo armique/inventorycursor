@@ -125,6 +125,91 @@ export interface PhotoArchiveResult {
   photosArchived: number;
   photosFailed: number;
   itemsUpdated: number;
+  failures?: PhotoArchiveFailure[];
+}
+
+export interface PhotoArchiveFailure {
+  url: string;
+  error: string;
+  items: { id: string; name: string; inTrash: boolean }[];
+}
+
+export interface UnarchivedPhotoEntry {
+  url: string;
+  items: { id: string; name: string; inTrash: boolean }[];
+}
+
+/** Items still using remote/data URLs — use this to find photos that failed archive. */
+export function listUnarchivedPhotoEntries(
+  items: InventoryItem[],
+  trash: InventoryItem[] = []
+): UnarchivedPhotoEntry[] {
+  const byUrl = new Map<string, UnarchivedPhotoEntry>();
+
+  const scan = (item: InventoryItem, inTrash: boolean) => {
+    for (const url of collectPhotoUrlsFromItem(item)) {
+      if (!urlNeedsPhotoArchive(url)) continue;
+      const existing = byUrl.get(url);
+      const row = { id: item.id, name: item.name || item.id, inTrash };
+      if (existing) {
+        if (!existing.items.some((x) => x.id === row.id)) existing.items.push(row);
+      } else {
+        byUrl.set(url, { url, items: [row] });
+      }
+    }
+  };
+
+  items.forEach((item) => scan(item, false));
+  trash.forEach((item) => scan(item, true));
+  return [...byUrl.values()].sort((a, b) => a.items[0]?.name.localeCompare(b.items[0]?.name || '') || 0);
+}
+
+function itemsUsingPhotoUrl(items: InventoryItem[], trash: InventoryItem[], url: string) {
+  const all = [
+    ...items.map((i) => ({ item: i, inTrash: false })),
+    ...trash.map((i) => ({ item: i, inTrash: true })),
+  ];
+  const out: { id: string; name: string; inTrash: boolean }[] = [];
+  for (const { item, inTrash } of all) {
+    if (collectPhotoUrlsFromItem(item).includes(url)) {
+      out.push({ id: item.id, name: item.name || item.id, inTrash });
+    }
+  }
+  return out;
+}
+
+function remotePhotoFetchVariants(url: string): string[] {
+  const trimmed = url.trim();
+  const out = [trimmed];
+  try {
+    const u = new URL(trimmed);
+    const host = u.hostname.toLowerCase();
+    if (host.includes('ebayimg.com')) {
+      const l1600 = trimmed.replace(/\/s-l\d+\.(jpg|jpeg|png|webp)(\?.*)?$/i, '/s-l1600.$1$2');
+      if (l1600 !== trimmed) out.push(l1600);
+      const dollar57 = trimmed.replace(/\$_\d+\.(JPG|JPEG|PNG|jpg|jpeg|png)/g, '$_57.$1');
+      if (dollar57 !== trimmed) out.push(dollar57);
+      const noQuery = trimmed.split('?')[0];
+      if (noQuery !== trimmed) out.push(noQuery);
+    }
+  } catch {
+    /* ignore */
+  }
+  return [...new Set(out)];
+}
+
+/** Clear cached failure so a retry can re-download. */
+export function clearPhotoArchiveCacheForUrl(url: string): void {
+  sourceUrlCache.delete(url.trim());
+}
+
+export async function probePhotoArchiveUrl(url: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await fetchRemoteImageBlob(url);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error)?.message || 'Download failed' };
+  }
 }
 
 function remapItemPhotoUrls(item: InventoryItem, urlMap: Map<string, string>): InventoryItem {
@@ -170,21 +255,34 @@ export async function bulkArchiveInventoryPhotos(
   const urlMap = new Map<string, string>();
   let photosArchived = 0;
   let photosFailed = 0;
+  const failures: PhotoArchiveFailure[] = [];
 
   for (let i = 0; i < urlList.length; i++) {
     const source = urlList[i];
     options?.onProgress?.({ done: i, total: urlList.length, currentUrl: source });
+    clearPhotoArchiveCacheForUrl(source);
     try {
-      const persisted = await persistOneInventoryImageUrl(source, 'shared');
+      const persisted = await persistOneInventoryImageUrl(source, 'shared', { force: true });
       urlMap.set(source, persisted);
       if (isFirebaseStorageInventoryUrl(persisted) && persisted !== source) {
         photosArchived++;
-      } else if (persisted === source) {
+      } else {
         photosFailed++;
+        const probe = await probePhotoArchiveUrl(source);
+        failures.push({
+          url: source,
+          error: probe.error || 'Still using original URL after archive attempt',
+          items: itemsUsingPhotoUrl(items, trash, source),
+        });
       }
-    } catch {
+    } catch (e) {
       photosFailed++;
       urlMap.set(source, source);
+      failures.push({
+        url: source,
+        error: (e as Error)?.message || 'Archive failed',
+        items: itemsUsingPhotoUrl(items, trash, source),
+      });
     }
   }
 
@@ -214,8 +312,54 @@ export async function bulkArchiveInventoryPhotos(
       photosArchived,
       photosFailed,
       itemsUpdated,
+      failures,
     },
   };
+}
+
+/** Retry archiving one remote URL and apply the Storage URL to every item that uses it. */
+export async function archiveSinglePhotoUrl(
+  url: string,
+  items: InventoryItem[],
+  trash: InventoryItem[] = []
+): Promise<{
+  items: InventoryItem[];
+  trash: InventoryItem[];
+  success: boolean;
+  error?: string;
+  persistedUrl?: string;
+}> {
+  if (!canUploadToCloud()) {
+    throw new Error('Sign in with Google to archive photos.');
+  }
+  const trimmed = url.trim();
+  clearPhotoArchiveCacheForUrl(trimmed);
+  try {
+    const persisted = await persistOneInventoryImageUrl(trimmed, 'shared', { force: true });
+    if (!isFirebaseStorageInventoryUrl(persisted) || persisted === trimmed) {
+      const probe = await probePhotoArchiveUrl(trimmed);
+      return {
+        items,
+        trash,
+        success: false,
+        error: probe.error || 'Could not archive this photo',
+      };
+    }
+    const urlMap = new Map([[trimmed, persisted]]);
+    return {
+      items: items.map((item) => remapItemPhotoUrls(item, urlMap)),
+      trash: trash.map((item) => remapItemPhotoUrls(item, urlMap)),
+      success: true,
+      persistedUrl: persisted,
+    };
+  } catch (e) {
+    return {
+      items,
+      trash,
+      success: false,
+      error: (e as Error)?.message || 'Archive failed',
+    };
+  }
 }
 
 async function hashBlob(blob: Blob): Promise<string> {
@@ -228,32 +372,43 @@ async function hashBlob(blob: Blob): Promise<string> {
 }
 
 async function fetchRemoteImageBlob(url: string): Promise<Blob> {
-  const trimmed = url.trim();
-  try {
-    const direct = await fetch(trimmed, { mode: 'cors', credentials: 'omit' });
-    if (direct.ok) {
-      const blob = await direct.blob();
-      if (blob.type.startsWith('image/') && blob.size > 32) return blob;
+  const variants = remotePhotoFetchVariants(url);
+  let lastError = 'Could not download image';
+
+  for (const candidate of variants) {
+    try {
+      const direct = await fetch(candidate, { mode: 'cors', credentials: 'omit' });
+      if (direct.ok) {
+        const blob = await direct.blob();
+        if (blob.type.startsWith('image/') && blob.size > 32) return blob;
+      }
+    } catch {
+      /* try proxy */
     }
-  } catch {
-    // CORS or network — fall through to server proxy
+
+    const proxyUrl = `/api/images?route=fetch&url=${encodeURIComponent(candidate)}`;
+    try {
+      const proxied = await fetch(proxyUrl);
+      if (!proxied.ok) {
+        let detail = `HTTP ${proxied.status}`;
+        try {
+          const err = (await proxied.json()) as { error?: string };
+          if (err?.error) detail = err.error;
+        } catch {
+          /* binary error body */
+        }
+        lastError = detail;
+        continue;
+      }
+      const blob = await proxied.blob();
+      if (blob.size > 32) return blob;
+      lastError = 'Downloaded image was empty.';
+    } catch (e) {
+      lastError = (e as Error)?.message || lastError;
+    }
   }
 
-  const proxyUrl = `/api/images?route=fetch&url=${encodeURIComponent(trimmed)}`;
-  const proxied = await fetch(proxyUrl);
-  if (!proxied.ok) {
-    let detail = `HTTP ${proxied.status}`;
-    try {
-      const err = (await proxied.json()) as { error?: string };
-      if (err?.error) detail = err.error;
-    } catch {
-      /* binary error body */
-    }
-    throw new Error(`Could not download image: ${detail}`);
-  }
-  const blob = await proxied.blob();
-  if (!blob.size) throw new Error('Downloaded image was empty.');
-  return blob;
+  throw new Error(`Could not download image: ${lastError}`);
 }
 
 async function blobToPersistedUrl(blob: Blob, itemId: string): Promise<string> {
@@ -271,18 +426,21 @@ async function blobToPersistedUrl(blob: Blob, itemId: string): Promise<string> {
 
 async function persistOneInventoryImageUrl(
   url: string,
-  itemId: string
+  itemId: string,
+  options?: { force?: boolean }
 ): Promise<string> {
   const trimmed = url.trim();
   if (!trimmed) return trimmed;
 
   if (isFirebaseStorageInventoryUrl(trimmed)) return trimmed;
 
-  const cached = sourceUrlCache.get(trimmed);
-  if (cached) return cached;
+  if (!options?.force) {
+    const cached = sourceUrlCache.get(trimmed);
+    if (cached) return cached;
 
-  const inflight = inFlightBySource.get(trimmed);
-  if (inflight) return inflight;
+    const inflight = inFlightBySource.get(trimmed);
+    if (inflight) return inflight;
+  }
 
   const work = (async () => {
     let result = trimmed;
