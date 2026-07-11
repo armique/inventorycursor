@@ -34,9 +34,9 @@ export function isGraphicsCardItem(item: InventoryItem): boolean {
 
 export function isEligibleForBuilderPicker(
   item: InventoryItem,
-  opts: { editId: string | null; bundleMode: boolean }
+  opts: { editId: string | null; bundleMode: boolean; isLotBundle: boolean }
 ): boolean {
-  if (item.isDefective) return false;
+  if (item.isDefective && !opts.isLotBundle) return false;
   if ((item.category === 'Bundle' && item.subCategory === 'PC Bundle') || item.category === 'PC Bundle') {
     return false;
   }
@@ -123,10 +123,13 @@ export function getBuilderPickerBlockReason(
   opts: {
     editId: string | null;
     bundleMode: boolean;
+    isLotBundle: boolean;
     containersById: Map<string, InventoryItem>;
   }
 ): string | null {
-  if (item.isDefective) return 'Marked defective';
+  if (item.isDefective && !opts.isLotBundle) {
+    return 'Marked defective — only lot bundles can include faulty parts';
+  }
 
   if ((item.category === 'Bundle' && item.subCategory === 'PC Bundle') || item.category === 'PC Bundle') {
     return 'PC bundle — cannot add as a part';

@@ -313,7 +313,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
       });
       if (!relevant) continue;
 
-      const blockReason = getBuilderPickerBlockReason(item, { editId, bundleMode, containersById });
+      const blockReason = getBuilderPickerBlockReason(item, { editId, bundleMode, isLotBundle, containersById });
       if (blockReason) {
         if (!seen.has(item.id)) {
           blocked.push({ item, reason: blockReason });
@@ -322,9 +322,9 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
         continue;
       }
 
-      if (!isEligibleForBuilderPicker(item, { editId, bundleMode })) {
+      if (!isEligibleForBuilderPicker(item, { editId, bundleMode, isLotBundle })) {
         if (!seen.has(item.id)) {
-          blocked.push({ item, reason: getBuilderPickerBlockReason(item, { editId, bundleMode, containersById }) || 'Not available' });
+          blocked.push({ item, reason: getBuilderPickerBlockReason(item, { editId, bundleMode, isLotBundle, containersById }) || 'Not available' });
           seen.add(item.id);
         }
         continue;
@@ -478,7 +478,9 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
             </h3>
             <p className={`text-slate-500 font-bold ${compact ? 'text-sm' : 'text-[10px]'}`}>
               {resolvedMode === 'bundle'
-                ? 'Click to add or remove items'
+                ? isLotBundle
+                  ? 'Click to add or remove items — defective parts allowed in lot bundles'
+                  : 'Click to add or remove items — defective parts excluded'
                 : 'Click ✓ to remove · compatible items only'}
             </p>
           </div>
@@ -531,7 +533,8 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
                     <div className="flex-1 min-w-0">
                       <p className={`font-black truncate text-slate-900 ${compact ? 'text-base' : 'text-xs'}`}>{item.name}</p>
                       <p className={`text-slate-400 font-bold uppercase ${compact ? 'text-xs' : 'text-[9px]'}`}>
-                        {item.subCategory || item.category} • {item.status} • €{formatEUR(Number(item.buyPrice))}
+                        {item.subCategory || item.category} • {item.status}
+                        {item.isDefective ? ' • Defective' : ''} • €{formatEUR(Number(item.buyPrice))}
                       </p>
                     </div>
                     {isSelected ? (
