@@ -38,6 +38,15 @@ import BulkSelectionBar, { type BulkAction } from './BulkSelectionBar';
 import { generateItemSpecs } from '../services/specsAI';
 import { getStorefrontHiddenReason, isPublishedOnStorefront } from '../utils/storefrontCatalog';
 import { fetchEbayListingPriceForItem, type EbayListingPriceMatch } from '../services/ebayService';
+import { hasEbayStorefrontPriceSynced } from '../utils/ebayPrice';
+import ContainerMembershipBadge from './ContainerMembershipBadge';
+import {
+  buildContainersById,
+  buildContainerByChildId,
+  getContainerKind,
+  isContainerMember,
+  resolveParentContainer,
+} from '../utils/containerMembership';
 
 interface Props {
   items: InventoryItem[];
@@ -372,8 +381,8 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
       matchesStatus = true;
     }
     if (!matchesStatus) return false;
-    // While searching, show items even if nested inside a PC/bundle — user explicitly looked them up.
-    if (item.parentContainerId && !searchActive) return false;
+    // Hide nested parts unless searching or "in composition" flat view is enabled.
+    if (item.parentContainerId && !searchActive && !showInComposition) return false;
     if (!searchActive && !showInComposition && item.status === ItemStatus.IN_COMPOSITION) return false;
 
     // While actively searching, ignore the category filter entirely so search is always global —
@@ -716,6 +725,8 @@ const InventoryList: React.FC<Props> = ({
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [expandedBundles, setExpandedBundles] = useState<Set<string>>(new Set());
+  const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null);
+  const [scrollTargetItemId, setScrollTargetItemId] = useState<string | null>(null);
   
   // Modals
   const [itemToSell, setItemToSell] = useState<InventoryItem | null>(null);
@@ -1413,6 +1424,8 @@ const InventoryList: React.FC<Props> = ({
   const deferredSelectedIds = useDeferredValue(selectedIds);
 
   const itemsById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
+  const containersById = useMemo(() => buildContainersById(items), [items]);
+  const containerByChildId = useMemo(() => buildContainerByChildId(items), [items]);
 
   const handleDuplicate = (item: InventoryItem) => {
     const copy: InventoryItem = {
@@ -1499,6 +1512,44 @@ const InventoryList: React.FC<Props> = ({
       setItemToEdit(item); 
     }
   };
+
+  const openParentContainer = useCallback(
+    (parent: InventoryItem) => {
+      addRecentItemId(parent.id);
+      if (parent.isPC || parent.isBundle) {
+        navigate(`/panel/builder?editId=${parent.id}`);
+      } else {
+        setItemToEdit(parent);
+      }
+    },
+    [navigate]
+  );
+
+  const focusContainerInList = useCallback(
+    (parent: InventoryItem) => {
+      setSearchTerm('');
+      setSpecFilters({});
+      setSpecRangeFilters({});
+      setTimeFilter('ALL');
+      setCategoryFilter('ALL');
+      setSubCategoryFilter('');
+      setShowInComposition(true);
+      if (parent.status === ItemStatus.SOLD || parent.status === ItemStatus.TRADED) {
+        setStatusFilter('SOLD');
+      } else if (parent.isDraft) {
+        setStatusFilter('DRAFTS');
+      } else {
+        setStatusFilter('ACTIVE');
+      }
+      setExpandedBundles((prev) => {
+        const next = new Set(prev);
+        next.add(parent.id);
+        return next;
+      });
+      setScrollTargetItemId(parent.id);
+    },
+    []
+  );
 
   const handleParseSingleItem = useCallback(async (item: InventoryItem) => {
     setParsingSingleId(item.id);
@@ -1791,29 +1842,43 @@ const InventoryList: React.FC<Props> = ({
               </button>
 
               {/* Live eBay listing price (seller store / account) */}
+              {(() => {
+                const ebayPriceSynced = hasEbayStorefrontPriceSynced(item);
+                const ebayPriceLoadingThis = ebayPriceLoading && ebayPriceModalItem?.id === item.id;
+                return (
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   void handleFetchEbayListingPrice(item);
                 }}
-                className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border text-amber-700 ${
-                  ebayPriceLoading && ebayPriceModalItem?.id === item.id
-                    ? 'border-amber-300 bg-amber-50'
-                    : 'border-amber-200 bg-white hover:bg-amber-50'
+                className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors ${
+                  ebayPriceLoadingThis
+                    ? 'border-amber-300 bg-amber-50 text-amber-700'
+                    : ebayPriceSynced
+                      ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                      : 'border-slate-200 bg-white text-slate-500 hover:border-amber-300 hover:text-amber-700 hover:bg-amber-50/50'
                 }`}
-                title="Fetch live storefront price from your eBay listing (rounded to .99)"
+                title={
+                  ebayPriceSynced
+                    ? `eBay storefront price synced${item.storePrice != null ? ` (€${formatEUR(item.storePrice)})` : ''}${item.ebayListingId ? ` · listing ${item.ebayListingId}` : ''} — click to refresh`
+                    : 'Fetch live storefront price from your eBay listing (rounded to .99)'
+                }
               >
                 <span
                   className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black ${
-                    ebayPriceLoading && ebayPriceModalItem?.id === item.id
+                    ebayPriceLoadingThis
                       ? 'bg-amber-500 text-white'
-                      : 'bg-slate-200 text-amber-700'
+                      : ebayPriceSynced
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-200 text-slate-600'
                   }`}
                 >
                   €
                 </span>
               </button>
+                );
+              })()}
 
               <button
                 type="button"
@@ -1858,7 +1923,12 @@ const InventoryList: React.FC<Props> = ({
           setExpandedBundles(newExpanded);
         };
         const isEditingName = editingCell?.itemId === item.id && editingCell?.field === 'item';
-        const canExpandBundle = (item.isPC || item.isBundle) && childItems.length > 0;
+        const compositionFlatView = showInComposition && searchTerm.trim().length < 2;
+        const canExpandBundle =
+          (item.isPC || item.isBundle) && childItems.length > 0 && !compositionFlatView;
+        const parentContainer = resolveParentContainer(item, containersById, containerByChildId);
+        const parentKind = getContainerKind(parentContainer);
+        const showMembershipBadge = Boolean(parentKind && parentContainer && !item.isPC && !item.isBundle);
         const userPhotoCount = getItemUserPhotoCount(item);
         const hasUserPhotos = userPhotoCount > 0;
         return (
@@ -1971,6 +2041,11 @@ const InventoryList: React.FC<Props> = ({
                       {item.isDraft && <span className="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-black uppercase flex items-center gap-1"><StickyNote size={8}/> Draft</span>}
                       {item.isBundle && <span className="text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-black uppercase">Bundle</span>}
                       {item.isPC && <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-black uppercase">PC Build</span>}
+                      {isContainerMember(item) && !showMembershipBadge && (
+                        <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-black uppercase">
+                          In composition
+                        </span>
+                      )}
                       {item.isDefective && <span className="text-[9px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-black uppercase">Defective</span>}
                       {item.quantity != null && item.quantity > 1 && (
                         <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-black uppercase">
@@ -2019,6 +2094,16 @@ const InventoryList: React.FC<Props> = ({
                       <p className="text-[9px] text-blue-600 font-bold mt-1 flex items-center gap-1" title="Compatible parts in inventory — open item to see list">
                          <Layers size={10} /> Works with {compatibleCountByItemId.get(item.id)} item{compatibleCountByItemId.get(item.id) === 1 ? '' : 's'}
                       </p>
+                   )}
+                   {showMembershipBadge && parentKind && parentContainer && (
+                      <div className="mt-1.5">
+                        <ContainerMembershipBadge
+                          kind={parentKind}
+                          parentName={parentContainer.name}
+                          onOpen={() => openParentContainer(parentContainer)}
+                          onLocate={() => focusContainerInList(parentContainer)}
+                        />
+                      </div>
                    )}
                    {isExpanded && childItems.length > 0 && (
                       <div className="mt-3 ml-4 pl-4 border-l-2 border-slate-200 space-y-2">
@@ -2585,6 +2670,31 @@ const InventoryList: React.FC<Props> = ({
       setStatusFilter('ACTIVE');
     }
   }, []);
+
+  useLayoutEffect(() => {
+    if (!scrollTargetItemId) return;
+    const id = scrollTargetItemId;
+    let attempts = 0;
+    const tryScroll = () => {
+      const el = document.querySelector(`[data-inventory-item-id="${CSS.escape(id)}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setHighlightedItemId(id);
+        setScrollTargetItemId(null);
+        window.setTimeout(() => {
+          setHighlightedItemId((current) => (current === id ? null : current));
+        }, 2600);
+        return;
+      }
+      attempts += 1;
+      if (attempts < 8) {
+        window.setTimeout(tryScroll, 80);
+      } else {
+        setScrollTargetItemId(null);
+      }
+    };
+    tryScroll();
+  }, [scrollTargetItemId, sortedItems, sortedActiveItems, sortedSoldItems, splitView]);
 
   const isQuickCategoryPinActive = useCallback(
     (pin: QuickCategoryPin) => {
@@ -3310,6 +3420,9 @@ const InventoryList: React.FC<Props> = ({
             sortedItems.map((item) => {
               const userPhotoCount = getItemUserPhotoCount(item);
               const hasUserPhotos = userPhotoCount > 0;
+              const parentContainer = resolveParentContainer(item, containersById, containerByChildId);
+              const parentKind = getContainerKind(parentContainer);
+              const showMembershipBadge = Boolean(parentKind && parentContainer && !item.isPC && !item.isBundle);
               return (
               <div key={item.id} className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm space-y-3">
                 <div className="flex gap-3 items-start">
@@ -3348,6 +3461,23 @@ const InventoryList: React.FC<Props> = ({
                       <p className="text-[10px] text-slate-500 mt-1 truncate">
                         {item.customer?.name}{item.ebayUsername ? ` · ${item.ebayUsername}` : ''}
                       </p>
+                    )}
+                    {showMembershipBadge && parentKind && parentContainer && (
+                      <div className="mt-2">
+                        <ContainerMembershipBadge
+                          kind={parentKind}
+                          parentName={parentContainer.name}
+                          onOpen={() => openParentContainer(parentContainer)}
+                          onLocate={() => focusContainerInList(parentContainer)}
+                        />
+                      </div>
+                    )}
+                    {isContainerMember(item) && !showMembershipBadge && (
+                      <div className="mt-2">
+                        <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-black uppercase">
+                          In composition
+                        </span>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -3424,6 +3554,7 @@ const InventoryList: React.FC<Props> = ({
             selectedIdSet={selectedIdSet}
             renderRowCells={renderRowCells}
             getRowActivityKey={getRowActivityKey}
+            highlightedItemId={highlightedItemId}
             rowHeightEstimate={rowHeightEstimate}
             bulkBarSpacer={selectedIds.length > 0}
           />
@@ -3443,6 +3574,7 @@ const InventoryList: React.FC<Props> = ({
             selectedIdSet={selectedIdSet}
             renderRowCells={renderRowCells}
             getRowActivityKey={getRowActivityKey}
+            highlightedItemId={highlightedItemId}
             rowHeightEstimate={rowHeightEstimate}
             bulkBarSpacer={selectedIds.length > 0}
           />
@@ -3464,6 +3596,7 @@ const InventoryList: React.FC<Props> = ({
           selectedIdSet={selectedIdSet}
           renderRowCells={renderRowCells}
           getRowActivityKey={getRowActivityKey}
+          highlightedItemId={highlightedItemId}
           rowHeightEstimate={rowHeightEstimate}
           bulkBarSpacer={selectedIds.length > 0}
           className={statusFilter === 'SOLD' ? 'hidden lg:flex flex-1' : 'flex flex-1'}
@@ -3491,7 +3624,10 @@ const InventoryList: React.FC<Props> = ({
             onClose={() => setItemToEdit(null)}
             categories={categories}
             categoryFields={categoryFields} // Pass prop
-            onAddCategory={() => {}} 
+            onAddCategory={() => {}}
+            parentContainer={resolveParentContainer(itemToEdit, containersById, containerByChildId)}
+            onOpenParentContainer={openParentContainer}
+            onLocateParentContainer={focusContainerInList}
          />
       )}
 
@@ -3988,6 +4124,7 @@ type InventoryTableBodyProps = {
   visibleColumns: ColumnId[];
   renderRowCells: (item: InventoryItem, isSelected: boolean) => React.ReactNode;
   getRowActivityKey: (item: InventoryItem) => string;
+  highlightedItemId: string | null;
   scrollElement: HTMLDivElement | null;
   rowHeightEstimate: number;
   bulkBarSpacer: boolean;
@@ -3999,6 +4136,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
   visibleColumns,
   renderRowCells,
   getRowActivityKey,
+  highlightedItemId,
   scrollElement,
   rowHeightEstimate,
   bulkBarSpacer,
@@ -4019,6 +4157,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
       ) {
         h += 16;
       }
+      if (item.parentContainerId || item.status === ItemStatus.IN_COMPOSITION) h += 22;
       return h;
     },
     overscan: 5,
@@ -4057,6 +4196,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
             visibleColumns={visibleColumns}
             renderRowCells={renderRowCells}
             rowActivityKey={getRowActivityKey(item)}
+            highlighted={highlightedItemId === item.id}
           />
         ))}
         {bulkBarSpacer && (
@@ -4092,6 +4232,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
             visibleColumns={visibleColumns}
             renderRowCells={renderRowCells}
             rowActivityKey={getRowActivityKey(item)}
+            highlighted={highlightedItemId === item.id}
             virtualIndex={virtualRow.index}
             measureRef={rowVirtualizer.measureElement}
           />
@@ -4118,17 +4259,21 @@ type InventoryTableRowProps = {
   renderRowCells: (item: InventoryItem, isSelected: boolean) => React.ReactNode;
   /** Bumps when inline edit / AI spinners affect this row so memo does not skip updates. */
   rowActivityKey: string;
+  highlighted?: boolean;
   virtualIndex?: number;
   measureRef?: (node: Element | null) => void;
 };
 
 const InventoryTableRow = React.memo(
-  function InventoryTableRow({ item, isSelected, renderRowCells, virtualIndex, measureRef }: InventoryTableRowProps) {
+  function InventoryTableRow({ item, isSelected, renderRowCells, highlighted, virtualIndex, measureRef }: InventoryTableRowProps) {
     return (
       <tr
         ref={measureRef}
         data-index={virtualIndex}
-        className={`hover:bg-slate-50/50 group/row ${isSelected ? 'bg-blue-50/20' : ''}`}
+        data-inventory-item-id={item.id}
+        className={`hover:bg-slate-50/50 group/row ${isSelected ? 'bg-blue-50/20' : ''} ${
+          highlighted ? 'ring-2 ring-amber-400 ring-inset bg-amber-50/40 animate-pulse' : ''
+        }`}
       >
         {renderRowCells(item, isSelected)}
       </tr>
@@ -4139,6 +4284,7 @@ const InventoryTableRow = React.memo(
     prev.isSelected === next.isSelected &&
     prev.visibleColumns === next.visibleColumns &&
     prev.rowActivityKey === next.rowActivityKey &&
+    prev.highlighted === next.highlighted &&
     prev.renderRowCells === next.renderRowCells
 );
 
@@ -4157,6 +4303,7 @@ type InventoryListTablePaneProps = {
   selectedIdSet: Set<string>;
   renderRowCells: (item: InventoryItem, isSelected: boolean) => React.ReactNode;
   getRowActivityKey: (item: InventoryItem) => string;
+  highlightedItemId: string | null;
   rowHeightEstimate: number;
   bulkBarSpacer: boolean;
   className?: string;
@@ -4177,6 +4324,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
   selectedIdSet,
   renderRowCells,
   getRowActivityKey,
+  highlightedItemId,
   rowHeightEstimate,
   bulkBarSpacer,
   className = 'flex flex-1',
@@ -4308,6 +4456,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
             visibleColumns={visibleColumns}
             renderRowCells={renderRowCells}
             getRowActivityKey={getRowActivityKey}
+            highlightedItemId={highlightedItemId}
             scrollElement={scrollElement}
             rowHeightEstimate={rowHeightEstimate}
             bulkBarSpacer={bulkBarSpacer}

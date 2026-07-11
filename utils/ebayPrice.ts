@@ -11,3 +11,13 @@ export function parseEbayListingPriceValue(raw: unknown): number | undefined {
   if (!Number.isFinite(n) || n <= 0) return undefined;
   return n;
 }
+
+/** True when storefront price was linked from a live eBay listing (flags-column € icon). */
+export function hasEbayStorefrontPriceSynced(item: {
+  ebayListingId?: string;
+  listedOnEbay?: boolean;
+  storePrice?: number;
+}): boolean {
+  if (item.ebayListingId) return true;
+  return Boolean(item.listedOnEbay && item.storePrice != null && item.storePrice > 0);
+}
