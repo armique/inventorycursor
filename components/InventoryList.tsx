@@ -1812,16 +1812,20 @@ const InventoryList: React.FC<Props> = ({
           <td key={id} style={style} onClick={() => handleRowClick(item, isEditingName)}>
              <div className="flex items-start gap-1.5 cursor-pointer group/cell w-full py-0.5">
                 <div
-                  className={`relative shrink-0 rounded-md ${
+                  className={`relative shrink-0 rounded-md cursor-pointer hover:opacity-90 transition-opacity ${
                     hasUserPhotos
                       ? 'ring-2 ring-emerald-500/45'
                       : 'ring-1 ring-dashed ring-amber-400/80 bg-amber-50/40'
                   }`}
                   title={
                     hasUserPhotos
-                      ? `${userPhotoCount} item photo${userPhotoCount === 1 ? '' : 's'}`
-                      : 'No item photos — select row and use Add photos'
+                      ? `${userPhotoCount} photo${userPhotoCount === 1 ? '' : 's'} — click to add more`
+                      : 'Click to add photos'
                   }
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openAddPhotosModal([item.id]);
+                  }}
                 >
                   <ItemThumbnail item={item} className={`${dense ? 'w-8 h-8' : 'w-9 h-9'} rounded-md object-cover border border-slate-100 shrink-0`} size={thumbPx} />
                   <span

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { formatEUR } from '../utils/formatMoney';
 
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
@@ -11,6 +11,8 @@ import { InventoryItem, ItemStatus } from '../types';
 import { estimatePCPerformance, PerformanceEstimate } from '../services/geminiService';
 import ItemThumbnail, { getCategoryImageUrl } from './ItemThumbnail';
 import { isCompatibleWithBuild } from '../services/compatibility';
+import BuildItemPhotosPanel from './BuildItemPhotosPanel';
+import { getItemUserPhotoUrls } from '../utils/imageImport';
 
 interface Props {
   items: InventoryItem[];
@@ -101,8 +103,9 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
   const [parts, setParts] = useState<Record<string, InventoryItem[]>>({});
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [buildPhotos, setBuildPhotos] = useState<string[]>([]);
   
-  // AI Estimation
+  const isCompactEdit = Boolean(editId);
   const [performance, setPerformance] = useState<PerformanceEstimate | null>(null);
   const [estimating, setEstimating] = useState(false);
 
@@ -135,6 +138,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
            }
         });
         setParts(existingParts);
+        setBuildPhotos(getItemUserPhotoUrls(pc));
       }
     } else if (location.state?.initialParts) {
        // Similar logic for initial selection
@@ -189,8 +193,18 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
      
      const parentId = editId || (mode === 'bundle' ? `bundle-${Date.now()}` : `pc-${Date.now()}`);
      
+     const existingParent = editId ? items.find((i) => i.id === editId) : undefined;
+     const autoImageUrl =
+       mode === 'bundle'
+         ? allParts[0]?.imageUrl || getCategoryImageUrl({ category: allParts[0]?.category || 'Components' }) || undefined
+         : parts['CASE']?.[0]?.imageUrl || getCategoryImageUrl({ category: 'Cases' }) || undefined;
+     const userPhotos = buildPhotos.length > 0 ? buildPhotos : getItemUserPhotoUrls(existingParent || {});
+     const imageUrl = userPhotos[0] || autoImageUrl || existingParent?.imageUrl;
+     const imageUrls = userPhotos.length ? userPhotos : existingParent?.imageUrls;
+
      // Parent Item (PC or Bundle)
      const parentItem: InventoryItem = {
+        ...(existingParent || {}),
         id: parentId,
         name: buildName,
         category: mode === 'bundle' ? 'Bundle' : 'PC',
@@ -204,10 +218,8 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
         comment1: `${mode === 'bundle' ? 'Bundle Contents' : 'Custom Build Specs'}:\n${allParts.map(i => `- ${i.name}`).join('\n')}`,
         comment2: !mode && performance ? `AI Performance Estimate:\n${performance.summary}` : performance && mode !== 'bundle' ? `AI Performance Estimate:\n${performance.summary}` : '',
         vendor: mode === 'bundle' ? 'Custom Bundle' : 'Custom Build',
-        imageUrl:
-          mode === 'bundle'
-            ? allParts[0]?.imageUrl || getCategoryImageUrl({ category: allParts[0]?.category || 'Components' }) || undefined
-            : parts['CASE']?.[0]?.imageUrl || getCategoryImageUrl({ category: 'Cases' }) || undefined
+        imageUrl,
+        imageUrls: imageUrls?.length ? imageUrls : undefined,
      };
 
      // Update Components
@@ -323,7 +335,254 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
      });
   };
 
+  const clearSlot = useCallback((slotId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setParts((prev) => ({ ...prev, [slotId]: [] }));
+    if (selectedSlot === slotId) setSelectedSlot(null);
+  }, [selectedSlot]);
+
+  const removePartFromSlot = useCallback((slotId: string, itemId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setParts((prev) => ({
+      ...prev,
+      [slotId]: (prev[slotId] || []).filter((i) => i.id !== itemId),
+    }));
+  }, []);
+
+  const renderSlotRow = (slot: typeof SLOTS[number], compact = false) => {
+    const assigned = parts[slot.id] || [];
+    const hasItems = assigned.length > 0;
+
+    return (
+      <div
+        key={slot.id}
+        onClick={() => { setSelectedSlot(slot.id); setSearchQuery(''); }}
+        className={`${compact ? 'p-2.5 rounded-xl' : 'p-4 rounded-[2rem]'} border-2 cursor-pointer transition-all ${
+          selectedSlot === slot.id
+            ? 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-200'
+            : 'bg-white border-slate-100 hover:border-indigo-200'
+        }`}
+      >
+        <div className="flex items-center gap-2 mb-1">
+          <div className={`${compact ? 'p-1.5 rounded-lg' : 'p-2 rounded-xl'} ${hasItems ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-50 text-slate-400'}`}>
+            {React.cloneElement(slot.icon as React.ReactElement, { size: compact ? 16 : 20 })}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className={`font-black text-slate-900 truncate ${compact ? 'text-xs' : 'text-sm'}`}>{slot.label}</p>
+            <p className="text-[9px] text-slate-400 font-bold uppercase">
+              {assigned.length} selected {slot.required && !hasItems && <span className="text-red-400">*Req</span>}
+            </p>
+          </div>
+          {hasItems ? (
+            <button
+              type="button"
+              onClick={(e) => clearSlot(slot.id, e)}
+              title="Remove all parts from this slot"
+              className="p-0.5 rounded-full hover:bg-emerald-100 transition-colors"
+            >
+              <CheckCircle2 size={compact ? 16 : 20} className="text-emerald-500 hover:text-emerald-700" />
+            </button>
+          ) : (
+            <Plus size={compact ? 16 : 20} className="text-slate-300 shrink-0" />
+          )}
+        </div>
+
+        {hasItems && (
+          <div className={`space-y-0.5 ${compact ? 'pl-8' : 'pl-12'}`}>
+            {assigned.map((item) => (
+              <div key={item.id} className="text-[10px] font-bold text-slate-600 truncate flex justify-between items-center gap-1 group/part">
+                <span className="truncate">{item.name}</span>
+                <div className="flex items-center gap-1 shrink-0">
+                  <span className="text-slate-400">€{formatEUR(Number(item.buyPrice))}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => removePartFromSlot(slot.id, item.id, e)}
+                    className="p-0.5 rounded opacity-0 group-hover/part:opacity-100 hover:bg-red-100 text-red-500 transition-all"
+                    title="Remove from build"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderPartPicker = (compact = false) => {
+    if (!selectedSlot) {
+      return (
+        <div className={`flex-1 bg-slate-50 border border-dashed border-slate-300 flex flex-col items-center justify-center text-center opacity-60 ${compact ? 'rounded-xl min-h-[180px]' : 'rounded-[2.5rem]'}`}>
+          <Hammer size={compact ? 36 : 64} className="mb-3 text-slate-300"/>
+          <h3 className={`font-black text-slate-400 ${compact ? 'text-sm' : 'text-2xl'}`}>Select a slot</h3>
+          <p className="text-[10px] font-bold text-slate-400 max-w-xs mt-1 px-4">Pick a component slot to add or remove parts.</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className={`flex-1 bg-white border border-slate-200 shadow-sm flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 ${compact ? 'rounded-xl' : 'rounded-[2.5rem] shadow-lg'}`}>
+        <div className={`${compact ? 'p-3' : 'p-6'} border-b border-slate-100 bg-slate-50/50 flex justify-between items-center gap-2`}>
+          <div className="min-w-0">
+            <h3 className={`font-black text-slate-900 truncate ${compact ? 'text-sm' : 'text-xl'}`}>
+              {SLOTS.find(s => s.id === selectedSlot)?.label}
+            </h3>
+            <p className="text-[10px] text-slate-500 font-bold">Click ✓ to remove · compatible items only</p>
+          </div>
+          <button type="button" onClick={() => setSelectedSlot(null)} className="p-1.5 hover:bg-slate-200 rounded-full shrink-0"><X size={16}/></button>
+        </div>
+
+        <div className={`${compact ? 'p-2' : 'p-4'} border-b border-slate-100`}>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14}/>
+            <input
+              autoFocus
+              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs outline-none focus:ring-2 focus:ring-blue-50"
+              placeholder={`Search ${SLOTS.find(s => s.id === selectedSlot)?.label}…`}
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className={`flex-1 overflow-y-auto ${compact ? 'p-2 space-y-1' : 'p-4 space-y-2'}`}>
+          {availableItems.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-center opacity-40 py-8">
+              <Box size={32} className="mb-2 text-slate-300"/>
+              <p className="font-bold text-slate-400 text-xs">No items found</p>
+            </div>
+          ) : (
+            <>
+              {hiddenIncompatibleCount > 0 && (
+                <p className="text-[9px] text-slate-500 font-bold mb-1 px-1">{hiddenIncompatibleCount} incompatible hidden</p>
+              )}
+              {availableWithCompatibility.map(({ item }) => {
+                const isSelected = parts[selectedSlot!]?.some(p => p.id === item.id);
+                return (
+                  <div
+                    key={item.id}
+                    onClick={() => togglePart(item)}
+                    title={isSelected ? 'Click to remove from build' : 'Click to add to build'}
+                    className={`flex items-center gap-2 ${compact ? 'p-2 rounded-xl' : 'p-4 rounded-2xl'} border-2 transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-blue-50 border-blue-500 shadow-sm'
+                        : 'bg-white border-slate-100 hover:border-blue-200'
+                    }`}
+                  >
+                    <ItemThumbnail item={item} className={`${compact ? 'w-9 h-9' : 'w-12 h-12'} rounded-lg object-cover bg-slate-100 shrink-0`} size={compact ? 36 : 48} useCategoryImage />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-black text-xs truncate text-slate-900">{item.name}</p>
+                      <p className="text-[9px] text-slate-400 font-bold uppercase">{item.category} • €{formatEUR(Number(item.buyPrice))}</p>
+                    </div>
+                    {isSelected ? (
+                      <CheckCircle2 size={compact ? 18 : 24} className="text-blue-600 shrink-0" />
+                    ) : (
+                      <div className={`${compact ? 'w-5 h-5' : 'w-6 h-6'} rounded-full border-2 border-slate-200 shrink-0`}/>
+                    )}
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const currentTotal = (Object.values(parts).flat() as InventoryItem[]).reduce((sum, i) => sum + i.buyPrice, 0);
+
+  const headerActions = (
+    <div className="flex items-center gap-2 shrink-0">
+      {!isCompactEdit && (
+        <div className="flex items-center bg-slate-100 rounded-2xl p-1 text-[10px] font-black uppercase tracking-widest">
+          <button
+            type="button"
+            onClick={() => setMode('pc')}
+            className={`px-3 py-1.5 rounded-xl transition-colors ${
+              mode === 'pc' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            PC Build
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('bundle')}
+            className={`px-3 py-1.5 rounded-xl transition-colors ${
+              mode === 'bundle' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            Bundle
+          </button>
+        </div>
+      )}
+      <div className={`text-right ${isCompactEdit ? 'px-3 py-1.5 rounded-xl' : 'px-6 py-2 rounded-2xl shadow-lg'} bg-slate-900 text-white`}>
+        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total</p>
+        <p className={`font-black ${isCompactEdit ? 'text-lg' : 'text-2xl'}`}>€{formatEUR(currentTotal)}</p>
+      </div>
+      <button
+        onClick={handleSave}
+        className={`flex items-center gap-2 bg-blue-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 transition-all ${
+          isCompactEdit ? 'px-4 py-2' : 'px-8 py-4 rounded-2xl shadow-xl text-xs'
+        }`}
+      >
+        <Save size={isCompactEdit ? 14 : 18}/> Save
+      </button>
+    </div>
+  );
+
+  if (isCompactEdit) {
+    return (
+      <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-3 animate-in fade-in">
+        <div className="bg-slate-50 w-full max-w-5xl rounded-2xl shadow-2xl border border-white/20 overflow-hidden flex flex-col h-[min(92vh,760px)]">
+          <header className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-200 bg-white shrink-0">
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                type="button"
+                onClick={() => navigate('/panel/inventory')}
+                className="p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-400 hover:text-slate-900 shrink-0"
+              >
+                <ArrowLeft size={18}/>
+              </button>
+              <div className="min-w-0">
+                <h1 className="text-lg font-black text-slate-900 truncate">
+                  {mode === 'bundle' ? 'Edit Bundle' : 'Edit Build'}
+                </h1>
+                <p className="text-[10px] text-slate-500 font-bold truncate">Photos + parts in one place</p>
+              </div>
+            </div>
+            {headerActions}
+          </header>
+
+          <div className="flex-1 grid grid-cols-[220px_1fr] overflow-hidden min-h-0">
+            <aside className="border-r border-slate-200 bg-white p-3 flex flex-col gap-3 min-h-0 overflow-hidden">
+              <div>
+                <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Build name</label>
+                <input
+                  className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-slate-100"
+                  value={buildName}
+                  onChange={(e) => setBuildName(e.target.value)}
+                />
+              </div>
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <BuildItemPhotosPanel name={buildName} photos={buildPhotos} onChange={setBuildPhotos} />
+              </div>
+            </aside>
+
+            <div className="flex flex-col min-h-0 overflow-hidden p-3 gap-3">
+              <div className="grid grid-cols-2 xl:grid-cols-3 gap-2 max-h-[42%] overflow-y-auto shrink-0 pr-1">
+                {SLOTS.map((slot) => renderSlotRow(slot, true))}
+              </div>
+              <div className="flex-1 min-h-0 flex flex-col">
+                {renderPartPicker(true)}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-[1600px] mx-auto h-[calc(100vh-100px)] flex flex-col animate-in fade-in">
@@ -349,37 +608,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
              </div>
           </div>
           <div className="flex items-center gap-4">
-             <div className="flex items-center bg-slate-100 rounded-2xl p-1 text-[10px] font-black uppercase tracking-widest">
-               <button
-                 type="button"
-                 onClick={() => setMode('pc')}
-                 className={`px-3 py-1.5 rounded-xl transition-colors ${
-                   mode === 'pc'
-                     ? 'bg-slate-900 text-white shadow-sm'
-                     : 'text-slate-500 hover:text-slate-800'
-                 }`}
-               >
-                 PC Build
-               </button>
-               <button
-                 type="button"
-                 onClick={() => setMode('bundle')}
-                 className={`px-3 py-1.5 rounded-xl transition-colors ${
-                   mode === 'bundle'
-                     ? 'bg-slate-900 text-white shadow-sm'
-                     : 'text-slate-500 hover:text-slate-800'
-                 }`}
-               >
-                 Bundle
-               </button>
-             </div>
-             <div className="text-right px-6 py-2 bg-slate-900 text-white rounded-2xl shadow-lg">
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Cost</p>
-                <p className="text-2xl font-black">€{formatEUR(currentTotal)}</p>
-             </div>
-             <button onClick={handleSave} className="flex items-center gap-2 px-8 py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl">
-                <Save size={18}/> {mode === 'bundle' ? 'Save Bundle' : 'Save Build'}
-             </button>
+             {headerActions}
           </div>
        </header>
 
@@ -398,117 +627,13 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
              </div>
 
              <div className="space-y-3">
-                {SLOTS.map(slot => {
-                   const assigned = parts[slot.id] || [];
-                   const hasItems = assigned.length > 0;
-                   
-                   return (
-                      <div 
-                         key={slot.id}
-                         onClick={() => { setSelectedSlot(slot.id); setSearchQuery(''); }}
-                         className={`p-4 rounded-[2rem] border-2 cursor-pointer transition-all ${selectedSlot === slot.id ? 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-200' : 'bg-white border-slate-100 hover:border-indigo-200'}`}
-                      >
-                         <div className="flex items-center gap-3 mb-2">
-                            <div className={`p-2 rounded-xl ${hasItems ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-50 text-slate-400'}`}>
-                               {slot.icon}
-                            </div>
-                            <div className="flex-1">
-                               <p className="font-black text-sm text-slate-900">{slot.label}</p>
-                               <p className="text-[10px] text-slate-400 font-bold uppercase">{assigned.length} selected {slot.required && !hasItems && <span className="text-red-400">*Required</span>}</p>
-                            </div>
-                            {hasItems ? <CheckCircle2 size={20} className="text-emerald-500"/> : <Plus size={20} className="text-slate-300"/>}
-                         </div>
-                         
-                         {hasItems && (
-                            <div className="space-y-1 pl-12">
-                               {assigned.map(item => (
-                                  <div key={item.id} className="text-xs font-bold text-slate-600 truncate flex justify-between">
-                                     <span>{item.name}</span>
-                                     <span>€{formatEUR(Number(item.buyPrice))}</span>
-                                  </div>
-                               ))}
-                            </div>
-                         )}
-                      </div>
-                   );
-                })}
+                {SLOTS.map(slot => renderSlotRow(slot, false))}
              </div>
           </div>
 
           {/* CENTER: SELECTION / SEARCH */}
-          <div className="flex-1 flex flex-col gap-4">
-             {selectedSlot ? (
-                <div className="flex-1 bg-white rounded-[2.5rem] border border-slate-200 shadow-lg flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-                   <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-                      <div>
-                         <h3 className="text-xl font-black text-slate-900">Select {SLOTS.find(s => s.id === selectedSlot)?.label}</h3>
-                         <p className="text-xs text-slate-500 font-bold">Showing compatible inventory items</p>
-                         {SLOTS.find(s => s.id === selectedSlot)?.multiple && (
-                           <p className="text-[10px] text-indigo-600 font-bold mt-1">
-                             You can add multiple parts here (e.g. several RAM sticks or drives). List only shows items that match your CPU/motherboard (e.g. DDR5 RAM with a DDR5 board).
-                           </p>
-                         )}
-                      </div>
-                      <button onClick={() => setSelectedSlot(null)} className="p-2 hover:bg-slate-200 rounded-full"><X size={20}/></button>
-                   </div>
-                   
-                   <div className="p-4 border-b border-slate-100">
-                      <div className="relative">
-                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
-                         <input 
-                            autoFocus
-                            className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm outline-none focus:ring-4 focus:ring-blue-50 transition-all"
-                            placeholder={`Search ${SLOTS.find(s => s.id === selectedSlot)?.label}...`}
-                            value={searchQuery}
-                            onChange={e => setSearchQuery(e.target.value)}
-                         />
-                      </div>
-                   </div>
-
-                   <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                      {availableItems.length === 0 ? (
-                         <div className="h-full flex flex-col items-center justify-center text-center opacity-40">
-                            <Box size={48} className="mb-4 text-slate-300"/>
-                            <p className="font-bold text-slate-400">No items found</p>
-                            <p className="text-xs text-slate-400">Add items to inventory first</p>
-                         </div>
-                      ) : (
-                         <>
-                            {hiddenIncompatibleCount > 0 && (
-                               <p className="text-[10px] text-slate-500 font-bold mb-2 px-1">{hiddenIncompatibleCount} incompatible item{hiddenIncompatibleCount === 1 ? '' : 's'} hidden</p>
-                            )}
-                            {availableWithCompatibility.map(({ item }) => {
-                               const isSelected = parts[selectedSlot!]?.some(p => p.id === item.id);
-                               return (
-                                  <div
-                                     key={item.id}
-                                     onClick={() => togglePart(item)}
-                                     className={`flex items-center gap-4 p-4 rounded-2xl border-2 transition-all ${
-                                       isSelected
-                                         ? 'bg-blue-50 border-blue-500 shadow-md cursor-pointer hover:scale-[1.01]'
-                                         : 'bg-white border-slate-100 hover:border-blue-200 cursor-pointer hover:scale-[1.01]'
-                                     }`}
-                                  >
-                                     <ItemThumbnail item={item} className="w-12 h-12 rounded-xl object-cover bg-slate-100" size={48} useCategoryImage />
-                                     <div className="flex-1 min-w-0">
-                                        <p className="font-black text-sm truncate text-slate-900">{item.name}</p>
-                                        <p className="text-[10px] text-slate-400 font-bold uppercase">{item.category} • €{formatEUR(Number(item.buyPrice))}</p>
-                                     </div>
-                                     {isSelected ? <CheckCircle2 size={24} className="text-blue-600"/> : <div className="w-6 h-6 rounded-full border-2 border-slate-200"/>}
-                                  </div>
-                               );
-                            })}
-                         </>
-                      )}
-                   </div>
-                </div>
-             ) : (
-                <div className="flex-1 bg-slate-50 rounded-[2.5rem] border border-dashed border-slate-300 flex flex-col items-center justify-center text-center opacity-60">
-                   <Hammer size={64} className="mb-6 text-slate-300"/>
-                   <h3 className="text-2xl font-black text-slate-400">Start Building</h3>
-                   <p className="text-sm font-bold text-slate-400 max-w-xs mt-2">Select a slot on the left to add components from your inventory.</p>
-                </div>
-             )}
+          <div className="flex-1 flex flex-col gap-4 min-h-0">
+             {renderPartPicker(false)}
           </div>
 
           {/* RIGHT: AI ANALYSIS */}
