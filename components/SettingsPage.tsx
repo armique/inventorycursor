@@ -85,11 +85,21 @@ const getEbayConfig = () => {
     const saved = localStorage.getItem('ebay_config');
     if (saved) return JSON.parse(saved);
   } catch (_) {}
-  return { token: '' };
+  return { token: '', username: 'rm4ik' };
 };
 
-const saveEbayConfig = (token: string) => {
-  localStorage.setItem('ebay_config', JSON.stringify({ token: token.trim() }));
+const saveEbayConfigLocal = (updates: { token?: string; username?: string }) => {
+  const prev = getEbayConfig();
+  localStorage.setItem(
+    'ebay_config',
+    JSON.stringify({
+      token: updates.token !== undefined ? updates.token.trim() : prev.token || '',
+      username:
+        updates.username !== undefined
+          ? updates.username.trim().replace(/^@/, '') || 'rm4ik'
+          : prev.username || 'rm4ik',
+    })
+  );
 };
 
 const GITHUB_APP_REPO_URL = 'https://github.com/armique/inventorycursor';
@@ -134,6 +144,7 @@ const SettingsPage: React.FC<Props> = ({
   const [githubRepo, setGitHubRepo] = useState(() => getStoredConfig()?.repo || 'armique/inventorycursor');
   const [githubTokenInput, setGitHubTokenInput] = useState('');
   const [ebayTokenInput, setEbayTokenInput] = useState('');
+  const [ebayUsernameInput, setEbayUsernameInput] = useState(() => getEbayConfig()?.username || 'rm4ik');
   const [githubSyncLoading, setGitHubSyncLoading] = useState(false);
   const [githubCommits, setGitHubCommits] = useState<BackupCommit[]>([]);
   const [githubCommitsLoading, setGitHubCommitsLoading] = useState(false);
@@ -685,10 +696,32 @@ const SettingsPage: React.FC<Props> = ({
              <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
                 <h3 className="text-xl font-black text-slate-900 flex items-center gap-2"><ShoppingBag size={24}/> eBay sync (optional)</h3>
                 <p className="text-sm text-slate-500">
-                   Optional OAuth token for the automatic eBay order banner in the panel. Most sellers mark sales with the eBay order screenshot parser in the sale dialog instead — no API setup required.
+                   Import photos from your public eBay seller store (Browse API). Order sync still uses an optional OAuth token. Most sellers mark sales with the eBay order screenshot parser in the sale dialog instead — no API setup required.
                 </p>
                 <div className="space-y-2">
-                   <label className="text-[10px] font-black uppercase text-slate-400 ml-1">OAuth Access Token</label>
+                   <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Seller username</label>
+                   <input
+                      type="text"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm outline-none focus:border-slate-900"
+                      placeholder="rm4ik"
+                      value={ebayUsernameInput}
+                      onChange={e => setEbayUsernameInput(e.target.value.replace(/^@/, ''))}
+                   />
+                   <p className="text-xs text-slate-500">
+                      Listings are loaded from your public seller page, e.g.{' '}
+                      <a
+                         href={`https://www.ebay.de/usr/${ebayUsernameInput.trim() || 'rm4ik'}`}
+                         target="_blank"
+                         rel="noopener noreferrer"
+                         className="text-indigo-600 hover:underline"
+                      >
+                         ebay.de/usr/{ebayUsernameInput.trim() || 'rm4ik'}
+                      </a>
+                      . Default: <code className="bg-slate-100 px-1 rounded">rm4ik</code>.
+                   </p>
+                </div>
+                <div className="space-y-2">
+                   <label className="text-[10px] font-black uppercase text-slate-400 ml-1">OAuth Access Token (optional)</label>
                    <input
                       type="password"
                       className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm outline-none focus:border-slate-900"
@@ -697,20 +730,28 @@ const SettingsPage: React.FC<Props> = ({
                       onChange={e => setEbayTokenInput(e.target.value)}
                    />
                    <p className="text-xs text-slate-500">
-                      eBay Developer Account → Create OAuth application → User Token with <code className="bg-slate-100 px-1 rounded">sell.fulfillment</code> or <code className="bg-slate-100 px-1 rounded">sell.fulfillment.readonly</code> scope.
+                      eBay Developer Account → OAuth User Token. Scopes: <code className="bg-slate-100 px-1 rounded">sell.fulfillment.readonly</code> (order sync) and{' '}
+                      <code className="bg-slate-100 px-1 rounded">sell.inventory.readonly</code> (extra private listings). Photo import works from your seller store without a token.
                    </p>
                 </div>
                 <div className="flex items-center gap-3">
                    <button
                       type="button"
-                      onClick={() => { saveEbayConfig(ebayTokenInput || getEbayConfig()?.token || ''); setEbayTokenInput(''); showToast('eBay token saved', 'success'); }}
+                      onClick={() => {
+                         saveEbayConfigLocal({
+                            token: ebayTokenInput || getEbayConfig()?.token || '',
+                            username: ebayUsernameInput,
+                         });
+                         setEbayTokenInput('');
+                         showToast('eBay settings saved', 'success');
+                      }}
                       className="px-5 py-2.5 bg-slate-900 text-white rounded-xl font-bold text-xs uppercase hover:bg-slate-800 flex items-center gap-2"
                    >
-                      <Save size={16}/> Save token
+                      <Save size={16}/> Save eBay settings
                    </button>
-                   {getEbayConfig()?.token && (
+                   {(getEbayConfig()?.token || getEbayConfig()?.username) && (
                       <span className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-800 rounded-xl text-sm font-bold">
-                         <CheckCircle2 size={16}/> Token configured
+                         <CheckCircle2 size={16}/> {getEbayConfig()?.username || 'rm4ik'} configured
                       </span>
                    )}
                 </div>

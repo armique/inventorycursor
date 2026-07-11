@@ -7,13 +7,51 @@
 // We point to our own server route. The server handles the actual call to api.ebay.com
 const PROXY_BASE = '/api/ebay'; 
 
-const getEbayConfig = () => {
+export interface EbayConfig {
+  token?: string;
+  username?: string;
+}
+
+const DEFAULT_EBAY_USERNAME = 'rm4ik';
+
+const getEbayConfig = (): EbayConfig => {
   const saved = localStorage.getItem('ebay_config');
   if (saved) {
-    return JSON.parse(saved);
+    try {
+      return JSON.parse(saved);
+    } catch (_) {}
   }
-  return { token: '' };
+  return { token: '', username: DEFAULT_EBAY_USERNAME };
 };
+
+export function getEbayUsername(): string {
+  const username = getEbayConfig()?.username?.trim().replace(/^@/, '');
+  return username || DEFAULT_EBAY_USERNAME;
+}
+
+export function saveEbayConfig(updates: Partial<EbayConfig>): void {
+  const prev = getEbayConfig();
+  localStorage.setItem(
+    'ebay_config',
+    JSON.stringify({
+      token: updates.token !== undefined ? updates.token.trim() : prev.token || '',
+      username:
+        updates.username !== undefined
+          ? updates.username.trim().replace(/^@/, '') || DEFAULT_EBAY_USERNAME
+          : prev.username || DEFAULT_EBAY_USERNAME,
+    })
+  );
+}
+
+export function getEbayToken(): string | null {
+  const config = getEbayConfig();
+  const token = config?.token?.trim();
+  return token || null;
+}
+
+export function hasEbayToken(): boolean {
+  return Boolean(getEbayToken());
+}
 
 const makeRequest = async (endpoint: string, options: RequestInit) => {
   const config = getEbayConfig();
@@ -156,3 +194,30 @@ export const fetchEbayOrder = async (orderId: string): Promise<EbayOrderData> =>
     sellDate: data.creationDate || undefined,
   };
 };
+
+export interface EbayMyListing {
+  sku?: string;
+  offerId?: string;
+  listingId: string;
+  title: string;
+  thumbnail?: string;
+  imageUrls: string[];
+  listingUrl?: string;
+  source: 'inventory' | 'trading' | 'seller_store';
+}
+
+/** Fetch active eBay listings from the seller store (Browse API) plus optional OAuth inventory. */
+export async function fetchMyEbayListings(): Promise<EbayMyListing[]> {
+  const token = getEbayToken();
+  const username = getEbayUsername();
+  const res = await fetch('/api/ebay?route=listings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: token || undefined, username }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || `Failed to fetch eBay listings: ${res.status}`);
+  }
+  return data.listings || [];
+}

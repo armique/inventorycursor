@@ -22,6 +22,8 @@ import { recordCategoryCorrection, suggestCategoryFromCorrections } from '../ser
 import { filesToDataUrls, prepareInventoryImagesForStorage, getItemUserPhotoCount, isCategoryPlaceholderImage } from '../utils/imageImport';
 import { searchProductPhotos, getImageSearchProviders, ImageSearchResult, ImageSearchProvider } from '../services/imageSearchService';
 import { getCachedProductPhoto, setCachedProductPhoto } from '../services/firebaseService';
+import { fetchMyEbayListings, getEbayUsername, type EbayMyListing } from '../services/ebayService';
+import { matchEbayListingsForItem } from '../utils/ebayListingMatch';
 
 interface Props {
   items: InventoryItem[];
@@ -136,6 +138,12 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   const [photoSearchResults, setPhotoSearchResults] = useState<ImageSearchResult[] | null>(null);
   const [photoSearching, setPhotoSearching] = useState(false);
   const [photoSearchError, setPhotoSearchError] = useState<string | null>(null);
+  const [ebayListingMatches, setEbayListingMatches] = useState<Array<EbayMyListing & { matchScore: number }> | null>(null);
+  const [ebayListingLoading, setEbayListingLoading] = useState(false);
+  const [ebayListingError, setEbayListingError] = useState<string | null>(null);
+  const [ebayImportingId, setEbayImportingId] = useState<string | null>(null);
+  const [expandedEbayListingId, setExpandedEbayListingId] = useState<string | null>(null);
+  const [selectedEbayPhotosByListing, setSelectedEbayPhotosByListing] = useState<Record<string, string[]>>({});
   const [previewPhoto, setPreviewPhoto] = useState<ImageSearchResult | null>(null);
   const [imageProviders, setImageProviders] = useState<ImageSearchProvider[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<string>(''); // '' = auto (try all configured)
@@ -432,6 +440,100 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     } finally {
       setPhotoSearching(false);
     }
+  };
+
+  const handleFromMyEbayListings = async () => {
+    if (!formData.name) return alert('Please enter an item name first.');
+    setEbayListingLoading(true);
+    setEbayListingError(null);
+    setEbayListingMatches(null);
+    setExpandedEbayListingId(null);
+    setSelectedEbayPhotosByListing({});
+    setPhotoSearchResults(null);
+    setPhotoSearchError(null);
+    try {
+      const all = await fetchMyEbayListings();
+      if (!all.length) {
+        setEbayListingError(`No active eBay listings found for seller ${getEbayUsername()}.`);
+        return;
+      }
+      const matches = matchEbayListingsForItem(formData.name, all, formData.ebaySku);
+      if (!matches.length) {
+        setEbayListingError(
+          `No listings matched "${formData.name}". You have ${all.length} active listing${all.length === 1 ? '' : 's'} — try a shorter search name.`
+        );
+        return;
+      }
+      setEbayListingMatches(matches);
+    } catch (e: unknown) {
+      setEbayListingError((e as Error)?.message || 'Failed to load your eBay listings.');
+    } finally {
+      setEbayListingLoading(false);
+    }
+  };
+
+  const toggleEbayPhotoSelection = (listingId: string, url: string) => {
+    setSelectedEbayPhotosByListing((prev) => {
+      const current = new Set(prev[listingId] || []);
+      if (current.has(url)) current.delete(url);
+      else current.add(url);
+      return { ...prev, [listingId]: Array.from(current) };
+    });
+  };
+
+  const toggleEbayListingExpanded = (listingId: string) => {
+    setExpandedEbayListingId((prev) => (prev === listingId ? null : listingId));
+  };
+
+  const selectAllEbayPhotos = (listing: EbayMyListing) => {
+    setSelectedEbayPhotosByListing((prev) => ({
+      ...prev,
+      [listing.listingId]: [...listing.imageUrls],
+    }));
+  };
+
+  const clearEbayPhotoSelection = (listingId: string) => {
+    setSelectedEbayPhotosByListing((prev) => ({ ...prev, [listingId]: [] }));
+  };
+
+  const finalizeEbayListingImport = async (
+    listing: EbayMyListing & { matchScore: number },
+    urls: string[]
+  ) => {
+    if (!urls.length) return;
+    setEbayImportingId(listing.listingId);
+    try {
+      await addImageUrls(urls);
+      setFormData((prev) => ({
+        ...prev,
+        listedOnEbay: true,
+        ...(listing.sku ? { ebaySku: listing.sku } : {}),
+        ...(listing.offerId ? { ebayOfferId: listing.offerId } : {}),
+      }));
+      setEbayListingMatches(null);
+      setExpandedEbayListingId(null);
+      setSelectedEbayPhotosByListing({});
+      if (formDataRef.current.name && urls[0]) {
+        void setCachedProductPhoto(formDataRef.current.name, urls[0]);
+      }
+    } catch {
+      alert('Could not import photos from this listing.');
+    } finally {
+      setEbayImportingId(null);
+    }
+  };
+
+  const handleImportAllEbayListingPhotos = (listing: EbayMyListing & { matchScore: number }) => {
+    void finalizeEbayListingImport(listing, listing.imageUrls);
+  };
+
+  const handleImportSelectedEbayPhotos = (listing: EbayMyListing & { matchScore: number }) => {
+    const selected = selectedEbayPhotosByListing[listing.listingId] || [];
+    if (!selected.length) {
+      alert('Select at least one photo to import.');
+      return;
+    }
+    void finalizeEbayListingImport(listing, selected);
   };
 
   /** Picking a photo from search results replaces the current default entirely — search results
@@ -948,6 +1050,16 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                           <Search size={12} className={photoSearching ? 'animate-spin' : ''} />
                           {photoSearching ? 'Searching…' : 'Find real photos'}
                         </button>
+                        <button
+                          type="button"
+                          onClick={handleFromMyEbayListings}
+                          disabled={ebayListingLoading || !formData.name}
+                          title={`Match this item name against your eBay seller store (${getEbayUsername()}) and import photos`}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-blue-200 text-blue-700 text-[10px] font-black uppercase tracking-widest hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <ShoppingBag size={12} className={ebayListingLoading ? 'animate-pulse' : ''} />
+                          {ebayListingLoading ? 'Loading…' : 'My eBay photos'}
+                        </button>
                         <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-600 cursor-pointer hover:bg-slate-50">
                           <Upload size={12} /> Add images
                           <input type="file" accept="image/*" multiple className="hidden" onChange={handleMultiImageUpload} />
@@ -958,6 +1070,161 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                         <p className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
                           {photoSearchError}
                         </p>
+                      )}
+                      {ebayListingError && (
+                        <p className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                          {ebayListingError}
+                        </p>
+                      )}
+                      {ebayListingMatches && ebayListingMatches.length > 0 && (
+                        <div className="rounded-2xl border border-blue-200 bg-blue-50/40 p-3 space-y-2.5 shadow-sm">
+                          <div className="flex items-center justify-between px-0.5 gap-2">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">
+                              {ebayListingMatches.length} matching eBay listing{ebayListingMatches.length === 1 ? '' : 's'}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => setEbayListingMatches(null)}
+                              className="text-[10px] font-bold text-slate-400 hover:text-slate-700"
+                            >
+                              Dismiss
+                            </button>
+                          </div>
+                          <div className="space-y-2">
+                            {ebayListingMatches.map((listing) => {
+                              const expanded = expandedEbayListingId === listing.listingId;
+                              const selected = selectedEbayPhotosByListing[listing.listingId] || [];
+                              const selectedSet = new Set(selected);
+                              const importing = ebayImportingId === listing.listingId;
+
+                              return (
+                              <div
+                                key={listing.listingId}
+                                className="rounded-xl bg-white border border-slate-200 overflow-hidden"
+                              >
+                                <div className="flex items-start gap-3 p-2.5">
+                                  {listing.thumbnail ? (
+                                    <img
+                                      src={listing.thumbnail}
+                                      alt=""
+                                      className="w-14 h-14 rounded-lg object-cover border border-slate-100 shrink-0"
+                                    />
+                                  ) : (
+                                    <div className="w-14 h-14 rounded-lg bg-slate-100 border border-slate-200 shrink-0" />
+                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-bold text-slate-900 leading-snug line-clamp-2">{listing.title}</p>
+                                    <p className="text-[10px] text-slate-500 mt-0.5">
+                                      {listing.imageUrls.length} photo{listing.imageUrls.length === 1 ? '' : 's'}
+                                      {listing.listingUrl ? (
+                                        <>
+                                          {' · '}
+                                          <a
+                                            href={listing.listingUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-blue-600 hover:underline"
+                                          >
+                                            View on eBay
+                                          </a>
+                                        </>
+                                      ) : null}
+                                    </p>
+                                    <div className="mt-2 flex flex-wrap gap-1.5">
+                                      <button
+                                        type="button"
+                                        disabled={importing || listing.imageUrls.length === 0}
+                                        onClick={() => handleImportAllEbayListingPhotos(listing)}
+                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 disabled:opacity-50"
+                                      >
+                                        <Upload size={11} />
+                                        {importing ? 'Importing…' : `Import all ${listing.imageUrls.length}`}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={importing || listing.imageUrls.length === 0}
+                                        onClick={() => toggleEbayListingExpanded(listing.listingId)}
+                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-blue-200 text-blue-700 text-[10px] font-black uppercase tracking-widest hover:bg-blue-50 disabled:opacity-50"
+                                      >
+                                        {expanded ? 'Hide photos' : 'Pick photos'}
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {expanded && listing.imageUrls.length > 0 && (
+                                  <div className="px-2.5 pb-2.5 pt-0 border-t border-slate-100 space-y-2">
+                                    <div className="flex items-center justify-between gap-2 pt-2">
+                                      <p className="text-[10px] font-bold text-slate-500">
+                                        Click photos to select · {selected.length} selected
+                                      </p>
+                                      <div className="flex gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => selectAllEbayPhotos(listing)}
+                                          className="text-[10px] font-bold text-blue-600 hover:underline"
+                                        >
+                                          Select all
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => clearEbayPhotoSelection(listing.listingId)}
+                                          className="text-[10px] font-bold text-slate-400 hover:text-slate-700"
+                                        >
+                                          Clear
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
+                                      {listing.imageUrls.map((url) => {
+                                        const isSelected = selectedSet.has(url);
+                                        return (
+                                          <button
+                                            key={url}
+                                            type="button"
+                                            title={isSelected ? 'Deselect photo' : 'Select photo'}
+                                            onClick={() => toggleEbayPhotoSelection(listing.listingId, url)}
+                                            className={`relative aspect-square rounded-xl overflow-hidden bg-slate-100 ring-2 transition-all ${
+                                              isSelected
+                                                ? 'ring-blue-500 shadow-md'
+                                                : 'ring-slate-200 hover:ring-blue-300'
+                                            }`}
+                                          >
+                                            <img
+                                              src={url}
+                                              alt=""
+                                              className="w-full h-full object-cover"
+                                              onError={(e) => {
+                                                (e.currentTarget as HTMLImageElement).style.display = 'none';
+                                              }}
+                                            />
+                                            {isSelected && (
+                                              <span className="absolute top-1.5 right-1.5 bg-blue-600 text-white rounded-full p-0.5 shadow">
+                                                <CheckCircle2 size={12} />
+                                              </span>
+                                            )}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      disabled={importing || selected.length === 0}
+                                      onClick={() => handleImportSelectedEbayPhotos(listing)}
+                                      className="w-full inline-flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 disabled:opacity-40"
+                                    >
+                                      <Upload size={11} />
+                                      {importing
+                                        ? 'Importing…'
+                                        : `Import selected (${selected.length})`}
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                            })}
+                          </div>
+                        </div>
                       )}
                       {photoSearchResults && photoSearchResults.length > 0 && (
                         <div className="rounded-2xl border border-slate-200 bg-white p-3 space-y-2.5 shadow-sm">
