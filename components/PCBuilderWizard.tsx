@@ -133,6 +133,8 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
   const isCompactEdit = Boolean(editId);
   const [performance, setPerformance] = useState<PerformanceEstimate | null>(null);
   const [estimating, setEstimating] = useState(false);
+  /** User typed a custom name — don't overwrite when parts change (PC builder only). */
+  const userEditedNameRef = useRef(false);
 
   // Initialize
   useEffect(() => {
@@ -180,10 +182,11 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
     }
   }, [editId, location.state, items]);
 
-  // Keep build/bundle name in sync with key parts
+  // Auto-name from parts for new PC builds only — never overwrite lot/custom bundle names or edits
   useEffect(() => {
+    if (editId || resolvedMode === 'bundle' || userEditedNameRef.current) return;
     setBuildName(getBuildNameFromParts(parts));
-  }, [parts]);
+  }, [parts, resolvedMode, editId]);
 
   const handleRunEstimate = async () => {
      const allParts = Object.values(parts).flat() as InventoryItem[];
@@ -650,7 +653,10 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
                 <input
                   className="w-full mt-2 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-lg outline-none focus:ring-2 focus:ring-slate-100"
                   value={buildName}
-                  onChange={(e) => setBuildName(e.target.value)}
+                  onChange={(e) => {
+                    userEditedNameRef.current = true;
+                    setBuildName(e.target.value);
+                  }}
                 />
               </div>
               <div className="flex-1 min-h-0 overflow-hidden">
@@ -716,7 +722,10 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
                 <input 
                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-lg outline-none focus:ring-4 focus:ring-slate-100 transition-all mt-2"
                    value={buildName}
-                   onChange={e => setBuildName(e.target.value)}
+                   onChange={e => {
+                     userEditedNameRef.current = true;
+                     setBuildName(e.target.value);
+                   }}
                    placeholder="My Gaming PC"
                 />
              </div>
