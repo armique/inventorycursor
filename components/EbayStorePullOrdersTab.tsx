@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
   CalendarRange,
@@ -44,6 +45,7 @@ function todayISO(): string {
 }
 
 const EbayStorePullOrdersTab: React.FC<Props> = ({ items }) => {
+  const navigate = useNavigate();
   const [backfilling, setBackfilling] = useState(false);
   const [backfillProgress, setBackfillProgress] = useState<BackfillProgress | null>(null);
   const [backfillError, setBackfillError] = useState<string | null>(null);
@@ -96,7 +98,20 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items }) => {
   );
   const alreadyUpToDate = suggested.isIncremental && suggested.from >= suggested.to;
 
-  const tokenReady = hasEbayToken();
+  const [tokenReady, setTokenReady] = useState(() => hasEbayToken());
+
+  useEffect(() => {
+    const refresh = () => setTokenReady(hasEbayToken());
+    refresh();
+    window.addEventListener('focus', refresh);
+    window.addEventListener('storage', refresh);
+    window.addEventListener('ebay-config-updated', refresh);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('storage', refresh);
+      window.removeEventListener('ebay-config-updated', refresh);
+    };
+  }, []);
 
   const soldOnEbayMissingLink = items.filter(
     (i) =>
@@ -108,7 +123,7 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items }) => {
   const runBackfill = useCallback(
     async (fromDate: string, toDate: string) => {
       if (!tokenReady) {
-        setBackfillError('Add your eBay token in Settings first (Fulfillment API access).');
+        setBackfillError('Path A needs an eBay OAuth token in Settings (eBay API tab). Path B CSV import below works without a token.');
         return;
       }
       if (!fromDate || !toDate) {
@@ -289,9 +304,23 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items }) => {
           the Fulfillment API does not expose fees, so net-after-fees comes from Path B (CSV) when available.
         </p>
         {!tokenReady && (
-          <p className="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            No eBay token configured — add one in Settings before running the backfill.
-          </p>
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 space-y-2 text-[11px] text-amber-950">
+            <p className="font-bold">
+              Path A needs an eBay OAuth token — stored in this browser only (not synced with cloud login).
+            </p>
+            <p className="text-amber-900/90">
+              Settings → <span className="font-bold">eBay API</span> → paste your User Token with scope{' '}
+              <code className="bg-amber-100/80 px-1 rounded">sell.fulfillment.readonly</code>, then Save.
+              Or skip the API and use <span className="font-bold">Path B — CSV import</span> below (no token required).
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate('/panel/settings?tab=ebay')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-900 text-white text-[10px] font-black uppercase tracking-wide hover:bg-amber-950"
+            >
+              Open eBay API settings
+            </button>
+          </div>
         )}
 
         <div className="flex flex-wrap items-center gap-3">

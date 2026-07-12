@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { 
   Cloud, Building2, Layers, Wrench, ShoppingBag, Sparkles, Shield,
   CheckCircle2, AlertTriangle, ArrowUp, RefreshCw, Save, LogIn, LogOut, User as UserIcon, Download, Upload, FileText, Github, History, ArchiveRestore, Rocket, Copy, ExternalLink, Plus, FolderPlus, FileSpreadsheet, Images, Loader2
@@ -111,6 +112,7 @@ const saveEbayConfigLocal = (updates: { token?: string; username?: string }) => 
           : prev.username || 'rm4ik',
     })
   );
+  window.dispatchEvent(new Event('ebay-config-updated'));
 };
 
 const GITHUB_APP_REPO_URL = 'https://github.com/armique/inventorycursor';
@@ -143,7 +145,13 @@ const SettingsPage: React.FC<Props> = ({
   actionHistory = [],
   onApplyArchivedPhotos,
 }) => {
-  const [activeTab, setActiveTab] = useState<typeof SETTINGS_TABS[number]['id']>('BUSINESS');
+  const [searchParams] = useSearchParams();
+  const tabFromUrl = searchParams.get('tab')?.toUpperCase();
+  const initialTab =
+    tabFromUrl === 'EBAY' || tabFromUrl === 'EBAY API'
+      ? 'EBAY'
+      : (SETTINGS_TABS.find((t) => t.id === tabFromUrl)?.id ?? 'BUSINESS');
+  const [activeTab, setActiveTab] = useState<typeof SETTINGS_TABS[number]['id']>(initialTab);
   const [aiSettings, setAiSettings] = useState<AISettings>(() => loadAISettings());
   const [backupEncrypt, setBackupEncrypt] = useState(false);
   const [backupPassphrase, setBackupPassphrase] = useState('');
@@ -172,6 +180,12 @@ const SettingsPage: React.FC<Props> = ({
   const [githubTokenInput, setGitHubTokenInput] = useState('');
   const [ebayTokenInput, setEbayTokenInput] = useState('');
   const [ebayUsernameInput, setEbayUsernameInput] = useState(() => getEbayConfig()?.username || 'rm4ik');
+  const [ebayConfigVersion, setEbayConfigVersion] = useState(0);
+
+  useEffect(() => {
+    const tab = searchParams.get('tab')?.toUpperCase();
+    if (tab === 'EBAY' || tab === 'EBAY API') setActiveTab('EBAY');
+  }, [searchParams]);
   const [githubSyncLoading, setGitHubSyncLoading] = useState(false);
   const [githubCommits, setGitHubCommits] = useState<BackupCommit[]>([]);
   const [githubCommitsLoading, setGitHubCommitsLoading] = useState(false);
@@ -832,17 +846,38 @@ const SettingsPage: React.FC<Props> = ({
                             username: ebayUsernameInput,
                          });
                          setEbayTokenInput('');
+                         setEbayConfigVersion((v) => v + 1);
                          showToast('eBay settings saved', 'success');
                       }}
                       className="px-5 py-2.5 bg-slate-900 text-white rounded-xl font-bold text-xs uppercase hover:bg-slate-800 flex items-center gap-2"
                    >
                       <Save size={16}/> Save eBay settings
                    </button>
-                   {(getEbayConfig()?.token || getEbayConfig()?.username) && (
-                      <span className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-800 rounded-xl text-sm font-bold">
-                         <CheckCircle2 size={16}/> {getEbayConfig()?.username || 'rm4ik'} configured
-                      </span>
-                   )}
+                   {(() => {
+                      void ebayConfigVersion;
+                      const cfg = getEbayConfig();
+                      const hasToken = Boolean(cfg?.token?.trim());
+                      const hasUsername = Boolean(cfg?.username?.trim());
+                      if (!hasToken && !hasUsername) return null;
+                      return (
+                         <div className="flex flex-wrap items-center gap-2">
+                            {hasUsername && (
+                               <span className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-sm font-bold">
+                                  Store: {cfg?.username || 'rm4ik'}
+                               </span>
+                            )}
+                            {hasToken ? (
+                               <span className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-800 rounded-xl text-sm font-bold">
+                                  <CheckCircle2 size={16}/> OAuth token saved — order API ready
+                               </span>
+                            ) : (
+                               <span className="inline-flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-900 rounded-xl text-sm font-bold">
+                                  <AlertTriangle size={16}/> No OAuth token — order backfill needs one (CSV import does not)
+                               </span>
+                            )}
+                         </div>
+                      );
+                   })()}
                 </div>
              </div>
           )}

@@ -43,6 +43,7 @@ export function saveEbayConfig(updates: Partial<EbayConfig>): void {
           : prev.username || DEFAULT_EBAY_USERNAME,
     })
   );
+  window.dispatchEvent(new Event('ebay-config-updated'));
 }
 
 export function getEbayToken(): string | null {
