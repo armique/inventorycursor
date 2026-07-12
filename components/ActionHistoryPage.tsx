@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { ActionHistoryEntry, InventoryItem, ItemStatus } from '../types';
 import { History, RotateCcw, Search, Trash2 } from 'lucide-react';
+import ItemLink from './ItemLink';
 
 interface Props {
   entries: ActionHistoryEntry[];
@@ -172,9 +173,18 @@ const ActionHistoryPage: React.FC<Props> = ({ entries, items, onClear, onRevertT
 
                         <td className="px-4 py-3.5">
                           {e.itemName ? (
-                            <p className="text-sm font-bold text-slate-900 leading-snug" title={e.itemName}>
-                              {e.itemName}
-                            </p>
+                            e.itemId ? (
+                              <ItemLink
+                                itemId={e.itemId}
+                                itemName={e.itemName}
+                                items={items}
+                                className="text-sm font-bold text-slate-900 hover:text-indigo-600 hover:underline leading-snug block truncate"
+                              />
+                            ) : (
+                              <p className="text-sm font-bold text-slate-900 leading-snug" title={e.itemName}>
+                                {e.itemName}
+                              </p>
+                            )
                           ) : (
                             <span className="text-sm text-slate-300">—</span>
                           )}

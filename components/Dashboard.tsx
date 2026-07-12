@@ -17,6 +17,7 @@ import {
   type EbayReminderPending,
 } from '../services/ebayListingReminder';
 import EbaySoldReminderWidget from './EbaySoldReminderWidget';
+import ItemLink from './ItemLink';
 import { InventoryItem, ItemStatus, Expense, BusinessSettings, TaxMode, DashboardPreferences, DashboardTask } from '../types';
 import { DEFAULT_DASHBOARD_WIDGET_IDS } from '../services/constants';
 import { isRealizedDisposal } from '../utils/itemDisposition';
@@ -835,10 +836,10 @@ const Dashboard: React.FC<Props> = ({
 
   // Recent Activity Data
   const activityFeed = useMemo(() => {
-    const actions: { type: string, date: string, item: string, amount: number }[] = [];
+    const actions: { type: string; date: string; item: string; amount: number; itemId?: string }[] = [];
     items.forEach((i) => {
       if (i.buyDate && !shouldSkipContainerForPurchaseCogs(i, items)) {
-        actions.push({ type: 'BOUGHT', date: i.buyDate, item: i.name, amount: -Number(i.buyPrice) });
+        actions.push({ type: 'BOUGHT', date: i.buyDate, item: i.name, amount: -Number(i.buyPrice), itemId: i.id });
       }
       if (
         i.sellDate &&
@@ -851,7 +852,7 @@ const Dashboard: React.FC<Props> = ({
             : i.status === ItemStatus.TRADED
               ? 'TRADED'
               : 'SOLD';
-        actions.push({ type, date: i.sellDate, item: i.name, amount: Number(i.sellPrice || 0) });
+        actions.push({ type, date: i.sellDate, item: i.name, amount: Number(i.sellPrice || 0), itemId: i.id });
       }
     });
     expenses.forEach(e => {
@@ -1238,6 +1239,11 @@ const Dashboard: React.FC<Props> = ({
             {periodInsights.bestSale && (
               <>
                 <span className="text-slate-300 hidden sm:inline">·</span>
+                <ItemLink
+                  item={periodInsights.bestSale}
+                  itemName={periodInsights.bestSale.name}
+                  className="text-emerald-800 font-bold hover:text-emerald-900 hover:underline truncate max-w-[120px] sm:max-w-[220px]"
+                />
                 <button
                   type="button"
                   onClick={() =>
@@ -1249,9 +1255,9 @@ const Dashboard: React.FC<Props> = ({
                       netProfit: periodInsights.bestSaleProfit,
                     })
                   }
-                  className="text-emerald-700 font-bold hover:underline truncate max-w-[180px] sm:max-w-none"
+                  className="text-emerald-700 font-bold hover:underline tabular-nums shrink-0"
                 >
-                  Best +€{formatEUR(periodInsights.bestSaleProfit)}
+                  +€{formatEUR(periodInsights.bestSaleProfit)}
                 </button>
               </>
             )}
@@ -1367,7 +1373,16 @@ const Dashboard: React.FC<Props> = ({
                         {action.type === 'SOLD' ? <TrendingUp size={16}/> : action.type === 'GIFTED' ? <Gift size={16}/> : action.type === 'TRADED' ? <ArrowRightLeft size={16}/> : action.type === 'BOUGHT' ? <Package size={16}/> : <TrendingDown size={16}/>}
                      </div>
                      <div className="flex-1 min-w-0">
-                        <p className="font-bold text-slate-900 truncate">{action.item}</p>
+                        {action.itemId ? (
+                          <ItemLink
+                            itemId={action.itemId}
+                            itemName={action.item}
+                            items={items}
+                            className="font-bold text-slate-900 hover:text-indigo-600 hover:underline truncate block"
+                          />
+                        ) : (
+                          <p className="font-bold text-slate-900 truncate">{action.item}</p>
+                        )}
                         <p className="text-xs lg:text-sm text-slate-400">{new Date(action.date).toLocaleDateString()}</p>
                      </div>
                      <span className={`font-black tabular-nums shrink-0 ${action.amount > 0 ? 'text-emerald-600' : 'text-slate-700'}`}>
@@ -1632,7 +1647,11 @@ const Dashboard: React.FC<Props> = ({
                         const profit = calculateItemProfit(item);
                         return (
                           <div key={item.id} className="px-3 py-2.5 space-y-0.5">
-                            <p className="font-medium text-slate-900 truncate text-sm">{item.name}</p>
+                            <ItemLink
+                              item={item}
+                              itemName={item.name}
+                              className="font-medium text-slate-900 hover:text-indigo-600 hover:underline truncate text-sm block"
+                            />
                             <div className="flex flex-wrap gap-x-3 text-xs text-slate-600">
                               <span>Sell €{formatEUR(sell)}</span>
                               <span>Buy €{formatEUR(buy)}</span>
@@ -1661,7 +1680,11 @@ const Dashboard: React.FC<Props> = ({
                   const soldOn = item.sellDate ? toLocalCalendarDateKey(item.sellDate) : '';
                   return (
                     <div key={item.id} className="p-3 bg-slate-50 rounded-xl space-y-1">
-                      <p className="font-medium text-slate-900 truncate">{item.name}</p>
+                      <ItemLink
+                        item={item}
+                        itemName={item.name}
+                        className="font-medium text-slate-900 hover:text-indigo-600 hover:underline truncate block"
+                      />
                       {soldOn && (
                         <p className="text-[10px] text-slate-400 font-bold uppercase">Sold {soldOn}</p>
                       )}
