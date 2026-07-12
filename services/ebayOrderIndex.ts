@@ -93,6 +93,9 @@ function loadRaw(): { orders: EbayOrderRecord[]; meta: EbayOrderIndexMeta } {
 
 function saveRaw(orders: EbayOrderRecord[], meta: EbayOrderIndexMeta): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ orders, meta }));
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('ebay-order-index-updated'));
+  }
 }
 
 export function loadEbayOrderIndex(): { orders: EbayOrderRecord[]; meta: EbayOrderIndexMeta } {
@@ -188,6 +191,9 @@ export function addCsvImportMeta(entry: { fileName: string; rowCount: number; or
 
 export function clearEbayOrderIndex(): void {
   localStorage.removeItem(STORAGE_KEY);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('ebay-order-index-updated'));
+  }
 }
 
 export interface SuggestedBackfillRange {

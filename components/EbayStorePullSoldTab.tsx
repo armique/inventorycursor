@@ -490,6 +490,22 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
 
   return (
     <div className="space-y-6">
+      <div className="rounded-2xl border border-indigo-200 bg-indigo-50/80 p-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-black uppercase text-indigo-800">Prefer Sales sync</p>
+          <p className="text-[11px] text-indigo-900/90 mt-0.5 max-w-xl">
+            Order-based matching on the <strong>Sales sync</strong> tab is more reliable than listing snapshots —
+            it uses your actual eBay orders (buyer, payout, order ID) and catches sales even when titles change.
+          </p>
+        </div>
+        <Link
+          to="/panel/ebay?tab=sales"
+          className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-700 text-white text-[10px] font-black uppercase tracking-wide hover:bg-indigo-800"
+        >
+          Open sales sync
+        </Link>
+      </div>
+
       <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-3 shadow-sm">
         <h2 className="text-sm font-black text-slate-900">Daily eBay listing change detection</h2>
         <p className="text-xs text-slate-600">

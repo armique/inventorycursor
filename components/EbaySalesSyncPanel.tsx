@@ -1,0 +1,426 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AlertCircle,
+  ArrowRight,
+  CheckCircle2,
+  Loader2,
+  RefreshCw,
+  ShoppingBag,
+  TrendingDown,
+} from 'lucide-react';
+import { InventoryItem, TaxMode } from '../types';
+import { loadEbayOrderIndex } from '../services/ebayOrderIndex';
+import { runEbaySalesSync, peekEbaySalesSync } from '../services/ebaySalesSync';
+import { hasEbayToken } from '../services/ebayService';
+import type { BackfillProgress } from '../services/ebayOrderBackfill';
+import { applyEbayOrderMatchToItem } from '../utils/applyEbayOrderMatch';
+import {
+  type OrderLinkSuggestion,
+  type OrderLinkSuggestionKind,
+} from '../utils/ebayOrderLinkAnalysis';
+import { formatEUR } from '../utils/formatMoney';
+import ItemLink from './ItemLink';
+import EbayToolProgressBar from './EbayToolProgressBar';
+
+interface Props {
+  items: InventoryItem[];
+  taxMode: TaxMode;
+  onUpdate: (items: InventoryItem[]) => void;
+  onCacheUpdated?: () => void;
+}
+
+type FilterKind = 'all' | OrderLinkSuggestionKind;
+
+function matchKindLabel(kind: OrderLinkSuggestion['match']['matchKind']): string {
+  if (kind === 'listingId') return 'Listing';
+  if (kind === 'sku') return 'SKU';
+  return 'Title';
+}
+
+function kindLabel(kind: OrderLinkSuggestionKind): string {
+  if (kind === 'mark_sold') return 'Mark sold';
+  if (kind === 'link') return 'Link order';
+  return 'Fix payout';
+}
+
+function kindBadgeClass(kind: OrderLinkSuggestionKind): string {
+  if (kind === 'mark_sold') return 'bg-emerald-100 text-emerald-800';
+  if (kind === 'link') return 'bg-blue-100 text-blue-800';
+  return 'bg-amber-100 text-amber-900';
+}
+
+const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCacheUpdated }) => {
+  const [syncing, setSyncing] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [suggestions, setSuggestions] = useState<OrderLinkSuggestion[]>([]);
+  const [stats, setStats] = useState<ReturnType<typeof peekEbaySalesSync>['stats'] | null>(null);
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
+  const [filter, setFilter] = useState<FilterKind>('all');
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [fetchProgress, setFetchProgress] = useState<BackfillProgress | null>(null);
+  const cancelRef = useRef<{ cancelled: boolean }>({ cancelled: false });
+  const autoRanRef = useRef(false);
+
+  const applyAnalysis = useCallback(
+    (result: ReturnType<typeof peekEbaySalesSync>, info?: string) => {
+      setSuggestions(result.suggestions);
+      setStats(result.stats);
+      const nextSelected: Record<string, boolean> = {};
+      for (const s of result.suggestions) nextSelected[s.id] = true;
+      setSelected(nextSelected);
+      setDismissed(new Set());
+      const parts: string[] = [];
+      if (result.stats.markSoldCandidates) parts.push(`${result.stats.markSoldCandidates} to mark sold`);
+      if (result.stats.linkCandidates) parts.push(`${result.stats.linkCandidates} to link`);
+      if (result.stats.repriceCandidates) parts.push(`${result.stats.repriceCandidates} to reprice`);
+      setMessage(
+        info ||
+          (result.suggestions.length
+            ? `Found ${result.suggestions.length} suggestion(s)${parts.length ? ` — ${parts.join(', ')}` : ''}.`
+            : 'All caught up — no inventory rows need updating against cached orders.')
+      );
+    },
+    []
+  );
+
+  const runSync = useCallback(
+    async (skipFetch = false) => {
+      setSyncing(true);
+      setError(null);
+      setMessage(null);
+      setFetchProgress(null);
+      cancelRef.current = { cancelled: false };
+      try {
+        const { orders: before } = loadEbayOrderIndex();
+        if (!before.length && skipFetch) {
+          setError('No cached orders yet — expand “Order cache setup” below and run a backfill or import CSV first.');
+          return;
+        }
+
+        const result = await runEbaySalesSync(items, {
+          skipFetch,
+          onFetchProgress: setFetchProgress,
+          cancelToken: cancelRef.current,
+        });
+
+        if (result.fetch?.error) {
+          setError(result.fetch.error);
+        }
+
+        let info: string | undefined;
+        if (result.fetch && !result.fetch.error && !result.fetch.cancelled) {
+          info = `Fetched ${result.fetch.ordersFetched} new order(s) · ${result.analysis.suggestions.length} suggestion(s) to review.`;
+          onCacheUpdated?.();
+        } else if (result.fetchSkipped && result.fetchSkippedReason) {
+          info = `${result.fetchSkippedReason} · ${result.analysis.suggestions.length} suggestion(s) from cache.`;
+        }
+
+        applyAnalysis(result.analysis, info);
+      } catch (e: unknown) {
+        setError((e as Error)?.message || 'Sales sync failed.');
+      } finally {
+        setSyncing(false);
+        setTimeout(() => setFetchProgress(null), 800);
+      }
+    },
+    [items, applyAnalysis, onCacheUpdated]
+  );
+
+  // On open: analyze cache immediately (no API) so forgotten sales surface fast.
+  useEffect(() => {
+    if (autoRanRef.current) return;
+    autoRanRef.current = true;
+    const { orders } = loadEbayOrderIndex();
+    if (orders.length) applyAnalysis(peekEbaySalesSync(items));
+  }, [items, applyAnalysis]);
+
+  const visible = useMemo(() => {
+    return suggestions.filter((s) => {
+      if (dismissed.has(s.id)) return false;
+      if (filter === 'all') return true;
+      return s.kind === filter;
+    });
+  }, [suggestions, dismissed, filter]);
+
+  const selectedVisible = visible.filter((s) => selected[s.id]);
+
+  const counts = useMemo(() => {
+    const active = suggestions.filter((s) => !dismissed.has(s.id));
+    return {
+      all: active.length,
+      mark_sold: active.filter((s) => s.kind === 'mark_sold').length,
+      link: active.filter((s) => s.kind === 'link').length,
+      reprice: active.filter((s) => s.kind === 'reprice').length,
+    };
+  }, [suggestions, dismissed]);
+
+  const applySuggestions = async (rows: OrderLinkSuggestion[]) => {
+    if (!rows.length) return;
+    setApplying(true);
+    setError(null);
+    try {
+      const byId = new Map(items.map((i) => [i.id, i]));
+      const updated = new Map<string, InventoryItem>();
+      for (const row of rows) {
+        const current = byId.get(row.item.id) ?? updated.get(row.item.id) ?? row.item;
+        updated.set(row.item.id, applyEbayOrderMatchToItem(current, row.match, taxMode));
+      }
+      onUpdate([...updated.values()]);
+      setDismissed((prev) => {
+        const next = new Set(prev);
+        for (const row of rows) next.add(row.id);
+        return next;
+      });
+      const marked = rows.filter((r) => r.kind === 'mark_sold').length;
+      setMessage(
+        `Applied ${rows.length} row(s)${marked ? ` — ${marked} marked sold` : ''}. Sell price set to net payout when available.`
+      );
+    } catch (e: unknown) {
+      setError((e as Error)?.message || 'Apply failed.');
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  const tokenReady = hasEbayToken();
+
+  return (
+    <div className="rounded-2xl border-2 border-indigo-200 bg-gradient-to-b from-indigo-50/80 to-white p-5 space-y-4 shadow-sm">
+      <div className="flex items-start gap-3">
+        <div className="p-2.5 rounded-xl bg-indigo-600 text-white shrink-0">
+          <ShoppingBag size={18} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-sm font-black text-slate-900">eBay sales sync</h3>
+          <p className="text-xs text-slate-600 mt-1 max-w-2xl">
+            Matches your inventory against cached eBay orders. Catches items you{' '}
+            <span className="font-bold">forgot to mark sold</span>, links missing order IDs on past sales, and
+            fixes sell prices to the <span className="font-bold">net payout</span> (after fees) when Payments CSV
+            data is in the cache. Nothing applies until you confirm.
+          </p>
+        </div>
+      </div>
+
+      {stats && (
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+          {[
+            { label: 'Cached orders', value: stats.cachedOrders },
+            { label: 'In stock', value: stats.inStockItems },
+            { label: 'Mark sold', value: counts.mark_sold, highlight: counts.mark_sold > 0 },
+            { label: 'Link order', value: counts.link, highlight: counts.link > 0 },
+            { label: 'Fix payout', value: counts.reprice, highlight: counts.reprice > 0 },
+          ].map((s) => (
+            <div
+              key={s.label}
+              className={`rounded-lg border p-2.5 ${
+                s.highlight ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'
+              }`}
+            >
+              <p className="text-[9px] font-black uppercase text-slate-400">{s.label}</p>
+              <p className={`text-lg font-black ${s.highlight ? 'text-emerald-700' : 'text-slate-900'}`}>{s.value}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => void runSync(false)}
+          disabled={syncing || applying || !tokenReady}
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-[11px] font-black uppercase tracking-widest hover:bg-indigo-700 disabled:opacity-50"
+          title={!tokenReady ? 'Add eBay token in Settings' : undefined}
+        >
+          {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+          {syncing ? 'Syncing…' : 'Sync sales (fetch + match)'}
+        </button>
+        <button
+          type="button"
+          onClick={() => void runSync(true)}
+          disabled={syncing || applying}
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-700 text-[11px] font-black uppercase tracking-widest hover:bg-slate-50 disabled:opacity-50"
+        >
+          Re-match cache only
+        </button>
+        {suggestions.length > 0 && (
+          <>
+            {(['all', 'mark_sold', 'link', 'reprice'] as const).map((kind) => (
+              <button
+                key={kind}
+                type="button"
+                onClick={() => setFilter(kind)}
+                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase border ${
+                  filter === kind
+                    ? 'bg-indigo-50 border-indigo-300 text-indigo-800'
+                    : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                {kind === 'all'
+                  ? `All (${counts.all})`
+                  : kind === 'mark_sold'
+                    ? `Mark sold (${counts.mark_sold})`
+                    : kind === 'link'
+                      ? `Link (${counts.link})`
+                      : `Payout (${counts.reprice})`}
+              </button>
+            ))}
+            <button
+              type="button"
+              disabled={applying || selectedVisible.length === 0}
+              onClick={() => void applySuggestions(selectedVisible)}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-[11px] font-black uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50 ml-auto"
+            >
+              {applying ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+              Apply selected ({selectedVisible.length})
+            </button>
+          </>
+        )}
+      </div>
+
+      {!tokenReady && (
+        <p className="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Add an eBay OAuth token to fetch new orders automatically. You can still use{' '}
+          <span className="font-black">Re-match cache only</span> on your existing {stats?.cachedOrders ?? 0} cached
+          orders.
+        </p>
+      )}
+
+      {stats && stats.netDataOrders === 0 && stats.cachedOrders > 0 && (
+        <p className="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Import <span className="font-black">Seller Hub → Payments → All transactions</span> CSV in Order cache
+          setup below for true bottom-line payouts (ad fees / tax adjustments).
+        </p>
+      )}
+
+      {fetchProgress && (
+        <EbayToolProgressBar
+          label={`Fetching new orders (chunk ${fetchProgress.chunkIndex + 1}/${fetchProgress.chunkCount})`}
+          done={fetchProgress.chunkIndex + 1}
+          total={fetchProgress.chunkCount}
+          detail={`${fetchProgress.rangeLabel} · ${fetchProgress.ordersFetchedTotal} total`}
+          tone="blue"
+        />
+      )}
+
+      {error && (
+        <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+          <AlertCircle size={16} className="shrink-0 mt-0.5" />
+          {error}
+        </div>
+      )}
+      {message && !error && (
+        <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          <CheckCircle2 size={16} className="shrink-0 mt-0.5" />
+          {message}
+        </div>
+      )}
+
+      {visible.length > 0 && (
+        <div className="space-y-2 max-h-[min(560px,58vh)] overflow-y-auto pr-1">
+          {visible.map((row) => {
+            const { item, match, kind } = row;
+            const { order, lineItem, matchKind } = match;
+            return (
+              <div
+                key={row.id}
+                className={`rounded-xl border p-3 space-y-2 ${
+                  selected[row.id] ? 'border-indigo-200 bg-indigo-50/40' : 'border-slate-200 bg-white'
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(selected[row.id])}
+                    onChange={(e) => setSelected((prev) => ({ ...prev, [row.id]: e.target.checked }))}
+                    className="mt-1 shrink-0"
+                  />
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${kindBadgeClass(kind)}`}>
+                        {kindLabel(kind)}
+                      </span>
+                      <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                        {matchKindLabel(matchKind)} · {row.totalScore}
+                      </span>
+                      {kind === 'mark_sold' && (
+                        <span className="text-[9px] font-bold uppercase text-emerald-700">In stock → sold</span>
+                      )}
+                    </div>
+                    <ItemLink
+                      item={item}
+                      itemName={item.name}
+                      className="text-sm font-black text-slate-900 hover:text-indigo-600 hover:underline truncate block"
+                    />
+                    <p className="text-[11px] text-slate-500 line-clamp-2">{lineItem.title}</p>
+                    <p className="text-[11px] text-slate-500">
+                      Order <span className="font-bold text-slate-700">{order.orderId}</span>
+                      {order.creationDate ? ` · ${order.creationDate}` : ''}
+                      {item.sellDate ? ` · sold ${item.sellDate}` : ''}
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0 space-y-0.5">
+                    <p className="text-[9px] font-black uppercase text-slate-400">Payout</p>
+                    {kind !== 'mark_sold' && (
+                      <p className="text-xs text-slate-500 tabular-nums">
+                        {row.currentSellPrice != null ? `€${formatEUR(row.currentSellPrice)}` : '—'}
+                      </p>
+                    )}
+                    <p className="text-sm font-black text-emerald-700 tabular-nums flex items-center justify-end gap-1">
+                      {kind !== 'mark_sold' && row.currentSellPrice != null && (
+                        <ArrowRight size={12} className="text-slate-400" />
+                      )}
+                      €{formatEUR(row.suggestedSellPrice)}
+                    </p>
+                    {!row.netKnown && (
+                      <p className="text-[9px] font-bold text-amber-700">Gross (import Payments CSV)</p>
+                    )}
+                    {row.priceDelta != null && Math.abs(row.priceDelta) >= 0.02 && kind !== 'mark_sold' && (
+                      <p
+                        className={`text-[10px] font-bold tabular-nums ${
+                          row.priceDelta < 0 ? 'text-red-600' : 'text-emerald-600'
+                        }`}
+                      >
+                        {row.priceDelta > 0 ? '+' : ''}€{formatEUR(row.priceDelta)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 pl-7">
+                  <button
+                    type="button"
+                    disabled={applying}
+                    onClick={() => void applySuggestions([row])}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[10px] font-black uppercase hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    {kind === 'mark_sold' ? 'Mark sold & apply' : 'Apply'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDismissed((prev) => new Set(prev).add(row.id))}
+                    className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-[10px] font-black uppercase text-slate-500 hover:bg-slate-50"
+                  >
+                    Dismiss
+                  </button>
+                  {row.netAmount != null && row.grossAmount != null && row.grossAmount > row.netAmount && (
+                    <span className="text-[10px] text-slate-500 inline-flex items-center gap-1">
+                      <TrendingDown size={11} />
+                      Fees €{formatEUR(row.grossAmount - row.netAmount)}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {suggestions.length > 0 && visible.length === 0 && (
+        <p className="text-sm text-slate-500 text-center py-6">All suggestions dismissed. Run sync again anytime.</p>
+      )}
+    </div>
+  );
+};
+
+export default EbaySalesSyncPanel;

@@ -194,9 +194,9 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             : 'p-4 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:p-8 lg:p-8 xl:p-10 2xl:p-12 md:pb-8'
         }`}
       >
-        {/* eBay sync on load */}
+        {/* eBay sales sync reminders */}
         {onUpdateItems && (
-          <EbaySyncBanner items={items} onUpdate={onUpdateItems} />
+          <EbaySyncBanner items={items} />
         )}
         {ebayReminder && (
           <div className="md:hidden">

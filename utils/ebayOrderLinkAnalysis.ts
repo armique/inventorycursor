@@ -3,7 +3,7 @@ import type { EbayOrderLineItem, EbayOrderRecord } from '../services/ebayOrderIn
 import { findMatchingOrdersForItem, type EbayOrderMatch } from './ebayOrderMatch';
 import { getLinePayout } from './ebayOrderPayout';
 
-export type OrderLinkSuggestionKind = 'link' | 'reprice';
+export type OrderLinkSuggestionKind = 'mark_sold' | 'link' | 'reprice';
 
 export interface OrderLinkSuggestion {
   id: string;
@@ -24,9 +24,12 @@ export interface OrderLinkAnalysisResult {
   suggestions: OrderLinkSuggestion[];
   stats: {
     cachedOrders: number;
+    inStockItems: number;
     soldEbayItems: number;
     alreadyLinked: number;
     unlinkedSold: number;
+    markSoldCandidates: number;
+    linkCandidates: number;
     repriceCandidates: number;
     netDataOrders: number;
   };
@@ -54,13 +57,31 @@ function isSoldEbayCandidate(item: InventoryItem): boolean {
   );
 }
 
+function isMarkSoldCandidate(item: InventoryItem): boolean {
+  if (item.isPC || item.isBundle) return false;
+  if (item.status !== ItemStatus.IN_STOCK && item.status !== ItemStatus.ORDERED) return false;
+  if (item.ebayOrderId?.trim()) return false;
+  return true;
+}
+
 function dateProximityBonus(sellDate: string | undefined, orderDate: string | null): number {
   if (!sellDate || !orderDate) return 0;
-  const days = Math.abs(new Date(`${sellDate}T12:00:00`).getTime() - new Date(`${orderDate}T12:00:00`).getTime()) / 86400000;
+  const days =
+    Math.abs(new Date(`${sellDate}T12:00:00`).getTime() - new Date(`${orderDate}T12:00:00`).getTime()) /
+    86400000;
   if (days <= 3) return 40;
   if (days <= 14) return 20;
   if (days <= 45) return 8;
   if (days > 120) return -15;
+  return 0;
+}
+
+function orderRecencyBonus(orderDate: string | null): number {
+  if (!orderDate) return 0;
+  const days = (Date.now() - new Date(`${orderDate}T12:00:00`).getTime()) / 86400000;
+  if (days <= 7) return 15;
+  if (days <= 30) return 8;
+  if (days <= 90) return 3;
   return 0;
 }
 
@@ -108,50 +129,39 @@ function makeSuggestion(
   };
 }
 
+function minScoreForMatch(kind: OrderLinkSuggestionKind, matchKind: EbayOrderMatch['matchKind']): number {
+  if (matchKind === 'listingId' || matchKind === 'sku') return 40;
+  if (kind === 'mark_sold') return 62;
+  return 55;
+}
+
 const REPRICE_MIN_DELTA = 0.02;
 
-export function buildOrderLinkAnalysis(items: InventoryItem[], orders: EbayOrderRecord[]): OrderLinkAnalysisResult {
-  const soldEbay = items.filter(isSoldEbayCandidate);
-  const alreadyLinked = soldEbay.filter((i) => Boolean(i.ebayOrderId?.trim()));
-  const unlinkedSold = soldEbay.filter((i) => !i.ebayOrderId?.trim());
-  const ordersById = new Map(orders.map((o) => [o.orderId, o]));
-  const reservedLines = buildClaimedLineKeys(items, orders);
+const KIND_SORT: Record<OrderLinkSuggestionKind, number> = {
+  mark_sold: 0,
+  link: 1,
+  reprice: 2,
+};
 
-  const suggestions: OrderLinkSuggestion[] = [];
-
-  // Reprice: already linked, cached order has payout data that differs from stored sell price.
-  for (const item of alreadyLinked) {
-    const order = ordersById.get(item.ebayOrderId!.trim());
-    if (!order) continue;
-    const matches = findMatchingOrdersForItem(item, [order], 0);
-    const match = matches[0] ?? (order.lineItems.length === 1
-      ? {
-          order,
-          lineItem: order.lineItems[0],
-          matchScore: 500,
-          matchKind: 'title' as const,
-        }
-      : null);
-    if (!match) continue;
-
-    const payout = getLinePayout(match.order, match.lineItem);
-    const current = item.sellPrice ?? 0;
-    const delta = Math.abs(current - payout.sellPrice);
-    if (delta < REPRICE_MIN_DELTA) continue;
-    // Only suggest reprice when we know net, or gross clearly differs (early screenshot price vs API gross).
-    if (!payout.netKnown && payout.gross != null && Math.abs(current - payout.gross) < REPRICE_MIN_DELTA) continue;
-
-    suggestions.push(makeSuggestion('reprice', item, match, match.matchScore + 100));
-  }
-
-  // Link: sold on eBay but missing order id — best order line per item, one line claimed once.
+function assignGreedy(
+  kind: OrderLinkSuggestionKind,
+  items: InventoryItem[],
+  orders: EbayOrderRecord[],
+  reservedLines: Set<string>,
+  suggestions: OrderLinkSuggestion[],
+  dateField: 'sellDate' | 'none'
+): void {
   const candidateRows: { item: InventoryItem; match: EbayOrderMatch; totalScore: number }[] = [];
-  for (const item of unlinkedSold) {
+
+  for (const item of items) {
     for (const match of findMatchingOrdersForItem(item, orders)) {
       const key = lineItemClaimKey(match.order.orderId, match.lineItem);
       if (reservedLines.has(key)) continue;
-      const totalScore = match.matchScore + dateProximityBonus(item.sellDate, match.order.creationDate);
-      candidateRows.push({ item, match, totalScore });
+      const dateBonus =
+        dateField === 'sellDate'
+          ? dateProximityBonus(item.sellDate, match.order.creationDate)
+          : orderRecencyBonus(match.order.creationDate);
+      candidateRows.push({ item, match, totalScore: match.matchScore + dateBonus });
     }
   }
 
@@ -160,30 +170,80 @@ export function buildOrderLinkAnalysis(items: InventoryItem[], orders: EbayOrder
 
   for (const row of candidateRows) {
     if (assignedItems.has(row.item.id)) continue;
-    const minScore = row.match.matchKind === 'title' ? 55 : 40;
-    if (row.totalScore < minScore) continue;
+    if (row.totalScore < minScoreForMatch(kind, row.match.matchKind)) continue;
 
     const key = lineItemClaimKey(row.match.order.orderId, row.match.lineItem);
     if (reservedLines.has(key)) continue;
 
     assignedItems.add(row.item.id);
     reservedLines.add(key);
-    suggestions.push(makeSuggestion('link', row.item, row.match, row.totalScore));
+    suggestions.push(makeSuggestion(kind, row.item, row.match, row.totalScore));
+  }
+}
+
+export function buildOrderLinkAnalysis(items: InventoryItem[], orders: EbayOrderRecord[]): OrderLinkAnalysisResult {
+  const inStockItems = items.filter(isMarkSoldCandidate);
+  const soldEbay = items.filter(isSoldEbayCandidate);
+  const alreadyLinked = soldEbay.filter((i) => Boolean(i.ebayOrderId?.trim()));
+  const unlinkedSold = soldEbay.filter((i) => !i.ebayOrderId?.trim());
+  const ordersById = new Map(orders.map((o) => [o.orderId, o]));
+  const reservedLines = buildClaimedLineKeys(items, orders);
+
+  const suggestions: OrderLinkSuggestion[] = [];
+
+  // 1) In stock but eBay order exists → mark sold + fill order data.
+  assignGreedy('mark_sold', inStockItems, orders, reservedLines, suggestions, 'none');
+
+  // 2) Already sold, missing order id → link order + fix payout.
+  assignGreedy('link', unlinkedSold, orders, reservedLines, suggestions, 'sellDate');
+
+  // 3) Already linked but payout differs (e.g. ad fees deducted later).
+  for (const item of alreadyLinked) {
+    const order = ordersById.get(item.ebayOrderId!.trim());
+    if (!order) continue;
+    const matches = findMatchingOrdersForItem(item, [order], 0);
+    const match =
+      matches[0] ??
+      (order.lineItems.length === 1
+        ? {
+            order,
+            lineItem: order.lineItems[0],
+            matchScore: 500,
+            matchKind: 'title' as const,
+          }
+        : null);
+    if (!match) continue;
+
+    const payout = getLinePayout(match.order, match.lineItem);
+    const current = item.sellPrice ?? 0;
+    const delta = Math.abs(current - payout.sellPrice);
+    if (delta < REPRICE_MIN_DELTA) continue;
+    if (!payout.netKnown && payout.gross != null && Math.abs(current - payout.gross) < REPRICE_MIN_DELTA) continue;
+
+    suggestions.push(makeSuggestion('reprice', item, match, match.matchScore + 100));
   }
 
   suggestions.sort((a, b) => {
-    if (a.kind !== b.kind) return a.kind === 'link' ? -1 : 1;
+    const kindDiff = KIND_SORT[a.kind] - KIND_SORT[b.kind];
+    if (kindDiff !== 0) return kindDiff;
     return b.totalScore - a.totalScore;
   });
+
+  const markSoldCandidates = suggestions.filter((s) => s.kind === 'mark_sold').length;
+  const linkCandidates = suggestions.filter((s) => s.kind === 'link').length;
+  const repriceCandidates = suggestions.filter((s) => s.kind === 'reprice').length;
 
   return {
     suggestions,
     stats: {
       cachedOrders: orders.length,
+      inStockItems: inStockItems.length,
       soldEbayItems: soldEbay.length,
       alreadyLinked: alreadyLinked.length,
       unlinkedSold: unlinkedSold.length,
-      repriceCandidates: suggestions.filter((s) => s.kind === 'reprice').length,
+      markSoldCandidates,
+      linkCandidates,
+      repriceCandidates,
       netDataOrders: orders.filter((o) => o.netTotal != null).length,
     },
   };

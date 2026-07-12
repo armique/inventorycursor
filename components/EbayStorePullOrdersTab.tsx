@@ -7,12 +7,10 @@ import {
   ChevronDown,
   ChevronUp,
   Cloud,
-  CloudOff,
   Database,
   FileSpreadsheet,
   History,
   Loader2,
-  Receipt,
   RefreshCw,
   Trash2,
   Upload,
@@ -33,7 +31,7 @@ import {
   upsertEbayOrders,
 } from '../services/ebayOrderIndex';
 import EbayToolProgressBar from './EbayToolProgressBar';
-import EbayOrderLinkAnalysisPanel from './EbayOrderLinkAnalysisPanel';
+import EbaySalesSyncPanel from './EbaySalesSyncPanel';
 
 interface Props {
   items: InventoryItem[];
@@ -66,7 +64,10 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
   const [csvImportMessage, setCsvImportMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [showCacheSetup, setShowCacheSetup] = useState(() => getOrderIndexStats().count === 0);
   const [statsVersion, setStatsVersion] = useState(0);
+
+  const refreshStats = () => setStatsVersion((v) => v + 1);
   const { stats, meta } = React.useMemo(() => {
     return { stats: getOrderIndexStats(), meta: loadEbayOrderIndex().meta };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -217,82 +218,82 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-3 shadow-sm">
-        <div className="flex items-start gap-3">
-          <div className="p-2.5 rounded-xl bg-indigo-100 text-indigo-700 shrink-0">
-            <Receipt size={18} />
+      <EbaySalesSyncPanel
+        items={items}
+        taxMode={taxMode}
+        onUpdate={onUpdate}
+        onCacheUpdated={refreshStats}
+      />
+
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setShowCacheSetup((v) => !v)}
+          className="w-full flex items-center justify-between gap-3 p-4 text-left hover:bg-slate-50/80 transition-colors"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2 rounded-xl bg-slate-100 text-slate-600 shrink-0">
+              <Database size={16} />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-sm font-black text-slate-900">Order cache setup</h2>
+              <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+                {stats.count
+                  ? `${stats.count} cached order(s) · ${stats.oldestDate || '?'} → ${stats.newestDate || '?'}`
+                  : 'Backfill via API or import CSV — required once for sales sync'}
+              </p>
+            </div>
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <h2 className="text-sm font-black text-slate-900">Order history — two independent paths</h2>
-              {cloudReady ? (
-                <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1 shrink-0">
-                  {cloudPulling ? <Loader2 size={11} className="animate-spin" /> : <Cloud size={11} />}
-                  {cloudPulling ? 'Restoring from cloud…' : 'Saved to your account'}
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1 shrink-0">
-                  <CloudOff size={11} />
-                  Local to this browser only
-                </span>
+          <div className="flex items-center gap-2 shrink-0">
+            {cloudReady ? (
+              <span className="hidden sm:inline-flex items-center gap-1 text-[9px] font-black uppercase text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">
+                {cloudPulling ? <Loader2 size={10} className="animate-spin" /> : <Cloud size={10} />}
+                Cloud
+              </span>
+            ) : null}
+            {showCacheSetup ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+          </div>
+        </button>
+
+        {showCacheSetup && (
+          <div className="border-t border-slate-100 p-5 space-y-6">
+            <div className="space-y-2">
+              <p className="text-xs text-slate-500 max-w-2xl">
+                Sales sync matches your inventory against this order cache (buyer, order ID, payout). Run the
+                eBay API backfill once, optionally import a Payments CSV for net-after-fees amounts, or both —
+                orders dedupe by ID.
+                {cloudReady
+                  ? ' Signed in — cache mirrors to your account across devices.'
+                  : ' Sign in (Settings → Cloud sync) to save history to your account.'}
+              </p>
+              {cloudPullMessage && (
+                <p className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-1.5 inline-block">
+                  {cloudPullMessage}
+                </p>
               )}
             </div>
-            <p className="text-xs text-slate-500 mt-1 max-w-2xl">
-              Build a cache of your past eBay orders (buyer, address, order ID, price) that the{' '}
-              <span className="font-bold text-slate-700">order lookup</span> button in the inventory Flags column
-              searches. Use the eBay API backfill, import a Seller Hub CSV, or both — both feed the same cache and
-              are deduplicated by order ID, so try each and see which covers your history better.
-              {cloudReady ? (
-                <>
-                  {' '}
-                  Since you're signed in, it's also mirrored to your account — a cleared browser or a new PC will
-                  restore it automatically instead of starting from zero.
-                </>
-              ) : (
-                <>
-                  {' '}
-                  Sign in (Settings → Cloud sync) to also save this to your account, so a cleared browser or a new
-                  PC doesn't lose it.
-                </>
-              )}
-            </p>
-            {cloudPullMessage && (
-              <p className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-1.5 mt-2 inline-block">
-                {cloudPullMessage}
+
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              {[
+                { label: 'Cached orders', value: stats.count },
+                { label: 'API only', value: stats.apiOnlyCount },
+                { label: 'CSV only', value: stats.csvOnlyCount },
+                { label: 'Both sources', value: stats.bothCount },
+                { label: 'Sold, unlinked', value: soldOnEbayMissingLink },
+              ].map((s) => (
+                <div key={s.label} className="rounded-xl border border-slate-200 bg-slate-50/50 p-3">
+                  <p className="text-[10px] font-black uppercase text-slate-400">{s.label}</p>
+                  <p className="text-xl font-black text-slate-900 mt-1">{s.value}</p>
+                </div>
+              ))}
+            </div>
+
+            {meta.apiBackfill?.completedThroughDate && (
+              <p className="text-[11px] text-slate-500">
+                API backfill last completed through{' '}
+                <span className="font-bold text-slate-700">{meta.apiBackfill.completedThroughDate}</span>
               </p>
             )}
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        {[
-          { label: 'Cached orders', value: stats.count },
-          { label: 'API only', value: stats.apiOnlyCount },
-          { label: 'CSV only', value: stats.csvOnlyCount },
-          { label: 'Both sources', value: stats.bothCount },
-          { label: 'Sold on eBay, unlinked', value: soldOnEbayMissingLink },
-        ].map((s) => (
-          <div key={s.label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-[10px] font-black uppercase text-slate-400">{s.label}</p>
-            <p className="text-2xl font-black text-slate-900 mt-1">{s.value}</p>
-          </div>
-        ))}
-      </div>
-
-      {(stats.oldestDate || stats.newestDate) && (
-        <p className="text-[11px] text-slate-500">
-          Cache covers <span className="font-bold text-slate-700">{stats.oldestDate || '?'}</span> →{' '}
-          <span className="font-bold text-slate-700">{stats.newestDate || '?'}</span>
-          {meta.apiBackfill?.completedThroughDate && (
-            <>
-              {' '}
-              · API backfill last completed through{' '}
-              <span className="font-bold text-slate-700">{meta.apiBackfill.completedThroughDate}</span>
-            </>
-          )}
-        </p>
-      )}
 
       {/* Path A: eBay API backfill */}
       <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-4 shadow-sm">
@@ -520,8 +521,6 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
         )}
       </div>
 
-      <EbayOrderLinkAnalysisPanel items={items} taxMode={taxMode} onUpdate={onUpdate} />
-
       <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-xs text-slate-500">
           <History size={14} />
@@ -537,6 +536,9 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
           <Trash2 size={12} />
           Clear cache
         </button>
+      </div>
+          </div>
+        )}
       </div>
     </div>
   );

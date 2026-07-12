@@ -84,13 +84,13 @@ const TABS: { id: PullTab; label: string; icon: React.ReactNode; hint: string }[
     id: 'sold',
     label: 'Detect sold',
     icon: <TrendingDown size={14} />,
-    hint: 'Ended listings since last check → mark inventory as sold',
+    hint: 'Legacy: listing snapshot diff — prefer Sales sync for order-based matching',
   },
   {
     id: 'orders',
-    label: 'Order history',
+    label: 'Sales sync',
     icon: <PackageSearch size={14} />,
-    hint: 'Backfill orders since Feb 2025 (API) or import a Seller Hub CSV — powers the order lookup button in Flags',
+    hint: 'Fetch eBay orders and match inventory — mark forgotten sales, link order IDs, fix net payout',
   },
 ];
 
@@ -102,12 +102,13 @@ const EbayStorePullPage: React.FC<Props> = ({
   onUpdate,
   onPublishCatalog,
 }) => {
-  const [tab, setTab] = useState<PullTab>('sync');
+  const [tab, setTab] = useState<PullTab>('orders');
   const [searchParams] = useSearchParams();
 
   useEffect(() => {
     const t = searchParams.get('tab');
-    if (t === 'sync' || t === 'import' || t === 'sold' || t === 'orders') setTab(t);
+    if (t === 'sales') setTab('orders');
+    else if (t === 'sync' || t === 'import' || t === 'sold' || t === 'orders') setTab(t);
   }, [searchParams]);
   const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
