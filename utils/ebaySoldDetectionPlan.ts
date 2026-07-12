@@ -23,8 +23,6 @@ export function getActiveInventoryForSoldDetection(items: InventoryItem[]): Inve
   return items.filter(
     (i) =>
       i.status === ItemStatus.IN_STOCK &&
-      !i.isPC &&
-      !i.isBundle &&
       !i.parentContainerId &&
       Boolean(i.name?.trim())
   );
@@ -58,10 +56,17 @@ export function matchDisappearedListingToItem(
   }
 
   let best: { item: InventoryItem; score: number } | null = null;
+  const titleNorm = listing.title.trim().toLowerCase();
   for (const item of activeItems) {
     const score = scoreListingTitleMatch(item.name, listing.title, listing.sku, item.ebaySku);
-    if (score >= MIN_SCORE && (!best || score > best.score)) {
-      best = { item, score };
+    const itemNorm = item.name.trim().toLowerCase();
+    const reverseScore =
+      titleNorm.length >= 8 && itemNorm.includes(titleNorm.slice(0, Math.min(titleNorm.length, 40)))
+        ? 90
+        : 0;
+    const finalScore = Math.max(score, reverseScore);
+    if (finalScore >= MIN_SCORE && (!best || finalScore > best.score)) {
+      best = { item, score: finalScore };
     }
   }
 

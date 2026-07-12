@@ -1,19 +1,32 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  History,
   Loader2,
   RefreshCw,
   ShoppingBag,
   TrendingDown,
+  X,
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, TaxMode } from '../types';
-import { clearPendingReminder } from '../services/ebayListingReminder';
+import {
+  clearPendingReminder,
+  dismissPendingReminder,
+  hydrateSoldDetectionFromPending,
+  loadPendingReminder,
+  savePendingReminder,
+  soldDetectionPlanToPending,
+} from '../services/ebayListingReminder';
 import { fetchMyEbayListings, getEbayUsername } from '../services/ebayService';
 import {
-  compareEbayListingSnapshots,
   loadEbayListingSnapshot,
+  loadEbayListingSnapshotHistory,
+  recordEbayListingCheck,
   saveEbayListingSnapshot,
+  type EbayListingSnapshotCheckRecord,
   type EbayListingSnapshotEntry,
 } from '../services/ebayListingSnapshot';
 import {
@@ -62,6 +75,35 @@ function matchKindLabel(kind: EbaySoldDetectionMatch['matchKind']): string {
   return 'Title match';
 }
 
+function applyPendingDetectionToState(
+  items: InventoryItem[],
+  setMatches: React.Dispatch<React.SetStateAction<EbaySoldDetectionMatch[]>>,
+  setUnmatched: React.Dispatch<React.SetStateAction<EbayListingSnapshotEntry[]>>,
+  setSnapshotMeta: React.Dispatch<
+    React.SetStateAction<{ previousAt: string; disappeared: number } | null>
+  >,
+  setRowState: React.Dispatch<React.SetStateAction<Record<string, SoldRowState>>>,
+  rowKey: (match: EbaySoldDetectionMatch) => string
+): boolean {
+  const pending = loadPendingReminder();
+  if (!pending || pending.dismissed || pending.disappearedCount <= 0) return false;
+
+  const { matches: hydrated, unmatched } = hydrateSoldDetectionFromPending(items, pending);
+  setMatches(hydrated);
+  setUnmatched(unmatched);
+  setSnapshotMeta({
+    previousAt: pending.previousSnapshotAt || pending.detectedAt,
+    disappeared: pending.disappearedCount,
+  });
+
+  const initial: Record<string, SoldRowState> = {};
+  for (const match of hydrated) {
+    initial[rowKey(match)] = defaultSoldRowState(match);
+  }
+  setRowState(initial);
+  return true;
+}
+
 const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPublishCatalog }) => {
   const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -73,10 +115,32 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
   const [snapshotMeta, setSnapshotMeta] = useState<{ previousAt: string; disappeared: number } | null>(null);
   const [rowState, setRowState] = useState<Record<string, SoldRowState>>({});
   const [progress, setProgress] = useState<EbayToolProgress | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [checkHistory, setCheckHistory] = useState<EbayListingSnapshotCheckRecord[]>(() =>
+    loadEbayListingSnapshotHistory()
+  );
 
   const rowKey = (match: EbaySoldDetectionMatch) => match.item.id;
 
   const previousSnapshot = loadEbayListingSnapshot();
+
+  const refreshHistory = useCallback(() => {
+    setCheckHistory(loadEbayListingSnapshotHistory());
+  }, []);
+
+  useEffect(() => {
+    const restored = applyPendingDetectionToState(
+      items,
+      setMatches,
+      setUnmatched,
+      setSnapshotMeta,
+      setRowState,
+      rowKey
+    );
+    if (restored) {
+      setInfo('Restored the last detected eBay listing changes — review matches below.');
+    }
+  }, [items]);
 
   const checkForSold = useCallback(async () => {
     setLoading(true);
@@ -97,11 +161,11 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
         total: 4,
         detail: `${listings.length} listing${listings.length === 1 ? '' : 's'}`,
       });
-      const prev = loadEbayListingSnapshot();
 
-      if (!prev) {
+      if (!loadEbayListingSnapshot()) {
         setProgress({ label: 'Saving baseline snapshot…', done: 3, total: 4 });
-        saveEbayListingSnapshot(listings, getEbayUsername());
+        recordEbayListingCheck(listings, getEbayUsername());
+        refreshHistory();
         setProgress({ label: 'Baseline saved', done: 4, total: 4 });
         setInfo(
           `Saved baseline snapshot of ${listings.length} active listing${listings.length === 1 ? '' : 's'}. Run this check again after listings disappear to detect likely sales.`
@@ -110,13 +174,14 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
       }
 
       setProgress({ label: 'Comparing to last snapshot…', done: 2, total: 4 });
-      const { disappeared } = compareEbayListingSnapshots(prev.entries, listings);
-      saveEbayListingSnapshot(listings, getEbayUsername());
+      const check = recordEbayListingCheck(listings, getEbayUsername());
+      refreshHistory();
 
-      if (!disappeared.length) {
+      if (!check.disappeared.length) {
+        clearPendingReminder();
         setProgress({ label: 'No listing changes', done: 4, total: 4 });
         setInfo(
-          `No listings disappeared since ${new Date(prev.meta.capturedAt).toLocaleString()}. Snapshot updated (${listings.length} active).`
+          `No listings disappeared since ${new Date(check.previous!.meta.capturedAt).toLocaleString()}. Snapshot updated (${listings.length} active).`
         );
         return;
       }
@@ -125,20 +190,29 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
         label: 'Matching ended listings to inventory…',
         done: 3,
         total: 4,
-        detail: `${disappeared.length} ended`,
+        detail: `${check.disappeared.length} ended`,
       });
-      const plan = buildEbaySoldDetectionPlan(items, disappeared);
+      const plan = buildEbaySoldDetectionPlan(items, check.disappeared);
       setProgress({
         label: 'Check complete',
         done: 4,
         total: 4,
         detail: `${plan.matches.length} likely sale${plan.matches.length === 1 ? '' : 's'}`,
       });
+
+      const pending = soldDetectionPlanToPending(
+        plan,
+        check.disappeared,
+        check.previous!.meta.capturedAt,
+        check.checkRecord!.checkId
+      );
+      savePendingReminder(pending);
+
       setMatches(plan.matches);
       setUnmatched(plan.unmatchedDisappeared);
       setSnapshotMeta({
-        previousAt: prev.meta.capturedAt,
-        disappeared: disappeared.length,
+        previousAt: check.previous!.meta.capturedAt,
+        disappeared: check.disappeared.length,
       });
 
       const initial: Record<string, SoldRowState> = {};
@@ -152,7 +226,7 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
       setLoading(false);
       setTimeout(() => setProgress(null), 900);
     }
-  }, [items]);
+  }, [items, refreshHistory]);
 
   const updateRow = (key: string, patch: Partial<SoldRowState>) => {
     setRowState((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
@@ -180,6 +254,15 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
       return row?.selected && row.confirmed;
     });
   }, [matches, rowState]);
+
+  const dismissDetection = () => {
+    dismissPendingReminder();
+    setMatches([]);
+    setUnmatched([]);
+    setSnapshotMeta(null);
+    setRowState({});
+    setInfo('Detection dismissed. Snapshot history is still available below.');
+  };
 
   const applyConfirmed = async () => {
     if (!readyToApply.length) return;
@@ -278,6 +361,7 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
           detail: `${listings.length} listing${listings.length === 1 ? '' : 's'}`,
         });
         saveEbayListingSnapshot(listings, getEbayUsername());
+        clearPendingReminder();
         setProgress({ label: 'Baseline reset', done: 2, total: 2 });
         setInfo(`Baseline reset — ${listings.length} active listings saved.`);
         setMatches([]);
@@ -300,7 +384,8 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
         <p className="text-xs text-slate-600">
           Compares your current active eBay listings to the last saved snapshot. Listings that
           disappeared are matched to in-stock inventory and suggested as sold — with the same sell-price
-          and order-screenshot parsing as the inventory sale dialog.
+          and order-screenshot parsing as the inventory sale dialog. Every check is saved to snapshot
+          history so you can review past diffs even after the baseline updates.
         </p>
         {previousSnapshot && (
           <p className="text-[11px] text-slate-500">
@@ -352,21 +437,33 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
         </div>
       )}
 
-      {snapshotMeta && matches.length > 0 && (
+      {snapshotMeta && snapshotMeta.disappeared > 0 && (
         <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-3 flex flex-wrap items-center gap-2">
           <p className="text-xs font-bold text-rose-900 flex-1 min-w-[200px]">
             {snapshotMeta.disappeared} listing{snapshotMeta.disappeared === 1 ? '' : 's'} ended since{' '}
-            {new Date(snapshotMeta.previousAt).toLocaleString()} · {matches.length} likely sale
-            {matches.length === 1 ? '' : 's'}
+            {new Date(snapshotMeta.previousAt).toLocaleString()}
+            {matches.length > 0
+              ? ` · ${matches.length} likely sale${matches.length === 1 ? '' : 's'}`
+              : ' · no automatic inventory matches'}
           </p>
+          {matches.length > 0 && (
+            <button
+              type="button"
+              disabled={applying || readyToApply.length === 0}
+              onClick={() => void applyConfirmed()}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {applying ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+              Mark {readyToApply.length} confirmed as sold
+            </button>
+          )}
           <button
             type="button"
-            disabled={applying || readyToApply.length === 0}
-            onClick={() => void applyConfirmed()}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50"
+            onClick={dismissDetection}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-rose-200 bg-white text-[10px] font-black uppercase text-rose-700 hover:bg-rose-50"
           >
-            {applying ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-            Mark {readyToApply.length} confirmed as sold
+            <X size={12} />
+            Dismiss
           </button>
         </div>
       )}
@@ -404,6 +501,11 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
                   <div className="min-w-0 flex-1">
                     <p className="text-[10px] font-black uppercase text-slate-400">Inventory item</p>
                     <p className="text-sm font-bold text-slate-900">{match.item.name}</p>
+                    {(match.item.isBundle || match.item.isPC) && (
+                      <span className="inline-block mt-1 text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-100">
+                        {match.item.isPC ? 'PC build' : 'Bundle'}
+                      </span>
+                    )}
                     <p className="text-[10px] text-slate-500 mt-1 line-clamp-2">
                       Ended listing: {listing.title}
                       {listing.price != null ? ` · was €${formatEUR(listing.price)}` : ''}
@@ -479,19 +581,81 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
       </div>
 
       {unmatched.length > 0 && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-4 space-y-2">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-4 space-y-3">
           <p className="text-xs font-black uppercase text-amber-800">
             {unmatched.length} ended listing{unmatched.length === 1 ? '' : 's'} with no inventory match
           </p>
-          <ul className="text-xs text-amber-900 space-y-1 max-h-32 overflow-y-auto">
+          <p className="text-[11px] text-amber-900/80">
+            These listings left your eBay store but were not linked to an in-stock item automatically.
+            Mark the matching inventory item sold manually, or link it via eBay Store Pull → Sync first.
+          </p>
+          <ul className="text-xs text-amber-900 space-y-2 max-h-48 overflow-y-auto">
             {unmatched.map((l) => (
-              <li key={l.listingId} className="line-clamp-1">
-                {l.title}
+              <li key={l.listingId} className="rounded-lg bg-white/70 border border-amber-100 px-3 py-2">
+                <p className="font-bold line-clamp-2">{l.title}</p>
+                {l.price != null && (
+                  <p className="text-[10px] text-amber-800/80 mt-0.5">Was €{formatEUR(l.price)}</p>
+                )}
               </li>
             ))}
           </ul>
         </div>
       )}
+
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setHistoryOpen((o) => !o)}
+          className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-50"
+        >
+          <span className="inline-flex items-center gap-2 text-xs font-black uppercase text-slate-700">
+            <History size={14} />
+            Snapshot check history ({checkHistory.length})
+          </span>
+          {historyOpen ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+        </button>
+        {historyOpen && (
+          <div className="border-t border-slate-100 max-h-80 overflow-y-auto divide-y divide-slate-50">
+            {checkHistory.length === 0 ? (
+              <p className="px-4 py-6 text-xs text-slate-500 text-center">
+                No checks recorded yet. Run a sold check to start building history.
+              </p>
+            ) : (
+              checkHistory.map((record) => (
+                <div key={record.checkId} className="px-4 py-3 space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                    <span className="font-bold text-slate-900">
+                      {new Date(record.checkedAt).toLocaleString()}
+                    </span>
+                    <span className="text-slate-500">
+                      {record.previousCount} → {record.currentCount} listings
+                    </span>
+                    {record.disappearedCount > 0 && (
+                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-100">
+                        −{record.disappearedCount} ended
+                      </span>
+                    )}
+                    {record.appearedCount > 0 && (
+                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">
+                        +{record.appearedCount} new
+                      </span>
+                    )}
+                  </div>
+                  {record.disappeared.length > 0 && (
+                    <ul className="text-[10px] text-slate-600 space-y-0.5 pl-1">
+                      {record.disappeared.map((l) => (
+                        <li key={l.listingId} className="line-clamp-1">
+                          Ended: {l.title}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 };
