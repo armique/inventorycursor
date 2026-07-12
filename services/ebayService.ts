@@ -138,7 +138,9 @@ export interface EbayOrderSummary {
   orderId: string;
   creationDate: string | null;
   buyer: { username: string; fullName?: string; address?: string; email?: string; phone?: string };
-  lineItems: { sku: string | null; title: string; lineItemCost: number | null }[];
+  lineItems: { sku: string | null; title: string; lineItemCost: number | null; listingId?: string | null }[];
+  /** Full order total (gross, before eBay fees) from the Fulfillment API pricing summary. */
+  orderTotal?: number | null;
 }
 
 /** List orders from eBay Fulfillment API (last 7 days by default). */

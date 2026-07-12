@@ -34,6 +34,7 @@ import {
   getDefaultDashboardPreferences,
 } from './services/dashboardPreferences';
 import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchFromCloud } from './services/firebaseService';
+import { pullOrderIndexFromCloud } from './services/ebayOrderIndex';
 import { DEFAULT_CATEGORIES } from './services/constants';
 import { appendPriceHistoryIfChanged } from './services/priceHistory';
 import { computeItemProfitBeforeOverhead } from './services/financialAggregation';
@@ -293,6 +294,7 @@ const App: React.FC = () => {
   const writeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localPersistDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialWriteDoneRef = useRef(false);
+  const ebayOrderIndexPulledRef = useRef(false);
   const storeCatalogPublishDoneRef = useRef(false);
   const catalogPublishDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cloudSyncInFlightRef = useRef(false);
@@ -537,6 +539,7 @@ const App: React.FC = () => {
       }
       if (!user) {
         initialWriteDoneRef.current = false;
+        ebayOrderIndexPulledRef.current = false;
         setSyncState(prev => ({ ...prev, status: 'idle', message: undefined }));
         return;
       }
@@ -646,6 +649,15 @@ const App: React.FC = () => {
       }
     })();
   }, [authUser, items, trash, expenses, recurringExpenses, categories, categoryFields, businessSettings, monthlyGoal, dashboardPrefs, actionHistory, applyRemoteData]);
+
+  // Re-hydrate the cached eBay order history (Order lookup button in Flags column) from the
+  // cloud mirror as soon as we're signed in — so a cleared browser or brand-new PC has the
+  // order cache ready before the user ever opens the eBay Store Pull → Order history tab.
+  useEffect(() => {
+    if (!authUser || !isCloudEnabled() || ebayOrderIndexPulledRef.current) return;
+    ebayOrderIndexPulledRef.current = true;
+    void pullOrderIndexFromCloud().catch((e) => console.warn('eBay order index cloud pull failed:', e));
+  }, [authUser]);
 
   // Publish store catalog once when panel has items and auth (ensures storefront gets data)
   useEffect(() => {

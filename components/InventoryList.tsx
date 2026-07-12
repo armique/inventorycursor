@@ -7,7 +7,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
   Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone, Camera, Gift
 } from 'lucide-react';
-import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions } from '../types';
+import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
 import { itemMatchesSalePlatformFilter, isMissingExplicitSalePlatform, MISSING_PLATFORM_FILTER, SALE_PLATFORM_OPTIONS, formatItemSalePlatform, formatSalePlatformLabel } from '../utils/salePlatform';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
@@ -41,6 +41,9 @@ import { generateItemSpecs } from '../services/specsAI';
 import { getStorefrontHiddenReason, isPublishedOnStorefront } from '../utils/storefrontCatalog';
 import { fetchEbayListingPriceForItem, type EbayListingPriceMatch } from '../services/ebayService';
 import { hasEbayStorefrontPriceSynced } from '../utils/ebayPrice';
+import { loadEbayOrderIndex } from '../services/ebayOrderIndex';
+import { findMatchingOrdersForItem, type EbayOrderMatch } from '../utils/ebayOrderMatch';
+import { calculateSaleProfit } from '../utils/saleProfit';
 import ContainerMembershipBadge from './ContainerMembershipBadge';
 import {
   buildContainersById,
@@ -105,7 +108,7 @@ interface SortConfig {
 /** Inv column: icon buttons in one row (28px each + 4px gaps, matching the actual `gap-1` grid + cell padding). */
 const PRESENCE_ICON_SIZE_PX = 28;
 const PRESENCE_ICON_GAP_PX = 4;
-const PRESENCE_ICON_COUNT = 4;
+const PRESENCE_ICON_COUNT = 5;
 const PRESENCE_COL_WIDTH =
   PRESENCE_ICON_COUNT * PRESENCE_ICON_SIZE_PX +
   (PRESENCE_ICON_COUNT - 1) * PRESENCE_ICON_GAP_PX +
@@ -958,6 +961,59 @@ const InventoryList: React.FC<Props> = ({
     closeEbayPriceModal();
   };
 
+  // --- eBay order lookup (Flags column) — searches the locally cached order index (API backfill + CSV import) ---
+  const [orderLookupItem, setOrderLookupItem] = useState<InventoryItem | null>(null);
+  const [orderLookupMatches, setOrderLookupMatches] = useState<EbayOrderMatch[]>([]);
+
+  const openOrderLookupModal = (item: InventoryItem) => {
+    const { orders } = loadEbayOrderIndex();
+    const matches = findMatchingOrdersForItem(item, orders);
+    setOrderLookupItem(item);
+    setOrderLookupMatches(matches);
+  };
+
+  const closeOrderLookupModal = () => {
+    setOrderLookupItem(null);
+    setOrderLookupMatches([]);
+  };
+
+  const applyOrderMatchToItem = (item: InventoryItem, match: EbayOrderMatch) => {
+    const { order, lineItem } = match;
+    const gross = lineItem.lineItemCost ?? order.grossTotal ?? 0;
+    const net = order.netTotal ?? null;
+    const fee = order.feeTotal ?? (net != null && order.grossTotal != null ? Math.max(0, order.grossTotal - net) : 0);
+    const sellPrice = net ?? gross;
+    const profit = calculateSaleProfit(sellPrice, item.buyPrice, fee || 0, businessSettings.taxMode);
+
+    const customer: CustomerInfo = {
+      name: order.buyer.fullName || order.buyer.username || '',
+      address: order.buyer.address || '',
+      ...(order.buyer.phone ? { phone: order.buyer.phone } : {}),
+      ...(order.buyer.email ? { email: order.buyer.email } : {}),
+    };
+
+    const updated: InventoryItem = {
+      ...item,
+      status:
+        item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED ? ItemStatus.SOLD : item.status,
+      sellPrice,
+      sellDate: order.creationDate || item.sellDate || new Date().toISOString().split('T')[0],
+      platformSold: item.platformSold || 'ebay.de',
+      paymentType: item.paymentType || 'ebay.de',
+      profit: parseFloat(profit.toFixed(2)),
+      customer,
+      ebayUsername: order.buyer.username || item.ebayUsername,
+      ebayOrderId: order.orderId,
+      hasFee: Boolean(fee),
+      feeAmount: fee || 0,
+    };
+
+    onUpdate([updated]);
+    setToast(`Applied order ${order.orderId} to ${item.name}`);
+    setTimeout(() => setToast((prev) => (prev?.startsWith('Applied order') ? null : prev)), 2200);
+    closeOrderLookupModal();
+  };
+
   // Visible Columns (from order, excluding hidden) — memoized so row renders are not invalidated every parent render
   const visibleColumns = useMemo(() => {
     const ALWAYS_HIDDEN = ['parseSpecs', 'salePlatform'];
@@ -1807,7 +1863,7 @@ const InventoryList: React.FC<Props> = ({
         return (
           <td key={id} className="inv-col-icons border-r border-slate-100/90 align-middle" style={style} onClick={(e) => e.stopPropagation()}>
             <div
-              className={`grid grid-cols-4 ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-items-start shrink-0`}
+              className={`grid grid-cols-5 ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-items-start shrink-0`}
               style={{ width: PRESENCE_ICON_COUNT * PRESENCE_ICON_SIZE_PX + (PRESENCE_ICON_COUNT - 1) * PRESENCE_ICON_GAP_PX }}
             >
               {/* Physical presence: present → lost → defective → unknown */}
@@ -1926,6 +1982,27 @@ const InventoryList: React.FC<Props> = ({
                 >
                   S
                 </span>
+              </button>
+
+              {/* eBay order lookup: search cached order history (API backfill + CSV import) for this item */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openOrderLookupModal(item);
+                }}
+                className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors ${
+                  item.ebayOrderId
+                    ? 'border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                    : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-300 hover:text-indigo-700 hover:bg-indigo-50/50'
+                }`}
+                title={
+                  item.ebayOrderId
+                    ? `eBay order linked: ${item.ebayOrderId} — click to search cached orders again`
+                    : 'Search cached eBay orders (since Feb 2025) for this item'
+                }
+              >
+                <Receipt size={13} strokeWidth={2.25} />
               </button>
             </div>
           </td>
@@ -3993,6 +4070,88 @@ const InventoryList: React.FC<Props> = ({
                         </div>
                      </div>
                   ) : null}
+               </div>
+            </div>
+         </div>,
+         document.body
+      )}
+
+      {orderLookupItem && createPortal(
+         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4" onClick={closeOrderLookupModal}>
+            <div
+               className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden"
+               onClick={(e) => e.stopPropagation()}
+            >
+               <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                  <div className="flex items-center gap-2 min-w-0">
+                     <Receipt size={18} className="text-indigo-600 shrink-0"/>
+                     <h3 className="font-black text-slate-900 text-sm truncate">eBay order lookup • {orderLookupItem.name}</h3>
+                  </div>
+                  <button onClick={closeOrderLookupModal} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl shrink-0"><X size={18}/></button>
+               </div>
+               <div className="p-4 max-h-[70vh] overflow-y-auto space-y-3">
+                  {orderLookupMatches.length === 0 ? (
+                     <div className="py-6 text-center space-y-3">
+                        <AlertCircle size={28} className="mx-auto text-slate-300"/>
+                        <p className="text-sm font-bold text-slate-600">No cached orders match this item.</p>
+                        <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                           Run an API backfill or import a Seller Hub CSV in <span className="font-bold text-slate-600">eBay Store Pull → Order history</span>, then try again.
+                        </p>
+                        <button
+                           type="button"
+                           onClick={() => { closeOrderLookupModal(); navigate('/panel/ebay-store-pull?tab=orders'); }}
+                           className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700"
+                        >
+                           Open order history tool
+                        </button>
+                     </div>
+                  ) : (
+                     orderLookupMatches.slice(0, 8).map((match) => {
+                        const { order, lineItem, matchScore, matchKind } = match;
+                        const gross = lineItem.lineItemCost ?? order.grossTotal ?? null;
+                        const net = order.netTotal ?? null;
+                        return (
+                           <div key={`${order.orderId}-${lineItem.sku || lineItem.title}`} className="rounded-xl border border-slate-200 p-3 space-y-2">
+                              <div className="flex items-start justify-between gap-2">
+                                 <div className="min-w-0">
+                                    <p className="text-sm font-bold text-slate-900 line-clamp-2">{lineItem.title}</p>
+                                    <p className="text-[11px] text-slate-500 mt-0.5">Order {order.orderId} · {order.creationDate || 'date unknown'}</p>
+                                 </div>
+                                 <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap ${
+                                    matchKind === 'listingId' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
+                                    matchKind === 'sku' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
+                                    'bg-amber-50 text-amber-700 border border-amber-100'
+                                 }`}>
+                                    {matchKind === 'listingId' ? 'Listing match' : matchKind === 'sku' ? 'SKU match' : `Title match ${matchScore}`}
+                                 </span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                 <div className="rounded-lg bg-slate-50 border border-slate-200 p-2">
+                                    <p className="text-[9px] font-black uppercase text-slate-400">Buyer</p>
+                                    <p className="font-bold text-slate-800 truncate">{order.buyer.fullName || order.buyer.username || '—'}</p>
+                                    {order.buyer.address && <p className="text-slate-500 whitespace-pre-line text-[10px] mt-0.5 line-clamp-3">{order.buyer.address}</p>}
+                                 </div>
+                                 <div className="rounded-lg bg-slate-50 border border-slate-200 p-2">
+                                    <p className="text-[9px] font-black uppercase text-slate-400">Price</p>
+                                    {gross != null && <p className="font-bold text-slate-800">Gross €{formatEUR(gross)}</p>}
+                                    {net != null ? (
+                                       <p className="font-black text-emerald-700">Net €{formatEUR(net)}</p>
+                                    ) : (
+                                       <p className="text-[10px] text-slate-400">Net unknown (import CSV for fees)</p>
+                                    )}
+                                 </div>
+                              </div>
+                              <button
+                                 type="button"
+                                 onClick={() => applyOrderMatchToItem(orderLookupItem, match)}
+                                 className="w-full py-2 bg-emerald-600 text-white rounded-lg text-[11px] font-black hover:bg-emerald-700"
+                              >
+                                 Apply order to this item
+                              </button>
+                           </div>
+                        );
+                     })
+                  )}
                </div>
             </div>
          </div>,

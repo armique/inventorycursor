@@ -1129,3 +1129,111 @@ export async function setCachedProductPhoto(name: string, imageUrl: string): Pro
     console.warn("setCachedProductPhoto failed:", e);
   }
 }
+
+// --- EBAY ORDER INDEX (cached order history, cross-device) ---
+// Durable mirror of services/ebayOrderIndex.ts's localStorage cache — one Firestore doc
+// per order under the signed-in user, so a wiped browser / brand-new PC can re-hydrate the
+// local cache instead of losing history and needing a full API re-backfill or CSV re-import.
+// Kept loosely typed here (no import from services/ebayOrderIndex.ts) to avoid a circular
+// dependency; the caller casts to/from its EbayOrderRecord shape.
+
+const EBAY_ORDERS_COLLECTION = "ebayOrders";
+const EBAY_ORDERS_META_DOC_ID = "_meta";
+
+function sanitizeOrderDocId(orderId: string): string {
+  const cleaned = orderId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 300);
+  return cleaned || "unknown";
+}
+
+export interface EbayOrderCloudMeta {
+  updatedAt?: string;
+  count?: number;
+  apiBackfill?: {
+    fromDate: string;
+    toDate: string;
+    completedThroughDate?: string;
+    lastRunAt: string;
+    isComplete?: boolean;
+  };
+  csvImports?: { fileName: string; rowCount: number; orderCount: number; importedAt: string }[];
+}
+
+/** One-time fetch of every cached eBay order (+ meta) for this user. Returns null if signed out / cloud disabled. */
+export async function fetchEbayOrdersFromCloud(): Promise<{ orders: Record<string, unknown>[]; meta: EbayOrderCloudMeta | null } | null> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) return null;
+  try {
+    const colRef = collection(ctx.db, "users", user.uid, EBAY_ORDERS_COLLECTION);
+    const snap = await getDocs(colRef);
+    const orders: Record<string, unknown>[] = [];
+    let meta: EbayOrderCloudMeta | null = null;
+    snap.forEach((d) => {
+      if (d.id === EBAY_ORDERS_META_DOC_ID) {
+        meta = d.data() as EbayOrderCloudMeta;
+      } else {
+        orders.push(d.data() as Record<string, unknown>);
+      }
+    });
+    return { orders, meta };
+  } catch (err) {
+    console.error("fetchEbayOrdersFromCloud failed:", err);
+    return null;
+  }
+}
+
+/** Upload new/changed eBay orders (one doc per order, batched) and merge a meta patch. Requires auth. */
+export async function writeEbayOrdersToCloud(
+  orders: (Record<string, unknown> & { orderId: string })[],
+  metaPatch?: EbayOrderCloudMeta
+): Promise<void> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) throw new Error("Not signed in");
+  const colRef = collection(ctx.db, "users", user.uid, EBAY_ORDERS_COLLECTION);
+
+  const BATCH_MAX = 450;
+  let batch = writeBatch(ctx.db);
+  let count = 0;
+  for (const order of orders) {
+    const id = sanitizeOrderDocId(String(order.orderId));
+    batch.set(doc(colRef, id), stripUndefined(order));
+    count++;
+    if (count >= BATCH_MAX) {
+      await batch.commit();
+      batch = writeBatch(ctx.db);
+      count = 0;
+    }
+  }
+  if (metaPatch) {
+    batch.set(
+      doc(colRef, EBAY_ORDERS_META_DOC_ID),
+      stripUndefined({ ...metaPatch, updatedAt: new Date().toISOString() }),
+      { merge: true }
+    );
+    count++;
+  }
+  if (count > 0) await batch.commit();
+}
+
+/** Delete every cached eBay order doc (and meta) for this user. Requires auth. */
+export async function clearEbayOrdersCloud(): Promise<void> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) return;
+  const colRef = collection(ctx.db, "users", user.uid, EBAY_ORDERS_COLLECTION);
+  const snap = await getDocs(colRef);
+  const BATCH_MAX = 450;
+  let batch = writeBatch(ctx.db);
+  let count = 0;
+  for (const d of snap.docs) {
+    batch.delete(d.ref);
+    count++;
+    if (count >= BATCH_MAX) {
+      await batch.commit();
+      batch = writeBatch(ctx.db);
+      count = 0;
+    }
+  }
+  if (count > 0) await batch.commit();
+}

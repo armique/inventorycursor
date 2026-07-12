@@ -26,10 +26,11 @@ import { formatEUR } from '../utils/formatMoney';
 import { normalizeImageList, prepareInventoryImagesForStorage } from '../utils/imageImport';
 import EbayStorePullImportTab from './EbayStorePullImportTab';
 import EbayStorePullSoldTab from './EbayStorePullSoldTab';
+import EbayStorePullOrdersTab from './EbayStorePullOrdersTab';
 import EbayToolProgressBar, { type EbayToolProgress } from './EbayToolProgressBar';
 
 type PhotoMode = 'none' | 'all' | 'pick';
-type PullTab = 'sync' | 'import' | 'sold';
+type PullTab = 'sync' | 'import' | 'sold' | 'orders';
 
 interface Props {
   items: InventoryItem[];
@@ -85,6 +86,12 @@ const TABS: { id: PullTab; label: string; icon: React.ReactNode; hint: string }[
     icon: <TrendingDown size={14} />,
     hint: 'Ended listings since last check → mark inventory as sold',
   },
+  {
+    id: 'orders',
+    label: 'Order history',
+    icon: <PackageSearch size={14} />,
+    hint: 'Backfill orders since Feb 2025 (API) or import a Seller Hub CSV — powers the order lookup button in Flags',
+  },
 ];
 
 const EbayStorePullPage: React.FC<Props> = ({
@@ -100,7 +107,7 @@ const EbayStorePullPage: React.FC<Props> = ({
 
   useEffect(() => {
     const t = searchParams.get('tab');
-    if (t === 'sync' || t === 'import' || t === 'sold') setTab(t);
+    if (t === 'sync' || t === 'import' || t === 'sold' || t === 'orders') setTab(t);
   }, [searchParams]);
   const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -370,6 +377,8 @@ const EbayStorePullPage: React.FC<Props> = ({
           onUpdate={onUpdate}
           onPublishCatalog={onPublishCatalog}
         />
+      ) : tab === 'orders' ? (
+        <EbayStorePullOrdersTab items={items} />
       ) : (
         <>
 

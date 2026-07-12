@@ -519,7 +519,9 @@ async function handleEbayOrders(req, res) {
             sku: li.sku || li.lineItemId || null,
             title: li.title || '',
             lineItemCost: li.lineItemCost?.value ? parseFloat(li.lineItemCost.value) : null,
+            listingId: li.legacyItemId || null,
           })),
+          orderTotal: order.pricingSummary?.total?.value ? parseFloat(order.pricingSummary.total.value) : null,
         });
       }
       if (orders.length < limit) break;
