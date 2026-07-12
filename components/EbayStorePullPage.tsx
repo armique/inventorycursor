@@ -378,7 +378,7 @@ const EbayStorePullPage: React.FC<Props> = ({
           onPublishCatalog={onPublishCatalog}
         />
       ) : tab === 'orders' ? (
-        <EbayStorePullOrdersTab items={items} />
+        <EbayStorePullOrdersTab items={items} taxMode={taxMode} onUpdate={onUpdate} />
       ) : (
         <>
 

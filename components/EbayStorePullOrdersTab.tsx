@@ -17,7 +17,7 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
-import { InventoryItem, ItemStatus } from '../types';
+import { InventoryItem, ItemStatus, TaxMode } from '../types';
 import { hasEbayToken } from '../services/ebayService';
 import { isCloudEnabled } from '../services/firebaseService';
 import { backfillEbayOrders, type BackfillProgress } from '../services/ebayOrderBackfill';
@@ -33,9 +33,12 @@ import {
   upsertEbayOrders,
 } from '../services/ebayOrderIndex';
 import EbayToolProgressBar from './EbayToolProgressBar';
+import EbayOrderLinkAnalysisPanel from './EbayOrderLinkAnalysisPanel';
 
 interface Props {
   items: InventoryItem[];
+  taxMode: TaxMode;
+  onUpdate: (items: InventoryItem[]) => void;
 }
 
 const DEFAULT_FROM = '2025-02-01';
@@ -44,7 +47,7 @@ function todayISO(): string {
   return new Date().toISOString().split('T')[0];
 }
 
-const EbayStorePullOrdersTab: React.FC<Props> = ({ items }) => {
+const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) => {
   const navigate = useNavigate();
   const [backfilling, setBackfilling] = useState(false);
   const [backfillProgress, setBackfillProgress] = useState<BackfillProgress | null>(null);
@@ -516,6 +519,8 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items }) => {
           </div>
         )}
       </div>
+
+      <EbayOrderLinkAnalysisPanel items={items} taxMode={taxMode} onUpdate={onUpdate} />
 
       <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-xs text-slate-500">

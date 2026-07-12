@@ -43,7 +43,7 @@ import { fetchEbayListingPriceForItem, type EbayListingPriceMatch } from '../ser
 import { hasEbayStorefrontPriceSynced } from '../utils/ebayPrice';
 import { loadEbayOrderIndex } from '../services/ebayOrderIndex';
 import { findMatchingOrdersForItem, type EbayOrderMatch } from '../utils/ebayOrderMatch';
-import { calculateSaleProfit } from '../utils/saleProfit';
+import { applyEbayOrderMatchToItem } from '../utils/applyEbayOrderMatch';
 import ContainerMembershipBadge from './ContainerMembershipBadge';
 import {
   buildContainersById,
@@ -978,38 +978,9 @@ const InventoryList: React.FC<Props> = ({
   };
 
   const applyOrderMatchToItem = (item: InventoryItem, match: EbayOrderMatch) => {
-    const { order, lineItem } = match;
-    const gross = lineItem.lineItemCost ?? order.grossTotal ?? 0;
-    const net = order.netTotal ?? null;
-    const fee = order.feeTotal ?? (net != null && order.grossTotal != null ? Math.max(0, order.grossTotal - net) : 0);
-    const sellPrice = net ?? gross;
-    const profit = calculateSaleProfit(sellPrice, item.buyPrice, fee || 0, businessSettings.taxMode);
-
-    const customer: CustomerInfo = {
-      name: order.buyer.fullName || order.buyer.username || '',
-      address: order.buyer.address || '',
-      ...(order.buyer.phone ? { phone: order.buyer.phone } : {}),
-      ...(order.buyer.email ? { email: order.buyer.email } : {}),
-    };
-
-    const updated: InventoryItem = {
-      ...item,
-      status:
-        item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED ? ItemStatus.SOLD : item.status,
-      sellPrice,
-      sellDate: order.creationDate || item.sellDate || new Date().toISOString().split('T')[0],
-      platformSold: item.platformSold || 'ebay.de',
-      paymentType: item.paymentType || 'ebay.de',
-      profit: parseFloat(profit.toFixed(2)),
-      customer,
-      ebayUsername: order.buyer.username || item.ebayUsername,
-      ebayOrderId: order.orderId,
-      hasFee: Boolean(fee),
-      feeAmount: fee || 0,
-    };
-
+    const updated = applyEbayOrderMatchToItem(item, match, businessSettings.taxMode);
     onUpdate([updated]);
-    setToast(`Applied order ${order.orderId} to ${item.name}`);
+    setToast(`Applied order ${match.order.orderId} to ${item.name}`);
     setTimeout(() => setToast((prev) => (prev?.startsWith('Applied order') ? null : prev)), 2200);
     closeOrderLookupModal();
   };
