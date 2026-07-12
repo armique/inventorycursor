@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   AlertCircle,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
   History,
-  Link2,
   Loader2,
+  PlusCircle,
   RefreshCw,
   ShoppingBag,
   TrendingDown,
@@ -14,6 +15,7 @@ import {
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, TaxMode } from '../types';
 import {
+  cancelPendingReminder,
   clearPendingReminder,
   dismissPendingReminder,
   hydrateSoldDetectionFromPending,
@@ -24,10 +26,10 @@ import {
 import { fetchMyEbayListings, getEbayUsername } from '../services/ebayService';
 import {
   diffSnapshotEntriesToLive,
+  listingToSnapshotEntry,
   loadEbayListingSnapshot,
   loadEbayListingSnapshotHistory,
   recordEbayListingCheck,
-  recordInventoryReconciliationCheck,
   restoreBaselineFromHistory,
   saveEbayListingSnapshot,
   type EbayListingSnapshotCheckRecord,
@@ -38,7 +40,7 @@ import {
   defaultSellPriceForDetection,
   type EbaySoldDetectionMatch,
 } from '../utils/ebaySoldDetectionPlan';
-import { buildInventoryEbayReconciliation } from '../utils/ebayInventoryReconciliation';
+import { filterAppearedListingsNotInInventory } from '../utils/ebayListingChangePlan';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 import { computeItemProfitBeforeOverhead } from '../services/financialAggregation';
 import type { ParsedEbayOrderScreenshot } from '../services/ebayOrderScreenshotAI';
@@ -84,21 +86,26 @@ function applyPendingDetectionToState(
   items: InventoryItem[],
   setMatches: React.Dispatch<React.SetStateAction<EbaySoldDetectionMatch[]>>,
   setUnmatched: React.Dispatch<React.SetStateAction<EbayListingSnapshotEntry[]>>,
+  setAppeared: React.Dispatch<React.SetStateAction<EbayListingSnapshotEntry[]>>,
   setSnapshotMeta: React.Dispatch<
-    React.SetStateAction<{ previousAt: string; disappeared: number } | null>
+    React.SetStateAction<{ previousAt: string; disappeared: number; appeared: number } | null>
   >,
   setRowState: React.Dispatch<React.SetStateAction<Record<string, SoldRowState>>>,
   rowKey: (match: EbaySoldDetectionMatch) => string
 ): boolean {
   const pending = loadPendingReminder();
-  if (!pending || pending.dismissed || pending.disappearedCount <= 0) return false;
+  if (!pending || pending.dismissed) return false;
+  const appearedCount = pending.appearedCount ?? pending.appeared?.length ?? 0;
+  if (pending.disappearedCount <= 0 && appearedCount <= 0) return false;
 
-  const { matches: hydrated, unmatched } = hydrateSoldDetectionFromPending(items, pending);
+  const { matches: hydrated, unmatched, appeared } = hydrateSoldDetectionFromPending(items, pending);
   setMatches(hydrated);
   setUnmatched(unmatched);
+  setAppeared(appeared);
   setSnapshotMeta({
     previousAt: pending.previousSnapshotAt || pending.detectedAt,
     disappeared: pending.disappearedCount,
+    appeared: appearedCount,
   });
 
   const initial: Record<string, SoldRowState> = {};
@@ -117,7 +124,12 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
   const [matches, setMatches] = useState<EbaySoldDetectionMatch[]>([]);
   const [unmatched, setUnmatched] = useState<EbayListingSnapshotEntry[]>([]);
-  const [snapshotMeta, setSnapshotMeta] = useState<{ previousAt: string; disappeared: number } | null>(null);
+  const [appearedListings, setAppearedListings] = useState<EbayListingSnapshotEntry[]>([]);
+  const [snapshotMeta, setSnapshotMeta] = useState<{
+    previousAt: string;
+    disappeared: number;
+    appeared: number;
+  } | null>(null);
   const [rowState, setRowState] = useState<Record<string, SoldRowState>>({});
   const [progress, setProgress] = useState<EbayToolProgress | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -137,16 +149,27 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
     (
       plan: ReturnType<typeof buildEbaySoldDetectionPlan>,
       disappeared: EbayListingSnapshotEntry[],
+      appeared: EbayListingSnapshotEntry[],
+      pendingCurrentEntries: EbayListingSnapshotEntry[],
       previousAt: string,
       checkId: string
     ) => {
-      const pending = soldDetectionPlanToPending(plan, disappeared, previousAt, checkId);
+      const pending = soldDetectionPlanToPending(
+        plan,
+        disappeared,
+        appeared,
+        pendingCurrentEntries,
+        previousAt,
+        checkId
+      );
       savePendingReminder(pending);
       setMatches(plan.matches);
       setUnmatched(plan.unmatchedDisappeared);
+      setAppearedListings(appeared);
       setSnapshotMeta({
         previousAt,
         disappeared: disappeared.length,
+        appeared: appeared.length,
       });
       const initial: Record<string, SoldRowState> = {};
       for (const match of plan.matches) {
@@ -157,11 +180,17 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
     []
   );
 
+  const newOnEbayNotInInventory = useMemo(
+    () => filterAppearedListingsNotInInventory(items, appearedListings),
+    [items, appearedListings]
+  );
+
   useEffect(() => {
     const restored = applyPendingDetectionToState(
       items,
       setMatches,
       setUnmatched,
+      setAppearedListings,
       setSnapshotMeta,
       setRowState,
       rowKey
@@ -178,6 +207,7 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
     setApplyMessage(null);
     setMatches([]);
     setUnmatched([]);
+    setAppearedListings([]);
     setSnapshotMeta(null);
     setRowState({});
     setProgress({ label: 'Fetching active eBay listings…', done: 0, total: 4 });
@@ -193,11 +223,11 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
 
       if (!loadEbayListingSnapshot()) {
         setProgress({ label: 'Saving baseline snapshot…', done: 3, total: 4 });
-        recordEbayListingCheck(listings, getEbayUsername());
+        recordEbayListingCheck(listings, getEbayUsername(), { commitBaseline: true });
         refreshHistory();
         setProgress({ label: 'Baseline saved', done: 4, total: 4 });
         setInfo(
-          `Saved baseline snapshot of ${listings.length} active listing${listings.length === 1 ? '' : 's'}. Run this check again after listings disappear to detect likely sales.`
+          `Saved ${listings.length} eBay listing titles & IDs as today's baseline. Daily checks will compare against this snapshot.`
         );
         return;
       }
@@ -206,11 +236,11 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
       const check = recordEbayListingCheck(listings, getEbayUsername());
       refreshHistory();
 
-      if (!check.disappeared.length) {
+      if (!check.disappeared.length && !check.appeared.length) {
         clearPendingReminder();
         setProgress({ label: 'No listing changes', done: 4, total: 4 });
         setInfo(
-          `No listings disappeared since ${new Date(check.previous!.meta.capturedAt).toLocaleString()}. Snapshot updated (${listings.length} active).`
+          `No changes since ${new Date(check.previous!.meta.capturedAt).toLocaleString()} (${listings.length} listings, same as last snapshot).`
         );
         return;
       }
@@ -219,7 +249,7 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
         label: 'Matching ended listings to inventory…',
         done: 3,
         total: 4,
-        detail: `${check.disappeared.length} ended`,
+        detail: `${check.disappeared.length} ended · ${check.appeared.length} new`,
       });
       const plan = buildEbaySoldDetectionPlan(items, check.disappeared);
       setProgress({
@@ -229,87 +259,22 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
         detail: `${plan.matches.length} likely sale${plan.matches.length === 1 ? '' : 's'}`,
       });
 
-      const pending = soldDetectionPlanToPending(
-        plan,
-        check.disappeared,
-        check.previous!.meta.capturedAt,
-        check.checkRecord!.checkId
-      );
-      savePendingReminder(pending);
-
       applyDetectionResults(
         plan,
         check.disappeared,
+        check.checkRecord!.appeared,
+        check.currentEntries,
         check.previous!.meta.capturedAt,
         check.checkRecord!.checkId
       );
+
+      if (!check.baselineCommitted) {
+        setInfo(
+          `Found changes vs saved eBay snapshot (${check.previous!.meta.count} → ${listings.length}). Review below — baseline updates when you dismiss or mark sold.`
+        );
+      }
     } catch (e: unknown) {
       setError((e as Error)?.message || 'Failed to check eBay listings.');
-    } finally {
-      setLoading(false);
-      setTimeout(() => setProgress(null), 900);
-    }
-  }, [items, refreshHistory, applyDetectionResults]);
-
-  const reconcileWithInventory = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    setInfo(null);
-    setApplyMessage(null);
-    setMatches([]);
-    setUnmatched([]);
-    setSnapshotMeta(null);
-    setRowState({});
-    setProgress({ label: 'Fetching live eBay listings…', done: 0, total: 3 });
-
-    try {
-      const listings = await fetchMyEbayListings();
-      setProgress({
-        label: 'Fetching live eBay listings…',
-        done: 1,
-        total: 3,
-        detail: `${listings.length} active`,
-      });
-
-      setProgress({ label: 'Matching inventory to live store…', done: 2, total: 3 });
-      const recon = buildInventoryEbayReconciliation(items, listings);
-
-      const checkRecord = recordInventoryReconciliationCheck(
-        {
-          previousEntries: recon.previousEntries,
-          currentEntries: recon.currentEntries,
-          disappeared: recon.disappeared,
-          previousCount: recon.previousCount,
-          currentCount: recon.currentCount,
-          planMatches: recon.plan.matches.length,
-        },
-        getEbayUsername()
-      );
-      refreshHistory();
-
-      setProgress({
-        label: 'Reconciliation complete',
-        done: 3,
-        total: 3,
-        detail:
-          recon.disappeared.length > 0
-            ? `${recon.previousCount} → ${recon.currentCount}`
-            : 'no gaps',
-      });
-
-      if (!recon.disappeared.length) {
-        setInfo(
-          `Live store has ${listings.length} listings. Every inventory item with an eBay link still appears active. If you expected sales, link items in Sync first (ebayListingId / storefront price).`
-        );
-        return;
-      }
-
-      applyDetectionResults(recon.plan, recon.disappeared, checkRecord.checkedAt, checkRecord.checkId);
-      setInfo(
-        `Reconstructed store change ${recon.previousCount} → ${recon.currentCount}: ${recon.disappeared.length} listing${recon.disappeared.length === 1 ? '' : 's'} ended and matched to inventory. History log saved.`
-      );
-    } catch (e: unknown) {
-      setError((e as Error)?.message || 'Failed to reconcile with inventory.');
     } finally {
       setLoading(false);
       setTimeout(() => setProgress(null), 900);
@@ -332,19 +297,24 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
       try {
         const listings = await fetchMyEbayListings();
         setProgress({ label: 'Comparing to history baseline…', done: 2, total: 3 });
-        const { disappeared } = diffSnapshotEntriesToLive(record.previousEntries, listings);
+        const { disappeared, appeared } = diffSnapshotEntriesToLive(record.previousEntries, listings);
         const plan = buildEbaySoldDetectionPlan(items, disappeared);
+        const checkedAt = new Date().toISOString();
+        const currentEntries = listings.map((l) => listingToSnapshotEntry(l, checkedAt));
+        const appearedEntries = appeared.map((l) => listingToSnapshotEntry(l, checkedAt));
 
         applyDetectionResults(
           plan,
           disappeared,
+          appearedEntries,
+          currentEntries,
           record.previousCapturedAt || record.checkedAt,
           record.checkId
         );
 
         setProgress({ label: 'Comparison complete', done: 3, total: 3 });
         setInfo(
-          `Compared history baseline (${record.previousCount} listings) to ${listings.length} live — ${disappeared.length} ended.`
+          `Compared history baseline (${record.previousCount} listings) to ${listings.length} live — ${disappeared.length} ended, ${appeared.length} new.`
         );
       } catch (e: unknown) {
         setError((e as Error)?.message || 'Failed to replay history comparison.');
@@ -397,9 +367,10 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
     dismissPendingReminder();
     setMatches([]);
     setUnmatched([]);
+    setAppearedListings([]);
     setSnapshotMeta(null);
     setRowState({});
-    setInfo('Detection dismissed. Snapshot history is still available below.');
+    setInfo('Changes accepted — eBay snapshot baseline updated to the latest live store.');
   };
 
   const applyConfirmed = async () => {
@@ -474,6 +445,7 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
         setApplyMessage(`Marked ${updates.length} item${updates.length === 1 ? '' : 's'} as sold.`);
         setMatches([]);
         setUnmatched([]);
+        setAppearedListings([]);
         setRowState({});
         setSnapshotMeta(null);
       }
@@ -499,11 +471,12 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
           detail: `${listings.length} listing${listings.length === 1 ? '' : 's'}`,
         });
         saveEbayListingSnapshot(listings, getEbayUsername());
-        clearPendingReminder();
+        cancelPendingReminder();
         setProgress({ label: 'Baseline reset', done: 2, total: 2 });
-        setInfo(`Baseline reset — ${listings.length} active listings saved.`);
+        setInfo(`Baseline reset — ${listings.length} active eBay listings saved (titles & IDs).`);
         setMatches([]);
         setUnmatched([]);
+        setAppearedListings([]);
         setSnapshotMeta(null);
         setRowState({});
       } catch (e: unknown) {
@@ -518,20 +491,23 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-3 shadow-sm">
-        <h2 className="text-sm font-black text-slate-900">Detect likely sales (ended listings)</h2>
+        <h2 className="text-sm font-black text-slate-900">Daily eBay listing change detection</h2>
         <p className="text-xs text-slate-600">
-          Compares your current active eBay listings to the last saved snapshot. Listings that
-          disappeared are matched to in-stock inventory and suggested as sold — with the same sell-price
-          and order-screenshot parsing as the inventory sale dialog. Every check is saved to snapshot
-          history so you can review past diffs even after the baseline updates.
+          The first check saves every active eBay listing <strong>title, ID, SKU, and price</strong> as
+          your baseline. Each later check compares the live store to that saved snapshot only — never
+          guesses from random inventory items.
         </p>
-        <p className="text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
-          <strong className="text-slate-700">Missing an old 42→40 diff?</strong> Use{' '}
-          <span className="font-bold text-violet-700">Reconcile with inventory</span> — it fetches your{' '}
-          {previousSnapshot ? `${previousSnapshot.meta.count} saved / ` : ''}
-          live listings, rebuilds what left the store from inventory links (e.g. RAM bundle + laptop), and
-          logs the change in history.
-        </p>
+        <ul className="text-[11px] text-slate-500 space-y-1 list-disc pl-4">
+          <li>
+            <strong className="text-slate-700">Removed from eBay</strong> → match the saved listing title
+            to inventory and suggest marking sold
+          </li>
+          <li>
+            <strong className="text-slate-700">New on eBay</strong> → suggest adding to inventory via
+            Import missing
+          </li>
+          <li>Baseline updates after you dismiss or mark sold (pending changes stay visible until then)</li>
+        </ul>
         {previousSnapshot && (
           <p className="text-[11px] text-slate-500">
             Last snapshot: {new Date(previousSnapshot.meta.capturedAt).toLocaleString()} ·{' '}
@@ -546,16 +522,7 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-rose-600 text-white text-xs font-black uppercase tracking-widest hover:bg-rose-700 disabled:opacity-50"
           >
             {loading ? <Loader2 size={16} className="animate-spin" /> : <TrendingDown size={16} />}
-            {loading ? 'Checking…' : 'Check for sold listings'}
-          </button>
-          <button
-            type="button"
-            onClick={() => void reconcileWithInventory()}
-            disabled={loading || applying}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 text-white text-xs font-black uppercase tracking-widest hover:bg-violet-700 disabled:opacity-50"
-          >
-            {loading ? <Loader2 size={16} className="animate-spin" /> : <Link2 size={16} />}
-            Reconcile with inventory
+            {loading ? 'Checking…' : 'Check for changes'}
           </button>
           <button
             type="button"
@@ -591,14 +558,17 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
         </div>
       )}
 
-      {snapshotMeta && snapshotMeta.disappeared > 0 && (
+      {snapshotMeta && (snapshotMeta.disappeared > 0 || snapshotMeta.appeared > 0) && (
         <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-3 flex flex-wrap items-center gap-2">
           <p className="text-xs font-bold text-rose-900 flex-1 min-w-[200px]">
-            {snapshotMeta.disappeared} listing{snapshotMeta.disappeared === 1 ? '' : 's'} ended since{' '}
-            {new Date(snapshotMeta.previousAt).toLocaleString()}
-            {matches.length > 0
-              ? ` · ${matches.length} likely sale${matches.length === 1 ? '' : 's'}`
-              : ' · no automatic inventory matches'}
+            Changes since {new Date(snapshotMeta.previousAt).toLocaleString()}
+            {snapshotMeta.disappeared > 0 &&
+              ` · ${snapshotMeta.disappeared} removed from eBay`}
+            {snapshotMeta.appeared > 0 && ` · ${snapshotMeta.appeared} new on eBay`}
+            {snapshotMeta.disappeared > 0 &&
+              (matches.length > 0
+                ? ` · ${matches.length} inventory match${matches.length === 1 ? '' : 'es'}`
+                : ' · no automatic inventory matches for removed listings')}
           </p>
           {matches.length > 0 && (
             <button
@@ -734,14 +704,43 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
         })}
       </div>
 
+      {newOnEbayNotInInventory.length > 0 && (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 space-y-3">
+          <p className="text-xs font-black uppercase text-emerald-800">
+            {newOnEbayNotInInventory.length} new on eBay — not in inventory yet
+          </p>
+          <p className="text-[11px] text-emerald-900/80">
+            These listings appeared in your eBay store since the last saved snapshot and do not match any
+            in-stock inventory item. Add them via Import missing.
+          </p>
+          <ul className="text-xs text-emerald-900 space-y-2 max-h-48 overflow-y-auto">
+            {newOnEbayNotInInventory.map((l) => (
+              <li key={l.listingId} className="rounded-lg bg-white/70 border border-emerald-100 px-3 py-2">
+                <p className="font-bold line-clamp-2">{l.title}</p>
+                {l.price != null && (
+                  <p className="text-[10px] text-emerald-800/80 mt-0.5">€{formatEUR(l.price)}</p>
+                )}
+              </li>
+            ))}
+          </ul>
+          <Link
+            to="/panel/ebay-store-pull?tab=import"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700"
+          >
+            <PlusCircle size={14} />
+            Open Import missing
+          </Link>
+        </div>
+      )}
+
       {unmatched.length > 0 && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-4 space-y-3">
           <p className="text-xs font-black uppercase text-amber-800">
-            {unmatched.length} ended listing{unmatched.length === 1 ? '' : 's'} with no inventory match
+            {unmatched.length} removed eBay listing{unmatched.length === 1 ? '' : 's'} — no inventory match
           </p>
           <p className="text-[11px] text-amber-900/80">
-            These listings left your eBay store but were not linked to an in-stock item automatically.
-            Mark the matching inventory item sold manually, or link it via eBay Store Pull → Sync first.
+            These titles were saved in your eBay snapshot and left the store, but no in-stock inventory
+            item matched automatically. Mark the correct item sold manually, or link it first in Sync.
           </p>
           <ul className="text-xs text-amber-900 space-y-2 max-h-48 overflow-y-auto">
             {unmatched.map((l) => (

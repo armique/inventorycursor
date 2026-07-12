@@ -1,7 +1,10 @@
 import type { InventoryItem } from '../types';
 import { fetchMyEbayListings, getEbayUsername } from './ebayService';
-import { recordEbayListingCheck } from './ebayListingSnapshot';
-import type { EbayListingSnapshotEntry } from './ebayListingSnapshot';
+import {
+  commitEbayListingBaselineFromEntries,
+  recordEbayListingCheck,
+  type EbayListingSnapshotEntry,
+} from './ebayListingSnapshot';
 import {
   buildEbaySoldDetectionPlan,
   type EbaySoldDetectionMatch,
@@ -24,14 +27,20 @@ export interface EbaySoldDetectionMatchPersisted {
 export interface EbayReminderPending {
   detectedAt: string;
   disappearedCount: number;
+  appearedCount: number;
   matchCount: number;
   unmatchedCount: number;
   dismissed: boolean;
   checkId?: string;
   previousSnapshotAt?: string;
+  /** Ended eBay listings from the saved snapshot (real titles/IDs). */
   disappeared?: EbayListingSnapshotEntry[];
+  /** New eBay listings vs saved snapshot. */
+  appeared?: EbayListingSnapshotEntry[];
   matches?: EbaySoldDetectionMatchPersisted[];
   unmatchedDisappeared?: EbayListingSnapshotEntry[];
+  /** Live store fetch — committed to baseline when dismissed or applied. */
+  pendingCurrentEntries?: EbayListingSnapshotEntry[];
 }
 
 export type EbayReminderCheckReason =
@@ -101,14 +110,31 @@ export function savePendingReminder(reminder: EbayReminderPending | null): void 
   localStorage.setItem(REMINDER_KEY, JSON.stringify(reminder));
 }
 
+export function cancelPendingReminder(): void {
+  savePendingReminder(null);
+  notifyReminderUpdated();
+}
+
+export function commitPendingEbayBaseline(): void {
+  const pending = loadPendingReminder();
+  if (!pending?.pendingCurrentEntries?.length) return;
+  commitEbayListingBaselineFromEntries(
+    pending.pendingCurrentEntries,
+    getEbayUsername(),
+    pending.detectedAt
+  );
+}
+
 export function dismissPendingReminder(): void {
   const current = loadPendingReminder();
   if (!current) return;
+  commitPendingEbayBaseline();
   savePendingReminder({ ...current, dismissed: true });
   notifyReminderUpdated();
 }
 
 export function clearPendingReminder(): void {
+  commitPendingEbayBaseline();
   savePendingReminder(null);
   notifyReminderUpdated();
 }
@@ -122,18 +148,23 @@ function notifyReminderUpdated(): void {
 export function soldDetectionPlanToPending(
   plan: ReturnType<typeof buildEbaySoldDetectionPlan>,
   disappeared: EbayListingSnapshotEntry[],
+  appeared: EbayListingSnapshotEntry[],
+  pendingCurrentEntries: EbayListingSnapshotEntry[],
   previousSnapshotAt: string,
   checkId: string
 ): EbayReminderPending {
   return {
     detectedAt: new Date().toISOString(),
     disappearedCount: disappeared.length,
+    appearedCount: appeared.length,
     matchCount: plan.matches.length,
     unmatchedCount: plan.unmatchedDisappeared.length,
     dismissed: false,
     checkId,
-    previousSnapshotAt: previousSnapshotAt,
+    previousSnapshotAt,
     disappeared,
+    appeared,
+    pendingCurrentEntries,
     matches: plan.matches.map((m) => ({
       itemId: m.item.id,
       lastKnownListing: m.lastKnownListing,
@@ -148,7 +179,11 @@ export function soldDetectionPlanToPending(
 export function hydrateSoldDetectionFromPending(
   items: InventoryItem[],
   pending: EbayReminderPending
-): { matches: EbaySoldDetectionMatch[]; unmatched: EbayListingSnapshotEntry[] } {
+): {
+  matches: EbaySoldDetectionMatch[];
+  unmatched: EbayListingSnapshotEntry[];
+  appeared: EbayListingSnapshotEntry[];
+} {
   const itemsById = new Map(items.map((i) => [i.id, i]));
   const matches: EbaySoldDetectionMatch[] = [];
 
@@ -167,13 +202,15 @@ export function hydrateSoldDetectionFromPending(
   return {
     matches,
     unmatched: pending.unmatchedDisappeared ?? [],
+    appeared: pending.appeared ?? [],
   };
 }
 
 export function getActiveReminderForDisplay(): EbayReminderPending | null {
   const pending = loadPendingReminder();
   if (!pending || pending.dismissed) return null;
-  if (pending.disappearedCount <= 0) return null;
+  const appeared = pending.appearedCount ?? pending.appeared?.length ?? 0;
+  if (pending.disappearedCount <= 0 && appeared <= 0) return null;
   return pending;
 }
 
@@ -206,12 +243,12 @@ export async function runAutoEbayListingReminderCheck(
 
     if (!loadEbayListingSnapshot()) {
       onProgress?.({ label: 'Saving baseline snapshot…', done: 3, total: 4 });
-      recordEbayListingCheck(listings, getEbayUsername());
+      recordEbayListingCheck(listings, getEbayUsername(), { commitBaseline: true });
       onProgress?.({ label: 'Baseline saved', done: 4, total: 4 });
       return {
         ran: true,
         reason: 'baseline_saved',
-        message: `Saved ${listings.length} eBay listings as baseline for future sold detection.`,
+        message: `Saved ${listings.length} eBay listing titles & IDs as today's baseline.`,
         pending: null,
       };
     }
@@ -219,7 +256,7 @@ export async function runAutoEbayListingReminderCheck(
     onProgress?.({ label: 'Comparing to last snapshot…', done: 2, total: 4 });
     const check = recordEbayListingCheck(listings, getEbayUsername());
 
-    if (!check.disappeared.length) {
+    if (!check.disappeared.length && !check.appeared.length) {
       clearPendingReminder();
       onProgress?.({ label: 'No listing changes', done: 4, total: 4 });
       return {
@@ -233,13 +270,15 @@ export async function runAutoEbayListingReminderCheck(
       label: 'Matching ended listings to inventory…',
       done: 3,
       total: 4,
-      detail: `${check.disappeared.length} ended`,
+      detail: `${check.disappeared.length} ended · ${check.appeared.length} new`,
     });
     const plan = buildEbaySoldDetectionPlan(items, check.disappeared);
 
     const pending = soldDetectionPlanToPending(
       plan,
       check.disappeared,
+      check.checkRecord!.appeared,
+      check.currentEntries,
       check.previous!.meta.capturedAt,
       check.checkRecord!.checkId
     );
@@ -249,14 +288,21 @@ export async function runAutoEbayListingReminderCheck(
     notifyReminderUpdated();
     onProgress?.({ label: 'Check complete', done: 4, total: 4 });
 
+    const parts: string[] = [];
+    if (check.disappeared.length) {
+      parts.push(
+        `${check.disappeared.length} listing${check.disappeared.length === 1 ? '' : 's'} removed from eBay`
+      );
+    }
+    if (check.appeared.length) {
+      parts.push(`${check.appeared.length} new on eBay`);
+    }
+
     return {
       ran: true,
       reason: 'detected',
       pending,
-      message:
-        plan.matches.length > 0
-          ? `${plan.matches.length} inventory item${plan.matches.length === 1 ? '' : 's'} may have sold on eBay.`
-          : `${check.disappeared.length} eBay listing${check.disappeared.length === 1 ? '' : 's'} ended — review your inventory.`,
+      message: parts.join(' · '),
     };
   } catch (e: unknown) {
     return {

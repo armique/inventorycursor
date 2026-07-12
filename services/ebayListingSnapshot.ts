@@ -126,10 +126,11 @@ export function compareEbayListingSnapshots(
   return { disappeared, appeared, stillActive };
 }
 
-/** Compare, append immutable history entry, then save the new baseline snapshot. */
+/** Compare, append history, and optionally update the baseline snapshot. */
 export function recordEbayListingCheck(
   listings: EbayMyListing[],
-  sellerUsername?: string
+  sellerUsername?: string,
+  options?: { commitBaseline?: boolean }
 ): {
   previous: { entries: EbayListingSnapshotEntry[]; meta: EbayListingSnapshotMeta } | null;
   disappeared: EbayListingSnapshotEntry[];
@@ -137,10 +138,13 @@ export function recordEbayListingCheck(
   stillActive: EbayMyListing[];
   checkRecord: EbayListingSnapshotCheckRecord | null;
   meta: EbayListingSnapshotMeta;
+  currentEntries: EbayListingSnapshotEntry[];
+  baselineCommitted: boolean;
 } {
   const previous = loadEbayListingSnapshot();
   const checkedAt = new Date().toISOString();
   const checkId = `check-${Date.now()}`;
+  const currentEntries = listings.map((l) => listingToSnapshotEntry(l, checkedAt));
 
   if (!previous) {
     const meta = saveEbayListingSnapshot(listings, sellerUsername);
@@ -151,11 +155,21 @@ export function recordEbayListingCheck(
       stillActive: [],
       checkRecord: null,
       meta,
+      currentEntries,
+      baselineCommitted: true,
     };
   }
 
   const { disappeared, appeared, stillActive } = compareEbayListingSnapshots(previous.entries, listings);
-  const meta = saveEbayListingSnapshot(listings, sellerUsername);
+  const hasChanges = disappeared.length > 0 || appeared.length > 0;
+  const shouldCommit = options?.commitBaseline ?? !hasChanges;
+
+  let meta: EbayListingSnapshotMeta;
+  if (shouldCommit) {
+    meta = saveEbayListingSnapshot(listings, sellerUsername);
+  } else {
+    meta = previous.meta;
+  }
 
   const checkRecord: EbayListingSnapshotCheckRecord = {
     checkId,
@@ -170,7 +184,7 @@ export function recordEbayListingCheck(
     disappeared,
     appeared: appeared.map((l) => listingToSnapshotEntry(l, checkedAt)),
     previousEntries: previous.entries,
-    currentEntries: listings.map((l) => listingToSnapshotEntry(l, checkedAt)),
+    currentEntries,
     checkKind: 'manual',
   };
 
@@ -183,51 +197,18 @@ export function recordEbayListingCheck(
     stillActive,
     checkRecord,
     meta,
+    currentEntries,
+    baselineCommitted: shouldCommit,
   };
 }
 
-/** Record a reconciliation check (reconstructed baseline vs current live store). */
-export function recordInventoryReconciliationCheck(
-  reconciliation: {
-    previousEntries: EbayListingSnapshotEntry[];
-    currentEntries: EbayListingSnapshotEntry[];
-    disappeared: EbayListingSnapshotEntry[];
-    previousCount: number;
-    currentCount: number;
-    planMatches: number;
-  },
-  sellerUsername?: string
-): EbayListingSnapshotCheckRecord {
-  const checkedAt = new Date().toISOString();
-  const checkId = `reconcile-${Date.now()}`;
-
-  const currentIds = new Set(reconciliation.currentEntries.map((e) => e.listingId));
-  const previousIds = new Set(reconciliation.previousEntries.map((e) => e.listingId));
-  const appeared = reconciliation.currentEntries.filter((e) => !previousIds.has(e.listingId));
-
-  const checkRecord: EbayListingSnapshotCheckRecord = {
-    checkId,
-    checkedAt,
-    sellerUsername,
-    previousCapturedAt: checkedAt,
-    previousCount: reconciliation.previousCount,
-    currentCount: reconciliation.currentCount,
-    disappearedCount: reconciliation.disappeared.length,
-    appearedCount: appeared.length,
-    stillActiveCount: reconciliation.currentEntries.filter((e) => previousIds.has(e.listingId)).length,
-    disappeared: reconciliation.disappeared,
-    appeared,
-    previousEntries: reconciliation.previousEntries,
-    currentEntries: reconciliation.currentEntries,
-    checkKind: 'reconcile',
-  };
-
-  appendEbayListingSnapshotHistory(checkRecord);
-
-  // Baseline = what's live on eBay right now (e.g. 40 listings).
-  saveEbayListingSnapshotEntries(reconciliation.currentEntries, sellerUsername, checkedAt);
-
-  return checkRecord;
+/** Accept the latest live fetch as the new comparison baseline (after review or no changes). */
+export function commitEbayListingBaselineFromEntries(
+  entries: EbayListingSnapshotEntry[],
+  sellerUsername?: string,
+  capturedAt?: string
+): EbayListingSnapshotMeta {
+  return saveEbayListingSnapshotEntries(entries, sellerUsername, capturedAt);
 }
 
 /** Restore a prior snapshot from history as the comparison baseline (e.g. 42 listings). */

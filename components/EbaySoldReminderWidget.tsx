@@ -23,12 +23,16 @@ const EbaySoldReminderWidget: React.FC<Props> = ({
   const title =
     reminder.matchCount > 0
       ? `${reminder.matchCount} possible eBay sale${reminder.matchCount === 1 ? '' : 's'}`
-      : `${reminder.disappearedCount} listing${reminder.disappearedCount === 1 ? '' : 's'} ended on eBay`;
+      : reminder.disappearedCount > 0
+        ? `${reminder.disappearedCount} listing${reminder.disappearedCount === 1 ? '' : 's'} removed from eBay`
+        : `${reminder.appearedCount ?? 0} new listing${(reminder.appearedCount ?? 0) === 1 ? '' : 's'} on eBay`;
 
   const subtitle =
     reminder.matchCount > 0
       ? `${reminder.disappearedCount} listing${reminder.disappearedCount === 1 ? '' : 's'} removed since last check — update inventory & sell prices.`
-      : 'Review ended listings and mark sold items in inventory.';
+      : reminder.disappearedCount > 0
+        ? 'Review ended eBay listings from the saved snapshot and mark sold items in inventory.'
+        : 'New eBay listings since last snapshot — add missing items to inventory.';
 
   if (variant === 'sidebar') {
     return (
