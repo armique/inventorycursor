@@ -325,31 +325,7 @@ async function fetchTradingActiveListings(token) {
   <DetailLevel>ReturnAll</DetailLevel>
 </GetMyeBaySellingRequest>`;
 
-  const ebayRes = await fetch('https://api.ebay.com/ws/api.dll', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'text/xml',
-      'X-EBAY-API-CALL-NAME': 'GetMyeBaySelling',
-      'X-EBAY-API-SITEID': '77',
-      'X-EBAY-API-COMPATIBILITY-LEVEL': '967',
-    },
-    body: xml,
-  });
-
-  if (ebayRes.status === 401) {
-    const err = new Error('eBay token expired or invalid.');
-    err.status = 401;
-    throw err;
-  }
-  if (!ebayRes.ok) {
-    const errText = await ebayRes.text();
-    const err = new Error(errText.slice(0, 300));
-    err.status = ebayRes.status;
-    throw err;
-  }
-
-  const text = await ebayRes.text();
+  const text = await postTradingApi('GetMyeBaySelling', xml, token);
   return parseTradingActiveListings(text);
 }
 
@@ -361,6 +337,64 @@ function decodeTradingXmlText(raw) {
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .trim();
+}
+
+function normalizeUserToken(token) {
+  return String(token || '').replace(/^Bearer\s+/i, '').trim();
+}
+
+/** Trading API (XML) uses X-EBAY-API-IAF-TOKEN — not Authorization: Bearer. */
+function tradingApiHeaders(callName, token) {
+  return {
+    'X-EBAY-API-IAF-TOKEN': normalizeUserToken(token),
+    'Content-Type': 'text/xml',
+    'X-EBAY-API-CALL-NAME': callName,
+    'X-EBAY-API-SITEID': '77',
+    'X-EBAY-API-COMPATIBILITY-LEVEL': '967',
+  };
+}
+
+function friendlyTradingError(rawMessage) {
+  const msg = decodeTradingXmlText(rawMessage);
+  if (/Authentifizierungs-Token|authentication token/i.test(msg)) {
+    return (
+      'eBay rejected the user token for Trading API (buyer purchases). ' +
+      'In Settings, paste a fresh User OAuth token from eBay Developer → User Tokens (same token used for sales sync). ' +
+      'If it still fails, regenerate the token and save again.'
+    );
+  }
+  return msg;
+}
+
+async function postTradingApi(callName, xmlBody, token) {
+  const ebayRes = await fetch('https://api.ebay.com/ws/api.dll', {
+    method: 'POST',
+    headers: tradingApiHeaders(callName, token),
+    body: xmlBody,
+  });
+
+  const text = await ebayRes.text();
+
+  if (ebayRes.status === 401) {
+    const err = new Error('eBay token expired or invalid.');
+    err.status = 401;
+    throw err;
+  }
+  if (!ebayRes.ok) {
+    const err = new Error(text.slice(0, 300));
+    err.status = ebayRes.status;
+    throw err;
+  }
+  if (/<Ack>\s*Failure\s*<\/Ack>/i.test(text)) {
+    const msg =
+      text.match(/<LongMessage>([\s\S]*?)<\/LongMessage>/i)?.[1] ||
+      text.match(/<ShortMessage>([\s\S]*?)<\/ShortMessage>/i)?.[1] ||
+      `${callName} failed`;
+    const err = new Error(friendlyTradingError(msg));
+    throw err;
+  }
+
+  return text;
 }
 
 function parseTradingBuyerPurchases(xml) {
@@ -423,38 +457,7 @@ async function fetchTradingBuyerPurchases(token, fromDate, toDate) {
   <DetailLevel>ReturnAll</DetailLevel>
 </GetOrdersRequest>`;
 
-    const ebayRes = await fetch('https://api.ebay.com/ws/api.dll', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'text/xml',
-        'X-EBAY-API-CALL-NAME': 'GetOrders',
-        'X-EBAY-API-SITEID': '77',
-        'X-EBAY-API-COMPATIBILITY-LEVEL': '967',
-      },
-      body: xml,
-    });
-
-    if (ebayRes.status === 401) {
-      const err = new Error('eBay token expired or invalid.');
-      err.status = 401;
-      throw err;
-    }
-    if (!ebayRes.ok) {
-      const errText = await ebayRes.text();
-      const err = new Error(errText.slice(0, 300));
-      err.status = ebayRes.status;
-      throw err;
-    }
-
-    const text = await ebayRes.text();
-    if (/<Ack>\s*Failure\s*<\/Ack>/i.test(text)) {
-      const msg =
-        text.match(/<LongMessage>([\s\S]*?)<\/LongMessage>/i)?.[1] ||
-        text.match(/<ShortMessage>([\s\S]*?)<\/ShortMessage>/i)?.[1] ||
-        'GetOrders failed';
-      throw new Error(decodeTradingXmlText(msg));
-    }
+    const text = await postTradingApi('GetOrders', xml, token);
 
     const batch = parseTradingBuyerPurchases(text);
     all.push(...batch);

@@ -833,8 +833,8 @@ const SettingsPage: React.FC<Props> = ({
                       onChange={e => setEbayTokenInput(e.target.value)}
                    />
                    <p className="text-xs text-slate-500">
-                      eBay Developer Account → OAuth User Token. Scopes: <code className="bg-slate-100 px-1 rounded">sell.fulfillment.readonly</code> (order sync) and{' '}
-                      <code className="bg-slate-100 px-1 rounded">sell.inventory.readonly</code> (extra private listings). Photo import works from your seller store without a token.
+                      eBay Developer Account → OAuth User Token. Scopes: <code className="bg-slate-100 px-1 rounded">sell.fulfillment.readonly</code> (seller order sync) and{' '}
+                      <code className="bg-slate-100 px-1 rounded">sell.inventory.readonly</code> (private listings). Buyer purchases use the same user token via Trading API.
                    </p>
                 </div>
                 <div className="flex items-center gap-3">

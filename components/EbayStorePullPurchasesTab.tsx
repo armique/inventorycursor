@@ -284,7 +284,7 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
             <AlertCircle size={16} className="shrink-0 mt-0.5" />
             <span>
               Connect eBay in <Link to="/panel/settings" className="font-bold underline">Settings</Link> — same user
-              token as sales sync (Trading API buyer scope).
+              OAuth token as sales sync (no extra scope needed for buyer history).
             </span>
           </div>
         )}
