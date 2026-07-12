@@ -6,7 +6,11 @@
  * table rather than exact strings.
  */
 
-import type { EbayOrderLineItem, EbayOrderRecord } from './ebayOrderIndex';
+import type { EbayOrderFinancialEvent, EbayOrderLineItem, EbayOrderRecord } from './ebayOrderIndex';
+import {
+  classifyTransactionType,
+  financialEventId,
+} from '../utils/ebayOrderFinancial';
 
 export interface EbayOrderCsvParseResult {
   orders: EbayOrderRecord[];
@@ -41,7 +45,9 @@ type CanonicalField =
   | 'total'
   | 'saleDate'
   | 'netAmount'
-  | 'fee';
+  | 'fee'
+  | 'transactionType'
+  | 'description';
 
 const HEADER_ALIASES: Record<string, CanonicalField> = {
   ordernumber: 'orderId',
@@ -115,6 +121,14 @@ const HEADER_ALIASES: Record<string, CanonicalField> = {
   transactionfee: 'fee',
   fee: 'fee',
   verkaufsgebuehr: 'fee',
+  transactiontype: 'transactionType',
+  transaktionstyp: 'transactionType',
+  type: 'transactionType',
+  typ: 'transactionType',
+  description: 'description',
+  beschreibung: 'description',
+  memo: 'description',
+  details: 'description',
 };
 
 function normalizeHeader(h: string): string {
@@ -258,19 +272,53 @@ export function parseEbayOrderCsv(text: string): EbayOrderCsvParseResult {
       .map((p) => p?.trim())
       .filter(Boolean);
 
-    const lineItem: EbayOrderLineItem = {
-      sku: row.sku?.trim() || null,
-      title: row.title?.trim() || '(unknown item)',
-      lineItemCost: parseMoney(row.soldFor) ?? parseMoney(row.total),
-      listingId: row.listingId?.trim() || null,
-      quantity: row.quantity ? parseInt(row.quantity, 10) || null : null,
-    };
+    const net = parseMoney(row.netAmount);
+    const fee = parseMoney(row.fee);
+    const gross = parseMoney(row.total) ?? parseMoney(row.soldFor);
+    const txType = row.transactionType?.trim();
+    const desc = row.description?.trim() || row.title?.trim();
+    const eventDate = parseDateGuess(row.saleDate);
+    const eventKind = classifyTransactionType(txType, net ?? gross);
+    const eventAmount = net ?? gross ?? 0;
+
+    const financialEvent: EbayOrderFinancialEvent | null =
+      Math.abs(eventAmount) >= 0.001 || eventKind !== 'sale'
+        ? {
+            id: financialEventId({
+              orderId,
+              date: eventDate,
+              amount: eventAmount,
+              kind: eventKind,
+              description: desc || txType,
+            }),
+            date: eventDate,
+            kind: eventKind,
+            amount: eventAmount,
+            grossAmount: gross,
+            feeAmount: fee,
+            description: desc || txType,
+            transactionType: txType,
+            source: 'csv',
+            importedAt: new Date().toISOString(),
+          }
+        : null;
+
+    const lineItem: EbayOrderLineItem | null =
+      eventKind === 'sale' || (eventAmount > 0 && row.title?.trim())
+        ? {
+            sku: row.sku?.trim() || null,
+            title: row.title?.trim() || '(unknown item)',
+            lineItemCost: gross ?? parseMoney(row.soldFor),
+            listingId: row.listingId?.trim() || null,
+            quantity: row.quantity ? parseInt(row.quantity, 10) || null : null,
+          }
+        : null;
 
     let record = byOrderId.get(orderId);
     if (!record) {
       record = {
         orderId,
-        creationDate: parseDateGuess(row.saleDate),
+        creationDate: eventDate,
         buyer: {
           username: row.buyerUsername?.trim() || undefined,
           fullName: (row.shipToName || row.buyerName)?.trim() || undefined,
@@ -279,28 +327,45 @@ export function parseEbayOrderCsv(text: string): EbayOrderCsvParseResult {
           phone: row.shipToPhone?.trim() || undefined,
         },
         lineItems: [],
-        grossTotal: parseMoney(row.total),
-        netTotal: parseMoney(row.netAmount),
-        feeTotal: parseMoney(row.fee),
+        grossTotal: gross,
+        netTotal: net,
+        feeTotal: fee,
         shippingCost: parseMoney(row.shipping),
         taxTotal: parseMoney(row.tax),
+        financialEvents: [],
         sources: ['csv'],
         importedAt: new Date().toISOString(),
       };
       byOrderId.set(orderId, record);
     } else {
-      record.netTotal = record.netTotal ?? parseMoney(row.netAmount);
-      record.feeTotal = record.feeTotal ?? parseMoney(row.fee);
-      record.grossTotal = record.grossTotal ?? parseMoney(row.total);
+      if (net != null) record.netTotal = (record.netTotal ?? 0) + net;
+      if (fee != null) record.feeTotal = (record.feeTotal ?? 0) + fee;
+      if (gross != null && record.grossTotal == null) record.grossTotal = gross;
       record.shippingCost = record.shippingCost ?? parseMoney(row.shipping);
       record.taxTotal = record.taxTotal ?? parseMoney(row.tax);
     }
-    record.lineItems.push(lineItem);
+
+    if (lineItem) record.lineItems.push(lineItem);
+    if (financialEvent) {
+      record.financialEvents = record.financialEvents || [];
+      if (!record.financialEvents.some((e) => e.id === financialEvent.id)) {
+        record.financialEvents.push(financialEvent);
+      }
+    }
     matchedRowCount++;
   }
 
+  const orders = Array.from(byOrderId.values()).map((record) => {
+    if (record.financialEvents?.length) {
+      const sum = record.financialEvents.reduce((s, e) => s + e.amount, 0);
+      record.netTotal = Math.round(sum * 100) / 100;
+    }
+    if (!record.financialEvents?.length) delete record.financialEvents;
+    return record;
+  });
+
   return {
-    orders: Array.from(byOrderId.values()),
+    orders,
     rowCount: lines.length - 1,
     matchedRowCount,
     skippedRowCount,

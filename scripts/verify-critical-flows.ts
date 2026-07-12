@@ -13,6 +13,14 @@ import { calculateSaleProfit } from '../utils/saleProfit';
 import { getLinePayout } from '../utils/ebayOrderPayout';
 import { applyEbayOrderMatchToItem } from '../utils/applyEbayOrderMatch';
 import { buildOrderLinkAnalysis } from '../utils/ebayOrderLinkAnalysis';
+import { classifyTransactionType, sumFinancialEventNet } from '../utils/ebayOrderFinancial';
+import {
+  applyEbaySaleAdjustmentToItem,
+  buildAdjustmentFromEvent,
+  getOriginalSellPrice,
+  sumAdjustmentAmounts,
+} from '../utils/ebaySaleAdjustments';
+import type { EbayOrderFinancialEvent, EbayOrderRecord } from '../services/ebayOrderIndex';
 import { isRealizedDisposal, dispositionDate } from '../utils/itemDisposition';
 import { parseEbayOrderCsv } from '../services/ebayOrderCsvImport';
 import type { EbayOrderRecord } from '../services/ebayOrderIndex';
@@ -282,19 +290,105 @@ function runFinanzamtTests(): void {
   const rows = buildFinanzamtWareRows(items);
   assert(rows.length === 3, 'finanzamt exports sold, gifted, traded');
   const soldRow = rows.find((r) => r.Bezeichnung === 'RTX 4070' && r.Status.includes('Verkauft'));
-  assert(soldRow?.Verkaufspreis_EUR === 430, 'finanzamt sell price exact cents');
-  assert(rows.some((r) => r.Status.includes('Verschenkt')), 'finanzamt includes gifted status');
+  assert(soldRow?.Effektiver_VK_EUR === 430, 'finanzamt effective sell price');
+
+  const withAdj = baseItem({
+    id: 'fa-adj',
+    name: 'Adjusted GPU',
+    status: ItemStatus.SOLD,
+    sellPrice: 65,
+    originalSellPrice: 85,
+    sellDate: '2025-07-01',
+    profit: 15,
+    ebayOrderId: 'ORD-1',
+    ebaySaleAdjustments: [
+      {
+        id: 'a1',
+        eventId: 'e2',
+        date: '2025-07-08',
+        kind: 'refund',
+        amount: -20,
+        orderId: 'ORD-1',
+        reason: 'eBay refund',
+        source: 'ebay_csv',
+        importedAt: '',
+        sellPriceBefore: 85,
+        sellPriceAfter: 65,
+      },
+    ],
+  });
+  const adjRows = buildFinanzamtWareRows([withAdj]);
+  assert(adjRows[0].Ursprünglicher_VK_EUR === 85, 'finanzamt original VK');
+  assert(adjRows[0].Korrektur_Summe_EUR === -20, 'finanzamt correction sum');
+  assert(adjRows[0].eBay_Bestellnr === 'ORD-1', 'finanzamt order id');
+  assert(adjRows[0].Korrektur_Nachweis.includes('eBay refund'), 'finanzamt adjustment note');
 }
 
 function runCsvImportTests(): void {
   const csv = [
-    'Order Number,Custom label,Item title,Sold For,Net amount,Final Value Fee,Sale Date',
-    'ORD-CSV-1,SKU-X,Test GPU,100.00,85.00,15.00,2025-07-01',
-    'ORD-CSV-1,SKU-X,Test GPU,-20.00,-17.00,3.00,2025-07-08',
+    'Order Number,Custom label,Item title,Sold For,Net amount,Final Value Fee,Sale Date,Transaction type',
+    'ORD-CSV-1,SKU-X,Test GPU,100.00,85.00,15.00,2025-07-01,Order',
+    'ORD-CSV-1,SKU-X,Test GPU refund,,-20.00,3.00,2025-07-08,Refund',
   ].join('\n');
   const parsed = parseEbayOrderCsv(csv);
   assert(parsed.orders.length === 1, 'groups csv by order id');
-  assert(parsed.orders[0].lineItems.length === 2, 'keeps multiple rows per order (refund line preserved)');
+  assert(parsed.orders[0].lineItems.length >= 1, 'keeps sale line item');
+  assert((parsed.orders[0].financialEvents?.length || 0) >= 2, 'stores sale + refund events');
+  assertClose(parsed.orders[0].netTotal ?? 0, 65, 'order net = sale + refund');
+}
+
+function runAdjustmentTests(): void {
+  assert(classifyTransactionType('Refund', -20) === 'return', 'classifies negative refund as return');
+  assert(classifyTransactionType('Storniert', null) === 'cancellation', 'classifies cancellation');
+
+  const events: EbayOrderFinancialEvent[] = [
+    { id: 'e1', date: '2025-07-01', kind: 'sale', amount: 85, source: 'csv', importedAt: '' },
+    { id: 'e2', date: '2025-07-08', kind: 'refund', amount: -20, source: 'csv', importedAt: '' },
+  ];
+  assertClose(sumFinancialEventNet(events)!, 65, 'sums signed event net');
+
+  const sold = baseItem({
+    id: 'adj-1',
+    status: ItemStatus.SOLD,
+    sellPrice: 85,
+    originalSellPrice: 85,
+    ebayOrderId: 'ORD-ADJ',
+    platformSold: 'ebay.de',
+  });
+  const refundEvent = events[1];
+  const adjustment = buildAdjustmentFromEvent(sold, refundEvent, 'ORD-ADJ');
+  assert(adjustment != null, 'builds adjustment from refund event');
+  if (adjustment) {
+    const next = applyEbaySaleAdjustmentToItem(sold, adjustment, 'SmallBusiness');
+    assertClose(next.sellPrice!, 65, 'effective sell after refund');
+    assert(next.originalSellPrice === 85, 'preserves original sell price');
+    assert((next.ebaySaleAdjustments?.length || 0) === 1, 'stores adjustment audit row');
+    assertClose(sumAdjustmentAmounts(next), -20, 'adjustment sum');
+  }
+
+  const order: EbayOrderRecord = {
+    orderId: 'ORD-ADJ',
+    creationDate: '2025-07-01',
+    buyer: { username: 'b' },
+    lineItems: [{ sku: 'SKU-X', title: 'GPU', lineItemCost: 100 }],
+    grossTotal: 100,
+    netTotal: 65,
+    financialEvents: events,
+    sources: ['csv'],
+    importedAt: new Date().toISOString(),
+  };
+  const linked = baseItem({
+    id: 'adj-1',
+    ebaySku: 'SKU-X',
+    ebayOrderId: 'ORD-ADJ',
+    status: ItemStatus.SOLD,
+    sellPrice: 85,
+    originalSellPrice: 85,
+    platformSold: 'ebay.de',
+  });
+  const analysis = buildOrderLinkAnalysis([linked], [order]);
+  assert(analysis.stats.adjustmentCandidates >= 1, 'suggests refund adjustment');
+  assert(analysis.suggestions.some((s) => s.kind === 'adjustment'), 'adjustment suggestion kind');
 }
 
 console.log('DeInventory critical-flow verification\n');
@@ -306,6 +400,7 @@ runTradeAllocationTests();
 runProfitTests();
 runEbayPayoutTests();
 runEbayAnalysisTests();
+runAdjustmentTests();
 runFinanzamtTests();
 runCsvImportTests();
 

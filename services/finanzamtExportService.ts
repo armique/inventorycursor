@@ -19,6 +19,7 @@ import {
   shouldSkipCompositionChild,
   isBundleSoldOnParentOnly,
 } from './financialAggregation';
+import { formatAdjustmentsForFinanzamt, getOriginalSellPrice, sumAdjustmentAmounts } from '../utils/ebaySaleAdjustments';
 
 const round2 = roundMoney;
 
@@ -83,8 +84,13 @@ export type FinanzamtWareRow = {
   Verkaufsdatum: string;
   Einkaufspreis_EUR: number | '';
   Verkaufspreis_EUR: number | '';
+  Ursprünglicher_VK_EUR: number | '';
+  Korrektur_Summe_EUR: number | '';
+  Effektiver_VK_EUR: number | '';
   'Gebühren_Verkauf_EUR': number | '';
   Gewinn_EUR: number | '';
+  eBay_Bestellnr: string;
+  Korrektur_Nachweis: string;
   Paket_oder_PC: string;
   Rolle_im_Paket: string;
   Stückliste_Komponenten: string;
@@ -118,6 +124,11 @@ function buildWareRow(
   if (item.isBundle) zeilenart = 'Paket / Bundle';
 
   const comment = [item.comment1, item.comment2].filter(Boolean).join(' — ').slice(0, 500);
+  const originalVk = getOriginalSellPrice(item);
+  const correctionSum = sumAdjustmentAmounts(item);
+  const effectiveVk =
+    item.sellPrice !== undefined && item.sellPrice !== null ? round2(Number(item.sellPrice)) : null;
+  const adjustmentNote = formatAdjustmentsForFinanzamt(item);
 
   return {
     Zeilenart: zeilenart,
@@ -128,8 +139,10 @@ function buildWareRow(
     Einkaufsdatum: item.buyDate || '',
     Verkaufsdatum: item.sellDate || item.containerSoldDate || '',
     Einkaufspreis_EUR: item.buyPrice !== undefined && item.buyPrice !== null ? round2(Number(item.buyPrice)) : '',
-    Verkaufspreis_EUR:
-      item.sellPrice !== undefined && item.sellPrice !== null ? round2(Number(item.sellPrice)) : '',
+    Verkaufspreis_EUR: effectiveVk ?? '',
+    Ursprünglicher_VK_EUR: originalVk != null ? round2(originalVk) : effectiveVk ?? '',
+    Korrektur_Summe_EUR: correctionSum !== 0 ? round2(correctionSum) : '',
+    Effektiver_VK_EUR: effectiveVk ?? '',
     'Gebühren_Verkauf_EUR':
       item.feeAmount !== undefined && item.feeAmount !== null && Number(item.feeAmount) !== 0
         ? round2(Number(item.feeAmount))
@@ -144,6 +157,8 @@ function buildWareRow(
     Einkauf_Lieferant: item.vendor || '',
     Rechnungsnummer: item.invoiceNumber || '',
     Kunde_Name: item.customer?.name || '',
+    eBay_Bestellnr: item.ebayOrderId || '',
+    Korrektur_Nachweis: adjustmentNote,
     Bemerkung: comment,
   };
 }
@@ -333,6 +348,9 @@ const WARE_HEADER_ORDER: (keyof FinanzamtWareRow)[] = [
   'Verkaufsdatum',
   'Einkaufspreis_EUR',
   'Verkaufspreis_EUR',
+  'Ursprünglicher_VK_EUR',
+  'Korrektur_Summe_EUR',
+  'Effektiver_VK_EUR',
   'Gebühren_Verkauf_EUR',
   'Gewinn_EUR',
   'Paket_oder_PC',
@@ -343,6 +361,8 @@ const WARE_HEADER_ORDER: (keyof FinanzamtWareRow)[] = [
   'Einkauf_Lieferant',
   'Rechnungsnummer',
   'Kunde_Name',
+  'eBay_Bestellnr',
+  'Korrektur_Nachweis',
   'Bemerkung',
 ];
 

@@ -508,6 +508,10 @@ async function handleEbayOrders(req, res) {
         allOrders.push({
           orderId: order.orderId,
           creationDate: order.creationDate ? order.creationDate.split('T')[0] : null,
+          lastModifiedDate: order.lastModifiedDate ? order.lastModifiedDate.split('T')[0] : null,
+          orderFulfillmentStatus: order.orderFulfillmentStatus || null,
+          orderPaymentStatus: order.orderPaymentStatus || null,
+          cancelState: order.cancelStatus?.cancelState || order.cancelStatus?.cancelRequests?.[0]?.cancelReason || null,
           buyer: {
             username: order.buyer?.username || '',
             fullName: fullName.trim() || undefined,

@@ -1,4 +1,5 @@
 import type { EbayOrderLineItem, EbayOrderRecord } from '../services/ebayOrderIndex';
+import { getOrderEffectiveNet } from './ebayOrderFinancial';
 
 export interface LinePayout {
   gross: number | null;
@@ -25,11 +26,14 @@ export function getLinePayout(order: EbayOrderRecord, line: EbayOrderLineItem): 
     line.lineItemCost ??
     (order.lineItems.length === 1 ? order.grossTotal ?? null : null);
 
-  const net = prorateOrderAmount(order.netTotal, gross, order);
+  const orderNet = getOrderEffectiveNet(order);
+  const net = prorateOrderAmount(orderNet, gross, order);
   const feeRaw = prorateOrderAmount(order.feeTotal, gross, order);
   const fee =
     feeRaw ??
-    (net != null && order.grossTotal != null ? Math.max(0, order.grossTotal - (order.netTotal ?? 0)) : 0);
+    (net != null && order.grossTotal != null && orderNet == null
+      ? Math.max(0, order.grossTotal - (order.netTotal ?? 0))
+      : 0);
 
   const sellPrice = net ?? gross ?? 0;
   return {

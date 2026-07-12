@@ -1,9 +1,16 @@
-import { InventoryItem, ItemStatus } from '../types';
+import { InventoryItem, ItemStatus, type EbaySaleAdjustment } from '../types';
 import type { EbayOrderLineItem, EbayOrderRecord } from '../services/ebayOrderIndex';
 import { findMatchingOrdersForItem, type EbayOrderMatch } from './ebayOrderMatch';
 import { getLinePayout } from './ebayOrderPayout';
+import { getOrderEffectiveNet, isOrderCancelled, unappliedOrderEvents } from './ebayOrderFinancial';
+import {
+  buildAdjustmentFromEvent,
+  getAppliedEventIds,
+  getEffectiveSellPrice,
+  round2,
+} from './ebaySaleAdjustments';
 
-export type OrderLinkSuggestionKind = 'mark_sold' | 'link' | 'reprice';
+export type OrderLinkSuggestionKind = 'mark_sold' | 'link' | 'reprice' | 'adjustment';
 
 export interface OrderLinkSuggestion {
   id: string;
@@ -18,6 +25,9 @@ export interface OrderLinkSuggestion {
   netKnown: boolean;
   priceDelta: number | null;
   totalScore: number;
+  /** For adjustment suggestions — auditable post-sale correction. */
+  adjustment?: EbaySaleAdjustment;
+  adjustmentReason?: string;
 }
 
 export interface OrderLinkAnalysisResult {
@@ -31,6 +41,7 @@ export interface OrderLinkAnalysisResult {
     markSoldCandidates: number;
     linkCandidates: number;
     repriceCandidates: number;
+    adjustmentCandidates: number;
     netDataOrders: number;
   };
 }
@@ -108,13 +119,14 @@ function makeSuggestion(
   kind: OrderLinkSuggestionKind,
   item: InventoryItem,
   match: EbayOrderMatch,
-  totalScore: number
+  totalScore: number,
+  extra?: Partial<OrderLinkSuggestion>
 ): OrderLinkSuggestion {
   const payout = getLinePayout(match.order, match.lineItem);
-  const current = item.sellPrice ?? null;
+  const current = getEffectiveSellPrice(item) ?? item.sellPrice ?? null;
   const delta = current != null ? payout.sellPrice - current : null;
   return {
-    id: `${kind}:${item.id}:${match.order.orderId}:${lineItemClaimKey(match.order.orderId, match.lineItem)}`,
+    id: `${kind}:${item.id}:${match.order.orderId}:${lineItemClaimKey(match.order.orderId, match.lineItem)}${extra?.adjustment?.eventId ? `:${extra.adjustment.eventId}` : ''}`,
     kind,
     item,
     match,
@@ -126,6 +138,7 @@ function makeSuggestion(
     netKnown: payout.netKnown,
     priceDelta: delta,
     totalScore,
+    ...extra,
   };
 }
 
@@ -140,8 +153,78 @@ const REPRICE_MIN_DELTA = 0.02;
 const KIND_SORT: Record<OrderLinkSuggestionKind, number> = {
   mark_sold: 0,
   link: 1,
-  reprice: 2,
+  adjustment: 2,
+  reprice: 3,
 };
+
+function prorateFactorForLine(order: EbayOrderRecord, line: EbayOrderLineItem): number {
+  const gross = line.lineItemCost ?? 0;
+  const fromLines = order.lineItems.reduce((sum, li) => sum + (li.lineItemCost ?? 0), 0);
+  const base = fromLines > 0 ? fromLines : order.grossTotal ?? 0;
+  if (!base || base <= 0) return order.lineItems.length <= 1 ? 1 : 0;
+  return gross / base;
+}
+
+function findAdjustmentSuggestions(
+  item: InventoryItem,
+  match: EbayOrderMatch,
+  suggestions: OrderLinkSuggestion[]
+): void {
+  const { order, lineItem } = match;
+  const applied = getAppliedEventIds(item);
+  const pendingEvents = unappliedOrderEvents(order, applied);
+  const factor = prorateFactorForLine(order, lineItem);
+
+  for (const event of pendingEvents) {
+    const adjustment = buildAdjustmentFromEvent(item, event, order.orderId, factor);
+    if (!adjustment) continue;
+    suggestions.push(
+      makeSuggestion('adjustment', item, match, match.matchScore + 200, {
+        adjustment,
+        adjustmentReason: adjustment.reason,
+        suggestedSellPrice: adjustment.sellPriceAfter,
+        priceDelta: adjustment.amount,
+      })
+    );
+  }
+
+  const payout = getLinePayout(order, lineItem);
+  const current = getEffectiveSellPrice(item) ?? item.sellPrice ?? 0;
+  const delta = round2(payout.sellPrice - current);
+  if (Math.abs(delta) < REPRICE_MIN_DELTA) return;
+  if (pendingEvents.length > 0) return;
+  if (item.originalSellPrice == null && !item.ebaySaleAdjustments?.length) return;
+
+  const reason = isOrderCancelled(order)
+    ? 'eBay order cancelled — effective payout changed'
+    : getOrderEffectiveNet(order) != null
+      ? 'Order payout changed (re-import Payments CSV or sync for details)'
+      : 'Payout correction from cached order data';
+
+  const adjustment: EbaySaleAdjustment = {
+    id: `adj-payout-${order.orderId}-${item.id}-${Date.now()}`,
+    date: order.lastModifiedDate || order.creationDate || new Date().toISOString().split('T')[0],
+    kind: isOrderCancelled(order) ? 'cancellation' : 'payout_correction',
+    amount: delta,
+    orderId: order.orderId,
+    reason,
+    source: 'ebay_sync',
+    importedAt: new Date().toISOString(),
+    sellPriceBefore: current,
+    sellPriceAfter: round2(current + delta),
+    feeBefore: item.feeAmount,
+    feeAfter: item.feeAmount,
+  };
+
+  suggestions.push(
+    makeSuggestion('adjustment', item, match, match.matchScore + 150, {
+      adjustment,
+      adjustmentReason: reason,
+      suggestedSellPrice: adjustment.sellPriceAfter,
+      priceDelta: delta,
+    })
+  );
+}
 
 function assignGreedy(
   kind: OrderLinkSuggestionKind,
@@ -197,7 +280,7 @@ export function buildOrderLinkAnalysis(items: InventoryItem[], orders: EbayOrder
   // 2) Already sold, missing order id → link order + fix payout.
   assignGreedy('link', unlinkedSold, orders, reservedLines, suggestions, 'sellDate');
 
-  // 3) Already linked but payout differs (e.g. ad fees deducted later).
+  // 3) Already linked — post-sale refunds/returns or payout drift.
   for (const item of alreadyLinked) {
     const order = ordersById.get(item.ebayOrderId!.trim());
     if (!order) continue;
@@ -214,11 +297,16 @@ export function buildOrderLinkAnalysis(items: InventoryItem[], orders: EbayOrder
         : null);
     if (!match) continue;
 
+    const beforeCount = suggestions.length;
+    findAdjustmentSuggestions(item, match, suggestions);
+    if (suggestions.length > beforeCount) continue;
+
     const payout = getLinePayout(match.order, match.lineItem);
     const current = item.sellPrice ?? 0;
     const delta = Math.abs(current - payout.sellPrice);
     if (delta < REPRICE_MIN_DELTA) continue;
     if (!payout.netKnown && payout.gross != null && Math.abs(current - payout.gross) < REPRICE_MIN_DELTA) continue;
+    if (item.originalSellPrice != null || (item.ebaySaleAdjustments?.length ?? 0) > 0) continue;
 
     suggestions.push(makeSuggestion('reprice', item, match, match.matchScore + 100));
   }
@@ -232,6 +320,7 @@ export function buildOrderLinkAnalysis(items: InventoryItem[], orders: EbayOrder
   const markSoldCandidates = suggestions.filter((s) => s.kind === 'mark_sold').length;
   const linkCandidates = suggestions.filter((s) => s.kind === 'link').length;
   const repriceCandidates = suggestions.filter((s) => s.kind === 'reprice').length;
+  const adjustmentCandidates = suggestions.filter((s) => s.kind === 'adjustment').length;
 
   return {
     suggestions,
@@ -244,7 +333,8 @@ export function buildOrderLinkAnalysis(items: InventoryItem[], orders: EbayOrder
       markSoldCandidates,
       linkCandidates,
       repriceCandidates,
-      netDataOrders: orders.filter((o) => o.netTotal != null).length,
+      adjustmentCandidates,
+      netDataOrders: orders.filter((o) => getOrderEffectiveNet(o) != null).length,
     },
   };
 }

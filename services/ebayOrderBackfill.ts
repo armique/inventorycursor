@@ -65,6 +65,10 @@ function summaryToRecord(o: EbayOrderSummary): EbayOrderRecord {
       quantity: null,
     })),
     grossTotal: o.orderTotal ?? (lineTotal || null),
+    orderFulfillmentStatus: o.orderFulfillmentStatus ?? null,
+    orderPaymentStatus: o.orderPaymentStatus ?? null,
+    cancelState: o.cancelState ?? null,
+    lastModifiedDate: o.lastModifiedDate ?? null,
     sources: ['api'],
     importedAt: new Date().toISOString(),
   };

@@ -20,10 +20,15 @@ export function applyEbayOrderMatchToItem(
     ...(order.buyer.email ? { email: order.buyer.email } : {}),
   };
 
+  const originalSellPrice =
+    item.originalSellPrice ??
+    (item.sellPrice != null && item.ebayOrderId === order.orderId ? item.sellPrice : payout.sellPrice);
+
   return {
     ...item,
     status:
       item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED ? ItemStatus.SOLD : item.status,
+    originalSellPrice,
     sellPrice: payout.sellPrice,
     sellDate: order.creationDate || item.sellDate || new Date().toISOString().split('T')[0],
     platformSold: item.platformSold || 'ebay.de',

@@ -138,6 +138,10 @@ export const createEbayDraft = async (item: any) => {
 export interface EbayOrderSummary {
   orderId: string;
   creationDate: string | null;
+  lastModifiedDate?: string | null;
+  orderFulfillmentStatus?: string | null;
+  orderPaymentStatus?: string | null;
+  cancelState?: string | null;
   buyer: { username: string; fullName?: string; address?: string; email?: string; phone?: string };
   lineItems: { sku: string | null; title: string; lineItemCost: number | null; listingId?: string | null }[];
   /** Full order total (gross, before eBay fees) from the Fulfillment API pricing summary. */

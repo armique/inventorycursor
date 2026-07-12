@@ -60,6 +60,33 @@ export interface PriceHistoryEntry {
   previousPrice?: number;
 }
 
+/** Documented eBay post-sale change (return, refund, cancellation) — Finanzamt-auditable. */
+export type EbaySaleAdjustmentKind =
+  | 'refund'
+  | 'return'
+  | 'cancellation'
+  | 'fee_adjustment'
+  | 'payout_correction';
+
+export interface EbaySaleAdjustment {
+  id: string;
+  /** Links back to cached order financial event — prevents double-apply. */
+  eventId?: string;
+  /** YYYY-MM-DD */
+  date: string;
+  kind: EbaySaleAdjustmentKind;
+  /** Signed EUR change to effective revenue (negative = clawback). */
+  amount: number;
+  orderId: string;
+  reason: string;
+  source: 'ebay_csv' | 'ebay_api' | 'ebay_sync';
+  importedAt: string;
+  sellPriceBefore: number;
+  sellPriceAfter: number;
+  feeBefore?: number;
+  feeAfter?: number;
+}
+
 export interface InventoryItem {
   id: string;
   name: string;
@@ -99,6 +126,10 @@ export interface InventoryItem {
   kleinanzeigenChatImage?: string; // Base64 or URL
   ebayUsername?: string;
   ebayOrderId?: string;
+  /** First recorded net/gross sell price when linked via eBay sync — never overwritten (Finanzamt audit). */
+  originalSellPrice?: number;
+  /** Documented post-sale payout changes (returns, refunds, cancellations). */
+  ebaySaleAdjustments?: EbaySaleAdjustment[];
   
   // eBay API Tracking
   ebaySku?: string;

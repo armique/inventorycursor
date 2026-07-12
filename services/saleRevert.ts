@@ -49,6 +49,8 @@ export function applySaleRevert(items: InventoryItem[], itemId: string): Invento
       invoiceNumber: undefined,
       customer: undefined,
       ebayOrderId: undefined,
+      originalSellPrice: undefined,
+      ebaySaleAdjustments: undefined,
     };
   });
 }

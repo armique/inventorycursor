@@ -22,6 +22,7 @@ function readDismissedCount(): number {
 const EbaySyncBanner: React.FC<Props> = ({ items }) => {
   const [pending, setPending] = useState(0);
   const [markSold, setMarkSold] = useState(0);
+  const [adjustments, setAdjustments] = useState(0);
   const [cachedOrders, setCachedOrders] = useState(0);
   const [dismissed, setDismissed] = useState(false);
 
@@ -29,6 +30,7 @@ const EbaySyncBanner: React.FC<Props> = ({ items }) => {
     const analysis = peekEbaySalesSync(items);
     setPending(analysis.suggestions.length);
     setMarkSold(analysis.stats.markSoldCandidates);
+    setAdjustments(analysis.stats.adjustmentCandidates);
     setCachedOrders(getOrderIndexStats().count);
     setDismissed(analysis.suggestions.length <= readDismissedCount());
   }, [items]);
@@ -93,7 +95,9 @@ const EbaySyncBanner: React.FC<Props> = ({ items }) => {
           <p className="text-xs text-emerald-900/90 mt-0.5">
             {markSold > 0
               ? `${markSold} in-stock item${markSold === 1 ? '' : 's'} may have sold on eBay`
-              : 'Link order IDs or fix sell prices to match what you actually received'}
+              : adjustments > 0
+                ? `${adjustments} return/refund adjustment${adjustments === 1 ? '' : 's'} to document`
+                : 'Link order IDs or fix sell prices to match what you actually received'}
             {' — '}
             nothing is applied until you confirm.
           </p>

@@ -21,10 +21,38 @@ import {
   clearEbayOrdersCloud,
   type EbayOrderCloudMeta,
 } from './firebaseService';
+import {
+  mergeFinancialEvents,
+  sumFinancialEventNet,
+} from '../utils/ebayOrderFinancial';
 
 const STORAGE_KEY = 'ebay_order_index_v1';
 
 export type EbayOrderSource = 'api' | 'csv';
+
+export type EbayOrderFinancialEventKind =
+  | 'sale'
+  | 'refund'
+  | 'return'
+  | 'cancellation'
+  | 'fee'
+  | 'adjustment'
+  | 'unknown';
+
+export interface EbayOrderFinancialEvent {
+  id: string;
+  /** YYYY-MM-DD */
+  date: string | null;
+  kind: EbayOrderFinancialEventKind;
+  /** Signed net EUR impact on seller payout. */
+  amount: number;
+  grossAmount?: number | null;
+  feeAmount?: number | null;
+  description?: string;
+  transactionType?: string;
+  source: EbayOrderSource;
+  importedAt: string;
+}
 
 export interface EbayOrderLineItem {
   sku: string | null;
@@ -56,6 +84,12 @@ export interface EbayOrderRecord {
   feeTotal?: number | null;
   shippingCost?: number | null;
   taxTotal?: number | null;
+  /** Per-transaction events (refunds, returns, fee rows) — usually from Payments CSV. */
+  financialEvents?: EbayOrderFinancialEvent[];
+  orderFulfillmentStatus?: string | null;
+  orderPaymentStatus?: string | null;
+  cancelState?: string | null;
+  lastModifiedDate?: string | null;
   sources: EbayOrderSource[];
   importedAt: string;
 }
@@ -124,6 +158,25 @@ function mergeLineItems(a: EbayOrderLineItem[], b: EbayOrderLineItem[]): EbayOrd
 }
 
 function mergeOrderRecords(existing: EbayOrderRecord, incoming: EbayOrderRecord): EbayOrderRecord {
+  const financialEvents = mergeFinancialEvents(existing.financialEvents, incoming.financialEvents || []);
+  const eventNet = sumFinancialEventNet(financialEvents);
+
+  const mergedNet =
+    eventNet != null
+      ? eventNet
+      : incoming.netTotal != null && existing.netTotal != null
+        ? incoming.importedAt >= existing.importedAt
+          ? incoming.netTotal
+          : existing.netTotal
+        : existing.netTotal ?? incoming.netTotal;
+
+  const mergedFee =
+    incoming.feeTotal != null && existing.feeTotal != null
+      ? incoming.importedAt >= existing.importedAt
+        ? incoming.feeTotal
+        : existing.feeTotal
+      : existing.feeTotal ?? incoming.feeTotal;
+
   return {
     orderId: existing.orderId,
     creationDate: existing.creationDate || incoming.creationDate,
@@ -136,12 +189,17 @@ function mergeOrderRecords(existing: EbayOrderRecord, incoming: EbayOrderRecord)
     },
     lineItems: mergeLineItems(existing.lineItems, incoming.lineItems),
     grossTotal: existing.grossTotal ?? incoming.grossTotal,
-    netTotal: existing.netTotal ?? incoming.netTotal,
-    feeTotal: existing.feeTotal ?? incoming.feeTotal,
+    netTotal: mergedNet,
+    feeTotal: mergedFee,
     shippingCost: existing.shippingCost ?? incoming.shippingCost,
     taxTotal: existing.taxTotal ?? incoming.taxTotal,
+    financialEvents: financialEvents.length ? financialEvents : undefined,
+    orderFulfillmentStatus: incoming.orderFulfillmentStatus || existing.orderFulfillmentStatus,
+    orderPaymentStatus: incoming.orderPaymentStatus || existing.orderPaymentStatus,
+    cancelState: incoming.cancelState || existing.cancelState,
+    lastModifiedDate: incoming.lastModifiedDate || existing.lastModifiedDate,
     sources: Array.from(new Set([...existing.sources, ...incoming.sources])),
-    importedAt: existing.importedAt,
+    importedAt: incoming.importedAt > existing.importedAt ? incoming.importedAt : existing.importedAt,
   };
 }
 

@@ -14,6 +14,7 @@ import { runEbaySalesSync, peekEbaySalesSync } from '../services/ebaySalesSync';
 import { hasEbayToken } from '../services/ebayService';
 import type { BackfillProgress } from '../services/ebayOrderBackfill';
 import { applyEbayOrderMatchToItem } from '../utils/applyEbayOrderMatch';
+import { applyEbaySaleAdjustmentToItem } from '../utils/ebaySaleAdjustments';
 import {
   type OrderLinkSuggestion,
   type OrderLinkSuggestionKind,
@@ -40,12 +41,14 @@ function matchKindLabel(kind: OrderLinkSuggestion['match']['matchKind']): string
 function kindLabel(kind: OrderLinkSuggestionKind): string {
   if (kind === 'mark_sold') return 'Mark sold';
   if (kind === 'link') return 'Link order';
+  if (kind === 'adjustment') return 'Return/refund';
   return 'Fix payout';
 }
 
 function kindBadgeClass(kind: OrderLinkSuggestionKind): string {
   if (kind === 'mark_sold') return 'bg-emerald-100 text-emerald-800';
   if (kind === 'link') return 'bg-blue-100 text-blue-800';
+  if (kind === 'adjustment') return 'bg-rose-100 text-rose-900';
   return 'bg-amber-100 text-amber-900';
 }
 
@@ -75,6 +78,7 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
       if (result.stats.markSoldCandidates) parts.push(`${result.stats.markSoldCandidates} to mark sold`);
       if (result.stats.linkCandidates) parts.push(`${result.stats.linkCandidates} to link`);
       if (result.stats.repriceCandidates) parts.push(`${result.stats.repriceCandidates} to reprice`);
+      if (result.stats.adjustmentCandidates) parts.push(`${result.stats.adjustmentCandidates} return/refund`);
       setMessage(
         info ||
           (result.suggestions.length
@@ -152,6 +156,7 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
       all: active.length,
       mark_sold: active.filter((s) => s.kind === 'mark_sold').length,
       link: active.filter((s) => s.kind === 'link').length,
+      adjustment: active.filter((s) => s.kind === 'adjustment').length,
       reprice: active.filter((s) => s.kind === 'reprice').length,
     };
   }, [suggestions, dismissed]);
@@ -165,7 +170,11 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
       const updated = new Map<string, InventoryItem>();
       for (const row of rows) {
         const current = byId.get(row.item.id) ?? updated.get(row.item.id) ?? row.item;
-        updated.set(row.item.id, applyEbayOrderMatchToItem(current, row.match, taxMode));
+        if (row.kind === 'adjustment' && row.adjustment) {
+          updated.set(row.item.id, applyEbaySaleAdjustmentToItem(current, row.adjustment, taxMode));
+        } else {
+          updated.set(row.item.id, applyEbayOrderMatchToItem(current, row.match, taxMode));
+        }
       }
       onUpdate([...updated.values()]);
       setDismissed((prev) => {
@@ -174,8 +183,9 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
         return next;
       });
       const marked = rows.filter((r) => r.kind === 'mark_sold').length;
+      const adjusted = rows.filter((r) => r.kind === 'adjustment').length;
       setMessage(
-        `Applied ${rows.length} row(s)${marked ? ` — ${marked} marked sold` : ''}. Sell price set to net payout when available.`
+        `Applied ${rows.length} row(s)${marked ? ` — ${marked} marked sold` : ''}${adjusted ? ` — ${adjusted} adjustment(s) documented` : ''}. Original sell price preserved for audit.`
       );
     } catch (e: unknown) {
       setError((e as Error)?.message || 'Apply failed.');
@@ -198,18 +208,20 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
             Matches your inventory against cached eBay orders. Catches items you{' '}
             <span className="font-bold">forgot to mark sold</span>, links missing order IDs on past sales, and
             fixes sell prices to the <span className="font-bold">net payout</span> (after fees) when Payments CSV
-            data is in the cache. Nothing applies until you confirm.
+            data is in the cache, and documents <span className="font-bold">returns, refunds, and cancellations</span>{' '}
+            as auditable adjustments without erasing the original sale. Nothing applies until you confirm.
           </p>
         </div>
       </div>
 
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
           {[
             { label: 'Cached orders', value: stats.cachedOrders },
             { label: 'In stock', value: stats.inStockItems },
             { label: 'Mark sold', value: counts.mark_sold, highlight: counts.mark_sold > 0 },
             { label: 'Link order', value: counts.link, highlight: counts.link > 0 },
+            { label: 'Returns', value: counts.adjustment, highlight: counts.adjustment > 0 },
             { label: 'Fix payout', value: counts.reprice, highlight: counts.reprice > 0 },
           ].map((s) => (
             <div
@@ -246,7 +258,7 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
         </button>
         {suggestions.length > 0 && (
           <>
-            {(['all', 'mark_sold', 'link', 'reprice'] as const).map((kind) => (
+            {(['all', 'mark_sold', 'link', 'adjustment', 'reprice'] as const).map((kind) => (
               <button
                 key={kind}
                 type="button"
@@ -263,6 +275,8 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
                     ? `Mark sold (${counts.mark_sold})`
                     : kind === 'link'
                       ? `Link (${counts.link})`
+                      : kind === 'adjustment'
+                        ? `Returns (${counts.adjustment})`
                       : `Payout (${counts.reprice})`}
               </button>
             ))}
@@ -290,7 +304,8 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
       {stats && stats.netDataOrders === 0 && stats.cachedOrders > 0 && (
         <p className="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
           Import <span className="font-black">Seller Hub → Payments → All transactions</span> CSV in Order cache
-          setup below for true bottom-line payouts (ad fees / tax adjustments).
+          setup below for true bottom-line payouts and to detect <span className="font-black">returns/refunds</span>{' '}
+          (re-import after new refunds — adjustments appear in Sales sync).
         </p>
       )}
 
@@ -347,7 +362,15 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
                       {kind === 'mark_sold' && (
                         <span className="text-[9px] font-bold uppercase text-emerald-700">In stock → sold</span>
                       )}
+                      {kind === 'adjustment' && (
+                        <span className="text-[9px] font-bold uppercase text-rose-700">Document adjustment</span>
+                      )}
                     </div>
+                    {row.adjustmentReason && (
+                      <p className="text-[11px] font-bold text-rose-800 bg-rose-50 border border-rose-100 rounded-lg px-2 py-1">
+                        {row.adjustmentReason}
+                      </p>
+                    )}
                     <ItemLink
                       item={item}
                       itemName={item.name}
@@ -394,7 +417,7 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
                     onClick={() => void applySuggestions([row])}
                     className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[10px] font-black uppercase hover:bg-emerald-700 disabled:opacity-50"
                   >
-                    {kind === 'mark_sold' ? 'Mark sold & apply' : 'Apply'}
+                    {kind === 'adjustment' ? 'Apply adjustment' : kind === 'mark_sold' ? 'Mark sold & apply' : 'Apply'}
                   </button>
                   <button
                     type="button"
