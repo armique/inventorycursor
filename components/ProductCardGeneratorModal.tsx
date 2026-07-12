@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Link } from 'react-router-dom';
 import {
   BookmarkPlus,
   CheckCircle2,
@@ -321,8 +322,9 @@ const ProductCardGeneratorModal: React.FC<Props> = ({
                 </div>
               )}
             </div>
-            <p className="text-[10px] text-slate-500 mt-3 font-semibold">
-              Export {PRODUCT_CARD_WIDTH}×{PRODUCT_CARD_HEIGHT}px · eBay / Kleinanzeigen ready
+            <p className="text-xs text-slate-500 mt-3 font-semibold">
+              Export {PRODUCT_CARD_WIDTH}×{PRODUCT_CARD_HEIGHT}px · eBay / Kleinanzeigen ready ·{' '}
+              <Link to="/panel/product-card-studio" className="text-indigo-600 font-bold hover:underline">Open Card Studio</Link> for AI compare
             </p>
           </div>
 

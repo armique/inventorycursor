@@ -101,16 +101,24 @@ function drawGradientBackground(ctx: CanvasRenderingContext2D, template: Product
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, PRODUCT_CARD_WIDTH, PRODUCT_CARD_HEIGHT);
 
-  // Subtle accent glow
-  const glow = ctx.createRadialGradient(820, 180, 40, 820, 180, 420);
-  glow.addColorStop(0, template.theme.accentSoft);
-  glow.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = glow;
+  // Subtle accent glows
+  const glow1 = ctx.createRadialGradient(820, 180, 40, 820, 180, 420);
+  glow1.addColorStop(0, template.theme.accentSoft);
+  glow1.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow1;
   ctx.fillRect(0, 0, PRODUCT_CARD_WIDTH, PRODUCT_CARD_HEIGHT);
 
-  // Top accent bar
+  const glow2 = ctx.createRadialGradient(180, PRODUCT_CARD_HEIGHT - 120, 20, 180, PRODUCT_CARD_HEIGHT - 120, 360);
+  glow2.addColorStop(0, template.theme.accentSoft);
+  glow2.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow2;
+  ctx.fillRect(0, 0, PRODUCT_CARD_WIDTH, PRODUCT_CARD_HEIGHT);
+
+  // Top accent bar + inner highlight line
   ctx.fillStyle = template.theme.accent;
   ctx.fillRect(0, 0, PRODUCT_CARD_WIDTH, 6);
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx.fillRect(0, 6, PRODUCT_CARD_WIDTH, 1);
 }
 
 function drawPhoto(
@@ -211,6 +219,8 @@ function drawSpecGrid(
     drawRoundedRect(ctx, cx, cy, cellW, cellH, 14);
     ctx.fillStyle = template.theme.surface;
     ctx.fill();
+    ctx.fillStyle = template.theme.accent;
+    ctx.fillRect(cx, cy + 10, 4, cellH - 20);
     ctx.strokeStyle = template.theme.surfaceBorder;
     ctx.lineWidth = 1;
     ctx.stroke();
@@ -267,6 +277,17 @@ export async function renderProductCardToCanvas(input: ProductCardRenderInput): 
     textY += 52;
   }
 
+  if (template.tagline?.trim()) {
+    ctx.font = '600 26px "Segoe UI", system-ui, sans-serif';
+    ctx.fillStyle = template.theme.accent;
+    const tagLines = wrapText(ctx, template.tagline.trim(), textW, 2);
+    for (const line of tagLines) {
+      textY += 8;
+      ctx.fillText(line, textX, textY);
+      textY += 34;
+    }
+  }
+
   ctx.font = '600 22px "Segoe UI", system-ui, sans-serif';
   ctx.fillStyle = template.theme.textMuted;
   ctx.fillText(getProductCardSubtitle(item), textX, textY + 8);
@@ -295,11 +316,21 @@ export async function renderProductCardToCanvas(input: ProductCardRenderInput): 
   const uspY = isCenter ? Math.min(textY + 12, PRODUCT_CARD_HEIGHT - 180) : photoBox.y + photoBox.h + 32;
   drawUspPills(ctx, template.usps, isCenter ? pad : photoBox.x, uspY, isCenter ? PRODUCT_CARD_WIDTH - pad * 2 : photoBox.w + textW + 40, template);
 
-  // Footer brand strip
-  ctx.font = '600 18px "Segoe UI", system-ui, sans-serif';
+  // Footer
+  const footerLeft = template.aiMeta
+    ? `Design: ${template.aiMeta.provider} · ${new Date(template.aiMeta.generatedAt).toLocaleDateString('de-DE')}`
+    : 'DeInventory Pro · Premium Listing Card';
+  ctx.font = '600 17px "Segoe UI", system-ui, sans-serif';
   ctx.fillStyle = template.theme.textMuted;
   ctx.textBaseline = 'bottom';
-  ctx.fillText('DeInventory Pro · Premium Listing Card', pad, PRODUCT_CARD_HEIGHT - 36);
+  ctx.fillText(footerLeft, pad, PRODUCT_CARD_HEIGHT - 36);
+  if (template.aiMeta) {
+    ctx.textAlign = 'right';
+    ctx.fillStyle = template.theme.accent;
+    ctx.font = '700 15px "Segoe UI", system-ui, sans-serif';
+    ctx.fillText('AI Template', PRODUCT_CARD_WIDTH - pad, PRODUCT_CARD_HEIGHT - 36);
+    ctx.textAlign = 'left';
+  }
 
   return canvas;
 }

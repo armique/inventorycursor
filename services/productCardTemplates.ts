@@ -28,6 +28,16 @@ export interface ProductCardTemplate {
   maxSpecs: number;
   createdAt: string;
   isBuiltin?: boolean;
+  /** Optional marketing line under title (AI or manual). */
+  tagline?: string;
+  /** Which AI created this template, if any. */
+  aiMeta?: {
+    provider: string;
+    providerId: string;
+    model?: string;
+    generatedAt: string;
+    variantStyle?: string;
+  };
 }
 
 const STORAGE_KEY = 'product_card_templates_v1';

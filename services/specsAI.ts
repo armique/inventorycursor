@@ -18,6 +18,10 @@ const getEnv = (key: string): string => {
 
 type Provider = 'openai' | 'anthropic' | 'gemini' | 'groq' | 'ollama' | 'together' | 'mistral';
 
+export type AIProviderId = Provider;
+
+const PAID_PROVIDERS: Provider[] = ['openai', 'anthropic'];
+
 /** Order: free / generous first, then paid. Used for cycling when one fails. */
 const PROVIDER_ORDER: Provider[] = ['groq', 'ollama', 'gemini', 'together', 'mistral', 'openai', 'anthropic'];
 
@@ -457,6 +461,28 @@ async function getRawJsonFromAI(prompt: string, maxTokens: number = 512): Promis
 export async function requestAIJson<T = unknown>(prompt: string, options?: { maxTokens?: number }): Promise<T> {
   const raw = await getRawJsonFromAI(prompt, options?.maxTokens ?? 512);
   return JSON.parse(raw) as T;
+}
+
+/** Call a specific configured provider (for compare / A-B tests). */
+export async function requestAIJsonFromProvider<T = unknown>(
+  provider: AIProviderId,
+  prompt: string,
+  options?: { maxTokens?: number }
+): Promise<T> {
+  const raw = await getRawJsonFromProvider(provider, prompt, options?.maxTokens ?? 512);
+  return JSON.parse(raw) as T;
+}
+
+export function listConfiguredAIProviders(): { id: AIProviderId; label: string; tier: 'free' | 'paid' }[] {
+  return getAvailableProviders().map((id) => ({
+    id,
+    label: PROVIDER_LABELS[id],
+    tier: PAID_PROVIDERS.includes(id) ? 'paid' : 'free',
+  }));
+}
+
+export function getAIProviderLabel(id: AIProviderId): string {
+  return PROVIDER_LABELS[id] || id;
 }
 
 // --- Plain-text generation (e.g. store descriptions) ---

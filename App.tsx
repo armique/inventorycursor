@@ -25,6 +25,7 @@ const DealHunterPage = lazy(() => import('./components/DealHunterPage'));
 const EbayStorePullPage = lazy(() => import('./components/EbayStorePullPage'));
 const HealthCheckPage = lazy(() => import('./components/HealthCheckPage'));
 const ThreeDPrintPage = lazy(() => import('./components/ThreeDPrintPage'));
+const ProductCardStudioPage = lazy(() => import('./components/ProductCardStudioPage'));
 
 import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense, DashboardPreferences, ActionHistoryEntry, TaxMode, ItemUpdateOptions } from './types';
 import {
@@ -1287,6 +1288,7 @@ const App: React.FC = () => {
           <Route path="edit/:id" element={<ItemForm onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="builder" element={<PCBuilderWizard items={items} onSave={handleUpdate} />} />
           <Route path="3d-print" element={<ThreeDPrintPage items={items} onSave={handleUpdate} categories={categories} onAddExpense={handleAddExpense} />} />
+          <Route path="product-card-studio" element={<ProductCardStudioPage items={items} onUpdate={handleUpdate} categoryFields={categoryFields} />} />
           <Route path="pricing" element={<PriceCheck />} />
           <Route path="deal-hunter" element={<DealHunterPage items={items} onUpdate={handleUpdate} />} />
           <Route path="ebay-store-pull" element={<EbayStorePullPage items={items} categories={categories} categoryFields={categoryFields} taxMode={businessSettings.taxMode} onUpdate={handleUpdate} onPublishCatalog={publishStoreCatalogNow} onAddExpense={handleAddExpense} />} />

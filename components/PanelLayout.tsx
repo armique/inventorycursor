@@ -3,7 +3,7 @@ import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
   Package, PlusCircle, Settings, RefreshCw, Briefcase, Trash2, CloudUpload, LayoutDashboard,
   Layers, Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe, Tag, Radar, Activity,
-  Printer, LayoutTemplate, PackageSearch,
+  Printer, LayoutTemplate, PackageSearch, Sparkles,
 } from 'lucide-react';
 import PanelBreadcrumbs from './PanelBreadcrumbs';
 import { usePanelLocale } from '../context/PanelLocaleContext';
@@ -130,6 +130,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     { to: '/panel/add', icon: <PlusCircle size={20} />, label: 'Add Item' },
     { to: '/panel/add-bulk', icon: <Layers size={20} />, label: 'Bulk Entry' },
     { to: '/panel/3d-print', icon: <Printer size={20} />, label: '3D Print' },
+    { to: '/panel/product-card-studio', icon: <Sparkles size={20} />, label: 'Card Studio' },
     { to: '/panel/builder', icon: <Briefcase size={20} />, label: 'PC Builder' },
     { to: '/panel/pricing', icon: <Tag size={20} />, label: 'Price check' },
     { to: '/panel/deal-hunter', icon: <Radar size={20} />, label: 'Deal hunter' },
