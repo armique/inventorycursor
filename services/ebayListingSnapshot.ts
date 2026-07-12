@@ -31,6 +31,11 @@ export interface EbayListingSnapshotCheckRecord {
   stillActiveCount: number;
   disappeared: EbayListingSnapshotEntry[];
   appeared: EbayListingSnapshotEntry[];
+  /** Full listing rows before this check (for replay / baseline restore). */
+  previousEntries?: EbayListingSnapshotEntry[];
+  /** Full listing rows after this check (usually current active store). */
+  currentEntries?: EbayListingSnapshotEntry[];
+  checkKind?: 'auto' | 'manual' | 'reconcile';
 }
 
 export function listingToSnapshotEntry(listing: EbayMyListing, capturedAt: string): EbayListingSnapshotEntry {
@@ -85,8 +90,17 @@ function appendEbayListingSnapshotHistory(record: EbayListingSnapshotCheckRecord
 export function saveEbayListingSnapshot(listings: EbayMyListing[], sellerUsername?: string): EbayListingSnapshotMeta {
   const capturedAt = new Date().toISOString();
   const entries = listings.map((l) => listingToSnapshotEntry(l, capturedAt));
+  return saveEbayListingSnapshotEntries(entries, sellerUsername);
+}
+
+export function saveEbayListingSnapshotEntries(
+  entries: EbayListingSnapshotEntry[],
+  sellerUsername?: string,
+  capturedAt?: string
+): EbayListingSnapshotMeta {
+  const at = capturedAt || new Date().toISOString();
   const meta: EbayListingSnapshotMeta = {
-    capturedAt,
+    capturedAt: at,
     count: entries.length,
     sellerUsername,
   };
@@ -155,6 +169,9 @@ export function recordEbayListingCheck(
     stillActiveCount: stillActive.length,
     disappeared,
     appeared: appeared.map((l) => listingToSnapshotEntry(l, checkedAt)),
+    previousEntries: previous.entries,
+    currentEntries: listings.map((l) => listingToSnapshotEntry(l, checkedAt)),
+    checkKind: 'manual',
   };
 
   appendEbayListingSnapshotHistory(checkRecord);
@@ -167,4 +184,65 @@ export function recordEbayListingCheck(
     checkRecord,
     meta,
   };
+}
+
+/** Record a reconciliation check (reconstructed baseline vs current live store). */
+export function recordInventoryReconciliationCheck(
+  reconciliation: {
+    previousEntries: EbayListingSnapshotEntry[];
+    currentEntries: EbayListingSnapshotEntry[];
+    disappeared: EbayListingSnapshotEntry[];
+    previousCount: number;
+    currentCount: number;
+    planMatches: number;
+  },
+  sellerUsername?: string
+): EbayListingSnapshotCheckRecord {
+  const checkedAt = new Date().toISOString();
+  const checkId = `reconcile-${Date.now()}`;
+
+  const currentIds = new Set(reconciliation.currentEntries.map((e) => e.listingId));
+  const previousIds = new Set(reconciliation.previousEntries.map((e) => e.listingId));
+  const appeared = reconciliation.currentEntries.filter((e) => !previousIds.has(e.listingId));
+
+  const checkRecord: EbayListingSnapshotCheckRecord = {
+    checkId,
+    checkedAt,
+    sellerUsername,
+    previousCapturedAt: checkedAt,
+    previousCount: reconciliation.previousCount,
+    currentCount: reconciliation.currentCount,
+    disappearedCount: reconciliation.disappeared.length,
+    appearedCount: appeared.length,
+    stillActiveCount: reconciliation.currentEntries.filter((e) => previousIds.has(e.listingId)).length,
+    disappeared: reconciliation.disappeared,
+    appeared,
+    previousEntries: reconciliation.previousEntries,
+    currentEntries: reconciliation.currentEntries,
+    checkKind: 'reconcile',
+  };
+
+  appendEbayListingSnapshotHistory(checkRecord);
+
+  // Baseline = what's live on eBay right now (e.g. 40 listings).
+  saveEbayListingSnapshotEntries(reconciliation.currentEntries, sellerUsername, checkedAt);
+
+  return checkRecord;
+}
+
+/** Restore a prior snapshot from history as the comparison baseline (e.g. 42 listings). */
+export function restoreBaselineFromHistory(checkId: string): boolean {
+  const record = loadEbayListingSnapshotHistory().find((r) => r.checkId === checkId);
+  const entries = record?.previousEntries;
+  if (!entries?.length) return false;
+  saveEbayListingSnapshotEntries(entries, record.sellerUsername, record.previousCapturedAt || record.checkedAt);
+  return true;
+}
+
+/** Compare a stored entry set to a fresh live fetch without saving. */
+export function diffSnapshotEntriesToLive(
+  previousEntries: EbayListingSnapshotEntry[],
+  currentListings: EbayMyListing[]
+): ReturnType<typeof compareEbayListingSnapshots> {
+  return compareEbayListingSnapshots(previousEntries, currentListings);
 }

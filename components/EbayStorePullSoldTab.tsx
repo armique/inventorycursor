@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronUp,
   History,
+  Link2,
   Loader2,
   RefreshCw,
   ShoppingBag,
@@ -22,9 +23,12 @@ import {
 } from '../services/ebayListingReminder';
 import { fetchMyEbayListings, getEbayUsername } from '../services/ebayService';
 import {
+  diffSnapshotEntriesToLive,
   loadEbayListingSnapshot,
   loadEbayListingSnapshotHistory,
   recordEbayListingCheck,
+  recordInventoryReconciliationCheck,
+  restoreBaselineFromHistory,
   saveEbayListingSnapshot,
   type EbayListingSnapshotCheckRecord,
   type EbayListingSnapshotEntry,
@@ -34,6 +38,7 @@ import {
   defaultSellPriceForDetection,
   type EbaySoldDetectionMatch,
 } from '../utils/ebaySoldDetectionPlan';
+import { buildInventoryEbayReconciliation } from '../utils/ebayInventoryReconciliation';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 import { computeItemProfitBeforeOverhead } from '../services/financialAggregation';
 import type { ParsedEbayOrderScreenshot } from '../services/ebayOrderScreenshotAI';
@@ -128,6 +133,30 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
     setCheckHistory(loadEbayListingSnapshotHistory());
   }, []);
 
+  const applyDetectionResults = useCallback(
+    (
+      plan: ReturnType<typeof buildEbaySoldDetectionPlan>,
+      disappeared: EbayListingSnapshotEntry[],
+      previousAt: string,
+      checkId: string
+    ) => {
+      const pending = soldDetectionPlanToPending(plan, disappeared, previousAt, checkId);
+      savePendingReminder(pending);
+      setMatches(plan.matches);
+      setUnmatched(plan.unmatchedDisappeared);
+      setSnapshotMeta({
+        previousAt,
+        disappeared: disappeared.length,
+      });
+      const initial: Record<string, SoldRowState> = {};
+      for (const match of plan.matches) {
+        initial[rowKey(match)] = defaultSoldRowState(match);
+      }
+      setRowState(initial);
+    },
+    []
+  );
+
   useEffect(() => {
     const restored = applyPendingDetectionToState(
       items,
@@ -208,25 +237,134 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
       );
       savePendingReminder(pending);
 
-      setMatches(plan.matches);
-      setUnmatched(plan.unmatchedDisappeared);
-      setSnapshotMeta({
-        previousAt: check.previous!.meta.capturedAt,
-        disappeared: check.disappeared.length,
-      });
-
-      const initial: Record<string, SoldRowState> = {};
-      for (const match of plan.matches) {
-        initial[rowKey(match)] = defaultSoldRowState(match);
-      }
-      setRowState(initial);
+      applyDetectionResults(
+        plan,
+        check.disappeared,
+        check.previous!.meta.capturedAt,
+        check.checkRecord!.checkId
+      );
     } catch (e: unknown) {
       setError((e as Error)?.message || 'Failed to check eBay listings.');
     } finally {
       setLoading(false);
       setTimeout(() => setProgress(null), 900);
     }
-  }, [items, refreshHistory]);
+  }, [items, refreshHistory, applyDetectionResults]);
+
+  const reconcileWithInventory = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    setInfo(null);
+    setApplyMessage(null);
+    setMatches([]);
+    setUnmatched([]);
+    setSnapshotMeta(null);
+    setRowState({});
+    setProgress({ label: 'Fetching live eBay listings…', done: 0, total: 3 });
+
+    try {
+      const listings = await fetchMyEbayListings();
+      setProgress({
+        label: 'Fetching live eBay listings…',
+        done: 1,
+        total: 3,
+        detail: `${listings.length} active`,
+      });
+
+      setProgress({ label: 'Matching inventory to live store…', done: 2, total: 3 });
+      const recon = buildInventoryEbayReconciliation(items, listings);
+
+      const checkRecord = recordInventoryReconciliationCheck(
+        {
+          previousEntries: recon.previousEntries,
+          currentEntries: recon.currentEntries,
+          disappeared: recon.disappeared,
+          previousCount: recon.previousCount,
+          currentCount: recon.currentCount,
+          planMatches: recon.plan.matches.length,
+        },
+        getEbayUsername()
+      );
+      refreshHistory();
+
+      setProgress({
+        label: 'Reconciliation complete',
+        done: 3,
+        total: 3,
+        detail:
+          recon.disappeared.length > 0
+            ? `${recon.previousCount} → ${recon.currentCount}`
+            : 'no gaps',
+      });
+
+      if (!recon.disappeared.length) {
+        setInfo(
+          `Live store has ${listings.length} listings. Every inventory item with an eBay link still appears active. If you expected sales, link items in Sync first (ebayListingId / storefront price).`
+        );
+        return;
+      }
+
+      applyDetectionResults(recon.plan, recon.disappeared, checkRecord.checkedAt, checkRecord.checkId);
+      setInfo(
+        `Reconstructed store change ${recon.previousCount} → ${recon.currentCount}: ${recon.disappeared.length} listing${recon.disappeared.length === 1 ? '' : 's'} ended and matched to inventory. History log saved.`
+      );
+    } catch (e: unknown) {
+      setError((e as Error)?.message || 'Failed to reconcile with inventory.');
+    } finally {
+      setLoading(false);
+      setTimeout(() => setProgress(null), 900);
+    }
+  }, [items, refreshHistory, applyDetectionResults]);
+
+  const replayHistoryComparison = useCallback(
+    async (record: EbayListingSnapshotCheckRecord) => {
+      if (!record.previousEntries?.length) {
+        setError('This history entry has no saved baseline to compare.');
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+      setInfo(null);
+      setApplyMessage(null);
+      setProgress({ label: 'Fetching live eBay listings…', done: 0, total: 3 });
+
+      try {
+        const listings = await fetchMyEbayListings();
+        setProgress({ label: 'Comparing to history baseline…', done: 2, total: 3 });
+        const { disappeared } = diffSnapshotEntriesToLive(record.previousEntries, listings);
+        const plan = buildEbaySoldDetectionPlan(items, disappeared);
+
+        applyDetectionResults(
+          plan,
+          disappeared,
+          record.previousCapturedAt || record.checkedAt,
+          record.checkId
+        );
+
+        setProgress({ label: 'Comparison complete', done: 3, total: 3 });
+        setInfo(
+          `Compared history baseline (${record.previousCount} listings) to ${listings.length} live — ${disappeared.length} ended.`
+        );
+      } catch (e: unknown) {
+        setError((e as Error)?.message || 'Failed to replay history comparison.');
+      } finally {
+        setLoading(false);
+        setTimeout(() => setProgress(null), 900);
+      }
+    },
+    [items, applyDetectionResults]
+  );
+
+  const handleRestoreBaseline = (checkId: string) => {
+    const ok = restoreBaselineFromHistory(checkId);
+    if (ok) {
+      setInfo('Baseline restored from history. Run “Check for sold listings” to compare against live eBay.');
+      setError(null);
+    } else {
+      setError('Could not restore baseline — this history entry has no full snapshot saved.');
+    }
+  };
 
   const updateRow = (key: string, patch: Partial<SoldRowState>) => {
     setRowState((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
@@ -387,6 +525,13 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
           and order-screenshot parsing as the inventory sale dialog. Every check is saved to snapshot
           history so you can review past diffs even after the baseline updates.
         </p>
+        <p className="text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
+          <strong className="text-slate-700">Missing an old 42→40 diff?</strong> Use{' '}
+          <span className="font-bold text-violet-700">Reconcile with inventory</span> — it fetches your{' '}
+          {previousSnapshot ? `${previousSnapshot.meta.count} saved / ` : ''}
+          live listings, rebuilds what left the store from inventory links (e.g. RAM bundle + laptop), and
+          logs the change in history.
+        </p>
         {previousSnapshot && (
           <p className="text-[11px] text-slate-500">
             Last snapshot: {new Date(previousSnapshot.meta.capturedAt).toLocaleString()} ·{' '}
@@ -402,6 +547,15 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
           >
             {loading ? <Loader2 size={16} className="animate-spin" /> : <TrendingDown size={16} />}
             {loading ? 'Checking…' : 'Check for sold listings'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void reconcileWithInventory()}
+            disabled={loading || applying}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 text-white text-xs font-black uppercase tracking-widest hover:bg-violet-700 disabled:opacity-50"
+          >
+            {loading ? <Loader2 size={16} className="animate-spin" /> : <Link2 size={16} />}
+            Reconcile with inventory
           </button>
           <button
             type="button"
@@ -630,6 +784,11 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
                     <span className="text-slate-500">
                       {record.previousCount} → {record.currentCount} listings
                     </span>
+                    {record.checkKind === 'reconcile' && (
+                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-100">
+                        Reconcile
+                      </span>
+                    )}
                     {record.disappearedCount > 0 && (
                       <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-100">
                         −{record.disappearedCount} ended
@@ -650,6 +809,28 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
                       ))}
                     </ul>
                   )}
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {record.previousEntries && record.previousEntries.length > 0 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void replayHistoryComparison(record)}
+                          disabled={loading || applying}
+                          className="text-[9px] font-black uppercase px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          Compare again
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRestoreBaseline(record.checkId)}
+                          disabled={loading || applying}
+                          className="text-[9px] font-black uppercase px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          Restore {record.previousCount}-item baseline
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               ))
             )}
