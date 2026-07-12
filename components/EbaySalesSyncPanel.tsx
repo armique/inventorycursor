@@ -20,8 +20,8 @@ import {
   type OrderLinkSuggestionKind,
 } from '../utils/ebayOrderLinkAnalysis';
 import { formatEUR } from '../utils/formatMoney';
-import ItemLink from './ItemLink';
 import EbayToolProgressBar from './EbayToolProgressBar';
+import EbaySalesMatchReviewModal from './EbaySalesMatchReviewModal';
 
 interface Props {
   items: InventoryItem[];
@@ -63,6 +63,7 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fetchProgress, setFetchProgress] = useState<BackfillProgress | null>(null);
+  const [reviewRow, setReviewRow] = useState<OrderLinkSuggestion | null>(null);
   const cancelRef = useRef<{ cancelled: boolean }>({ cancelled: false });
   const autoRanRef = useRef(false);
 
@@ -74,6 +75,7 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
       for (const s of result.suggestions) nextSelected[s.id] = true;
       setSelected(nextSelected);
       setDismissed(new Set());
+      setReviewRow(null);
       const parts: string[] = [];
       if (result.stats.markSoldCandidates) parts.push(`${result.stats.markSoldCandidates} to mark sold`);
       if (result.stats.linkCandidates) parts.push(`${result.stats.linkCandidates} to link`);
@@ -187,6 +189,7 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
       setMessage(
         `Applied ${rows.length} row(s)${marked ? ` — ${marked} marked sold` : ''}${adjusted ? ` — ${adjusted} adjustment(s) documented` : ''}. Original sell price preserved for audit.`
       );
+      setReviewRow(null);
     } catch (e: unknown) {
       setError((e as Error)?.message || 'Apply failed.');
     } finally {
@@ -334,6 +337,9 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
 
       {visible.length > 0 && (
         <div className="space-y-2 max-h-[min(560px,58vh)] overflow-y-auto pr-1">
+          <p className="text-[11px] text-slate-500 px-1">
+            Click an item name, order ID, or <span className="font-bold text-indigo-700">Review match</span> to compare inventory vs eBay order before applying.
+          </p>
           {visible.map((row) => {
             const { item, match, kind } = row;
             const { order, lineItem, matchKind } = match;
@@ -371,14 +377,23 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
                         {row.adjustmentReason}
                       </p>
                     )}
-                    <ItemLink
-                      item={item}
-                      itemName={item.name}
-                      className="text-sm font-black text-slate-900 hover:text-indigo-600 hover:underline truncate block"
-                    />
+                    <button
+                      type="button"
+                      onClick={() => setReviewRow(row)}
+                      className="text-sm font-black text-slate-900 hover:text-indigo-600 text-left truncate block max-w-full"
+                    >
+                      {item.name}
+                    </button>
                     <p className="text-[11px] text-slate-500 line-clamp-2">{lineItem.title}</p>
                     <p className="text-[11px] text-slate-500">
-                      Order <span className="font-bold text-slate-700">{order.orderId}</span>
+                      Order{' '}
+                      <button
+                        type="button"
+                        onClick={() => setReviewRow(row)}
+                        className="font-bold text-indigo-700 hover:underline"
+                      >
+                        {order.orderId}
+                      </button>
                       {order.creationDate ? ` · ${order.creationDate}` : ''}
                       {item.sellDate ? ` · sold ${item.sellDate}` : ''}
                     </p>
@@ -413,6 +428,13 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
                 <div className="flex flex-wrap items-center gap-2 pl-7">
                   <button
                     type="button"
+                    onClick={() => setReviewRow(row)}
+                    className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-[10px] font-black uppercase hover:bg-indigo-700"
+                  >
+                    Review match
+                  </button>
+                  <button
+                    type="button"
                     disabled={applying}
                     onClick={() => void applySuggestions([row])}
                     className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[10px] font-black uppercase hover:bg-emerald-700 disabled:opacity-50"
@@ -441,6 +463,16 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
 
       {suggestions.length > 0 && visible.length === 0 && (
         <p className="text-sm text-slate-500 text-center py-6">All suggestions dismissed. Run sync again anytime.</p>
+      )}
+
+      {reviewRow && (
+        <EbaySalesMatchReviewModal
+          row={reviewRow}
+          applying={applying}
+          onClose={() => setReviewRow(null)}
+          onApply={(r) => void applySuggestions([r])}
+          onDismiss={(r) => setDismissed((prev) => new Set(prev).add(r.id))}
+        />
       )}
     </div>
   );
