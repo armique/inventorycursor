@@ -49,6 +49,8 @@ import {
   isContainerMember,
   resolveParentContainer,
 } from '../utils/containerMembership';
+import { resolveTradeReceivedItems, resolveTradeSourceItem } from '../utils/tradeLinks';
+import TradeLinkBadge from './TradeLinkBadge';
 
 interface Props {
   items: InventoryItem[];
@@ -1554,6 +1556,28 @@ const InventoryList: React.FC<Props> = ({
     []
   );
 
+  const focusTradeLinkedItem = useCallback((target: InventoryItem) => {
+    setSearchTerm('');
+    setSpecFilters({});
+    setSpecRangeFilters({});
+    setTimeFilter('ALL');
+    setCategoryFilter('ALL');
+    setSubCategoryFilter('');
+    setShowInComposition(true);
+    if (isRealizedDisposal(target)) {
+      setStatusFilter('SOLD');
+    } else if (target.isDraft) {
+      setStatusFilter('DRAFTS');
+    } else {
+      setStatusFilter('ACTIVE');
+    }
+    setScrollTargetItemId(target.id);
+  }, []);
+
+  const openTradeLinkedItem = useCallback((target: InventoryItem) => {
+    setItemToEdit(target);
+  }, []);
+
   const handleParseSingleItem = useCallback(async (item: InventoryItem) => {
     setParsingSingleId(item.id);
     try {
@@ -1931,6 +1955,8 @@ const InventoryList: React.FC<Props> = ({
         const parentContainer = resolveParentContainer(item, containersById, containerByChildId);
         const parentKind = getContainerKind(parentContainer);
         const showMembershipBadge = Boolean(parentKind && parentContainer && !item.isPC && !item.isBundle);
+        const tradeReceived = resolveTradeReceivedItems(item, itemsById);
+        const tradeSource = resolveTradeSourceItem(item, itemsById);
         const userPhotoCount = getItemUserPhotoCount(item);
         const hasUserPhotos = userPhotoCount > 0;
         return (
@@ -2107,6 +2133,26 @@ const InventoryList: React.FC<Props> = ({
                         />
                       </div>
                    )}
+                   {(tradeReceived.length > 0 || tradeSource) && (
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {tradeReceived.length > 0 && (
+                          <TradeLinkBadge
+                            variant="outgoing"
+                            receivedItems={tradeReceived}
+                            onLocateItem={focusTradeLinkedItem}
+                            onOpenItem={openTradeLinkedItem}
+                          />
+                        )}
+                        {tradeSource && (
+                          <TradeLinkBadge
+                            variant="incoming"
+                            sourceItem={tradeSource}
+                            onLocate={() => focusTradeLinkedItem(tradeSource)}
+                            onOpen={() => openTradeLinkedItem(tradeSource)}
+                          />
+                        )}
+                      </div>
+                   )}
                    {isExpanded && childItems.length > 0 && (
                       <div className="mt-3 ml-4 pl-4 border-l-2 border-slate-200 space-y-2">
                          <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Components:</p>
@@ -2201,6 +2247,14 @@ const InventoryList: React.FC<Props> = ({
           item.status === ItemStatus.IN_COMPOSITION
             ? 'In\u00A0Composition' // non-breaking space to keep on one line
             : item.status;
+        const tradeReceivedForStatus = resolveTradeReceivedItems(item, itemsById);
+        const tradeSourceForStatus = resolveTradeSourceItem(item, itemsById);
+        const statusTitle =
+          item.status === ItemStatus.TRADED && tradeReceivedForStatus.length > 0
+            ? `Traded for: ${tradeReceivedForStatus.map((i) => i.name).join(', ')} — double click to change status`
+            : tradeSourceForStatus
+              ? `From trade: ${tradeSourceForStatus.name} — double click to change status`
+              : 'Double click to change status';
         return (
           <td 
              key={id} 
@@ -2231,9 +2285,15 @@ const InventoryList: React.FC<Props> = ({
                       item.status === ItemStatus.IN_COMPOSITION ? 'bg-blue-100 text-blue-700' :
                       'bg-slate-100 text-slate-600'
                    }`}
-                   title="Double click to change status"
+                   title={statusTitle}
                 >
-                  {statusLabel}
+                  {item.status === ItemStatus.TRADED && tradeReceivedForStatus.length > 0 && (
+                    <span className="inline-flex items-center gap-1">
+                      <ArrowRightLeft size={10} className="opacity-80" />
+                      {statusLabel}
+                    </span>
+                  )}
+                  {(item.status !== ItemStatus.TRADED || tradeReceivedForStatus.length === 0) && statusLabel}
                 </span>
              )}
           </td>
@@ -3427,6 +3487,8 @@ const InventoryList: React.FC<Props> = ({
               const parentContainer = resolveParentContainer(item, containersById, containerByChildId);
               const parentKind = getContainerKind(parentContainer);
               const showMembershipBadge = Boolean(parentKind && parentContainer && !item.isPC && !item.isBundle);
+              const tradeReceived = resolveTradeReceivedItems(item, itemsById);
+              const tradeSource = resolveTradeSourceItem(item, itemsById);
               return (
               <div key={item.id} className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm space-y-3">
                 <div className="flex gap-3 items-start">
@@ -3474,6 +3536,26 @@ const InventoryList: React.FC<Props> = ({
                           onOpen={() => openParentContainer(parentContainer)}
                           onLocate={() => focusContainerInList(parentContainer)}
                         />
+                      </div>
+                    )}
+                    {(tradeReceived.length > 0 || tradeSource) && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {tradeReceived.length > 0 && (
+                          <TradeLinkBadge
+                            variant="outgoing"
+                            receivedItems={tradeReceived}
+                            onLocateItem={focusTradeLinkedItem}
+                            onOpenItem={openTradeLinkedItem}
+                          />
+                        )}
+                        {tradeSource && (
+                          <TradeLinkBadge
+                            variant="incoming"
+                            sourceItem={tradeSource}
+                            onLocate={() => focusTradeLinkedItem(tradeSource)}
+                            onOpen={() => openTradeLinkedItem(tradeSource)}
+                          />
+                        )}
                       </div>
                     )}
                     {isContainerMember(item) && !showMembershipBadge && (
@@ -3632,6 +3714,11 @@ const InventoryList: React.FC<Props> = ({
             parentContainer={resolveParentContainer(itemToEdit, containersById, containerByChildId)}
             onOpenParentContainer={openParentContainer}
             onLocateParentContainer={focusContainerInList}
+            onLocateTradeItem={(target) => {
+              setItemToEdit(null);
+              focusTradeLinkedItem(target);
+            }}
+            onOpenTradeItem={openTradeLinkedItem}
          />
       )}
 
@@ -4172,6 +4259,9 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
         (item.customer?.name || item.giftRecipient || item.ebayUsername || item.ebayOrderId)
       ) {
         h += 16;
+      }
+      if ((item.tradedForIds?.length ?? 0) > 0 || item.tradedFromId) {
+        h += 22;
       }
       if (item.parentContainerId || item.status === ItemStatus.IN_COMPOSITION) h += 22;
       return h;
