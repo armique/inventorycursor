@@ -17,7 +17,9 @@ import {
   RefreshCcw,
   Scale,
   Sparkles,
-  Loader2
+  Loader2,
+  AlertTriangle,
+  Lightbulb
 } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
@@ -67,10 +69,14 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
   const [parseProgress, setParseProgress] = useState<string | null>(null);
   const [parsingRowId, setParsingRowId] = useState<string | null>(null);
   /** Total value you attribute to your outgoing item in this deal (basis for remainder → incoming cost). */
-  const [dealValue, setDealValue] = useState<number>(() =>
-    item.sellPrice != null && !Number.isNaN(Number(item.sellPrice)) ? Number(item.sellPrice) : 0
-  );
-  const [splitMode, setSplitMode] = useState<TradeSplitMode>('manual');
+  const [dealValue, setDealValue] = useState<number>(() => {
+    const sell = Number(item.sellPrice);
+    if (Number.isFinite(sell) && sell > 0) return sell;
+    const buy = Number(item.buyPrice);
+    if (Number.isFinite(buy) && buy > 0) return buy;
+    return 0;
+  });
+  const [splitMode, setSplitMode] = useState<TradeSplitMode>('equal');
   
   // Search State
   const [searchQuery, setSearchQuery] = useState('');
@@ -218,6 +224,46 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
     incomingItems.length > 0 &&
     Math.abs(totalIncomingValue + netCash - dealValue) > 0.02;
 
+  const incomingWithZeroValue = incomingItems.filter((i) => i.estimatedValue <= 0);
+  const manualValuesMissing =
+    splitMode === 'manual' && incomingItems.length > 0 && incomingWithZeroValue.length > 0;
+  const dealValueMissing = splitMode !== 'manual' && incomingItems.length > 0 && dealValue <= 0;
+  const zeroTradeTotal =
+    incomingItems.length > 0 && totalTradeValue <= 0 && cashAmount === 0;
+  const projectedLossFromZero = zeroTradeTotal && Number(item.buyPrice) > 0;
+  const equalSplitSuggestion =
+    incomingItems.length >= 2 && dealValue > 0
+      ? allocateRemainderEuros(
+          Math.max(0, remainderForItems),
+          incomingItems.map((i) => ({
+            id: i.id,
+            name: i.name,
+            category: i.category,
+            hardwareDbType: i.hardwareDbType,
+            specs: i.specs,
+          })),
+          'equal'
+        )
+      : null;
+
+  const applyEqualSplitFromDeal = () => {
+    if (dealValue <= 0) {
+      alert('Set "Your item deal value" first — usually what your outgoing item is worth in this trade (often your original cost for an even swap).');
+      return;
+    }
+    setSplitMode('equal');
+  };
+
+  const applySuggestedEvenSplit = () => {
+    const basis = dealValue > 0 ? dealValue : Number(item.buyPrice) || 0;
+    if (basis <= 0) {
+      alert('Set a deal value or ensure your outgoing item has a buy price.');
+      return;
+    }
+    setDealValue(basis);
+    setSplitMode('equal');
+  };
+
   const handleConfirmTrade = async () => {
     if (incomingItems.length === 0 && cashAmount === 0) {
       alert("Please add at least one item or cash to the trade.");
@@ -237,6 +283,33 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
         alert('Incoming item values and cash do not match deal value. Adjust deal value or switch to manual.');
         return;
       }
+    } else if (incomingItems.length > 0) {
+      if (totalTradeValue <= 0) {
+        alert(
+          'Incoming items have no value — your outgoing item would be recorded as €0 trade value and show a large loss on the dashboard.\n\n' +
+            'Either enter a value on each incoming item, or set "Your item deal value" and use "Split remainder equally".'
+        );
+        return;
+      }
+      if (incomingWithZeroValue.length > 0) {
+        alert(
+          `${incomingWithZeroValue.length} incoming item(s) still have €0 value. Fill every "Val" field or switch to equal/smart split.`
+        );
+        return;
+      }
+    }
+
+    if (totalTradeValue <= 0 && cashAmount === 0 && incomingItems.length > 0) {
+      alert('Total trade value is €0 — set deal value and split incoming items before confirming.');
+      return;
+    }
+
+    if (projectedProfit < -50 && totalTradeValue < Number(item.buyPrice) * 0.25) {
+      const ok = window.confirm(
+        `This trade records your outgoing item at only €${formatEUR(totalTradeValue)} (you paid €${formatEUR(Number(item.buyPrice))}). ` +
+          `Dashboard profit will drop by about €${formatEUR(Number(item.buyPrice) - totalTradeValue)}.\n\nContinue anyway?`
+      );
+      if (!ok) return;
     }
 
     let drafts: IncomingItemDraft[] = incomingItems.map((d) => ({ ...d }));
@@ -330,7 +403,67 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
           </button>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-8 lg:p-10">
+        <div className="px-8 lg:px-10 pt-6 space-y-3 shrink-0">
+          <div className="rounded-2xl border border-violet-100 bg-violet-50/70 p-4 flex gap-3">
+            <Lightbulb size={18} className="text-violet-600 shrink-0 mt-0.5" />
+            <div className="text-[11px] text-violet-950 leading-relaxed space-y-1">
+              <p className="font-black uppercase text-[10px] tracking-wide text-violet-700">How trades hit your dashboard</p>
+              <p>
+                Your outgoing item is booked like a <strong>sale</strong> at <strong>total trade value</strong> (incoming
+                values + cash). Profit = that value − what you paid. Incoming items get those values as their{' '}
+                <strong>buy price</strong> — editing buy price later does <strong>not</strong> fix the outgoing trade line.
+              </p>
+              <p>
+                <strong>Recommended:</strong> set deal value (often your original cost for an even swap), add incoming
+                items, keep <strong>Split remainder equally</strong> — values fill in automatically.
+              </p>
+            </div>
+          </div>
+
+          {(projectedLossFromZero || manualValuesMissing || dealValueMissing) && (
+            <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 flex gap-3">
+              <AlertTriangle size={20} className="text-amber-600 shrink-0" />
+              <div className="text-xs text-amber-950 space-y-2">
+                {projectedLossFromZero && (
+                  <p className="font-bold">
+                    Total trade value is €0 — confirming would record a{' '}
+                    <span className="text-red-700">€{formatEUR(Number(item.buyPrice))} loss</span> on this item in
+                    dashboard profit.
+                  </p>
+                )}
+                {manualValuesMissing && (
+                  <p>Manual mode: {incomingWithZeroValue.length} incoming item(s) still at €0.</p>
+                )}
+                {dealValueMissing && (
+                  <p>Set &quot;Your item deal value&quot; on the left (e.g. €{formatEUR(Number(item.buyPrice))} for an even swap).</p>
+                )}
+                {incomingItems.length >= 2 && dealValue > 0 && equalSplitSuggestion && (
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <span className="text-[10px] font-bold text-amber-800">Suggested split:</span>
+                    {incomingItems.map((inc, idx) => (
+                      <span
+                        key={inc.id}
+                        className="text-[10px] font-black bg-white border border-amber-200 rounded-lg px-2 py-1"
+                      >
+                        {inc.name.slice(0, 24)}
+                        {inc.name.length > 24 ? '…' : ''} → €{formatEUR(equalSplitSuggestion[idx] ?? 0)}
+                      </span>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={applySuggestedEvenSplit}
+                      className="text-[10px] font-black uppercase tracking-wide px-3 py-1.5 rounded-lg bg-amber-600 text-white hover:bg-amber-700"
+                    >
+                      Apply equal split
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-8 lg:p-10 pt-4">
           <div className="flex flex-col lg:flex-row gap-8 items-stretch h-full">
             
             {/* LEFT: OUTGOING */}
@@ -361,9 +494,20 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
                     placeholder="e.g. agreed value / list price"
                   />
                   <p className="text-[9px] text-slate-500 font-medium leading-snug ml-2">
-                    For cash + parts trades: set this to what your outgoing item is worth in the deal. Incoming parts get the remainder after cash (
-                    <span className="font-black text-slate-700">€{formatEUR(Math.max(0, remainderForItems))}</span> to split) when using Equal or Smart split.
+                    For cash + parts trades: set this to what your outgoing item is worth in the deal. Defaults to your
+                    list/sell price or original cost. Incoming parts get the remainder after cash (
+                    <span className="font-black text-slate-700">€{formatEUR(Math.max(0, remainderForItems))}</span> to
+                    split) when using Equal or Smart split.
                   </p>
+                  {incomingItems.length >= 2 && dealValue > 0 && splitMode === 'manual' && (
+                    <button
+                      type="button"
+                      onClick={applyEqualSplitFromDeal}
+                      className="ml-2 mt-2 text-[10px] font-black uppercase tracking-wide text-violet-700 hover:text-violet-900"
+                    >
+                      → Split €{formatEUR(dealValue)} equally across {incomingItems.length} items
+                    </button>
+                  )}
                 </div>
 
                 <div className="space-y-4">
@@ -606,6 +750,11 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
                     {projectedProfit >= 0 ? <TrendingUp size={16}/> : <TrendingDown size={16}/>}
                     <span className="text-lg font-black">{projectedProfit >= 0 ? '+' : ''}€{formatEUR(projectedProfit)}</span>
                  </div>
+                 {projectedLossFromZero && (
+                   <p className="text-[9px] font-bold text-red-600 mt-1 max-w-[200px] leading-snug">
+                     Fix values before confirm — otherwise dashboard shows a large loss.
+                   </p>
+                 )}
               </div>
            </div>
            
