@@ -52,6 +52,17 @@ export function applyTradeRevert(
     }
   }
 
+  for (const id of toRemove) {
+    const rec = items.find((i) => i.id === id);
+    if (!rec) continue;
+    if (rec.status === ItemStatus.SOLD || rec.status === ItemStatus.TRADED) {
+      return {
+        ok: false,
+        message: `"${rec.name}" was already sold or traded in a later deal. Revert that trade first, then try again.`,
+      };
+    }
+  }
+
   let restored: InventoryItem = { ...outgoing };
   restored.status = ItemStatus.IN_STOCK;
   delete restored.sellPrice;

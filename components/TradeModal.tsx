@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
+import { resolveTradeIncomingCategory } from '../utils/itemCategoryDetect';
 import { searchAllHardware, HardwareMetadata } from '../services/hardwareDB';
 import { allocateRemainderEuros, TradeSplitMode } from '../services/tradeAllocation';
 import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
@@ -44,6 +45,7 @@ interface IncomingItemDraft {
   name: string;
   estimatedValue: number;
   category: string;
+  subCategory?: string;
   /** LOCAL_HARDWARE_INDEX category when picked from DB search. */
   hardwareDbType?: string;
   specs?: Record<string, string | number>;
@@ -95,19 +97,17 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
   }, [searchQuery]);
 
   const handleAddFromSearch = (res: HardwareMetadata) => {
-    // Map DB type to Category
-    let category = 'PC Components';
-    if (res.type) {
-       if (['GPU', 'CPU', 'Motherboard', 'RAM', 'Storage', 'PSU', 'Case', 'Cooling'].includes(res.type)) category = 'PC Components';
-       if (res.type === 'Laptop') category = 'Laptops';
-       if (['Smartphone', 'Tablet'].includes(res.type)) category = 'Gadgets';
-    }
+    const { category, subCategory } = resolveTradeIncomingCategory(`${res.vendor} ${res.model}`, {
+      hardwareDbType: res.type,
+      categories: HIERARCHY_CATEGORIES,
+    });
 
     setIncomingItems(prev => [...prev, {
       id: `new-${Date.now()}-${Math.random()}`,
       name: `${res.vendor} ${res.model}`,
       estimatedValue: 0,
-      category: category,
+      category,
+      subCategory,
       hardwareDbType: res.type,
       specs: res.specs ? { ...res.specs } : undefined,
       source: 'search'
@@ -126,6 +126,10 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
       name,
       estimatedValue: 0,
       category: newItemCategory,
+      subCategory: resolveTradeIncomingCategory(name, {
+        userCategory: newItemCategory,
+        categories: HIERARCHY_CATEGORIES,
+      }).subCategory,
       source: 'manual'
     }]);
 
@@ -267,20 +271,27 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
 
     const noteSuffix = tradeNote ? `\n\n[Trade Context]: ${tradeNote}` : '';
 
-    const newInventoryItems: InventoryItem[] = drafts.map((draft) => ({
-      id: `trade-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      name: draft.name,
-      buyPrice: draft.estimatedValue,
-      buyDate: tradeAcquiredAt,
-      category: draft.category,
-      subCategory: draft.category,
-      status: ItemStatus.IN_STOCK,
-      comment1: `Acquired via trade from: ${item.name} (Value: €${draft.estimatedValue})${noteSuffix}`,
-      comment2: '',
-      vendor: draft.parsedVendor || 'Trade',
-      tradedFromId: item.id,
-      ...(draft.specs && Object.keys(draft.specs).length > 0 ? { specs: draft.specs } : {})
-    }));
+    const newInventoryItems: InventoryItem[] = drafts.map((draft) => {
+      const { category, subCategory } = resolveTradeIncomingCategory(draft.name, {
+        hardwareDbType: draft.hardwareDbType,
+        userCategory: draft.category,
+        categories: HIERARCHY_CATEGORIES,
+      });
+      return {
+        id: `trade-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        name: draft.name,
+        buyPrice: draft.estimatedValue,
+        buyDate: tradeAcquiredAt,
+        category,
+        subCategory,
+        status: ItemStatus.IN_STOCK,
+        comment1: `Acquired via trade from: ${item.name} (Value: €${draft.estimatedValue})${noteSuffix}`,
+        comment2: '',
+        vendor: draft.parsedVendor || 'Trade',
+        tradedFromId: item.id,
+        ...(draft.specs && Object.keys(draft.specs).length > 0 ? { specs: draft.specs } : {}),
+      };
+    });
 
     const newIds = newInventoryItems.map((i) => i.id);
 

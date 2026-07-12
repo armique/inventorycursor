@@ -110,6 +110,48 @@ export function reconcileCategory(
   return { category: aiCategory, subCategory: aiSub };
 }
 
+/** Map hardware DB index keys + item name to canonical category/subCategory for trade imports. */
+const HARDWARE_DB_TYPE_TO_HIERARCHY: Record<string, { category: string; subCategory: string }> = {
+  Processors: { category: 'Components', subCategory: 'Processors' },
+  'Graphics Cards': { category: 'Components', subCategory: 'Graphics Cards' },
+  Motherboards: { category: 'Components', subCategory: 'Motherboards' },
+  RAM: { category: 'Components', subCategory: 'RAM' },
+  'Storage (SSD/HDD)': { category: 'Components', subCategory: 'Storage (SSD/HDD)' },
+  'Power Supplies': { category: 'Components', subCategory: 'Power Supplies' },
+  Cases: { category: 'Components', subCategory: 'Cases' },
+  Cooling: { category: 'Components', subCategory: 'Cooling' },
+  Laptops: { category: 'Laptops', subCategory: 'Gaming Laptop' },
+  Gadgets: { category: 'Gadgets', subCategory: 'Spare Parts' },
+};
+
+export function resolveTradeIncomingCategory(
+  name: string,
+  options?: {
+    hardwareDbType?: string;
+    userCategory?: string;
+    categories?: Record<string, string[]>;
+  }
+): { category: string; subCategory: string } {
+  const categories = options?.categories ?? {};
+  const keys = Object.keys(categories);
+  const hardwareDbType = options?.hardwareDbType?.trim();
+
+  if (hardwareDbType && HARDWARE_DB_TYPE_TO_HIERARCHY[hardwareDbType]) {
+    const mapped = HARDWARE_DB_TYPE_TO_HIERARCHY[hardwareDbType];
+    return {
+      category: normalizeCategory(mapped.category, keys.length ? keys : ['Components']),
+      subCategory: normalizeSubCategory(mapped.category, mapped.subCategory, categories),
+    };
+  }
+
+  const userCategory = options?.userCategory?.trim();
+  if (userCategory) {
+    return reconcileCategory(name, userCategory, undefined, categories);
+  }
+
+  return reconcileCategory(name, undefined, undefined, categories);
+}
+
 async function detectItemCategoryWithAI(
   name: string,
   categories: Record<string, string[]>

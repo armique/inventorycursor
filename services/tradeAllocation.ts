@@ -52,7 +52,7 @@ export function tradeItemSmartWeight(item: TradeAllocationItemInput): number {
   if (t === 'Monitors') return 38;
   if (['Gadgets', 'Smartphones', 'Tablets', 'Consoles'].includes(t)) return 44;
 
-  if (item.category === 'PC Components') {
+  if (item.category === 'Components' || item.category === 'PC Components') {
     if (/\bcpu\b|processor|ryzen|core\s*i/.test(name)) return tradeItemSmartWeight({ ...item, hardwareDbType: 'Processors' });
     if (/rtx|radeon|gtx|graphics|gpu|grafikkarte/.test(name)) return tradeItemSmartWeight({ ...item, hardwareDbType: 'Graphics Cards' });
   }
