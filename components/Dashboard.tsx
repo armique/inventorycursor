@@ -1418,7 +1418,6 @@ const Dashboard: React.FC<Props> = ({
                         dataKey="name" 
                         axisLine={false} 
                         tickLine={false} 
-                        tick={{ fill: '#64748b', fontSize: 12 }}
                         tick={(props: { x: number; y: number; payload?: { value?: string }; index?: number }) => {
                           const { x, y, payload, index } = props;
                           const point = typeof index === 'number' ? chartData[index] : chartData.find(d => d.name === payload?.value);
