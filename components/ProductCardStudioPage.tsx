@@ -11,7 +11,8 @@ import {
   Trash2,
   Upload,
   Wand2,
-  X,
+  FileJson,
+  FolderOpen,
 } from 'lucide-react';
 import type { InventoryItem } from '../types';
 import { getItemUserPhotoUrls, normalizeImageList, prepareInventoryImagesForStorage, filesToDataUrls } from '../utils/imageImport';
@@ -42,6 +43,16 @@ import {
   renderProductCardToCanvas,
 } from '../services/productCardRenderer';
 import { detectProductCardFamily } from '../utils/productCardContent';
+import ProductPhotoEnhancePanel from './ProductPhotoEnhancePanel';
+import {
+  loadBuiltinTemplatePack,
+  parseProductCardTemplateJson,
+  exportProductCardTemplateJson,
+} from '../utils/productCardTemplateImport';
+import {
+  deleteSavedProductCardTemplate,
+  loadSavedProductCardTemplates,
+} from '../services/productCardTemplates';
 
 interface Props {
   items: InventoryItem[];
@@ -49,7 +60,7 @@ interface Props {
   categoryFields?: Record<string, string[]>;
 }
 
-type StudioTab = 'create' | 'library';
+type StudioTab = 'create' | 'library' | 'templates';
 
 interface VariantPreview {
   key: string;
@@ -65,6 +76,10 @@ const ProductCardStudioPage: React.FC<Props> = ({ items, onUpdate, categoryField
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [photoUrl, setPhotoUrl] = useState('');
   const [uploadPreview, setUploadPreview] = useState<string | null>(null);
+  const [activePhoto, setActivePhoto] = useState('');
+  const [photoEnhanceMeta, setPhotoEnhanceMeta] = useState<{ provider: string; note?: string } | null>(null);
+  const [packTemplates, setPackTemplates] = useState<ProductCardTemplate[]>([]);
+  const [savedTemplates, setSavedTemplates] = useState<ProductCardTemplate[]>(() => loadSavedProductCardTemplates());
   const [selectedProviders, setSelectedProviders] = useState<AIProviderId[]>(() =>
     providers.slice(0, 3).map((p) => p.id)
   );
@@ -76,6 +91,9 @@ const ProductCardStudioPage: React.FC<Props> = ({ items, onUpdate, categoryField
   const [message, setMessage] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const importRef = useRef<HTMLInputElement>(null);
+
+  const rawPhotoSource = uploadPreview || photoUrl;
 
   const filteredItems = useMemo(() => {
     const q = search.trim();
@@ -93,7 +111,11 @@ const ProductCardStudioPage: React.FC<Props> = ({ items, onUpdate, categoryField
     [selectedItem]
   );
 
-  const activePhoto = uploadPreview || photoUrl;
+  const activePhotoResolved = activePhoto || rawPhotoSource;
+
+  useEffect(() => {
+    void loadBuiltinTemplatePack().then(setPackTemplates);
+  }, []);
 
   const categoryFieldsForItem = useMemo(() => {
     if (!selectedItem) return undefined;
@@ -108,22 +130,24 @@ const ProductCardStudioPage: React.FC<Props> = ({ items, onUpdate, categoryField
     const photos = getItemUserPhotoUrls(selectedItem);
     setPhotoUrl(photos[0] || '');
     setUploadPreview(null);
+    setActivePhoto('');
+    setPhotoEnhanceMeta(null);
     setActiveTemplate(suggestTemplateForItem(selectedItem));
     setVariants([]);
   }, [selectedItem?.id]);
 
   const renderPreview = useCallback(
     async (template: ProductCardTemplate): Promise<string | null> => {
-      if (!selectedItem || !activePhoto) return null;
+      if (!selectedItem || !activePhotoResolved) return null;
       const canvas = await renderProductCardToCanvas({
         item: selectedItem,
         template,
-        photoUrl: activePhoto,
+        photoUrl: activePhotoResolved,
         categoryFields: categoryFieldsForItem,
       });
       return canvas.toDataURL('image/jpeg', 0.82);
     },
-    [activePhoto, categoryFieldsForItem, selectedItem]
+    [activePhotoResolved, categoryFieldsForItem, selectedItem]
   );
 
   const handleGenerate = async () => {
@@ -155,7 +179,7 @@ const ProductCardStudioPage: React.FC<Props> = ({ items, onUpdate, categoryField
 
       for (let i = 0; i < results.length; i++) {
         const result = results[i];
-        if (result.error || !activePhoto) {
+        if (result.error || !activePhotoResolved) {
           setVariants((prev) =>
             prev.map((v, j) => (j === i ? { ...v, loading: false } : v))
           );
@@ -194,13 +218,13 @@ const ProductCardStudioPage: React.FC<Props> = ({ items, onUpdate, categoryField
   };
 
   const handleExport = async (template: ProductCardTemplate) => {
-    if (!selectedItem || !activePhoto) return;
+    if (!selectedItem || !activePhotoResolved) return;
     setExporting(true);
     try {
       const blob = await renderProductCardBlob({
         item: selectedItem,
         template,
-        photoUrl: activePhoto,
+        photoUrl: activePhotoResolved,
         categoryFields: categoryFieldsForItem,
       });
       const safe = selectedItem.name.replace(/[^a-zA-Z0-9äöüÄÖÜß\-]+/g, '-').slice(0, 40);
@@ -211,13 +235,13 @@ const ProductCardStudioPage: React.FC<Props> = ({ items, onUpdate, categoryField
   };
 
   const handleApplyToItem = async (template: ProductCardTemplate) => {
-    if (!selectedItem || !activePhoto) return;
+    if (!selectedItem || !activePhotoResolved) return;
     setExporting(true);
     try {
       const blob = await renderProductCardBlob({
         item: selectedItem,
         template,
-        photoUrl: activePhoto,
+        photoUrl: activePhotoResolved,
         categoryFields: categoryFieldsForItem,
       });
       const file = new File([blob], `card-${Date.now()}.jpg`, { type: 'image/jpeg' });
@@ -277,6 +301,13 @@ const ProductCardStudioPage: React.FC<Props> = ({ items, onUpdate, categoryField
               className={`px-4 py-2 rounded-lg text-xs font-black uppercase ${tab === 'library' ? 'bg-white text-slate-900' : 'text-white/80'}`}
             >
               Library ({library.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab('templates')}
+              className={`px-4 py-2 rounded-lg text-xs font-black uppercase ${tab === 'templates' ? 'bg-white text-slate-900' : 'text-white/80'}`}
+            >
+              Templates
             </button>
           </div>
         </div>
@@ -343,17 +374,30 @@ const ProductCardStudioPage: React.FC<Props> = ({ items, onUpdate, categoryField
                       <button
                         key={url}
                         type="button"
-                        onClick={() => { setPhotoUrl(url); setUploadPreview(null); }}
-                        className={`aspect-square rounded-lg overflow-hidden border-2 ${activePhoto === url ? 'border-indigo-600' : 'border-slate-200'}`}
+                        onClick={() => { setPhotoUrl(url); setUploadPreview(null); setActivePhoto(''); }}
+                        className={`aspect-square rounded-lg overflow-hidden border-2 ${rawPhotoSource === url ? 'border-indigo-600' : 'border-slate-200'}`}
                       >
                         <img src={url} alt="" className="w-full h-full object-cover" />
                       </button>
                     ))}
                   </div>
-                  <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => void filesToDataUrls(Array.from(e.target.files || [])).then((u) => u[0] && setUploadPreview(u[0]))} />
+                  <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => void filesToDataUrls(Array.from(e.target.files || [])).then((u) => { if (u[0]) { setUploadPreview(u[0]); setActivePhoto(''); } })} />
                   <button type="button" onClick={() => fileRef.current?.click()} className="w-full py-2 rounded-xl border border-dashed text-xs font-bold text-slate-600 flex items-center justify-center gap-1">
                     <Upload size={12} /> Upload
                   </button>
+                  {rawPhotoSource && (
+                    <ProductPhotoEnhancePanel
+                      sourceUrl={rawPhotoSource}
+                      onEnhanced={(url, meta) => {
+                        setActivePhoto(url);
+                        setPhotoEnhanceMeta(meta);
+                      }}
+                      className="mt-3"
+                    />
+                  )}
+                  {photoEnhanceMeta && (
+                    <p className="text-[10px] text-slate-500 mt-1">Using: {photoEnhanceMeta.provider}</p>
+                  )}
                 </section>
 
                 <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -450,13 +494,13 @@ const ProductCardStudioPage: React.FC<Props> = ({ items, onUpdate, categoryField
                   </article>
                 ))}
               </div>
-            ) : activeTemplate && activePhoto ? (
+            ) : activeTemplate && activePhotoResolved ? (
               <div className="rounded-2xl border border-slate-200 bg-white p-6">
                 <p className="text-xs font-black uppercase text-slate-500 mb-4">Manual preview · {activeTemplate.name}</p>
                 <ManualPreview
                   item={selectedItem}
                   template={activeTemplate}
-                  photoUrl={activePhoto}
+                  photoUrl={activePhotoResolved}
                   categoryFields={categoryFieldsForItem}
                 />
                 <div className="flex gap-2 mt-4">
@@ -471,7 +515,7 @@ const ProductCardStudioPage: React.FC<Props> = ({ items, onUpdate, categoryField
             )}
           </div>
         </div>
-      ) : (
+      ) : tab === 'library' ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
           {library.length === 0 ? (
             <p className="col-span-full text-center text-slate-500 py-16">No saved designs yet.</p>
@@ -509,6 +553,121 @@ const ProductCardStudioPage: React.FC<Props> = ({ items, onUpdate, categoryField
               </article>
             ))
           )}
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <section className="rounded-2xl border border-slate-200 bg-white p-5">
+            <h2 className="text-sm font-black text-slate-900 flex items-center gap-2 mb-2">
+              <FolderOpen size={16} /> Template packs (built-in)
+            </h2>
+            <p className="text-xs text-slate-500 mb-4">
+              Ready-made layouts you can reuse. No scraping from Canva/eBay — those templates are copyrighted. Import your own JSON or use these packs.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {packTemplates.map((t) => (
+                <div key={t.id} className="rounded-xl border border-slate-200 p-3 space-y-2">
+                  <div className="h-16 rounded-lg" style={{ background: `linear-gradient(135deg, ${t.theme.bgFrom}, ${t.theme.bgTo})` }} />
+                  <p className="text-xs font-bold text-slate-900">{t.name}</p>
+                  <p className="text-[10px] text-slate-500">{t.family} · {t.layout}</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      saveProductCardTemplate(t);
+                      setSavedTemplates(loadSavedProductCardTemplates());
+                      setMessage(`Saved „${t.name}" to your templates`);
+                    }}
+                    className="text-[10px] font-black uppercase text-indigo-600"
+                  >
+                    Save to my templates
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-5">
+            <h2 className="text-sm font-black text-slate-900 flex items-center gap-2 mb-2">
+              <FileJson size={16} /> Import / export JSON
+            </h2>
+            <p className="text-xs text-slate-500 mb-3">
+              Share templates as <code className="bg-slate-100 px-1 rounded">.json</code> files. Export from a saved design or create manually (see{' '}
+              <code className="bg-slate-100 px-1 rounded">public/product-card-templates/</code> for examples).
+            </p>
+            <input
+              ref={importRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = () => {
+                  try {
+                    const t = parseProductCardTemplateJson(String(reader.result));
+                    saveProductCardTemplate(t);
+                    setSavedTemplates(loadSavedProductCardTemplates());
+                    setMessage(`Imported „${t.name}"`);
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Invalid template JSON');
+                  }
+                };
+                reader.readAsText(file);
+                e.target.value = '';
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => importRef.current?.click()}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-black uppercase"
+            >
+              <Upload size={14} /> Import template JSON
+            </button>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-5">
+            <h2 className="text-sm font-black text-slate-900 mb-3">My saved templates</h2>
+            {savedTemplates.length === 0 ? (
+              <p className="text-sm text-slate-500">No custom templates yet — save from Create tab or import JSON.</p>
+            ) : (
+              <ul className="space-y-2">
+                {savedTemplates.map((t) => (
+                  <li key={t.id} className="flex items-center justify-between gap-2 rounded-xl border border-slate-100 px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold truncate">{t.name}</p>
+                      <p className="text-[10px] text-slate-500">{t.aiMeta?.provider || 'Manual'} · {t.family}</p>
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const json = exportProductCardTemplateJson(t);
+                          const blob = new Blob([json], { type: 'application/json' });
+                          const a = document.createElement('a');
+                          a.href = URL.createObjectURL(blob);
+                          a.download = `${t.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.json`;
+                          a.click();
+                        }}
+                        className="text-[10px] font-bold text-indigo-600 px-2 py-1"
+                      >
+                        Export
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          deleteSavedProductCardTemplate(t.id);
+                          setSavedTemplates(loadSavedProductCardTemplates());
+                        }}
+                        className="text-[10px] font-bold text-red-600 px-2 py-1"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         </div>
       )}
 

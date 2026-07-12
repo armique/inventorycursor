@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "name": "Kleinanzeigen — Clean White",
+  "family": "generic",
+  "layout": "hero-center",
+  "author": "DeInventory Pack",
+  "source": "builtin-pack",
+  "theme": {
+    "bgFrom": "#ffffff",
+    "bgTo": "#f1f5f9",
+    "accent": "#16a34a",
+    "accentSoft": "rgba(22, 163, 74, 0.12)",
+    "text": "#0f172a",
+    "textMuted": "#64748b",
+    "surface": "rgba(15, 23, 42, 0.04)",
+    "surfaceBorder": "rgba(15, 23, 42, 0.08)"
+  },
+  "usps": [
+    "Versand möglich",
+    "Privatverkauf",
+    "Sofort verfügbar",
+    "Originalverpackung"
+  ],
+  "tagline": "Seriös · Schnell · Fair",
+  "showPrice": true,
+  "showSpecs": true,
+  "maxSpecs": 4
+}

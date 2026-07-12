@@ -34,6 +34,7 @@ import {
   renderProductCardToCanvas,
 } from '../services/productCardRenderer';
 import { detectProductCardFamily } from '../utils/productCardContent';
+import ProductPhotoEnhancePanel from './ProductPhotoEnhancePanel';
 
 interface Props {
   item: InventoryItem;
@@ -53,6 +54,7 @@ const ProductCardGeneratorModal: React.FC<Props> = ({
   const [template, setTemplate] = useState<ProductCardTemplate>(() => suggestTemplateForItem(item));
   const [photoUrl, setPhotoUrl] = useState<string>(() => existingPhotos[0] || '');
   const [uploadPreview, setUploadPreview] = useState<string | null>(null);
+  const [enhancedPhoto, setEnhancedPhoto] = useState('');
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [rendering, setRendering] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -62,7 +64,8 @@ const ProductCardGeneratorModal: React.FC<Props> = ({
   const fileRef = useRef<HTMLInputElement>(null);
   const renderSeq = useRef(0);
 
-  const activePhoto = uploadPreview || photoUrl;
+  const rawPhoto = uploadPreview || photoUrl;
+  const activePhoto = enhancedPhoto || rawPhoto;
 
   const refreshPreview = useCallback(async () => {
     if (!activePhoto) {
@@ -110,6 +113,7 @@ const ProductCardGeneratorModal: React.FC<Props> = ({
       if (!urls[0]) return;
       setUploadPreview(urls[0]);
       setPhotoUrl('');
+      setEnhancedPhoto('');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Upload failed');
     }
@@ -341,9 +345,10 @@ const ProductCardGeneratorModal: React.FC<Props> = ({
                       onClick={() => {
                         setPhotoUrl(url);
                         setUploadPreview(null);
+                        setEnhancedPhoto('');
                       }}
                       className={`aspect-square rounded-xl overflow-hidden border-2 ${
-                        activePhoto === url ? 'border-indigo-600 ring-2 ring-indigo-200' : 'border-slate-200'
+                        rawPhoto === url ? 'border-indigo-600 ring-2 ring-indigo-200' : 'border-slate-200'
                       }`}
                     >
                       <img src={url} alt="" className="w-full h-full object-cover" />
@@ -368,6 +373,13 @@ const ProductCardGeneratorModal: React.FC<Props> = ({
               >
                 <Upload size={14} /> Upload photo
               </button>
+              {rawPhoto && (
+                <ProductPhotoEnhancePanel
+                  sourceUrl={rawPhoto}
+                  onEnhanced={(url) => setEnhancedPhoto(url)}
+                  className="mt-3"
+                />
+              )}
             </div>
 
             <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 text-[11px] text-slate-600 space-y-1">

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "name": "eBay — Bold Orange",
+  "family": "pc",
+  "layout": "hero-left",
+  "author": "DeInventory Pack",
+  "source": "builtin-pack",
+  "theme": {
+    "bgFrom": "#1a1a1a",
+    "bgTo": "#2d2d2d",
+    "accent": "#f59e0b",
+    "accentSoft": "rgba(245, 158, 11, 0.2)",
+    "text": "#fafafa",
+    "textMuted": "#a3a3a3",
+    "surface": "rgba(255, 255, 255, 0.05)",
+    "surfaceBorder": "rgba(245, 158, 11, 0.3)"
+  },
+  "usps": [
+    "Geprüfte Hardware",
+    "Schneller Versand",
+    "Versand aus DE",
+    "Top Zustand"
+  ],
+  "tagline": "Markenware · Geprüft · Versichert",
+  "showPrice": true,
+  "showSpecs": true,
+  "maxSpecs": 6
+}

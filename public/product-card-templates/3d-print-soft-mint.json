@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "name": "3D Print — Soft Mint Studio",
+  "family": "3d",
+  "layout": "hero-center",
+  "author": "DeInventory Pack",
+  "source": "builtin-pack",
+  "theme": {
+    "bgFrom": "#ecfdf5",
+    "bgTo": "#d1fae5",
+    "accent": "#059669",
+    "accentSoft": "rgba(5, 150, 105, 0.15)",
+    "text": "#064e3b",
+    "textMuted": "#047857",
+    "surface": "rgba(255, 255, 255, 0.65)",
+    "surfaceBorder": "rgba(5, 150, 105, 0.25)"
+  },
+  "usps": [
+    "3D gedruckt in Deutschland",
+    "2–3 Tage Lieferung",
+    "2 Farbauswahl",
+    "Premium PLA+ Filament"
+  ],
+  "tagline": "Handmade in Germany",
+  "showPrice": true,
+  "showSpecs": true,
+  "maxSpecs": 5
+}
