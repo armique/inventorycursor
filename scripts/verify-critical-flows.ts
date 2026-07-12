@@ -25,6 +25,7 @@ import { isRealizedDisposal, dispositionDate } from '../utils/itemDisposition';
 import { parseEbayOrderCsv } from '../services/ebayOrderCsvImport';
 import type { EbayOrderRecord } from '../services/ebayOrderIndex';
 import {
+  findSpoolByEbayLineKey,
   addFilamentSpool,
   getRemainingGrams,
   getUsedGrams,
@@ -429,6 +430,31 @@ function runFilamentStockTests(): void {
 
   const adjusted = setRemainingOverride(used.state, spool.id, 500, 'weighed');
   assert(getRemainingGrams(adjusted.spools[0]) === 500, 'manual remaining override');
+
+  let dupState: FilamentStockState = { spools: [], updatedAt: new Date().toISOString() };
+  dupState = addFilamentSpool(dupState, {
+    type: 'PLA',
+    color: 'Red',
+    pricePerKg: 18,
+    purchasedGrams: 1000,
+    source: 'ebay',
+    ebayLineKey: 'order-1-tx-1',
+  });
+  let dupBlocked = false;
+  try {
+    addFilamentSpool(dupState, {
+      type: 'PLA',
+      color: 'Red',
+      pricePerKg: 18,
+      purchasedGrams: 1000,
+      source: 'ebay',
+      ebayLineKey: 'order-1-tx-1',
+    });
+  } catch {
+    dupBlocked = true;
+  }
+  assert(dupBlocked, 'blocks duplicate ebay line spool');
+  assert(!!findSpoolByEbayLineKey('order-1-tx-1', dupState), 'find spool by ebay line');
 }
 
 function runFilamentExpenseTaxTests(): void {
@@ -441,6 +467,19 @@ function runFilamentExpenseTaxTests(): void {
   ];
   const summary = calculateTaxSummary([], expenses, year);
   assertClose(summary.expenses, 50, 'tax summary excludes filament stock from operating');
+
+  const printItem = baseItem({
+    id: 'print-1',
+    name: 'Bracket',
+    buyPrice: 2.5,
+    buyDate: '2026-04-01',
+    status: ItemStatus.IN_STOCK,
+    specs: { 'Production Method': '3D Printed', 'Filament Weight': '100g' },
+  });
+  const withPrint = calculateTaxSummary([printItem], expenses, year);
+  assertClose(withPrint.cogs, 2.5, 'print wareneingang from item buyPrice only');
+  assertClose(withPrint.expenses, 50, 'filament stock purchase still not operating');
+  assertClose(withPrint.netProfit, -52.5, 'no double filament hit in EÜR (cogs yes, stock expense no)');
 }
 
 console.log('DeInventory critical-flow verification\n');

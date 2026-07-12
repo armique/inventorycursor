@@ -301,22 +301,23 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
       },
     ];
 
-    if (selectedSpoolId) {
-      const stock = loadFilamentStock();
-      const { error } = recordFilamentUsage(stock, selectedSpoolId, totalGramsNeeded, {
-        kind: 'print',
-        inventoryItemId: uniqueId,
-        inventoryItemName: itemName.trim(),
-        note: `${quantity}× @ ${filamentWeight}g`,
-      });
-      if (error) {
-        setErrorMsg(error);
-        return;
-      }
-    }
-
     try {
       onSave(createdItems);
+
+      if (selectedSpoolId) {
+        const stock = loadFilamentStock();
+        const { error } = recordFilamentUsage(stock, selectedSpoolId, totalGramsNeeded, {
+          kind: 'print',
+          inventoryItemId: uniqueId,
+          inventoryItemName: itemName.trim(),
+          note: `${quantity}× @ ${filamentWeight}g`,
+        });
+        if (error) {
+          setErrorMsg(`Item saved but stock deduction failed: ${error}`);
+          return;
+        }
+      }
+
       setSuccessMsg(`Successfully created ${quantity} item(s) and added them to inventory!`);
       
       // Reset basic inputs but preserve calculator setup for next print

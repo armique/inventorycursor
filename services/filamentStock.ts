@@ -167,7 +167,15 @@ export interface AddSpoolInput {
   ebayLineKey?: string;
 }
 
+export function findSpoolByEbayLineKey(lineKey: string, state?: FilamentStockState): FilamentSpool | undefined {
+  const stock = state ?? loadFilamentStock();
+  return stock.spools.find((s) => s.ebayLineKey === lineKey);
+}
+
 export function addFilamentSpool(state: FilamentStockState, input: AddSpoolInput): FilamentStockState {
+  if (input.ebayLineKey && findSpoolByEbayLineKey(input.ebayLineKey, state)) {
+    throw new Error('A spool for this eBay purchase line already exists.');
+  }
   const spool: FilamentSpool = {
     id: `spool-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     type: input.type.trim(),

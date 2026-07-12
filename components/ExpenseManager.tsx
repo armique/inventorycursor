@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { Expense, ExpenseCategory, RecurringExpense } from '../types';
+import { sumInventoryStockExpenseAmount, sumOperatingExpenseAmount } from '../utils/expenseCategories';
 import { uploadExpenseAttachment } from '../services/firebaseService';
 import { VirtualList } from './VirtualList';
 
@@ -128,11 +129,12 @@ const ExpenseManager: React.FC<Props> = ({
   };
 
   const stats = useMemo(() => {
-    const total = expenses.reduce((sum, e) => sum + e.amount, 0);
-    const thisMonth = expenses
-      .filter(e => new Date(e.date).getMonth() === new Date().getMonth())
-      .reduce((sum, e) => sum + e.amount, 0);
-    return { total, thisMonth };
+    const total = sumOperatingExpenseAmount(expenses);
+    const stockTotal = sumInventoryStockExpenseAmount(expenses);
+    const thisMonth = sumOperatingExpenseAmount(
+      expenses.filter((e) => new Date(e.date).getMonth() === new Date().getMonth())
+    );
+    return { total, stockTotal, thisMonth };
   }, [expenses]);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -237,8 +239,13 @@ const ExpenseManager: React.FC<Props> = ({
                <div className="p-3 bg-red-50 text-red-500 rounded-2xl"><TrendingDown size={20}/></div>
                <span className="text-[10px] font-bold uppercase text-slate-400 bg-slate-50 px-2 py-1 rounded-lg">Total</span>
             </div>
-            <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Total Expenses</p>
+            <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Operating expenses</p>
             <h4 className="text-3xl font-black text-slate-900">€{formatEUR(stats.total)}</h4>
+            {stats.stockTotal > 0 && (
+              <p className="text-[10px] text-indigo-600 font-semibold mt-1">
+                + €{formatEUR(stats.stockTotal)} filament stock (inventory, not in total above)
+              </p>
+            )}
          </div>
 
          <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">

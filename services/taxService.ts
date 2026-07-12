@@ -4,7 +4,7 @@ import {
   shouldSkipContainerRow,
   shouldSkipContainerForPurchaseCogs,
 } from './financialAggregation';
-import { isOperatingExpense } from '../utils/expenseCategories';
+import { isOperatingExpense, isFilamentStockExpense, FILAMENT_STOCK_EXPENSE_CATEGORY } from '../utils/expenseCategories';
 
 function itemCountsForTaxExport(item: InventoryItem, items: InventoryItem[]): boolean {
   if (item.isDraft) return false;
@@ -186,6 +186,20 @@ export const generateTaxReportCSV = (items: InventoryItem[], expenses: Expense[]
       e.date,
       'Ausgabe',
       e.category,
+      e.description,
+      `-${e.amount.toFixed(2).replace('.', ',')}`,
+      e.id
+    ].map(c => `"${c}"`).join(';'));
+  });
+
+  // 4. Filament stock (Vorratsbestand — not operating; COGS when printed)
+  expenses
+    .filter(e => new Date(e.date).getFullYear() === year && isFilamentStockExpense(e.category))
+    .forEach(e => {
+    rows.push([
+      e.date,
+      'Vorratsbestand',
+      FILAMENT_STOCK_EXPENSE_CATEGORY,
       e.description,
       `-${e.amount.toFixed(2).replace('.', ',')}`,
       e.id

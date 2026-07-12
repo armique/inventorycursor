@@ -22,6 +22,7 @@ import { InventoryItem, ItemStatus, Expense, BusinessSettings, TaxMode, Dashboar
 import { DEFAULT_DASHBOARD_WIDGET_IDS } from '../services/constants';
 import { isRealizedDisposal } from '../utils/itemDisposition';
 import { calculateTaxSummary, generateTaxReportCSV } from '../services/taxService';
+import { filterOperatingExpenses, isFilamentStockExpense, sumOperatingExpenseAmount } from '../utils/expenseCategories';
 import {
   roundMoney,
   computeItemProfitBeforeOverhead,
@@ -207,7 +208,9 @@ const Dashboard: React.FC<Props> = ({
     netProfit?: number;
   }) => {
     const dayExpenses =
-      p.dateStr.length === 10 ? expenses.filter((e) => toLocalCalendarDateKey(e.date) === p.dateStr) : [];
+      p.dateStr.length === 10
+        ? filterOperatingExpenses(expenses.filter((e) => toLocalCalendarDateKey(e.date) === p.dateStr))
+        : [];
     openFinancialDetail({
       title: `Day — ${p.dayLabel}`,
       items: p.items,
@@ -397,6 +400,12 @@ const Dashboard: React.FC<Props> = ({
     });
   }, [expenses, startDate, endDate]);
 
+  /** Betriebsausgaben only — excludes filament stock (COGS flows via print item buyPrice). */
+  const filteredOperatingExpenses = useMemo(
+    () => filterOperatingExpenses(filteredExpenses),
+    [filteredExpenses]
+  );
+
   const soldInPeriod = useMemo(
     () =>
       filteredItems.filter(
@@ -429,7 +438,9 @@ const Dashboard: React.FC<Props> = ({
       soldForStats.reduce((acc: number, i) => acc + calculateItemProfit(i), 0)
     );
 
-    const totalExpenses = roundMoney(filteredExpenses.reduce((acc: number, e) => acc + Number(e.amount), 0));
+    const totalExpenses = roundMoney(
+      filteredOperatingExpenses.reduce((acc: number, e) => acc + Number(e.amount), 0)
+    );
     const netProfit = roundMoney(grossProfit - totalExpenses);
     const inventoryValue = roundMoney(
       inStockForValue.reduce((acc: number, i) => acc + Number(i.buyPrice), 0)
@@ -464,7 +475,7 @@ const Dashboard: React.FC<Props> = ({
       deathPileCount: deathPileItems.length,
       deathPileValue,
     };
-  }, [soldInPeriod, filteredItems, filteredExpenses, items, taxMode]);
+  }, [soldInPeriod, filteredItems, filteredOperatingExpenses, items, taxMode]);
 
   const gameStats = useMemo(() => {
     const soldForRollup = items.filter(
@@ -474,7 +485,7 @@ const Dashboard: React.FC<Props> = ({
     );
     const allTimeProfit = roundMoney(
       soldForRollup.reduce((acc: number, i) => acc + calculateItemProfit(i), 0) -
-        expenses.reduce((acc: number, e) => acc + Number(e.amount || 0), 0)
+        sumOperatingExpenseAmount(expenses)
     );
 
     const currentLevel = LEVELS.slice().reverse().find((l) => allTimeProfit >= l.min) || LEVELS[0];
@@ -487,8 +498,8 @@ const Dashboard: React.FC<Props> = ({
     const currentMonthItems = soldForRollup.filter(
       (i) => !!i.sellDate && yearMonthKeyFromDate(i.sellDate) === thisYearMonth
     );
-    const currentMonthExpenses = expenses.filter(
-      (e) => !!e.date && yearMonthKeyFromDate(e.date) === thisYearMonth
+    const currentMonthExpenses = filterOperatingExpenses(
+      expenses.filter((e) => !!e.date && yearMonthKeyFromDate(e.date) === thisYearMonth)
     );
     const monthSaleProfit = roundMoney(
       currentMonthItems.reduce((acc: number, i) => acc + calculateItemProfit(i), 0)
@@ -541,7 +552,7 @@ const Dashboard: React.FC<Props> = ({
     if (timeFilter === 'ALL' || diffDays > 366) {
        const years = new Set<number>();
        filteredItems.forEach(i => { if (i.sellDate) years.add(new Date(i.sellDate).getFullYear()); });
-       filteredExpenses.forEach(e => years.add(new Date(e.date).getFullYear()));
+       filteredOperatingExpenses.forEach(e => years.add(new Date(e.date).getFullYear()));
        
        const sortedYears = Array.from(years).sort((a: number, b: number) => Number(a) - Number(b));
        
@@ -553,7 +564,7 @@ const Dashboard: React.FC<Props> = ({
               i.sellDate &&
               new Date(i.sellDate).getFullYear() === year
           );
-          const exps = filteredExpenses.filter(e => new Date(e.date).getFullYear() === year);
+          const exps = filteredOperatingExpenses.filter(e => new Date(e.date).getFullYear() === year);
           const revenue = roundMoney(sold.reduce((acc: number, i) => acc + (Number(i.sellPrice) || 0), 0));
           const itemProfit = roundMoney(sold.reduce((acc: number, i) => acc + calculateItemProfit(i), 0));
           const expTotal = roundMoney(exps.reduce((acc: number, e) => acc + Number(e.amount), 0));
@@ -584,7 +595,7 @@ const Dashboard: React.FC<Props> = ({
               !!i.sellDate &&
               toLocalCalendarDateKey(i.sellDate) === dayStr
           );
-          const exps = filteredExpenses.filter((e) => toLocalCalendarDateKey(e.date) === dayStr);
+          const exps = filteredOperatingExpenses.filter((e) => toLocalCalendarDateKey(e.date) === dayStr);
           const revenue = roundMoney(sold.reduce((acc: number, i) => acc + (Number(i.sellPrice) || 0), 0));
           const itemProfit = roundMoney(sold.reduce((acc: number, i) => acc + calculateItemProfit(i), 0));
           const expTotal = roundMoney(exps.reduce((acc: number, e) => acc + Number(e.amount), 0));
@@ -609,7 +620,7 @@ const Dashboard: React.FC<Props> = ({
        }
     }
     return data;
-  }, [filteredItems, filteredExpenses, startDate, endDate, timeFilter, taxMode, items]);
+  }, [filteredItems, filteredOperatingExpenses, startDate, endDate, timeFilter, taxMode, items]);
 
   // NEW: Category Pie Chart Data
   const categoryData = useMemo(() => {
@@ -674,7 +685,7 @@ const Dashboard: React.FC<Props> = ({
       byMonth[key].saleProfit += calculateItemProfit(i);
       byMonth[key].revenue += Number(i.sellPrice) || 0;
     });
-    filteredExpenses.forEach((e) => {
+    filteredOperatingExpenses.forEach((e) => {
       const key = yearMonthKeyFromDate(e.date);
       if (!key) return;
       if (!byMonth[key]) byMonth[key] = { items: [], saleProfit: 0, revenue: 0 };
@@ -683,7 +694,7 @@ const Dashboard: React.FC<Props> = ({
       .map(([name, g]) => {
         const saleProfit = roundMoney(g.saleProfit);
         const revenue = roundMoney(g.revenue);
-        const scopeExpenses = filteredExpenses.filter((e) => yearMonthKeyFromDate(e.date) === name);
+        const scopeExpenses = filteredOperatingExpenses.filter((e) => yearMonthKeyFromDate(e.date) === name);
         const expenses = roundMoney(scopeExpenses.reduce((acc, e) => acc + Number(e.amount), 0));
         return {
           name,
@@ -696,7 +707,7 @@ const Dashboard: React.FC<Props> = ({
         };
       })
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [soldInPeriod, filteredExpenses, taxMode]);
+  }, [soldInPeriod, filteredOperatingExpenses, taxMode]);
 
   const periodInsights = useMemo(() => {
     const count = soldInPeriod.length;
@@ -856,7 +867,12 @@ const Dashboard: React.FC<Props> = ({
       }
     });
     expenses.forEach(e => {
-      actions.push({ type: 'EXPENSE', date: e.date, item: e.description, amount: -Number(e.amount) });
+      actions.push({
+        type: isFilamentStockExpense(e.category) ? 'STOCK' : 'EXPENSE',
+        date: e.date,
+        item: e.description,
+        amount: -Number(e.amount),
+      });
     });
     
     return actions.sort((a, b) => {
@@ -988,7 +1004,7 @@ const Dashboard: React.FC<Props> = ({
             openFinancialDetail({
               title: `Period — ${periodLabel}`,
               items: soldInPeriod,
-              scopeExpenses: filteredExpenses,
+              scopeExpenses: filteredOperatingExpenses,
               revenue: stats.totalTurnover,
               itemProfit: stats.grossProfit,
               expTotal: stats.totalExpenses,
@@ -1000,7 +1016,7 @@ const Dashboard: React.FC<Props> = ({
           {[
             { label: 'Revenue', value: `€${formatEUR(stats.totalTurnover)}`, tone: 'text-slate-900' },
             { label: 'Sale profit', value: `€${formatEUR(stats.grossProfit)}`, tone: 'text-blue-700' },
-            { label: 'Expenses', value: `−€${formatEUR(stats.totalExpenses)}`, tone: 'text-red-600' },
+            { label: 'Operating exp.', value: `−€${formatEUR(stats.totalExpenses)}`, tone: 'text-red-600' },
             { label: 'Net profit', value: `€${formatEUR(stats.netProfit)}`, tone: stats.netProfit >= 0 ? 'text-emerald-700' : 'text-red-600' },
           ].map((k) => (
             <div key={k.label} className="bg-white px-3 py-3 sm:px-4 sm:py-3.5 lg:px-6 lg:py-5 flex flex-col justify-center min-h-[4.5rem] lg:min-h-[5.5rem]">
@@ -1089,7 +1105,7 @@ const Dashboard: React.FC<Props> = ({
                 openFinancialDetail({
                   title: `All sales — ${periodLabel}`,
                   items: soldInPeriod,
-                  scopeExpenses: filteredExpenses,
+                  scopeExpenses: filteredOperatingExpenses,
                   revenue: stats.totalTurnover,
                   itemProfit: stats.grossProfit,
                   expTotal: stats.totalExpenses,
@@ -1368,9 +1384,10 @@ const Dashboard: React.FC<Props> = ({
                        : action.type === 'GIFTED' ? 'bg-rose-100 text-rose-600'
                        : action.type === 'TRADED' ? 'bg-indigo-100 text-indigo-600'
                        : action.type === 'BOUGHT' ? 'bg-blue-100 text-blue-600'
+                       : action.type === 'STOCK' ? 'bg-violet-100 text-violet-600'
                        : 'bg-red-50 text-red-500'
                      }`}>
-                        {action.type === 'SOLD' ? <TrendingUp size={16}/> : action.type === 'GIFTED' ? <Gift size={16}/> : action.type === 'TRADED' ? <ArrowRightLeft size={16}/> : action.type === 'BOUGHT' ? <Package size={16}/> : <TrendingDown size={16}/>}
+                        {action.type === 'SOLD' ? <TrendingUp size={16}/> : action.type === 'GIFTED' ? <Gift size={16}/> : action.type === 'TRADED' ? <ArrowRightLeft size={16}/> : action.type === 'BOUGHT' ? <Package size={16}/> : action.type === 'STOCK' ? <Package size={16}/> : <TrendingDown size={16}/>}
                      </div>
                      <div className="flex-1 min-w-0">
                         {action.itemId ? (

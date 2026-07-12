@@ -21,3 +21,11 @@ export function filterOperatingExpenses(expenses: Expense[]): Expense[] {
 export function filterInventoryStockExpenses(expenses: Expense[]): Expense[] {
   return expenses.filter((e) => isFilamentStockExpense(e.category));
 }
+
+export function sumOperatingExpenseAmount(expenses: Expense[]): number {
+  return filterOperatingExpenses(expenses).reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+}
+
+export function sumInventoryStockExpenseAmount(expenses: Expense[]): number {
+  return filterInventoryStockExpenses(expenses).reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+}

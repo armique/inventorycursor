@@ -25,6 +25,7 @@ import {
 } from '../services/ebayPurchaseIndex';
 import {
   addFilamentSpool,
+  findSpoolByEbayLineKey,
   kgToGrams,
   loadFilamentStock,
   type FilamentStockState,
@@ -160,6 +161,14 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
   const addAsFilament = (p: EbayPurchaseRecord) => {
     const form = filamentForms[p.lineKey];
     if (!form) return;
+    if (findSpoolByEbayLineKey(p.lineKey)) {
+      alert('This eBay line is already linked to a filament spool.');
+      return;
+    }
+    if (p.disposition === 'filament') {
+      alert('This purchase was already added as filament stock.');
+      return;
+    }
     const color = form.color === 'Custom' ? form.colorCustom.trim() : form.color;
     const kg = parseFloat(form.weightKg.replace(',', '.'));
     const paid = p.totalPaid ?? 0;
@@ -186,25 +195,29 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
     expense.description = expenseDescriptionForEbayPurchase(p.title, p.orderId);
     onAddExpense(expense);
 
-    let stock: FilamentStockState = loadFilamentStock();
-    stock = addFilamentSpool(stock, {
-      type: form.type,
-      color,
-      pricePerKg: paid / kg,
-      purchasedGrams: kgToGrams(kg),
-      purchasedAt: p.creationDate || todayISO(),
-      source: 'ebay',
-      vendor: p.sellerUsername ? `eBay · ${p.sellerUsername}` : 'eBay',
-      totalPaid: paid,
-      note: `eBay #${p.orderId} — ${p.title}`,
-      expenseId: expense.id,
-      ebayOrderId: p.orderId,
-      ebayLineKey: p.lineKey,
-    });
-    const spool = stock.spools[stock.spools.length - 1];
-    setPurchaseDisposition(p.lineKey, 'filament', { expenseId: expense.id, filamentSpoolId: spool.id });
-    setExpandedFilament(null);
-    refresh();
+    try {
+      let stock: FilamentStockState = loadFilamentStock();
+      stock = addFilamentSpool(stock, {
+        type: form.type,
+        color,
+        pricePerKg: paid / kg,
+        purchasedGrams: kgToGrams(kg),
+        purchasedAt: p.creationDate || todayISO(),
+        source: 'ebay',
+        vendor: p.sellerUsername ? `eBay · ${p.sellerUsername}` : 'eBay',
+        totalPaid: paid,
+        note: `eBay #${p.orderId} — ${p.title}`,
+        expenseId: expense.id,
+        ebayOrderId: p.orderId,
+        ebayLineKey: p.lineKey,
+      });
+      const spool = stock.spools[stock.spools.length - 1];
+      setPurchaseDisposition(p.lineKey, 'filament', { expenseId: expense.id, filamentSpoolId: spool.id });
+      setExpandedFilament(null);
+      refresh();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to add spool.');
+    }
   };
 
   const addAsOperatingExpense = (p: EbayPurchaseRecord) => {

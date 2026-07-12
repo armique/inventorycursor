@@ -169,14 +169,3 @@ export function setPurchaseBackfillMeta(fromDate: string, toDate: string, fetche
     },
   });
 }
-
-export function findSpoolByEbayLineKey(lineKey: string): string | undefined {
-  const stockRaw = localStorage.getItem('filament_stock_v1');
-  if (!stockRaw) return undefined;
-  try {
-    const stock = JSON.parse(stockRaw) as { spools?: { id: string; ebayLineKey?: string }[] };
-    return stock.spools?.find((s) => s.ebayLineKey === lineKey)?.id;
-  } catch {
-    return undefined;
-  }
-}
