@@ -38,10 +38,9 @@ const ReturnModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
         paymentType: undefined,
         feeAmount: undefined,
         hasFee: false,
+        giftRecipient: undefined,
+        giftRelation: undefined,
         comment2: (item.comment2 || '') + returnNote,
-        // Keep invoice number if you want a record, or clear it. 
-        // Usually better to keep history or clear if generating credit note. 
-        // Clearing here for fresh start:
         invoiceNumber: undefined, 
         customer: undefined
       };
@@ -69,7 +68,7 @@ const ReturnModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
         <div className="p-8 space-y-6">
           <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-xs text-slate-500 leading-relaxed">
             <p><span className="font-bold text-slate-700">Action:</span> Selected items will be moved back to <span className="font-bold text-blue-600">Active Inventory</span>.</p>
-            <p className="mt-1">Sales data (Price, Date, Profit) will be cleared.</p>
+            <p className="mt-1">Sales, trade, and gift data (price, date, profit) will be cleared.</p>
           </div>
 
           <div className="space-y-4">

@@ -21,7 +21,7 @@ export function computeCategoryRoi(items: InventoryItem[]): CategoryRoiRow[] {
   const map = new Map<string, { profits: number[]; margins: number[]; days: number[] }>();
 
   for (const item of items) {
-    if (item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED) continue;
+    if (item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED && item.status !== ItemStatus.GIFTED) continue;
     if (item.isPC || item.isBundle) continue;
     const buy = item.buyPrice || 0;
     const sell = item.sellPrice || 0;

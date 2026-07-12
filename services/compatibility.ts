@@ -1,4 +1,4 @@
-import { InventoryItem, ItemStatus } from '../types';
+import { isRealizedDisposal } from '../utils/itemDisposition';
 
 /** Get a spec value from item (case-insensitive key match). */
 export function getSpec(item: InventoryItem | undefined, key: string): string | number | undefined {
@@ -300,7 +300,7 @@ export function getCompatibleItemsForItem(
   item: InventoryItem,
   allItems: InventoryItem[]
 ): CompatibleGroup[] {
-  const others = allItems.filter((i) => i.id !== item.id && i.status !== ItemStatus.SOLD && i.status !== ItemStatus.TRADED);
+  const others = allItems.filter((i) => i.id !== item.id && !isRealizedDisposal(i));
   const get = (i: InventoryItem, key: string) => getSpec(i, key);
   const result: CompatibleGroup[] = [];
 

@@ -8,7 +8,7 @@ export function stripTradeContextFromComment2(comment2: string): string {
 
 function recomputeRealizedProfit(item: InventoryItem, taxMode: TaxMode): InventoryItem {
   if (item.isBundle || item.isPC) return item;
-  if (item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED) return { ...item, profit: undefined };
+  if (item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED && item.status !== ItemStatus.GIFTED) return { ...item, profit: undefined };
   if (item.sellPrice == null || Number.isNaN(Number(item.sellPrice))) return { ...item, profit: undefined };
   if (Number.isNaN(Number(item.buyPrice))) return { ...item, profit: undefined };
   const profit = computeItemProfitBeforeOverhead(item, taxMode);
@@ -55,7 +55,7 @@ export function applyTradeRevert(
   for (const id of toRemove) {
     const rec = items.find((i) => i.id === id);
     if (!rec) continue;
-    if (rec.status === ItemStatus.SOLD || rec.status === ItemStatus.TRADED) {
+    if (rec.status === ItemStatus.SOLD || rec.status === ItemStatus.TRADED || rec.status === ItemStatus.GIFTED) {
       return {
         ok: false,
         message: `"${rec.name}" was already sold or traded in a later deal. Revert that trade first, then try again.`,

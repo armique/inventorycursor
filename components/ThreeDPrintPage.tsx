@@ -132,7 +132,7 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
   // --- RECENT PRINTS HISTORY ---
   const recentPrints = useMemo(() => {
     const printedItems = items.filter(
-      (item) => item.specs && item.specs['Production Method'] === '3D Printed' && item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED
+      (item) => item.specs && item.specs['Production Method'] === '3D Printed' && item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED && item.status !== ItemStatus.GIFTED
     );
     const map = new Map<string, InventoryItem>();
     const sorted = [...printedItems].sort((a, b) => {

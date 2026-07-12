@@ -15,11 +15,18 @@ function itemCountsForTaxExport(item: InventoryItem, items: InventoryItem[]): bo
 export interface TaxSummary {
   year: number;
   revenue: number;
+  /** Sales revenue (Sold status). */
+  revenueFromSales: number;
+  /** Trade disposal revenue (Traded status). */
+  revenueFromTrades: number;
+  /** Privatentnahme / gift imputed revenue (Gifted status). */
+  revenueFromGifts: number;
   cogs: number; // Wareneingang (Cost of Goods Purchased)
   expenses: number; // Operating Expenses
   fees: number;
   netProfit: number;
   vatPayable?: number;
+  giftCount?: number;
 }
 
 // EÜR (Einnahmenüberschussrechnung) Logic:
@@ -28,6 +35,10 @@ export interface TaxSummary {
 // 3. Expenses = Operating expenses paid in the calendar year.
 export const calculateTaxSummary = (items: InventoryItem[], expenses: Expense[], year: number, taxMode: TaxMode = 'SmallBusiness'): TaxSummary => {
   let revenue = 0;
+  let revenueFromSales = 0;
+  let revenueFromTrades = 0;
+  let revenueFromGifts = 0;
+  let giftCount = 0;
   let cogs = 0;
   let fees = 0;
   let operatingExpenses = 0;
@@ -51,7 +62,7 @@ export const calculateTaxSummary = (items: InventoryItem[], expenses: Expense[],
 
     const sellYear = item.sellDate ? new Date(item.sellDate).getFullYear() : 0;
     if (sellYear !== year) return;
-    if (item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED) return;
+    if (item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED && item.status !== ItemStatus.GIFTED) return;
 
     let itemRevenue = Number(item.sellPrice) || 0;
 
@@ -63,6 +74,14 @@ export const calculateTaxSummary = (items: InventoryItem[], expenses: Expense[],
     }
 
     revenue += itemRevenue;
+    if (item.status === ItemStatus.GIFTED) {
+      revenueFromGifts += itemRevenue;
+      giftCount += 1;
+    } else if (item.status === ItemStatus.TRADED) {
+      revenueFromTrades += itemRevenue;
+    } else {
+      revenueFromSales += itemRevenue;
+    }
 
     if (item.hasFee && item.feeAmount) {
       fees += Number(item.feeAmount) || 0;
@@ -83,6 +102,10 @@ export const calculateTaxSummary = (items: InventoryItem[], expenses: Expense[],
   return {
     year,
     revenue: Math.round((revenue + Number.EPSILON) * 100) / 100,
+    revenueFromSales: Math.round((revenueFromSales + Number.EPSILON) * 100) / 100,
+    revenueFromTrades: Math.round((revenueFromTrades + Number.EPSILON) * 100) / 100,
+    revenueFromGifts: Math.round((revenueFromGifts + Number.EPSILON) * 100) / 100,
+    giftCount,
     cogs: Math.round((cogs + Number.EPSILON) * 100) / 100,
     expenses: Math.round((operatingExpenses + Number.EPSILON) * 100) / 100,
     fees: Math.round((fees + Number.EPSILON) * 100) / 100,
@@ -116,21 +139,27 @@ export const generateTaxReportCSV = (items: InventoryItem[], expenses: Expense[]
     ].map(c => `"${c}"`).join(';'));
   });
 
-  // 2. Inventory Sales (Erlöse) – same lines as dashboard / tax revenue pass
+  // 2. Disposals (sales, trades, gifts) — same lines as dashboard / tax revenue pass
   items
     .filter(
       (i) =>
         itemCountsForTaxExport(i, items) &&
-        (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
+        (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED || i.status === ItemStatus.GIFTED) &&
         i.sellDate &&
         new Date(i.sellDate).getFullYear() === year
     )
     .forEach(i => {
+    const isGift = i.status === ItemStatus.GIFTED;
+    const recipient = i.giftRecipient || i.customer?.name || '';
     rows.push([
       i.sellDate || '',
       'Einnahme',
-      'Umsatzerlöse',
-      `Verkauf: ${i.name}`,
+      isGift ? 'Privatentnahme' : 'Umsatzerlöse',
+      isGift
+        ? `Verschenkt: ${i.name}${recipient ? ` → ${recipient}` : ''}`
+        : i.status === ItemStatus.TRADED
+          ? `Tausch: ${i.name}`
+          : `Verkauf: ${i.name}`,
       `${(i.sellPrice || 0).toFixed(2).replace('.', ',')}`,
       i.invoiceNumber || i.id
     ].map(c => `"${c}"`).join(';'));

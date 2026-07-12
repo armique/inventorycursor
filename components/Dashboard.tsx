@@ -8,6 +8,7 @@ import {
   TrendingUp, Target, Package, TrendingDown, Trophy, Star, Crown, Zap,
   Edit3, Check, CalendarDays, ArrowRight, CheckCircle2, Plus, X, Activity, AlertCircle,
   Settings2, ChevronUp, ChevronDown, ChevronRight, Download, Sparkles, BarChart3, LayoutDashboard,
+  Gift, ArrowRightLeft,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import {
@@ -18,6 +19,7 @@ import {
 import EbaySoldReminderWidget from './EbaySoldReminderWidget';
 import { InventoryItem, ItemStatus, Expense, BusinessSettings, TaxMode, DashboardPreferences, DashboardTask } from '../types';
 import { DEFAULT_DASHBOARD_WIDGET_IDS } from '../services/constants';
+import { isRealizedDisposal } from '../utils/itemDisposition';
 import { calculateTaxSummary, generateTaxReportCSV } from '../services/taxService';
 import {
   roundMoney,
@@ -375,7 +377,7 @@ const Dashboard: React.FC<Props> = ({
     const endKey = toLocalCalendarDateKey(endDate);
     return items.filter((item) => {
       const raw =
-        item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED ? item.sellDate : item.buyDate;
+        isRealizedDisposal(item) ? item.sellDate : item.buyDate;
       if (!raw) return false;
       const k = toLocalCalendarDateKey(raw);
       if (!k) return false;
@@ -398,7 +400,7 @@ const Dashboard: React.FC<Props> = ({
     () =>
       filteredItems.filter(
         (i) =>
-          (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
+          isRealizedDisposal(i) &&
           !shouldSkipForAggregatedSaleLine(i, items)
       ),
     [filteredItems, items]
@@ -466,7 +468,7 @@ const Dashboard: React.FC<Props> = ({
   const gameStats = useMemo(() => {
     const soldForRollup = items.filter(
       (i) =>
-        (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
+        isRealizedDisposal(i) &&
         !shouldSkipForAggregatedSaleLine(i, items)
     );
     const allTimeProfit = roundMoney(
@@ -545,7 +547,7 @@ const Dashboard: React.FC<Props> = ({
        sortedYears.forEach(year => {
           const sold = filteredItems.filter(
             (i) =>
-              (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
+              isRealizedDisposal(i) &&
               !shouldSkipForAggregatedSaleLine(i, items) &&
               i.sellDate &&
               new Date(i.sellDate).getFullYear() === year
@@ -576,7 +578,7 @@ const Dashboard: React.FC<Props> = ({
           
           const sold = filteredItems.filter(
             (i) =>
-              (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
+              isRealizedDisposal(i) &&
               !shouldSkipForAggregatedSaleLine(i, items) &&
               !!i.sellDate &&
               toLocalCalendarDateKey(i.sellDate) === dayStr
@@ -794,7 +796,7 @@ const Dashboard: React.FC<Props> = ({
     const prevKey = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
     const soldPrev = items.filter(
       (i) =>
-        (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
+        isRealizedDisposal(i) &&
         !shouldSkipForAggregatedSaleLine(i, items) &&
         i.sellDate &&
         yearMonthKeyFromDate(i.sellDate) === prevKey
@@ -840,10 +842,16 @@ const Dashboard: React.FC<Props> = ({
       }
       if (
         i.sellDate &&
-        (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
+        isRealizedDisposal(i) &&
         !shouldSkipForAggregatedSaleLine(i, items)
       ) {
-        actions.push({ type: 'SOLD', date: i.sellDate, item: i.name, amount: Number(i.sellPrice || 0) });
+        const type =
+          i.status === ItemStatus.GIFTED
+            ? 'GIFTED'
+            : i.status === ItemStatus.TRADED
+              ? 'TRADED'
+              : 'SOLD';
+        actions.push({ type, date: i.sellDate, item: i.name, amount: Number(i.sellPrice || 0) });
       }
     });
     expenses.forEach(e => {
@@ -1306,6 +1314,15 @@ const Dashboard: React.FC<Props> = ({
                 <td className="py-2 text-slate-600">€{formatEUR(taxSummary.fees)}</td>
                 <td className="py-2 text-emerald-600">€{formatEUR(taxSummary.netProfit)}</td>
               </tr>
+              {(taxSummary.revenueFromGifts > 0 || taxSummary.revenueFromTrades > 0) && (
+                <tr className="text-[11px] text-slate-500">
+                  <td colSpan={5} className="pt-1 pb-2">
+                    Revenue breakdown: sales €{formatEUR(taxSummary.revenueFromSales)}
+                    {taxSummary.revenueFromTrades > 0 && ` · trades €${formatEUR(taxSummary.revenueFromTrades)}`}
+                    {taxSummary.revenueFromGifts > 0 && ` · gifts (Privatentnahme) €${formatEUR(taxSummary.revenueFromGifts)} (${taxSummary.giftCount ?? 0})`}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -1340,8 +1357,14 @@ const Dashboard: React.FC<Props> = ({
             <div className="space-y-2 max-h-[160px] lg:max-h-[220px] overflow-y-auto">
                {activityFeed.map((action, idx) => (
                   <div key={idx} className="flex items-center gap-3 text-sm lg:text-base">
-                     <div className={`w-9 h-9 lg:w-10 lg:h-10 rounded-lg flex items-center justify-center shrink-0 ${action.type === 'SOLD' ? 'bg-emerald-100 text-emerald-600' : action.type === 'BOUGHT' ? 'bg-blue-100 text-blue-600' : 'bg-red-50 text-red-500'}`}>
-                        {action.type === 'SOLD' ? <TrendingUp size={16}/> : action.type === 'BOUGHT' ? <Package size={16}/> : <TrendingDown size={16}/>}
+                     <div className={`w-9 h-9 lg:w-10 lg:h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                       action.type === 'SOLD' ? 'bg-emerald-100 text-emerald-600'
+                       : action.type === 'GIFTED' ? 'bg-rose-100 text-rose-600'
+                       : action.type === 'TRADED' ? 'bg-indigo-100 text-indigo-600'
+                       : action.type === 'BOUGHT' ? 'bg-blue-100 text-blue-600'
+                       : 'bg-red-50 text-red-500'
+                     }`}>
+                        {action.type === 'SOLD' ? <TrendingUp size={16}/> : action.type === 'GIFTED' ? <Gift size={16}/> : action.type === 'TRADED' ? <ArrowRightLeft size={16}/> : action.type === 'BOUGHT' ? <Package size={16}/> : <TrendingDown size={16}/>}
                      </div>
                      <div className="flex-1 min-w-0">
                         <p className="font-bold text-slate-900 truncate">{action.item}</p>

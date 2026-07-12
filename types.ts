@@ -4,7 +4,8 @@ export enum ItemStatus {
   SOLD = 'Sold',
   ORDERED = 'Ordered',
   IN_COMPOSITION = 'In Composition',
-  TRADED = 'Traded'
+  TRADED = 'Traded',
+  GIFTED = 'Gifted'
 }
 
 export type Platform = 'ebay.de' | 'kleinanzeigen.de' | 'In Person' | 'Amazon' | 'Other';
@@ -19,6 +20,7 @@ export type PaymentType =
   | 'Kleinanzeigen (Wire Transfer)'
   | 'Paypal' 
   | 'Trade'
+  | 'Gift'
   | 'Other';
 
 export type TaxMode = 'SmallBusiness' | 'RegularVAT' | 'DifferentialVAT';
@@ -141,6 +143,11 @@ export interface InventoryItem {
   tradedForIds?: string[]; // IDs of items received in exchange
   tradedFromId?: string;   // ID of the item this was traded from
   cashOnTop?: number;      // Cash received during trade
+
+  /** Privatentnahme / gift — recipient label (e.g. daughter, friend). */
+  giftRecipient?: string;
+  /** Optional relation for your records (German gift-tax context). */
+  giftRelation?: 'family' | 'friend' | 'other';
 
   // AI Market Data
   marketTitle?: string;

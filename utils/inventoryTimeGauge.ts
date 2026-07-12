@@ -136,7 +136,7 @@ function aggregateBundleDaysToSell(children: InventoryItem[], container: Invento
 }
 
 export function getTimeGaugeRow(item: InventoryItem, nowMs: number, allItems?: InventoryItem[]): TimeGaugeRow | null {
-  const sold = item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED;
+  const sold = item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED || item.status === ItemStatus.GIFTED;
   const children =
     (item.isPC || item.isBundle) && allItems?.length
       ? resolveContainerChildItems(item, allItems)

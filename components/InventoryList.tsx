@@ -5,9 +5,10 @@ import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSort
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone, Camera
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone, Camera, Gift
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions } from '../types';
+import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
 import { itemMatchesSalePlatformFilter, isMissingExplicitSalePlatform, MISSING_PLATFORM_FILTER, SALE_PLATFORM_OPTIONS, formatItemSalePlatform, formatSalePlatformLabel } from '../utils/salePlatform';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { getCompatibleItemsForItem } from '../services/compatibility';
@@ -26,6 +27,7 @@ const ebaySoldSearchUrl = (query: string) =>
 import SaleModal from './SaleModal';
 import ReturnModal from './ReturnModal';
 import TradeModal from './TradeModal';
+import GiftModal from './GiftModal';
 import CrossPostingModal from './CrossPostingModal';
 import RetroBundleModal from './RetroBundleModal';
 import EditItemModal from './EditItemModal';
@@ -212,10 +214,10 @@ const ACTIONS_GAP_PX = 2;
 /** Number of action buttons rendered for a given item — must mirror the conditions in the 'actions' cell below. */
 function countActionButtons(item: InventoryItem): number {
   let n = 2; // Edit, Duplicate (always shown)
-  if (item.status === ItemStatus.IN_STOCK) n += 5; // Check price, Cross-post, AI tools, Mark sold, Trade
+  if (item.status === ItemStatus.IN_STOCK) n += 6; // Check price, Cross-post, AI tools, Mark sold, Trade, Gift
   if (item.isPC || item.isBundle) n += 1; // Unbundle
-  if (item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED) n += 1; // Invoice
-  if (item.status === ItemStatus.SOLD) n += 1; // Mark unsold/return
+  if (isSoldOrTradedOnly(item)) n += 1; // Invoice
+  if (item.status === ItemStatus.SOLD || item.status === ItemStatus.GIFTED) n += 1; // Mark unsold/return or undo gift
   n += 1; // Delete (always shown)
   return n;
 }
@@ -374,7 +376,7 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
         item.status === ItemStatus.ORDERED ||
         item.status === ItemStatus.IN_COMPOSITION;
     } else if (statusFilter === 'SOLD') {
-      matchesStatus = item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED;
+      matchesStatus = isRealizedDisposal(item);
     } else if (statusFilter === 'DRAFTS') {
       matchesStatus = item.isDraft === true;
     } else {
@@ -401,7 +403,7 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
 
     // Spec and date filters are browsing aids — skip them during search so a suggestion click always reveals the row.
     if (!searchActive && timeFilter !== 'ALL') {
-      const isSalesItem = item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED;
+      const isSalesItem = isRealizedDisposal(item);
       const dateStr = isSalesItem ? item.sellDate : item.buyDate;
       if (!dateStr) return true;
       const itemDate = new Date(dateStr);
@@ -732,6 +734,7 @@ const InventoryList: React.FC<Props> = ({
   const [itemToSell, setItemToSell] = useState<InventoryItem | null>(null);
   const [itemToReturn, setItemToReturn] = useState<InventoryItem | null>(null);
   const [itemToTrade, setItemToTrade] = useState<InventoryItem | null>(null);
+  const [itemToGift, setItemToGift] = useState<InventoryItem | null>(null);
   const [itemToCrossPost, setItemToCrossPost] = useState<InventoryItem | null>(null);
   const [itemToDelete, setItemToDelete] = useState<InventoryItem | null>(null);
   const [itemToEditCategory, setItemToEditCategory] = useState<InventoryItem | null>(null);
@@ -1054,7 +1057,7 @@ const InventoryList: React.FC<Props> = ({
     return items.filter(item => {
       let matchesStatus = false;
       if (statusFilter === 'ACTIVE') matchesStatus = item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED || item.status === ItemStatus.IN_COMPOSITION;
-      else if (statusFilter === 'SOLD') matchesStatus = item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED;
+      else if (statusFilter === 'SOLD') matchesStatus = isRealizedDisposal(item);
       else if (statusFilter === 'DRAFTS') matchesStatus = item.isDraft === true;
       else matchesStatus = true;
       if (!matchesStatus) return false;
@@ -1069,7 +1072,7 @@ const InventoryList: React.FC<Props> = ({
       const matchesSearch = item.name.toLowerCase().includes(searchLower) || item.category.toLowerCase().includes(searchLower) || item.vendor?.toLowerCase().includes(searchLower);
       if (!matchesSearch) return false;
       if (timeFilter !== 'ALL') {
-        const isSalesItem = item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED;
+        const isSalesItem = isRealizedDisposal(item);
         const dateStr = isSalesItem ? item.sellDate : item.buyDate;
         if (!dateStr) return false;
         const itemDate = new Date(dateStr);
@@ -1237,7 +1240,7 @@ const InventoryList: React.FC<Props> = ({
     let totalNetRevenue = 0;
     let totalProfit = 0;
 
-    const soldItems = (splitView ? sortedSoldItems : sortedItems).filter(i => i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED);
+    const soldItems = (splitView ? sortedSoldItems : sortedItems).filter((i) => isRealizedDisposal(i));
     // For financial stats we only want to count *real* items once.
     // PC builds / Bundles are just containers whose economics live in their child items,
     // so we ignore rows where isPC / isBundle is true to avoid double-counting revenue & profit.
@@ -1369,7 +1372,7 @@ const InventoryList: React.FC<Props> = ({
 
     const updates: Partial<InventoryItem> = { [targetField]: newValue };
 
-    if ((targetField === 'buyPrice' || targetField === 'sellPrice') && (item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED)) {
+    if ((targetField === 'buyPrice' || targetField === 'sellPrice') && isRealizedDisposal(item)) {
         const b = targetField === 'buyPrice' ? newValue : item.buyPrice;
         const s = targetField === 'sellPrice' ? newValue : (item.sellPrice || 0);
         const fee = item.feeAmount || 0;
@@ -1534,7 +1537,7 @@ const InventoryList: React.FC<Props> = ({
       setCategoryFilter('ALL');
       setSubCategoryFilter('');
       setShowInComposition(true);
-      if (parent.status === ItemStatus.SOLD || parent.status === ItemStatus.TRADED) {
+      if (isRealizedDisposal(parent)) {
         setStatusFilter('SOLD');
       } else if (parent.isDraft) {
         setStatusFilter('DRAFTS');
@@ -1585,7 +1588,7 @@ const InventoryList: React.FC<Props> = ({
     }
     
     const selectedItemsList = items.filter(i => selectedIds.includes(i.id));
-    const isSalesMode = selectedItemsList.some(i => i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED);
+    const isSalesMode = selectedItemsList.some((i) => isRealizedDisposal(i));
 
     if (isSalesMode) {
        if (selectedItemsList.length < 2) {
@@ -1599,8 +1602,7 @@ const InventoryList: React.FC<Props> = ({
     const validItems = selectedItemsList.filter(i => 
       !i.isDefective &&
       (i.status === ItemStatus.IN_STOCK || 
-      i.status === ItemStatus.SOLD || 
-      i.status === ItemStatus.TRADED)
+      isRealizedDisposal(i))
     );
     
     if (validItems.length === 0) {
@@ -2065,7 +2067,7 @@ const InventoryList: React.FC<Props> = ({
                          <span className="text-[9px] text-slate-500 font-medium">({childItems.length} items)</span>
                       )}
                    </div>
-                   {(item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED) && (item.customer?.name || item.ebayUsername || item.ebayOrderId) && (
+                   {(isRealizedDisposal(item) && (item.customer?.name || item.giftRecipient || item.ebayUsername || item.ebayOrderId)) && (
                       <p
                         className="text-[9px] text-slate-600 font-medium mt-1.5 flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100"
                         title={[
@@ -2225,6 +2227,7 @@ const InventoryList: React.FC<Props> = ({
                       item.status === ItemStatus.SOLD ? 'bg-purple-100 text-purple-700' :
                       item.status === ItemStatus.IN_STOCK ? 'bg-emerald-100 text-emerald-700' :
                       item.status === ItemStatus.TRADED ? 'bg-indigo-100 text-indigo-700' :
+                      item.status === ItemStatus.GIFTED ? 'bg-rose-100 text-rose-700' :
                       item.status === ItemStatus.IN_COMPOSITION ? 'bg-blue-100 text-blue-700' :
                       'bg-slate-100 text-slate-600'
                    }`}
@@ -2410,7 +2413,7 @@ const InventoryList: React.FC<Props> = ({
            </td>
         );
       case 'sellDate': {
-        const isSoldOrTraded = item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED;
+        const isSoldOrTraded = isRealizedDisposal(item);
         const hasBuyerData = item.customer?.name || item.ebayUsername || item.ebayOrderId;
         const buyerTitle = hasBuyerData ? [
           item.customer?.name ? `Buyer: ${item.customer.name}` : null,
@@ -2609,11 +2612,12 @@ const InventoryList: React.FC<Props> = ({
               )}
               {item.status === ItemStatus.IN_STOCK && <button onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToSell(item); }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md shrink-0" title="Mark Sold"><ShoppingBag size={14}/></button>}
               {item.status === ItemStatus.IN_STOCK && <button onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToTrade(item); }} className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-md shrink-0" title="Trade"><ArrowRightLeft size={14}/></button>}
-              {(item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED) && (
+              {item.status === ItemStatus.IN_STOCK && <button onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToGift(item); }} className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-md shrink-0" title="Gift / Privatentnahme"><Gift size={14}/></button>}
+              {isSoldOrTradedOnly(item) && (
                 <button onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setInvoiceViewItem(item); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md shrink-0" title="Generate Invoice"><FileText size={14}/></button>
               )}
-              {item.status === ItemStatus.SOLD && (
-                <button onClick={(e) => { e.stopPropagation(); setItemToReturn(item); }} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-md shrink-0" title="Mark Unsold / Return"><RotateCcw size={14}/></button>
+              {(item.status === ItemStatus.SOLD || item.status === ItemStatus.GIFTED) && (
+                <button onClick={(e) => { e.stopPropagation(); setItemToReturn(item); }} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-md shrink-0" title={item.status === ItemStatus.GIFTED ? 'Undo gift' : 'Mark Unsold / Return'}><RotateCcw size={14}/></button>
               )}
               <button onClick={(e) => { e.stopPropagation(); setItemToDelete(item); }} className="p-1.5 text-slate-300 hover:text-red-500 rounded-md shrink-0" title="Delete"><Trash2 size={14}/></button>
             </div>
@@ -2662,7 +2666,7 @@ const InventoryList: React.FC<Props> = ({
     setCategoryFilter('ALL');
     setSubCategoryFilter('');
     setShowInComposition(true);
-    if (item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED) {
+    if (isRealizedDisposal(item)) {
       setStatusFilter('SOLD');
     } else if (item.isDraft) {
       setStatusFilter('DRAFTS');
@@ -2756,7 +2760,7 @@ const InventoryList: React.FC<Props> = ({
     () =>
       deferredSelectedIds.some((id) => {
         const s = itemsById.get(id)?.status;
-        return s === ItemStatus.SOLD || s === ItemStatus.TRADED;
+        return s != null && isRealizedDisposal({ status: s } as InventoryItem);
       }),
     [deferredSelectedIds, itemsById]
   );
@@ -4008,6 +4012,18 @@ const InventoryList: React.FC<Props> = ({
          />
       )}
 
+      {itemToGift && (
+         <GiftModal
+            item={itemToGift}
+            taxMode={businessSettings.taxMode}
+            onSave={(updated) => {
+               onUpdate([updated]);
+               setItemToGift(null);
+            }}
+            onClose={() => setItemToGift(null)}
+         />
+      )}
+
       {itemToCrossPost && (
          <CrossPostingModal 
             item={itemToCrossPost}
@@ -4152,8 +4168,8 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
       let h = rowHeightEstimate;
       if (item.specs && Object.keys(item.specs).length > 0) h += 14;
       if (
-        (item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED) &&
-        (item.customer?.name || item.ebayUsername || item.ebayOrderId)
+        isRealizedDisposal(item) &&
+        (item.customer?.name || item.giftRecipient || item.ebayUsername || item.ebayOrderId)
       ) {
         h += 16;
       }

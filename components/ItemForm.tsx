@@ -958,7 +958,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   );
 
   const containerClass = isModal ? "h-full flex flex-col" : "max-w-4xl mx-auto space-y-6 pb-16 animate-in fade-in duration-400";
-  const isSold = formData.status === ItemStatus.SOLD || formData.status === ItemStatus.TRADED;
+  const isSold = formData.status === ItemStatus.SOLD || formData.status === ItemStatus.TRADED || formData.status === ItemStatus.GIFTED;
 
   return (
     <div className={containerClass}>
@@ -1625,7 +1625,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                           <span className="font-bold text-slate-800">€{formatEUR(entry.price)}</span>
                         </div>
                       ))}
-                      {(formData.status === ItemStatus.SOLD || formData.status === ItemStatus.TRADED) && formData.sellDate && (
+                      {(formData.status === ItemStatus.SOLD || formData.status === ItemStatus.TRADED || formData.status === ItemStatus.GIFTED) && formData.sellDate && (
                         <div className="flex items-center gap-2 text-emerald-700 font-bold pt-1">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                           <span>Sold</span>
@@ -1633,7 +1633,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                           <span>€{formatEUR(formData.sellPrice ?? 0)}</span>
                         </div>
                       )}
-                      {!(formData.priceHistory && formData.priceHistory.length > 0) && formData.status !== ItemStatus.SOLD && formData.status !== ItemStatus.TRADED && (
+                      {!(formData.priceHistory && formData.priceHistory.length > 0) && formData.status !== ItemStatus.SOLD && formData.status !== ItemStatus.TRADED && formData.status !== ItemStatus.GIFTED && (
                         <p className="text-slate-400 text-[10px]">Price changes will appear here when you edit buy or sell price.</p>
                       )}
                     </div>

@@ -132,7 +132,7 @@ export { DEFAULT_CATEGORIES, HIERARCHY_CATEGORIES } from './services/constants';
 function recomputeRealizedProfit(item: InventoryItem, taxMode: TaxMode): InventoryItem {
   // Keep container-style bookkeeping untouched; their profit is handled separately.
   if (item.isBundle || item.isPC) return item;
-  if (item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED) return item;
+  if (item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED && item.status !== ItemStatus.GIFTED) return item;
   if (item.sellPrice == null || Number.isNaN(Number(item.sellPrice))) return { ...item, profit: undefined };
   if (Number.isNaN(Number(item.buyPrice))) return { ...item, profit: undefined };
   const profit = computeItemProfitBeforeOverhead(item, taxMode);
@@ -374,7 +374,8 @@ const App: React.FC = () => {
     const largeFields = ['imageUrl', 'receiptUrl', 'kleinanzeigenChatImage', 'kleinanzeigenBuyChatImage', 'marketDescription'] as const;
     const localById = new Map(localList.map((i) => [i.id, i]));
     const byId = new Map<string, InventoryItem>();
-    const isDisposed = (s: ItemStatus | undefined) => s === ItemStatus.SOLD || s === ItemStatus.TRADED;
+    const isDisposed = (s: ItemStatus | undefined) =>
+      s === ItemStatus.SOLD || s === ItemStatus.TRADED || s === ItemStatus.GIFTED;
 
     const applyLargeFieldPlaceholders = (base: InventoryItem, fromRemote: InventoryItem): InventoryItem => {
       let changed = false;
@@ -886,7 +887,7 @@ const App: React.FC = () => {
           }
           const taxMode = businessSettings.taxMode || 'SmallBusiness';
           final = recomputeRealizedProfit(final, taxMode);
-          if (final.status === ItemStatus.SOLD || final.status === ItemStatus.TRADED) {
+          if (final.status === ItemStatus.SOLD || final.status === ItemStatus.TRADED || final.status === ItemStatus.GIFTED) {
             final = { ...final, storeVisible: false };
           }
           if (idx >= 0) {
@@ -1255,7 +1256,8 @@ const App: React.FC = () => {
   const ALL_STATUSES = [
     ItemStatus.IN_STOCK, 
     ItemStatus.SOLD, 
-    ItemStatus.TRADED, 
+    ItemStatus.TRADED,
+    ItemStatus.GIFTED,
     ItemStatus.ORDERED,
     ItemStatus.IN_COMPOSITION
   ];

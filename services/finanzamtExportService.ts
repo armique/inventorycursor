@@ -34,6 +34,7 @@ const STATUS_DE: Record<ItemStatus, string> = {
   [ItemStatus.ORDERED]: 'Bestellt',
   [ItemStatus.IN_COMPOSITION]: 'Im Paket / Zusammenbau',
   [ItemStatus.TRADED]: 'Getauscht',
+  [ItemStatus.GIFTED]: 'Verschenkt (Privatentnahme)',
 };
 
 const PAYMENT_DE: Partial<Record<string, string>> = {
@@ -46,6 +47,7 @@ const PAYMENT_DE: Partial<Record<string, string>> = {
   'Kleinanzeigen (Wire Transfer)': 'Kleinanzeigen (Überweisung)',
   Paypal: 'PayPal',
   Trade: 'Tausch',
+  Gift: 'Privatentnahme / Schenkung',
   Other: 'Sonstiges',
 };
 

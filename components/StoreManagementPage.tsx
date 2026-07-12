@@ -109,7 +109,7 @@ const StoreManagementPage: React.FC<Props> = ({ items, categories, categoryField
   // wrote directly into sellPrice, so active (not-yet-sold) items can carry a "fake" sellPrice
   // that was never a real target/sale price — it was just what got typed as the storefront price.
   const itemsWithFakeSellPrice = items.filter(
-    (i) => i.status !== ItemStatus.SOLD && i.status !== ItemStatus.TRADED && i.sellPrice != null
+    (i) => i.status !== ItemStatus.SOLD && i.status !== ItemStatus.TRADED && i.status !== ItemStatus.GIFTED && i.sellPrice != null
   );
   // In-page confirm instead of window.confirm() — some browser setups silently block native
   // dialogs, which would make the cleanup button appear to do nothing when clicked.

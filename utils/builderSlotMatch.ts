@@ -154,6 +154,7 @@ export function getBuilderPickerBlockReason(
 
   if (item.status === ItemStatus.SOLD) return 'Sold — revert the sale first';
   if (item.status === ItemStatus.TRADED) return 'Traded away';
+  if (item.status === ItemStatus.GIFTED) return 'Gifted — undo gift first';
   if (item.status === ItemStatus.IN_COMPOSITION) return 'Already in another build/bundle';
 
   return `Not available (${item.status})`;
