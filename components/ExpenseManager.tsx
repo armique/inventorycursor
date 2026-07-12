@@ -4,7 +4,7 @@ import { formatEUR, parseLocaleMoney } from '../utils/formatMoney';
 
 import { 
   Plus, Trash2, Calendar, Tag, CreditCard, Search, Wallet, 
-  TrendingDown, TrendingUp, Filter, Receipt, ShoppingBag, 
+  TrendingDown, TrendingUp, Filter, Receipt, ShoppingBag, Package,
   Wrench, Truck, Percent, Briefcase, X, Repeat, Sparkles, Edit3, Copy, Paperclip, FileText as FileTextIcon
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
@@ -31,6 +31,7 @@ const CATEGORIES: { id: ExpenseCategory; label: string; icon: React.ReactNode; c
   { id: 'Cleaning', label: 'Cleaning', icon: <CreditCard size={16}/>, color: 'text-cyan-500 bg-cyan-50' },
   { id: 'Office', label: 'Office / Admin', icon: <Briefcase size={16}/>, color: 'text-indigo-500 bg-indigo-50' },
   { id: 'Marketing', label: 'Ads / Marketing', icon: <TrendingUp size={16}/>, color: 'text-pink-500 bg-pink-50' },
+  { id: '3D Filament (stock)', label: '3D Filament (stock)', icon: <Package size={16}/>, color: 'text-indigo-500 bg-indigo-50' },
   { id: 'Other', label: 'Other', icon: <Tag size={16}/>, color: 'text-gray-500 bg-gray-50' },
 ];
 

@@ -4,6 +4,7 @@ import {
   shouldSkipContainerRow,
   shouldSkipContainerForPurchaseCogs,
 } from './financialAggregation';
+import { isOperatingExpense } from '../utils/expenseCategories';
 
 function itemCountsForTaxExport(item: InventoryItem, items: InventoryItem[]): boolean {
   if (item.isDraft) return false;
@@ -88,10 +89,10 @@ export const calculateTaxSummary = (items: InventoryItem[], expenses: Expense[],
     }
   });
 
-  // Process Operating Expenses
+  // Process Operating Expenses (excludes inventory stock e.g. filament spools — COGS via print items)
   expenses.forEach(exp => {
     const expYear = new Date(exp.date).getFullYear();
-    if (expYear === year) {
+    if (expYear === year && isOperatingExpense(exp.category)) {
       operatingExpenses += exp.amount;
     }
   });
@@ -177,8 +178,10 @@ export const generateTaxReportCSV = (items: InventoryItem[], expenses: Expense[]
     }
   });
 
-  // 3. Operating Expenses
-  expenses.filter(e => new Date(e.date).getFullYear() === year).forEach(e => {
+  // 3. Operating Expenses (Betriebsausgaben — not inventory stock)
+  expenses
+    .filter(e => new Date(e.date).getFullYear() === year && isOperatingExpense(e.category))
+    .forEach(e => {
     rows.push([
       e.date,
       'Ausgabe',

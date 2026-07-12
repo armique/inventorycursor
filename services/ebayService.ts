@@ -166,6 +166,38 @@ export const listEbayOrders = async (fromDate?: string, toDate?: string): Promis
   return data.orders || [];
 };
 
+/** Buyer-side purchase line from Trading API GetOrders. */
+export interface EbayPurchaseSummary {
+  lineKey: string;
+  orderId: string;
+  transactionId?: string | null;
+  itemId?: string | null;
+  title: string;
+  sellerUsername?: string;
+  creationDate: string | null;
+  quantity: number;
+  unitPrice: number | null;
+  totalPaid: number | null;
+}
+
+/** List items you bought on eBay (Trading API, buyer role). */
+export const listEbayPurchases = async (fromDate?: string, toDate?: string): Promise<EbayPurchaseSummary[]> => {
+  const config = getEbayConfig();
+  if (!config?.token) {
+    throw new Error('eBay token not configured. Add your token in Settings.');
+  }
+  const res = await fetch('/api/ebay-purchases', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: config.token, fromDate, toDate }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || `Failed to fetch purchases: ${res.status}`);
+  }
+  return data.purchases || [];
+};
+
 /** Response shape from /api/ebay-order. */
 export interface EbayOrderData {
   customer: { name: string; address: string; phone?: string; email?: string };

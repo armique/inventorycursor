@@ -24,6 +24,17 @@ import type { EbayOrderFinancialEvent, EbayOrderRecord } from '../services/ebayO
 import { isRealizedDisposal, dispositionDate } from '../utils/itemDisposition';
 import { parseEbayOrderCsv } from '../services/ebayOrderCsvImport';
 import type { EbayOrderRecord } from '../services/ebayOrderIndex';
+import {
+  addFilamentSpool,
+  getRemainingGrams,
+  getUsedGrams,
+  recordFilamentUsage,
+  setRemainingOverride,
+  type FilamentStockState,
+} from '../services/filamentStock';
+import { calculateTaxSummary } from '../services/taxService';
+import { FILAMENT_STOCK_EXPENSE_CATEGORY, isOperatingExpense } from '../utils/expenseCategories';
+import type { Expense } from '../types';
 
 let passed = 0;
 let failed = 0;
@@ -391,6 +402,47 @@ function runAdjustmentTests(): void {
   assert(analysis.suggestions.some((s) => s.kind === 'adjustment'), 'adjustment suggestion kind');
 }
 
+function runFilamentStockTests(): void {
+  let state: FilamentStockState = { spools: [], updatedAt: new Date().toISOString() };
+  state = addFilamentSpool(state, {
+    type: 'PLA',
+    color: 'White',
+    pricePerKg: 20,
+    purchasedGrams: 1000,
+    source: 'amazon',
+    vendor: 'Amazon',
+  });
+  const spool = state.spools[0];
+  assert(spool.purchasedGrams === 1000, 'spool purchased grams');
+  assert(getRemainingGrams(spool) === 1000, 'full spool remaining initially');
+
+  const used = recordFilamentUsage(state, spool.id, 150, {
+    kind: 'print',
+    inventoryItemName: 'Bracket',
+  });
+  assert(!used.error, 'print usage records');
+  assert(getUsedGrams(used.state.spools[0]) === 150, 'used grams after print');
+  assert(getRemainingGrams(used.state.spools[0]) === 850, 'remaining after print');
+
+  const blocked = recordFilamentUsage(used.state, spool.id, 900, { kind: 'print' });
+  assert(!!blocked.error, 'blocks over-deduction');
+
+  const adjusted = setRemainingOverride(used.state, spool.id, 500, 'weighed');
+  assert(getRemainingGrams(adjusted.spools[0]) === 500, 'manual remaining override');
+}
+
+function runFilamentExpenseTaxTests(): void {
+  assert(isOperatingExpense('Shipping') === true, 'shipping is operating');
+  assert(isOperatingExpense(FILAMENT_STOCK_EXPENSE_CATEGORY) === false, 'filament stock not operating');
+  const year = 2026;
+  const expenses: Expense[] = [
+    { id: 'e1', description: 'DHL', amount: 50, date: '2026-03-01', category: 'Shipping' },
+    { id: 'e2', description: 'PLA spool', amount: 20, date: '2026-03-02', category: FILAMENT_STOCK_EXPENSE_CATEGORY },
+  ];
+  const summary = calculateTaxSummary([], expenses, year);
+  assertClose(summary.expenses, 50, 'tax summary excludes filament stock from operating');
+}
+
 console.log('DeInventory critical-flow verification\n');
 
 runTradeTests();
@@ -403,6 +455,8 @@ runEbayAnalysisTests();
 runAdjustmentTests();
 runFinanzamtTests();
 runCsvImportTests();
+runFilamentStockTests();
+runFilamentExpenseTaxTests();
 
 console.log(`\nResults: ${passed} passed, ${failed} failed`);
 if (failed > 0) {

@@ -1,26 +1,28 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { 
-  Printer, ArrowLeft, Save, Plus, AlertCircle, CheckCircle2, 
-  HelpCircle, DollarSign, Layers, Zap, Gauge, Wrench, ShieldAlert, History
+import {
+  Printer, ArrowLeft, Save, AlertCircle, CheckCircle2,
+  Layers, Zap, Gauge, ShieldAlert, History,
 } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
-import { formatEUR } from '../utils/formatMoney';
-
-interface Filament {
-  id: string;
-  type: string;
-  color: string;
-  price: number;
-}
+import FilamentStockPanel from './FilamentStockPanel';
+import {
+  getRemainingGrams,
+  gramsToKgDisplay,
+  loadFilamentStock,
+  recordFilamentUsage,
+  spoolLabel,
+  type FilamentSpool,
+} from '../services/filamentStock';
 
 interface ThreeDPrintPageProps {
   items: InventoryItem[];
   onSave: (items: InventoryItem[]) => void;
   categories: Record<string, string[]>;
+  onAddExpense?: (expense: import('../types').Expense) => void;
 }
 
-const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, categories }) => {
+const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, categories, onAddExpense }) => {
   const navigate = useNavigate();
 
   // Basic Details
@@ -38,96 +40,36 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
   const [plannedSellPrice, setPlannedSellPrice] = useState<string>('');
   const [storeVisible, setStoreVisible] = useState(false);
 
-  // Filament Settings
-  const DEFAULT_FILAMENTS: Filament[] = [
-    { id: 'pla-black', type: 'PLA', color: 'Black', price: 13 },
-    { id: 'pla-white', type: 'PLA', color: 'White', price: 13 },
-    { id: 'petg-black', type: 'PETG', color: 'Black', price: 15 },
-    { id: 'abs-black', type: 'ABS', color: 'Black', price: 16 }
-  ];
+  // Filament stock + calculator fields
+  const initialStock = loadFilamentStock();
+  const [selectedSpoolId, setSelectedSpoolId] = useState<string | null>(() => initialStock.spools[0]?.id ?? null);
 
-  const [filaments, setFilaments] = useState<Filament[]>(() => {
-    const saved = localStorage.getItem('3d_print_filaments');
-    return saved ? JSON.parse(saved) : DEFAULT_FILAMENTS;
-  });
+  const applySpoolToCalculator = useCallback((spool: FilamentSpool | null) => {
+    if (!spool) return;
+    setSelectedSpoolId(spool.id);
+    setFilamentType(spool.type);
+    setFilamentColor(spool.color);
+    setFilamentPrice(spool.pricePerKg);
+  }, []);
 
-  const [selectedFilamentId, setSelectedFilamentId] = useState<string>(() => {
-    const saved = localStorage.getItem('3d_print_filaments');
-    const list = saved ? JSON.parse(saved) : DEFAULT_FILAMENTS;
-    return list[0]?.id || 'custom';
-  });
+  const [filamentType, setFilamentType] = useState<string>(() => initialStock.spools[0]?.type || 'PLA');
+  const [filamentColor, setFilamentColor] = useState<string>(() => initialStock.spools[0]?.color || 'Black');
+  const [filamentWeight, setFilamentWeight] = useState<number>(100);
+  const [filamentPrice, setFilamentPrice] = useState<number>(() => initialStock.spools[0]?.pricePerKg || 13);
 
-  const [filamentType, setFilamentType] = useState<string>(() => {
-    const saved = localStorage.getItem('3d_print_filaments');
-    const list = saved ? JSON.parse(saved) : DEFAULT_FILAMENTS;
-    return list[0]?.type || 'PLA';
-  });
+  const [stockRevision, setStockRevision] = useState(0);
+  useEffect(() => {
+    const onStock = () => setStockRevision((v) => v + 1);
+    window.addEventListener('filament-stock-updated', onStock);
+    return () => window.removeEventListener('filament-stock-updated', onStock);
+  }, []);
 
-  const [filamentColor, setFilamentColor] = useState<string>(() => {
-    const saved = localStorage.getItem('3d_print_filaments');
-    const list = saved ? JSON.parse(saved) : DEFAULT_FILAMENTS;
-    return list[0]?.color || 'Black';
-  });
+  const selectedSpool = useMemo(() => {
+    if (!selectedSpoolId) return null;
+    return loadFilamentStock().spools.find((s) => s.id === selectedSpoolId) ?? null;
+  }, [selectedSpoolId, stockRevision]);
 
-  const [filamentWeight, setFilamentWeight] = useState<number>(100); // grams
-  const [filamentPrice, setFilamentPrice] = useState<number>(() => {
-    const saved = localStorage.getItem('3d_print_filaments');
-    const list = saved ? JSON.parse(saved) : DEFAULT_FILAMENTS;
-    return list[0]?.price || 13;
-  }); // € per kg
-
-  // Add filament stock form inputs
-  const [newFilTypeSelect, setNewFilTypeSelect] = useState('PLA');
-  const [newFilTypeCustom, setNewFilTypeCustom] = useState('');
-  const [newFilColorSelect, setNewFilColorSelect] = useState('Black');
-  const [newFilColorCustom, setNewFilColorCustom] = useState('');
-  const [newFilPrice, setNewFilPrice] = useState('');
-
-  const addFilament = () => {
-    const typeToSave = newFilTypeSelect === 'CUSTOM' ? newFilTypeCustom.trim() : newFilTypeSelect;
-    const colorToSave = newFilColorSelect === 'CUSTOM' ? newFilColorCustom.trim() : newFilColorSelect;
-
-    if (!typeToSave || !colorToSave || !newFilPrice.trim()) {
-      alert('Please fill out all filament profile fields.');
-      return;
-    }
-    const priceNum = parseFloat(newFilPrice.replace(',', '.'));
-    if (isNaN(priceNum) || priceNum <= 0) {
-      alert('Please enter a valid price.');
-      return;
-    }
-    const newFil: Filament = {
-      id: `fil-${Date.now()}`,
-      type: typeToSave,
-      color: colorToSave,
-      price: priceNum
-    };
-    const next = [...filaments, newFil];
-    setFilaments(next);
-    localStorage.setItem('3d_print_filaments', JSON.stringify(next));
-    
-    // Auto select newly added filament
-    setSelectedFilamentId(newFil.id);
-    setFilamentType(newFil.type);
-    setFilamentColor(newFil.color);
-    setFilamentPrice(newFil.price);
-
-    // Reset inputs
-    setNewFilTypeSelect('PLA');
-    setNewFilTypeCustom('');
-    setNewFilColorSelect('Black');
-    setNewFilColorCustom('');
-    setNewFilPrice('');
-  };
-
-  const deleteFilament = (id: string) => {
-    const next = filaments.filter(f => f.id !== id);
-    setFilaments(next);
-    localStorage.setItem('3d_print_filaments', JSON.stringify(next));
-    if (selectedFilamentId === id) {
-      setSelectedFilamentId('custom');
-    }
-  };
+  const pendingFilamentGrams = filamentWeight * quantity;
 
   // --- RECENT PRINTS HISTORY ---
   const recentPrints = useMemo(() => {
@@ -168,17 +110,18 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
     
     const fType = String(specs['Filament Type'] || '');
     const fColor = String(specs['Filament Color'] || '');
+    const spoolId = String(specs['Filament Spool ID'] || '');
     if (fType) setFilamentType(fType);
     if (fColor) setFilamentColor(fColor);
-    
-    const matchedFil = filaments.find(
-      (f) => f.type.toLowerCase() === fType.toLowerCase() && f.color.toLowerCase() === fColor.toLowerCase()
+
+    const stock = loadFilamentStock();
+    const byId = spoolId ? stock.spools.find((s) => s.id === spoolId) : undefined;
+    const byMatch = stock.spools.find(
+      (s) => s.type.toLowerCase() === fType.toLowerCase() && s.color.toLowerCase() === fColor.toLowerCase()
     );
-    if (matchedFil) {
-      setSelectedFilamentId(matchedFil.id);
-      setFilamentPrice(matchedFil.price);
-    } else {
-      setSelectedFilamentId('custom');
+    const matched = byId || byMatch;
+    if (matched) {
+      applySpoolToCalculator(matched);
     }
     
     const comment2 = histItem.comment2 || '';
@@ -304,6 +247,17 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
       return;
     }
 
+    const totalGramsNeeded = filamentWeight * quantity;
+    if (selectedSpoolId && selectedSpool) {
+      const remaining = getRemainingGrams(selectedSpool);
+      if (selectedSpool.purchasedGrams > 0 && totalGramsNeeded > remaining + 0.5) {
+        setErrorMsg(
+          `Not enough filament on ${spoolLabel(selectedSpool)} — need ${gramsToKgDisplay(totalGramsNeeded)}, only ${gramsToKgDisplay(remaining)} left.`
+        );
+        return;
+      }
+    }
+
     const categoryToSave = showCustomCategory ? customCategory.trim() : selectedCategory;
     const subCategoryToSave = showCustomCategory ? customSubCategory.trim() : selectedSubCategory;
 
@@ -341,10 +295,25 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
           'Print Time': `${printHours}h ${printMinutes}m`,
           'Printer Model Cost': `${printerCost} €`,
           'Filament Type': filamentType,
-          'Filament Color': filamentColor
-        }
-      }
+          'Filament Color': filamentColor,
+          ...(selectedSpoolId ? { 'Filament Spool ID': selectedSpoolId } : {}),
+        },
+      },
     ];
+
+    if (selectedSpoolId) {
+      const stock = loadFilamentStock();
+      const { error } = recordFilamentUsage(stock, selectedSpoolId, totalGramsNeeded, {
+        kind: 'print',
+        inventoryItemId: uniqueId,
+        inventoryItemName: itemName.trim(),
+        note: `${quantity}× @ ${filamentWeight}g`,
+      });
+      if (error) {
+        setErrorMsg(error);
+        return;
+      }
+    }
 
     try {
       onSave(createdItems);
@@ -399,6 +368,13 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
           <p className="text-sm font-semibold">{successMsg}</p>
         </div>
       )}
+
+      <FilamentStockPanel
+        selectedSpoolId={selectedSpoolId}
+        onSelectSpool={applySpoolToCalculator}
+        pendingGrams={pendingFilamentGrams}
+        onAddExpense={onAddExpense}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Form Inputs (Left) */}
@@ -589,33 +565,38 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
             {/* Filament */}
             <div className="space-y-4">
               <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Material (Filament)</h3>
-              
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="sm:col-span-2">
                   <label className="block text-xs font-bold text-slate-600 mb-1">
-                    Select Filament Profile *
+                    Active spool (deducts on save)
                   </label>
                   <select
-                    value={selectedFilamentId}
+                    value={selectedSpoolId ?? ''}
                     onChange={(e) => {
                       const id = e.target.value;
-                      setSelectedFilamentId(id);
-                      const fil = filaments.find(f => f.id === id);
-                      if (fil) {
-                        setFilamentType(fil.type);
-                        setFilamentColor(fil.color);
-                        setFilamentPrice(fil.price);
+                      if (!id) {
+                        setSelectedSpoolId(null);
+                        return;
                       }
+                      const spool = loadFilamentStock().spools.find((s) => s.id === id);
+                      applySpoolToCalculator(spool ?? null);
                     }}
                     className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm bg-white font-semibold text-slate-850"
                   >
-                    {filaments.map((fil) => (
-                      <option key={fil.id} value={fil.id}>
-                        {fil.type} - {fil.color} (€{fil.price.toFixed(2)}/kg)
+                    <option value="">No spool — price only, no stock deduction</option>
+                    {loadFilamentStock().spools.map((spool) => (
+                      <option key={spool.id} value={spool.id}>
+                        {spoolLabel(spool)} · {gramsToKgDisplay(getRemainingGrams(spool))} left · €
+                        {spool.pricePerKg.toFixed(2)}/kg
                       </option>
                     ))}
-                    <option value="custom">Custom Filament Profile</option>
                   </select>
+                  {selectedSpool && (
+                    <p className="text-[11px] text-slate-500 mt-1.5 font-semibold">
+                      {gramsToKgDisplay(getRemainingGrams(selectedSpool))} remaining on this spool after prior prints.
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -642,7 +623,6 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
                     value={filamentPrice}
                     onChange={(e) => {
                       setFilamentPrice(Math.max(0, parseFloat(e.target.value) || 0));
-                      setSelectedFilamentId('custom');
                     }}
                     className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
                   />
@@ -658,7 +638,6 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
                     value={filamentType}
                     onChange={(e) => {
                       setFilamentType(e.target.value);
-                      setSelectedFilamentId('custom');
                     }}
                     className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
                   />
@@ -674,7 +653,6 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
                     value={filamentColor}
                     onChange={(e) => {
                       setFilamentColor(e.target.value);
-                      setSelectedFilamentId('custom');
                     }}
                     className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
                   />
@@ -826,11 +804,25 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
                 </span>
               </div>
               <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-400">Filament Cost</span>
+                <span className="text-slate-400">
+                  Filament Cost
+                  {quantity > 1 ? ` (×${quantity})` : ''}
+                </span>
                 <span className="font-mono text-white font-bold">
                   €{calculations.filamentCostUnit.toFixed(2)}
+                  {quantity > 1 && (
+                    <span className="text-slate-400 font-normal text-xs ml-1">
+                      / €{(calculations.filamentCostUnit * quantity).toFixed(2)} total
+                    </span>
+                  )}
                 </span>
               </div>
+              {selectedSpool && pendingFilamentGrams > 0 && (
+                <div className="flex justify-between items-center text-xs text-indigo-300/90 px-1">
+                  <span>Stock use ({quantity}× {filamentWeight}g)</span>
+                  <span className="font-mono font-bold">−{gramsToKgDisplay(pendingFilamentGrams)}</span>
+                </div>
+              )}
               <div className="flex justify-between items-center text-sm">
                 <span className="text-slate-400">Electricity Cost</span>
                 <span className="font-mono text-white font-bold">
@@ -936,118 +928,6 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
               <p className="text-amber-800 leading-relaxed">
                 Electricity pricing in Bavaria averages **34.0¢ per kWh** for German household tariffs in 2026. This rate is pre-loaded into the calculator, but you should adjust this if you are on a specific commercial, contract-bound, or dynamic grid tariff (e.g. Tibber/Awattar).
               </p>
-            </div>
-          </div>
-
-          {/* Section 3: Filament Stock & Prices */}
-          <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-6 animate-in fade-in duration-250">
-            <h2 className="text-lg font-black text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
-              <Printer size={18} className="text-brand-500" />
-              3. Filament Stock & Prices
-            </h2>
-            
-            {/* List of filaments */}
-            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-              {filaments.map((fil) => (
-                <div key={fil.id} className="flex justify-between items-center bg-slate-50 hover:bg-slate-100/70 p-3.5 rounded-2xl border border-slate-150 transition-colors">
-                  <div className="flex flex-col">
-                    <span className="font-extrabold text-slate-800 text-sm">{fil.type}</span>
-                    <span className="text-slate-500 text-xs font-semibold">Color: {fil.color}</span>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <span className="font-mono font-black text-slate-700 text-sm">€{fil.price.toFixed(2)}/kg</span>
-                    <button
-                      type="button"
-                      onClick={() => deleteFilament(fil.id)}
-                      className="text-xs text-red-500 hover:text-red-700 font-extrabold transition-colors"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Add filament form */}
-            <div className="bg-slate-50/50 p-4 rounded-2xl border border-slate-150 space-y-4">
-              <span className="text-xs font-black uppercase tracking-wider text-slate-550 block">Add New Filament Profile</span>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Type</label>
-                  <select
-                    value={newFilTypeSelect}
-                    onChange={(e) => setNewFilTypeSelect(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white font-semibold text-slate-800"
-                  >
-                    <option value="PLA">PLA</option>
-                    <option value="PETG">PETG</option>
-                    <option value="ABS">ABS</option>
-                    <option value="ASA">ASA</option>
-                    <option value="TPU">TPU</option>
-                    <option value="Nylon">Nylon</option>
-                    <option value="PVA">PVA</option>
-                    <option value="CUSTOM">Custom...</option>
-                  </select>
-                  {newFilTypeSelect === 'CUSTOM' && (
-                    <input
-                      type="text"
-                      placeholder="e.g. Wood, Polycarbonate"
-                      value={newFilTypeCustom}
-                      onChange={(e) => setNewFilTypeCustom(e.target.value)}
-                      className="w-full mt-2 px-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500 animate-in fade-in slide-in-from-top-1 duration-150"
-                    />
-                  )}
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Color</label>
-                  <select
-                    value={newFilColorSelect}
-                    onChange={(e) => setNewFilColorSelect(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white font-semibold text-slate-800"
-                  >
-                    <option value="Black">Black</option>
-                    <option value="White">White</option>
-                    <option value="Grey">Grey</option>
-                    <option value="Silver">Silver</option>
-                    <option value="Gold">Gold</option>
-                    <option value="Red">Red</option>
-                    <option value="Blue">Blue</option>
-                    <option value="Green">Green</option>
-                    <option value="Yellow">Yellow</option>
-                    <option value="Orange">Orange</option>
-                    <option value="Purple">Purple</option>
-                    <option value="Pink">Pink</option>
-                    <option value="Transparent">Transparent</option>
-                    <option value="CUSTOM">Custom...</option>
-                  </select>
-                  {newFilColorSelect === 'CUSTOM' && (
-                    <input
-                      type="text"
-                      placeholder="e.g. Silk Gold, Matte Teal"
-                      value={newFilColorCustom}
-                      onChange={(e) => setNewFilColorCustom(e.target.value)}
-                      className="w-full mt-2 px-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500 animate-in fade-in slide-in-from-top-1 duration-150"
-                    />
-                  )}
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Price / kg (€)</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. 18.50"
-                    value={newFilPrice}
-                    onChange={(e) => setNewFilPrice(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500"
-                  />
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={addFilament}
-                className="w-full py-2.5 px-4 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-extrabold text-xs uppercase tracking-wider transition-all"
-              >
-                Add Filament Profile
-              </button>
             </div>
           </div>
         </div>

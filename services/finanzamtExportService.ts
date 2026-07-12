@@ -20,11 +20,17 @@ import {
   isBundleSoldOnParentOnly,
 } from './financialAggregation';
 import { formatAdjustmentsForFinanzamt, getOriginalSellPrice, sumAdjustmentAmounts } from '../utils/ebaySaleAdjustments';
+import {
+  FILAMENT_STOCK_EXPENSE_CATEGORY,
+  filterInventoryStockExpenses,
+  filterOperatingExpenses,
+} from '../utils/expenseCategories';
 
 const round2 = roundMoney;
 
 const SHEET_WARE = 'Ware_Buchungen';
 const SHEET_AUSGABEN = 'Betriebsausgaben';
+const SHEET_VORRAT = 'Vorratsbestand_Filament';
 const SHEET_PAKETE = 'Pakete_Uebersicht';
 const SHEET_ANLEITUNG = 'Anleitung';
 
@@ -261,11 +267,24 @@ export function buildFinanzamtPaketSummaryRows(items: InventoryItem[]): Finanzam
 }
 
 function buildAusgabenRows(expenses: Expense[]): Record<string, string | number>[] {
-  return expenses.map((e) => ({
+  return filterOperatingExpenses(expenses).map((e) => ({
     Datum: e.date || '',
     Beschreibung: e.description || '',
     Betrag_EUR: round2(Number(e.amount || 0)),
     Kategorie: e.category || '',
+    Beleg_URL: e.attachmentUrl || '',
+    Dateiname_Beleg: e.attachmentName || '',
+  }));
+}
+
+function buildVorratFilamentRows(expenses: Expense[]): Record<string, string | number>[] {
+  return filterInventoryStockExpenses(expenses).map((e) => ({
+    Datum: e.date || '',
+    Beschreibung: e.description || '',
+    Betrag_EUR: round2(Number(e.amount || 0)),
+    Kategorie: e.category || FILAMENT_STOCK_EXPENSE_CATEGORY,
+    Hinweis_Buchung:
+      'Vorratsbestand — kein sofortiger Betriebsausgaben-Abzug; Materialkosten über Druck-Wareneingang (3D Print COGS).',
     Beleg_URL: e.attachmentUrl || '',
     Dateiname_Beleg: e.attachmentName || '',
   }));
@@ -283,7 +302,8 @@ function instructionSheetRows(companyName: string, exportedAt: string, periodNot
     ['1) Anleitung', 'Diese Übersicht.'],
     ['2) Ware_Buchungen', 'Alle buchungsrelevanten Positionen: Bestand, verkaufte Einzelteile, Pakete.'],
     ['3) Pakete_Uebersicht', 'Eine Zeile pro Paket/PC mit Stückliste und Hinweis, wie der Verkauf in den Daten gebucht ist.'],
-    ['4) Betriebsausgaben', 'Ihre erfassten Ausgaben inkl. Kategorie und optional Beleg-Link.'],
+    ['4) Betriebsausgaben', 'Laufende Betriebsausgaben (Versand, Tools, …) — ohne Filament-Vorratsbestand.'],
+    ['5) Vorratsbestand_Filament', `Einkäufe mit Kategorie „${FILAMENT_STOCK_EXPENSE_CATEGORY}“ — Inventar, kein direkter Gewinn-Abzug.`],
     ['', ''],
     ['Wichtig: Pakete und PCs', ''],
     [
@@ -610,6 +630,32 @@ export async function exportFinanzamtWorkbook(
         ])
       : [['Keine Ausgaben erfasst.', null, null, null, null, null]];
   addStyledTableSheet(wb, SHEET_AUSGABEN, ausHeaders, ausData, ausRows.length > 0 ? [2] : [], [12, 40, 14, 18, 48, 24]);
+
+  const vorratRows = buildVorratFilamentRows(exportExpenses);
+  const vorratHeaders =
+    vorratRows.length > 0
+      ? ['Datum', 'Beschreibung', 'Betrag_EUR', 'Kategorie', 'Hinweis_Buchung', 'Beleg_URL', 'Dateiname_Beleg']
+      : ['Hinweis'];
+  const vorratData =
+    vorratRows.length > 0
+      ? vorratRows.map((r) => [
+          r.Datum,
+          r.Beschreibung,
+          typeof r.Betrag_EUR === 'number' ? r.Betrag_EUR : null,
+          r.Kategorie,
+          r.Hinweis_Buchung,
+          r.Beleg_URL || null,
+          r.Dateiname_Beleg || null,
+        ])
+      : [[`Keine ${FILAMENT_STOCK_EXPENSE_CATEGORY}-Einkäufe im Zeitraum.`, null, null, null, null, null, null]];
+  addStyledTableSheet(
+    wb,
+    SHEET_VORRAT,
+    vorratHeaders,
+    vorratData,
+    vorratRows.length > 0 ? [2] : [],
+    [12, 40, 14, 22, 52, 48, 24]
+  );
 
   const date = new Date().toISOString().slice(0, 10);
   const fileStem = bounds ? `Finanzamt-Export-${formatBoundsForFilename(bounds)}` : `Finanzamt-Export-${date}`;

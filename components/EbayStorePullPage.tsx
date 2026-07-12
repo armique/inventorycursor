@@ -27,10 +27,12 @@ import { normalizeImageList, prepareInventoryImagesForStorage } from '../utils/i
 import EbayStorePullImportTab from './EbayStorePullImportTab';
 import EbayStorePullSoldTab from './EbayStorePullSoldTab';
 import EbayStorePullOrdersTab from './EbayStorePullOrdersTab';
+import EbayStorePullPurchasesTab from './EbayStorePullPurchasesTab';
 import EbayToolProgressBar, { type EbayToolProgress } from './EbayToolProgressBar';
+import type { Expense } from '../types';
 
 type PhotoMode = 'none' | 'all' | 'pick';
-type PullTab = 'sync' | 'import' | 'sold' | 'orders';
+type PullTab = 'sync' | 'import' | 'sold' | 'orders' | 'purchases';
 
 interface Props {
   items: InventoryItem[];
@@ -39,6 +41,7 @@ interface Props {
   taxMode: TaxMode;
   onUpdate: (items: InventoryItem[]) => void;
   onPublishCatalog?: () => void | Promise<void>;
+  onAddExpense: (expense: Expense) => void;
 }
 
 function defaultRowState(match: EbayStorePullMatch): RowState {
@@ -92,6 +95,12 @@ const TABS: { id: PullTab; label: string; icon: React.ReactNode; hint: string }[
     icon: <PackageSearch size={14} />,
     hint: 'Fetch eBay orders and match inventory — mark forgotten sales, link order IDs, fix net payout',
   },
+  {
+    id: 'purchases',
+    label: 'Purchases',
+    icon: <ShoppingBag size={14} />,
+    hint: 'What you bought on eBay — filament stock, expenses, personal',
+  },
 ];
 
 const EbayStorePullPage: React.FC<Props> = ({
@@ -101,6 +110,7 @@ const EbayStorePullPage: React.FC<Props> = ({
   taxMode,
   onUpdate,
   onPublishCatalog,
+  onAddExpense,
 }) => {
   const [tab, setTab] = useState<PullTab>('orders');
   const [searchParams] = useSearchParams();
@@ -108,6 +118,7 @@ const EbayStorePullPage: React.FC<Props> = ({
   useEffect(() => {
     const t = searchParams.get('tab');
     if (t === 'sales') setTab('orders');
+    else if (t === 'purchases') setTab('purchases');
     else if (t === 'sync' || t === 'import' || t === 'sold' || t === 'orders') setTab(t);
   }, [searchParams]);
   const [loading, setLoading] = useState(false);
@@ -380,6 +391,8 @@ const EbayStorePullPage: React.FC<Props> = ({
         />
       ) : tab === 'orders' ? (
         <EbayStorePullOrdersTab items={items} taxMode={taxMode} onUpdate={onUpdate} />
+      ) : tab === 'purchases' ? (
+        <EbayStorePullPurchasesTab items={items} onAddExpense={onAddExpense} />
       ) : (
         <>
 

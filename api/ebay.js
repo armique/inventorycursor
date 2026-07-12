@@ -353,6 +353,144 @@ async function fetchTradingActiveListings(token) {
   return parseTradingActiveListings(text);
 }
 
+function decodeTradingXmlText(raw) {
+  return String(raw || '')
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .trim();
+}
+
+function parseTradingBuyerPurchases(xml) {
+  const purchases = [];
+  const orderBlocks = xml.match(/<Order>[\s\S]*?<\/Order>/gi) || [];
+  for (const orderBlock of orderBlocks) {
+    const orderId = orderBlock.match(/<OrderID>([^<]+)<\/OrderID>/i)?.[1]?.trim();
+    const createdTime = orderBlock.match(/<CreatedTime>([^<]+)<\/CreatedTime>/i)?.[1];
+    const creationDate = createdTime ? createdTime.split('T')[0] : null;
+    const txBlocks = orderBlock.match(/<Transaction>[\s\S]*?<\/Transaction>/gi) || [];
+    for (const tx of txBlocks) {
+      const transactionId = tx.match(/<TransactionID>([^<]+)<\/TransactionID>/i)?.[1]?.trim();
+      const itemBlock = tx.match(/<Item>[\s\S]*?<\/Item>/i)?.[0] || tx;
+      const itemId = itemBlock.match(/<ItemID>([^<]+)<\/ItemID>/i)?.[1]?.trim();
+      const titleRaw = tx.match(/<Title>([\s\S]*?)<\/Title>/i)?.[1];
+      const title = decodeTradingXmlText(titleRaw);
+      const priceStr = tx.match(/<TransactionPrice[^>]*>([\d.,]+)<\/TransactionPrice>/i)?.[1];
+      const unitPrice = parseListingPrice(priceStr);
+      const qtyStr = tx.match(/<QuantityPurchased>(\d+)<\/QuantityPurchased>/i)?.[1];
+      const quantity = qtyStr ? parseInt(qtyStr, 10) : 1;
+      const sellerRaw = tx.match(/<Seller>[\s\S]*?<UserID>([\s\S]*?)<\/UserID>/i)?.[1];
+      const sellerUsername = decodeTradingXmlText(sellerRaw);
+      const lineKey = `${orderId || 'order'}-${transactionId || itemId || purchases.length}`;
+      const totalPaid = unitPrice != null ? Math.round(unitPrice * quantity * 100) / 100 : null;
+      purchases.push({
+        lineKey,
+        orderId: orderId || '',
+        transactionId: transactionId || null,
+        itemId: itemId || null,
+        title,
+        sellerUsername: sellerUsername || undefined,
+        creationDate,
+        quantity,
+        unitPrice,
+        totalPaid,
+      });
+    }
+  }
+  return purchases;
+}
+
+async function fetchTradingBuyerPurchases(token, fromDate, toDate) {
+  const now = new Date();
+  const to = toDate ? new Date(`${toDate}T23:59:59Z`) : now;
+  const from = fromDate ? new Date(`${fromDate}T00:00:00Z`) : new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+  const all = [];
+  let pageNumber = 1;
+
+  for (;;) {
+    const xml = `<?xml version="1.0" encoding="utf-8"?>
+<GetOrdersRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+  <OrderRole>Buyer</OrderRole>
+  <OrderStatus>All</OrderStatus>
+  <CreateTimeFrom>${from.toISOString()}</CreateTimeFrom>
+  <CreateTimeTo>${to.toISOString()}</CreateTimeTo>
+  <Pagination>
+    <EntriesPerPage>100</EntriesPerPage>
+    <PageNumber>${pageNumber}</PageNumber>
+  </Pagination>
+  <DetailLevel>ReturnAll</DetailLevel>
+</GetOrdersRequest>`;
+
+    const ebayRes = await fetch('https://api.ebay.com/ws/api.dll', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'text/xml',
+        'X-EBAY-API-CALL-NAME': 'GetOrders',
+        'X-EBAY-API-SITEID': '77',
+        'X-EBAY-API-COMPATIBILITY-LEVEL': '967',
+      },
+      body: xml,
+    });
+
+    if (ebayRes.status === 401) {
+      const err = new Error('eBay token expired or invalid.');
+      err.status = 401;
+      throw err;
+    }
+    if (!ebayRes.ok) {
+      const errText = await ebayRes.text();
+      const err = new Error(errText.slice(0, 300));
+      err.status = ebayRes.status;
+      throw err;
+    }
+
+    const text = await ebayRes.text();
+    if (/<Ack>\s*Failure\s*<\/Ack>/i.test(text)) {
+      const msg =
+        text.match(/<LongMessage>([\s\S]*?)<\/LongMessage>/i)?.[1] ||
+        text.match(/<ShortMessage>([\s\S]*?)<\/ShortMessage>/i)?.[1] ||
+        'GetOrders failed';
+      throw new Error(decodeTradingXmlText(msg));
+    }
+
+    const batch = parseTradingBuyerPurchases(text);
+    all.push(...batch);
+
+    const hasMore = /<HasMoreOrders>\s*true\s*<\/HasMoreOrders>/i.test(text);
+    if (!hasMore || batch.length === 0) break;
+    pageNumber += 1;
+    if (pageNumber > 50) break;
+  }
+
+  return all;
+}
+
+async function handleEbayPurchases(req, res) {
+  let token, fromDate, toDate;
+  if (req.method === 'POST') {
+    const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+    token = body.token || (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    fromDate = body.fromDate || body.from;
+    toDate = body.toDate || body.to;
+  } else {
+    token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || req.query?.token;
+    fromDate = req.query?.fromDate || req.query?.from;
+    toDate = req.query?.toDate || req.query?.to;
+  }
+  if (!token) return res.status(400).json({ error: 'Missing token.' });
+
+  try {
+    const purchases = await fetchTradingBuyerPurchases(token, fromDate, toDate);
+    return res.status(200).json({ purchases });
+  } catch (e) {
+    if (e.status === 401) return res.status(401).json({ error: e.message });
+    return res.status(500).json({ error: e instanceof Error ? e.message : 'Failed to fetch eBay purchases' });
+  }
+}
+
 async function handleEbayListings(req, res) {
   const { token, username: rawUsername } = getListingsRequest(req);
   const username = String(rawUsername || 'rm4ik').trim().replace(/^@/, '');
@@ -550,6 +688,7 @@ export default async function handler(req, res) {
 
   const route = String(req.query?.route || 'order').trim();
   if (route === 'orders') return handleEbayOrders(req, res);
+  if (route === 'purchases') return handleEbayPurchases(req, res);
   if (route === 'listings') return handleEbayListings(req, res);
   return handleEbayOrder(req, res);
 }
