@@ -36,6 +36,7 @@ import ItemThumbnail from './ItemThumbnail';
 import InvoiceView from './InvoiceView';
 import InventoryAISpecsPanel from './InventoryAISpecsPanel';
 import AddPhotosModal, { type AddPhotosApplyOptions } from './AddPhotosModal';
+import ProductCardGeneratorModal from './ProductCardGeneratorModal';
 import BulkSelectionBar, { type BulkAction } from './BulkSelectionBar';
 import { generateItemSpecs } from '../services/specsAI';
 import { getStorefrontHiddenReason, isPublishedOnStorefront } from '../utils/storefrontCatalog';
@@ -615,6 +616,7 @@ const InventoryList: React.FC<Props> = ({
   const [showAISpecsModal, setShowAISpecsModal] = useState(false);
   const [showBulkAddPhotosModal, setShowBulkAddPhotosModal] = useState(false);
   const [addPhotosTargetIds, setAddPhotosTargetIds] = useState<string[]>([]);
+  const [cardGenItem, setCardGenItem] = useState<InventoryItem | null>(null);
 
   // -- INLINE EDITING STATE --
   const [editingCell, setEditingCell] = useState<{ itemId: string, field: ColumnId } | null>(null);
@@ -1894,6 +1896,18 @@ const InventoryList: React.FC<Props> = ({
                 <Camera size={13} strokeWidth={2.25} />
               </button>
 
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCardGenItem(item);
+                }}
+                className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors border-indigo-200 bg-indigo-50/80 text-indigo-700 hover:bg-indigo-100`}
+                title="Generate premium product card (eBay / Kleinanzeigen)"
+              >
+                <Sparkles size={13} strokeWidth={2.25} />
+              </button>
+
               {/* Live eBay listing price (seller store / account) */}
               {(() => {
                 const ebayPriceSynced = hasEbayStorefrontPriceSynced(item);
@@ -2864,6 +2878,20 @@ const InventoryList: React.FC<Props> = ({
     setAddPhotosTargetIds([]);
   }, []);
 
+  const handleApplyProductCardPhoto = useCallback(
+    async (url: string) => {
+      if (!cardGenItem) return;
+      const merged = normalizeImageList([url, cardGenItem.imageUrl, ...(cardGenItem.imageUrls || [])]);
+      await onUpdate({
+        ...cardGenItem,
+        imageUrl: merged[0],
+        imageUrls: merged,
+      });
+      setToast('Product card applied as main photo');
+    },
+    [cardGenItem, onUpdate]
+  );
+
   const selectedHasSoldOrTraded = useMemo(
     () =>
       deferredSelectedIds.some((id) => {
@@ -3509,6 +3537,18 @@ const InventoryList: React.FC<Props> = ({
         ebaySku={addPhotosTargetItems.length === 1 ? addPhotosTargetItems[0]?.ebaySku : undefined}
         storageItemId={addPhotosTargetItems.length === 1 ? addPhotosTargetItems[0]?.id : 'shared'}
       />
+
+      {cardGenItem && (
+        <ProductCardGeneratorModal
+          item={cardGenItem}
+          categoryFields={
+            (categoryFields || {})[`${cardGenItem.category}:${cardGenItem.subCategory}`] ||
+            (categoryFields || {})[cardGenItem.category]
+          }
+          onClose={() => setCardGenItem(null)}
+          onApplyAsMainPhoto={handleApplyProductCardPhoto}
+        />
+      )}
 
       {/* Toast notification for quick actions (e.g. copy listing text) */}
       {toast && (

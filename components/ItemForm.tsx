@@ -8,7 +8,7 @@ import {
   MessageCircle, Link as LinkIcon, Upload, Search, Database, 
   Cpu, Monitor, HardDrive, Zap, Wind, AlertCircle, CheckCircle2, Copy,
   Fan, Lightbulb, Keyboard, Mouse, Tv, MoreHorizontal, Cable, Laptop as LaptopIcon, Wrench,
-  Wand2, Sliders, X, History
+  Wand2, Sliders, X, History, Sparkles
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, Platform, PaymentType } from '../types';
 import { SALE_PLATFORM_OPTIONS } from '../utils/salePlatform';
@@ -26,6 +26,7 @@ import { getCachedProductPhoto, setCachedProductPhoto } from '../services/fireba
 import { fetchMyEbayListings, getEbayUsername, ebayListingToPriceMatch, type EbayMyListing, type EbayListingPriceMatch } from '../services/ebayService';
 import { matchEbayListingsForItem } from '../utils/ebayListingMatch';
 import EbayListingPriceModal from './EbayListingPriceModal';
+import ProductCardGeneratorModal from './ProductCardGeneratorModal';
 
 interface Props {
   items: InventoryItem[];
@@ -156,6 +157,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   const [selectedEbayPhotosByListing, setSelectedEbayPhotosByListing] = useState<Record<string, string[]>>({});
   const [ebayPriceModalMatch, setEbayPriceModalMatch] = useState<EbayListingPriceMatch | null>(null);
   const [ebayPriceModalOpen, setEbayPriceModalOpen] = useState(false);
+  const [showProductCardGen, setShowProductCardGen] = useState(false);
   const [ebayPriceModalError, setEbayPriceModalError] = useState<string | null>(null);
   const [previewPhoto, setPreviewPhoto] = useState<ImageSearchResult | null>(null);
   const [imageProviders, setImageProviders] = useState<ImageSearchProvider[]>([]);
@@ -1228,6 +1230,15 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                           <ShoppingBag size={12} className={ebayListingLoading ? 'animate-pulse' : ''} />
                           {ebayListingLoading ? 'Loading…' : 'My eBay photos'}
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowProductCardGen(true)}
+                          disabled={!formData.name}
+                          title="Generate premium listing card with specs and USP badges"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 disabled:opacity-50"
+                        >
+                          <Sparkles size={12} /> Product card
+                        </button>
                         <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-600 cursor-pointer hover:bg-slate-50">
                           <Upload size={12} /> Add images
                           <input type="file" accept="image/*" multiple className="hidden" onChange={handleMultiImageUpload} />
@@ -1778,6 +1789,35 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
         onClose={closeEbayPriceModal}
         onApply={applyEbayListingPriceFromModal}
       />
+
+      {showProductCardGen && formData.name && (
+        <ProductCardGeneratorModal
+          item={{
+            ...(formData as InventoryItem),
+            id: getPhotoItemId(),
+            name: formData.name,
+            buyPrice: formData.buyPrice ?? 0,
+            buyDate: formData.buyDate || new Date().toISOString().split('T')[0],
+            category: formData.category || 'Misc',
+            status: formData.status || ItemStatus.IN_STOCK,
+            comment1: formData.comment1 || '',
+            comment2: formData.comment2 || '',
+          }}
+          categoryFields={
+            categoryFields[`${formData.category}:${formData.subCategory}`] ||
+            categoryFields[formData.category || '']
+          }
+          onClose={() => setShowProductCardGen(false)}
+          onApplyAsMainPhoto={async (url) => {
+            setFormData((prev) => ({
+              ...prev,
+              imageUrl: url,
+              imageUrls: [url, ...(prev.imageUrls || []).filter((u) => u !== url)],
+            }));
+            setShowProductCardGen(false);
+          }}
+        />
+      )}
     </div>
   );
 };
