@@ -1,5 +1,5 @@
 import type { EbayOrderLineItem, EbayOrderRecord } from '../services/ebayOrderIndex';
-import { getOrderEffectiveNet } from './ebayOrderFinancial';
+import { getOrderEffectiveNet, sumOrderFeeDeductions } from './ebayOrderFinancial';
 
 export interface LinePayout {
   gross: number | null;
@@ -20,37 +20,19 @@ function prorateOrderAmount(orderAmount: number | null | undefined, lineGross: n
   return (line / base) * orderAmount;
 }
 
-function getSaleEventNetForLine(order: EbayOrderRecord, line: EbayOrderLineItem): number | null {
-  const sales = (order.financialEvents || []).filter((e) => e.kind === 'sale');
-  if (!sales.length) return null;
-  if (sales.length === 1 && order.lineItems.length <= 1) return sales[0].amount;
-  const lineGross = line.lineItemCost;
-  if (lineGross != null) {
-    const match = sales.find(
-      (e) =>
-        (e.grossAmount != null && Math.abs(e.grossAmount - lineGross) < 0.05) ||
-        (e.description && line.title && e.description.includes(line.title.slice(0, 24)))
-    );
-    if (match) return match.amount;
-  }
-  return sales.length === 1 ? sales[0].amount : null;
-}
-
-/** Best-effort payout for one order line — prefers net (after fees/taxes) when the cache has it (usually from CSV). */
+/**
+ * Best-effort payout for one order line.
+ * Net = signed sum of all CSV/API financial events on the order (Bestelleinnahmen),
+ * matching eBay Seller Hub “Ihr Verkaufserlös → Bestelleinnahmen”.
+ */
 export function getLinePayout(order: EbayOrderRecord, line: EbayOrderLineItem): LinePayout {
   const gross =
     line.lineItemCost ??
     (order.lineItems.length === 1 ? order.grossTotal ?? null : null);
 
-  const saleLineNet = getSaleEventNetForLine(order, line);
-  const orderNet = saleLineNet ?? getOrderEffectiveNet(order);
+  const orderNet = getOrderEffectiveNet(order);
   const net = prorateOrderAmount(orderNet, gross, order);
-  const feeRaw = prorateOrderAmount(order.feeTotal, gross, order);
-  const fee =
-    feeRaw ??
-    (net != null && order.grossTotal != null && orderNet == null
-      ? Math.max(0, order.grossTotal - (order.netTotal ?? 0))
-      : 0);
+  const fee = prorateOrderAmount(sumOrderFeeDeductions(order), gross, order) ?? sumOrderFeeDeductions(order);
 
   const sellPrice = net ?? gross ?? 0;
   return {

@@ -1,18 +1,29 @@
 import type { EbayOrderFinancialEvent, EbayOrderRecord } from '../services/ebayOrderIndex';
 
-const REFUND_RE = /refund|rückerstattung|rueckerstattung|return|retoure|credit|gutschrift|chargeback|reversal|storno/i;
+const REFUND_RE = /refund|rückerstattung|rueckerstattung|return|retoure|chargeback|reversal/i;
+const CREDIT_RE = /credit|gutschrift|storno/i;
 const CANCEL_RE = /cancel|cancellation|storniert|annull/i;
-const FEE_RE = /fee|gebühr|gebuehr|advert|werbung|promotion|insertion/i;
+const FEE_RE = /fee|gebühr|gebuehr|advert|werbung|promotion|insertion|anzeige/i;
+const SHIPPING_LABEL_RE = /versandetikett|shipping\s*label|shippinglabel|versandlabel/i;
 
-export function classifyTransactionType(raw: string | undefined, amount: number | null): EbayOrderFinancialEvent['kind'] {
+export function classifyTransactionType(
+  raw: string | undefined,
+  amount: number | null,
+  description?: string
+): EbayOrderFinancialEvent['kind'] {
   const t = (raw || '').trim();
+  const d = (description || '').trim();
+
   if (t) {
     if (CANCEL_RE.test(t)) return 'cancellation';
-    if (REFUND_RE.test(t)) return amount != null && amount < 0 ? 'return' : 'refund';
-    if (FEE_RE.test(t)) return 'fee';
+    if (SHIPPING_LABEL_RE.test(t)) return 'fee';
+    if (REFUND_RE.test(t) || REFUND_RE.test(d)) return amount != null && amount < 0 ? 'return' : 'refund';
+    if (CREDIT_RE.test(t) || CREDIT_RE.test(d)) return amount != null && amount < 0 ? 'return' : 'refund';
+    if (FEE_RE.test(t) || FEE_RE.test(d)) return 'fee';
     if (/order|sale|verkauf|bestellung|payment|zahlung/i.test(t)) return 'sale';
   }
-  if (amount != null && amount < -0.001) return 'refund';
+  if (/versandetikett|sendungsnr\./i.test(d)) return 'fee';
+  if (amount != null && amount < -0.001) return 'fee';
   if (amount != null && amount > 0.001) return 'sale';
   return 'unknown';
 }
@@ -49,6 +60,16 @@ export function sumFinancialEventNet(events: EbayOrderFinancialEvent[] | undefin
   return Math.round(total * 100) / 100;
 }
 
+/** Sum of fee/shipping-label deductions (positive EUR amount). */
+export function sumOrderFeeDeductions(order: EbayOrderRecord): number {
+  const fromEvents = (order.financialEvents || [])
+    .filter((e) => e.kind === 'fee' && e.amount < -0.001)
+    .reduce((s, e) => s + Math.abs(e.amount), 0);
+  if (fromEvents > 0) return Math.round(fromEvents * 100) / 100;
+  if (order.feeTotal != null && order.feeTotal > 0) return order.feeTotal;
+  return 0;
+}
+
 /** Best effective net for an order — events win over static netTotal. */
 export function getOrderEffectiveNet(order: EbayOrderRecord): number | null {
   const fromEvents = sumFinancialEventNet(order.financialEvents);
@@ -64,13 +85,16 @@ export function isOrderCancelled(order: EbayOrderRecord): boolean {
 }
 
 export function describeFinancialEvent(event: EbayOrderFinancialEvent): string {
+  if (event.transactionType && SHIPPING_LABEL_RE.test(event.transactionType)) {
+    return event.description?.trim() || 'Versandetikett';
+  }
   if (event.description?.trim()) return event.description.trim();
   if (event.transactionType?.trim()) return event.transactionType.trim();
   if (event.kind === 'return') return 'eBay return / refund';
   if (event.kind === 'refund') return 'eBay refund';
   if (event.kind === 'cancellation') return 'eBay order cancelled';
-  if (event.kind === 'fee') return 'eBay fee adjustment';
-  if (event.kind === 'sale') return 'eBay sale payout';
+  if (event.kind === 'fee') return 'eBay fee';
+  if (event.kind === 'sale') return 'eBay order proceeds';
   return 'eBay payout adjustment';
 }
 

@@ -373,14 +373,61 @@ function runCsvImportTests(): void {
     financialEvents: [
       { id: 's1', date: '2025-08-11', kind: 'sale' as const, amount: 59.82, grossAmount: 65.29, source: 'csv' as const, importedAt: '' },
       { id: 'f1', date: '2025-08-11', kind: 'fee' as const, amount: -10.1, source: 'csv' as const, importedAt: '' },
-      { id: 'l1', date: '2025-08-12', kind: 'fee' as const, amount: -7.69, source: 'csv' as const, importedAt: '' },
+      { id: 'l1', date: '2025-08-12', kind: 'fee' as const, amount: -7.69, transactionType: 'Versandetikett', description: 'DHL', source: 'csv' as const, importedAt: '' },
     ],
     sources: ['csv' as const],
     importedAt: '',
   };
   const salePayout = getLinePayout(saleOnlyOrder, saleOnlyOrder.lineItems[0]);
-  assertClose(salePayout.sellPrice, 59.82, 'uses sale-row net not whole-order net');
-  assert(salePayout.netKnown === true, 'sale-row net known');
+  assertClose(salePayout.sellPrice, 42.03, 'net = order proceeds minus fees and shipping label');
+  assertClose(salePayout.fee, 17.79, 'fees include promoted + shipping label');
+  assert(salePayout.netKnown === true, 'order net known');
+
+  const corsairOrder = {
+    orderId: '15-13186-47065',
+    creationDate: '2025-06-12',
+    buyer: { username: 'ccjon-46', fullName: 'Jonas Meyer' },
+    lineItems: [{ sku: null, title: 'Corsair RAM', lineItemCost: 26.99, listingId: '267283009195' }],
+    grossTotal: 33.18,
+    netTotal: 22.33,
+    financialEvents: [
+      {
+        id: 'f-promo',
+        date: '2025-06-12',
+        kind: 'fee' as const,
+        amount: -4.66,
+        transactionType: 'Andere Gebühr',
+        description: 'Promoted Listings - General fee',
+        source: 'csv' as const,
+        importedAt: '',
+      },
+      {
+        id: 'f-ship',
+        date: '2025-06-12',
+        kind: 'fee' as const,
+        amount: -6.19,
+        transactionType: 'Versandetikett',
+        description: 'DHL',
+        source: 'csv' as const,
+        importedAt: '',
+      },
+      {
+        id: 'sale',
+        date: '2025-06-12',
+        kind: 'sale' as const,
+        amount: 33.18,
+        transactionType: 'Bestellung',
+        source: 'csv' as const,
+        importedAt: '',
+      },
+    ],
+    sources: ['csv' as const],
+    importedAt: '',
+  };
+  const corsairPayout = getLinePayout(corsairOrder, corsairOrder.lineItems[0]);
+  assertClose(corsairPayout.gross ?? 0, 26.99, 'item gross excludes buyer shipping');
+  assertClose(corsairPayout.sellPrice, 22.33, 'Bestelleinnahmen after ads + shipping label');
+  assert(classifyTransactionType('Versandetikett', -6.19, 'DHL') === 'fee', 'shipping label is fee not refund');
 }
 
 function runAdjustmentTests(): void {

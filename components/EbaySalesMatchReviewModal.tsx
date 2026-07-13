@@ -17,6 +17,7 @@ import { loadEbayOrderIndex } from '../services/ebayOrderIndex';
 import type { EbayOrderRecord } from '../services/ebayOrderIndex';
 import type { OrderLinkSuggestion, OrderLinkSuggestionKind } from '../utils/ebayOrderLinkAnalysis';
 import { getLinePayout } from '../utils/ebayOrderPayout';
+import { describeFinancialEvent } from '../utils/ebayOrderFinancial';
 import { scoreListingTitleMatch } from '../utils/ebayListingMatch';
 import { formatEUR } from '../utils/formatMoney';
 
@@ -472,6 +473,11 @@ const EbaySalesMatchReviewModal: React.FC<Props> = ({
                     Net payout unknown — import Seller Hub Payments CSV for accurate after-fee amounts.
                   </p>
                 )}
+                {row.netKnown && (
+                  <p className="text-[10px] text-slate-600 bg-slate-50 border border-slate-100 rounded-lg px-2 py-1">
+                    Net payout = Bestelleinnahmen (order proceeds − Promoted Listings − Versandetikett − fees), matching eBay Seller Hub.
+                  </p>
+                )}
 
                 {order.financialEvents && order.financialEvents.length > 0 && (
                   <div>
@@ -483,8 +489,7 @@ const EbaySalesMatchReviewModal: React.FC<Props> = ({
                           className="text-[10px] flex justify-between gap-2 bg-slate-50 rounded px-2 py-1 border border-slate-100"
                         >
                           <span className="text-slate-600 truncate">
-                            {ev.date} · {ev.kind}
-                            {ev.description ? ` — ${ev.description}` : ''}
+                            {ev.date} · {describeFinancialEvent(ev)}
                           </span>
                           <span
                             className={`font-bold tabular-nums shrink-0 ${ev.amount < 0 ? 'text-red-600' : 'text-emerald-700'}`}

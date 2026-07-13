@@ -347,7 +347,7 @@ export function parseEbayOrderCsv(text: string): EbayOrderCsvParseResult {
     const txType = row.transactionType?.trim();
     const desc = row.description?.trim() || row.title?.trim();
     const eventDate = parseDateGuess(row.saleDate);
-    const eventKind = classifyTransactionType(txType, net ?? gross);
+    const eventKind = classifyTransactionType(txType, net ?? gross, desc);
     const eventAmount = net ?? gross ?? 0;
 
     const financialEvent: EbayOrderFinancialEvent | null =
