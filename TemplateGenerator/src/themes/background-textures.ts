@@ -11,6 +11,8 @@ export type BackgroundTexture = {
   label: string;
   description: string;
   swatch: string;
+  /** When set, an AI-generated image is used as the full background surface. */
+  image?: string;
   layers: CSSProperties[];
 };
 
@@ -22,6 +24,24 @@ function bt(
   layers: CSSProperties[]
 ): BackgroundTexture {
   return { id, label, description, swatch, layers };
+}
+
+/** Image-based texture (AI generated, served from /public/textures). */
+function img(
+  id: string,
+  label: string,
+  description: string,
+  image: string,
+  layers: CSSProperties[] = []
+): BackgroundTexture {
+  return {
+    id,
+    label,
+    description,
+    swatch: `url("${image}") center / cover`,
+    image,
+    layers,
+  };
 }
 
 export const BACKGROUND_TEXTURES: BackgroundTexture[] = [
@@ -240,6 +260,50 @@ export const BACKGROUND_TEXTURES: BackgroundTexture[] = [
         backgroundImage: `repeating-radial-gradient(circle at 78% 72%, transparent 0 22px, rgba(var(--t-glow-primary),0.09) 22px 23px, transparent 23px 42px)`,
       },
     ]
+  ),
+
+  // AI-generated photographic textures (served from /public/textures)
+  img(
+    "ai-black-marble",
+    "Black Marble",
+    "AI · black stone + gold veins",
+    "/textures/tex-black-marble-gold.png"
+  ),
+  img(
+    "ai-carbon-fiber",
+    "Carbon Weave",
+    "AI · woven carbon fiber",
+    "/textures/tex-carbon-fiber.png"
+  ),
+  img(
+    "ai-brushed-metal",
+    "Titanium",
+    "AI · brushed dark metal",
+    "/textures/tex-brushed-metal.png"
+  ),
+  img(
+    "ai-aurora-nebula",
+    "Aurora Nebula",
+    "AI · violet · cyan · magenta glow",
+    "/textures/tex-aurora-nebula.png"
+  ),
+  img(
+    "ai-velvet",
+    "Emerald Velvet",
+    "AI · plush luxury fabric",
+    "/textures/tex-velvet.png"
+  ),
+  img(
+    "ai-concrete",
+    "Microcement",
+    "AI · matte architectural concrete",
+    "/textures/tex-concrete.png"
+  ),
+  img(
+    "ai-soft-silk",
+    "Pastel Silk",
+    "AI · light airy gradient",
+    "/textures/tex-soft-silk-light.png"
   ),
 ];
 

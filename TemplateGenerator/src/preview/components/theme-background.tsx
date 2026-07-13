@@ -18,6 +18,17 @@ export function ThemeBackground() {
         }}
       />
 
+      {texture.image && (
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage: `url("${texture.image}")`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+          }}
+        />
+      )}
+
       <div
         className="absolute inset-0 opacity-70"
         style={{

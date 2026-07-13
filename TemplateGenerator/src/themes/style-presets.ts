@@ -69,7 +69,7 @@ export const STYLE_PRESETS: StylePreset[] = [
     typographyId: "luxury-soft",
     titleTypographyId: "luxury-serif",
     titleColorId: "gold",
-    backgroundTexture: "marble-luxe",
+    backgroundTexture: "ai-black-marble",
   },
   {
     id: "carbon-style",
@@ -83,7 +83,7 @@ export const STYLE_PRESETS: StylePreset[] = [
     typographyId: "linear-sharp",
     titleTypographyId: "linear-bold",
     titleColorId: "white",
-    backgroundTexture: "carbon-fiber",
+    backgroundTexture: "ai-carbon-fiber",
   },
   {
     id: "neon-minimal",
