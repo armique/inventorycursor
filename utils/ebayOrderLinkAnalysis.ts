@@ -203,41 +203,43 @@ function findAdjustmentSuggestions(
     return;
   }
 
-  // Prefer one correction to signed Bestelleinnahmen (includes refunds) over per-event tweaks.
-  if (targetNet != null && Math.abs(current - targetNet) >= REPRICE_MIN_DELTA) {
+  // CSV / signed Bestelleinnahmen — one correction to net; never per-event fee rows (already in sum).
+  if (targetNet != null && payout.netKnown) {
+    if (Math.abs(current - targetNet) < REPRICE_MIN_DELTA) {
+      return;
+    }
+
     const reason = isOrderFullyRefunded(order)
       ? `Full refund on order — net Bestelleinnahmen €${targetNet.toFixed(2)} (DHL label & fees included)`
       : hasPostSaleRefund(order)
         ? 'Partial refund / return — net payout from Transaktionsbericht'
         : isOrderCancelled(order)
           ? 'eBay order cancelled — effective payout changed'
-          : 'Order payout changed — re-import Payments CSV';
+          : 'Sell price should match signed net Bestelleinnahmen from Transaktionsbericht (fees already included)';
 
-    if (hasPostSaleRefund(order) || isOrderCancelled(order) || item.originalSellPrice != null || (item.ebaySaleAdjustments?.length ?? 0) > 0) {
-      const adjustment: EbaySaleAdjustment = {
-        id: `adj-net-${order.orderId}-${item.id}`,
-        date: order.lastModifiedDate || order.creationDate || new Date().toISOString().split('T')[0],
-        kind: isOrderFullyRefunded(order) ? 'return' : 'payout_correction',
-        amount: round2(targetNet - current),
-        orderId: order.orderId,
-        reason,
-        source: 'ebay_csv',
-        importedAt: new Date().toISOString(),
-        sellPriceBefore: current,
-        sellPriceAfter: round2(targetNet),
-        feeBefore: item.feeAmount,
-        feeAfter: 0,
-      };
-      suggestions.push(
-        makeSuggestion('adjustment', item, match, match.matchScore + 220, {
-          adjustment,
-          adjustmentReason: reason,
-          suggestedSellPrice: targetNet,
-          priceDelta: adjustment.amount,
-        })
-      );
-      return;
-    }
+    const adjustment: EbaySaleAdjustment = {
+      id: `adj-net-${order.orderId}-${item.id}`,
+      date: order.lastModifiedDate || order.creationDate || new Date().toISOString().split('T')[0],
+      kind: isOrderFullyRefunded(order) ? 'return' : 'payout_correction',
+      amount: round2(targetNet - current),
+      orderId: order.orderId,
+      reason,
+      source: 'ebay_csv',
+      importedAt: new Date().toISOString(),
+      sellPriceBefore: current,
+      sellPriceAfter: round2(targetNet),
+      feeBefore: item.feeAmount,
+      feeAfter: 0,
+    };
+    suggestions.push(
+      makeSuggestion('adjustment', item, match, match.matchScore + 220, {
+        adjustment,
+        adjustmentReason: reason,
+        suggestedSellPrice: targetNet,
+        priceDelta: adjustment.amount,
+      })
+    );
+    return;
   }
 
   const applied = getAppliedEventIds(item);

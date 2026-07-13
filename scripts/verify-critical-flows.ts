@@ -266,7 +266,9 @@ function runEbayAnalysisTests(): void {
     platformSold: 'ebay.de',
   });
   const r3 = buildOrderLinkAnalysis([linked], [order]);
-  assert(r3.suggestions.some((s) => s.kind === 'reprice'), 'reprice when net payout differs');
+  const netFix = r3.suggestions.find((s) => s.kind === 'adjustment');
+  assert(netFix != null, 'net correction when sell differs from CSV net');
+  assertClose(netFix.suggestedSellPrice ?? 0, 430, 'adjustment targets signed net payout');
 
   const keys = new Set(r1.suggestions.map((s) => s.id));
   assert(keys.size === r1.suggestions.length, 'no duplicate suggestion ids in mark_sold pass');
@@ -542,8 +544,38 @@ function runAdjustmentTests(): void {
     platformSold: 'ebay.de',
   });
   const analysis = buildOrderLinkAnalysis([linked], [order]);
-  assert(analysis.stats.adjustmentCandidates >= 1, 'suggests refund adjustment');
-  assert(analysis.suggestions.some((s) => s.kind === 'adjustment'), 'adjustment suggestion kind');
+  const adjustments = analysis.suggestions.filter((s) => s.kind === 'adjustment');
+  assert(adjustments.length === 1, 'one net adjustment only when CSV net known');
+  assertClose(adjustments[0].suggestedSellPrice, 65, 'net correction to signed CSV total');
+
+  const ramOrder: EbayOrderRecord = {
+    orderId: '22-14582-84483',
+    creationDate: '2024-05-08',
+    buyer: { username: 'buyer' },
+    lineItems: [{ sku: null, title: 'Crucial 16GB DDR5 4800MHz RAM CT16G48C40S5', lineItemCost: 120 }],
+    grossTotal: 120.45,
+    financialEvents: [
+      { id: 'ram-sale', date: '2024-05-08', kind: 'sale', amount: 120.45, transactionType: 'Bestellung', source: 'csv', importedAt: '' },
+      { id: 'ram-dhl', date: '2024-05-08', kind: 'fee', amount: -6.19, transactionType: 'Versandetikett', description: 'DHL', source: 'csv', importedAt: '' },
+      { id: 'ram-pl', date: '2024-05-08', kind: 'fee', amount: -6.53, transactionType: 'Andere Gebühr', description: 'Promoted Listings - General fee', source: 'csv', importedAt: '' },
+    ],
+    sources: ['csv'],
+    importedAt: '',
+  };
+  assertClose(getOrderEffectiveNet(ramOrder)!, 107.73, 'RAM order signed net');
+  const linkedRam = baseItem({
+    id: 'ram-1',
+    name: 'Crucial 16GB DDR5 4800MHz RAM CT16G48C40S5',
+    ebayOrderId: '22-14582-84483',
+    status: ItemStatus.SOLD,
+    sellPrice: 107.73,
+    platformSold: 'ebay.de',
+  });
+  const ramAnalysis = buildOrderLinkAnalysis([linkedRam], [ramOrder]);
+  assert(
+    ramAnalysis.suggestions.filter((s) => s.kind === 'adjustment').length === 0,
+    'no duplicate fee adjustments when sell already matches CSV net'
+  );
 }
 
 function runFilamentStockTests(): void {
