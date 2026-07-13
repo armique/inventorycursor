@@ -14,6 +14,13 @@ import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { getCompatibleItemsForItem } from '../services/compatibility';
 import { generateKleinanzeigenCSV, generateEbayCSV } from '../services/ebayCsvService';
 import { matchesInventorySearch } from '../utils/inventorySearchIndex';
+import {
+  type AmountFilterState,
+  EMPTY_AMOUNT_FILTER,
+  isAmountFilterActive,
+  itemMatchesAmountFilter,
+  amountFilterSummary,
+} from '../utils/inventoryAmountFilter';
 import { copyKleinanzeigenListing } from '../utils/copyKleinanzeigenListing';
 import { bundleComponentBreakdown } from '../utils/bundleProfitBreakdown';
 import { cycleInventoryItemPresence, getItemPresenceCycleState, getItemUserPhotoCount, normalizeImageList, prepareInventoryImagesForStorage } from '../utils/imageImport';
@@ -351,6 +358,7 @@ type InventoryListFilterParams = {
   specRangeFilters: Record<string, { min?: number; max?: number }>;
   showInComposition: boolean;
   timeGaugeSortKeyMap: Map<string, number>;
+  amountFilter: AmountFilterState;
 };
 
 function filterAndSortInventoryItems(params: InventoryListFilterParams): InventoryItem[] {
@@ -369,6 +377,7 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
     specRangeFilters,
     showInComposition,
     timeGaugeSortKeyMap,
+    amountFilter,
   } = params;
 
   const query = searchTerm.trim();
@@ -423,6 +432,9 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
         } else if (!itemMatchesSalePlatformFilter(item, salePlatformFilter as Platform)) return false;
       }
       if (salePaymentFilter !== 'ALL' && item.paymentType !== salePaymentFilter) return false;
+      if (!searchActive && isAmountFilterActive(amountFilter) && !itemMatchesAmountFilter(item, amountFilter)) {
+        return false;
+      }
     }
 
     if (!searchActive) {
@@ -527,6 +539,15 @@ const InventoryList: React.FC<Props> = ({
   // New Filters for Sales
   const [salePlatformFilter, setSalePlatformFilter] = useState<string>(() => loadState<string>('sale_platform', 'ALL'));
   const [salePaymentFilter, setSalePaymentFilter] = useState<string>(() => loadState<string>('sale_payment', 'ALL'));
+  const [amountFilter, setAmountFilter] = useState<AmountFilterState>(() =>
+    loadState<AmountFilterState>('amount_filter', EMPTY_AMOUNT_FILTER)
+  );
+  const [showAmountFilterPanel, setShowAmountFilterPanel] = useState(false);
+  const amountFilterPanelRef = useRef<HTMLDivElement>(null);
+  const amountFilterButtonRef = useRef<HTMLButtonElement>(null);
+  const [amountExactDraft, setAmountExactDraft] = useState('');
+  const [amountMinDraft, setAmountMinDraft] = useState('');
+  const [amountMaxDraft, setAmountMaxDraft] = useState('');
 
   // Spec filters: key -> allowed values (empty = no filter). Range filters for numeric specs.
   const [specFilters, setSpecFilters] = useState<Record<string, (string | number)[]>>(() => loadState('spec_filters', {}));
@@ -648,6 +669,7 @@ const InventoryList: React.FC<Props> = ({
       localStorage.setItem(`${k}_manual_width_cols`, JSON.stringify(Array.from(manualWidthColumns)));
       localStorage.setItem(`${k}_sale_platform`, JSON.stringify(salePlatformFilter));
       localStorage.setItem(`${k}_sale_payment`, JSON.stringify(salePaymentFilter));
+      localStorage.setItem(`${k}_amount_filter`, JSON.stringify(amountFilter));
       localStorage.setItem(`${k}_spec_filters`, JSON.stringify(specFilters));
       localStorage.setItem(`${k}_spec_range_filters`, JSON.stringify(specRangeFilters));
       localStorage.setItem(`${k}_show_in_composition`, JSON.stringify(showInComposition));
@@ -661,7 +683,7 @@ const InventoryList: React.FC<Props> = ({
     };
   }, [
     searchTerm, timeFilter, statusFilter, categoryFilter, subCategoryFilter, sortConfig, columnWidths,
-    manualWidthColumns, salePlatformFilter, salePaymentFilter, specFilters, specRangeFilters, showInComposition,
+    manualWidthColumns, salePlatformFilter, salePaymentFilter, amountFilter, specFilters, specRangeFilters, showInComposition,
     columnOrder, hiddenColumnIds, splitView, quickCategoryPins, persistenceKey,
   ]);
 
@@ -676,6 +698,51 @@ const InventoryList: React.FC<Props> = ({
     document.addEventListener('mousedown', handle);
     return () => document.removeEventListener('mousedown', handle);
   }, [showSpecFiltersPanel]);
+
+  useEffect(() => {
+    if (!showAmountFilterPanel) return;
+    setAmountExactDraft(amountFilter.exact != null ? String(amountFilter.exact) : '');
+    setAmountMinDraft(amountFilter.min != null ? String(amountFilter.min) : '');
+    setAmountMaxDraft(amountFilter.max != null ? String(amountFilter.max) : '');
+  }, [showAmountFilterPanel, amountFilter.exact, amountFilter.min, amountFilter.max]);
+
+  useEffect(() => {
+    if (!showAmountFilterPanel) return;
+    const handle = (e: MouseEvent) => {
+      const el = e.target as Node;
+      if (amountFilterPanelRef.current?.contains(el) || amountFilterButtonRef.current?.contains(el)) return;
+      setShowAmountFilterPanel(false);
+    };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [showAmountFilterPanel]);
+
+  const applyAmountFilterDraft = useCallback(() => {
+    const exactRaw = amountExactDraft.trim();
+    const minRaw = amountMinDraft.trim();
+    const maxRaw = amountMaxDraft.trim();
+    const exact = exactRaw ? parseLocaleMoney(exactRaw) : null;
+    const min = minRaw ? parseLocaleMoney(minRaw) : null;
+    const max = maxRaw ? parseLocaleMoney(maxRaw) : null;
+    if (exactRaw && exact == null) return;
+    if (minRaw && min == null) return;
+    if (maxRaw && max == null) return;
+    setAmountFilter((prev) => ({
+      ...prev,
+      exact: exact ?? undefined,
+      min: exact != null ? undefined : min ?? undefined,
+      max: exact != null ? undefined : max ?? undefined,
+    }));
+    setShowAmountFilterPanel(false);
+  }, [amountExactDraft, amountMinDraft, amountMaxDraft]);
+
+  const clearAmountFilter = useCallback(() => {
+    setAmountFilter(EMPTY_AMOUNT_FILTER);
+    setAmountExactDraft('');
+    setAmountMinDraft('');
+    setAmountMaxDraft('');
+    setShowAmountFilterPanel(false);
+  }, []);
 
   // Close columns panel when clicking outside
   useEffect(() => {
@@ -1175,6 +1242,7 @@ const InventoryList: React.FC<Props> = ({
       dateRange,
       salePlatformFilter,
       salePaymentFilter,
+      amountFilter,
       specFilters,
       specRangeFilters,
       showInComposition,
@@ -1190,6 +1258,7 @@ const InventoryList: React.FC<Props> = ({
       dateRange,
       salePlatformFilter,
       salePaymentFilter,
+      amountFilter,
       specFilters,
       specRangeFilters,
       showInComposition,
@@ -1221,7 +1290,7 @@ const InventoryList: React.FC<Props> = ({
     if (tableContainerRef.current) tableContainerRef.current.scrollTop = 0;
     if (activeTableRef.current) activeTableRef.current.scrollTop = 0;
     if (soldTableRef.current) soldTableRef.current.scrollTop = 0;
-  }, [searchTerm, timeFilter, sortConfig, statusFilter, categoryFilter, subCategoryFilter, salePlatformFilter, salePaymentFilter, specFilters, specRangeFilters, splitView]);
+  }, [searchTerm, timeFilter, sortConfig, statusFilter, categoryFilter, subCategoryFilter, salePlatformFilter, salePaymentFilter, amountFilter, specFilters, specRangeFilters, splitView]);
 
   const getRowActivityKey = useCallback(
     (item: InventoryItem) =>
@@ -2768,7 +2837,7 @@ const InventoryList: React.FC<Props> = ({
      setSelectedIds([]);
   };
 
-  const hasActiveFilters = statusFilter !== 'ACTIVE' || categoryFilter !== 'ALL' || subCategoryFilter || timeFilter !== 'ALL' || salePlatformFilter !== 'ALL' || salePaymentFilter !== 'ALL' || activeSpecFilterCount > 0 || !showInComposition;
+  const hasActiveFilters = statusFilter !== 'ACTIVE' || categoryFilter !== 'ALL' || subCategoryFilter || timeFilter !== 'ALL' || salePlatformFilter !== 'ALL' || salePaymentFilter !== 'ALL' || isAmountFilterActive(amountFilter) || activeSpecFilterCount > 0 || !showInComposition;
   const clearAllFilters = () => {
     setStatusFilter('ACTIVE');
     setCategoryFilter('ALL');
@@ -2776,6 +2845,7 @@ const InventoryList: React.FC<Props> = ({
     setTimeFilter('ALL');
     setSalePlatformFilter('ALL');
     setSalePaymentFilter('ALL');
+    setAmountFilter(EMPTY_AMOUNT_FILTER);
     setSpecFilters({});
     setSpecRangeFilters({});
     setShowInComposition(true);
@@ -2784,6 +2854,7 @@ const InventoryList: React.FC<Props> = ({
   const revealItemInList = useCallback((item: InventoryItem) => {
     setSpecFilters({});
     setSpecRangeFilters({});
+    setAmountFilter(EMPTY_AMOUNT_FILTER);
     setTimeFilter('ALL');
     setCategoryFilter('ALL');
     setSubCategoryFilter('');
@@ -3271,6 +3342,98 @@ const InventoryList: React.FC<Props> = ({
                       <option value="ALL">Payment</option>
                       {PAYMENT_METHODS.map(p => <option key={p} value={p}>{p}</option>)}
                   </select>
+                  <div className="relative flex items-center" ref={amountFilterPanelRef}>
+                    <button
+                      type="button"
+                      ref={amountFilterButtonRef}
+                      onClick={() => setShowAmountFilterPanel((p) => !p)}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[10px] font-semibold uppercase tracking-wide ${
+                        showAmountFilterPanel || isAmountFilterActive(amountFilter)
+                          ? 'border-blue-500 text-blue-600 bg-blue-50'
+                          : 'border-slate-200 text-slate-600 bg-white hover:bg-slate-50'
+                      }`}
+                      title="Filter sold items by sell (VK) or buy (EK) amount"
+                    >
+                      <Wallet size={11} />
+                      Amount
+                      {isAmountFilterActive(amountFilter) && (
+                        <span className="max-w-[88px] truncate normal-case font-bold">{amountFilterSummary(amountFilter)}</span>
+                      )}
+                      <ChevronDown size={11} className={`transition-transform ${showAmountFilterPanel ? 'rotate-180' : ''}`} />
+                    </button>
+                    {showAmountFilterPanel && (
+                      <div className="absolute left-0 top-full mt-1 z-50 w-64 rounded-xl border border-slate-200 bg-white shadow-xl animate-in fade-in zoom-in-95 duration-150 p-3 space-y-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-slate-600">Amount filter</span>
+                          {isAmountFilterActive(amountFilter) && (
+                            <button type="button" onClick={clearAmountFilter} className="text-[10px] font-bold text-slate-500 hover:text-red-600 flex items-center gap-1">
+                              <FilterX size={10} /> Clear
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {(['sell', 'buy', 'either'] as const).map((field) => (
+                            <button
+                              key={field}
+                              type="button"
+                              onClick={() => setAmountFilter((prev) => ({ ...prev, field }))}
+                              className={`px-2 py-1 rounded-lg text-xs font-bold ${
+                                amountFilter.field === field ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                              }`}
+                            >
+                              {field === 'sell' ? 'Sell (VK)' : field === 'buy' ? 'Buy (EK)' : 'Either'}
+                            </button>
+                          ))}
+                        </div>
+                        <label className="block space-y-1">
+                          <span className="text-[10px] font-bold uppercase text-slate-500">Exact €</span>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            placeholder="e.g. 22.33"
+                            value={amountExactDraft}
+                            onChange={(e) => setAmountExactDraft(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') applyAmountFilterDraft(); }}
+                            className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30"
+                          />
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="block space-y-1">
+                            <span className="text-[10px] font-bold uppercase text-slate-500">Min €</span>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              placeholder="Min"
+                              value={amountMinDraft}
+                              onChange={(e) => setAmountMinDraft(e.target.value)}
+                              disabled={Boolean(amountExactDraft.trim())}
+                              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30 disabled:bg-slate-50 disabled:text-slate-400"
+                            />
+                          </label>
+                          <label className="block space-y-1">
+                            <span className="text-[10px] font-bold uppercase text-slate-500">Max €</span>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              placeholder="Max"
+                              value={amountMaxDraft}
+                              onChange={(e) => setAmountMaxDraft(e.target.value)}
+                              disabled={Boolean(amountExactDraft.trim())}
+                              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/30 disabled:bg-slate-50 disabled:text-slate-400"
+                            />
+                          </label>
+                        </div>
+                        <p className="text-[10px] text-slate-500 leading-snug">Exact match allows ±2 ct. Use Either to match sell or buy price.</p>
+                        <button
+                          type="button"
+                          onClick={applyAmountFilterDraft}
+                          className="w-full py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold uppercase tracking-wide hover:bg-slate-800"
+                        >
+                          Apply
+                        </button>
+                      </div>
+                    )}
+                  </div>
                </>
             )}
             <div className="relative flex items-center" ref={columnsPanelRef}>
@@ -3458,6 +3621,12 @@ const InventoryList: React.FC<Props> = ({
                        </span>
                      )}
                      {salePaymentFilter !== 'ALL' && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 text-xs font-medium truncate max-w-[120px]" title={salePaymentFilter}>{salePaymentFilter} <button type="button" onClick={() => setSalePaymentFilter('ALL')} className="hover:opacity-80">×</button></span>}
+                     {isAmountFilterActive(amountFilter) && (
+                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 text-xs font-medium">
+                         {amountFilterSummary(amountFilter)}
+                         <button type="button" onClick={clearAmountFilter} className="hover:opacity-80">×</button>
+                       </span>
+                     )}
                   </>
                )}
                {Object.entries(specFilters).filter(([, v]) => v?.length).map(([k, v]) => (
