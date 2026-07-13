@@ -5,8 +5,10 @@ import {
   AlignEndHorizontal,
   AlignStartHorizontal,
   ArrowDownToLine,
+  BringToFront,
   LayoutGrid,
   RotateCcw,
+  SendToBack,
 } from "lucide-react";
 
 import { SectionLabel } from "@/components/layout/section-label";
@@ -48,6 +50,10 @@ export function PreviewControls() {
   const imageScaleX = usePreviewStore((s) => s.imageScaleX);
   const imageScaleY = usePreviewStore((s) => s.imageScaleY);
   const imageRotation = usePreviewStore((s) => s.imageRotation);
+  const productBehindCards = usePreviewStore((s) => s.productBehindCards);
+  const toggleProductBehindCards = usePreviewStore(
+    (s) => s.toggleProductBehindCards
+  );
   const setActiveTheme = usePreviewStore((s) => s.setActiveTheme);
   const setActiveSpecCardStyle = usePreviewStore((s) => s.setActiveSpecCardStyle);
   const setSpecLayout = usePreviewStore((s) => s.setSpecLayout);
@@ -314,6 +320,29 @@ export function PreviewControls() {
               className="h-1.5 w-full cursor-pointer accent-violet-500"
             />
           </div>
+
+          <button
+            type="button"
+            onClick={toggleProductBehindCards}
+            className={cn(
+              "flex h-9 w-full items-center justify-center gap-2 rounded-lg border text-xs font-medium transition-all",
+              productBehindCards
+                ? "border-amber-500/30 bg-amber-500/10 text-foreground"
+                : "border-white/[0.08] bg-white/[0.02] text-muted-foreground hover:bg-white/[0.04]"
+            )}
+          >
+            {productBehindCards ? (
+              <>
+                <BringToFront className="size-3.5" strokeWidth={1.75} />
+                Photo behind cards — bring to front
+              </>
+            ) : (
+              <>
+                <SendToBack className="size-3.5" strokeWidth={1.75} />
+                Send photo behind cards
+              </>
+            )}
+          </button>
 
           <div className="flex items-center justify-between border-t border-white/[0.06] pt-2">
             <span className="font-mono text-[10px] text-muted-foreground">

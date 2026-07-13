@@ -44,6 +44,7 @@ interface PreviewStore {
   imageScaleY: number;
   imageRotation: number;
   isProductSelected: boolean;
+  productBehindCards: boolean;
   iconOnlyCards: boolean;
   backgroundTextureId: string;
   activePresetId: string | null;
@@ -82,6 +83,8 @@ interface PreviewStore {
   uploadProductImage: (file: File) => Promise<void>;
   setImageScale: (scaleX: number, scaleY: number) => void;
   setImageRotation: (degrees: number) => void;
+  setProductBehindCards: (enabled: boolean) => void;
+  toggleProductBehindCards: () => void;
   resetProductTransform: () => void;
 }
 
@@ -113,6 +116,7 @@ export const usePreviewStore = create<PreviewStore>((set, get) => ({
   imageScaleY: 1,
   imageRotation: 0,
   isProductSelected: false,
+  productBehindCards: false,
   iconOnlyCards: false,
   backgroundTextureId: "studio",
   activePresetId: null,
@@ -356,6 +360,9 @@ export const usePreviewStore = create<PreviewStore>((set, get) => ({
     }),
   setImageRotation: (degrees) =>
     set({ imageRotation: clampProductRotation(degrees) }),
+  setProductBehindCards: (enabled) => set({ productBehindCards: enabled }),
+  toggleProductBehindCards: () =>
+    set((state) => ({ productBehindCards: !state.productBehindCards })),
   resetProductTransform: () =>
     set({
       productX: 50,

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import Image from "next/image";
-import { ImagePlus, RotateCw } from "lucide-react";
+import { BringToFront, ImagePlus, RotateCw, SendToBack } from "lucide-react";
 
 import { usePreviewStore } from "@/hooks/use-preview-store";
 import { EASE_OUT } from "@/lib/motion";
@@ -47,9 +47,13 @@ export function FloatingProduct() {
   const imageScaleY = usePreviewStore((s) => s.imageScaleY);
   const imageRotation = usePreviewStore((s) => s.imageRotation);
   const isProductSelected = usePreviewStore((s) => s.isProductSelected);
+  const productBehindCards = usePreviewStore((s) => s.productBehindCards);
   const setProductPlacement = usePreviewStore((s) => s.setProductPlacement);
   const setImageScale = usePreviewStore((s) => s.setImageScale);
   const setImageRotation = usePreviewStore((s) => s.setImageRotation);
+  const toggleProductBehindCards = usePreviewStore(
+    (s) => s.toggleProductBehindCards
+  );
   const selectProduct = usePreviewStore((s) => s.selectProduct);
   const clearSelection = usePreviewStore((s) => s.clearSelection);
 
@@ -199,7 +203,7 @@ export function FloatingProduct() {
       ref={containerRef}
       className={cn(
         "absolute inset-0",
-        isProductSelected ? "z-[8]" : "z-[5]"
+        productBehindCards ? "z-[2]" : isProductSelected ? "z-[8]" : "z-[5]"
       )}
       onClick={() => clearSelection()}
     >
@@ -215,112 +219,135 @@ export function FloatingProduct() {
         }}
       >
         <motion.div
-          ref={productRef}
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.15, duration: 0.75, ease: EASE_OUT }}
           className="group relative h-full w-full"
-          style={{
-            transform: `scaleX(${imageScaleX}) scaleY(${imageScaleY}) rotate(${imageRotation}deg)`,
-            transformOrigin: "center center",
-          }}
           onClick={(e) => e.stopPropagation()}
         >
+          {/* Transform wrapper — Framer Motion controls the parent's transform
+              for the entry animation, so scale/rotate live on this inner div
+              to avoid being overwritten. */}
           <div
-            role="button"
-            tabIndex={0}
-            onPointerDown={onPointerDown("move")}
-            className={cn(
-              "relative h-full w-full touch-none",
-              "cursor-grab active:cursor-grabbing",
-              isProductSelected &&
-                "rounded-2xl ring-2 ring-violet-400/45 ring-offset-2 ring-offset-transparent",
-              !hasImage &&
-                "rounded-2xl border-2 border-dashed border-white/20 bg-white/[0.03]"
-            )}
+            ref={productRef}
+            className="relative h-full w-full"
+            style={{
+              transform: `scaleX(${imageScaleX}) scaleY(${imageScaleY}) rotate(${imageRotation}deg)`,
+              transformOrigin: "center center",
+            }}
           >
-            {hasImage ? (
-              <>
-                <div
-                  className="pointer-events-none absolute left-1/2 top-[72%] -translate-x-1/2"
-                  style={{
-                    width: "72%",
-                    height: "12%",
-                    borderRadius: "50%",
-                    background:
-                      "radial-gradient(ellipse, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.12) 45%, transparent 72%)",
-                    filter: "blur(18px)",
-                  }}
-                />
-
-                <div
-                  className="pointer-events-none absolute left-1/2 top-[58%] -translate-x-1/2"
-                  style={{
-                    width: "90%",
-                    height: "35%",
-                    background: `radial-gradient(ellipse at center, rgba(var(--t-glow-primary), 0.28) 0%, rgba(var(--t-glow-secondary), 0.14) 40%, transparent 72%)`,
-                    filter: "blur(48px)",
-                  }}
-                />
-
-                <div className="relative z-[2] h-[88%] w-full">
-                  <Image
-                    src={productImageSrc!}
-                    alt="Product"
-                    fill
-                    priority
-                    unoptimized={isBlob}
-                    draggable={false}
-                    className="object-contain select-none"
+            <div
+              role="button"
+              tabIndex={0}
+              onPointerDown={onPointerDown("move")}
+              className={cn(
+                "relative h-full w-full touch-none",
+                "cursor-grab active:cursor-grabbing",
+                isProductSelected &&
+                  "rounded-2xl ring-2 ring-violet-400/45 ring-offset-2 ring-offset-transparent",
+                !hasImage &&
+                  "rounded-2xl border-2 border-dashed border-white/20 bg-white/[0.03]"
+              )}
+            >
+              {hasImage ? (
+                <>
+                  <div
+                    className="pointer-events-none absolute left-1/2 top-[72%] -translate-x-1/2"
                     style={{
-                      filter:
-                        "drop-shadow(0 28px 42px rgba(0,0,0,0.42)) drop-shadow(0 8px 18px rgba(0,0,0,0.28))",
+                      width: "72%",
+                      height: "12%",
+                      borderRadius: "50%",
+                      background:
+                        "radial-gradient(ellipse, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.12) 45%, transparent 72%)",
+                      filter: "blur(18px)",
                     }}
-                    sizes="(max-width: 720px) 58vw, 400px"
                   />
+
+                  <div
+                    className="pointer-events-none absolute left-1/2 top-[58%] -translate-x-1/2"
+                    style={{
+                      width: "90%",
+                      height: "35%",
+                      background: `radial-gradient(ellipse at center, rgba(var(--t-glow-primary), 0.28) 0%, rgba(var(--t-glow-secondary), 0.14) 40%, transparent 72%)`,
+                      filter: "blur(48px)",
+                    }}
+                  />
+
+                  <div className="relative z-[2] h-[88%] w-full">
+                    <Image
+                      src={productImageSrc!}
+                      alt="Product"
+                      fill
+                      priority
+                      unoptimized={isBlob}
+                      draggable={false}
+                      className="object-contain select-none"
+                      style={{
+                        filter:
+                          "drop-shadow(0 28px 42px rgba(0,0,0,0.42)) drop-shadow(0 8px 18px rgba(0,0,0,0.28))",
+                      }}
+                      sizes="(max-width: 720px) 58vw, 400px"
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
+                  <ImagePlus
+                    className="size-8 text-white/25"
+                    strokeWidth={1.5}
+                  />
+                  <p className="text-[10px] leading-relaxed text-white/35">
+                    Upload photo in sidebar
+                    <br />
+                    Drag frame to set position
+                  </p>
                 </div>
-              </>
-            ) : (
-              <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
-                <ImagePlus
-                  className="size-8 text-white/25"
-                  strokeWidth={1.5}
+              )}
+            </div>
+
+            {isProductSelected && (
+              <>
+                <HandleButton
+                  ariaLabel="Rotate"
+                  onPointerDown={onPointerDown("rotate")}
+                  className="-top-5 left-1/2 -translate-x-1/2 cursor-grab active:cursor-grabbing"
+                >
+                  <RotateCw className="size-3" strokeWidth={2} />
+                </HandleButton>
+                <HandleButton
+                  ariaLabel={
+                    productBehindCards ? "Bring to front" : "Send behind cards"
+                  }
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleProductBehindCards();
+                  }}
+                  className="-top-5 right-0 cursor-pointer"
+                >
+                  {productBehindCards ? (
+                    <BringToFront className="size-3" strokeWidth={2} />
+                  ) : (
+                    <SendToBack className="size-3" strokeWidth={2} />
+                  )}
+                </HandleButton>
+                <HandleButton
+                  ariaLabel="Resize corner"
+                  onPointerDown={onPointerDown("resize-se")}
+                  className="-bottom-1 -right-1 cursor-se-resize"
                 />
-                <p className="text-[10px] leading-relaxed text-white/35">
-                  Upload photo in sidebar
-                  <br />
-                  Drag frame to set position
-                </p>
-              </div>
+                <HandleButton
+                  ariaLabel="Resize width"
+                  onPointerDown={onPointerDown("resize-e")}
+                  className="-right-1 top-1/2 -translate-y-1/2 cursor-ew-resize"
+                />
+                <HandleButton
+                  ariaLabel="Resize height"
+                  onPointerDown={onPointerDown("resize-s")}
+                  className="-bottom-1 left-1/2 -translate-x-1/2 cursor-ns-resize"
+                />
+              </>
             )}
           </div>
-
-          {isProductSelected && (
-            <>
-              <HandleButton
-                ariaLabel="Rotate"
-                onPointerDown={onPointerDown("rotate")}
-                className="-top-5 left-1/2 -translate-x-1/2 cursor-grab active:cursor-grabbing"
-              >
-                <RotateCw className="size-3" strokeWidth={2} />
-              </HandleButton>
-              <HandleButton
-                ariaLabel="Resize corner"
-                onPointerDown={onPointerDown("resize-se")}
-                className="-bottom-1 -right-1 cursor-se-resize"
-              />
-              <HandleButton
-                ariaLabel="Resize width"
-                onPointerDown={onPointerDown("resize-e")}
-                className="-right-1 top-1/2 -translate-y-1/2 cursor-ew-resize"
-              />
-              <HandleButton
-                ariaLabel="Resize height"
-                onPointerDown={onPointerDown("resize-s")}
-                className="-bottom-1 left-1/2 -translate-x-1/2 cursor-ns-resize"
-              />
-            </>
-          )}
 
           <div
             className={cn(
@@ -330,7 +357,7 @@ export function FloatingProduct() {
                 : "opacity-0 group-hover:opacity-100"
             )}
           >
-            Drag · handles resize · top handle tilts
+            Drag · handles resize · top-left tilts · top-right layer
           </div>
         </motion.div>
       </div>
@@ -341,11 +368,13 @@ export function FloatingProduct() {
 function HandleButton({
   ariaLabel,
   onPointerDown,
+  onClick,
   className,
   children,
 }: {
   ariaLabel: string;
-  onPointerDown: (e: React.PointerEvent) => void;
+  onPointerDown?: (e: React.PointerEvent) => void;
+  onClick?: (e: React.MouseEvent) => void;
   className?: string;
   children?: React.ReactNode;
 }) {
@@ -354,6 +383,7 @@ function HandleButton({
       type="button"
       aria-label={ariaLabel}
       onPointerDown={onPointerDown}
+      onClick={onClick}
       className={cn(
         "absolute z-30 flex size-5 items-center justify-center rounded-full touch-none",
         "border border-white/35 bg-violet-500/80 shadow-lg",
