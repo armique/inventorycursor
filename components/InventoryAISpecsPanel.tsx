@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Sparkles, Loader2, AlertCircle, Info, AlertTriangle, X } from 'lucide-react';
 import { InventoryItem } from '../types';
 import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
+import { mergeAiSpecsIntoEssential, resolveEssentialSpecKeys } from '../services/essentialSpecFields';
 
 const BATCH_SIZE = 12;
 const DELAY_BETWEEN_BATCHES_MS = 60_000;
@@ -74,20 +75,16 @@ const InventoryAISpecsPanelInner: React.FC<Props> = ({
 
   const mergeSpecsResult = useCallback(
     (item: InventoryItem, result: Awaited<ReturnType<typeof generateItemSpecs>>): InventoryItem => {
-      const activeKey = `${item.category}:${item.subCategory}`;
-      const definedFields = categoryFields[activeKey] || categoryFields[item.category || ''] || [];
-      let newSpecs = { ...(item.specs || {}) };
-      const returnedSpecs = result.specs || {};
-      Object.entries(returnedSpecs).forEach(([k, v]) => {
-        if (v === undefined || v === null || v === '') return;
-        const keyToUse =
-          definedFields.length > 0
-            ? (definedFields.find((df) => df.toLowerCase() === k.toLowerCase()) || k)
-            : k;
-        newSpecs[keyToUse] = v;
-      });
+      const newSpecs = mergeAiSpecsIntoEssential(
+        item.specs,
+        result.specs,
+        item.category || '',
+        item.subCategory,
+        categoryFields
+      );
       const updates: Partial<InventoryItem> = {
-        specs: newSpecs as Record<string, string | number>,
+        specs: newSpecs,
+        specsAiSuggested: Object.keys(newSpecs).length ? { ...newSpecs } : undefined,
       };
       if (result.standardizedName) updates.name = result.standardizedName;
       if (result.vendor) updates.vendor = result.vendor;
@@ -127,8 +124,11 @@ const InventoryAISpecsPanelInner: React.FC<Props> = ({
               const latest = currentItems.find((it) => it.id === item.id) || item;
               try {
                 const categoryContext = `${latest.category || 'Unknown'}${latest.subCategory ? ' / ' + latest.subCategory : ''}`;
-                const activeKey = `${latest.category}:${latest.subCategory}`;
-                const knownKeys = categoryFields[activeKey] || categoryFields[latest.category || ''] || [];
+                const knownKeys = resolveEssentialSpecKeys(
+                  latest.category || '',
+                  latest.subCategory,
+                  categoryFields
+                );
                 const result = await generateItemSpecs(latest.name, categoryContext, knownKeys);
                 const merged = mergeSpecsResult(latest, result);
                 batchUpdates.push(merged);

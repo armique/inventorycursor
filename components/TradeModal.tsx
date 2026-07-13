@@ -26,6 +26,7 @@ import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { resolveTradeIncomingCategory } from '../utils/itemCategoryDetect';
 import { searchAllHardware, HardwareMetadata } from '../services/hardwareDB';
 import { allocateRemainderEuros, TradeSplitMode } from '../services/tradeAllocation';
+import { resolveEssentialSpecKeys, mergeAiSpecsIntoEssential } from '../services/essentialSpecFields';
 import { toLocalCalendarDateKey } from '../utils/calendarDate';
 import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
 import ItemThumbnail, { CategoryIconBox } from './ItemThumbnail';
@@ -143,10 +144,8 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
     setNewItemName('');
   };
 
-  const knownKeysForDraft = (d: IncomingItemDraft) => {
-    const activeKey = `${d.category}:`;
-    return categoryFields[activeKey] || categoryFields[d.category] || [];
-  };
+  const knownKeysForDraft = (d: IncomingItemDraft) =>
+    resolveEssentialSpecKeys(d.category, d.subCategory, categoryFields);
 
   const parseSpecsForIncomingRow = async (id: string) => {
     const d = incomingItems.find((i) => i.id === id);
@@ -155,12 +154,13 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
     try {
       const result = await generateItemSpecs(d.name, d.category, knownKeysForDraft(d));
       if (result.specs && Object.keys(result.specs).length > 0) {
+        const mergedSpecs = mergeAiSpecsIntoEssential(d.specs, result.specs, d.category, d.subCategory, categoryFields);
         setIncomingItems((prev) =>
           prev.map((i) =>
             i.id === id
               ? {
                   ...i,
-                  specs: result.specs,
+                  specs: mergedSpecs,
                   ...(result.standardizedName ? { name: result.standardizedName } : {}),
                   ...(result.vendor ? { parsedVendor: result.vendor } : {})
                 }
@@ -326,9 +326,16 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
             const result = await generateItemSpecs(row.name, row.category, knownKeysForDraft(row));
             const idx = drafts.findIndex((x) => x.id === row.id);
             if (idx >= 0 && result.specs && Object.keys(result.specs).length > 0) {
+              const mergedSpecs = mergeAiSpecsIntoEssential(
+                drafts[idx].specs,
+                result.specs,
+                row.category,
+                row.subCategory,
+                categoryFields
+              );
               drafts[idx] = {
                 ...drafts[idx],
-                specs: result.specs,
+                specs: mergedSpecs,
                 ...(result.standardizedName ? { name: result.standardizedName } : {}),
                 ...(result.vendor ? { parsedVendor: result.vendor } : {})
               };

@@ -1,5 +1,6 @@
 import type { EbayMyListing } from '../services/ebayService';
 import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
+import { filterSpecsToEssentialKeys, resolveEssentialSpecKeys } from '../services/essentialSpecFields';
 import { detectItemCategory } from './itemCategoryDetect';
 import { cleanEbayListingTitle } from './ebayBulkSyncPlan';
 
@@ -46,16 +47,15 @@ export async function enrichOrphanListingDraft(
   if (options.parseSpecs && getSpecsAIProvider()) {
     try {
       const categoryContext = `${category}${subCategory ? ` / ${subCategory}` : ''}`;
-      const activeKey = `${category}:${subCategory || ''}`;
-      const knownKeys = categoryFields[activeKey] || categoryFields[category] || [];
+      const knownKeys = resolveEssentialSpecKeys(category, subCategory, categoryFields);
       const result = await generateItemSpecs(parsedName, categoryContext, knownKeys);
       if (result.standardizedName?.trim()) {
         parsedName = result.standardizedName.trim();
       }
       if (result.vendor) vendor = result.vendor;
       if (result.specs && Object.keys(result.specs).length > 0) {
-        specs = result.specs;
-        specsAiSuggested = { ...result.specs };
+        specs = filterSpecsToEssentialKeys(result.specs, knownKeys);
+        specsAiSuggested = { ...specs };
       }
     } catch (e) {
       const msg = (e as Error)?.message || 'AI spec parse failed.';

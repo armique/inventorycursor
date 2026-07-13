@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useLayoutEffect, useRef, useDeferredValue, startTransition } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { pickEssentialSpecOptions, mergeAiSpecsIntoEssential, resolveEssentialSpecKeys } from '../services/essentialSpecFields';
 import { formatEUR, parseLocaleMoney, parseLocaleNumber } from '../utils/formatMoney';
 import { toLocalCalendarDateKey } from '../utils/calendarDate';
 import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSortKey, buildTimeGaugeSortKeyMap } from '../utils/inventoryTimeGauge';
@@ -1262,6 +1263,20 @@ const InventoryList: React.FC<Props> = ({
     return result;
   }, [baseFilteredForSpecs, showSpecFiltersPanel, hasActiveSpecFilters, activeQuickPin]);
 
+  const quickPinSpecOptions = useMemo(() => {
+    if (!activeQuickPin) return [];
+    const fallbackKeys =
+      categoryFields[`${activeQuickPin.category}:${activeQuickPin.subCategory || ''}`] ||
+      categoryFields[activeQuickPin.category] ||
+      [];
+    return pickEssentialSpecOptions(
+      specOptions,
+      activeQuickPin.category,
+      activeQuickPin.subCategory,
+      fallbackKeys
+    );
+  }, [activeQuickPin, specOptions, categoryFields]);
+
   // Convenience: socket filter options (e.g. for processors / motherboards)
   const socketSpec = useMemo(() => {
     const lowerMatch = (k: string) => {
@@ -1710,17 +1725,13 @@ const InventoryList: React.FC<Props> = ({
     setParsingSingleId(item.id);
     try {
       const categoryContext = `${item.category || 'Unknown'}${item.subCategory ? ' / ' + item.subCategory : ''}`;
-      const activeKey = `${item.category}:${item.subCategory}`;
-      const knownKeys = (categoryFields || {})[activeKey] || (categoryFields || {})[item.category || ''] || [];
+      const knownKeys = resolveEssentialSpecKeys(item.category || '', item.subCategory, categoryFields);
       const result = await generateItemSpecs(item.name, categoryContext, knownKeys);
-      const definedFields = knownKeys;
-      let newSpecs = { ...(item.specs || {}) };
-      Object.entries(result.specs || {}).forEach(([k, v]) => {
-        if (v === undefined || v === null || v === '') return;
-        const keyToUse = definedFields.length > 0 ? (definedFields.find((df) => df.toLowerCase() === k.toLowerCase()) || k) : k;
-        newSpecs[keyToUse] = v;
-      });
-      const updates: Partial<InventoryItem> = { specs: newSpecs as Record<string, string | number> };
+      const newSpecs = mergeAiSpecsIntoEssential(item.specs, result.specs, item.category || '', item.subCategory, categoryFields);
+      const updates: Partial<InventoryItem> = {
+        specs: newSpecs,
+        specsAiSuggested: Object.keys(newSpecs).length ? { ...newSpecs } : undefined,
+      };
       if (result.standardizedName) updates.name = result.standardizedName;
       if (result.vendor) updates.vendor = result.vendor;
       const merged = { ...item, ...updates };
@@ -3754,13 +3765,13 @@ const InventoryList: React.FC<Props> = ({
                    </button>
                  )}
                </div>
-               {specOptions.length === 0 ? (
+               {quickPinSpecOptions.length === 0 ? (
                  <p className="text-[10px] text-slate-500">
-                   No spec fields on {activeQuickPin.label} items yet — add specs to filter by DDR type, capacity, frequency, etc.
+                   No key spec fields on {activeQuickPin.label} items yet — add specs like memory type, capacity, or speed to filter here.
                  </p>
                ) : (
                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                   {specOptions.map(({ key, values }) => {
+                   {quickPinSpecOptions.map(({ key, values }) => {
                      const selected = specFilters[key] ?? [];
                      return (
                        <div key={key} className="flex flex-wrap items-center gap-1.5">

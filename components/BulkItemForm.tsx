@@ -14,6 +14,7 @@ import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { CATEGORY_IMAGES, searchAllHardware, HardwareMetadata } from '../services/hardwareDB';
 import { generateItemSpecs, getSpecsAIProvider, requestAIJson } from '../services/specsAI';
+import { mergeAiSpecsIntoEssential, resolveEssentialSpecKeys } from '../services/essentialSpecFields';
 import { correctGpuVramInSpecs, shouldApplyGpuVramCorrection } from '../services/gpuVramCorrection';
 import { filesToDataUrls, prepareInventoryImagesForStorage } from '../utils/imageImport';
 
@@ -590,14 +591,21 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
           setParseProgress(`Parsing specs… ${i + 1} / ${needSpecs.length}`);
           try {
             const categoryContext = `${draft.category}${draft.subCategory ? ` / ${draft.subCategory}` : ''}`;
-            const activeKey = `${draft.category}:${draft.subCategory || ''}`;
-            const knownKeys = categoryFields[activeKey] || categoryFields[draft.category] || [];
+            const knownKeys = resolveEssentialSpecKeys(draft.category, draft.subCategory, categoryFields);
             const result = await generateItemSpecs(draft.name, categoryContext, knownKeys);
             const idx = updated.findIndex((x) => x.id === draft.id);
             if (idx >= 0 && result.specs && Object.keys(result.specs).length > 0) {
+              const mergedSpecs = mergeAiSpecsIntoEssential(
+                updated[idx].specs,
+                result.specs,
+                draft.category,
+                draft.subCategory,
+                categoryFields
+              );
               updated[idx] = {
                 ...updated[idx],
-                specs: result.specs,
+                specs: mergedSpecs,
+                specsAiSuggested: Object.keys(mergedSpecs).length ? { ...mergedSpecs } : undefined,
                 ...(result.standardizedName && { name: result.standardizedName }),
                 ...(result.vendor && { vendor: result.vendor }),
               };

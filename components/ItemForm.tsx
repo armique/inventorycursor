@@ -16,7 +16,7 @@ import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 import { CATEGORY_IMAGES, getSpecOptions } from '../services/hardwareDB';
 import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
 import { getCompatibleItemsForItem } from '../services/compatibility';
-import { getEssentialSpecFieldKeys } from '../services/essentialSpecFields';
+import { mergeAiSpecsIntoEssential, resolveEssentialSpecKeys, filterSpecsToEssentialKeys } from '../services/essentialSpecFields';
 import { getCompatibilityWarnings } from '../utils/compatibilityWarnings';
 import { recordCategoryCorrection, suggestCategoryFromCorrections } from '../services/categoryCorrections';
 import { detectItemCategory, searchInventoryItemsForAdd } from '../utils/itemCategoryDetect';
@@ -323,51 +323,22 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     const categoryContext = formData.category || 'Unknown';
     setGeneratingSpecs(true);
     
-    const activeKey = `${formData.category}:${formData.subCategory}`;
-    const legacyFields = categoryFields[activeKey] || categoryFields[formData.category || ''] || [];
-    const essential = getEssentialSpecFieldKeys(formData.category || '', formData.subCategory);
-    const definedFields =
-      essential.length > 0 ? [...essential] : legacyFields.slice(0, 12);
+    const definedFields = resolveEssentialSpecKeys(formData.category || '', formData.subCategory, categoryFields);
 
     try {
       const result = await generateItemSpecs(formData.name, categoryContext, definedFields);
 
-      let newSpecs = { ...(formData.specs || {}) };
-      const returnedSpecs = result.specs || {};
-      const nextAi: Record<string, string | number> = { ...(formData.specsAiSuggested || {}) };
-
-      // Loose match so AI phrasing variants (e.g. "CPU Socket" / "Base Clock Speed") still count
-      // as the curated field rather than being rejected outright for not matching verbatim.
-      const normKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const findCuratedMatch = (k: string) => {
-        const nk = normKey(k);
-        return (
-          definedFields.find((df) => normKey(df) === nk) ||
-          definedFields.find((df) => {
-            const nd = normKey(df);
-            return nk.includes(nd) || nd.includes(nk);
-          })
-        );
-      };
-
-      Object.entries(returnedSpecs).forEach(([k, v]) => {
-        if (v === undefined || v === null || v === '') return;
-        let keyToUse = definedFields.length > 0 ? findCuratedMatch(k) || k : k;
-        if (formData.subCategory === 'RAM' && k.toLowerCase() === 'capacity' && !definedFields.some((df) => df.toLowerCase() === 'capacity')) {
-          keyToUse = 'Kit Capacity';
-        }
-        if (formData.subCategory === 'Storage (SSD/HDD)' && k.toLowerCase() === 'type' && !definedFields.some((df) => df.toLowerCase() === 'type')) {
-          keyToUse = 'Drive Type';
-        }
-        // Store whatever the AI returns (even fields beyond the curated list) so nothing is ever
-        // silently lost to an imperfect name match — the compact editor only *displays* the
-        // curated fields (see renderSpecsEditor), it doesn't need parsing itself to discard data.
-        newSpecs[keyToUse] = v;
-        nextAi[keyToUse] = v;
-      });
+      const newSpecs = mergeAiSpecsIntoEssential(
+        formData.specs as Record<string, string | number> | undefined,
+        result.specs,
+        formData.category || '',
+        formData.subCategory,
+        categoryFields
+      );
+      const nextAi = filterSpecsToEssentialKeys(result.specs || {}, definedFields);
 
       const updates: Partial<InventoryItem> = {
-        specs: newSpecs as Record<string, string | number>,
+        specs: newSpecs,
         specsAiSuggested: Object.keys(nextAi).length ? nextAi : undefined,
       };
 
@@ -654,15 +625,20 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     const fallbackImage = CATEGORY_IMAGES[formData.subCategory || formData.category || 'Components'];
     const saveItemId = formData.id || `item-${Date.now()}`;
 
-    const specsOut =
+    const specsBase =
       isRamItem(formData.category, formData.subCategory) && formData.specs
         ? normalizeRamSpecsForSave({ ...formData.specs })
         : formData.specs;
+    const essentialKeys = resolveEssentialSpecKeys(formData.category || '', formData.subCategory, categoryFields);
+    const specsOut = filterSpecsToEssentialKeys(specsBase as Record<string, string | number>, essentialKeys);
 
-    const aiSuggested =
+    const aiSuggestedRaw =
       formData.specsAiSuggested && Object.keys(formData.specsAiSuggested).length > 0
         ? formData.specsAiSuggested
         : undefined;
+    const aiSuggested = aiSuggestedRaw
+      ? filterSpecsToEssentialKeys(aiSuggestedRaw, essentialKeys)
+      : undefined;
 
     let storedImages = normalizedImages;
     try {
@@ -678,7 +654,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       imageUrl: storedImages[0] || fallbackImage,
       imageUrls: storedImages.length ? storedImages : [fallbackImage],
       specs: specsOut ?? {},
-      specsAiSuggested: aiSuggested,
+      specsAiSuggested: aiSuggested && Object.keys(aiSuggested).length ? aiSuggested : undefined,
     };
 
     let itemsToSave: InventoryItem[] = [];
@@ -721,7 +697,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     const legacyTemplate =
       categoryFields[`${cat}:${sub}`] || categoryFields[cat] || [];
 
-    const essential = getEssentialSpecFieldKeys(cat, sub);
+    const essential = resolveEssentialSpecKeys(cat, sub, categoryFields);
     // Fall back to whatever specs actually exist (parsed or manually entered) if this category has
     // neither a curated list nor a legacy template — otherwise real data could end up with nowhere
     // to render and look like parsing "did nothing" even though it succeeded.

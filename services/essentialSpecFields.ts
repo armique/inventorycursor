@@ -86,3 +86,90 @@ export function getEssentialSpecFieldKeys(category: string, subCategory: string 
   if (list?.length) return list.slice(0, MAX_ESSENTIAL_SPEC_FIELDS);
   return [];
 }
+
+function normSpecKey(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/** Loose match so item keys like "DDR Type" still map to curated "Memory Type". */
+export function specKeyMatchesEssential(specKey: string, essentialKey: string): boolean {
+  const nk = normSpecKey(specKey);
+  const ne = normSpecKey(essentialKey);
+  if (!nk || !ne) return false;
+  return nk === ne || nk.includes(ne) || ne.includes(nk);
+}
+
+/** Keep only curated essential spec rows for quick-pin sub-filters (preserves essential order). */
+export function pickEssentialSpecOptions<T extends { key: string }>(
+  options: T[],
+  category: string,
+  subCategory: string | undefined,
+  fallbackKeys?: string[]
+): T[] {
+  let essential = getEssentialSpecFieldKeys(category, subCategory);
+  if (!essential.length && fallbackKeys?.length) {
+    essential = fallbackKeys.slice(0, MAX_ESSENTIAL_SPEC_FIELDS);
+  }
+  if (!essential.length) return options.slice(0, 5);
+
+  const used = new Set<string>();
+  const result: T[] = [];
+  for (const essentialKey of essential) {
+    const match = options.find((o) => !used.has(o.key) && specKeyMatchesEssential(o.key, essentialKey));
+    if (match) {
+      used.add(match.key);
+      result.push(match);
+    }
+  }
+  return result;
+}
+
+/** Essential keys for AI parsing / storage — curated list first, then legacy category template. */
+export function resolveEssentialSpecKeys(
+  category: string,
+  subCategory: string | undefined,
+  categoryFields?: Record<string, string[]>
+): string[] {
+  const essential = getEssentialSpecFieldKeys(category, subCategory);
+  if (essential.length) return essential;
+  if (!categoryFields) return [];
+  const activeKey = `${category}:${subCategory || ''}`;
+  return (categoryFields[activeKey] || categoryFields[category] || []).slice(0, MAX_ESSENTIAL_SPEC_FIELDS);
+}
+
+/** Drop geeky / extra spec keys — keep only the curated essential set (canonical key names). */
+export function filterSpecsToEssentialKeys(
+  specs: Record<string, string | number> | undefined,
+  essentialKeys: string[]
+): Record<string, string | number> {
+  if (!specs) return {};
+  if (!essentialKeys.length) {
+    const entries = Object.entries(specs).filter(([, v]) => v !== '' && v != null);
+    return Object.fromEntries(entries.slice(0, MAX_ESSENTIAL_SPEC_FIELDS));
+  }
+  const out: Record<string, string | number> = {};
+  for (const essentialKey of essentialKeys) {
+    for (const [k, v] of Object.entries(specs)) {
+      if (v === undefined || v === null || v === '') continue;
+      if (specKeyMatchesEssential(k, essentialKey)) {
+        out[essentialKey] = v;
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+/** Merge AI parse into item specs — essential fields only, AI values win on conflict. */
+export function mergeAiSpecsIntoEssential(
+  existing: Record<string, string | number> | undefined,
+  aiSpecs: Record<string, string | number> | undefined,
+  category: string,
+  subCategory: string | undefined,
+  categoryFields?: Record<string, string[]>
+): Record<string, string | number> {
+  const essentialKeys = resolveEssentialSpecKeys(category, subCategory, categoryFields);
+  const fromExisting = filterSpecsToEssentialKeys(existing, essentialKeys);
+  const fromAi = filterSpecsToEssentialKeys(aiSpecs, essentialKeys);
+  return { ...fromExisting, ...fromAi };
+}

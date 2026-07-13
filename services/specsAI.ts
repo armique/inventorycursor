@@ -6,6 +6,7 @@
  */
 
 import { correctGpuVramInSpecs } from './gpuVramCorrection';
+import { filterSpecsToEssentialKeys } from './essentialSpecFields';
 import { loadAISettings } from './aiSettings';
 
 const getEnv = (key: string): string => {
@@ -134,33 +135,30 @@ function buildPrompt(name: string, rawCategory: string, knownKeys: string[]): st
   let fieldInstruction = '';
   if (knownKeys.length > 0) {
     fieldInstruction = `
-PREFERRED KEYS (use these exact names when the spec matches): ${JSON.stringify(knownKeys)}
-- If a spec matches one of these (e.g. "Ram" vs "Memory"), use the exact key from the list.
-- You may also add any other important specs not in the list with clear, short key names (e.g. Cores, Threads, Base Clock, Max Turbo, Cache, TDP, Lithography, Socket).
+ESSENTIAL KEYS ONLY — return specs using EXACTLY these keys and nothing else:
+${JSON.stringify(knownKeys)}
+
+Rules:
+- Map synonyms to the closest key (e.g. "DDR4" → "Memory Type", "16GB" → "Kit Capacity").
+- Do NOT add extra geeky fields (no lithography, cache, threads, PCIe lanes, process node, etc.) unless the key is in the list above.
+- Omit a key if you are unsure; do not guess.
 `;
   } else {
     fieldInstruction = `
-Use clear, short key names for all specs (e.g. Cores, Threads, Base Clock, Max Turbo, Cache, TDP, Socket, Cores, Memory, Storage, etc.).
+Return at most ${10} practical comparison specs with short key names (e.g. Socket, Model, Capacity).
+Skip deep enthusiast stats (cache sizes, lithography, lane counts, etc.).
 `;
   }
-  return `Look up this hardware/product and extract technical specifications from your knowledge (as if from product pages/specs). Return all important specs so they can be added to an item card.
+  return `Look up this hardware/product and extract only the essential comparison specs for inventory resale.
 
 Item: "${name}"
 Category: ${rawCategory}
 ${fieldInstruction}
 
-Examples by type (use EXACT keys when they appear in PREFERRED KEYS):
-- CPU: Generation, Base Clock, Boost Clock, Cores, Threads, Socket, DDR Support
-- GPU: VRAM, GPU Series (e.g. GeForce RTX), Model, Base Clock, Boost Clock, Memory Type (GDDR), TDP
-- RAM: Kit Capacity (total kit), Memory Type (DDR4/DDR5), Speed, Latency, Modules (stick count), GB per Stick
-- Motherboard: Socket, Form Factor, Chipset, Memory Slots, Max Memory
-- PSU: Wattage, Efficiency, Modular, Form Factor
-- Storage: Drive Type, Capacity, Interface (NVMe/SATA)
-
 Return a valid JSON object with this exact structure (no markdown, no code fence):
 {"standardizedName":"...","vendor":"...","specs":{...}}
 
-Rules: specs values can be string or number. Include as many relevant specs as you know.
+Rules: specs values can be string or number. Only include keys allowed above.
 
 GRAPHICS CARDS (GPUs): For the "VRAM" field, use the exact frame-buffer memory of that GPU model only (e.g. RTX 5070 has 12GB VRAM). Do not use system RAM, total memory across unrelated devices, or another GPU tier. If the product name includes a GB figure next to the chip name (e.g. "RTX 5070 12GB"), that GB value is the VRAM.`;
 }
@@ -367,9 +365,10 @@ export async function generateItemSpecs(
   for (const provider of providers) {
     try {
       const raw = await callProviderSpecs(provider, prompt);
+      const corrected = correctGpuVramInSpecs(name, raw.standardizedName, raw.specs || {});
       return {
         ...raw,
-        specs: correctGpuVramInSpecs(name, raw.standardizedName, raw.specs || {}),
+        specs: filterSpecsToEssentialKeys(corrected, knownKeys),
       };
     } catch (e) {
       lastError = e instanceof Error ? e : new Error(String(e));
