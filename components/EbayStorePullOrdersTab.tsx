@@ -29,7 +29,9 @@ import {
   pullOrderIndexFromCloud,
   pushOrderIndexToCloud,
   upsertEbayOrders,
+  type EbayOrderRecord,
 } from '../services/ebayOrderIndex';
+import { invalidateEbaySalesSyncPeekCache } from '../services/ebaySalesSync';
 import { getOrderEffectiveNet } from '../utils/ebayOrderFinancial';
 import { formatEUR } from '../utils/formatMoney';
 import { matchesEbayToolSearch } from '../utils/ebayToolSearch';
@@ -67,6 +69,7 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
   const [csvError, setCsvError] = useState<string | null>(null);
   const [csvImportMessage, setCsvImportMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingCsvImportRef = useRef(false);
 
   const [showCacheSetup, setShowCacheSetup] = useState(() => getOrderIndexStats().count === 0);
   const [statsVersion, setStatsVersion] = useState(0);
@@ -177,14 +180,18 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
           setBackfillMessage(`Cancelled — fetched ${result.ordersFetched} order(s) before stopping.`);
         } else {
           setBackfillMessage(
-            `Fetched ${result.ordersFetched} order(s) from eBay · ${result.added} new, ${result.merged} updated in cache.`
+            `Fetched ${result.ordersFetched} order(s) from eBay · ${result.added} new, ${result.merged} updated in cache — matching inventory…`
           );
         }
       } catch (e: unknown) {
         setBackfillError((e as Error)?.message || 'Backfill failed.');
       } finally {
         setBackfilling(false);
+        invalidateEbaySalesSyncPeekCache();
         setStatsVersion((v) => v + 1);
+        requestAnimationFrame(() => {
+          document.getElementById('ebay-sales-sync-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
         setTimeout(() => setBackfillProgress(null), 1200);
       }
     },
@@ -206,7 +213,9 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
       setCsvResult(result);
       if (!result.orders.length) {
         setCsvError('No orders could be parsed from this file. Check the column headers below.');
+        return;
       }
+      commitCsvImport(result.orders, file.name, result.rowCount);
     } catch (e: unknown) {
       setCsvError((e as Error)?.message || 'Failed to read file.');
       setCsvResult(null);
@@ -220,26 +229,54 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
     if (file) void handleCsvFile(file);
   };
 
+  const commitCsvImport = useCallback(
+    (orders: EbayOrderRecord[], fileName: string, rowCount: number) => {
+      pendingCsvImportRef.current = true;
+      invalidateEbaySalesSyncPeekCache();
+      const result = upsertEbayOrders(orders);
+      addCsvImportMeta({ fileName, rowCount, orderCount: orders.length });
+      void pushOrderIndexToCloud(result.changed);
+      setCsvResult(null);
+      setCsvImportMessage(
+        `Imported ${orders.length} order(s) from "${fileName}" · ${result.added} new, ${result.merged} updated — matching inventory…`
+      );
+      setStatsVersion((v) => v + 1);
+      requestAnimationFrame(() => {
+        document.getElementById('ebay-sales-sync-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    },
+    []
+  );
+
   const importCsvOrders = () => {
     if (!csvResult?.orders.length || !csvFileName) return;
-    const result = upsertEbayOrders(csvResult.orders);
-    addCsvImportMeta({ fileName: csvFileName, rowCount: csvResult.rowCount, orderCount: csvResult.orders.length });
-    void pushOrderIndexToCloud(result.changed);
-    setCsvImportMessage(
-      `Imported ${csvResult.orders.length} order(s) from "${csvFileName}" · ${result.added} new, ${result.merged} updated in cache. Sales sync re-matched automatically — net payout should appear in suggestions.`
-    );
-    setCsvResult(null);
+    commitCsvImport(csvResult.orders, csvFileName, csvResult.rowCount);
     setCsvFileName(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
-    setStatsVersion((v) => v + 1);
   };
+
+  const handleRematchComplete = useCallback(
+    ({ orderCount, suggestionCount }: { orderCount: number; suggestionCount: number }) => {
+      if (!pendingCsvImportRef.current || orderCount === 0) return;
+      pendingCsvImportRef.current = false;
+      setCsvImportMessage(
+        suggestionCount > 0
+          ? `Imported ${orderCount} order(s) · ${suggestionCount} suggestion(s) ready in sales sync above — review and apply.`
+          : `Imported ${orderCount} order(s) · no automatic matches found — link manually or try Re-match cache only.`
+      );
+    },
+    []
+  );
 
   const handleClearIndex = () => {
     const scope = cloudReady ? 'this browser AND your saved cloud history' : 'this browser';
     if (!confirm(`Clear the entire cached order index (${scope})? This does not affect any inventory items — only the cache used for order lookups.`)) {
       return;
     }
-    void clearEbayOrderIndexEverywhere().then(() => setStatsVersion((v) => v + 1));
+    void clearEbayOrderIndexEverywhere().then(() => {
+      invalidateEbaySalesSyncPeekCache();
+      setStatsVersion((v) => v + 1);
+    });
   };
 
   return (
@@ -249,6 +286,8 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
         taxMode={taxMode}
         onUpdate={onUpdate}
         onCacheUpdated={refreshStats}
+        cacheVersion={statsVersion}
+        onRematchComplete={handleRematchComplete}
       />
 
       <div className="shrink-0 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
@@ -301,18 +340,31 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
 
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               {[
-                { label: 'Cached orders', value: stats.count },
-                { label: 'API only', value: stats.apiOnlyCount },
-                { label: 'CSV only', value: stats.csvOnlyCount },
-                { label: 'Both sources', value: stats.bothCount },
-                { label: 'Sold, unlinked', value: soldOnEbayMissingLink },
+                { label: 'Cached orders', value: stats.count, hint: 'Imported eBay order history' },
+                { label: 'API only', value: stats.apiOnlyCount, hint: 'From Fulfillment API' },
+                { label: 'CSV only', value: stats.csvOnlyCount, hint: 'From Seller Hub CSV' },
+                { label: 'Both sources', value: stats.bothCount, hint: 'API + CSV merged' },
+                {
+                  label: 'Inventory w/o order ID',
+                  value: soldOnEbayMissingLink,
+                  hint: 'Sold items in your stock list — not removed when cache is cleared',
+                },
               ].map((s) => (
-                <div key={s.label} className="rounded-xl border border-slate-200 bg-slate-50/50 p-3">
+                <div key={s.label} className="rounded-xl border border-slate-200 bg-slate-50/50 p-3" title={s.hint}>
                   <p className="text-[10px] font-black uppercase text-slate-400">{s.label}</p>
                   <p className="text-xl font-black text-slate-900 mt-1">{s.value}</p>
                 </div>
               ))}
             </div>
+
+            {stats.count === 0 && soldOnEbayMissingLink > 0 && (
+              <p className="text-[11px] font-bold text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                Clearing the order cache removed imported eBay history only. The{' '}
+                <span className="font-black">{soldOnEbayMissingLink}</span> sold item
+                {soldOnEbayMissingLink === 1 ? '' : 's'} without an order ID are still in your inventory — re-backfill
+                or import CSV to match them again.
+              </p>
+            )}
 
             {meta.apiBackfill?.completedThroughDate && (
               <p className="text-[11px] text-slate-500">
@@ -468,8 +520,9 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
         <p className="text-xs text-slate-500">
           Export a report from eBay Seller Hub → <span className="font-bold">Orders</span> (buyer/address/order
           ID) or Seller Hub → <span className="font-bold">Payments → All transactions</span> (adds net amount
-          after fees) and upload it here. Column headers are auto-detected — German and English exports both
-          work.
+          after fees) and upload it here. Choosing a file imports orders immediately and runs{' '}
+          <span className="font-bold">sales sync</span> above — column headers are auto-detected (German and
+          English exports both work).
         </p>
         <input
           ref={fileInputRef}

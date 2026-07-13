@@ -1,8 +1,17 @@
-import { CustomerInfo, InventoryItem, ItemStatus, TaxMode } from '../types';
+import { InventoryItem, ItemStatus, TaxMode } from '../types';
 import type { EbayOrderMatch } from './ebayOrderMatch';
+import { customerFromEbayOrder } from './ebayOrderBuyerData';
 import { getLinePayout } from './ebayOrderPayout';
 import { calculateSaleProfit } from './saleProfit';
 import { hasPostSaleRefund, sumOrderSaleProceeds } from './ebayOrderFinancial';
+
+/** True when linking an eBay order should correct platform/payment to eBay. */
+export function shouldCorrectSalePlatformToEbay(item: InventoryItem): boolean {
+  if (!item.platformSold?.trim()) return true;
+  if (item.platformSold === 'kleinanzeigen.de') return true;
+  if (item.paymentType?.startsWith('Kleinanzeigen')) return true;
+  return false;
+}
 
 /** Apply a cached eBay order match onto an inventory row (link order id, buyer, net sell price, profit). */
 export function applyEbayOrderMatchToItem(
@@ -15,12 +24,9 @@ export function applyEbayOrderMatchToItem(
   const feeForProfit = payout.netKnown ? 0 : payout.fee;
   const profit = calculateSaleProfit(payout.sellPrice, item.buyPrice, feeForProfit, taxMode);
 
-  const customer: CustomerInfo = {
-    name: order.buyer.fullName || order.buyer.username || '',
-    address: order.buyer.address || '',
-    ...(order.buyer.phone ? { phone: order.buyer.phone } : {}),
-    ...(order.buyer.email ? { email: order.buyer.email } : {}),
-  };
+  const customer = customerFromEbayOrder(order);
+  const hadKleinanzeigenSale =
+    item.platformSold === 'kleinanzeigen.de' || item.paymentType?.startsWith('Kleinanzeigen');
 
   const originalSellPrice =
     item.originalSellPrice ??
@@ -30,20 +36,30 @@ export function applyEbayOrderMatchToItem(
         ? item.sellPrice
         : payout.sellPrice);
 
-  return {
+  const next: InventoryItem = {
     ...item,
     status:
       item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED ? ItemStatus.SOLD : item.status,
     originalSellPrice,
     sellPrice: payout.sellPrice,
     sellDate: order.creationDate || item.sellDate || new Date().toISOString().split('T')[0],
-    platformSold: item.platformSold || 'ebay.de',
-    paymentType: item.paymentType || 'ebay.de',
+    platformSold: shouldCorrectSalePlatformToEbay(item) ? 'ebay.de' : item.platformSold || 'ebay.de',
+    paymentType: shouldCorrectSalePlatformToEbay(item) ? 'ebay.de' : item.paymentType || 'ebay.de',
     profit: parseFloat(profit.toFixed(2)),
-    customer: customer.name || customer.address ? customer : item.customer,
+    customer:
+      customer.name || customer.address || customer.phone || customer.email ? customer : item.customer,
     ebayUsername: order.buyer.username || item.ebayUsername,
     ebayOrderId: order.orderId,
+    ebaySku: lineItem.sku || item.ebaySku,
+    ebayListingId: lineItem.listingId || item.ebayListingId,
     hasFee: !payout.netKnown && Boolean(payout.fee),
     feeAmount: payout.netKnown ? 0 : payout.fee,
   };
+
+  if (hadKleinanzeigenSale) {
+    next.kleinanzeigenChatUrl = undefined;
+    next.kleinanzeigenChatImage = undefined;
+  }
+
+  return next;
 }

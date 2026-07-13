@@ -11,7 +11,8 @@ import { computeItemProfitBeforeOverhead, roundMoney } from '../services/financi
 import { buildFinanzamtWareRows } from '../services/finanzamtExportService';
 import { calculateSaleProfit } from '../utils/saleProfit';
 import { getLinePayout } from '../utils/ebayOrderPayout';
-import { applyEbayOrderMatchToItem } from '../utils/applyEbayOrderMatch';
+import { applyEbayOrderMatchToItem, shouldCorrectSalePlatformToEbay } from '../utils/applyEbayOrderMatch';
+import { countSalesByPlatform } from '../utils/salePlatform';
 import { buildOrderLinkAnalysis } from '../utils/ebayOrderLinkAnalysis';
 import { classifyTransactionType, sumFinancialEventNet, getOrderEffectiveNet, isOrderFullyRefunded, sumOrderSaleProceeds } from '../utils/ebayOrderFinancial';
 import {
@@ -222,6 +223,73 @@ function runEbayPayoutTests(): void {
   assertClose(applied.sellPrice!, 80, 'ebay apply uses net payout');
   assertClose(applied.profit!, 30, 'ebay apply profit: net sell 80 - buy 50 (fee already in net)');
   assert(applied.ebayOrderId === 'ORD-1', 'links order id');
+  assert(applied.platformSold === 'ebay.de', 'sets ebay platform');
+  assert(applied.paymentType === 'ebay.de', 'sets ebay payment');
+}
+
+function runEbayApplyPlatformTests(): void {
+  const order: EbayOrderRecord = {
+    orderId: 'KA-FIX-1',
+    creationDate: '2025-08-10',
+    buyer: {
+      username: 'ebay_buyer',
+      fullName: 'Max Mustermann',
+      address: 'Musterstr. 1\n12345 Berlin',
+      email: 'max@example.com',
+    },
+    lineItems: [{ sku: 'GPU-X', title: 'RTX 3080', lineItemCost: 400, listingId: '555123' }],
+    grossTotal: 400,
+    netTotal: 350,
+    feeTotal: 50,
+    sources: ['csv'],
+    importedAt: new Date().toISOString(),
+  };
+  const match = {
+    order,
+    lineItem: order.lineItems[0],
+    matchScore: 900,
+    matchKind: 'sku' as const,
+  };
+
+  const kaItem = baseItem({
+    id: 'ka-mistake',
+    status: ItemStatus.SOLD,
+    platformSold: 'kleinanzeigen.de',
+    paymentType: 'Kleinanzeigen über Freunde',
+    sellPrice: 360,
+    sellDate: '2025-08-10',
+    buyPrice: 200,
+    kleinanzeigenChatUrl: 'https://www.kleinanzeigen.de/chat/1',
+  });
+  assert(shouldCorrectSalePlatformToEbay(kaItem), 'KA sale should correct to ebay on link');
+  const beforeCounts = countSalesByPlatform([kaItem]);
+  assert(beforeCounts.kleinanzeigen === 1 && beforeCounts.ebay === 0, 'dashboard: KA before link');
+
+  const applied = applyEbayOrderMatchToItem(kaItem, match, 'SmallBusiness');
+  assert(applied.platformSold === 'ebay.de', 'corrects platform to ebay');
+  assert(applied.paymentType === 'ebay.de', 'corrects payment to ebay');
+  assert(applied.ebayOrderId === 'KA-FIX-1', 'sets order id');
+  assert(applied.ebaySku === 'GPU-X', 'fills sku from order line');
+  assert(applied.ebayListingId === '555123', 'fills listing id from order line');
+  assert(applied.customer?.name === 'Max Mustermann', 'fills buyer name');
+  assert(applied.customer?.address?.includes('Berlin'), 'fills buyer address');
+  assert(!applied.kleinanzeigenChatUrl, 'clears KA chat after ebay link');
+
+  const afterCounts = countSalesByPlatform([applied]);
+  assert(afterCounts.ebay === 1 && afterCounts.kleinanzeigen === 0, 'dashboard: ebay after link');
+
+  const unknownPlatform = baseItem({
+    id: 'no-platform',
+    status: ItemStatus.SOLD,
+    sellPrice: 350,
+    sellDate: '2025-08-10',
+    buyPrice: 200,
+  });
+  assert(shouldCorrectSalePlatformToEbay(unknownPlatform), 'missing platform should correct');
+  const unknownApplied = applyEbayOrderMatchToItem(unknownPlatform, match, 'SmallBusiness');
+  assert(unknownApplied.platformSold === 'ebay.de', 'missing platform becomes ebay');
+  assert(countSalesByPlatform([unknownApplied]).unknown === 0, 'dashboard: not unknown after link');
+  assert(countSalesByPlatform([unknownApplied]).ebay === 1, 'dashboard: counts as ebay');
 }
 
 function runEbayAnalysisTests(): void {
@@ -697,6 +765,7 @@ runTradeActionHistoryTests();
 runTradeAllocationTests();
 runProfitTests();
 runEbayPayoutTests();
+runEbayApplyPlatformTests();
 runEbayAnalysisTests();
 runAdjustmentTests();
 runFinanzamtTests();

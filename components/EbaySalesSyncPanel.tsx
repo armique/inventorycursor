@@ -16,9 +16,11 @@ import type { BackfillProgress } from '../services/ebayOrderBackfill';
 import { applyEbayOrderMatchToItem } from '../utils/applyEbayOrderMatch';
 import { applyEbaySaleAdjustmentToItem, isRestockAfterRefundAdjustment, getAdjustmentSuggestionLabel, getAdjustmentSuggestionBadgeClass, summarizeAdjustmentSuggestions, isRefundLikeAdjustmentKind } from '../utils/ebaySaleAdjustments';
 import {
+  buildOrderLinkAnalysis,
   type OrderLinkSuggestion,
   type OrderLinkSuggestionKind,
 } from '../utils/ebayOrderLinkAnalysis';
+import { invalidateEbaySalesSyncPeekCache } from '../services/ebaySalesSync';
 import { formatEUR } from '../utils/formatMoney';
 import { matchesEbayToolSearch } from '../utils/ebayToolSearch';
 import EbayToolProgressBar from './EbayToolProgressBar';
@@ -30,6 +32,9 @@ interface Props {
   taxMode: TaxMode;
   onUpdate: (items: InventoryItem[]) => void;
   onCacheUpdated?: () => void;
+  /** Bump when order cache changes (CSV import, API backfill, clear) to re-run matching. */
+  cacheVersion?: number;
+  onRematchComplete?: (info: { orderCount: number; suggestionCount: number }) => void;
 }
 
 type FilterKind = 'all' | OrderLinkSuggestionKind;
@@ -80,7 +85,14 @@ function suggestionSearchHaystack(row: OrderLinkSuggestion): Array<string | numb
   ];
 }
 
-const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCacheUpdated }) => {
+const EbaySalesSyncPanel: React.FC<Props> = ({
+  items,
+  taxMode,
+  onUpdate,
+  onCacheUpdated,
+  cacheVersion = 0,
+  onRematchComplete,
+}) => {
   const [syncing, setSyncing] = useState(false);
   const [applying, setApplying] = useState(false);
   const [suggestions, setSuggestions] = useState<OrderLinkSuggestion[]>([]);
@@ -169,13 +181,49 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
     [items, applyAnalysis, onCacheUpdated]
   );
 
+  const rematchFromCache = useCallback(
+    (infoPrefix?: string) => {
+      invalidateEbaySalesSyncPeekCache();
+      const { orders } = loadEbayOrderIndex();
+      if (!orders.length) {
+        applyAnalysis(
+          buildOrderLinkAnalysis(itemsRef.current, []),
+          infoPrefix || 'Order cache is empty — import or backfill orders below to get match suggestions.'
+        );
+        onRematchComplete?.({ orderCount: 0, suggestionCount: 0 });
+        return;
+      }
+      const result = peekEbaySalesSync(itemsRef.current);
+      const parts: string[] = [];
+      if (result.stats.markSoldCandidates) parts.push(`${result.stats.markSoldCandidates} to mark sold`);
+      if (result.stats.linkCandidates) parts.push(`${result.stats.linkCandidates} to link`);
+      if (result.stats.repriceCandidates) parts.push(`${result.stats.repriceCandidates} to reprice`);
+      const adj = summarizeAdjustmentSuggestions(result.suggestions);
+      if (adj.refundLike) parts.push(`${adj.refundLike} return/refund`);
+      if (adj.restock) parts.push(`${adj.restock} restock after refund`);
+      if (adj.payoutFix) parts.push(`${adj.payoutFix} payout fix`);
+      if (adj.fee) parts.push(`${adj.fee} fee note`);
+      const detail =
+        result.suggestions.length && parts.length ? ` — ${parts.join(', ')}` : '';
+      applyAnalysis(
+        result,
+        infoPrefix ||
+          (result.suggestions.length
+            ? `Matched ${orders.length} cached order(s) · ${result.suggestions.length} suggestion(s) to review${detail}.`
+            : `Matched ${orders.length} cached order(s) — no inventory rows need updating.`)
+      );
+      onRematchComplete?.({ orderCount: orders.length, suggestionCount: result.suggestions.length });
+    },
+    [applyAnalysis, onRematchComplete]
+  );
+
   // On open: analyze cache once (idle) — avoid re-running on every inventory edit.
   useEffect(() => {
     if (autoRanRef.current) return;
     autoRanRef.current = true;
     const run = () => {
       const { orders } = loadEbayOrderIndex();
-      if (orders.length) applyAnalysis(peekEbaySalesSync(itemsRef.current));
+      if (orders.length) rematchFromCache();
     };
     if (typeof requestIdleCallback === 'function') {
       const id = requestIdleCallback(run, { timeout: 2000 });
@@ -183,20 +231,22 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
     }
     const t = window.setTimeout(run, 200);
     return () => clearTimeout(t);
-  }, [applyAnalysis]);
+  }, [rematchFromCache]);
 
-  // Re-match when order cache changes (CSV import, API backfill, cloud pull).
+  // Explicit rematch when parent bumps cache (CSV import, API backfill, clear).
+  const lastCacheVersionRef = useRef(cacheVersion);
   useEffect(() => {
-    const refreshFromCache = () => {
-      const { orders } = loadEbayOrderIndex();
-      if (!orders.length) return;
-      const run = () => applyAnalysis(peekEbaySalesSync(itemsRef.current));
-      if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 1500 });
-      else run();
-    };
+    if (cacheVersion === 0 || cacheVersion === lastCacheVersionRef.current) return;
+    lastCacheVersionRef.current = cacheVersion;
+    rematchFromCache();
+  }, [cacheVersion, rematchFromCache]);
+
+  // Re-match when order cache changes from other tabs / same page events.
+  useEffect(() => {
+    const refreshFromCache = () => rematchFromCache();
     window.addEventListener('ebay-order-index-updated', refreshFromCache);
     return () => window.removeEventListener('ebay-order-index-updated', refreshFromCache);
-  }, [applyAnalysis]);
+  }, [rematchFromCache]);
 
   const visible = useMemo(() => {
     return suggestions.filter((s) => {
@@ -268,7 +318,10 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
   const tokenReady = hasEbayToken();
 
   return (
-    <div className="rounded-2xl border-2 border-indigo-200 bg-gradient-to-b from-indigo-50/80 to-white p-4 xl:p-5 flex flex-col min-h-[min(720px,calc(100vh-10rem))] gap-4 shadow-sm">
+    <div
+      id="ebay-sales-sync-panel"
+      className="rounded-2xl border-2 border-indigo-200 bg-gradient-to-b from-indigo-50/80 to-white p-4 xl:p-5 flex flex-col min-h-[min(720px,calc(100vh-10rem))] gap-4 shadow-sm"
+    >
       <div className="shrink-0 flex flex-wrap items-start gap-3">
         <div className="p-2.5 rounded-xl bg-indigo-600 text-white shrink-0">
           <ShoppingBag size={18} />
@@ -583,6 +636,22 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
       {suggestions.length > 0 && visible.length === 0 && (
         <p className="text-sm text-slate-500 text-center py-6">
           {search.trim() ? 'No suggestions match your search — try order ID, buyer name, or item title.' : 'All suggestions dismissed. Run sync again anytime.'}
+        </p>
+      )}
+
+      {suggestions.length === 0 && (stats?.cachedOrders ?? 0) === 0 && (
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 px-4 py-5 text-center space-y-2">
+          <p className="text-sm font-bold text-indigo-950">No cached eBay orders yet</p>
+          <p className="text-xs text-indigo-900/80 max-w-lg mx-auto">
+            Expand <span className="font-bold">Order cache setup</span> below and run an API backfill or import a Seller Hub CSV.
+            Your sold inventory items stay in the list — only the imported order history was cleared.
+          </p>
+        </div>
+      )}
+
+      {suggestions.length === 0 && (stats?.cachedOrders ?? 0) > 0 && (
+        <p className="text-sm text-slate-500 text-center py-6">
+          All caught up — no inventory rows need updating against cached orders.
         </p>
       )}
 
