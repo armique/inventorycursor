@@ -11,7 +11,6 @@ import { usePanelKeyboardShortcuts } from '../hooks/usePanelKeyboardShortcuts';
 import { signInWithGoogle, logOut, completeGoogleRedirectSignIn, getAuthErrorMessage } from '../services/firebaseService';
 import QuotaMonitor from './QuotaMonitor';
 import GlobalSearch from './GlobalSearch';
-import EbaySyncBanner from './EbaySyncBanner';
 import EbaySoldReminderWidget from './EbaySoldReminderWidget';
 import OnboardingWizard, { isOnboardingComplete } from './OnboardingWizard';
 import { useEbayListingReminder } from '../hooks/useEbayListingReminder';
@@ -188,10 +187,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             : 'p-4 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:p-8 lg:p-8 xl:p-10 2xl:p-12 md:pb-8'
         }`}
       >
-        {/* eBay sales sync reminders */}
-        {onUpdateItems && (
-          <EbaySyncBanner items={items} />
-        )}
         {ebayReminder && (
           <div className="md:hidden">
             <EbaySoldReminderWidget
