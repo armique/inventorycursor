@@ -34,6 +34,7 @@ import {
 } from '../services/productCardLibrary';
 import {
   BUILTIN_PRODUCT_CARD_TEMPLATES,
+  PREMIUM_NOIR_EDITORIAL_TEMPLATE,
   saveProductCardTemplate,
   suggestTemplateForItem,
   type ProductCardTemplate,
@@ -43,7 +44,7 @@ import {
   renderProductCardBlob,
   renderProductCardToCanvas,
 } from '../services/productCardRenderer';
-import { detectProductCardFamily } from '../utils/productCardContent';
+import { detectProductCardFamily, DEFAULT_USPS } from '../utils/productCardContent';
 import ProductPhotoEnhancePanel from './ProductPhotoEnhancePanel';
 import {
   loadBuiltinTemplatePack,
@@ -276,37 +277,37 @@ const ProductCardStudioPage: React.FC<Props> = ({ items, onUpdate, categoryField
 
   return (
     <div className="max-w-[1400px] mx-auto space-y-6 pb-8">
-      <header className="rounded-2xl border border-slate-200 bg-gradient-to-br from-indigo-950 via-slate-900 to-slate-900 text-white p-6 sm:p-8 shadow-xl overflow-hidden relative">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4" />
+      <header className="rounded-2xl border border-white/10 bg-gradient-to-br from-[#09090b] via-[#111113] to-[#141418] text-white p-6 sm:p-8 shadow-2xl overflow-hidden relative">
+        <div className="absolute top-0 right-0 w-72 h-72 bg-white/[0.04] rounded-full blur-3xl -translate-y-1/2 translate-x-1/4" />
         <div className="relative flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 text-indigo-300 text-[10px] font-black uppercase tracking-[0.2em] mb-2">
+            <div className="flex items-center gap-2 text-zinc-400 text-[10px] font-black uppercase tracking-[0.2em] mb-2">
               <Sparkles size={14} /> Product Card Studio
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight">AI listing card generator</h1>
-            <p className="text-sm text-slate-300 mt-2 max-w-xl">
-              Generate premium eBay / Kleinanzeigen cards with multiple AI providers, compare designs, save templates with AI attribution, and apply to inventory.
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-zinc-50">Premium listing card generator</h1>
+            <p className="text-sm text-zinc-400 mt-2 max-w-xl">
+              Apple-style showcase layouts with flanking spec callouts. Generate, compare, export JPG, and apply to inventory.
             </p>
           </div>
-          <div className="flex rounded-xl bg-white/10 p-1 backdrop-blur-sm">
+          <div className="flex rounded-xl bg-white/[0.06] border border-white/10 p-1 backdrop-blur-sm">
             <button
               type="button"
               onClick={() => setTab('create')}
-              className={`px-4 py-2 rounded-lg text-xs font-black uppercase ${tab === 'create' ? 'bg-white text-slate-900' : 'text-white/80'}`}
+              className={`px-4 py-2 rounded-lg text-xs font-black uppercase transition-colors ${tab === 'create' ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-300 hover:text-white'}`}
             >
               Create
             </button>
             <button
               type="button"
               onClick={() => setTab('library')}
-              className={`px-4 py-2 rounded-lg text-xs font-black uppercase ${tab === 'library' ? 'bg-white text-slate-900' : 'text-white/80'}`}
+              className={`px-4 py-2 rounded-lg text-xs font-black uppercase transition-colors ${tab === 'library' ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-300 hover:text-white'}`}
             >
               Library ({library.length})
             </button>
             <button
               type="button"
               onClick={() => setTab('templates')}
-              className={`px-4 py-2 rounded-lg text-xs font-black uppercase ${tab === 'templates' ? 'bg-white text-slate-900' : 'text-white/80'}`}
+              className={`px-4 py-2 rounded-lg text-xs font-black uppercase transition-colors ${tab === 'templates' ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-300 hover:text-white'}`}
             >
               Templates
             </button>
@@ -338,15 +339,15 @@ const ProductCardStudioPage: React.FC<Props> = ({ items, onUpdate, categoryField
       {tab === 'create' ? (
         <div className="grid grid-cols-1 xl:grid-cols-[320px_1fr] gap-6">
           <aside className="space-y-4">
-            <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-[10px] font-black uppercase text-slate-500 mb-2">1 · Pick item</p>
+            <section className="rounded-2xl border border-zinc-200/80 bg-white p-4 shadow-sm">
+              <p className="text-[10px] font-black uppercase text-zinc-500 mb-2">1 · Pick item</p>
               <div className="relative mb-2">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search inventory…"
-                  className="w-full pl-9 pr-3 py-2 rounded-xl border text-sm"
+                  className="w-full pl-9 pr-3 py-2 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
                 />
               </div>
               <ul className="max-h-52 overflow-y-auto space-y-1">
@@ -355,8 +356,8 @@ const ProductCardStudioPage: React.FC<Props> = ({ items, onUpdate, categoryField
                     <button
                       type="button"
                       onClick={() => setSelectedItemId(item.id)}
-                      className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold truncate ${
-                        selectedItemId === item.id ? 'bg-indigo-600 text-white' : 'hover:bg-slate-50 text-slate-700'
+                      className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold truncate transition-colors ${
+                        selectedItemId === item.id ? 'bg-zinc-900 text-white' : 'hover:bg-zinc-50 text-zinc-700'
                       }`}
                     >
                       {item.name}
@@ -424,22 +425,45 @@ const ProductCardStudioPage: React.FC<Props> = ({ items, onUpdate, categoryField
                     type="button"
                     disabled={generating || !selectedItem || selectedProviders.length === 0}
                     onClick={() => void handleGenerate()}
-                    className="mt-3 w-full inline-flex items-center justify-center gap-2 py-3 rounded-xl bg-indigo-600 text-white text-xs font-black uppercase disabled:opacity-50"
+                    className="mt-3 w-full inline-flex items-center justify-center gap-2 py-3 rounded-xl bg-zinc-900 text-white text-xs font-black uppercase disabled:opacity-50 hover:bg-zinc-800 transition-colors"
                   >
                     {generating ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
                     Generate & compare
                   </button>
                 </section>
 
-                <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <p className="text-[10px] font-black uppercase text-slate-500 mb-2">Built-in (no AI)</p>
-                  <div className="flex flex-wrap gap-1">
-                    {BUILTIN_PRODUCT_CARD_TEMPLATES.filter((t) => t.family === detectProductCardFamily(selectedItem)).map((t) => (
+                <section className="rounded-2xl border border-zinc-200/80 bg-white p-4 shadow-sm">
+                  <p className="text-[10px] font-black uppercase text-zinc-500 mb-2">Built-in templates</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setActiveTemplate({
+                          ...PREMIUM_NOIR_EDITORIAL_TEMPLATE,
+                          usps: [...DEFAULT_USPS[detectProductCardFamily(selectedItem)]],
+                          family: detectProductCardFamily(selectedItem),
+                        })
+                      }
+                      className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-colors ${
+                        activeTemplate?.id === PREMIUM_NOIR_EDITORIAL_TEMPLATE.id
+                          ? 'bg-zinc-900 text-white'
+                          : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
+                      }`}
+                    >
+                      Premium Showcase
+                    </button>
+                    {BUILTIN_PRODUCT_CARD_TEMPLATES.filter(
+                      (t) => t.id !== PREMIUM_NOIR_EDITORIAL_TEMPLATE.id && t.family === detectProductCardFamily(selectedItem)
+                    ).map((t) => (
                       <button
                         key={t.id}
                         type="button"
                         onClick={() => setActiveTemplate({ ...t, usps: [...t.usps] })}
-                        className="px-2 py-1 rounded-lg bg-slate-100 text-[10px] font-bold text-slate-700 hover:bg-indigo-100"
+                        className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-colors ${
+                          activeTemplate?.id === t.id
+                            ? 'bg-zinc-900 text-white'
+                            : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
+                        }`}
                       >
                         {t.name.split('—')[1]?.trim() || t.name}
                       </button>
@@ -496,17 +520,19 @@ const ProductCardStudioPage: React.FC<Props> = ({ items, onUpdate, categoryField
                 ))}
               </div>
             ) : activeTemplate && activePhotoResolved ? (
-              <div className="rounded-2xl border border-slate-200 bg-white p-6">
-                <p className="text-xs font-black uppercase text-slate-500 mb-4">Manual preview · {activeTemplate.name}</p>
-                <ManualPreview
-                  item={selectedItem}
-                  template={activeTemplate}
-                  photoUrl={activePhotoResolved}
-                  categoryFields={categoryFieldsForItem}
-                />
+              <div className="rounded-2xl border border-zinc-200/80 bg-[#fafafa] p-6 shadow-sm">
+                <p className="text-xs font-black uppercase text-zinc-500 mb-4">Live preview · {activeTemplate.name}</p>
+                <div className="rounded-2xl bg-[#09090b] p-6 sm:p-10 flex justify-center">
+                  <ManualPreview
+                    item={selectedItem}
+                    template={activeTemplate}
+                    photoUrl={activePhotoResolved}
+                    categoryFields={categoryFieldsForItem}
+                  />
+                </div>
                 <div className="flex gap-2 mt-4">
-                  <button type="button" disabled={exporting} onClick={() => void handleExport(activeTemplate)} className="px-4 py-2 rounded-xl border text-xs font-black uppercase">Download</button>
-                  <button type="button" disabled={exporting} onClick={() => void handleApplyToItem(activeTemplate)} className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-black uppercase">Apply as main photo</button>
+                  <button type="button" disabled={exporting} onClick={() => void handleExport(activeTemplate)} className="px-4 py-2 rounded-xl border border-zinc-300 text-xs font-black uppercase hover:bg-white transition-colors">Download</button>
+                  <button type="button" disabled={exporting} onClick={() => void handleApplyToItem(activeTemplate)} className="px-4 py-2 rounded-xl bg-zinc-900 text-white text-xs font-black uppercase hover:bg-zinc-800 transition-colors">Apply as main photo</button>
                 </div>
               </div>
             ) : (
@@ -704,8 +730,8 @@ function ManualPreview({
     });
     return () => { cancelled = true; };
   }, [item, template, photoUrl, categoryFields]);
-  if (!url) return <div className="py-20 flex justify-center"><Loader2 className="animate-spin text-indigo-600" /></div>;
-  return <img src={url} alt="" className="max-w-sm mx-auto rounded-xl shadow-lg" />;
+  if (!url) return <div className="py-20 flex justify-center"><Loader2 className="animate-spin text-zinc-400" /></div>;
+  return <img src={url} alt="" className="max-w-full w-[min(100%,360px)] rounded-xl shadow-2xl ring-1 ring-white/10" />;
 }
 
 export default ProductCardStudioPage;

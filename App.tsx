@@ -22,6 +22,7 @@ const InvoiceManager = lazy(() => import('./components/InvoiceManager'));
 const ActionHistoryPage = lazy(() => import('./components/ActionHistoryPage'));
 const EbayStorePullPage = lazy(() => import('./components/EbayStorePullPage'));
 const ThreeDPrintPage = lazy(() => import('./components/ThreeDPrintPage'));
+const ProductCardStudioPage = lazy(() => import('./components/ProductCardStudioPage'));
 
 import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense, DashboardPreferences, ActionHistoryEntry, TaxMode, ItemUpdateOptions } from './types';
 import {
@@ -1317,6 +1318,16 @@ const App: React.FC = () => {
           <Route path="trash" element={<TrashPage items={trash} onRestore={handleRestoreFromTrash} onPermanentDelete={handlePermanentDelete} />} />
           <Route path="store-management" element={<StoreManagementPage items={items} categories={categories} categoryFields={categoryFields} onUpdate={handleUpdate} onPublishCatalog={publishStoreCatalogNow} />} />
           <Route path="storefront-configurator" element={<StorefrontConfiguratorPage />} />
+          <Route
+            path="product-card-generator"
+            element={
+              <ProductCardStudioPage
+                items={items}
+                onUpdate={handleUpdate}
+                categoryFields={categoryFields}
+              />
+            }
+          />
           <Route path="settings" element={<SettingsPage items={items} trash={trash} expenses={expenses} monthlyGoal={monthlyGoal} dashboardPreferences={dashboardPrefs} actionHistory={actionHistory} onForcePush={handleForcePush} onRestoreItems={setItems} onRestoreBackup={handleRestoreBackup} onFixEncoding={handleFixEncoding} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} onUpdateCategoryStructure={handleUpdateCategoryStructure} onUpdateCategoryFields={handleUpdateCategoryFields} onRenameCategory={() => {}} onRenameSubCategory={() => {}} onApplyArchivedPhotos={(archivedItems, archivedTrash) => { setItems(archivedItems); setTrash(archivedTrash); }} />} />
         </Route>
         <Route path="/auth/github/callback" element={<GitHubOAuthCallback />} />

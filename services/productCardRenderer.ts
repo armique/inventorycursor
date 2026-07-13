@@ -201,7 +201,9 @@ function drawShowcaseSpecCallout(
   y: number,
   width: number,
   align: 'left' | 'right',
-  template: ProductCardTemplate
+  template: ProductCardTemplate,
+  anchorX?: number,
+  anchorY?: number
 ) {
   const padX = 18;
   const padY = 16;
@@ -233,6 +235,21 @@ function drawShowcaseSpecCallout(
   ctx.fillStyle = template.theme.text;
   const val = spec.value.length > 16 ? `${spec.value.slice(0, 14)}…` : spec.value;
   ctx.fillText(val, textX, y + padY + 22);
+
+  if (anchorX != null && anchorY != null) {
+    const lineStartX = align === 'left' ? x + width + 6 : x - 6;
+    const lineStartY = y + h / 2;
+    ctx.beginPath();
+    ctx.moveTo(lineStartX, lineStartY);
+    ctx.lineTo(anchorX, anchorY);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(anchorX, anchorY, 3, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.fill();
+  }
 
   ctx.textAlign = 'left';
 }
@@ -328,11 +345,13 @@ async function renderPremiumShowcaseCard(
       if (isLeft) {
         const y = leftYs[sideIndex];
         if (y == null) return;
-        drawShowcaseSpecCallout(ctx, spec, leftX, y - 44, calloutW, 'left', template);
+        const anchorX = centerX - heroSize / 2 + 12;
+        drawShowcaseSpecCallout(ctx, spec, leftX, y - 44, calloutW, 'left', template, anchorX, y);
       } else {
         const y = rightYs[sideIndex];
         if (y == null) return;
-        drawShowcaseSpecCallout(ctx, spec, rightX, y - 44, calloutW, 'right', template);
+        const anchorX = centerX + heroSize / 2 - 12;
+        drawShowcaseSpecCallout(ctx, spec, rightX, y - 44, calloutW, 'right', template, anchorX, y);
       }
     });
   }

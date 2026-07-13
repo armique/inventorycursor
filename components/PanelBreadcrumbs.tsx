@@ -15,6 +15,8 @@ const LABELS: Record<string, string> = {
   import: 'Import',
   trash: 'Trash',
   'store-management': 'Store',
+  'storefront-configurator': 'Storefront configurator',
+  'product-card-generator': 'Product card generator',
   settings: 'Settings',
 };
 
