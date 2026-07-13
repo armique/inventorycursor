@@ -22,7 +22,7 @@ export interface ProductCardTemplate {
   family: ProductCardFamily;
   theme: ProductCardTheme;
   usps: string[];
-  layout: 'hero-left' | 'hero-center';
+  layout: 'hero-left' | 'hero-center' | 'hero-showcase';
   /** Premium canvas treatment — deeper shadows, glass surfaces, editorial typography. */
   variant?: 'standard' | 'premium';
   showPrice: boolean;
@@ -100,34 +100,32 @@ function builtinTemplate(
   };
 }
 
-const PREMIUM_NOIR_THEME: ProductCardTheme = {
-  bgFrom: '#050508',
-  bgTo: '#12121a',
-  accent: '#d4b87a',
-  accentSoft: 'rgba(212, 184, 122, 0.24)',
-  text: '#faf9f7',
-  textMuted: '#9b9aa8',
-  surface: 'rgba(255, 255, 255, 0.05)',
-  surfaceBorder: 'rgba(212, 184, 122, 0.32)',
+const PREMIUM_SHOWCASE_THEME: ProductCardTheme = {
+  bgFrom: '#09090b',
+  bgTo: '#141418',
+  accent: '#f4f4f5',
+  accentSoft: 'rgba(255, 255, 255, 0.07)',
+  text: '#fafafa',
+  textMuted: '#a1a1aa',
+  surface: 'rgba(255, 255, 255, 0.08)',
+  surfaceBorder: 'rgba(255, 255, 255, 0.14)',
 };
 
 export const PREMIUM_NOIR_EDITORIAL_TEMPLATE: ProductCardTemplate = {
   id: 'premium-noir-editorial',
-  name: 'Premium Noir — Editorial',
+  name: 'Premium Showcase — Center Hero',
   family: 'generic',
-  theme: { ...PREMIUM_NOIR_THEME },
+  theme: { ...PREMIUM_SHOWCASE_THEME },
   usps: [
-    'Premium Qualität',
-    'Geprüft & verpackt',
-    'Versand aus Deutschland',
-    'Seriöser Verkauf',
+    'Geprüfte Qualität',
+    'Versand aus DE',
+    'Sorgfältig verpackt',
   ],
-  layout: 'hero-left',
+  layout: 'hero-showcase',
   variant: 'premium',
   showPrice: true,
   showSpecs: true,
-  maxSpecs: 5,
-  tagline: 'Curated Hardware · Listings That Convert',
+  maxSpecs: 6,
   createdAt: 'builtin',
   isBuiltin: true,
 };

@@ -7,7 +7,7 @@ export interface ProductCardTemplateExport {
   schemaVersion: number;
   name: string;
   family: ProductCardFamily;
-  layout: 'hero-left' | 'hero-center';
+  layout: 'hero-left' | 'hero-center' | 'hero-showcase';
   variant?: 'standard' | 'premium';
   theme: ProductCardTheme;
   usps: string[];
@@ -43,7 +43,12 @@ export function parseProductCardTemplateJson(raw: unknown): ProductCardTemplate 
     id: `import-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     name: obj.name.trim(),
     family: obj.family,
-    layout: obj.layout === 'hero-center' ? 'hero-center' : 'hero-left',
+    layout:
+      obj.layout === 'hero-showcase'
+        ? 'hero-showcase'
+        : obj.layout === 'hero-center'
+          ? 'hero-center'
+          : 'hero-left',
     variant: obj.variant === 'premium' ? 'premium' : 'standard',
     theme: {
       bgFrom: obj.theme.bgFrom,

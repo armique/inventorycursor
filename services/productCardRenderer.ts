@@ -94,55 +94,13 @@ function drawRoundedRect(
 }
 
 function drawGradientBackground(ctx: CanvasRenderingContext2D, template: ProductCardTemplate) {
-  const isPremium = template.variant === 'premium';
   const { bgFrom, bgTo } = template.theme;
-
-  if (isPremium) {
-    const grad = ctx.createLinearGradient(0, 0, PRODUCT_CARD_WIDTH * 0.85, PRODUCT_CARD_HEIGHT);
-    grad.addColorStop(0, bgFrom);
-    grad.addColorStop(0.55, '#0c0c12');
-    grad.addColorStop(1, bgTo);
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, PRODUCT_CARD_WIDTH, PRODUCT_CARD_HEIGHT);
-
-    const warm = ctx.createRadialGradient(720, 200, 30, 720, 200, 520);
-    warm.addColorStop(0, template.theme.accentSoft);
-    warm.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = warm;
-    ctx.fillRect(0, 0, PRODUCT_CARD_WIDTH, PRODUCT_CARD_HEIGHT);
-
-    const cool = ctx.createRadialGradient(120, PRODUCT_CARD_HEIGHT - 80, 20, 120, PRODUCT_CARD_HEIGHT - 80, 400);
-    cool.addColorStop(0, 'rgba(99, 102, 241, 0.08)');
-    cool.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = cool;
-    ctx.fillRect(0, 0, PRODUCT_CARD_WIDTH, PRODUCT_CARD_HEIGHT);
-
-    // Subtle film grain
-    ctx.save();
-    ctx.globalAlpha = 0.035;
-    for (let i = 0; i < 2800; i++) {
-      const gx = Math.random() * PRODUCT_CARD_WIDTH;
-      const gy = Math.random() * PRODUCT_CARD_HEIGHT;
-      const g = Math.random() * 40 + 200;
-      ctx.fillStyle = `rgb(${g},${g},${g})`;
-      ctx.fillRect(gx, gy, 1, 1);
-    }
-    ctx.restore();
-
-    ctx.fillStyle = template.theme.accent;
-    ctx.fillRect(0, 0, PRODUCT_CARD_WIDTH, 4);
-    ctx.fillStyle = 'rgba(255,255,255,0.06)';
-    ctx.fillRect(0, 4, PRODUCT_CARD_WIDTH, 1);
-    return;
-  }
-
-  const grad = ctx.createLinearGradient(0, 0, PRODUCT_CARD_WIDTH, PRODUCT_CARD_HEIGHT);
+  const grad = ctx.createLinearGradient(0, 0, 0, PRODUCT_CARD_HEIGHT);
   grad.addColorStop(0, bgFrom);
   grad.addColorStop(1, bgTo);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, PRODUCT_CARD_WIDTH, PRODUCT_CARD_HEIGHT);
 
-  // Subtle accent glows
   const glow1 = ctx.createRadialGradient(820, 180, 40, 820, 180, 420);
   glow1.addColorStop(0, template.theme.accentSoft);
   glow1.addColorStop(1, 'rgba(0,0,0,0)');
@@ -155,11 +113,254 @@ function drawGradientBackground(ctx: CanvasRenderingContext2D, template: Product
   ctx.fillStyle = glow2;
   ctx.fillRect(0, 0, PRODUCT_CARD_WIDTH, PRODUCT_CARD_HEIGHT);
 
-  // Top accent bar + inner highlight line
   ctx.fillStyle = template.theme.accent;
   ctx.fillRect(0, 0, PRODUCT_CARD_WIDTH, 6);
   ctx.fillStyle = 'rgba(255,255,255,0.08)';
   ctx.fillRect(0, 6, PRODUCT_CARD_WIDTH, 1);
+}
+
+function drawShowcaseBackground(ctx: CanvasRenderingContext2D, template: ProductCardTemplate) {
+  const { bgFrom, bgTo } = template.theme;
+  const base = ctx.createLinearGradient(0, 0, 0, PRODUCT_CARD_HEIGHT);
+  base.addColorStop(0, bgFrom);
+  base.addColorStop(1, bgTo);
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, PRODUCT_CARD_WIDTH, PRODUCT_CARD_HEIGHT);
+
+  const spotlight = ctx.createRadialGradient(
+    PRODUCT_CARD_WIDTH / 2,
+    PRODUCT_CARD_HEIGHT * 0.46,
+    40,
+    PRODUCT_CARD_WIDTH / 2,
+    PRODUCT_CARD_HEIGHT * 0.46,
+    520
+  );
+  spotlight.addColorStop(0, 'rgba(255, 255, 255, 0.09)');
+  spotlight.addColorStop(0.45, 'rgba(255, 255, 255, 0.03)');
+  spotlight.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = spotlight;
+  ctx.fillRect(0, 0, PRODUCT_CARD_WIDTH, PRODUCT_CARD_HEIGHT);
+
+  const floor = ctx.createRadialGradient(
+    PRODUCT_CARD_WIDTH / 2,
+    PRODUCT_CARD_HEIGHT * 0.72,
+    20,
+    PRODUCT_CARD_WIDTH / 2,
+    PRODUCT_CARD_HEIGHT * 0.72,
+    380
+  );
+  floor.addColorStop(0, 'rgba(255, 255, 255, 0.04)');
+  floor.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = floor;
+  ctx.fillRect(0, 0, PRODUCT_CARD_WIDTH, PRODUCT_CARD_HEIGHT);
+}
+
+function drawShowcaseHeroPhoto(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  cx: number,
+  cy: number,
+  size: number,
+  template: ProductCardTemplate
+) {
+  const x = cx - size / 2;
+  const y = cy - size / 2;
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+  ctx.shadowBlur = 64;
+  ctx.shadowOffsetY = 24;
+  const glow = ctx.createRadialGradient(cx, cy + size * 0.15, size * 0.1, cx, cy, size * 0.62);
+  glow.addColorStop(0, 'rgba(255, 255, 255, 0.14)');
+  glow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(cx, cy, size * 0.52, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  drawRoundedRect(ctx, x, y, size, size, 24);
+  ctx.clip();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+  ctx.fillRect(x, y, size, size);
+
+  const scale = Math.min(size / img.width, size / img.height);
+  const dw = img.width * scale;
+  const dh = img.height * scale;
+  const dx = x + (size - dw) / 2;
+  const dy = y + (size - dh) / 2;
+  ctx.drawImage(img, dx, dy, dw, dh);
+  ctx.restore();
+}
+
+function drawShowcaseSpecCallout(
+  ctx: CanvasRenderingContext2D,
+  spec: { label: string; value: string },
+  x: number,
+  y: number,
+  width: number,
+  align: 'left' | 'right',
+  template: ProductCardTemplate
+) {
+  const padX = 18;
+  const padY = 16;
+  const h = 88;
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+  ctx.shadowBlur = 24;
+  ctx.shadowOffsetY = 8;
+  drawRoundedRect(ctx, x, y, width, h, 18);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.07)';
+  ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.strokeStyle = template.theme.surfaceBorder;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
+
+  const textX = align === 'right' ? x + width - padX : x + padX;
+  ctx.textAlign = align === 'right' ? 'right' : 'left';
+  ctx.textBaseline = 'top';
+
+  ctx.font = '600 11px "Segoe UI", system-ui, sans-serif';
+  ctx.fillStyle = template.theme.textMuted;
+  const label = spec.label.length > 18 ? `${spec.label.slice(0, 16)}…` : spec.label;
+  ctx.fillText(label.toUpperCase(), textX, y + padY);
+
+  ctx.font = '800 28px "Segoe UI", system-ui, sans-serif';
+  ctx.fillStyle = template.theme.text;
+  const val = spec.value.length > 16 ? `${spec.value.slice(0, 14)}…` : spec.value;
+  ctx.fillText(val, textX, y + padY + 22);
+
+  ctx.textAlign = 'left';
+}
+
+function drawShowcaseUspRow(
+  ctx: CanvasRenderingContext2D,
+  usps: string[],
+  centerY: number,
+  template: ProductCardTemplate
+) {
+  const items = usps.filter(Boolean).slice(0, 4);
+  if (!items.length) return;
+
+  ctx.font = '600 15px "Segoe UI", system-ui, sans-serif';
+  const sep = '  ·  ';
+  const line = items.join(sep);
+  const tw = ctx.measureText(line).width;
+  const x = (PRODUCT_CARD_WIDTH - tw) / 2;
+
+  ctx.fillStyle = template.theme.textMuted;
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  ctx.fillText(line, x, centerY);
+}
+
+async function renderPremiumShowcaseCard(
+  ctx: CanvasRenderingContext2D,
+  input: {
+    item: InventoryItem;
+    template: ProductCardTemplate;
+    photo: HTMLImageElement;
+    categoryFields?: string[];
+    family: ReturnType<typeof detectProductCardFamily>;
+  }
+) {
+  const { item, template, photo, categoryFields, family } = input;
+  const pad = 48;
+  const centerX = PRODUCT_CARD_WIDTH / 2;
+
+  drawShowcaseBackground(ctx, template);
+
+  let headerY = 72;
+  const badge = getProductCardBadge(item, family);
+  if (badge) {
+    ctx.font = '700 12px "Segoe UI", system-ui, sans-serif';
+    const bw = ctx.measureText(badge.toUpperCase()).width + 28;
+    const bx = centerX - bw / 2;
+    drawRoundedRect(ctx, bx, headerY - 4, bw, 28, 14);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.fill();
+    ctx.strokeStyle = template.theme.surfaceBorder;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = template.theme.textMuted;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(badge.toUpperCase(), centerX, headerY + 10);
+    ctx.textAlign = 'left';
+    headerY += 40;
+  }
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.font = '800 38px "Segoe UI", system-ui, sans-serif';
+  ctx.fillStyle = template.theme.text;
+  const titleMax = PRODUCT_CARD_WIDTH - pad * 2;
+  const titleLines = wrapText(ctx, item.name, titleMax, 2);
+  for (const line of titleLines) {
+    ctx.fillText(line, centerX, headerY);
+    headerY += 46;
+  }
+
+  ctx.font = '500 18px "Segoe UI", system-ui, sans-serif';
+  ctx.fillStyle = template.theme.textMuted;
+  ctx.fillText(getProductCardSubtitle(item), centerX, headerY + 6);
+  headerY += 36;
+
+  const heroCy = 560;
+  const heroSize = 440;
+  drawShowcaseHeroPhoto(ctx, photo, centerX, heroCy, heroSize, template);
+
+  if (template.showSpecs) {
+    const specs = getProductCardSpecs(item, categoryFields, template.maxSpecs);
+    const calloutW = 228;
+    const leftX = pad;
+    const rightX = PRODUCT_CARD_WIDTH - pad - calloutW;
+    const leftYs = [heroCy - 150, heroCy - 10, heroCy + 130];
+    const rightYs = [heroCy - 90, heroCy + 50, heroCy + 190];
+
+    specs.forEach((spec, i) => {
+      const isLeft = i % 2 === 0;
+      const sideIndex = Math.floor(i / 2);
+      if (isLeft) {
+        const y = leftYs[sideIndex];
+        if (y == null) return;
+        drawShowcaseSpecCallout(ctx, spec, leftX, y - 44, calloutW, 'left', template);
+      } else {
+        const y = rightYs[sideIndex];
+        if (y == null) return;
+        drawShowcaseSpecCallout(ctx, spec, rightX, y - 44, calloutW, 'right', template);
+      }
+    });
+  }
+
+  let footerY = heroCy + heroSize / 2 + 56;
+  if (template.showPrice) {
+    const price = getProductCardPrice(item);
+    ctx.textAlign = 'center';
+    ctx.font = '600 14px "Segoe UI", system-ui, sans-serif';
+    ctx.fillStyle = template.theme.textMuted;
+    ctx.fillText(price.label.toUpperCase(), centerX, footerY);
+    ctx.font = '800 56px "Segoe UI", system-ui, sans-serif';
+    ctx.fillStyle = template.theme.text;
+    ctx.fillText(price.value, centerX, footerY + 22);
+    footerY += 96;
+  }
+
+  drawShowcaseUspRow(ctx, template.usps, footerY + 24, template);
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.font = '500 14px "Segoe UI", system-ui, sans-serif';
+  ctx.fillStyle = 'rgba(161, 161, 170, 0.65)';
+  const footer = template.aiMeta
+    ? `${template.aiMeta.provider} · ${new Date(template.aiMeta.generatedAt).toLocaleDateString('de-DE')}`
+    : 'DeInventory Pro';
+  ctx.fillText(footer, centerX, PRODUCT_CARD_HEIGHT - 40);
+  ctx.textAlign = 'left';
 }
 
 function drawPhoto(
@@ -171,33 +372,8 @@ function drawPhoto(
   h: number,
   template: ProductCardTemplate
 ) {
-  const isPremium = template.variant === 'premium';
-  const radius = isPremium ? 32 : 28;
-
-  if (isPremium) {
-    ctx.save();
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
-    ctx.shadowBlur = 48;
-    ctx.shadowOffsetY = 18;
-    drawRoundedRect(ctx, x, y, w, h, radius);
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    ctx.fill();
-    ctx.restore();
-
-    ctx.save();
-    drawRoundedRect(ctx, x - 2, y - 2, w + 4, h + 4, radius + 2);
-    const rim = ctx.createLinearGradient(x, y, x + w, y + h);
-    rim.addColorStop(0, template.theme.accent);
-    rim.addColorStop(0.5, 'rgba(255,255,255,0.35)');
-    rim.addColorStop(1, template.theme.accent);
-    ctx.strokeStyle = rim;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.restore();
-  }
-
   ctx.save();
-  drawRoundedRect(ctx, x, y, w, h, radius);
+  drawRoundedRect(ctx, x, y, w, h, 28);
   ctx.clip();
 
   ctx.fillStyle = template.theme.surface;
@@ -209,27 +385,12 @@ function drawPhoto(
   const dx = x + (w - dw) / 2;
   const dy = y + (h - dh) / 2;
   ctx.drawImage(img, dx, dy, dw, dh);
-
-  if (isPremium) {
-    const vignette = ctx.createRadialGradient(x + w / 2, y + h / 2, w * 0.2, x + w / 2, y + h / 2, w * 0.72);
-    vignette.addColorStop(0, 'rgba(0,0,0,0)');
-    vignette.addColorStop(1, 'rgba(0,0,0,0.35)');
-    ctx.fillStyle = vignette;
-    ctx.fillRect(x, y, w, h);
-
-    const shine = ctx.createLinearGradient(x, y, x, y + h * 0.45);
-    shine.addColorStop(0, 'rgba(255,255,255,0.12)');
-    shine.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = shine;
-    ctx.fillRect(x, y, w, h * 0.45);
-  }
-
   ctx.restore();
 
   ctx.save();
-  drawRoundedRect(ctx, x, y, w, h, radius);
+  drawRoundedRect(ctx, x, y, w, h, 28);
   ctx.strokeStyle = template.theme.surfaceBorder;
-  ctx.lineWidth = isPremium ? 1.5 : 2;
+  ctx.lineWidth = 2;
   ctx.stroke();
   ctx.restore();
 }
@@ -288,47 +449,33 @@ function drawSpecGrid(
   width: number,
   template: ProductCardTemplate
 ) {
-  const isPremium = template.variant === 'premium';
   const cols = 2;
   const cellW = (width - 16) / cols;
-  const cellH = isPremium ? 76 : 72;
+  const cellH = 72;
   specs.forEach((spec, i) => {
     const col = i % cols;
     const row = Math.floor(i / cols);
     const cx = x + col * (cellW + 16);
     const cy = y + row * (cellH + 12);
 
-    drawRoundedRect(ctx, cx, cy, cellW, cellH, isPremium ? 16 : 14);
-    if (isPremium) {
-      ctx.fillStyle = 'rgba(255,255,255,0.04)';
-      ctx.fill();
-      ctx.strokeStyle = template.theme.surfaceBorder;
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      const accentBar = ctx.createLinearGradient(cx, cy, cx, cy + cellH);
-      accentBar.addColorStop(0, template.theme.accent);
-      accentBar.addColorStop(1, 'rgba(212, 184, 122, 0.15)');
-      ctx.fillStyle = accentBar;
-      ctx.fillRect(cx, cy + 12, 3, cellH - 24);
-    } else {
-      ctx.fillStyle = template.theme.surface;
-      ctx.fill();
-      ctx.fillStyle = template.theme.accent;
-      ctx.fillRect(cx, cy + 10, 4, cellH - 20);
-      ctx.strokeStyle = template.theme.surfaceBorder;
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    }
+    drawRoundedRect(ctx, cx, cy, cellW, cellH, 14);
+    ctx.fillStyle = template.theme.surface;
+    ctx.fill();
+    ctx.fillStyle = template.theme.accent;
+    ctx.fillRect(cx, cy + 10, 4, cellH - 20);
+    ctx.strokeStyle = template.theme.surfaceBorder;
+    ctx.lineWidth = 1;
+    ctx.stroke();
 
-    ctx.font = `600 ${isPremium ? 14 : 16}px "Segoe UI", system-ui, sans-serif`;
+    ctx.font = '600 16px "Segoe UI", system-ui, sans-serif';
     ctx.fillStyle = template.theme.textMuted;
     ctx.textBaseline = 'top';
     ctx.fillText(spec.label.toUpperCase(), cx + 14, cy + 12);
 
-    ctx.font = `700 ${isPremium ? 21 : 22}px "Segoe UI", system-ui, sans-serif`;
+    ctx.font = '700 22px "Segoe UI", system-ui, sans-serif';
     ctx.fillStyle = template.theme.text;
     const val = spec.value.length > 22 ? `${spec.value.slice(0, 20)}…` : spec.value;
-    ctx.fillText(val, cx + 14, cy + (isPremium ? 36 : 34));
+    ctx.fillText(val, cx + 14, cy + 34);
   });
 }
 
@@ -341,21 +488,21 @@ export async function renderProductCardToCanvas(input: ProductCardRenderInput): 
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas not supported');
 
+  const photo = await loadPhotoForCanvas(photoUrl);
+
+  if (template.layout === 'hero-showcase') {
+    await renderPremiumShowcaseCard(ctx, { item, template, photo, categoryFields, family });
+    return canvas;
+  }
+
   drawGradientBackground(ctx, template);
 
-  const photo = await loadPhotoForCanvas(photoUrl);
-  const isPremium = template.variant === 'premium';
   const isCenter = template.layout === 'hero-center';
-  const pad = isPremium ? 52 : 56;
+  const pad = 56;
 
   const photoBox = isCenter
-    ? { x: pad, y: isPremium ? 108 : 120, w: PRODUCT_CARD_WIDTH - pad * 2, h: isPremium ? 540 : 520 }
-    : {
-        x: pad,
-        y: isPremium ? 88 : 100,
-        w: isPremium ? 500 : 460,
-        h: isPremium ? 500 : 460,
-      };
+    ? { x: pad, y: 120, w: PRODUCT_CARD_WIDTH - pad * 2, h: 520 }
+    : { x: pad, y: 100, w: 460, h: 460 };
 
   drawPhoto(ctx, photo, photoBox.x, photoBox.y, photoBox.w, photoBox.h, template);
 
@@ -369,7 +516,7 @@ export async function renderProductCardToCanvas(input: ProductCardRenderInput): 
     textY += 56;
   }
 
-  ctx.font = `${isPremium ? '800 46' : '800 44'}px "Segoe UI", system-ui, sans-serif`;
+  ctx.font = '800 44px "Segoe UI", system-ui, sans-serif';
   ctx.fillStyle = template.theme.text;
   ctx.textBaseline = 'top';
   const titleLines = wrapText(ctx, item.name, textW, 3);
@@ -396,31 +543,13 @@ export async function renderProductCardToCanvas(input: ProductCardRenderInput): 
 
   if (template.showPrice) {
     const price = getProductCardPrice(item);
-    if (isPremium) {
-      const priceW = textW;
-      const priceH = 96;
-      drawRoundedRect(ctx, textX, textY, priceW, priceH, 18);
-      ctx.fillStyle = 'rgba(255,255,255,0.04)';
-      ctx.fill();
-      ctx.strokeStyle = template.theme.surfaceBorder;
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      ctx.font = '700 20px "Segoe UI", system-ui, sans-serif';
-      ctx.fillStyle = template.theme.textMuted;
-      ctx.fillText(price.label.toUpperCase(), textX + 18, textY + 16);
-      ctx.font = '800 52px "Segoe UI", system-ui, sans-serif';
-      ctx.fillStyle = template.theme.accent;
-      ctx.fillText(price.value, textX + 18, textY + 42);
-      textY += priceH + 20;
-    } else {
-      ctx.font = '700 24px "Segoe UI", system-ui, sans-serif';
-      ctx.fillStyle = template.theme.textMuted;
-      ctx.fillText(price.label.toUpperCase(), textX, textY);
-      ctx.font = '800 56px "Segoe UI", system-ui, sans-serif';
-      ctx.fillStyle = template.theme.accent;
-      ctx.fillText(price.value, textX, textY + 32);
-      textY += isCenter ? 110 : 100;
-    }
+    ctx.font = '700 24px "Segoe UI", system-ui, sans-serif';
+    ctx.fillStyle = template.theme.textMuted;
+    ctx.fillText(price.label.toUpperCase(), textX, textY);
+    ctx.font = '800 56px "Segoe UI", system-ui, sans-serif';
+    ctx.fillStyle = template.theme.accent;
+    ctx.fillText(price.value, textX, textY + 32);
+    textY += isCenter ? 110 : 100;
   }
 
   if (template.showSpecs) {
@@ -435,24 +564,13 @@ export async function renderProductCardToCanvas(input: ProductCardRenderInput): 
   const uspY = isCenter ? Math.min(textY + 12, PRODUCT_CARD_HEIGHT - 180) : photoBox.y + photoBox.h + 32;
   drawUspPills(ctx, template.usps, isCenter ? pad : photoBox.x, uspY, isCenter ? PRODUCT_CARD_WIDTH - pad * 2 : photoBox.w + textW + 40, template);
 
-  // Footer
   const footerLeft = template.aiMeta
     ? `Design: ${template.aiMeta.provider} · ${new Date(template.aiMeta.generatedAt).toLocaleDateString('de-DE')}`
-    : isPremium
-      ? 'DeInventory Pro · Premium Listing'
-      : 'DeInventory Pro · Premium Listing Card';
-  if (isPremium) {
-    drawRoundedRect(ctx, pad, PRODUCT_CARD_HEIGHT - 72, PRODUCT_CARD_WIDTH - pad * 2, 44, 14);
-    ctx.fillStyle = 'rgba(255,255,255,0.03)';
-    ctx.fill();
-    ctx.strokeStyle = template.theme.surfaceBorder;
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  }
+    : 'DeInventory Pro · Premium Listing Card';
   ctx.font = '600 17px "Segoe UI", system-ui, sans-serif';
   ctx.fillStyle = template.theme.textMuted;
   ctx.textBaseline = 'bottom';
-  ctx.fillText(footerLeft, pad + (isPremium ? 14 : 0), PRODUCT_CARD_HEIGHT - (isPremium ? 44 : 36));
+  ctx.fillText(footerLeft, pad, PRODUCT_CARD_HEIGHT - 36);
   if (template.aiMeta) {
     ctx.textAlign = 'right';
     ctx.fillStyle = template.theme.accent;

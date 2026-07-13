@@ -28,7 +28,7 @@ const VARIANT_STYLES = [
 interface AIDesignJson {
   name?: string;
   tagline?: string;
-  layout?: 'hero-left' | 'hero-center';
+  layout?: 'hero-left' | 'hero-center' | 'hero-showcase';
   theme?: Partial<ProductCardTheme>;
   usps?: string[];
   showPrice?: boolean;
@@ -59,7 +59,7 @@ Return ONLY valid JSON (no markdown):
 {
   "name": "short template name in English",
   "tagline": "optional German marketing line max 60 chars",
-  "layout": "hero-left" or "hero-center",
+  "layout": "hero-left", "hero-center", or "hero-showcase",
   "theme": {
     "bgFrom": "#hex dark",
     "bgTo": "#hex dark",
@@ -81,7 +81,7 @@ Rules:
 - For 3D print family prefer: Made in Germany, delivery time, color choice, filament quality.
 - For PC hardware prefer: tested hardware, shipping DE, ready to ship, warranty-style trust.
 - Colors must have strong contrast for mobile listing thumbnails.
-- layout hero-center for product-forward showcase; hero-left for spec-heavy hardware.`;
+- layout hero-showcase for premium center-hero with flanking specs; hero-center for product-forward; hero-left for spec-heavy.`;
 }
 
 function sanitizeHex(color: string | undefined, fallback: string): string {
@@ -115,7 +115,12 @@ function aiJsonToTemplate(
   const custom = cloneTemplateAsCustom(base, json.name?.trim() || `AI · ${getAIProviderLabel(provider)}`);
   return {
     ...custom,
-    layout: json.layout === 'hero-center' ? 'hero-center' : 'hero-left',
+    layout:
+      json.layout === 'hero-showcase'
+        ? 'hero-showcase'
+        : json.layout === 'hero-center'
+          ? 'hero-center'
+          : 'hero-left',
     theme: mergeTheme(base.theme, json.theme),
     usps: usps.length >= 2 ? usps : base.usps,
     tagline: json.tagline?.trim() || undefined,
