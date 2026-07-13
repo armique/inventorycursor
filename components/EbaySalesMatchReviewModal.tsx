@@ -13,6 +13,8 @@ import {
   X,
 } from 'lucide-react';
 import { fetchEbayOrder, hasEbayToken } from '../services/ebayService';
+import { loadEbayOrderIndex } from '../services/ebayOrderIndex';
+import type { EbayOrderRecord } from '../services/ebayOrderIndex';
 import type { OrderLinkSuggestion, OrderLinkSuggestionKind } from '../utils/ebayOrderLinkAnalysis';
 import { getLinePayout } from '../utils/ebayOrderPayout';
 import { scoreListingTitleMatch } from '../utils/ebayListingMatch';
@@ -91,7 +93,19 @@ const EbaySalesMatchReviewModal: React.FC<Props> = ({
   onDismiss,
 }) => {
   const { item, match, kind } = row;
-  const { order, lineItem, matchKind, matchScore } = match;
+  const { order: matchOrder, lineItem, matchKind, matchScore } = match;
+  const [cachedOrder, setCachedOrder] = useState<EbayOrderRecord>(matchOrder);
+  const order = cachedOrder;
+
+  useEffect(() => {
+    const refresh = () => {
+      const fresh = loadEbayOrderIndex().orders.find((o) => o.orderId === matchOrder.orderId);
+      if (fresh) setCachedOrder(fresh);
+    };
+    refresh();
+    window.addEventListener('ebay-order-index-updated', refresh);
+    return () => window.removeEventListener('ebay-order-index-updated', refresh);
+  }, [matchOrder.orderId]);
   const payout = useMemo(() => getLinePayout(order, lineItem), [order, lineItem]);
 
   const [liveLoading, setLiveLoading] = useState(false);

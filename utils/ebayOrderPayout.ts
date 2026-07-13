@@ -20,13 +20,30 @@ function prorateOrderAmount(orderAmount: number | null | undefined, lineGross: n
   return (line / base) * orderAmount;
 }
 
+function getSaleEventNetForLine(order: EbayOrderRecord, line: EbayOrderLineItem): number | null {
+  const sales = (order.financialEvents || []).filter((e) => e.kind === 'sale');
+  if (!sales.length) return null;
+  if (sales.length === 1 && order.lineItems.length <= 1) return sales[0].amount;
+  const lineGross = line.lineItemCost;
+  if (lineGross != null) {
+    const match = sales.find(
+      (e) =>
+        (e.grossAmount != null && Math.abs(e.grossAmount - lineGross) < 0.05) ||
+        (e.description && line.title && e.description.includes(line.title.slice(0, 24)))
+    );
+    if (match) return match.amount;
+  }
+  return sales.length === 1 ? sales[0].amount : null;
+}
+
 /** Best-effort payout for one order line — prefers net (after fees/taxes) when the cache has it (usually from CSV). */
 export function getLinePayout(order: EbayOrderRecord, line: EbayOrderLineItem): LinePayout {
   const gross =
     line.lineItemCost ??
     (order.lineItems.length === 1 ? order.grossTotal ?? null : null);
 
-  const orderNet = getOrderEffectiveNet(order);
+  const saleLineNet = getSaleEventNetForLine(order, line);
+  const orderNet = saleLineNet ?? getOrderEffectiveNet(order);
   const net = prorateOrderAmount(orderNet, gross, order);
   const feeRaw = prorateOrderAmount(order.feeTotal, gross, order);
   const fee =

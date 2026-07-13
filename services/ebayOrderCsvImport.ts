@@ -377,7 +377,7 @@ export function parseEbayOrderCsv(text: string): EbayOrderCsvParseResult {
         ? {
             sku: row.sku?.trim() || null,
             title: row.title?.trim() || '(unknown item)',
-            lineItemCost: gross ?? parseMoney(row.soldFor),
+            lineItemCost: parseMoney(row.soldFor) ?? gross,
             listingId: row.listingId?.trim() || null,
             quantity: row.quantity ? parseInt(row.quantity, 10) || null : null,
           }

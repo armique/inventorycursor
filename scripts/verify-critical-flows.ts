@@ -362,6 +362,25 @@ function runCsvImportTests(): void {
   assert(deParsed.orders[0].buyer.username === 'kanyenord', 'de report buyer');
   assert((deParsed.orders[0].financialEvents?.length || 0) >= 2, 'de report sale + fee events');
   assert(deParsed.orders[0].netTotal != null, 'de report has net total');
+
+  const saleOnlyOrder = {
+    orderId: 'ORD-SALE-NET',
+    creationDate: '2025-08-11',
+    buyer: { username: 'buyer' },
+    lineItems: [{ sku: null, title: 'GPU', lineItemCost: 57.6 }],
+    grossTotal: 65.29,
+    netTotal: 42.03,
+    financialEvents: [
+      { id: 's1', date: '2025-08-11', kind: 'sale' as const, amount: 59.82, grossAmount: 65.29, source: 'csv' as const, importedAt: '' },
+      { id: 'f1', date: '2025-08-11', kind: 'fee' as const, amount: -10.1, source: 'csv' as const, importedAt: '' },
+      { id: 'l1', date: '2025-08-12', kind: 'fee' as const, amount: -7.69, source: 'csv' as const, importedAt: '' },
+    ],
+    sources: ['csv' as const],
+    importedAt: '',
+  };
+  const salePayout = getLinePayout(saleOnlyOrder, saleOnlyOrder.lineItems[0]);
+  assertClose(salePayout.sellPrice, 59.82, 'uses sale-row net not whole-order net');
+  assert(salePayout.netKnown === true, 'sale-row net known');
 }
 
 function runAdjustmentTests(): void {

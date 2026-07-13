@@ -142,6 +142,17 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
     if (orders.length) applyAnalysis(peekEbaySalesSync(items));
   }, [items, applyAnalysis]);
 
+  // Re-match when order cache changes (CSV import, API backfill, cloud pull).
+  useEffect(() => {
+    const refreshFromCache = () => {
+      const { orders } = loadEbayOrderIndex();
+      if (!orders.length) return;
+      applyAnalysis(peekEbaySalesSync(items));
+    };
+    window.addEventListener('ebay-order-index-updated', refreshFromCache);
+    return () => window.removeEventListener('ebay-order-index-updated', refreshFromCache);
+  }, [items, applyAnalysis]);
+
   const visible = useMemo(() => {
     return suggestions.filter((s) => {
       if (dismissed.has(s.id)) return false;

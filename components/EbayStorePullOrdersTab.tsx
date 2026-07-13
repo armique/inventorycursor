@@ -200,7 +200,7 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
     addCsvImportMeta({ fileName: csvFileName, rowCount: csvResult.rowCount, orderCount: csvResult.orders.length });
     void pushOrderIndexToCloud(result.changed);
     setCsvImportMessage(
-      `Imported ${csvResult.orders.length} order(s) from "${csvFileName}" · ${result.added} new, ${result.merged} updated in cache.`
+      `Imported ${csvResult.orders.length} order(s) from "${csvFileName}" · ${result.added} new, ${result.merged} updated in cache. Sales sync re-matched automatically — net payout should appear in suggestions.`
     );
     setCsvResult(null);
     setCsvFileName(null);
