@@ -60,6 +60,27 @@ export function sumFinancialEventNet(events: EbayOrderFinancialEvent[] | undefin
   return Math.round(total * 100) / 100;
 }
 
+/** Sale-row proceeds only (positive Bestellung events), before returns/fees on other rows. */
+export function sumOrderSaleProceeds(order: EbayOrderRecord): number | null {
+  const sales = (order.financialEvents || []).filter((e) => e.kind === 'sale' && e.amount > 0.001);
+  if (!sales.length) return null;
+  return Math.round(sales.reduce((s, e) => s + e.amount, 0) * 100) / 100;
+}
+
+export function hasPostSaleRefund(order: EbayOrderRecord): boolean {
+  return (order.financialEvents || []).some(
+    (e) => (e.kind === 'return' || e.kind === 'refund' || e.kind === 'cancellation') && e.amount < -0.01
+  );
+}
+
+/** True when signed net is zero or negative after a return/refund on the order. */
+export function isOrderFullyRefunded(order: EbayOrderRecord): boolean {
+  if (!hasPostSaleRefund(order)) return false;
+  const net = getOrderEffectiveNet(order);
+  if (net == null) return false;
+  return net <= 0.01;
+}
+
 /** Sum of fee/shipping-label deductions (positive EUR amount). */
 export function sumOrderFeeDeductions(order: EbayOrderRecord): number {
   const fromEvents = (order.financialEvents || [])

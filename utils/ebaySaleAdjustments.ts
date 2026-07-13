@@ -84,13 +84,16 @@ export function applyEbaySaleAdjustmentToItem(
     (item.sellPrice != null ? item.sellPrice : adjustment.sellPriceBefore);
 
   const sellPrice = adjustment.sellPriceAfter;
-  const profit = calculateSaleProfit(sellPrice, item.buyPrice, item.feeAmount || 0, taxMode);
+  const fee = adjustment.feeAfter ?? item.feeAmount ?? 0;
+  const profit = calculateSaleProfit(sellPrice, item.buyPrice, fee, taxMode);
 
   return {
     ...item,
     originalSellPrice: original,
     sellPrice,
     profit: parseFloat(profit.toFixed(2)),
+    hasFee: fee > 0,
+    feeAmount: fee,
     ebaySaleAdjustments: [...existing, adjustment],
   };
 }

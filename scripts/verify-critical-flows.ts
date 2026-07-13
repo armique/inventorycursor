@@ -13,7 +13,7 @@ import { calculateSaleProfit } from '../utils/saleProfit';
 import { getLinePayout } from '../utils/ebayOrderPayout';
 import { applyEbayOrderMatchToItem } from '../utils/applyEbayOrderMatch';
 import { buildOrderLinkAnalysis } from '../utils/ebayOrderLinkAnalysis';
-import { classifyTransactionType, sumFinancialEventNet } from '../utils/ebayOrderFinancial';
+import { classifyTransactionType, sumFinancialEventNet, getOrderEffectiveNet, isOrderFullyRefunded, sumOrderSaleProceeds } from '../utils/ebayOrderFinancial';
 import {
   applyEbaySaleAdjustmentToItem,
   buildAdjustmentFromEvent,
@@ -23,7 +23,6 @@ import {
 import type { EbayOrderFinancialEvent, EbayOrderRecord } from '../services/ebayOrderIndex';
 import { isRealizedDisposal, dispositionDate } from '../utils/itemDisposition';
 import { parseEbayOrderCsv } from '../services/ebayOrderCsvImport';
-import type { EbayOrderRecord } from '../services/ebayOrderIndex';
 import {
   findSpoolByEbayLineKey,
   addFilamentSpool,
@@ -216,7 +215,7 @@ function runEbayPayoutTests(): void {
   const applied = applyEbayOrderMatchToItem(item, match, 'SmallBusiness');
   assert(applied.status === ItemStatus.SOLD, 'ebay apply marks sold');
   assertClose(applied.sellPrice!, 80, 'ebay apply uses net payout');
-  assertClose(applied.profit!, 10, 'ebay apply profit: net sell 80 - buy 50 - fee 20');
+  assertClose(applied.profit!, 30, 'ebay apply profit: net sell 80 - buy 50 (fee already in net)');
   assert(applied.ebayOrderId === 'ORD-1', 'links order id');
 }
 
@@ -428,6 +427,38 @@ function runCsvImportTests(): void {
   assertClose(corsairPayout.gross ?? 0, 26.99, 'item gross excludes buyer shipping');
   assertClose(corsairPayout.sellPrice, 22.33, 'Bestelleinnahmen after ads + shipping label');
   assert(classifyTransactionType('Versandetikett', -6.19, 'DHL') === 'fee', 'shipping label is fee not refund');
+
+  const refundedGpu: EbayOrderRecord = {
+    orderId: '26-14576-17166',
+    creationDate: '2026-05-06',
+    buyer: { username: 'dawiest123', fullName: 'Thomas Wiest' },
+    lineItems: [{ sku: null, title: 'Nvidia Quadro P400 3x Mini DP 2GB GDDR5 Grafikkarte', lineItemCost: 20 }],
+    grossTotal: 26.19,
+    financialEvents: [
+      { id: 'gpu-sale', date: '2026-05-06', kind: 'sale', amount: 23.63, transactionType: 'Bestellung', source: 'csv', importedAt: '' },
+      { id: 'gpu-pl', date: '2026-05-06', kind: 'fee', amount: -3.74, transactionType: 'Andere Gebühr', description: 'Promoted Listings', source: 'csv', importedAt: '' },
+      { id: 'gpu-dhl', date: '2026-05-06', kind: 'fee', amount: -6.19, transactionType: 'Versandetikett', description: 'DHL', source: 'csv', importedAt: '' },
+      { id: 'gpu-ref', date: '2026-05-25', kind: 'return', amount: -24.17, transactionType: 'Rückerstattung', source: 'csv', importedAt: '' },
+      { id: 'gpu-pl-cr', date: '2026-05-25', kind: 'fee', amount: 3.74, transactionType: 'Andere Gebühr', description: 'Promoted Listings credit', source: 'csv', importedAt: '' },
+    ],
+    sources: ['csv'],
+    importedAt: '',
+  };
+  assertClose(getOrderEffectiveNet(refundedGpu)!, -6.73, 'refunded GPU order net Bestelleinnahmen');
+  assert(isOrderFullyRefunded(refundedGpu), 'GPU order detected as fully refunded');
+  assertClose(sumOrderSaleProceeds(refundedGpu)!, 23.63, 'initial sale proceeds before refund');
+  const gpuPayout = getLinePayout(refundedGpu, refundedGpu.lineItems[0]);
+  assertClose(gpuPayout.sellPrice, -6.73, 'GPU sell price is signed net after refund');
+  const gpuItem = baseItem({ id: 'gpu-1', buyPrice: 10, status: ItemStatus.IN_STOCK });
+  const gpuApplied = applyEbayOrderMatchToItem(
+    gpuItem,
+    { order: refundedGpu, lineItem: refundedGpu.lineItems[0], matchScore: 500, matchKind: 'title' },
+    'SmallBusiness'
+  );
+  assertClose(gpuApplied.sellPrice!, -6.73, 'apply match uses net after refund');
+  assertClose(gpuApplied.originalSellPrice!, 23.63, 'preserves pre-refund sale proceeds');
+  assertClose(gpuApplied.profit!, -16.73, 'profit = net payout minus buy price');
+  assert(gpuApplied.feeAmount === 0, 'no separate fee when net known from CSV');
 }
 
 function runAdjustmentTests(): void {

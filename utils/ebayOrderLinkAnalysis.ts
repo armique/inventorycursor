@@ -2,7 +2,7 @@ import { InventoryItem, ItemStatus, type EbaySaleAdjustment } from '../types';
 import type { EbayOrderLineItem, EbayOrderRecord } from '../services/ebayOrderIndex';
 import { findMatchingOrdersForItem, type EbayOrderMatch } from './ebayOrderMatch';
 import { getLinePayout } from './ebayOrderPayout';
-import { getOrderEffectiveNet, isOrderCancelled, unappliedOrderEvents } from './ebayOrderFinancial';
+import { getOrderEffectiveNet, isOrderCancelled, isOrderFullyRefunded, unappliedOrderEvents, hasPostSaleRefund } from './ebayOrderFinancial';
 import {
   buildAdjustmentFromEvent,
   getAppliedEventIds,
@@ -171,6 +171,47 @@ function findAdjustmentSuggestions(
   suggestions: OrderLinkSuggestion[]
 ): void {
   const { order, lineItem } = match;
+  const payout = getLinePayout(order, lineItem);
+  const current = getEffectiveSellPrice(item) ?? item.sellPrice ?? 0;
+  const targetNet = payout.netKnown ? payout.sellPrice : null;
+
+  // Prefer one correction to signed Bestelleinnahmen (includes refunds) over per-event tweaks.
+  if (targetNet != null && Math.abs(current - targetNet) >= REPRICE_MIN_DELTA) {
+    const reason = isOrderFullyRefunded(order)
+      ? `Full refund on order — net Bestelleinnahmen €${targetNet.toFixed(2)} (DHL label & fees included)`
+      : hasPostSaleRefund(order)
+        ? 'Partial refund / return — net payout from Transaktionsbericht'
+        : isOrderCancelled(order)
+          ? 'eBay order cancelled — effective payout changed'
+          : 'Order payout changed — re-import Payments CSV';
+
+    if (hasPostSaleRefund(order) || isOrderCancelled(order) || item.originalSellPrice != null || (item.ebaySaleAdjustments?.length ?? 0) > 0) {
+      const adjustment: EbaySaleAdjustment = {
+        id: `adj-net-${order.orderId}-${item.id}`,
+        date: order.lastModifiedDate || order.creationDate || new Date().toISOString().split('T')[0],
+        kind: isOrderFullyRefunded(order) ? 'return' : 'payout_correction',
+        amount: round2(targetNet - current),
+        orderId: order.orderId,
+        reason,
+        source: 'ebay_csv',
+        importedAt: new Date().toISOString(),
+        sellPriceBefore: current,
+        sellPriceAfter: round2(targetNet),
+        feeBefore: item.feeAmount,
+        feeAfter: 0,
+      };
+      suggestions.push(
+        makeSuggestion('adjustment', item, match, match.matchScore + 220, {
+          adjustment,
+          adjustmentReason: reason,
+          suggestedSellPrice: targetNet,
+          priceDelta: adjustment.amount,
+        })
+      );
+      return;
+    }
+  }
+
   const applied = getAppliedEventIds(item);
   const pendingEvents = unappliedOrderEvents(order, applied);
   const factor = prorateFactorForLine(order, lineItem);
@@ -188,9 +229,9 @@ function findAdjustmentSuggestions(
     );
   }
 
-  const payout = getLinePayout(order, lineItem);
-  const current = getEffectiveSellPrice(item) ?? item.sellPrice ?? 0;
-  const delta = round2(payout.sellPrice - current);
+  const payoutFallback = getLinePayout(order, lineItem);
+  const currentFallback = getEffectiveSellPrice(item) ?? item.sellPrice ?? 0;
+  const delta = round2(payoutFallback.sellPrice - currentFallback);
   if (Math.abs(delta) < REPRICE_MIN_DELTA) return;
   if (pendingEvents.length > 0) return;
   if (item.originalSellPrice == null && !item.ebaySaleAdjustments?.length) return;
@@ -210,10 +251,10 @@ function findAdjustmentSuggestions(
     reason,
     source: 'ebay_sync',
     importedAt: new Date().toISOString(),
-    sellPriceBefore: current,
-    sellPriceAfter: round2(current + delta),
+    sellPriceBefore: currentFallback,
+    sellPriceAfter: round2(currentFallback + delta),
     feeBefore: item.feeAmount,
-    feeAfter: item.feeAmount,
+    feeAfter: payoutFallback.netKnown ? 0 : item.feeAmount,
   };
 
   suggestions.push(
@@ -306,7 +347,10 @@ export function buildOrderLinkAnalysis(items: InventoryItem[], orders: EbayOrder
     const delta = Math.abs(current - payout.sellPrice);
     if (delta < REPRICE_MIN_DELTA) continue;
     if (!payout.netKnown && payout.gross != null && Math.abs(current - payout.gross) < REPRICE_MIN_DELTA) continue;
-    if (item.originalSellPrice != null || (item.ebaySaleAdjustments?.length ?? 0) > 0) continue;
+    // Allow reprice when CSV net differs (e.g. after refund import).
+    if (item.originalSellPrice != null || (item.ebaySaleAdjustments?.length ?? 0) > 0) {
+      if (!payout.netKnown || !hasPostSaleRefund(order)) continue;
+    }
 
     suggestions.push(makeSuggestion('reprice', item, match, match.matchScore + 100));
   }

@@ -2,6 +2,7 @@ import { CustomerInfo, InventoryItem, ItemStatus, TaxMode } from '../types';
 import type { EbayOrderMatch } from './ebayOrderMatch';
 import { getLinePayout } from './ebayOrderPayout';
 import { calculateSaleProfit } from './saleProfit';
+import { hasPostSaleRefund, sumOrderSaleProceeds } from './ebayOrderFinancial';
 
 /** Apply a cached eBay order match onto an inventory row (link order id, buyer, net sell price, profit). */
 export function applyEbayOrderMatchToItem(
@@ -11,7 +12,8 @@ export function applyEbayOrderMatchToItem(
 ): InventoryItem {
   const { order, lineItem } = match;
   const payout = getLinePayout(order, lineItem);
-  const profit = calculateSaleProfit(payout.sellPrice, item.buyPrice, payout.fee, taxMode);
+  const feeForProfit = payout.netKnown ? 0 : payout.fee;
+  const profit = calculateSaleProfit(payout.sellPrice, item.buyPrice, feeForProfit, taxMode);
 
   const customer: CustomerInfo = {
     name: order.buyer.fullName || order.buyer.username || '',
@@ -22,7 +24,11 @@ export function applyEbayOrderMatchToItem(
 
   const originalSellPrice =
     item.originalSellPrice ??
-    (item.sellPrice != null && item.ebayOrderId === order.orderId ? item.sellPrice : payout.sellPrice);
+    (hasPostSaleRefund(order)
+      ? sumOrderSaleProceeds(order) ?? payout.sellPrice
+      : item.sellPrice != null && item.ebayOrderId === order.orderId
+        ? item.sellPrice
+        : payout.sellPrice);
 
   return {
     ...item,
@@ -37,7 +43,7 @@ export function applyEbayOrderMatchToItem(
     customer: customer.name || customer.address ? customer : item.customer,
     ebayUsername: order.buyer.username || item.ebayUsername,
     ebayOrderId: order.orderId,
-    hasFee: Boolean(payout.fee),
-    feeAmount: payout.fee,
+    hasFee: !payout.netKnown && Boolean(payout.fee),
+    feeAmount: payout.netKnown ? 0 : payout.fee,
   };
 }
