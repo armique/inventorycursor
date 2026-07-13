@@ -2745,7 +2745,6 @@ const InventoryList: React.FC<Props> = ({
             <div className={`flex flex-nowrap justify-start items-center gap-0.5 transition-opacity ${activeAiDropdownId === item.id ? 'opacity-100' : 'opacity-100 sm:opacity-0 sm:group-hover/row:opacity-100'}`}>
               {item.status === ItemStatus.IN_STOCK && (
                  <>
-                   <button onClick={(e) => { e.stopPropagation(); navigate('/panel/pricing', { state: { query: item.name } }); }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md shrink-0" title="Check Market Price"><Tag size={14}/></button>
                    <button onClick={(e) => { e.stopPropagation(); setItemToCrossPost(item); }} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-md shrink-0" title="Cross-Post"><Share2 size={14}/></button>
                    
                    {/* Sparkles button (AI tools dropdown toggle) */}

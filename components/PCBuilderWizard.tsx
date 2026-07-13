@@ -583,9 +583,22 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
   };
 
   const currentTotal = (Object.values(parts).flat() as InventoryItem[]).reduce((sum, i) => sum + i.buyPrice, 0);
+  const selectedPartsCount = useMemo(() => (Object.values(parts).flat() as InventoryItem[]).length, [parts]);
+  const requiredSlotCount = useMemo(() => SLOTS.filter((s) => s.required).length, []);
+  const requiredSlotsFilled = useMemo(
+    () => SLOTS.filter((s) => s.required).filter((s) => (parts[s.id] || []).length > 0).length,
+    [parts]
+  );
+  const canRunEstimate = selectedPartsCount >= 3;
+
+  const clearAllSlots = useCallback(() => {
+    if (!confirm('Clear all selected parts from this build?')) return;
+    setParts({});
+    setSelectedSlot(null);
+  }, []);
 
   const headerActions = (
-    <div className="flex items-center gap-2 shrink-0">
+    <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
       {!isCompactEdit && (
         <div className="flex items-center bg-slate-100 rounded-2xl p-1 text-[10px] font-black uppercase tracking-widest">
           <button
@@ -612,13 +625,33 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
         <p className="text-xs font-black uppercase tracking-widest text-slate-400">Total</p>
         <p className={`font-black ${isCompactEdit ? 'text-2xl' : 'text-2xl'}`}>€{formatEUR(currentTotal)}</p>
       </div>
+      {!isCompactEdit && (
+        <>
+          <button
+            type="button"
+            onClick={clearAllSlots}
+            disabled={selectedPartsCount === 0}
+            className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 text-xs font-black uppercase tracking-widest hover:bg-slate-50 disabled:opacity-50"
+          >
+            Clear all
+          </button>
+          <button
+            type="button"
+            onClick={handleRunEstimate}
+            disabled={estimating || !canRunEstimate}
+            className="px-4 py-2.5 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700 text-xs font-black uppercase tracking-widest hover:bg-indigo-100 disabled:opacity-50"
+          >
+            {estimating ? 'Analyzing…' : 'Run AI check'}
+          </button>
+        </>
+      )}
       <button
         onClick={handleSave}
         className={`flex items-center gap-2 bg-blue-600 text-white rounded-xl font-black uppercase tracking-widest hover:bg-blue-700 transition-all ${
-          isCompactEdit ? 'px-6 py-3 text-sm' : 'px-8 py-4 rounded-2xl shadow-xl text-xs'
+          isCompactEdit ? 'px-6 py-3 text-sm' : 'px-6 py-3 rounded-xl shadow-lg text-xs'
         }`}
       >
-        <Save size={isCompactEdit ? 18 : 18}/> Save
+        <Save size={18}/> Save Build
       </button>
     </div>
   );
@@ -684,13 +717,14 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
   }
 
   return (
-    <div className="max-w-[1600px] mx-auto h-[calc(100vh-100px)] flex flex-col animate-in fade-in">
+    <div className="w-full h-[calc(100vh-88px)] flex flex-col animate-in fade-in px-4 pb-4">
        {/* HEADER */}
-       <header className="flex justify-between items-center mb-6 shrink-0 px-4">
-          <div className="flex items-center gap-4">
-             <button onClick={() => navigate(-1)} className="p-3 bg-white border border-slate-200 rounded-2xl text-slate-400 hover:text-slate-900 transition-all"><ArrowLeft size={24}/></button>
+       <header className="shrink-0 rounded-2xl border border-slate-200 bg-white px-4 py-3 mb-4">
+         <div className="flex flex-wrap justify-between items-center gap-3">
+          <div className="flex items-center gap-4 min-w-0">
+             <button onClick={() => navigate(-1)} className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-400 hover:text-slate-900 transition-all"><ArrowLeft size={22}/></button>
              <div>
-                <h1 className="text-3xl font-black text-slate-900 tracking-tight">
+                <h1 className="text-2xl font-black text-slate-900 tracking-tight">
                   {editId
                     ? resolvedMode === 'bundle'
                       ? 'Edit Bundle'
@@ -708,19 +742,28 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
                 </p>
              </div>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 flex-wrap">
+             <div className="hidden lg:flex items-center gap-2">
+               <span className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-black">
+                 Parts {selectedPartsCount}
+               </span>
+               <span className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-black">
+                 Required {requiredSlotsFilled}/{requiredSlotCount}
+               </span>
+             </div>
              {headerActions}
           </div>
+         </div>
        </header>
 
-       <div className="flex flex-1 gap-6 overflow-hidden px-4">
+       <div className="flex flex-1 gap-4 overflow-hidden min-h-0">
           
           {/* LEFT: SLOTS */}
-          <div className="w-[400px] flex flex-col gap-4 shrink-0 overflow-y-auto pb-20 scrollbar-hide">
-             <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm mb-4">
+          <div className="w-[360px] xl:w-[390px] flex flex-col gap-3 shrink-0 overflow-y-auto pb-6 scrollbar-hide">
+             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
                 <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Build Name</label>
                 <input 
-                   className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-lg outline-none focus:ring-4 focus:ring-slate-100 transition-all mt-2"
+                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-black text-base outline-none focus:ring-2 focus:ring-slate-100 transition-all mt-2"
                    value={buildName}
                    onChange={e => {
                      userEditedNameRef.current = true;
@@ -741,8 +784,8 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
           </div>
 
           {/* RIGHT: AI ANALYSIS */}
-          <div className="w-[300px] flex flex-col gap-4 shrink-0">
-             <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm h-full flex flex-col">
+          <div className="w-[300px] xl:w-[330px] flex flex-col gap-4 shrink-0">
+             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm h-full flex flex-col">
                 <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2">
                    <AlertTriangle size={14}/> Performance Check
                 </h3>
@@ -772,7 +815,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
                       <p className="text-xs font-bold text-slate-400 mb-4">Add CPU, GPU & RAM to see AI performance estimates.</p>
                       <button 
                          onClick={handleRunEstimate}
-                         disabled={estimating}
+                         disabled={estimating || !canRunEstimate}
                          className="px-6 py-3 bg-slate-900 text-white rounded-xl font-bold text-xs shadow-lg hover:bg-black transition-all disabled:opacity-50"
                       >
                          {estimating ? 'Analyzing...' : 'Run AI Analysis'}

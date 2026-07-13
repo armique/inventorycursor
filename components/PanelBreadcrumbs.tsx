@@ -8,8 +8,6 @@ const LABELS: Record<string, string> = {
   add: 'Add item',
   'add-bulk': 'Bulk add',
   builder: 'PC builder',
-  pricing: 'Price check',
-  'deal-hunter': 'Deal hunter',
   'ebay-store-pull': 'eBay Store Pull',
   invoices: 'Invoices',
   'action-history': 'Action history',
@@ -18,7 +16,6 @@ const LABELS: Record<string, string> = {
   trash: 'Trash',
   'store-management': 'Store',
   settings: 'Settings',
-  'health-check': 'Health check',
 };
 
 const PanelBreadcrumbs: React.FC = () => {

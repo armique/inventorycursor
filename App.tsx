@@ -15,17 +15,13 @@ const SheetsImport = lazy(() => import('./components/SheetsImport'));
 const ExpenseManager = lazy(() => import('./components/ExpenseManager'));
 const TrashPage = lazy(() => import('./components/TrashPage'));
 const PCBuilderWizard = lazy(() => import('./components/PCBuilderWizard'));
-const PriceCheck = lazy(() => import('./components/PriceCheck'));
 const StoreManagementPage = lazy(() => import('./components/StoreManagementPage'));
 const StorefrontConfiguratorPage = lazy(() => import('./components/StorefrontConfiguratorPage'));
 const LegalPage = lazy(() => import('./components/LegalPage'));
 const InvoiceManager = lazy(() => import('./components/InvoiceManager'));
 const ActionHistoryPage = lazy(() => import('./components/ActionHistoryPage'));
-const DealHunterPage = lazy(() => import('./components/DealHunterPage'));
 const EbayStorePullPage = lazy(() => import('./components/EbayStorePullPage'));
-const HealthCheckPage = lazy(() => import('./components/HealthCheckPage'));
 const ThreeDPrintPage = lazy(() => import('./components/ThreeDPrintPage'));
-const ProductCardStudioPage = lazy(() => import('./components/ProductCardStudioPage'));
 
 import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense, DashboardPreferences, ActionHistoryEntry, TaxMode, ItemUpdateOptions } from './types';
 import {
@@ -1288,11 +1284,7 @@ const App: React.FC = () => {
           <Route path="edit/:id" element={<ItemForm onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="builder" element={<PCBuilderWizard items={items} onSave={handleUpdate} />} />
           <Route path="3d-print" element={<ThreeDPrintPage items={items} onSave={handleUpdate} categories={categories} onAddExpense={handleAddExpense} />} />
-          <Route path="product-card-studio" element={<ProductCardStudioPage items={items} onUpdate={handleUpdate} categoryFields={categoryFields} />} />
-          <Route path="pricing" element={<PriceCheck />} />
-          <Route path="deal-hunter" element={<DealHunterPage items={items} onUpdate={handleUpdate} />} />
           <Route path="ebay-store-pull" element={<EbayStorePullPage items={items} categories={categories} categoryFields={categoryFields} taxMode={businessSettings.taxMode} onUpdate={handleUpdate} onPublishCatalog={publishStoreCatalogNow} onAddExpense={handleAddExpense} />} />
-          <Route path="health-check" element={<HealthCheckPage />} />
           <Route path="invoices" element={<InvoiceManager items={items} businessSettings={businessSettings} />} />
           <Route
             path="action-history"
