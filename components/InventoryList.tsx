@@ -5,7 +5,7 @@ import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSort
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone, Camera, Gift
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone, Camera, Gift, User
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
@@ -806,6 +806,7 @@ const InventoryList: React.FC<Props> = ({
   
   // Modals
   const [itemToSell, setItemToSell] = useState<InventoryItem | null>(null);
+  const [itemToEditBuyer, setItemToEditBuyer] = useState<InventoryItem | null>(null);
   const [itemToReturn, setItemToReturn] = useState<InventoryItem | null>(null);
   const [itemToTrade, setItemToTrade] = useState<InventoryItem | null>(null);
   const [itemToGift, setItemToGift] = useState<InventoryItem | null>(null);
@@ -2224,17 +2225,28 @@ const InventoryList: React.FC<Props> = ({
                          <span className="text-[9px] text-slate-500 font-medium">({childItems.length} items)</span>
                       )}
                    </div>
+                   {item.status === ItemStatus.SOLD && !item.customer?.name && !item.ebayUsername && !item.ebayOrderId && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToEditBuyer(item); }}
+                        className="text-[9px] text-indigo-600 font-bold mt-1.5 flex items-center gap-1 hover:underline"
+                      >
+                        <User size={10} /> Add buyer data
+                      </button>
+                   )}
                    {(isRealizedDisposal(item) && (item.customer?.name || item.giftRecipient || item.ebayUsername || item.ebayOrderId)) && (
                       <p
-                        className="text-[9px] text-slate-600 font-medium mt-1.5 flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100"
+                        className={`text-[9px] text-slate-600 font-medium mt-1.5 flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100 ${item.status === ItemStatus.SOLD ? 'cursor-pointer hover:bg-slate-100 hover:border-slate-200' : ''}`}
                         title={[
                           item.customer?.name ? `Buyer: ${item.customer.name}` : null,
                           item.customer?.address ? `Address: ${item.customer.address}` : null,
                           item.ebayUsername ? `eBay: ${item.ebayUsername}` : null,
                           item.ebayOrderId ? `Order ID: ${item.ebayOrderId}` : null,
+                          item.status === ItemStatus.SOLD ? 'Click to edit buyer data' : null,
                         ]
                           .filter(Boolean)
                           .join(' • ')}
+                        onClick={item.status === ItemStatus.SOLD ? (e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToEditBuyer(item); } : undefined}
                       >
                         <Info size={10} className="text-slate-400" />
                         <span className="truncate">
@@ -2806,6 +2818,9 @@ const InventoryList: React.FC<Props> = ({
               {item.status === ItemStatus.IN_STOCK && <button onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToGift(item); }} className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-md shrink-0" title="Gift / Privatentnahme"><Gift size={14}/></button>}
               {isSoldOrTradedOnly(item) && (
                 <button onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setInvoiceViewItem(item); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md shrink-0" title="Generate Invoice"><FileText size={14}/></button>
+              )}
+              {item.status === ItemStatus.SOLD && (
+                <button onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToEditBuyer(item); }} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-md shrink-0" title="Add / edit buyer data (eBay / Kleinanzeigen)"><User size={14}/></button>
               )}
               {(item.status === ItemStatus.SOLD || item.status === ItemStatus.GIFTED) && (
                 <button onClick={(e) => { e.stopPropagation(); setItemToReturn(item); }} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-md shrink-0" title={item.status === ItemStatus.GIFTED ? 'Undo gift' : 'Mark Unsold / Return'}><RotateCcw size={14}/></button>
@@ -3846,6 +3861,13 @@ const InventoryList: React.FC<Props> = ({
                 <div className="flex gap-2">
                   <button
                     type="button"
+                    onClick={() => { addRecentItemId(item.id); setItemToEditBuyer(item); }}
+                    className="flex-1 py-2 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-800 text-[10px] font-black uppercase"
+                  >
+                    Buyer
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => handleEditClick(item)}
                     className="flex-1 py-2 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase"
                   >
@@ -4342,6 +4364,7 @@ const InventoryList: React.FC<Props> = ({
          <SaleModal 
             item={itemToSell} 
             taxMode={businessSettings.taxMode}
+            mode="sell"
             onSave={(updated, splitOff) => { 
                // When selling a PC or bundle, also stamp all child components
                // with the container's sale date. Child items keep their original buyDate.
@@ -4405,6 +4428,19 @@ const InventoryList: React.FC<Props> = ({
                setItemToSell(null); 
             }} 
             onClose={() => setItemToSell(null)} 
+         />
+      )}
+
+      {itemToEditBuyer && (
+         <SaleModal
+            item={itemToEditBuyer}
+            taxMode={businessSettings.taxMode}
+            mode="editBuyer"
+            onSave={(updated) => {
+              onUpdate([updated]);
+              setItemToEditBuyer(null);
+            }}
+            onClose={() => setItemToEditBuyer(null)}
          />
       )}
 

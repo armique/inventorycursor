@@ -1,8 +1,11 @@
 
-import React, { useEffect, useState } from 'react';
-import { X, Euro, CheckCircle2, User, Globe, ChevronDown, Link as LinkIcon, MessageCircle, Hash, Upload, Sparkles, ImagePlus } from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { X, Euro, CheckCircle2, User, Globe, ChevronDown, Link as LinkIcon, MessageCircle, Hash, Upload, Sparkles, ImagePlus, Loader2, Database } from 'lucide-react';
 import { parseEbayOrderFromImageInput } from '../services/ebayOrderScreenshotAI';
 import { mapKleinanzeigenPaymentMethod, parseKleinanzeigenChatFromImageInput } from '../services/kleinanzeigenChatScreenshotAI';
+import { fetchEbayOrder } from '../services/ebayService';
+import { findEbayOrderById } from '../services/ebayOrderIndex';
+import { customerFromEbayOrder } from '../utils/ebayOrderBuyerData';
 import { InventoryItem, ItemStatus, PaymentType, CustomerInfo, Platform, TaxMode } from '../types';
 import { SALE_PLATFORM_OPTIONS } from '../utils/salePlatform';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
@@ -10,6 +13,8 @@ import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 interface Props {
   item: InventoryItem;
   taxMode?: TaxMode;
+  /** sell = mark in-stock item sold; editBuyer = update buyer/sale metadata on already-sold item */
+  mode?: 'sell' | 'editBuyer';
   onSave: (updatedItem: InventoryItem, splitOffItem?: InventoryItem) => void;
   onClose: () => void;
 }
@@ -26,7 +31,8 @@ const PAYMENT_METHODS: PaymentType[] = [
   'Other'
 ];
 
-const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, onClose }) => {
+const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 'sell', onSave, onClose }) => {
+  const isEditBuyer = mode === 'editBuyer';
   const [salePrice, setSalePrice] = useState<string>(item.sellPrice != null ? String(item.sellPrice) : '');
   const [saleDate, setSaleDate] = useState(item.sellDate || new Date().toISOString().split('T')[0]);
   const [paymentType, setPaymentType] = useState<PaymentType>(item.paymentType || 'ebay.de');
@@ -58,6 +64,82 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
   const [ebayScreenshotDragOver, setEbayScreenshotDragOver] = useState(false);
   const [kaChatParsing, setKaChatParsing] = useState(false);
   const [kaChatParseError, setKaChatParseError] = useState<string | null>(null);
+  const [orderIdLookupLoading, setOrderIdLookupLoading] = useState(false);
+  const [orderIdLookupMessage, setOrderIdLookupMessage] = useState<string | null>(null);
+
+  const applyEbayOrderBuyerFields = useCallback(
+    (fields: {
+      orderId?: string;
+      username?: string;
+      customer?: CustomerInfo;
+      sellDate?: string;
+      sellPrice?: number;
+    }) => {
+      if (fields.orderId) setEbayOrderId(fields.orderId);
+      if (fields.username) setEbayUsername(fields.username);
+      if (fields.customer) {
+        setCustomer((prev) => ({
+          ...prev,
+          ...fields.customer,
+        }));
+      }
+      if (!isEditBuyer && fields.sellDate) setSaleDate(fields.sellDate);
+      if (!isEditBuyer && fields.sellPrice != null && Number.isFinite(fields.sellPrice)) {
+        const fmtPrice = formatEUR(fields.sellPrice);
+        setSalePrice(fmtPrice);
+        setUnitPrice(fmtPrice);
+      }
+    },
+    [isEditBuyer]
+  );
+
+  const fillFromOrderId = useCallback(
+    async (rawOrderId: string, opts?: { silent?: boolean }) => {
+      const orderId = rawOrderId.trim();
+      if (!orderId) return;
+      setOrderIdLookupLoading(true);
+      if (!opts?.silent) setOrderIdLookupMessage(null);
+      try {
+        const cached = findEbayOrderById(orderId);
+        if (cached) {
+          applyEbayOrderBuyerFields({
+            orderId: cached.orderId,
+            username: cached.buyer.username,
+            customer: customerFromEbayOrder(cached),
+            sellDate: cached.creationDate || undefined,
+          });
+          setPlatformSold('ebay.de');
+          setPaymentType('ebay.de');
+          setOrderIdLookupMessage('Buyer filled from order cache.');
+          return;
+        }
+        const live = await fetchEbayOrder(orderId);
+        applyEbayOrderBuyerFields({
+          orderId: live.ebayOrderId,
+          username: live.ebayUsername,
+          customer: live.customer,
+          sellDate: live.sellDate,
+          sellPrice: live.sellPrice,
+        });
+        setPlatformSold('ebay.de');
+        setPaymentType('ebay.de');
+        setOrderIdLookupMessage('Buyer filled from eBay API.');
+      } catch (err: unknown) {
+        if (!opts?.silent) {
+          setOrderIdLookupMessage(err instanceof Error ? err.message : 'Order not found in cache or API.');
+        }
+      } finally {
+        setOrderIdLookupLoading(false);
+      }
+    },
+    [applyEbayOrderBuyerFields]
+  );
+
+  useEffect(() => {
+    if (!isEditBuyer || !ebayOrderId.trim()) return;
+    if (customer.name?.trim() || customer.address?.trim()) return;
+    void fillFromOrderId(ebayOrderId, { silent: true });
+  }, [isEditBuyer, ebayOrderId, customer.name, customer.address, fillFromOrderId]);
 
   useEffect(() => {
     if (platformSold !== 'ebay.de') setEbayScreenshotDragOver(false);
@@ -218,17 +300,42 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
   const handleSave = () => {
     const finalFee = hasFee ? feeAmount : 0;
     
-    const isBatchItem = item.quantity != null && item.quantity > 1;
+    const isBatchItem = !isEditBuyer && item.quantity != null && item.quantity > 1;
     const qtySold = isBatchItem ? quantityToSell : 1;
     
     const rawPriceText = isBatchItem ? unitPrice : salePrice;
     const parsedUnitPrice = parseLocaleNumber(rawPriceText);
     const unitPriceNum = rawPriceText.trim() === '' || !Number.isFinite(parsedUnitPrice) ? undefined : parsedUnitPrice;
     
-    const totalSellPrice = unitPriceNum != null ? unitPriceNum * qtySold : undefined;
-    const totalBuyPrice = item.buyPrice * qtySold;
+    const totalSellPrice = unitPriceNum != null ? unitPriceNum * qtySold : item.sellPrice;
+    const totalBuyPrice = isBatchItem ? item.buyPrice * qtySold : item.buyPrice;
     
-    const profit = totalSellPrice != null ? calculateProfit(totalSellPrice, totalBuyPrice, finalFee) : undefined;
+    const profit = totalSellPrice != null ? calculateProfit(totalSellPrice, totalBuyPrice, finalFee) : item.profit;
+
+    const buyerFields = {
+      paymentType,
+      platformSold,
+      hasFee,
+      feeAmount: finalFee,
+      comment2: comment,
+      customer,
+      ebayUsername,
+      ebayOrderId,
+      kleinanzeigenChatUrl,
+      kleinanzeigenChatImage,
+    };
+
+    if (isEditBuyer) {
+      onSave({
+        ...item,
+        ...buyerFields,
+        sellPrice: totalSellPrice,
+        sellDate: saleDate,
+        profit: profit != null ? parseFloat(profit.toFixed(2)) : item.profit,
+      });
+      onClose();
+      return;
+    }
 
     if (isBatchItem && qtySold < item.quantity!) {
       // Split: remaining stock stays in original item
@@ -305,8 +412,12 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
       >
         <header className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/30 shrink-0">
           <div>
-            <h2 className="text-2xl font-black text-slate-900 tracking-tight">Finalize Transaction</h2>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Invoice Generation Engine</p>
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight">
+              {isEditBuyer ? 'Buyer & sale details' : 'Finalize Transaction'}
+            </h2>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">
+              {isEditBuyer ? 'Update buyer data for invoice / records' : 'Invoice Generation Engine'}
+            </p>
           </div>
           <button onClick={onClose} className="p-3 hover:bg-white rounded-2xl transition-all text-slate-400"><X size={24} /></button>
         </header>
@@ -515,13 +626,36 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
                        </div>
                        <div className="space-y-1">
                           <label className="text-[9px] font-black uppercase text-slate-400 ml-1 flex items-center gap-1"><Hash size={10}/> Order ID</label>
-                          <input
-                             type="text"
-                             placeholder="12-34567-89012"
-                             className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
-                             value={ebayOrderId}
-                             onChange={e => setEbayOrderId(e.target.value)}
-                          />
+                          <div className="flex gap-2">
+                            <input
+                               type="text"
+                               placeholder="12-34567-89012"
+                               className="flex-1 min-w-0 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
+                               value={ebayOrderId}
+                               onChange={(e) => {
+                                 setEbayOrderId(e.target.value);
+                                 setOrderIdLookupMessage(null);
+                               }}
+                               onBlur={() => {
+                                 if (ebayOrderId.trim()) void fillFromOrderId(ebayOrderId, { silent: true });
+                               }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => void fillFromOrderId(ebayOrderId)}
+                              disabled={orderIdLookupLoading || !ebayOrderId.trim()}
+                              className="shrink-0 flex items-center gap-1 px-2.5 py-2 bg-slate-800 text-white rounded-xl text-[9px] font-black uppercase hover:bg-slate-900 disabled:opacity-50"
+                              title="Fill buyer from order cache or eBay API"
+                            >
+                              {orderIdLookupLoading ? <Loader2 size={12} className="animate-spin" /> : <Database size={12} />}
+                              Load
+                            </button>
+                          </div>
+                          {orderIdLookupMessage && (
+                            <p className={`text-[10px] font-bold mt-1 ${orderIdLookupMessage.includes('filled') || orderIdLookupMessage.includes('Filled') ? 'text-emerald-600' : 'text-slate-500'}`}>
+                              {orderIdLookupMessage}
+                            </p>
+                          )}
                        </div>
                     </div>
                  </div>
@@ -552,7 +686,10 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
 
         <footer className="p-8 bg-slate-50/50 border-t border-slate-100 flex gap-4 shrink-0">
           <button onClick={onClose} className="flex-1 py-4 font-black text-xs uppercase text-slate-400">Cancel</button>
-          <button onClick={handleSave} className="flex-[2] py-4 bg-slate-900 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-xl flex items-center justify-center gap-2"><CheckCircle2 size={18}/> Save & Mark Sold</button>
+          <button onClick={handleSave} className="flex-[2] py-4 bg-slate-900 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-xl flex items-center justify-center gap-2">
+            <CheckCircle2 size={18}/>
+            {isEditBuyer ? 'Save buyer data' : 'Save & Mark Sold'}
+          </button>
         </footer>
       </div>
     </div>

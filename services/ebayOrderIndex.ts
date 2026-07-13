@@ -356,6 +356,13 @@ export async function clearEbayOrderIndexEverywhere(): Promise<void> {
   }
 }
 
+export function findEbayOrderById(orderId: string): EbayOrderRecord | null {
+  const key = orderId.trim().toLowerCase();
+  if (!key) return null;
+  const { orders } = loadRaw();
+  return orders.find((o) => o.orderId.trim().toLowerCase() === key) ?? null;
+}
+
 export function getOrderIndexStats(): EbayOrderIndexStats {
   const { orders } = loadRaw();
   let oldest: string | null = null;
