@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useLayoutEffect, useRef, useDeferredValue, startTransition } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { formatEUR, parseLocaleMoney, parseLocaleNumber } from '../utils/formatMoney';
+import { toLocalCalendarDateKey } from '../utils/calendarDate';
 import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSortKey, buildTimeGaugeSortKeyMap } from '../utils/inventoryTimeGauge';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -2626,7 +2627,7 @@ const InventoryList: React.FC<Props> = ({
              className="text-left text-xs font-bold text-slate-500 cursor-pointer hover:bg-blue-50/30 transition-colors" 
              style={style}
              title="Double click to edit"
-             onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, id, (item as any)[id] || ''); }}
+             onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, id, toLocalCalendarDateKey((item as any)[id]) || ''); }}
            >
               {editingCell?.itemId === item.id && editingCell?.field === id ? (
                  <input 
@@ -2640,7 +2641,7 @@ const InventoryList: React.FC<Props> = ({
                    onClick={e => e.stopPropagation()}
                  />
               ) : (
-                 (item as any)[id] || '-'
+                 toLocalCalendarDateKey((item as any)[id]) || '-'
               )}
            </td>
         );
@@ -2664,7 +2665,7 @@ const InventoryList: React.FC<Props> = ({
              className="text-left text-xs font-bold text-slate-500 cursor-pointer hover:bg-blue-50/30 transition-colors" 
              style={style}
              title={buyerTitle || "Double click to edit"}
-             onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, id, (item as any)[id] || ''); }}
+             onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, id, toLocalCalendarDateKey((item as any)[id]) || ''); }}
            >
               {isEditingDate ? (
                  <input 
@@ -2679,7 +2680,7 @@ const InventoryList: React.FC<Props> = ({
                  />
               ) : (
                  <div className="flex flex-col items-end gap-1">
-                   <span>{(item as any)[id] || '-'}</span>
+                   <span>{toLocalCalendarDateKey((item as any)[id]) || '-'}</span>
                    {isSoldOrTraded && (
                      <>
                        {missing ? (

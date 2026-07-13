@@ -26,6 +26,7 @@ import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { resolveTradeIncomingCategory } from '../utils/itemCategoryDetect';
 import { searchAllHardware, HardwareMetadata } from '../services/hardwareDB';
 import { allocateRemainderEuros, TradeSplitMode } from '../services/tradeAllocation';
+import { toLocalCalendarDateKey } from '../utils/calendarDate';
 import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
 import ItemThumbnail, { CategoryIconBox } from './ItemThumbnail';
 
@@ -343,6 +344,7 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
     }
 
     const noteSuffix = tradeNote ? `\n\n[Trade Context]: ${tradeNote}` : '';
+    const tradeDate = toLocalCalendarDateKey(tradeAcquiredAt) || tradeAcquiredAt.slice(0, 10);
 
     const newInventoryItems: InventoryItem[] = drafts.map((draft) => {
       const { category, subCategory } = resolveTradeIncomingCategory(draft.name, {
@@ -354,7 +356,7 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
         id: `trade-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         name: draft.name,
         buyPrice: draft.estimatedValue,
-        buyDate: tradeAcquiredAt,
+        buyDate: tradeDate,
         category,
         subCategory,
         status: ItemStatus.IN_STOCK,
@@ -373,7 +375,7 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
       id: item.id,
       status: ItemStatus.TRADED,
       sellPrice: totalTradeValue,
-      sellDate: tradeAcquiredAt,
+      sellDate: tradeDate,
       profit: projectedProfit,
       tradedForIds: newIds,
       cashOnTop: netCash,
