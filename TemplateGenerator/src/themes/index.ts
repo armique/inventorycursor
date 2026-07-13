@@ -52,3 +52,10 @@ export {
   type StylePreset,
   type StylePresetId,
 } from "./style-presets";
+export {
+  BACKGROUND_TEXTURES,
+  BACKGROUND_TEXTURE_MAP,
+  getBackgroundTexture,
+  type BackgroundTexture,
+  type BackgroundTextureId,
+} from "./background-textures";

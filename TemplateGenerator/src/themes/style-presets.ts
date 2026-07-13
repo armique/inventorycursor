@@ -25,6 +25,7 @@ export type StylePreset = {
   titleTypographyId: TitleTypographyId;
   titleColorId: TitleColorId;
   iconOnly?: boolean;
+  backgroundTexture?: string;
 };
 
 export const STYLE_PRESETS: StylePreset[] = [
@@ -40,6 +41,7 @@ export const STYLE_PRESETS: StylePreset[] = [
     typographyId: "apple-clean",
     titleTypographyId: "apple-hero",
     titleColorId: "theme",
+    backgroundTexture: "studio",
   },
   {
     id: "dark-gaming",
@@ -53,6 +55,7 @@ export const STYLE_PRESETS: StylePreset[] = [
     typographyId: "gaming-tech",
     titleTypographyId: "gaming-poster",
     titleColorId: "white",
+    backgroundTexture: "prism-rays",
   },
   {
     id: "premium-black",
@@ -66,6 +69,7 @@ export const STYLE_PRESETS: StylePreset[] = [
     typographyId: "luxury-soft",
     titleTypographyId: "luxury-serif",
     titleColorId: "gold",
+    backgroundTexture: "marble-luxe",
   },
   {
     id: "carbon-style",
@@ -79,6 +83,7 @@ export const STYLE_PRESETS: StylePreset[] = [
     typographyId: "linear-sharp",
     titleTypographyId: "linear-bold",
     titleColorId: "white",
+    backgroundTexture: "carbon-fiber",
   },
   {
     id: "neon-minimal",
@@ -92,6 +97,7 @@ export const STYLE_PRESETS: StylePreset[] = [
     typographyId: "gaming-tech",
     titleTypographyId: "gaming-poster",
     titleColorId: "aurora",
+    backgroundTexture: "aurora-mesh",
   },
   {
     id: "ultra-simple",
@@ -105,6 +111,7 @@ export const STYLE_PRESETS: StylePreset[] = [
     typographyId: "apple-clean",
     titleTypographyId: "apple-hero",
     titleColorId: "theme",
+    backgroundTexture: "spotlight",
   },
   {
     id: "icon-focus",
@@ -118,6 +125,7 @@ export const STYLE_PRESETS: StylePreset[] = [
     typographyId: "apple-clean",
     titleTypographyId: "apple-hero",
     titleColorId: "theme",
+    backgroundTexture: "dot-matrix",
   },
   {
     id: "futuristic-hud",
@@ -131,6 +139,7 @@ export const STYLE_PRESETS: StylePreset[] = [
     typographyId: "gaming-tech",
     titleTypographyId: "gaming-poster",
     titleColorId: "cyan",
+    backgroundTexture: "blueprint",
   },
   {
     id: "diagonal-dynamic",
@@ -144,6 +153,7 @@ export const STYLE_PRESETS: StylePreset[] = [
     typographyId: "stripe-pro",
     titleTypographyId: "stripe-display",
     titleColorId: "ocean",
+    backgroundTexture: "silk-waves",
   },
   {
     id: "no-text-iconic",
@@ -158,6 +168,7 @@ export const STYLE_PRESETS: StylePreset[] = [
     titleTypographyId: "gaming-poster",
     titleColorId: "aurora",
     iconOnly: true,
+    backgroundTexture: "topographic",
   },
 ];
 

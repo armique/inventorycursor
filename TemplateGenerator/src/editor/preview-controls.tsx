@@ -18,7 +18,12 @@ import {
   PRODUCT_ROTATION_BOUNDS,
   PRODUCT_SCALE_BOUNDS,
 } from "@/lib/product-image";
-import { CARD_THEMES, SPEC_CARD_STYLES, THEME_LIST } from "@/themes";
+import {
+  BACKGROUND_TEXTURES,
+  CARD_THEMES,
+  SPEC_CARD_STYLES,
+  THEME_LIST,
+} from "@/themes";
 import { cn } from "@/lib/utils";
 
 const SPEC_LAYOUTS: {
@@ -35,6 +40,8 @@ const SPEC_LAYOUTS: {
 export function PreviewControls() {
   const activeTheme = usePreviewStore((s) => s.activeTheme);
   const activeSpecCardStyle = usePreviewStore((s) => s.activeSpecCardStyle);
+  const backgroundTextureId = usePreviewStore((s) => s.backgroundTextureId);
+  const setBackgroundTexture = usePreviewStore((s) => s.setBackgroundTexture);
   const specLayout = usePreviewStore((s) => s.specLayout);
   const productX = usePreviewStore((s) => s.productX);
   const productY = usePreviewStore((s) => s.productY);
@@ -84,6 +91,42 @@ export function PreviewControls() {
         </ScrollArea>
         <p className="text-[10px] text-muted-foreground">
           {CARD_THEMES[activeTheme].description}
+        </p>
+      </section>
+
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <SectionLabel>Background Texture</SectionLabel>
+          <span className="font-mono text-[10px] text-muted-foreground">
+            {BACKGROUND_TEXTURES.length} textures
+          </span>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {BACKGROUND_TEXTURES.map((texture) => (
+            <button
+              key={texture.id}
+              type="button"
+              onClick={() => setBackgroundTexture(texture.id)}
+              className={cn(
+                "group relative h-14 overflow-hidden rounded-xl border transition-all",
+                backgroundTextureId === texture.id
+                  ? "border-white/25 ring-2 ring-amber-500/40"
+                  : "border-white/[0.08] hover:border-white/15"
+              )}
+              style={{ background: texture.swatch }}
+              title={`${texture.label} — ${texture.description}`}
+            >
+              <span className="absolute inset-x-0 bottom-0 bg-black/55 px-1 py-1 text-[8px] font-medium leading-tight text-white/90 backdrop-blur-sm">
+                {texture.label}
+              </span>
+            </button>
+          ))}
+        </div>
+        <p className="text-[10px] text-muted-foreground">
+          {
+            BACKGROUND_TEXTURES.find((t) => t.id === backgroundTextureId)
+              ?.description
+          }
         </p>
       </section>
 

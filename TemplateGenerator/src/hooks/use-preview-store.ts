@@ -45,12 +45,14 @@ interface PreviewStore {
   imageRotation: number;
   isProductSelected: boolean;
   iconOnlyCards: boolean;
+  backgroundTextureId: string;
   activePresetId: string | null;
   specCards: EditableSpecCard[];
   specPlacements: Record<string, SpecPlacement>;
   selectedCardUid: string | null;
   applyStylePreset: (presetId: string) => void;
   setIconOnlyCards: (enabled: boolean) => void;
+  setBackgroundTexture: (id: string) => void;
   setActiveTheme: (theme: CardThemeId) => void;
   setActiveSpecCardStyle: (styleId: SpecCardStyleId) => void;
   setSpecLayout: (layout: SpecLayoutMode) => void;
@@ -112,6 +114,7 @@ export const usePreviewStore = create<PreviewStore>((set, get) => ({
   imageRotation: 0,
   isProductSelected: false,
   iconOnlyCards: false,
+  backgroundTextureId: "studio",
   activePresetId: null,
   specCards: initialCards,
   specPlacements: generateAlignedPlacements("around", initialUids),
@@ -131,11 +134,13 @@ export const usePreviewStore = create<PreviewStore>((set, get) => ({
       titleColorId: preset.titleColorId,
       titleFontId: null,
       iconOnlyCards: preset.iconOnly ?? false,
+      backgroundTextureId: preset.backgroundTexture ?? "studio",
       selectedCardUid: null,
       isProductSelected: false,
     });
   },
   setIconOnlyCards: (enabled) => set({ iconOnlyCards: enabled }),
+  setBackgroundTexture: (id) => set({ backgroundTextureId: id }),
   setActiveTheme: (theme) => set({ activeTheme: theme, activePresetId: null }),
   setActiveSpecCardStyle: (styleId) =>
     set({ activeSpecCardStyle: styleId, activePresetId: null }),
