@@ -404,7 +404,7 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
             return (
               <div
                 key={row.id}
-                className={`rounded-xl border p-3 space-y-2 xl:space-y-0 xl:grid xl:grid-cols-[auto_minmax(0,2.2fr)_minmax(0,1fr)_auto] xl:gap-4 xl:items-start ${
+                className={`rounded-xl border p-3 space-y-2 xl:space-y-0 xl:grid xl:grid-cols-[auto_minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,17rem)] xl:gap-4 xl:items-center ${
                   selected[row.id] ? 'border-indigo-200 bg-indigo-50/40' : 'border-slate-200 bg-white'
                 }`}
               >
@@ -500,11 +500,19 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
                             {row.priceDelta > 0 ? '+' : ''}€{formatEUR(row.priceDelta)}
                           </p>
                         )}
+                        {row.grossAmount != null &&
+                          row.netAmount != null &&
+                          row.grossAmount > row.netAmount && (
+                            <p className="text-[10px] text-slate-500 tabular-nums inline-flex items-center justify-end gap-1">
+                              <TrendingDown size={11} className="shrink-0" />
+                              Fees €{formatEUR(row.grossAmount - row.netAmount)}
+                            </p>
+                          )}
                       </>
                     )}
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 pl-7 xl:pl-0 xl:col-span-1 xl:justify-end xl:self-center">
+                <div className="flex flex-nowrap items-center gap-2 pl-7 xl:pl-0 xl:col-span-1 xl:justify-end xl:self-center shrink-0">
                   <button
                     type="button"
                     onClick={() => setReviewRow(row)}
@@ -533,12 +541,6 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
                   >
                     Dismiss
                   </button>
-                  {row.netAmount != null && row.grossAmount != null && row.grossAmount > row.netAmount && (
-                    <span className="text-[10px] text-slate-500 inline-flex items-center gap-1">
-                      <TrendingDown size={11} />
-                      Fees €{formatEUR(row.grossAmount - row.netAmount)}
-                    </span>
-                  )}
                 </div>
               </div>
             );
