@@ -4,24 +4,26 @@
   "family": "generic",
   "layout": "hero-showcase",
   "variant": "premium",
+  "backgroundId": "warm-wood",
   "author": "DeInventory",
   "source": "builtin-pack",
   "theme": {
-    "bgFrom": "#09090b",
-    "bgTo": "#141418",
-    "accent": "#f4f4f5",
-    "accentSoft": "rgba(255, 255, 255, 0.07)",
-    "text": "#fafafa",
-    "textMuted": "#a1a1aa",
-    "surface": "rgba(255, 255, 255, 0.08)",
-    "surfaceBorder": "rgba(255, 255, 255, 0.14)"
+    "bgFrom": "#ffffff",
+    "bgTo": "#eef4fb",
+    "accent": "#2563eb",
+    "accentSoft": "rgba(37, 99, 235, 0.12)",
+    "text": "#0f172a",
+    "textMuted": "#64748b",
+    "surface": "rgba(15, 23, 42, 0.04)",
+    "surfaceBorder": "rgba(148, 163, 184, 0.35)"
   },
   "usps": [
-    "Geprüfte Qualität",
-    "Versand aus DE",
-    "Sorgfältig verpackt"
+    "3D-Druck aus Deutschland",
+    "ATX & Micro ATX Support",
+    "PLA+ Premium Material",
+    "Schneller Versand 2–3 Werktage"
   ],
   "showPrice": true,
   "showSpecs": true,
-  "maxSpecs": 6
+  "maxSpecs": 4
 }

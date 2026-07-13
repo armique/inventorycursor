@@ -55,6 +55,10 @@ import {
   deleteSavedProductCardTemplate,
   loadSavedProductCardTemplates,
 } from '../services/productCardTemplates';
+import {
+  PRODUCT_CARD_BACKGROUNDS,
+  type ProductCardBackgroundId,
+} from '../services/productCardBackgrounds';
 
 interface Props {
   items: InventoryItem[];
@@ -146,6 +150,7 @@ const ProductCardStudioPage: React.FC<Props> = ({ items, onUpdate, categoryField
         template,
         photoUrl: activePhotoResolved,
         categoryFields: categoryFieldsForItem,
+        backgroundId: template.backgroundId,
       });
       return canvas.toDataURL('image/jpeg', 0.82);
     },
@@ -228,6 +233,7 @@ const ProductCardStudioPage: React.FC<Props> = ({ items, onUpdate, categoryField
         template,
         photoUrl: activePhotoResolved,
         categoryFields: categoryFieldsForItem,
+        backgroundId: template.backgroundId,
       });
       const safe = selectedItem.name.replace(/[^a-zA-Z0-9äöüÄÖÜß\-]+/g, '-').slice(0, 40);
       downloadProductCardBlob(blob, `${safe}-card.jpg`);
@@ -245,6 +251,7 @@ const ProductCardStudioPage: React.FC<Props> = ({ items, onUpdate, categoryField
         template,
         photoUrl: activePhotoResolved,
         categoryFields: categoryFieldsForItem,
+        backgroundId: template.backgroundId,
       });
       const file = new File([blob], `card-${Date.now()}.jpg`, { type: 'image/jpeg' });
       const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -470,6 +477,37 @@ const ProductCardStudioPage: React.FC<Props> = ({ items, onUpdate, categoryField
                     ))}
                   </div>
                 </section>
+
+                {activeTemplate?.layout === 'hero-showcase' && (
+                  <section className="rounded-2xl border border-zinc-200/80 bg-white p-4 shadow-sm">
+                    <p className="text-[10px] font-black uppercase text-zinc-500 mb-2">Background</p>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {PRODUCT_CARD_BACKGROUNDS.map((bg) => (
+                        <button
+                          key={bg.id}
+                          type="button"
+                          onClick={() =>
+                            activeTemplate &&
+                            setActiveTemplate({ ...activeTemplate, backgroundId: bg.id as ProductCardBackgroundId })
+                          }
+                          className={`text-left px-2 py-2 rounded-xl border text-[10px] font-bold transition-all ${
+                            (activeTemplate?.backgroundId ?? 'warm-wood') === bg.id
+                              ? 'border-zinc-900 ring-2 ring-zinc-200'
+                              : 'border-zinc-200 hover:border-zinc-300'
+                          }`}
+                        >
+                          <span
+                            className="block h-6 rounded-md mb-1 border border-black/5"
+                            style={{
+                              background: `linear-gradient(135deg, ${bg.outerFrom}, ${bg.outerTo})`,
+                            }}
+                          />
+                          {bg.name}
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                )}
               </>
             )}
           </aside>
@@ -725,7 +763,13 @@ function ManualPreview({
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
-    void renderProductCardToCanvas({ item, template, photoUrl, categoryFields }).then((c) => {
+    void renderProductCardToCanvas({
+      item,
+      template,
+      photoUrl,
+      categoryFields,
+      backgroundId: template.backgroundId,
+    }).then((c) => {
       if (!cancelled) setUrl(c.toDataURL('image/jpeg', 0.85));
     });
     return () => { cancelled = true; };

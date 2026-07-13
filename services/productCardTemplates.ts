@@ -23,6 +23,8 @@ export interface ProductCardTemplate {
   theme: ProductCardTheme;
   usps: string[];
   layout: 'hero-left' | 'hero-center' | 'hero-showcase';
+  /** Canvas backdrop preset (hero-showcase). */
+  backgroundId?: import('./productCardBackgrounds').ProductCardBackgroundId;
   /** Premium canvas treatment — deeper shadows, glass surfaces, editorial typography. */
   variant?: 'standard' | 'premium';
   showPrice: boolean;
@@ -100,32 +102,34 @@ function builtinTemplate(
   };
 }
 
-const PREMIUM_SHOWCASE_THEME: ProductCardTheme = {
-  bgFrom: '#09090b',
-  bgTo: '#141418',
-  accent: '#f4f4f5',
-  accentSoft: 'rgba(255, 255, 255, 0.07)',
-  text: '#fafafa',
-  textMuted: '#a1a1aa',
-  surface: 'rgba(255, 255, 255, 0.08)',
-  surfaceBorder: 'rgba(255, 255, 255, 0.14)',
-};
+const LIGHT_TEXT_THEME = {
+  bgFrom: '#ffffff',
+  bgTo: '#eef4fb',
+  accent: '#2563eb',
+  accentSoft: 'rgba(37, 99, 235, 0.12)',
+  text: '#0f172a',
+  textMuted: '#64748b',
+  surface: 'rgba(15, 23, 42, 0.04)',
+  surfaceBorder: 'rgba(148, 163, 184, 0.35)',
+} satisfies ProductCardTheme;
 
 export const PREMIUM_NOIR_EDITORIAL_TEMPLATE: ProductCardTemplate = {
   id: 'premium-noir-editorial',
   name: 'Premium Showcase — Center Hero',
   family: 'generic',
-  theme: { ...PREMIUM_SHOWCASE_THEME },
+  theme: { ...LIGHT_TEXT_THEME },
   usps: [
-    'Geprüfte Qualität',
-    'Versand aus DE',
-    'Sorgfältig verpackt',
+    '3D-Druck aus Deutschland',
+    'ATX & Micro ATX Support',
+    'PLA+ Premium Material',
+    'Schneller Versand 2–3 Werktage',
   ],
   layout: 'hero-showcase',
   variant: 'premium',
+  backgroundId: 'warm-wood',
   showPrice: true,
   showSpecs: true,
-  maxSpecs: 6,
+  maxSpecs: 4,
   createdAt: 'builtin',
   isBuiltin: true,
 };

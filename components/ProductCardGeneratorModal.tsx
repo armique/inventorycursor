@@ -34,6 +34,10 @@ import {
 } from '../services/productCardRenderer';
 import { detectProductCardFamily } from '../utils/productCardContent';
 import { loadBuiltinTemplatePack } from '../utils/productCardTemplateImport';
+import {
+  PRODUCT_CARD_BACKGROUNDS,
+  type ProductCardBackgroundId,
+} from '../services/productCardBackgrounds';
 import ProductPhotoEnhancePanel from './ProductPhotoEnhancePanel';
 
 interface Props {
@@ -81,6 +85,7 @@ const ProductCardGeneratorModal: React.FC<Props> = ({
         template,
         photoUrl: activePhoto,
         categoryFields,
+        backgroundId: template.backgroundId,
       });
       if (seq !== renderSeq.current) return;
       setPreviewUrl(canvas.toDataURL('image/jpeg', 0.88));
@@ -154,7 +159,7 @@ const ProductCardGeneratorModal: React.FC<Props> = ({
 
   const exportBlob = async () => {
     if (!activePhoto) throw new Error('Select or upload a photo first');
-    return renderProductCardBlob({ item, template, photoUrl: activePhoto, categoryFields });
+    return renderProductCardBlob({ item, template, photoUrl: activePhoto, categoryFields, backgroundId: template.backgroundId });
   };
 
   const handleDownload = async () => {
@@ -276,6 +281,34 @@ const ProductCardGeneratorModal: React.FC<Props> = ({
                     </li>
                   ))}
                 </ul>
+              </div>
+            )}
+
+            {template.layout === 'hero-showcase' && (
+              <div className="space-y-2 pt-2 border-t border-slate-200">
+                <p className="text-[10px] font-black uppercase text-slate-500">Background</p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {PRODUCT_CARD_BACKGROUNDS.map((bg) => (
+                    <button
+                      key={bg.id}
+                      type="button"
+                      onClick={() => setTemplate({ ...template, backgroundId: bg.id as ProductCardBackgroundId })}
+                      className={`text-left px-2 py-2 rounded-xl border text-[10px] font-bold transition-all ${
+                        (template.backgroundId ?? 'warm-wood') === bg.id
+                          ? 'border-indigo-500 ring-2 ring-indigo-200 bg-white'
+                          : 'border-slate-200 bg-white hover:border-slate-300'
+                      }`}
+                    >
+                      <span
+                        className="block h-6 rounded-md mb-1 border border-black/5"
+                        style={{
+                          background: `linear-gradient(135deg, ${bg.outerFrom}, ${bg.outerTo})`,
+                        }}
+                      />
+                      {bg.name}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 

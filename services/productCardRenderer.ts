@@ -1,6 +1,11 @@
 import type { InventoryItem } from '../types';
 import type { ProductCardTemplate } from './productCardTemplates';
 import {
+  getProductCardBackground,
+  type ProductCardBackgroundId,
+  type ProductCardBackgroundPreset,
+} from './productCardBackgrounds';
+import {
   getProductCardBadge,
   getProductCardPrice,
   getProductCardSpecs,
@@ -16,6 +21,8 @@ export interface ProductCardRenderInput {
   template: ProductCardTemplate;
   photoUrl: string;
   categoryFields?: string[];
+  /** Overrides template.backgroundId for hero-showcase layouts. */
+  backgroundId?: ProductCardBackgroundId;
 }
 
 async function loadPhotoForCanvas(url: string): Promise<HTMLImageElement> {
@@ -119,160 +126,244 @@ function drawGradientBackground(ctx: CanvasRenderingContext2D, template: Product
   ctx.fillRect(0, 6, PRODUCT_CARD_WIDTH, 1);
 }
 
-function drawShowcaseBackground(ctx: CanvasRenderingContext2D, template: ProductCardTemplate) {
-  const { bgFrom, bgTo } = template.theme;
-  const base = ctx.createLinearGradient(0, 0, 0, PRODUCT_CARD_HEIGHT);
-  base.addColorStop(0, bgFrom);
-  base.addColorStop(1, bgTo);
+function drawWoodGrain(ctx: CanvasRenderingContext2D, w: number, h: number, from: string, to: string) {
+  const base = ctx.createLinearGradient(0, 0, w, h);
+  base.addColorStop(0, from);
+  base.addColorStop(1, to);
   ctx.fillStyle = base;
-  ctx.fillRect(0, 0, PRODUCT_CARD_WIDTH, PRODUCT_CARD_HEIGHT);
+  ctx.fillRect(0, 0, w, h);
 
-  const spotlight = ctx.createRadialGradient(
-    PRODUCT_CARD_WIDTH / 2,
-    PRODUCT_CARD_HEIGHT * 0.46,
-    40,
-    PRODUCT_CARD_WIDTH / 2,
-    PRODUCT_CARD_HEIGHT * 0.46,
-    520
-  );
-  spotlight.addColorStop(0, 'rgba(255, 255, 255, 0.09)');
-  spotlight.addColorStop(0.45, 'rgba(255, 255, 255, 0.03)');
-  spotlight.addColorStop(1, 'rgba(0, 0, 0, 0)');
-  ctx.fillStyle = spotlight;
-  ctx.fillRect(0, 0, PRODUCT_CARD_WIDTH, PRODUCT_CARD_HEIGHT);
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  for (let y = 0; y < h; y += 6) {
+    const wave = Math.sin(y * 0.018) * 18 + Math.sin(y * 0.042) * 8;
+    ctx.strokeStyle = y % 24 === 0 ? 'rgba(60, 40, 15, 0.35)' : 'rgba(90, 60, 25, 0.2)';
+    ctx.lineWidth = y % 24 === 0 ? 2 : 1;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    for (let x = 0; x <= w; x += 48) {
+      ctx.lineTo(x, y + wave * Math.sin(x * 0.004));
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
 
-  const floor = ctx.createRadialGradient(
-    PRODUCT_CARD_WIDTH / 2,
-    PRODUCT_CARD_HEIGHT * 0.72,
-    20,
-    PRODUCT_CARD_WIDTH / 2,
-    PRODUCT_CARD_HEIGHT * 0.72,
-    380
-  );
-  floor.addColorStop(0, 'rgba(255, 255, 255, 0.04)');
-  floor.addColorStop(1, 'rgba(0, 0, 0, 0)');
-  ctx.fillStyle = floor;
+  const vignette = ctx.createRadialGradient(w / 2, h / 2, h * 0.2, w / 2, h / 2, h * 0.85);
+  vignette.addColorStop(0, 'rgba(0,0,0,0)');
+  vignette.addColorStop(1, 'rgba(0,0,0,0.22)');
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, w, h);
+}
+
+function drawShowcaseOuterBackground(ctx: CanvasRenderingContext2D, bg: ProductCardBackgroundPreset) {
+  if (bg.outerStyle === 'wood') {
+    drawWoodGrain(ctx, PRODUCT_CARD_WIDTH, PRODUCT_CARD_HEIGHT, bg.outerFrom, bg.outerTo);
+    return;
+  }
+  const grad = ctx.createLinearGradient(0, 0, PRODUCT_CARD_WIDTH, PRODUCT_CARD_HEIGHT);
+  grad.addColorStop(0, bg.outerFrom);
+  grad.addColorStop(1, bg.outerTo);
+  ctx.fillStyle = grad;
   ctx.fillRect(0, 0, PRODUCT_CARD_WIDTH, PRODUCT_CARD_HEIGHT);
 }
 
-function drawShowcaseHeroPhoto(
+function drawShowcaseInnerCard(
   ctx: CanvasRenderingContext2D,
-  img: HTMLImageElement,
-  cx: number,
-  cy: number,
-  size: number,
-  template: ProductCardTemplate
+  bg: ProductCardBackgroundPreset,
+  isDark: boolean
 ) {
-  const x = cx - size / 2;
-  const y = cy - size / 2;
+  const margin = 36;
+  const x = margin;
+  const y = margin;
+  const w = PRODUCT_CARD_WIDTH - margin * 2;
+  const h = PRODUCT_CARD_HEIGHT - margin * 2;
+  const r = 28;
 
   ctx.save();
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
-  ctx.shadowBlur = 64;
-  ctx.shadowOffsetY = 24;
-  const glow = ctx.createRadialGradient(cx, cy + size * 0.15, size * 0.1, cx, cy, size * 0.62);
-  glow.addColorStop(0, 'rgba(255, 255, 255, 0.14)');
-  glow.addColorStop(1, 'rgba(255, 255, 255, 0)');
-  ctx.fillStyle = glow;
-  ctx.beginPath();
-  ctx.arc(cx, cy, size * 0.52, 0, Math.PI * 2);
+  ctx.shadowColor = isDark ? 'rgba(0,0,0,0.45)' : 'rgba(15, 23, 42, 0.14)';
+  ctx.shadowBlur = isDark ? 48 : 36;
+  ctx.shadowOffsetY = isDark ? 16 : 12;
+  drawRoundedRect(ctx, x, y, w, h, r);
+  const inner = ctx.createLinearGradient(x, y, x, y + h);
+  inner.addColorStop(0, bg.innerFrom);
+  inner.addColorStop(0.55, bg.innerFrom);
+  inner.addColorStop(1, bg.innerTo);
+  ctx.fillStyle = inner;
   ctx.fill();
   ctx.restore();
 
-  ctx.save();
-  drawRoundedRect(ctx, x, y, size, size, 24);
-  ctx.clip();
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
-  ctx.fillRect(x, y, size, size);
+  drawRoundedRect(ctx, x, y, w, h, r);
+  ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.85)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
 
-  const scale = Math.min(size / img.width, size / img.height);
-  const dw = img.width * scale;
-  const dh = img.height * scale;
-  const dx = x + (size - dw) / 2;
-  const dy = y + (size - dh) / 2;
-  ctx.drawImage(img, dx, dy, dw, dh);
+  return { x, y, w, h, r };
+}
+
+function drawFeatureIcon(
+  ctx: CanvasRenderingContext2D,
+  kind: 'check' | 'board' | 'layers' | 'truck',
+  cx: number,
+  cy: number,
+  size: number,
+  stroke: string
+) {
+  ctx.save();
+  ctx.strokeStyle = stroke;
+  ctx.fillStyle = stroke;
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  const s = size * 0.38;
+  if (kind === 'check') {
+    ctx.beginPath();
+    ctx.arc(cx, cy, s * 0.85, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx - s * 0.35, cy);
+    ctx.lineTo(cx - s * 0.05, cy + s * 0.32);
+    ctx.lineTo(cx + s * 0.42, cy - s * 0.28);
+    ctx.stroke();
+  } else if (kind === 'board') {
+    const bw = s * 1.4;
+    const bh = s * 1.1;
+    drawRoundedRect(ctx, cx - bw / 2, cy - bh / 2, bw, bh, 4);
+    ctx.stroke();
+    ctx.fillRect(cx - bw * 0.28, cy - bh * 0.22, bw * 0.22, bh * 0.18);
+    ctx.fillRect(cx + bw * 0.06, cy - bh * 0.22, bw * 0.22, bh * 0.18);
+    ctx.fillRect(cx - bw * 0.1, cy + bh * 0.08, bw * 0.55, bh * 0.12);
+  } else if (kind === 'layers') {
+    for (let i = 0; i < 3; i++) {
+      const oy = i * 5 - 5;
+      drawRoundedRect(ctx, cx - s, cy - s * 0.5 + oy, s * 2, s * 0.9, 3);
+      ctx.stroke();
+    }
+  } else {
+    const tw = s * 1.5;
+    const th = s * 0.9;
+    drawRoundedRect(ctx, cx - tw * 0.35, cy - th * 0.35, tw * 0.55, th * 0.7, 3);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx + tw * 0.28, cy + th * 0.15, s * 0.28, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx - tw * 0.12, cy + th * 0.15, s * 0.22, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.moveTo(cx - tw * 0.35, cy - th * 0.1);
+    ctx.lineTo(cx + tw * 0.2, cy - th * 0.1);
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
-function drawShowcaseSpecCallout(
+function featureIconKind(text: string, index: number): 'check' | 'board' | 'layers' | 'truck' {
+  const t = text.toLowerCase();
+  if (/versand|shipping|liefer|werktag|delivery|schnell/.test(t)) return 'truck';
+  if (/atx|micro|motherboard|mainboard|form/.test(t)) return 'board';
+  if (/pla|material|druck|print|3d|deutschland|germany/.test(t)) return index % 2 === 0 ? 'check' : 'layers';
+  return (['check', 'board', 'layers', 'truck'] as const)[index % 4];
+}
+
+function drawShowcaseFeatureCallout(
   ctx: CanvasRenderingContext2D,
-  spec: { label: string; value: string },
+  text: string,
   x: number,
   y: number,
   width: number,
   align: 'left' | 'right',
-  template: ProductCardTemplate,
-  anchorX?: number,
-  anchorY?: number
+  theme: ProductCardTemplate['theme'],
+  iconIndex: number,
+  anchorX: number,
+  anchorY: number,
+  isDark: boolean
 ) {
-  const padX = 18;
-  const padY = 16;
-  const h = 88;
+  const iconSize = 52;
+  const iconCx = align === 'left' ? x + iconSize / 2 + 4 : x + width - iconSize / 2 - 4;
+  const iconCy = y + iconSize / 2 + 8;
+  const textX = align === 'left' ? x + iconSize + 18 : x + width - iconSize - 18;
+  const textAlign = align;
 
   ctx.save();
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
-  ctx.shadowBlur = 24;
-  ctx.shadowOffsetY = 8;
-  drawRoundedRect(ctx, x, y, width, h, 18);
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.07)';
+  ctx.beginPath();
+  ctx.arc(iconCx, iconCy, iconSize / 2, 0, Math.PI * 2);
+  ctx.fillStyle = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255, 0.92)';
   ctx.fill();
-  ctx.shadowColor = 'transparent';
-  ctx.strokeStyle = template.theme.surfaceBorder;
-  ctx.lineWidth = 1;
+  ctx.strokeStyle = isDark ? theme.surfaceBorder : 'rgba(148, 163, 184, 0.45)';
+  ctx.lineWidth = 1.5;
   ctx.stroke();
+  drawFeatureIcon(ctx, featureIconKind(text, iconIndex), iconCx, iconCy, iconSize, theme.text);
   ctx.restore();
 
-  const textX = align === 'right' ? x + width - padX : x + padX;
-  ctx.textAlign = align === 'right' ? 'right' : 'left';
+  ctx.textAlign = textAlign;
   ctx.textBaseline = 'top';
-
-  ctx.font = '600 11px "Segoe UI", system-ui, sans-serif';
-  ctx.fillStyle = template.theme.textMuted;
-  const label = spec.label.length > 18 ? `${spec.label.slice(0, 16)}…` : spec.label;
-  ctx.fillText(label.toUpperCase(), textX, y + padY);
-
-  ctx.font = '800 28px "Segoe UI", system-ui, sans-serif';
-  ctx.fillStyle = template.theme.text;
-  const val = spec.value.length > 16 ? `${spec.value.slice(0, 14)}…` : spec.value;
-  ctx.fillText(val, textX, y + padY + 22);
-
-  if (anchorX != null && anchorY != null) {
-    const lineStartX = align === 'left' ? x + width + 6 : x - 6;
-    const lineStartY = y + h / 2;
-    ctx.beginPath();
-    ctx.moveTo(lineStartX, lineStartY);
-    ctx.lineTo(anchorX, anchorY);
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(anchorX, anchorY, 3, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    ctx.fill();
+  ctx.font = '800 15px "Segoe UI", system-ui, sans-serif';
+  ctx.fillStyle = theme.text;
+  const lines = wrapText(ctx, text.toUpperCase(), width - iconSize - 28, 3);
+  let ty = y + 10;
+  for (const line of lines) {
+    ctx.fillText(line, textX, ty);
+    ty += 20;
   }
+
+  const lineStartX = align === 'left' ? x + width + 4 : x - 4;
+  const lineStartY = iconCy;
+  ctx.beginPath();
+  ctx.moveTo(lineStartX, lineStartY);
+  const midX = (lineStartX + anchorX) / 2;
+  ctx.bezierCurveTo(midX, lineStartY, midX, anchorY, anchorX, anchorY);
+  ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.18)' : 'rgba(100, 116, 139, 0.35)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(anchorX, anchorY, 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = isDark ? 'rgba(255,255,255,0.45)' : 'rgba(100, 116, 139, 0.55)';
+  ctx.fill();
 
   ctx.textAlign = 'left';
 }
 
-function drawShowcaseUspRow(
+function drawShowcaseHeroPhotoLight(
   ctx: CanvasRenderingContext2D,
-  usps: string[],
-  centerY: number,
-  template: ProductCardTemplate
+  img: HTMLImageElement,
+  cx: number,
+  cy: number,
+  maxSize: number,
+  isDark: boolean
 ) {
-  const items = usps.filter(Boolean).slice(0, 4);
-  if (!items.length) return;
+  const scale = Math.min(maxSize / img.width, maxSize / img.height);
+  const dw = img.width * scale;
+  const dh = img.height * scale;
+  const dx = cx - dw / 2;
+  const dy = cy - dh / 2;
 
-  ctx.font = '600 15px "Segoe UI", system-ui, sans-serif';
-  const sep = '  ·  ';
-  const line = items.join(sep);
-  const tw = ctx.measureText(line).width;
-  const x = (PRODUCT_CARD_WIDTH - tw) / 2;
+  ctx.save();
+  ctx.shadowColor = isDark ? 'rgba(0, 0, 0, 0.55)' : 'rgba(15, 23, 42, 0.22)';
+  ctx.shadowBlur = isDark ? 56 : 42;
+  ctx.shadowOffsetY = isDark ? 28 : 18;
+  const floor = ctx.createRadialGradient(cx, cy + dh * 0.42, 4, cx, cy + dh * 0.42, dw * 0.55);
+  floor.addColorStop(0, isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15, 23, 42, 0.12)');
+  floor.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = floor;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + dh * 0.44, dw * 0.48, dh * 0.08, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 
-  ctx.fillStyle = template.theme.textMuted;
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = 'left';
-  ctx.fillText(line, x, centerY);
+  ctx.drawImage(img, dx, dy, dw, dh);
+}
+
+function buildShowcaseCallouts(
+  template: ProductCardTemplate,
+  item: InventoryItem,
+  categoryFields?: string[]
+): string[] {
+  const usps = template.usps.filter(Boolean).slice(0, 4);
+  if (usps.length >= 4 || !template.showSpecs) return usps;
+
+  const specs = getProductCardSpecs(item, categoryFields, template.maxSpecs);
+  const specLines = specs.map((s) => `${s.label}: ${s.value}`);
+  return [...usps, ...specLines].slice(0, 4);
 }
 
 async function renderPremiumShowcaseCard(
@@ -283,103 +374,125 @@ async function renderPremiumShowcaseCard(
     photo: HTMLImageElement;
     categoryFields?: string[];
     family: ReturnType<typeof detectProductCardFamily>;
+    backgroundId?: ProductCardBackgroundId;
   }
 ) {
-  const { item, template, photo, categoryFields, family } = input;
-  const pad = 48;
+  const { item, template, photo, categoryFields, family, backgroundId } = input;
+  const bg = getProductCardBackground(backgroundId ?? template.backgroundId);
+  const theme = { ...template.theme, ...bg.theme };
+  const isDark = bg.id === 'midnight';
+
+  drawShowcaseOuterBackground(ctx, bg);
+  const card = drawShowcaseInnerCard(ctx, bg, isDark);
+  const pad = card.x + 44;
+  const innerW = card.w - 88;
   const centerX = PRODUCT_CARD_WIDTH / 2;
 
-  drawShowcaseBackground(ctx, template);
+  let headerY = card.y + 52;
 
-  let headerY = 72;
-  const badge = getProductCardBadge(item, family);
-  if (badge) {
-    ctx.font = '700 12px "Segoe UI", system-ui, sans-serif';
-    const bw = ctx.measureText(badge.toUpperCase()).width + 28;
-    const bx = centerX - bw / 2;
-    drawRoundedRect(ctx, bx, headerY - 4, bw, 28, 14);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-    ctx.fill();
-    ctx.strokeStyle = template.theme.surfaceBorder;
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.fillStyle = template.theme.textMuted;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(badge.toUpperCase(), centerX, headerY + 10);
-    ctx.textAlign = 'left';
-    headerY += 40;
-  }
+  ctx.save();
+  ctx.beginPath();
+  drawRoundedRect(ctx, card.x, card.y, card.w, card.h, card.r);
+  ctx.clip();
 
-  ctx.textAlign = 'center';
+  ctx.fillStyle = theme.accent;
+  ctx.fillRect(pad - 20, headerY + 4, 5, 44);
+
+  ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  ctx.font = '800 38px "Segoe UI", system-ui, sans-serif';
-  ctx.fillStyle = template.theme.text;
-  const titleMax = PRODUCT_CARD_WIDTH - pad * 2;
-  const titleLines = wrapText(ctx, item.name, titleMax, 2);
+  ctx.font = '800 30px "Segoe UI", system-ui, sans-serif';
+  ctx.fillStyle = theme.text;
+  const titleLines = wrapText(ctx, item.name.toUpperCase(), innerW - 24, 2);
   for (const line of titleLines) {
-    ctx.fillText(line, centerX, headerY);
-    headerY += 46;
+    ctx.fillText(line, pad, headerY);
+    headerY += 36;
   }
 
-  ctx.font = '500 18px "Segoe UI", system-ui, sans-serif';
-  ctx.fillStyle = template.theme.textMuted;
-  ctx.fillText(getProductCardSubtitle(item), centerX, headerY + 6);
-  headerY += 36;
-
-  const heroCy = 560;
-  const heroSize = 440;
-  drawShowcaseHeroPhoto(ctx, photo, centerX, heroCy, heroSize, template);
-
-  if (template.showSpecs) {
-    const specs = getProductCardSpecs(item, categoryFields, template.maxSpecs);
-    const calloutW = 228;
-    const leftX = pad;
-    const rightX = PRODUCT_CARD_WIDTH - pad - calloutW;
-    const leftYs = [heroCy - 150, heroCy - 10, heroCy + 130];
-    const rightYs = [heroCy - 90, heroCy + 50, heroCy + 190];
-
-    specs.forEach((spec, i) => {
-      const isLeft = i % 2 === 0;
-      const sideIndex = Math.floor(i / 2);
-      if (isLeft) {
-        const y = leftYs[sideIndex];
-        if (y == null) return;
-        const anchorX = centerX - heroSize / 2 + 12;
-        drawShowcaseSpecCallout(ctx, spec, leftX, y - 44, calloutW, 'left', template, anchorX, y);
-      } else {
-        const y = rightYs[sideIndex];
-        if (y == null) return;
-        const anchorX = centerX + heroSize / 2 - 12;
-        drawShowcaseSpecCallout(ctx, spec, rightX, y - 44, calloutW, 'right', template, anchorX, y);
-      }
-    });
+  const badge = getProductCardBadge(item, family);
+  const subtitle = template.tagline?.trim() || getProductCardSubtitle(item);
+  if (badge || subtitle) {
+    headerY += 6;
+    ctx.font = '600 14px "Segoe UI", system-ui, sans-serif';
+    ctx.fillStyle = theme.textMuted;
+    const sub = badge ? `${badge} · ${subtitle}` : subtitle;
+    ctx.fillText(sub, pad, headerY);
+    headerY += 28;
+  } else {
+    headerY += 12;
   }
 
-  let footerY = heroCy + heroSize / 2 + 56;
+  const heroCy = card.y + card.h * 0.48;
+  const heroMax = Math.min(card.w * 0.52, 500);
+  drawShowcaseHeroPhotoLight(ctx, photo, centerX, heroCy, heroMax, isDark);
+
+  const callouts = buildShowcaseCallouts(template, item, categoryFields);
+  const calloutW = 248;
+  const leftX = pad - 8;
+  const rightX = card.x + card.w - pad - calloutW + 8;
+  const leftYs = [heroCy - 168, heroCy + 72];
+  const rightYs = [heroCy - 48, heroCy + 192];
+  const heroHalf = heroMax * 0.38;
+
+  callouts.forEach((text, i) => {
+    const isLeft = i % 2 === 0;
+    const sideIndex = Math.floor(i / 2);
+    if (isLeft) {
+      const y = leftYs[sideIndex];
+      if (y == null) return;
+      drawShowcaseFeatureCallout(
+        ctx,
+        text,
+        leftX,
+        y,
+        calloutW,
+        'left',
+        theme,
+        i,
+        centerX - heroHalf,
+        y + 36,
+        isDark
+      );
+    } else {
+      const y = rightYs[sideIndex];
+      if (y == null) return;
+      drawShowcaseFeatureCallout(
+        ctx,
+        text,
+        rightX,
+        y,
+        calloutW,
+        'right',
+        theme,
+        i,
+        centerX + heroHalf,
+        y + 36,
+        isDark
+      );
+    }
+  });
+
   if (template.showPrice) {
     const price = getProductCardPrice(item);
+    const priceY = card.y + card.h - 118;
     ctx.textAlign = 'center';
-    ctx.font = '600 14px "Segoe UI", system-ui, sans-serif';
-    ctx.fillStyle = template.theme.textMuted;
-    ctx.fillText(price.label.toUpperCase(), centerX, footerY);
-    ctx.font = '800 56px "Segoe UI", system-ui, sans-serif';
-    ctx.fillStyle = template.theme.text;
-    ctx.fillText(price.value, centerX, footerY + 22);
-    footerY += 96;
+    ctx.font = '600 13px "Segoe UI", system-ui, sans-serif';
+    ctx.fillStyle = theme.textMuted;
+    ctx.fillText(price.label.toUpperCase(), centerX, priceY);
+    ctx.font = '800 48px "Segoe UI", system-ui, sans-serif';
+    ctx.fillStyle = theme.text;
+    ctx.fillText(price.value, centerX, priceY + 18);
   }
-
-  drawShowcaseUspRow(ctx, template.usps, footerY + 24, template);
 
   ctx.textAlign = 'center';
   ctx.textBaseline = 'bottom';
-  ctx.font = '500 14px "Segoe UI", system-ui, sans-serif';
-  ctx.fillStyle = 'rgba(161, 161, 170, 0.65)';
+  ctx.font = '500 12px "Segoe UI", system-ui, sans-serif';
+  ctx.fillStyle = isDark ? 'rgba(161, 161, 170, 0.55)' : 'rgba(100, 116, 139, 0.65)';
   const footer = template.aiMeta
     ? `${template.aiMeta.provider} · ${new Date(template.aiMeta.generatedAt).toLocaleDateString('de-DE')}`
     : 'DeInventory Pro';
-  ctx.fillText(footer, centerX, PRODUCT_CARD_HEIGHT - 40);
+  ctx.fillText(footer, centerX, card.y + card.h - 22);
   ctx.textAlign = 'left';
+  ctx.restore();
 }
 
 function drawPhoto(
@@ -499,7 +612,7 @@ function drawSpecGrid(
 }
 
 export async function renderProductCardToCanvas(input: ProductCardRenderInput): Promise<HTMLCanvasElement> {
-  const { item, template, photoUrl, categoryFields } = input;
+  const { item, template, photoUrl, categoryFields, backgroundId } = input;
   const family = detectProductCardFamily(item);
   const canvas = document.createElement('canvas');
   canvas.width = PRODUCT_CARD_WIDTH;
@@ -510,7 +623,7 @@ export async function renderProductCardToCanvas(input: ProductCardRenderInput): 
   const photo = await loadPhotoForCanvas(photoUrl);
 
   if (template.layout === 'hero-showcase') {
-    await renderPremiumShowcaseCard(ctx, { item, template, photo, categoryFields, family });
+    await renderPremiumShowcaseCard(ctx, { item, template, photo, categoryFields, family, backgroundId });
     return canvas;
   }
 

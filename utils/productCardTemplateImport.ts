@@ -1,5 +1,6 @@
 import type { ProductCardFamily } from './productCardContent';
 import type { ProductCardTemplate, ProductCardTheme } from '../services/productCardTemplates';
+import type { ProductCardBackgroundId } from '../services/productCardBackgrounds';
 
 export const TEMPLATE_JSON_SCHEMA_VERSION = 1;
 
@@ -9,6 +10,7 @@ export interface ProductCardTemplateExport {
   family: ProductCardFamily;
   layout: 'hero-left' | 'hero-center' | 'hero-showcase';
   variant?: 'standard' | 'premium';
+  backgroundId?: ProductCardBackgroundId;
   theme: ProductCardTheme;
   usps: string[];
   tagline?: string;
@@ -50,6 +52,7 @@ export function parseProductCardTemplateJson(raw: unknown): ProductCardTemplate 
           ? 'hero-center'
           : 'hero-left',
     variant: obj.variant === 'premium' ? 'premium' : 'standard',
+    backgroundId: obj.backgroundId,
     theme: {
       bgFrom: obj.theme.bgFrom,
       bgTo: obj.theme.bgTo,
@@ -85,6 +88,7 @@ export function exportProductCardTemplateJson(template: ProductCardTemplate): st
     family: template.family,
     layout: template.layout,
     variant: template.variant,
+    backgroundId: template.backgroundId,
     theme: template.theme,
     usps: template.usps,
     tagline: template.tagline,
