@@ -55,8 +55,9 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   React.useEffect(() => {
     void completeGoogleRedirectSignIn().catch(() => {});
   }, []);
-  /** Inventory/trash use internal scroll + docked bulk bar; other pages scroll normally. */
-  const isDockedPanelPage = /^\/panel\/(inventory|trash)(\/|$)/.test(location.pathname);
+  /** Inventory/trash use internal scroll + docked bulk bar; eBay tools use full-width workspace layout. */
+  const isDockedPanelPage =
+    /^\/panel\/(inventory|trash|ebay-store-pull)(\/|$)/.test(location.pathname);
 
   const requireAuth = isCloudEnabled && authReady && !authUser;
 
@@ -134,7 +135,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     { to: '/panel/builder', icon: <Briefcase size={20} />, label: 'PC Builder' },
     { to: '/panel/pricing', icon: <Tag size={20} />, label: 'Price check' },
     { to: '/panel/deal-hunter', icon: <Radar size={20} />, label: 'Deal hunter' },
-    { to: '/panel/ebay-store-pull', icon: <PackageSearch size={20} />, label: 'eBay Store Pull' },
+    { to: '/panel/ebay-store-pull', icon: <PackageSearch size={20} />, label: 'eBay Tools' },
     { to: '/panel/health-check', icon: <Activity size={20} />, label: 'Health check' },
     { to: '/panel/invoices', icon: <Receipt size={20} />, label: 'Invoice Manager' },
     { to: '/panel/action-history', icon: <History size={20} />, label: 'Action history' },

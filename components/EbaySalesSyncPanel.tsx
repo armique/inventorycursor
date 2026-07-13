@@ -216,14 +216,14 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
   const tokenReady = hasEbayToken();
 
   return (
-    <div className="rounded-2xl border-2 border-indigo-200 bg-gradient-to-b from-indigo-50/80 to-white p-5 space-y-4 shadow-sm">
-      <div className="flex items-start gap-3">
+    <div className="rounded-2xl border-2 border-indigo-200 bg-gradient-to-b from-indigo-50/80 to-white p-4 xl:p-5 flex flex-col min-h-[min(720px,calc(100vh-10rem))] gap-4 shadow-sm">
+      <div className="shrink-0 flex flex-wrap items-start gap-3">
         <div className="p-2.5 rounded-xl bg-indigo-600 text-white shrink-0">
           <ShoppingBag size={18} />
         </div>
         <div className="flex-1 min-w-0">
           <h3 className="text-sm font-black text-slate-900">eBay sales sync</h3>
-          <p className="text-xs text-slate-600 mt-1 max-w-2xl">
+          <p className="text-xs text-slate-600 mt-1">
             Matches your inventory against cached eBay orders. Catches items you{' '}
             <span className="font-bold">forgot to mark sold</span>, links missing order IDs on past sales, and
             fixes sell prices to the <span className="font-bold">net payout</span> (after fees) when Payments CSV
@@ -234,7 +234,7 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
       </div>
 
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+        <div className="shrink-0 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
           {[
             { label: 'Cached orders', value: stats.cachedOrders },
             { label: 'In stock', value: stats.inStockItems },
@@ -256,7 +256,7 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="shrink-0 flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={() => void runSync(false)}
@@ -352,28 +352,29 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
       )}
 
       {visible.length > 0 && (
-        <div className="space-y-2 max-h-[min(560px,58vh)] overflow-y-auto pr-1">
-          <p className="text-[11px] text-slate-500 px-1">
+        <div className="flex flex-col flex-1 min-h-0 gap-2">
+          <p className="shrink-0 text-[11px] text-slate-500 px-1">
             Click an item name, order ID, or <span className="font-bold text-indigo-700">Review match</span> to compare inventory vs eBay order before applying.
           </p>
+          <div className="flex-1 min-h-[280px] overflow-y-auto pr-1 space-y-2">
           {visible.map((row) => {
             const { item, match, kind } = row;
             const { order, lineItem, matchKind } = match;
             return (
               <div
                 key={row.id}
-                className={`rounded-xl border p-3 space-y-2 ${
+                className={`rounded-xl border p-3 space-y-2 xl:space-y-0 xl:grid xl:grid-cols-[auto_minmax(0,2.2fr)_minmax(0,1fr)_auto] xl:gap-4 xl:items-start ${
                   selected[row.id] ? 'border-indigo-200 bg-indigo-50/40' : 'border-slate-200 bg-white'
                 }`}
               >
-                <div className="flex items-start gap-3">
+                <div className="flex items-start gap-3 xl:contents">
                   <input
                     type="checkbox"
                     checked={Boolean(selected[row.id])}
                     onChange={(e) => setSelected((prev) => ({ ...prev, [row.id]: e.target.checked }))}
-                    className="mt-1 shrink-0"
+                    className="mt-1 shrink-0 xl:mt-2"
                   />
-                  <div className="flex-1 min-w-0 space-y-1">
+                  <div className="flex-1 min-w-0 space-y-1 xl:col-span-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${kindBadgeClass(kind)}`}>
                         {kindLabel(kind, row)}
@@ -403,7 +404,7 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
                     >
                       {item.name}
                     </button>
-                    <p className="text-[11px] text-slate-500 line-clamp-2">{lineItem.title}</p>
+                    <p className="text-[11px] text-slate-500 line-clamp-2 xl:line-clamp-3">{lineItem.title}</p>
                     <p className="text-[11px] text-slate-500">
                       Order{' '}
                       <button
@@ -417,7 +418,7 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
                       {item.sellDate ? ` · sold ${item.sellDate}` : ''}
                     </p>
                   </div>
-                  <div className="text-right shrink-0 space-y-0.5">
+                  <div className="text-right shrink-0 space-y-0.5 xl:col-span-1 xl:self-center">
                     {isRestockRow(row) ? (
                       <>
                         <p className="text-[9px] font-black uppercase text-slate-400">Buy price (EK)</p>
@@ -462,7 +463,7 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
                     )}
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 pl-7">
+                <div className="flex flex-wrap items-center gap-2 pl-7 xl:pl-0 xl:col-span-1 xl:justify-end xl:self-center">
                   <button
                     type="button"
                     onClick={() => setReviewRow(row)}
@@ -501,6 +502,7 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
               </div>
             );
           })}
+          </div>
         </div>
       )}
 

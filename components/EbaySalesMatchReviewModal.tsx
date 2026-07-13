@@ -193,7 +193,7 @@ const EbaySalesMatchReviewModal: React.FC<Props> = ({
       aria-labelledby="ebay-match-review-title"
     >
       <div
-        className="bg-white w-full sm:max-w-4xl max-h-[94vh] sm:rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200"
+        className="bg-white w-full h-[100dvh] sm:h-auto sm:max-h-[96vh] sm:max-w-[min(96vw,1400px)] sm:rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -278,7 +278,7 @@ const EbaySalesMatchReviewModal: React.FC<Props> = ({
             </div>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             {/* Inventory column */}
             <section className="rounded-xl border border-slate-200 overflow-hidden">
               <div className="px-3 py-2 bg-slate-50 border-b border-slate-100 flex items-center gap-2">

@@ -217,7 +217,7 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
   };
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-4 min-h-[calc(100vh-11rem)]">
       <EbaySalesSyncPanel
         items={items}
         taxMode={taxMode}
@@ -225,7 +225,7 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
         onCacheUpdated={refreshStats}
       />
 
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="shrink-0 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <button
           type="button"
           onClick={() => setShowCacheSetup((v) => !v)}

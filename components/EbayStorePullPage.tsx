@@ -333,16 +333,16 @@ const EbayStorePullPage: React.FC<Props> = ({
   };
 
   return (
-    <div className="max-w-[1200px] mx-auto space-y-6 animate-in fade-in pb-8">
-      <header className="flex flex-wrap items-start justify-between gap-4">
+    <div className="flex flex-col flex-1 min-h-0 w-full animate-in fade-in">
+      <header className="shrink-0 flex flex-wrap items-start justify-between gap-4 px-1">
         <div className="flex items-start gap-3 min-w-0">
           <div className="p-3 rounded-2xl bg-blue-100 text-blue-700 shrink-0">
             <PackageSearch size={26} />
           </div>
           <div className="min-w-0">
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight">eBay Store Pull</h1>
-            <p className="text-sm text-slate-500 mt-1 max-w-2xl">
-              Sync or import from{' '}
+            <h1 className="text-2xl font-black text-slate-900 tracking-tight">eBay Tools</h1>
+            <p className="text-sm text-slate-500 mt-1">
+              Sync, import, and reconcile orders from{' '}
               <span className="font-bold text-slate-700">{getEbayUsername()}</span> — review every change
               before applying.
             </p>
@@ -361,23 +361,26 @@ const EbayStorePullPage: React.FC<Props> = ({
         )}
       </header>
 
-      <div className="flex flex-wrap gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200/80 w-fit">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            title={t.hint}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all ${
-              tab === t.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            {t.icon}
-            {t.label}
-          </button>
-        ))}
+      <div className="shrink-0 w-full overflow-x-auto mt-4">
+        <div className="flex gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200/80 w-full min-w-max">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              title={t.hint}
+              className={`flex flex-1 items-center justify-center gap-1.5 px-3 xl:px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all whitespace-nowrap min-w-[7.5rem] ${
+                tab === t.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              {t.icon}
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
+      <div className="flex-1 min-h-0 overflow-y-auto mt-4 pb-2">
       {tab === 'sync' && progress && (
         <EbayToolProgressBar {...progress} tone="blue" />
       )}
@@ -732,6 +735,7 @@ const EbayStorePullPage: React.FC<Props> = ({
       )}
         </>
       )}
+      </div>
     </div>
   );
 };

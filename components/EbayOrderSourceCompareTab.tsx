@@ -226,7 +226,7 @@ const EbayOrderSourceCompareTab: React.FC = () => {
           <h2 className="text-sm font-black text-slate-900">API vs CSV compare (isolated)</h2>
           <span className="text-[9px] font-black uppercase text-violet-700 bg-violet-100 px-2 py-0.5 rounded-full">Beta</span>
         </div>
-        <p className="text-xs text-slate-600 max-w-3xl leading-relaxed">
+        <p className="text-xs text-slate-600 leading-relaxed">
           Separate debug tool — does <strong>not</strong> change Sales sync or inventory. Load orders via API and CSV into
           two isolated snapshots, then compare in the table below. Rows highlighted in <strong className="text-blue-700">blue</strong> are
           in API but missing from your CSV export.
@@ -376,7 +376,7 @@ const EbayOrderSourceCompareTab: React.FC = () => {
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-            <div className="overflow-x-auto max-h-[min(65vh,560px)] overflow-y-auto">
+            <div className="overflow-x-auto max-h-[min(72vh,calc(100vh-14rem))] overflow-y-auto">
               <table className="w-full text-left text-xs min-w-[1020px]">
                 <thead className="sticky top-0 z-10 bg-slate-100 border-b border-slate-200">
                   <tr className="text-[10px] font-black uppercase text-slate-500 tracking-wide">
@@ -415,13 +415,13 @@ const EbayOrderSourceCompareTab: React.FC = () => {
                         <td className="px-3 py-2 text-slate-600 whitespace-nowrap">
                           {row.dateApi || '—'} / {row.dateCsv || '—'}
                         </td>
-                        <td className="px-3 py-2 text-slate-700 max-w-[8rem] truncate" title={row.buyerApi}>{row.buyerApi}</td>
-                        <td className="px-3 py-2 text-slate-700 max-w-[8rem] truncate" title={row.buyerCsv}>{row.buyerCsv}</td>
+                        <td className="px-3 py-2 text-slate-700 max-w-[12rem] truncate" title={row.buyerApi}>{row.buyerApi}</td>
+                        <td className="px-3 py-2 text-slate-700 max-w-[12rem] truncate" title={row.buyerCsv}>{row.buyerCsv}</td>
                         <td className="px-3 py-2 font-semibold whitespace-nowrap">{row.grossApi != null ? `€${formatEUR(row.grossApi)}` : '—'}</td>
                         <td className="px-3 py-2 font-semibold whitespace-nowrap">{row.grossCsv != null ? `€${formatEUR(row.grossCsv)}` : '—'}</td>
                         <td className="px-3 py-2 font-semibold whitespace-nowrap">{row.netCsv != null ? `€${formatEUR(row.netCsv)}` : '—'}</td>
-                        <td className="px-3 py-2 text-slate-600 max-w-[10rem] truncate" title={row.itemsApi}>{row.itemsApi}</td>
-                        <td className="px-3 py-2 text-[10px] text-slate-600 max-w-[12rem]">
+                        <td className="px-3 py-2 text-slate-600 max-w-[16rem] truncate" title={row.itemsApi}>{row.itemsApi}</td>
+                        <td className="px-3 py-2 text-[10px] text-slate-600 max-w-[18rem]">
                           {[...row.flags, ...row.diffs].slice(0, 2).join(' · ') || '—'}
                           {row.paymentApi && row.status === 'api_only' ? ` · ${row.paymentApi}` : ''}
                         </td>
