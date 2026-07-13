@@ -2215,32 +2215,70 @@ const InventoryList: React.FC<Props> = ({
                          <span className="text-[9px] text-slate-500 font-medium">({childItems.length} items)</span>
                       )}
                    </div>
-                   {item.status === ItemStatus.SOLD && !item.customer?.name && !item.ebayUsername && !item.ebayOrderId && (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToEditBuyer(item); }}
-                        className="text-[9px] text-indigo-600 font-bold mt-1.5 flex items-center gap-1 hover:underline"
-                      >
-                        <User size={10} /> Add buyer data
-                      </button>
-                   )}
-                   {(isRealizedDisposal(item) && (item.customer?.name || item.giftRecipient || item.ebayUsername || item.ebayOrderId)) && (
+                   {item.status === ItemStatus.SOLD && (() => {
+                      const hasBuyerInfo = Boolean(item.customer?.name || item.ebayUsername || item.ebayOrderId);
+                      const openBuyerEditor = (e: React.MouseEvent) => {
+                        e.stopPropagation();
+                        addRecentItemId(item.id);
+                        setItemToEditBuyer(item);
+                      };
+                      return (
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={openBuyerEditor}
+                            className={`text-[9px] font-bold flex items-center gap-1 rounded-lg border transition-colors ${
+                              hasBuyerInfo
+                                ? 'text-slate-600 bg-slate-50 px-2 py-1 border-slate-100 hover:bg-slate-100 hover:border-slate-200'
+                                : 'text-indigo-800 bg-indigo-50 px-2 py-1 border-indigo-200 hover:bg-indigo-100'
+                            }`}
+                            title="Open buyer & eBay order editor — paste order ID, upload screenshot for AI parse, or type manually"
+                          >
+                            {hasBuyerInfo ? (
+                              <>
+                                <Info size={10} className="text-slate-400 shrink-0" />
+                                <span className="truncate max-w-[14rem]">
+                                  {item.customer?.name || 'Buyer'}
+                                  {item.ebayUsername ? ` · eBay: ${item.ebayUsername}` : ''}
+                                  {item.ebayOrderId ? ` · #${item.ebayOrderId}` : ''}
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <User size={10} className="shrink-0" />
+                                Add eBay order & buyer
+                              </>
+                            )}
+                          </button>
+                          {!item.ebayOrderId && (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); openOrderLookupModal(item); }}
+                              className="text-[9px] font-bold text-indigo-600 flex items-center gap-1 px-2 py-1 rounded-lg border border-indigo-100 bg-white hover:bg-indigo-50"
+                              title="Match this sale to a cached eBay order (API backfill or CSV import)"
+                            >
+                              <Receipt size={10} className="shrink-0" />
+                              Match order
+                            </button>
+                          )}
+                        </div>
+                      );
+                   })()}
+                   {item.status !== ItemStatus.SOLD && isRealizedDisposal(item) && (item.customer?.name || item.giftRecipient || item.ebayUsername || item.ebayOrderId) && (
                       <p
-                        className={`text-[9px] text-slate-600 font-medium mt-1.5 flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100 ${item.status === ItemStatus.SOLD ? 'cursor-pointer hover:bg-slate-100 hover:border-slate-200' : ''}`}
+                        className="text-[9px] text-slate-600 font-medium mt-1.5 flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100"
                         title={[
                           item.customer?.name ? `Buyer: ${item.customer.name}` : null,
                           item.customer?.address ? `Address: ${item.customer.address}` : null,
                           item.ebayUsername ? `eBay: ${item.ebayUsername}` : null,
                           item.ebayOrderId ? `Order ID: ${item.ebayOrderId}` : null,
-                          item.status === ItemStatus.SOLD ? 'Click to edit buyer data' : null,
                         ]
                           .filter(Boolean)
                           .join(' • ')}
-                        onClick={item.status === ItemStatus.SOLD ? (e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToEditBuyer(item); } : undefined}
                       >
                         <Info size={10} className="text-slate-400" />
                         <span className="truncate">
-                          {item.customer?.name || 'Buyer'}
+                          {item.customer?.name || item.giftRecipient || 'Buyer'}
                           {item.ebayUsername ? ` · eBay: ${item.ebayUsername}` : ''}
                           {item.ebayOrderId ? ` · #${item.ebayOrderId}` : ''}
                         </span>
@@ -2811,7 +2849,10 @@ const InventoryList: React.FC<Props> = ({
                 <button onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setInvoiceViewItem(item); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md shrink-0" title="Generate Invoice"><FileText size={14}/></button>
               )}
               {item.status === ItemStatus.SOLD && (
-                <button onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToEditBuyer(item); }} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-md shrink-0" title="Add / edit buyer data (eBay / Kleinanzeigen)"><User size={14}/></button>
+                <button onClick={(e) => { e.stopPropagation(); openOrderLookupModal(item); }} className={`p-1.5 rounded-md shrink-0 ${item.ebayOrderId ? 'text-indigo-700 bg-indigo-50 hover:bg-indigo-100' : 'text-slate-500 hover:bg-indigo-50 hover:text-indigo-700'}`} title={item.ebayOrderId ? `eBay order ${item.ebayOrderId} — search cached orders` : 'Match cached eBay order to this sale'}><Receipt size={14}/></button>
+              )}
+              {item.status === ItemStatus.SOLD && (
+                <button onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToEditBuyer(item); }} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-md shrink-0" title="Buyer & eBay order — order ID, screenshot parse, or manual entry"><User size={14}/></button>
               )}
               {(item.status === ItemStatus.SOLD || item.status === ItemStatus.GIFTED) && (
                 <button onClick={(e) => { e.stopPropagation(); setItemToReturn(item); }} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-md shrink-0" title={item.status === ItemStatus.GIFTED ? 'Undo gift' : 'Mark Unsold / Return'}><RotateCcw size={14}/></button>
@@ -4264,13 +4305,30 @@ const InventoryList: React.FC<Props> = ({
                         <p className="text-xs text-slate-400 max-w-sm mx-auto">
                            Run an API backfill or import a Seller Hub CSV in <span className="font-bold text-slate-600">eBay Store Pull → Sales sync</span>, then try again.
                         </p>
-                        <button
-                           type="button"
-                           onClick={() => { closeOrderLookupModal(); navigate('/panel/ebay-store-pull?tab=orders'); }}
-                           className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700"
-                        >
-                           Open order history tool
-                        </button>
+                        <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
+                           <button
+                              type="button"
+                              onClick={() => { closeOrderLookupModal(); navigate('/panel/ebay-store-pull?tab=orders'); }}
+                              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700"
+                           >
+                              Open order history tool
+                           </button>
+                           <button
+                              type="button"
+                              onClick={() => {
+                                 const target = orderLookupItem;
+                                 closeOrderLookupModal();
+                                 if (target) {
+                                    addRecentItemId(target.id);
+                                    setItemToEditBuyer(target);
+                                 }
+                              }}
+                              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-800 text-[10px] font-black uppercase tracking-widest hover:bg-indigo-100"
+                           >
+                              <User size={12} />
+                              Enter manually
+                           </button>
+                        </div>
                      </div>
                   ) : (
                      orderLookupMatches.slice(0, 8).map((match) => {

@@ -15,7 +15,6 @@ import EbaySyncBanner from './EbaySyncBanner';
 import EbaySoldReminderWidget from './EbaySoldReminderWidget';
 import OnboardingWizard, { isOnboardingComplete } from './OnboardingWizard';
 import { useEbayListingReminder } from '../hooks/useEbayListingReminder';
-import EbayToolProgressBar from './EbayToolProgressBar';
 import { InventoryItem, Expense, BusinessSettings } from '../types';
 
 interface SyncState {
@@ -47,10 +46,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   usePanelKeyboardShortcuts();
   const [signingIn, setSigningIn] = React.useState(false);
   const [showOnboarding, setShowOnboarding] = React.useState(() => !isOnboardingComplete());
-  const { reminder: ebayReminder, dismiss: dismissEbayReminder, checksRemaining, checkProgress } = useEbayListingReminder(
-    items,
-    Boolean(onUpdateItems)
-  );
+  const { reminder: ebayReminder, dismiss: dismissEbayReminder, checksRemaining } = useEbayListingReminder();
 
   React.useEffect(() => {
     void completeGoogleRedirectSignIn().catch(() => {});
@@ -264,14 +260,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
               <button type="button" onClick={() => setLocale('de')} className={`px-2 py-1 rounded ${locale === 'de' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>DE</button>
             </div>
           </div>
-          {checkProgress && (
-            <div className={`shrink-0 ${isDockedPanelPage ? 'px-0 pb-2' : 'px-4 md:px-8 pb-3'}`}>
-              <EbayToolProgressBar
-                {...checkProgress}
-                tone="rose"
-              />
-            </div>
-          )}
           <Suspense fallback={
             <div className="flex items-center justify-center min-h-[300px] flex-1">
               <Loader2 size={32} className="animate-spin text-slate-400" />

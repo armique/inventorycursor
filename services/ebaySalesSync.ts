@@ -2,19 +2,29 @@
  * Incremental order fetch into the local/cloud cache, then analyze inventory vs orders.
  */
 
-import { InventoryItem } from '../types';
-import { backfillEbayOrders, type BackfillProgress, type BackfillResult } from './ebayOrderBackfill';
-import {
-  getSuggestedBackfillRange,
-  loadEbayOrderIndex,
-} from './ebayOrderIndex';
-import { hasEbayToken } from './ebayService';
-import {
-  buildOrderLinkAnalysis,
-  type OrderLinkAnalysisResult,
-} from '../utils/ebayOrderLinkAnalysis';
+import { InventoryItem, ItemStatus } from '../types';
 
 const DEFAULT_HISTORY_FROM = '2025-02-01';
+
+let cachedPeek: { key: string; result: OrderLinkAnalysisResult } | null = null;
+
+function peekCacheKey(items: InventoryItem[], orderCount: number, ordersUpdatedAt: string): string {
+  let inStock = 0;
+  let unlinkedSold = 0;
+  let linkedSold = 0;
+  for (const item of items) {
+    if (item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) inStock += 1;
+    if (item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED) {
+      if (item.ebayOrderId?.trim()) linkedSold += 1;
+      else unlinkedSold += 1;
+    }
+  }
+  return `${items.length}:${inStock}:${unlinkedSold}:${linkedSold}:${orderCount}:${ordersUpdatedAt}`;
+}
+
+export function invalidateEbaySalesSyncPeekCache(): void {
+  cachedPeek = null;
+}
 
 function todayISO(): string {
   return new Date().toISOString().split('T')[0];
@@ -62,6 +72,7 @@ export async function runEbaySalesSync(
   }
 
   const { orders } = loadEbayOrderIndex();
+  invalidateEbaySalesSyncPeekCache();
   const analysis = buildOrderLinkAnalysis(items, orders);
 
   return { analysis, fetch, fetchSkipped, fetchSkippedReason };
@@ -69,6 +80,10 @@ export async function runEbaySalesSync(
 
 /** Lightweight check for dashboard banner — cache only, no API. */
 export function peekEbaySalesSync(items: InventoryItem[]): OrderLinkAnalysisResult {
-  const { orders } = loadEbayOrderIndex();
-  return buildOrderLinkAnalysis(items, orders);
+  const { orders, meta } = loadEbayOrderIndex();
+  const key = peekCacheKey(items, orders.length, meta?.updatedAt || '');
+  if (cachedPeek?.key === key) return cachedPeek.result;
+  const result = buildOrderLinkAnalysis(items, orders);
+  cachedPeek = { key, result };
+  return result;
 }

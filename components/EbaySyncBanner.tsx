@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, PackageSearch, X } from 'lucide-react';
-import { InventoryItem } from '../types';
+import { InventoryItem, ItemStatus } from '../types';
 import { peekEbaySalesSync } from '../services/ebaySalesSync';
 import { getOrderIndexStats } from '../services/ebayOrderIndex';
 import { summarizeAdjustmentSuggestions } from '../utils/ebaySaleAdjustments';
@@ -20,6 +20,18 @@ function readDismissedCount(): number {
   }
 }
 
+function inventorySyncFingerprint(items: InventoryItem[]): string {
+  let inStock = 0;
+  let unlinkedSold = 0;
+  for (const item of items) {
+    if (item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) inStock += 1;
+    if ((item.status === ItemStatus.SOLD || item.status === ItemStatus.TRADED) && !item.ebayOrderId?.trim()) {
+      unlinkedSold += 1;
+    }
+  }
+  return `${items.length}:${inStock}:${unlinkedSold}`;
+}
+
 const EbaySyncBanner: React.FC<Props> = ({ items }) => {
   const [pending, setPending] = useState(0);
   const [markSold, setMarkSold] = useState(0);
@@ -27,9 +39,12 @@ const EbaySyncBanner: React.FC<Props> = ({ items }) => {
   const [payoutAdjustments, setPayoutAdjustments] = useState(0);
   const [cachedOrders, setCachedOrders] = useState(0);
   const [dismissed, setDismissed] = useState(false);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  const idleRef = useRef<number | null>(null);
 
-  const refresh = useCallback(() => {
-    const analysis = peekEbaySalesSync(items);
+  const runAnalysis = useCallback(() => {
+    const analysis = peekEbaySalesSync(itemsRef.current);
     const adj = summarizeAdjustmentSuggestions(analysis.suggestions);
     setPending(analysis.suggestions.length);
     setMarkSold(analysis.stats.markSoldCandidates);
@@ -37,19 +52,37 @@ const EbaySyncBanner: React.FC<Props> = ({ items }) => {
     setPayoutAdjustments(adj.payoutFix + adj.fee);
     setCachedOrders(getOrderIndexStats().count);
     setDismissed(analysis.suggestions.length <= readDismissedCount());
-  }, [items]);
+  }, []);
+
+  const scheduleAnalysis = useCallback(() => {
+    if (idleRef.current != null && typeof cancelIdleCallback === 'function') {
+      cancelIdleCallback(idleRef.current);
+    }
+    const run = () => {
+      idleRef.current = null;
+      runAnalysis();
+    };
+    if (typeof requestIdleCallback === 'function') {
+      idleRef.current = requestIdleCallback(run, { timeout: 2500 });
+    } else {
+      idleRef.current = window.setTimeout(run, 300) as unknown as number;
+    }
+  }, [runAnalysis]);
+
+  const fingerprint = inventorySyncFingerprint(items);
 
   useEffect(() => {
-    refresh();
-    window.addEventListener('focus', refresh);
-    window.addEventListener('storage', refresh);
-    window.addEventListener('ebay-order-index-updated', refresh);
+    scheduleAnalysis();
+    const onOrdersUpdated = () => scheduleAnalysis();
+    window.addEventListener('ebay-order-index-updated', onOrdersUpdated);
     return () => {
-      window.removeEventListener('focus', refresh);
-      window.removeEventListener('storage', refresh);
-      window.removeEventListener('ebay-order-index-updated', refresh);
+      window.removeEventListener('ebay-order-index-updated', onOrdersUpdated);
+      if (idleRef.current != null) {
+        if (typeof cancelIdleCallback === 'function') cancelIdleCallback(idleRef.current);
+        else clearTimeout(idleRef.current);
+      }
     };
-  }, [refresh]);
+  }, [fingerprint, scheduleAnalysis]);
 
   const handleDismiss = () => {
     localStorage.setItem(DISMISS_COUNT_KEY, String(pending));

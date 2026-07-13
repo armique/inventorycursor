@@ -193,6 +193,36 @@ type AssignGreedyOptions = {
   minTitleScore?: number;
 };
 
+function buildOrderPriceIndex(orders: EbayOrderRecord[]): Map<number, EbayOrderRecord[]> {
+  const index = new Map<number, EbayOrderRecord[]>();
+  const add = (cents: number, order: EbayOrderRecord) => {
+    const bucket = index.get(cents);
+    if (bucket) {
+      if (!bucket.includes(order)) bucket.push(order);
+    } else {
+      index.set(cents, [order]);
+    }
+  };
+  for (const order of orders) {
+    for (const line of order.lineItems) {
+      const payout = getLinePayout(order, line);
+      for (const amt of [payout.sellPrice, payout.net, payout.gross]) {
+        if (amt != null && amt > 0) add(Math.round(amt * 100), order);
+      }
+    }
+  }
+  return index;
+}
+
+function ordersNearSellPrice(index: Map<number, EbayOrderRecord[]>, sellPrice: number): EbayOrderRecord[] {
+  const cents = Math.round(sellPrice * 100);
+  const seen = new Set<EbayOrderRecord>();
+  for (let delta = -5; delta <= 5; delta += 1) {
+    for (const order of index.get(cents + delta) || []) seen.add(order);
+  }
+  return [...seen];
+}
+
 function assignGreedy(
   kind: OrderLinkSuggestionKind,
   items: InventoryItem[],
@@ -203,9 +233,17 @@ function assignGreedy(
   options?: AssignGreedyOptions
 ): void {
   const candidateRows: { item: InventoryItem; match: EbayOrderMatch; totalScore: number }[] = [];
+  const priceIndex = buildOrderPriceIndex(orders);
 
   for (const item of items) {
-    for (const match of findMatchingOrdersForItem(item, orders)) {
+    let orderPool = orders;
+    if (item.sellPrice != null && item.sellPrice > 0) {
+      const near = ordersNearSellPrice(priceIndex, item.sellPrice);
+      if (near.length > 0) orderPool = near;
+      else if (options?.requirePriceAlign) continue;
+    }
+
+    for (const match of findMatchingOrdersForItem(item, orderPool)) {
       if (options?.minTitleScore != null && match.matchScore < options.minTitleScore) continue;
 
       const key = lineItemClaimKey(match.order.orderId, match.lineItem);

@@ -95,6 +95,8 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
   const [reviewRow, setReviewRow] = useState<OrderLinkSuggestion | null>(null);
   const cancelRef = useRef<{ cancelled: boolean }>({ cancelled: false });
   const autoRanRef = useRef(false);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
 
   const applyAnalysis = useCallback(
     (result: ReturnType<typeof peekEbaySalesSync>, info?: string) => {
@@ -167,24 +169,34 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
     [items, applyAnalysis, onCacheUpdated]
   );
 
-  // On open: analyze cache immediately (no API) so forgotten sales surface fast.
+  // On open: analyze cache once (idle) — avoid re-running on every inventory edit.
   useEffect(() => {
     if (autoRanRef.current) return;
     autoRanRef.current = true;
-    const { orders } = loadEbayOrderIndex();
-    if (orders.length) applyAnalysis(peekEbaySalesSync(items));
-  }, [items, applyAnalysis]);
+    const run = () => {
+      const { orders } = loadEbayOrderIndex();
+      if (orders.length) applyAnalysis(peekEbaySalesSync(itemsRef.current));
+    };
+    if (typeof requestIdleCallback === 'function') {
+      const id = requestIdleCallback(run, { timeout: 2000 });
+      return () => cancelIdleCallback(id);
+    }
+    const t = window.setTimeout(run, 200);
+    return () => clearTimeout(t);
+  }, [applyAnalysis]);
 
   // Re-match when order cache changes (CSV import, API backfill, cloud pull).
   useEffect(() => {
     const refreshFromCache = () => {
       const { orders } = loadEbayOrderIndex();
       if (!orders.length) return;
-      applyAnalysis(peekEbaySalesSync(items));
+      const run = () => applyAnalysis(peekEbaySalesSync(itemsRef.current));
+      if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 1500 });
+      else run();
     };
     window.addEventListener('ebay-order-index-updated', refreshFromCache);
     return () => window.removeEventListener('ebay-order-index-updated', refreshFromCache);
-  }, [items, applyAnalysis]);
+  }, [applyAnalysis]);
 
   const visible = useMemo(() => {
     return suggestions.filter((s) => {

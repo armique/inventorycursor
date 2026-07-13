@@ -214,7 +214,7 @@ export function getActiveReminderForDisplay(): EbayReminderPending | null {
   return pending;
 }
 
-/** Auto-check eBay listings vs last snapshot (max 3× per calendar day). */
+/** Manual sold-detection check (eBay Store Pull → Detect sold). Auto daily checks are disabled. */
 export async function runAutoEbayListingReminderCheck(
   items: InventoryItem[],
   onProgress?: (p: EbayReminderProgress) => void
