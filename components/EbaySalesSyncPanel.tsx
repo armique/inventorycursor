@@ -20,7 +20,9 @@ import {
   type OrderLinkSuggestionKind,
 } from '../utils/ebayOrderLinkAnalysis';
 import { formatEUR } from '../utils/formatMoney';
+import { matchesEbayToolSearch } from '../utils/ebayToolSearch';
 import EbayToolProgressBar from './EbayToolProgressBar';
+import EbayToolSearchInput from './EbayToolSearchInput';
 import EbaySalesMatchReviewModal from './EbaySalesMatchReviewModal';
 
 interface Props {
@@ -56,6 +58,26 @@ function kindBadgeClass(kind: OrderLinkSuggestionKind): string {
   return 'bg-amber-100 text-amber-900';
 }
 
+function suggestionSearchHaystack(row: OrderLinkSuggestion): Array<string | number | null | undefined> {
+  const { item, match, adjustmentReason } = row;
+  const { order, lineItem } = match;
+  return [
+    item.name,
+    item.ebaySku,
+    item.ebayOrderId,
+    item.ebayListingId,
+    item.sellDate,
+    order.orderId,
+    order.buyer.username,
+    order.buyer.fullName,
+    lineItem.title,
+    lineItem.sku,
+    lineItem.listingId,
+    adjustmentReason,
+    row.adjustment?.reason,
+  ];
+}
+
 const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCacheUpdated }) => {
   const [syncing, setSyncing] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -64,6 +86,7 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
   const [filter, setFilter] = useState<FilterKind>('all');
+  const [search, setSearch] = useState('');
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fetchProgress, setFetchProgress] = useState<BackfillProgress | null>(null);
@@ -158,6 +181,14 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
   }, [items, applyAnalysis]);
 
   const visible = useMemo(() => {
+    return suggestions.filter((s) => {
+      if (dismissed.has(s.id)) return false;
+      if (filter !== 'all' && s.kind !== filter) return false;
+      return matchesEbayToolSearch(search, suggestionSearchHaystack(s));
+    });
+  }, [suggestions, dismissed, filter, search]);
+
+  const activeBeforeSearch = useMemo(() => {
     return suggestions.filter((s) => {
       if (dismissed.has(s.id)) return false;
       if (filter === 'all') return true;
@@ -311,6 +342,16 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
           </>
         )}
       </div>
+
+      {suggestions.length > 0 && (
+        <EbayToolSearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search item, order ID, buyer, SKU, listing…"
+          matchCount={visible.length}
+          totalCount={activeBeforeSearch.length}
+        />
+      )}
 
       {!tokenReady && (
         <p className="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
@@ -507,7 +548,9 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
       )}
 
       {suggestions.length > 0 && visible.length === 0 && (
-        <p className="text-sm text-slate-500 text-center py-6">All suggestions dismissed. Run sync again anytime.</p>
+        <p className="text-sm text-slate-500 text-center py-6">
+          {search.trim() ? 'No suggestions match your search — try order ID, buyer name, or item title.' : 'All suggestions dismissed. Run sync again anytime.'}
+        </p>
       )}
 
       {reviewRow && (

@@ -30,7 +30,11 @@ import {
   pushOrderIndexToCloud,
   upsertEbayOrders,
 } from '../services/ebayOrderIndex';
+import { getOrderEffectiveNet } from '../utils/ebayOrderFinancial';
+import { formatEUR } from '../utils/formatMoney';
+import { matchesEbayToolSearch } from '../utils/ebayToolSearch';
 import EbayToolProgressBar from './EbayToolProgressBar';
+import EbayToolSearchInput from './EbayToolSearchInput';
 import EbaySalesSyncPanel from './EbaySalesSyncPanel';
 
 interface Props {
@@ -66,6 +70,8 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
 
   const [showCacheSetup, setShowCacheSetup] = useState(() => getOrderIndexStats().count === 0);
   const [statsVersion, setStatsVersion] = useState(0);
+  const [browseOpen, setBrowseOpen] = useState(false);
+  const [orderSearch, setOrderSearch] = useState('');
 
   const refreshStats = () => setStatsVersion((v) => v + 1);
   const { stats, meta } = React.useMemo(() => {
@@ -123,6 +129,26 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
       (i.platformSold === 'ebay.de' || Boolean(i.ebaySku)) &&
       !i.ebayOrderId
   ).length;
+
+  const cachedOrders = useMemo(() => {
+    return [...loadEbayOrderIndex().orders].sort((a, b) =>
+      (b.creationDate || '').localeCompare(a.creationDate || '')
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statsVersion]);
+
+  const visibleCachedOrders = useMemo(() => {
+    return cachedOrders.filter((o) =>
+      matchesEbayToolSearch(orderSearch, [
+        o.orderId,
+        o.buyer.username,
+        o.buyer.fullName,
+        o.lineItems.map((li) => li.title).join(' '),
+        o.lineItems.map((li) => li.sku).join(' '),
+        o.sources.join(' '),
+      ])
+    );
+  }, [cachedOrders, orderSearch]);
 
   const runBackfill = useCallback(
     async (fromDate: string, toDate: string) => {
@@ -520,6 +546,75 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
           </div>
         )}
       </div>
+
+      {stats.count > 0 && (
+        <div className="shrink-0 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setBrowseOpen((v) => !v)}
+            className="w-full flex items-center justify-between gap-3 p-4 text-left hover:bg-slate-50/80 transition-colors"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="p-2 rounded-xl bg-indigo-100 text-indigo-700 shrink-0">
+                <Database size={16} />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-sm font-black text-slate-900">Browse cached orders</h2>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  {stats.count} order(s) in cache — search by order ID, buyer, or item title
+                </p>
+              </div>
+            </div>
+            {browseOpen ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+          </button>
+          {browseOpen && (
+            <div className="border-t border-slate-100 p-4 space-y-3">
+              <EbayToolSearchInput
+                value={orderSearch}
+                onChange={setOrderSearch}
+                placeholder="Search order ID, buyer, item title, SKU…"
+                matchCount={visibleCachedOrders.length}
+                totalCount={cachedOrders.length}
+              />
+              <div className="max-h-[min(50vh,420px)] overflow-y-auto rounded-xl border border-slate-200 divide-y divide-slate-100">
+                {visibleCachedOrders.length === 0 ? (
+                  <p className="text-sm text-slate-500 text-center py-10">
+                    {orderSearch.trim() ? 'No orders match your search.' : 'Cache is empty.'}
+                  </p>
+                ) : (
+                  visibleCachedOrders.map((order) => {
+                    const net = getOrderEffectiveNet(order);
+                    const itemTitles = order.lineItems.map((li) => li.title).filter(Boolean).join(' · ');
+                    return (
+                      <div key={order.orderId} className="px-3 py-2.5 hover:bg-slate-50/80">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-mono text-xs font-black text-slate-900">{order.orderId}</span>
+                          <span className="text-[10px] font-bold text-slate-500">{order.creationDate || '—'}</span>
+                          <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                            {order.sources.join(' + ')}
+                          </span>
+                          {net != null && (
+                            <span className={`text-[10px] font-bold tabular-nums ${net < 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
+                              net €{formatEUR(net)}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-600 mt-0.5">
+                          {order.buyer.fullName || order.buyer.username || '—'}
+                          {order.buyer.username && order.buyer.fullName ? ` (@${order.buyer.username})` : ''}
+                        </p>
+                        {itemTitles && (
+                          <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5">{itemTitles}</p>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-xs text-slate-500">

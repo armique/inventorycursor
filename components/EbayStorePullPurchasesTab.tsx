@@ -38,7 +38,9 @@ import {
   looksLikeFilamentPurchase,
 } from '../utils/filamentTitleDetect';
 import { formatEUR } from '../utils/formatMoney';
+import { matchesEbayToolSearch } from '../utils/ebayToolSearch';
 import EbayToolProgressBar from './EbayToolProgressBar';
+import EbayToolSearchInput from './EbayToolSearchInput';
 
 interface Props {
   items: InventoryItem[];
@@ -87,6 +89,7 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
   }, [indexVersion]);
 
   const [filter, setFilter] = useState<'all' | 'pending' | 'filament'>('pending');
+  const [search, setSearch] = useState('');
   const [backfilling, setBackfilling] = useState(false);
   const [backfillProgress, setBackfillProgress] = useState<PurchaseBackfillProgress | null>(null);
   const [backfillError, setBackfillError] = useState<string | null>(null);
@@ -111,6 +114,23 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
   }, []);
 
   const filtered = useMemo(() => {
+    let rows = purchases;
+    if (filter === 'pending') rows = purchases.filter((p) => p.disposition === 'pending');
+    else if (filter === 'filament') rows = purchases.filter((p) => looksLikeFilamentPurchase(p.title));
+    return rows.filter((p) =>
+      matchesEbayToolSearch(search, [
+        p.title,
+        p.orderId,
+        p.sellerUsername,
+        p.transactionId,
+        p.itemId,
+        p.note,
+        p.creationDate,
+      ])
+    );
+  }, [purchases, filter, search]);
+
+  const filteredBeforeSearch = useMemo(() => {
     if (filter === 'pending') return purchases.filter((p) => p.disposition === 'pending');
     if (filter === 'filament') return purchases.filter((p) => looksLikeFilamentPurchase(p.title));
     return purchases;
@@ -358,9 +378,21 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
         ))}
       </div>
 
+      {purchases.length > 0 && (
+        <EbayToolSearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search title, order ID, seller…"
+          matchCount={filtered.length}
+          totalCount={filteredBeforeSearch.length}
+        />
+      )}
+
       <div className="space-y-3">
         {filtered.length === 0 ? (
-          <p className="text-sm text-slate-500 text-center py-12">No purchases in this view — fetch from eBay or change filter.</p>
+          <p className="text-sm text-slate-500 text-center py-12">
+            {search.trim() ? 'No purchases match your search.' : 'No purchases in this view — fetch from eBay or change filter.'}
+          </p>
         ) : (
           filtered.map((p) => {
             const likelyFilament = looksLikeFilamentPurchase(p.title);

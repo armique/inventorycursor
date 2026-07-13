@@ -25,12 +25,14 @@ import {
 } from '../utils/ebayBulkSyncPlan';
 import { formatEUR } from '../utils/formatMoney';
 import { normalizeImageList, prepareInventoryImagesForStorage } from '../utils/imageImport';
+import { matchesEbayToolSearch } from '../utils/ebayToolSearch';
 import EbayStorePullImportTab from './EbayStorePullImportTab';
 import EbayStorePullSoldTab from './EbayStorePullSoldTab';
 import EbayStorePullOrdersTab from './EbayStorePullOrdersTab';
 import EbayStorePullPurchasesTab from './EbayStorePullPurchasesTab';
 import EbayOrderSourceCompareTab from './EbayOrderSourceCompareTab';
 import EbayToolProgressBar, { type EbayToolProgress } from './EbayToolProgressBar';
+import EbayToolSearchInput from './EbayToolSearchInput';
 import type { Expense } from '../types';
 
 type PhotoMode = 'none' | 'all' | 'pick';
@@ -136,6 +138,7 @@ const EbayStorePullPage: React.FC<Props> = ({
   const [rowState, setRowState] = useState<Record<string, RowState>>({});
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
   const [progress, setProgress] = useState<EbayToolProgress | null>(null);
+  const [syncSearch, setSyncSearch] = useState('');
 
   const rowKey = (match: EbayStorePullMatch) => `${match.item.id}:${match.listing.listingId}`;
 
@@ -184,6 +187,36 @@ const EbayStorePullPage: React.FC<Props> = ({
     if (!plan) return [];
     return plan.matches.filter((m) => rowState[rowKey(m)]?.selected);
   }, [plan, rowState]);
+
+  const visibleSyncMatches = useMemo(() => {
+    if (!plan) return [];
+    return plan.matches.filter((m) =>
+      matchesEbayToolSearch(syncSearch, [
+        m.item.name,
+        m.item.ebaySku,
+        m.item.ebayListingId,
+        m.listing.title,
+        m.listing.sku,
+        m.listing.listingId,
+        m.matchKind,
+        m.warning,
+      ])
+    );
+  }, [plan, syncSearch]);
+
+  const visibleUnmatchedItems = useMemo(() => {
+    if (!plan) return [];
+    return plan.unmatchedItems.filter((item) =>
+      matchesEbayToolSearch(syncSearch, [item.name, item.ebaySku, item.category, item.subCategory])
+    );
+  }, [plan, syncSearch]);
+
+  const visibleUnusedListings = useMemo(() => {
+    if (!plan) return [];
+    return plan.unusedListings.filter((listing) =>
+      matchesEbayToolSearch(syncSearch, [listing.title, listing.sku, listing.listingId])
+    );
+  }, [plan, syncSearch]);
 
   const updateRow = (key: string, patch: Partial<RowState>) => {
     setRowState((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
@@ -468,7 +501,18 @@ const EbayStorePullPage: React.FC<Props> = ({
             ))}
           </div>
 
+          {(plan.matches.length > 0 || plan.unmatchedItems.length > 0 || plan.unusedListings.length > 0) && (
+            <EbayToolSearchInput
+              value={syncSearch}
+              onChange={setSyncSearch}
+              placeholder="Search inventory item, listing title, SKU…"
+              matchCount={visibleSyncMatches.length + visibleUnmatchedItems.length + visibleUnusedListings.length}
+              totalCount={plan.matches.length + plan.unmatchedItems.length + plan.unusedListings.length}
+            />
+          )}
+
           {plan.matches.length > 0 && (
+            <div className="space-y-3">
             <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3 flex flex-wrap items-center gap-2">
               <button
                 type="button"
@@ -524,10 +568,12 @@ const EbayStorePullPage: React.FC<Props> = ({
                 Apply {selectedMatches.length} selected
               </button>
             </div>
-          )}
 
           <div className="space-y-3">
-            {plan.matches.map((match) => {
+            {visibleSyncMatches.length === 0 && syncSearch.trim() ? (
+              <p className="text-sm text-slate-500 text-center py-8">No matches for your search.</p>
+            ) : null}
+            {visibleSyncMatches.map((match) => {
               const key = rowKey(match);
               const row = rowState[key] ?? defaultRowState(match);
               const rounded = getStorePullRoundedPrice(match.listing);
@@ -685,14 +731,17 @@ const EbayStorePullPage: React.FC<Props> = ({
               );
             })}
           </div>
+            </div>
+          )}
 
-          {plan.unmatchedItems.length > 0 && (
+          {visibleUnmatchedItems.length > 0 && (
             <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-4 space-y-2">
               <p className="text-xs font-black uppercase text-amber-800">
-                {plan.unmatchedItems.length} item{plan.unmatchedItems.length === 1 ? '' : 's'} without a listing match
+                {visibleUnmatchedItems.length} item{visibleUnmatchedItems.length === 1 ? '' : 's'} without a listing match
+                {syncSearch.trim() ? ` (filtered)` : ''}
               </p>
               <ul className="text-xs text-amber-900 space-y-1 max-h-40 overflow-y-auto">
-                {plan.unmatchedItems.map((item) => (
+                {visibleUnmatchedItems.map((item) => (
                   <li key={item.id} className="font-medium">
                     {item.name}
                     {item.ebaySku ? ` · SKU ${item.ebaySku}` : ''}
@@ -702,20 +751,21 @@ const EbayStorePullPage: React.FC<Props> = ({
             </div>
           )}
 
-          {plan.unusedListings.length > 0 && (
+          {visibleUnusedListings.length > 0 && (
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-2">
               <p className="text-xs font-black uppercase text-slate-500">
-                {plan.unusedListings.length} active listing{plan.unusedListings.length === 1 ? '' : 's'} not
+                {visibleUnusedListings.length} active listing{visibleUnusedListings.length === 1 ? '' : 's'} not
                 paired (no matching inventory without storefront price)
+                {syncSearch.trim() ? ` (filtered)` : ''}
               </p>
               <ul className="text-xs text-slate-600 space-y-1 max-h-40 overflow-y-auto">
-                {plan.unusedListings.slice(0, 20).map((listing) => (
+                {visibleUnusedListings.slice(0, 20).map((listing) => (
                   <li key={listing.listingId} className="line-clamp-1">
                     {listing.title}
                   </li>
                 ))}
-                {plan.unusedListings.length > 20 && (
-                  <li className="text-slate-400">…and {plan.unusedListings.length - 20} more</li>
+                {visibleUnusedListings.length > 20 && (
+                  <li className="text-slate-400">…and {visibleUnusedListings.length - 20} more</li>
                 )}
               </ul>
             </div>

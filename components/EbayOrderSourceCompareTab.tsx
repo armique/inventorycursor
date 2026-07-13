@@ -12,7 +12,6 @@ import {
   GitCompare,
   Loader2,
   RefreshCw,
-  Search,
   Trash2,
   Upload,
   X,
@@ -36,6 +35,7 @@ import {
   type SnapshotSyncStatus,
 } from '../utils/ebaySnapshotCompare';
 import EbayToolProgressBar from './EbayToolProgressBar';
+import EbayToolSearchInput from './EbayToolSearchInput';
 
 const DEFAULT_FROM = '2025-02-01';
 
@@ -368,11 +368,27 @@ const EbayOrderSourceCompareTab: React.FC = () => {
           )}
 
           <div className="flex flex-wrap items-center gap-2">
-            <div className="relative flex-1 min-w-[14rem]">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input type="text" placeholder="Search order ID, buyer, item…" value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold" />
-            </div>
-            {copyMsg && <span className="text-[10px] font-bold text-emerald-700">{copyMsg}</span>}
+          <EbayToolSearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search order ID, buyer, item…"
+            matchCount={tableRows.length}
+            totalCount={
+              filter === 'api_only'
+                ? report.apiOnly.length
+                : filter === 'csv_only'
+                  ? report.csvOnly.length
+                  : filter === 'gaps'
+                    ? report.apiOnly.length + report.csvOnly.length
+                    : filter === 'both'
+                      ? report.rows.filter((r) => r.status === 'both').length
+                      : filter === 'both_field_diffs'
+                        ? report.rows.filter((r) => r.status === 'both' && r.hasFieldDiffs).length
+                        : report.rows.length
+            }
+            className="flex-1"
+          />
+          {copyMsg && <span className="text-[10px] font-bold text-emerald-700">{copyMsg}</span>}
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">

@@ -42,10 +42,12 @@ import {
 } from '../utils/ebaySoldDetectionPlan';
 import { filterAppearedListingsNotInInventory } from '../utils/ebayListingChangePlan';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
+import { matchesEbayToolSearch } from '../utils/ebayToolSearch';
 import { computeItemProfitBeforeOverhead } from '../services/financialAggregation';
 import type { ParsedEbayOrderScreenshot } from '../services/ebayOrderScreenshotAI';
 import EbayOrderScreenshotInline from './EbayOrderScreenshotInline';
 import EbayToolProgressBar, { type EbayToolProgress } from './EbayToolProgressBar';
+import EbayToolSearchInput from './EbayToolSearchInput';
 
 interface SoldRowState {
   selected: boolean;
@@ -136,6 +138,7 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
   const [checkHistory, setCheckHistory] = useState<EbayListingSnapshotCheckRecord[]>(() =>
     loadEbayListingSnapshotHistory()
   );
+  const [search, setSearch] = useState('');
 
   const rowKey = (match: EbaySoldDetectionMatch) => match.item.id;
 
@@ -184,6 +187,56 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
     () => filterAppearedListingsNotInInventory(items, appearedListings),
     [items, appearedListings]
   );
+
+  const visibleMatches = useMemo(
+    () =>
+      matches.filter((m) =>
+        matchesEbayToolSearch(search, [
+          m.item.name,
+          m.item.ebaySku,
+          m.item.ebayOrderId,
+          m.lastKnownListing.title,
+          m.lastKnownListing.sku,
+          m.lastKnownListing.listingId,
+          m.matchKind,
+          m.warning,
+        ])
+      ),
+    [matches, search]
+  );
+
+  const visibleUnmatched = useMemo(
+    () =>
+      unmatched.filter((l) =>
+        matchesEbayToolSearch(search, [l.title, l.sku, l.listingId])
+      ),
+    [unmatched, search]
+  );
+
+  const visibleNewOnEbay = useMemo(
+    () =>
+      newOnEbayNotInInventory.filter((l) =>
+        matchesEbayToolSearch(search, [l.title, l.sku, l.listingId])
+      ),
+    [newOnEbayNotInInventory, search]
+  );
+
+  const visibleCheckHistory = useMemo(
+    () =>
+      checkHistory.filter((record) =>
+        matchesEbayToolSearch(search, [
+          record.checkId,
+          record.disappeared.map((l) => l.title).join(' '),
+          record.appeared.map((l) => l.title).join(' '),
+        ])
+      ),
+    [checkHistory, search]
+  );
+
+  const soldSearchTotal =
+    matches.length + unmatched.length + newOnEbayNotInInventory.length + checkHistory.length;
+  const soldSearchMatch =
+    visibleMatches.length + visibleUnmatched.length + visibleNewOnEbay.length + visibleCheckHistory.length;
 
   useEffect(() => {
     const restored = applyPendingDetectionToState(
@@ -608,8 +661,21 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
         </div>
       )}
 
+      {soldSearchTotal > 0 && (
+        <EbayToolSearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search item, listing title, SKU, order ID…"
+          matchCount={soldSearchMatch}
+          totalCount={soldSearchTotal}
+        />
+      )}
+
       <div className="space-y-3">
-        {matches.map((match) => {
+        {visibleMatches.length === 0 && search.trim() && matches.length > 0 ? (
+          <p className="text-sm text-slate-500 text-center py-6">No sold-detection matches for your search.</p>
+        ) : null}
+        {visibleMatches.map((match) => {
           const key = rowKey(match);
           const row = rowState[key] ?? defaultSoldRowState(match);
           const listing = match.lastKnownListing;
@@ -720,17 +786,18 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
         })}
       </div>
 
-      {newOnEbayNotInInventory.length > 0 && (
+      {visibleNewOnEbay.length > 0 && (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 space-y-3">
           <p className="text-xs font-black uppercase text-emerald-800">
-            {newOnEbayNotInInventory.length} new on eBay — not in inventory yet
+            {visibleNewOnEbay.length} new on eBay — not in inventory yet
+            {search.trim() ? ' (filtered)' : ''}
           </p>
           <p className="text-[11px] text-emerald-900/80">
             These listings appeared in your eBay store since the last saved snapshot and do not match any
             in-stock inventory item. Add them via Import missing.
           </p>
           <ul className="text-xs text-emerald-900 space-y-2 max-h-48 overflow-y-auto">
-            {newOnEbayNotInInventory.map((l) => (
+            {visibleNewOnEbay.map((l) => (
               <li key={l.listingId} className="rounded-lg bg-white/70 border border-emerald-100 px-3 py-2">
                 <p className="font-bold line-clamp-2">{l.title}</p>
                 {l.price != null && (
@@ -749,17 +816,18 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
         </div>
       )}
 
-      {unmatched.length > 0 && (
+      {visibleUnmatched.length > 0 && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-4 space-y-3">
           <p className="text-xs font-black uppercase text-amber-800">
-            {unmatched.length} removed eBay listing{unmatched.length === 1 ? '' : 's'} — no inventory match
+            {visibleUnmatched.length} removed eBay listing{visibleUnmatched.length === 1 ? '' : 's'} — no inventory match
+            {search.trim() ? ' (filtered)' : ''}
           </p>
           <p className="text-[11px] text-amber-900/80">
             These titles were saved in your eBay snapshot and left the store, but no in-stock inventory
             item matched automatically. Mark the correct item sold manually, or link it first in Sync.
           </p>
           <ul className="text-xs text-amber-900 space-y-2 max-h-48 overflow-y-auto">
-            {unmatched.map((l) => (
+            {visibleUnmatched.map((l) => (
               <li key={l.listingId} className="rounded-lg bg-white/70 border border-amber-100 px-3 py-2">
                 <p className="font-bold line-clamp-2">{l.title}</p>
                 {l.price != null && (
@@ -790,7 +858,7 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
                 No checks recorded yet. Run a sold check to start building history.
               </p>
             ) : (
-              checkHistory.map((record) => (
+              visibleCheckHistory.map((record) => (
                 <div key={record.checkId} className="px-4 py-3 space-y-1.5">
                   <div className="flex flex-wrap items-center gap-2 text-[11px]">
                     <span className="font-bold text-slate-900">

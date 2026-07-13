@@ -26,7 +26,9 @@ import { formatEUR } from '../utils/formatMoney';
 import { normalizeImageList, prepareInventoryImagesForStorage } from '../utils/imageImport';
 import { CATEGORY_IMAGES } from '../services/hardwareDB';
 import { getSpecsAIProvider } from '../services/specsAI';
+import { matchesEbayToolSearch } from '../utils/ebayToolSearch';
 import EbayToolProgressBar, { type EbayToolProgress } from './EbayToolProgressBar';
+import EbayToolSearchInput from './EbayToolSearchInput';
 
 type PhotoMode = 'none' | 'all' | 'pick';
 
@@ -81,6 +83,7 @@ const EbayStorePullImportTab: React.FC<Props> = ({
     null
   );
   const [rowState, setRowState] = useState<Record<string, ImportRowState>>({});
+  const [search, setSearch] = useState('');
 
   const rowKey = (listingId: string) => listingId;
 
@@ -157,6 +160,19 @@ const EbayStorePullImportTab: React.FC<Props> = ({
   const selectedDrafts = useMemo(() => {
     return drafts.filter((d) => rowState[rowKey(d.listing.listingId)]?.selected);
   }, [drafts, rowState]);
+
+  const visibleDrafts = useMemo(() => {
+    return drafts.filter((d) =>
+      matchesEbayToolSearch(search, [
+        d.parsedName,
+        d.listing.title,
+        d.listing.sku,
+        d.listing.listingId,
+        d.category,
+        d.subCategory,
+      ])
+    );
+  }, [drafts, search]);
 
   const updateRow = (key: string, patch: Partial<ImportRowState>) => {
     setRowState((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
@@ -421,8 +437,19 @@ const EbayStorePullImportTab: React.FC<Props> = ({
             </button>
           </div>
 
+          <EbayToolSearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search listing title, parsed name, SKU…"
+            matchCount={visibleDrafts.length}
+            totalCount={drafts.length}
+          />
+
           <div className="space-y-3">
-            {drafts.map((draft) => {
+            {visibleDrafts.length === 0 && search.trim() ? (
+              <p className="text-sm text-slate-500 text-center py-8">No listings match your search.</p>
+            ) : null}
+            {visibleDrafts.map((draft) => {
               const key = rowKey(draft.listing.listingId);
               const row = rowState[key] ?? defaultImportRowState(draft);
               const rounded = getStorePullRoundedPrice(draft.listing);

@@ -25,6 +25,7 @@ import {
 import type { EbayOrderFinancialEvent, EbayOrderRecord } from '../services/ebayOrderIndex';
 import { isRealizedDisposal, dispositionDate } from '../utils/itemDisposition';
 import { parseEbayOrderCsv } from '../services/ebayOrderCsvImport';
+import { matchesEbayToolSearch } from '../utils/ebayToolSearch';
 import {
   findSpoolByEbayLineKey,
   addFilamentSpool,
@@ -486,6 +487,9 @@ function runCsvImportTests(): void {
   assert(restocked.comment2.includes('Buy price +€6.73'), 'documents fee in comment');
   const gpuAnalysis = buildOrderLinkAnalysis([soldGpu], [refundedGpu]);
   assert(gpuAnalysis.suggestions.some((s) => s.adjustment?.kind === 'restock_after_refund'), 'suggests restock for refunded sold GPU');
+
+  assert(matchesEbayToolSearch('p400', ['Nvidia Quadro P400', '26-14576-17166']), 'ebay tool search matches haystack');
+  assert(!matchesEbayToolSearch('rtx', ['Nvidia Quadro P400']), 'ebay tool search rejects non-match');
 }
 
 function runAdjustmentTests(): void {
