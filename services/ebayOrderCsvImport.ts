@@ -129,6 +129,27 @@ const HEADER_ALIASES: Record<string, CanonicalField> = {
   beschreibung: 'description',
   memo: 'description',
   details: 'description',
+  // eBay.de Transaktionsbericht (Payments → Berichte → Alle)
+  datumdertransaktionserstellung: 'saleDate',
+  nutzernamedeskaufers: 'buyerUsername',
+  namedeskaufers: 'buyerName',
+  versandzielort: 'city',
+  versandnachprovinzregionbundesland: 'state',
+  versandzielplz: 'zip',
+  versandzielland: 'country',
+  betragabzuglichkosten: 'netAmount',
+  artikelnr: 'listingId',
+  transaktionsnummer: 'salesRecordNumber',
+  angebotstitel: 'title',
+  bestandseinheit: 'sku',
+  stuckzahl: 'quantity',
+  zwischensummeartikel: 'soldFor',
+  verpackungundversand: 'shipping',
+  transaktionsbetraginklkosten: 'total',
+  fixeranteilderverkaufsprovision: 'fee',
+  variableranteilderverkaufsprovision: 'fee',
+  vomverkaufereingezogenesteuern: 'tax',
+  vonebayeingezogenesteuern: 'tax',
 };
 
 function normalizeHeader(h: string): string {
@@ -201,7 +222,7 @@ function parseMoney(raw: string | undefined): number | null {
 
 function parseDateGuess(raw: string | undefined): string | null {
   if (!raw) return null;
-  const s = raw.trim();
+  const s = raw.trim().replace(/^"|"$/g, '');
   let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (m) return `${m[1]}-${m[2]}-${m[3]}`;
   m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/);
@@ -213,7 +234,49 @@ function parseDateGuess(raw: string | undefined): string | null {
     if (a > 12) return `${m[3]}-${String(b).padStart(2, '0')}-${String(a).padStart(2, '0')}`;
     return `${m[3]}-${String(a).padStart(2, '0')}-${String(b).padStart(2, '0')}`;
   }
+  const deMonths: Record<string, string> = {
+    jan: '01',
+    feb: '02',
+    mar: '03',
+    mär: '03',
+    apr: '04',
+    mai: '05',
+    jun: '06',
+    jul: '07',
+    aug: '08',
+    sep: '09',
+    okt: '10',
+    nov: '11',
+    dez: '12',
+  };
+  m = s.match(/^([A-Za-zäöüÄÖÜ]+)\s+(\d{1,2}),\s+(\d{4})/);
+  if (m) {
+    const mon = deMonths[m[1].toLowerCase().slice(0, 3).replace('ä', 'a').replace('ö', 'o').replace('ü', 'u')];
+    if (mon) return `${m[3]}-${mon}-${m[2].padStart(2, '0')}`;
+  }
   return null;
+}
+
+function isPlaceholderCell(value: string | undefined): boolean {
+  const v = (value || '').trim();
+  return !v || v === '--' || v === '-';
+}
+
+/** eBay Transaktionsbericht files start with disclaimer rows; header is ~10 lines in. */
+function findHeaderRowIndex(lines: string[]): number {
+  for (let i = 0; i < Math.min(lines.length, 60); i++) {
+    const line = lines[i];
+    if (!line.trim() || /^--[,;]/.test(line)) continue;
+    for (const delim of [';', ',']) {
+      const cells = parseCsvLine(line, delim);
+      const hasOrderCol = cells.some((h) => {
+        const field = HEADER_ALIASES[normalizeHeader(h)];
+        return field === 'orderId' || field === 'salesRecordNumber';
+      });
+      if (hasOrderCol) return i;
+    }
+  }
+  return 0;
 }
 
 /** Parse a Seller Hub Orders / Payments Transaction CSV export into cacheable order records. */
@@ -231,8 +294,9 @@ export function parseEbayOrderCsv(text: string): EbayOrderCsvParseResult {
     };
   }
 
-  const delimiter = detectDelimiter(lines[0]);
-  const headerCells = parseCsvLine(lines[0], delimiter);
+  const headerRowIndex = findHeaderRowIndex(lines);
+  const delimiter = detectDelimiter(lines[headerRowIndex] || lines[0]);
+  const headerCells = parseCsvLine(lines[headerRowIndex], delimiter);
   const fieldByIndex: Record<number, CanonicalField> = {};
   const detectedColumns: string[] = [];
   headerCells.forEach((h, idx) => {
@@ -243,6 +307,10 @@ export function parseEbayOrderCsv(text: string): EbayOrderCsvParseResult {
       detectedColumns.push(`${h.trim()} → ${field}`);
     }
   });
+
+  if (headerRowIndex > 0) {
+    warnings.push(`Skipped ${headerRowIndex} preamble row(s) (eBay Transaktionsbericht header detected).`);
+  }
 
   if (!Object.values(fieldByIndex).includes('orderId') && !Object.values(fieldByIndex).includes('salesRecordNumber')) {
     warnings.push('No "Order Number" (or Sales Record Number) column detected — cannot group rows into orders.');
@@ -255,18 +323,19 @@ export function parseEbayOrderCsv(text: string): EbayOrderCsvParseResult {
   let matchedRowCount = 0;
   let skippedRowCount = 0;
 
-  for (let r = 1; r < lines.length; r++) {
+  for (let r = headerRowIndex + 1; r < lines.length; r++) {
     const cells = parseCsvLine(lines[r], delimiter);
     const row: Partial<Record<CanonicalField, string>> = {};
     for (const [idxStr, field] of Object.entries(fieldByIndex)) {
       row[field] = cells[Number(idxStr)] ?? '';
     }
 
-    const orderId = row.orderId?.trim() || row.salesRecordNumber?.trim();
-    if (!orderId) {
+    const orderIdRaw = row.orderId?.trim() || row.salesRecordNumber?.trim();
+    if (isPlaceholderCell(orderIdRaw)) {
       skippedRowCount++;
       continue;
     }
+    const orderId = orderIdRaw!;
 
     const addrParts = [row.addr1, row.addr2, [row.zip, row.city].filter(Boolean).join(' '), row.state, row.country]
       .map((p) => p?.trim())
@@ -366,7 +435,7 @@ export function parseEbayOrderCsv(text: string): EbayOrderCsvParseResult {
 
   return {
     orders,
-    rowCount: lines.length - 1,
+    rowCount: Math.max(0, lines.length - headerRowIndex - 1),
     matchedRowCount,
     skippedRowCount,
     detectedColumns,

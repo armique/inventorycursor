@@ -23,6 +23,7 @@ import {
 } from '../services/specsAI';
 import {
   generateProductCardDesignBatch,
+  getDefaultCardStudioProviderIds,
   type GenerateDesignResult,
 } from '../services/productCardAI';
 import {
@@ -81,7 +82,7 @@ const ProductCardStudioPage: React.FC<Props> = ({ items, onUpdate, categoryField
   const [packTemplates, setPackTemplates] = useState<ProductCardTemplate[]>([]);
   const [savedTemplates, setSavedTemplates] = useState<ProductCardTemplate[]>(() => loadSavedProductCardTemplates());
   const [selectedProviders, setSelectedProviders] = useState<AIProviderId[]>(() =>
-    providers.slice(0, 3).map((p) => p.id)
+    getDefaultCardStudioProviderIds(providers)
   );
   const [generating, setGenerating] = useState(false);
   const [variants, setVariants] = useState<VariantPreview[]>([]);

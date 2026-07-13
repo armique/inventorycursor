@@ -347,6 +347,21 @@ function runCsvImportTests(): void {
   assert(parsed.orders[0].lineItems.length >= 1, 'keeps sale line item');
   assert((parsed.orders[0].financialEvents?.length || 0) >= 2, 'stores sale + refund events');
   assertClose(parsed.orders[0].netTotal ?? 0, 65, 'order net = sale + refund');
+
+  const deReport = [
+    '--,--,--',
+    'Transaktionsbericht',
+    'Datum der Transaktionserstellung;Typ;Bestellnummer;Nutzername des Käufers;Name des Käufers;Versandziel - Ort;Versandziel - PLZ;Versandziel - Land;Betrag abzügl. Kosten;Artikelnr.;Angebotstitel;Bestandseinheit;Stückzahl;Zwischensumme Artikel;Verpackung und Versand;Transaktionsbetrag (inkl. Kosten);Beschreibung',
+    '"Dez 29, 2025";Bestellung;08-14033-47175;kanyenord;Benjamin Imamovic;Bremen;28357;DE;"23,65";267458796006;2× Corsair AR120 Lüfter;SKU-1;1;"19,9";"6,19";"26,09";--',
+    '"Dez 29, 2025";Andere Gebühr;08-14033-47175;kanyenord;Benjamin Imamovic;--;--;--;"-2,14";267458796006;--;--;--;--;--;--;Promoted Listings fee',
+  ].join('\n');
+  const deParsed = parseEbayOrderCsv(deReport);
+  assert(deParsed.orders.length === 1, 'parses eBay.de Transaktionsbericht');
+  assert(deParsed.orders[0].orderId === '08-14033-47175', 'de report order id');
+  assert(deParsed.orders[0].lineItems.length >= 1, 'de report line item');
+  assert(deParsed.orders[0].buyer.username === 'kanyenord', 'de report buyer');
+  assert((deParsed.orders[0].financialEvents?.length || 0) >= 2, 'de report sale + fee events');
+  assert(deParsed.orders[0].netTotal != null, 'de report has net total');
 }
 
 function runAdjustmentTests(): void {

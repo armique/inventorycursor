@@ -1,7 +1,9 @@
 import type { InventoryItem } from '../types';
 import {
   type AIProviderId,
+  formatAIProviderError,
   getAIProviderLabel,
+  getDefaultCardStudioProviderIds,
   requestAIJsonFromProvider,
 } from './specsAI';
 import {
@@ -167,11 +169,11 @@ export async function generateProductCardDesignBatch(
         template: suggestTemplateForItem(item),
         provider,
         variantStyle: VARIANT_STYLES[idx % VARIANT_STYLES.length].id,
-        error: e instanceof Error ? e.message : String(e),
+        error: formatAIProviderError(provider, e),
       };
     }
   });
   return Promise.all(tasks);
 }
 
-export { VARIANT_STYLES };
+export { VARIANT_STYLES, getDefaultCardStudioProviderIds };

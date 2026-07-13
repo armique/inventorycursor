@@ -836,6 +836,13 @@ const SettingsPage: React.FC<Props> = ({
                       eBay Developer Account → OAuth User Token. Scopes: <code className="bg-slate-100 px-1 rounded">sell.fulfillment.readonly</code> (seller order sync) and{' '}
                       <code className="bg-slate-100 px-1 rounded">sell.inventory.readonly</code> (private listings). Buyer purchases use the same user token via Trading API.
                    </p>
+                   <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                      Tokens expire regularly (~2 h for OAuth access tokens). If Live order refresh or order sync shows &quot;token expired&quot;, generate a new User Token on{' '}
+                      <a href="https://developer.ebay.com/my/keys" target="_blank" rel="noopener noreferrer" className="text-indigo-700 font-bold hover:underline">
+                         developer.ebay.com
+                      </a>
+                      , paste it here, and Save. Stored in this browser only — not synced with cloud login.
+                   </p>
                 </div>
                 <div className="flex items-center gap-3">
                    <button

@@ -20,6 +20,81 @@ type Provider = 'openai' | 'anthropic' | 'gemini' | 'groq' | 'ollama' | 'togethe
 
 export type AIProviderId = Provider;
 
+/** Text models — lite first (higher free-tier quota). */
+const GEMINI_TEXT_MODELS = ['gemini-2.0-flash-lite', 'gemini-2.0-flash'] as const;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function isRateLimitError(message: string): boolean {
+  return /429|rate.?limit|resource.?exhausted|quota|too many requests/i.test(message);
+}
+
+export function formatAIProviderError(provider: AIProviderId, error: unknown): string {
+  const msg = error instanceof Error ? error.message : String(error);
+  const label = PROVIDER_LABELS[provider] || provider;
+  if (isRateLimitError(msg)) {
+    return `${label}: quota exceeded (429). Uncheck ${label} and use Groq/Together/Mistral, or wait a few minutes.`;
+  }
+  if (msg.startsWith(`${label}:`) || msg.startsWith('Gemini:')) {
+    return msg.replace(/^Gemini:/, `${label}:`);
+  }
+  return msg.length > 240 ? `${msg.slice(0, 240)}…` : msg;
+}
+
+/** Default Card Studio providers — Groq/Together first; Gemini last (strict free quota). */
+export function getDefaultCardStudioProviderIds(
+  providers: { id: AIProviderId }[]
+): AIProviderId[] {
+  const nonGemini = providers.filter((p) => p.id !== 'gemini');
+  const ordered =
+    nonGemini.length >= 3
+      ? nonGemini
+      : [...nonGemini, ...providers.filter((p) => p.id === 'gemini')];
+  return ordered.slice(0, 3).map((p) => p.id);
+}
+
+async function fetchGeminiText(
+  apiKey: string,
+  prompt: string,
+  generationConfig: Record<string, unknown>
+): Promise<string> {
+  let lastError: Error | null = null;
+  for (const model of GEMINI_TEXT_MODELS) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig,
+          }),
+        }
+      );
+      if (res.status === 429 && attempt === 0) {
+        await sleep(2500);
+        continue;
+      }
+      if (!res.ok) {
+        const errBody = await res.text();
+        lastError = new Error(
+          res.status === 429
+            ? `Gemini: 429 quota exceeded (${model}). Free tier limits — try Groq or wait ~1 min.`
+            : `Gemini: ${res.status} ${errBody.slice(0, 200)}`
+        );
+        if (res.status === 429) break;
+        throw lastError;
+      }
+      const data = await res.json();
+      return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '{}';
+    }
+  }
+  throw lastError ?? new Error('Gemini: all models failed');
+}
+
 const PAID_PROVIDERS: Provider[] = ['openai', 'anthropic'];
 
 /** Order: free / generous first, then paid. Used for cycling when one fails. */
@@ -157,27 +232,11 @@ async function callGemini(prompt: string): Promise<GenerateSpecsResult> {
   const apiKey = getEnv('VITE_GEMINI_API_KEY')?.trim() || getEnv('VITE_API_KEY')?.trim();
   if (!apiKey) throw new Error('VITE_GEMINI_API_KEY / VITE_API_KEY not set');
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          temperature: 0.2,
-          maxOutputTokens: 1536,
-        },
-      }),
-    }
-  );
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Gemini: ${res.status} ${err}`);
-  }
-  const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '{}';
+  const text = await fetchGeminiText(apiKey, prompt, {
+    responseMimeType: 'application/json',
+    temperature: 0.2,
+    maxOutputTokens: 1536,
+  });
   const parsed = JSON.parse(text) as GenerateSpecsResult;
   return { specs: parsed.specs || {}, standardizedName: parsed.standardizedName, vendor: parsed.vendor };
 }
@@ -363,20 +422,11 @@ async function getRawJsonFromProvider(provider: Provider, prompt: string, maxTok
     return (data.message?.content?.trim() || '{}').replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
   }
   if (provider === 'gemini' && apiKeyGe) {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKeyGe)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json', temperature: 0.2, maxOutputTokens: cap },
-        }),
-      }
-    );
-    if (!res.ok) throw new Error(`Gemini: ${res.status}`);
-    const data = await res.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '{}';
+    return fetchGeminiText(apiKeyGe, prompt, {
+      responseMimeType: 'application/json',
+      temperature: 0.2,
+      maxOutputTokens: cap,
+    });
   }
   if (provider === 'together' && apiKeyT) {
     const res = await fetch('https://api.together.xyz/v1/chat/completions', {
@@ -525,20 +575,7 @@ async function getRawTextFromProvider(provider: Provider, prompt: string, maxTok
     return data.message?.content?.trim() || '';
   }
   if (provider === 'gemini' && apiKeyGe) {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKeyGe)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.4, maxOutputTokens: maxTokens },
-        }),
-      }
-    );
-    if (!res.ok) throw new Error(`Gemini: ${res.status}`);
-    const data = await res.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+    return fetchGeminiText(apiKeyGe, prompt, { temperature: 0.4, maxOutputTokens: maxTokens });
   }
   if (provider === 'together' && apiKeyT) {
     const res = await fetch('https://api.together.xyz/v1/chat/completions', {

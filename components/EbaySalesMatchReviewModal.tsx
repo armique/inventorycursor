@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Link } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowRight,
@@ -374,9 +375,22 @@ const EbaySalesMatchReviewModal: React.FC<Props> = ({
                   </div>
                 )}
                 {liveError && (
-                  <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
-                    {liveError}
-                  </p>
+                  <div className="text-[11px] text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5 space-y-1.5">
+                    <p className="font-semibold">{liveError}</p>
+                    {/expired|invalid|401/i.test(liveError) && (
+                      <>
+                        <p className="text-[10px] text-amber-900/90 leading-snug">
+                          eBay OAuth access tokens expire (often after ~2 hours). Cached buyer and line items below still work — only the Live refresh needs a fresh token.
+                        </p>
+                        <Link
+                          to="/panel/settings?tab=EBAY"
+                          className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-indigo-700 hover:underline"
+                        >
+                          Settings → eBay API → paste new User Token
+                        </Link>
+                      </>
+                    )}
+                  </div>
                 )}
 
                 <div>

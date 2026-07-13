@@ -4106,7 +4106,7 @@ const InventoryList: React.FC<Props> = ({
                         <AlertCircle size={28} className="mx-auto text-slate-300"/>
                         <p className="text-sm font-bold text-slate-600">No cached orders match this item.</p>
                         <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                           Run an API backfill or import a Seller Hub CSV in <span className="font-bold text-slate-600">eBay Store Pull → Order history</span>, then try again.
+                           Run an API backfill or import a Seller Hub CSV in <span className="font-bold text-slate-600">eBay Store Pull → Sales sync</span>, then try again.
                         </p>
                         <button
                            type="button"

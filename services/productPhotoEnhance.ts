@@ -54,11 +54,15 @@ export async function enhanceProductPhoto(sourceUrl: string): Promise<PhotoEnhan
     }
 
     if (data.fallback === 'local' || res.status === 503) {
+      const details = Array.isArray(data.details) ? data.details : [];
+      const had429 = details.some((d: string) => /429|quota/i.test(String(d)));
       const dataUrl = await polishProductPhotoLocally(sourceUrl);
       return {
         dataUrl,
         provider: 'Local polish',
-        note: 'Add GEMINI_API_KEY or REMOVE_BG_API_KEY for AI background removal & cleanup',
+        note: had429
+          ? 'Gemini quota exceeded — using local polish. Set REMOVE_BG_API_KEY on Vercel for reliable background removal.'
+          : 'Add REMOVE_BG_API_KEY or GEMINI_API_KEY for AI background removal & cleanup',
         usedLocalFallback: true,
       };
     }

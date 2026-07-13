@@ -10,7 +10,7 @@ export function classifyTransactionType(raw: string | undefined, amount: number 
     if (CANCEL_RE.test(t)) return 'cancellation';
     if (REFUND_RE.test(t)) return amount != null && amount < 0 ? 'return' : 'refund';
     if (FEE_RE.test(t)) return 'fee';
-    if (/order|sale|verkauf|payment|zahlung/i.test(t)) return 'sale';
+    if (/order|sale|verkauf|bestellung|payment|zahlung/i.test(t)) return 'sale';
   }
   if (amount != null && amount < -0.001) return 'refund';
   if (amount != null && amount > 0.001) return 'sale';
