@@ -46,6 +46,7 @@ interface Props {
 }
 
 const DEFAULT_FROM = '2025-02-01';
+const ORDER_CACHE_RESET_KEY = 'ebay_order_cache_reset_2026_07_13';
 
 function todayISO(): string {
   return new Date().toISOString().split('T')[0];
@@ -86,6 +87,20 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
   const [cloudPulling, setCloudPulling] = useState(false);
   const [cloudPullMessage, setCloudPullMessage] = useState<string | null>(null);
   const cloudPulledOnceRef = useRef(false);
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(ORDER_CACHE_RESET_KEY) === 'done') return;
+      localStorage.setItem(ORDER_CACHE_RESET_KEY, 'done');
+      void clearEbayOrderIndexEverywhere().then(() => {
+        invalidateEbaySalesSyncPeekCache();
+        setCloudPullMessage('Order cache reset completed. Import CSV to rebuild suggestions.');
+        setStatsVersion((v) => v + 1);
+      });
+    } catch {
+      // ignore localStorage failures; manual clear is still available
+    }
+  }, []);
 
   // On first open, re-hydrate the local cache from the cloud mirror — covers a cleared
   // browser or a brand-new PC where localStorage never had this data to begin with.

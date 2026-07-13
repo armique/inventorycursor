@@ -3,6 +3,10 @@
  */
 
 import { InventoryItem, ItemStatus } from '../types';
+import { hasEbayToken } from './ebayService';
+import { backfillEbayOrders, type BackfillProgress, type BackfillResult } from './ebayOrderBackfill';
+import { getSuggestedBackfillRange, loadEbayOrderIndex } from './ebayOrderIndex';
+import { buildOrderLinkAnalysis, type OrderLinkAnalysisResult } from '../utils/ebayOrderLinkAnalysis';
 
 const DEFAULT_HISTORY_FROM = '2025-02-01';
 
