@@ -103,6 +103,30 @@ function quickCategoryPinId(category: string, subCategory?: string): string {
   return subCategory ? `${category}::${subCategory}` : `${category}::`;
 }
 
+function specValuesMatch(a: string | number, b: string | number): boolean {
+  if (typeof a === 'number' && typeof b === 'number') return a === b;
+  return String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+}
+
+function toggleSpecFilterSelection(
+  prev: Record<string, (string | number)[]>,
+  key: string,
+  val: string | number
+): Record<string, (string | number)[]> {
+  const arr = [...(prev[key] ?? [])];
+  const isSel = arr.some((a) => specValuesMatch(a, val));
+  if (isSel) {
+    const idx = arr.findIndex((a) => specValuesMatch(a, val));
+    if (idx !== -1) arr.splice(idx, 1);
+  } else {
+    arr.push(val);
+  }
+  const next = { ...prev };
+  if (arr.length) next[key] = arr;
+  else delete next[key];
+  return next;
+}
+
 const DEFAULT_QUICK_CATEGORY_PINS: QuickCategoryPin[] = [
   { id: quickCategoryPinId('Components', 'Processors'), label: 'CPU', category: 'Components', subCategory: 'Processors' },
   { id: quickCategoryPinId('Components', 'Graphics Cards'), label: 'GPU', category: 'Components', subCategory: 'Graphics Cards' },
@@ -1151,9 +1175,23 @@ const InventoryList: React.FC<Props> = ({
     return { start, end };
   }, [timeFilter]);
 
-  // Base-filtered items (no spec filters) — used to build available spec options in the Filters panel
+  const isQuickCategoryPinActive = useCallback(
+    (pin: QuickCategoryPin) => {
+      if (categoryFilter !== pin.category) return false;
+      if (!pin.subCategory) return !subCategoryFilter;
+      return subCategoryFilter === pin.subCategory;
+    },
+    [categoryFilter, subCategoryFilter]
+  );
+
+  const activeQuickPin = useMemo(
+    () => quickCategoryPins.find((pin) => isQuickCategoryPinActive(pin)) ?? null,
+    [quickCategoryPins, isQuickCategoryPinActive]
+  );
+
+  // Base-filtered items (no spec filters) — used to build available spec options in the Filters panel / quick pins
   const baseFilteredForSpecs = useMemo(() => {
-    if (!showSpecFiltersPanel && !hasActiveSpecFilters) return [];
+    if (!showSpecFiltersPanel && !hasActiveSpecFilters && !activeQuickPin) return [];
     const searchLower = searchTerm.toLowerCase();
     return items.filter(item => {
       let matchesStatus = false;
@@ -1189,11 +1227,11 @@ const InventoryList: React.FC<Props> = ({
       }
       return true;
     });
-  }, [items, searchTerm, statusFilter, categoryFilter, subCategoryFilter, timeFilter, dateRange, salePlatformFilter, salePaymentFilter, showInComposition, showSpecFiltersPanel, hasActiveSpecFilters]);
+  }, [items, searchTerm, statusFilter, categoryFilter, subCategoryFilter, timeFilter, dateRange, salePlatformFilter, salePaymentFilter, showInComposition, showSpecFiltersPanel, hasActiveSpecFilters, activeQuickPin]);
 
-  // Available spec keys and unique values (from base-filtered items) for the Filters panel
+  // Available spec keys and unique values (from base-filtered items) for the Filters panel / quick pins
   const specOptions = useMemo(() => {
-    if (!showSpecFiltersPanel && !hasActiveSpecFilters) return [];
+    if (!showSpecFiltersPanel && !hasActiveSpecFilters && !activeQuickPin) return [];
     const keyToValues = new Map<string, Set<string | number>>();
     const keyToNumeric = new Map<string, boolean>();
     baseFilteredForSpecs.forEach(item => {
@@ -1222,7 +1260,7 @@ const InventoryList: React.FC<Props> = ({
       result.push({ key, values: values.sort((a, b) => String(a).localeCompare(String(b))), isNumeric, min, max });
     });
     return result;
-  }, [baseFilteredForSpecs, showSpecFiltersPanel, hasActiveSpecFilters]);
+  }, [baseFilteredForSpecs, showSpecFiltersPanel, hasActiveSpecFilters, activeQuickPin]);
 
   // Convenience: socket filter options (e.g. for processors / motherboards)
   const socketSpec = useMemo(() => {
@@ -2940,26 +2978,28 @@ const InventoryList: React.FC<Props> = ({
     tryScroll();
   }, [scrollTargetItemId, sortedItems, sortedActiveItems, sortedSoldItems, splitView]);
 
-  const isQuickCategoryPinActive = useCallback(
-    (pin: QuickCategoryPin) => {
-      if (categoryFilter !== pin.category) return false;
-      if (!pin.subCategory) return !subCategoryFilter;
-      return subCategoryFilter === pin.subCategory;
-    },
-    [categoryFilter, subCategoryFilter]
-  );
+  const toggleSpecFilterValue = useCallback((key: string, val: string | number) => {
+    setSpecFilters((prev) => toggleSpecFilterSelection(prev, key, val));
+  }, []);
+
+  const clearQuickPinSpecFilters = useCallback(() => {
+    setSpecFilters({});
+    setSpecRangeFilters({});
+  }, []);
 
   const applyQuickCategoryPin = useCallback(
     (pin: QuickCategoryPin) => {
       if (isQuickCategoryPinActive(pin)) {
         setCategoryFilter('ALL');
         setSubCategoryFilter('');
+        clearQuickPinSpecFilters();
       } else {
         setCategoryFilter(pin.category);
         setSubCategoryFilter(pin.subCategory ?? '');
+        clearQuickPinSpecFilters();
       }
     },
-    [isQuickCategoryPinActive]
+    [isQuickCategoryPinActive, clearQuickPinSpecFilters]
   );
 
   const addQuickCategoryPin = useCallback((category: string, subCategory: string, label: string) => {
@@ -3535,7 +3575,7 @@ const InventoryList: React.FC<Props> = ({
                                           {values.map(val => {
                                              const isSelected = selected.some(s => (typeof val === 'number' && typeof s === 'number' && val === s) || String(val).toLowerCase() === String(s).toLowerCase());
                                              return (
-                                                <button key={String(val)} type="button" onClick={() => { setSpecFilters(prev => { const arr = [...(prev[key] ?? [])]; const isSel = arr.some(a => (typeof a === 'number' && typeof val === 'number' && a === val) || String(a).toLowerCase() === String(val).toLowerCase()); if (isSel) { const idx = arr.findIndex(a => (typeof a === 'number' && typeof val === 'number' && a === val) || String(a).toLowerCase() === String(val).toLowerCase()); if (idx !== -1) arr.splice(idx, 1); } else arr.push(val); const next = { ...prev }; if (arr.length) next[key] = arr; else delete next[key]; return next; }); }} className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${isSelected ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:border-blue-300'}`}>{String(val)}</button>
+                                                <button key={String(val)} type="button" onClick={() => toggleSpecFilterValue(key, val)} className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${isSelected ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:border-blue-300'}`}>{String(val)}</button>
                                              );
                                           })}
                                        </div>
@@ -3614,7 +3654,7 @@ const InventoryList: React.FC<Props> = ({
                )}
                {categoryFilter !== 'ALL' && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 text-xs font-medium">
-                     {categoryFilter}{subCategoryFilter ? ` / ${subCategoryFilter}` : ''} <button type="button" onClick={() => { setCategoryFilter('ALL'); setSubCategoryFilter(''); }} className="hover:opacity-80">×</button>
+                     {categoryFilter}{subCategoryFilter ? ` / ${subCategoryFilter}` : ''} <button type="button" onClick={() => { setCategoryFilter('ALL'); setSubCategoryFilter(''); setSpecFilters({}); setSpecRangeFilters({}); }} className="hover:opacity-80">×</button>
                   </span>
                )}
                {timeFilter !== 'ALL' && (
@@ -3666,7 +3706,8 @@ const InventoryList: React.FC<Props> = ({
             </div>
          )}
 
-         <div className="flex flex-wrap items-center gap-1">
+         <div className="space-y-2">
+           <div className="flex flex-wrap items-center gap-1">
             <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider shrink-0">Cat</span>
             {quickCategoryPins.map((pin) => {
               const active = isQuickCategoryPinActive(pin);
@@ -3695,6 +3736,63 @@ const InventoryList: React.FC<Props> = ({
             >
               <Plus size={14} />
             </button>
+           </div>
+
+           {activeQuickPin && (
+             <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-2.5 space-y-2">
+               <div className="flex items-center justify-between gap-2">
+                 <span className="text-[9px] font-black uppercase tracking-wider text-blue-700">
+                   Narrow {activeQuickPin.label}
+                 </span>
+                 {hasActiveSpecFilters && (
+                   <button
+                     type="button"
+                     onClick={clearQuickPinSpecFilters}
+                     className="text-[9px] font-bold uppercase text-blue-600 hover:text-red-600 flex items-center gap-1"
+                   >
+                     <FilterX size={10} /> Clear specs
+                   </button>
+                 )}
+               </div>
+               {specOptions.length === 0 ? (
+                 <p className="text-[10px] text-slate-500">
+                   No spec fields on {activeQuickPin.label} items yet — add specs to filter by DDR type, capacity, frequency, etc.
+                 </p>
+               ) : (
+                 <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                   {specOptions.map(({ key, values }) => {
+                     const selected = specFilters[key] ?? [];
+                     return (
+                       <div key={key} className="flex flex-wrap items-center gap-1.5">
+                         <span className="text-[9px] font-black uppercase tracking-wide text-slate-500 shrink-0 min-w-[4.5rem]">
+                           {key}
+                         </span>
+                         <div className="flex flex-wrap gap-1">
+                           {values.map((val) => {
+                             const isSelected = selected.some((s) => specValuesMatch(s, val));
+                             return (
+                               <button
+                                 key={`${key}-${String(val)}`}
+                                 type="button"
+                                 onClick={() => toggleSpecFilterValue(key, val)}
+                                 className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition-colors ${
+                                   isSelected
+                                     ? 'bg-blue-600 text-white border-blue-600'
+                                     : 'bg-white text-slate-700 border-slate-200 hover:border-blue-300 hover:text-blue-700'
+                                 }`}
+                               >
+                                 {String(val)}
+                               </button>
+                             );
+                           })}
+                         </div>
+                       </div>
+                     );
+                   })}
+                 </div>
+               )}
+             </div>
+           )}
          </div>
       </header>
 
