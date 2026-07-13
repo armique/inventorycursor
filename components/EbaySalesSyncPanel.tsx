@@ -14,7 +14,7 @@ import { runEbaySalesSync, peekEbaySalesSync } from '../services/ebaySalesSync';
 import { hasEbayToken } from '../services/ebayService';
 import type { BackfillProgress } from '../services/ebayOrderBackfill';
 import { applyEbayOrderMatchToItem } from '../utils/applyEbayOrderMatch';
-import { applyEbaySaleAdjustmentToItem, isRestockAfterRefundAdjustment } from '../utils/ebaySaleAdjustments';
+import { applyEbaySaleAdjustmentToItem, isRestockAfterRefundAdjustment, getAdjustmentSuggestionLabel, getAdjustmentSuggestionBadgeClass, summarizeAdjustmentSuggestions, isRefundLikeAdjustmentKind } from '../utils/ebaySaleAdjustments';
 import {
   type OrderLinkSuggestion,
   type OrderLinkSuggestionKind,
@@ -47,13 +47,15 @@ function isRestockRow(row: OrderLinkSuggestion): boolean {
 function kindLabel(kind: OrderLinkSuggestionKind, row?: OrderLinkSuggestion): string {
   if (kind === 'mark_sold') return 'Mark sold';
   if (kind === 'link') return 'Link order';
-  if (kind === 'adjustment') return row && isRestockRow(row) ? 'Restock after refund' : 'Return/refund';
+  if (kind === 'adjustment' && row?.adjustment) return getAdjustmentSuggestionLabel(row.adjustment);
+  if (kind === 'adjustment') return 'Adjustment';
   return 'Fix payout';
 }
 
-function kindBadgeClass(kind: OrderLinkSuggestionKind): string {
+function kindBadgeClass(kind: OrderLinkSuggestionKind, row?: OrderLinkSuggestion): string {
   if (kind === 'mark_sold') return 'bg-emerald-100 text-emerald-800';
   if (kind === 'link') return 'bg-blue-100 text-blue-800';
+  if (kind === 'adjustment' && row?.adjustment) return getAdjustmentSuggestionBadgeClass(row.adjustment);
   if (kind === 'adjustment') return 'bg-rose-100 text-rose-900';
   return 'bg-amber-100 text-amber-900';
 }
@@ -103,11 +105,15 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
       setSelected(nextSelected);
       setDismissed(new Set());
       setReviewRow(null);
+      const adj = summarizeAdjustmentSuggestions(result.suggestions);
       const parts: string[] = [];
       if (result.stats.markSoldCandidates) parts.push(`${result.stats.markSoldCandidates} to mark sold`);
       if (result.stats.linkCandidates) parts.push(`${result.stats.linkCandidates} to link`);
       if (result.stats.repriceCandidates) parts.push(`${result.stats.repriceCandidates} to reprice`);
-      if (result.stats.adjustmentCandidates) parts.push(`${result.stats.adjustmentCandidates} return/refund`);
+      if (adj.refundLike) parts.push(`${adj.refundLike} return/refund`);
+      if (adj.restock) parts.push(`${adj.restock} restock after refund`);
+      if (adj.payoutFix) parts.push(`${adj.payoutFix} payout fix`);
+      if (adj.fee) parts.push(`${adj.fee} fee note`);
       setMessage(
         info ||
           (result.suggestions.length
@@ -198,13 +204,16 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
 
   const selectedVisible = visible.filter((s) => selected[s.id]);
 
+
   const counts = useMemo(() => {
     const active = suggestions.filter((s) => !dismissed.has(s.id));
+    const summary = summarizeAdjustmentSuggestions(active);
     return {
       all: active.length,
       mark_sold: active.filter((s) => s.kind === 'mark_sold').length,
       link: active.filter((s) => s.kind === 'link').length,
       adjustment: active.filter((s) => s.kind === 'adjustment').length,
+      refund: summary.refundLike + summary.restock,
       reprice: active.filter((s) => s.kind === 'reprice').length,
     };
   }, [suggestions, dismissed]);
@@ -271,7 +280,7 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
             { label: 'In stock', value: stats.inStockItems },
             { label: 'Mark sold', value: counts.mark_sold, highlight: counts.mark_sold > 0 },
             { label: 'Link order', value: counts.link, highlight: counts.link > 0 },
-            { label: 'Returns', value: counts.adjustment, highlight: counts.adjustment > 0 },
+            { label: 'Refunds', value: counts.refund, highlight: counts.refund > 0 },
             { label: 'Fix payout', value: counts.reprice, highlight: counts.reprice > 0 },
           ].map((s) => (
             <div
@@ -326,7 +335,7 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
                     : kind === 'link'
                       ? `Link (${counts.link})`
                       : kind === 'adjustment'
-                        ? `Returns (${counts.adjustment})`
+                        ? `Adjustments (${counts.adjustment})`
                       : `Payout (${counts.reprice})`}
               </button>
             ))}
@@ -417,7 +426,7 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
                   />
                   <div className="flex-1 min-w-0 space-y-1 xl:col-span-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${kindBadgeClass(kind)}`}>
+                      <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${kindBadgeClass(kind, row)}`}>
                         {kindLabel(kind, row)}
                       </span>
                       <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
@@ -429,12 +438,21 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
                       {isRestockRow(row) && (
                         <span className="text-[9px] font-bold uppercase text-indigo-700">Sold → in stock · EK + fee</span>
                       )}
-                      {kind === 'adjustment' && !isRestockRow(row) && (
-                        <span className="text-[9px] font-bold uppercase text-rose-700">Document adjustment</span>
+                      {kind === 'adjustment' && row.adjustment && isRefundLikeAdjustmentKind(row.adjustment.kind) && (
+                        <span className="text-[9px] font-bold uppercase text-rose-700">Document refund</span>
+                      )}
+                      {kind === 'adjustment' && row.adjustment?.kind === 'payout_correction' && (
+                        <span className="text-[9px] font-bold uppercase text-amber-700">Match CSV net</span>
                       )}
                     </div>
                     {row.adjustmentReason && (
-                      <p className="text-[11px] font-bold text-rose-800 bg-rose-50 border border-rose-100 rounded-lg px-2 py-1">
+                      <p
+                        className={`text-[11px] font-bold rounded-lg px-2 py-1 border ${
+                          row.adjustment && isRefundLikeAdjustmentKind(row.adjustment.kind)
+                            ? 'text-rose-800 bg-rose-50 border-rose-100'
+                            : 'text-amber-900 bg-amber-50 border-amber-100'
+                        }`}
+                      >
                         {row.adjustmentReason}
                       </p>
                     )}

@@ -18,8 +18,10 @@ import {
   applyEbaySaleAdjustmentToItem,
   buildAdjustmentFromEvent,
   buildRestockAfterRefundAdjustment,
+  getAdjustmentSuggestionLabel,
   getOriginalSellPrice,
   hasRestockAfterRefundAdjustment,
+  isRefundLikeAdjustmentKind,
   sumAdjustmentAmounts,
 } from '../utils/ebaySaleAdjustments';
 import type { EbayOrderFinancialEvent, EbayOrderRecord } from '../services/ebayOrderIndex';
@@ -576,6 +578,10 @@ function runAdjustmentTests(): void {
     ramAnalysis.suggestions.filter((s) => s.kind === 'adjustment').length === 0,
     'no duplicate fee adjustments when sell already matches CSV net'
   );
+
+  assert(getAdjustmentSuggestionLabel({ kind: 'fee_adjustment' }) === 'Fee deduction', 'fee adjustment label');
+  assert(getAdjustmentSuggestionLabel({ kind: 'return' }) === 'Return / refund', 'return adjustment label');
+  assert(!isRefundLikeAdjustmentKind('fee_adjustment'), 'fee is not refund-like');
 }
 
 function runFilamentStockTests(): void {

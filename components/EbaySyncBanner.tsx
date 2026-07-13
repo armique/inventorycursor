@@ -4,6 +4,7 @@ import { ArrowRight, PackageSearch, X } from 'lucide-react';
 import { InventoryItem } from '../types';
 import { peekEbaySalesSync } from '../services/ebaySalesSync';
 import { getOrderIndexStats } from '../services/ebayOrderIndex';
+import { summarizeAdjustmentSuggestions } from '../utils/ebaySaleAdjustments';
 
 const DISMISS_COUNT_KEY = 'ebay_sales_sync_banner_dismissed_count';
 
@@ -22,15 +23,18 @@ function readDismissedCount(): number {
 const EbaySyncBanner: React.FC<Props> = ({ items }) => {
   const [pending, setPending] = useState(0);
   const [markSold, setMarkSold] = useState(0);
-  const [adjustments, setAdjustments] = useState(0);
+  const [refundAdjustments, setRefundAdjustments] = useState(0);
+  const [payoutAdjustments, setPayoutAdjustments] = useState(0);
   const [cachedOrders, setCachedOrders] = useState(0);
   const [dismissed, setDismissed] = useState(false);
 
   const refresh = useCallback(() => {
     const analysis = peekEbaySalesSync(items);
+    const adj = summarizeAdjustmentSuggestions(analysis.suggestions);
     setPending(analysis.suggestions.length);
     setMarkSold(analysis.stats.markSoldCandidates);
-    setAdjustments(analysis.stats.adjustmentCandidates);
+    setRefundAdjustments(adj.refundLike + adj.restock);
+    setPayoutAdjustments(adj.payoutFix + adj.fee);
     setCachedOrders(getOrderIndexStats().count);
     setDismissed(analysis.suggestions.length <= readDismissedCount());
   }, [items]);
@@ -95,9 +99,11 @@ const EbaySyncBanner: React.FC<Props> = ({ items }) => {
           <p className="text-xs text-emerald-900/90 mt-0.5">
             {markSold > 0
               ? `${markSold} in-stock item${markSold === 1 ? '' : 's'} may have sold on eBay`
-              : adjustments > 0
-                ? `${adjustments} return/refund adjustment${adjustments === 1 ? '' : 's'} to document`
-                : 'Link order IDs or fix sell prices to match what you actually received'}
+              : refundAdjustments > 0
+                ? `${refundAdjustments} return/refund adjustment${refundAdjustments === 1 ? '' : 's'} to document`
+                : payoutAdjustments > 0
+                  ? `${payoutAdjustments} payout adjustment${payoutAdjustments === 1 ? '' : 's'} to review`
+                  : 'Link order IDs or fix sell prices to match what you actually received'}
             {' — '}
             nothing is applied until you confirm.
           </p>

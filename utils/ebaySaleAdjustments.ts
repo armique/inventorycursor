@@ -1,4 +1,4 @@
-import { InventoryItem, ItemStatus, TaxMode, type EbaySaleAdjustment, type PriceHistoryEntry } from '../types';
+import { InventoryItem, ItemStatus, TaxMode, type EbaySaleAdjustment, type EbaySaleAdjustmentKind, type PriceHistoryEntry } from '../types';
 import type { EbayOrderRecord } from '../services/ebayOrderIndex';
 import type { EbayOrderFinancialEvent } from '../services/ebayOrderIndex';
 import { describeFinancialEvent } from './ebayOrderFinancial';
@@ -44,6 +44,53 @@ export function mapEventKindToAdjustmentKind(
 
 export function isRestockAfterRefundAdjustment(adjustment: EbaySaleAdjustment): boolean {
   return adjustment.kind === 'restock_after_refund' || Boolean(adjustment.revertToStock);
+}
+
+export function isRefundLikeAdjustmentKind(kind: EbaySaleAdjustmentKind): boolean {
+  return kind === 'return' || kind === 'refund' || kind === 'cancellation';
+}
+
+export function getAdjustmentSuggestionLabel(adjustment: Pick<EbaySaleAdjustment, 'kind'>): string {
+  switch (adjustment.kind) {
+    case 'restock_after_refund':
+      return 'Restock after refund';
+    case 'return':
+    case 'refund':
+      return 'Return / refund';
+    case 'cancellation':
+      return 'Cancellation';
+    case 'fee_adjustment':
+      return 'Fee deduction';
+    case 'payout_correction':
+      return 'Fix payout';
+    default:
+      return 'Payout adjustment';
+  }
+}
+
+export function getAdjustmentSuggestionBadgeClass(adjustment: Pick<EbaySaleAdjustment, 'kind'>): string {
+  if (adjustment.kind === 'restock_after_refund') return 'bg-indigo-100 text-indigo-800';
+  if (isRefundLikeAdjustmentKind(adjustment.kind)) return 'bg-rose-100 text-rose-900';
+  if (adjustment.kind === 'fee_adjustment') return 'bg-slate-100 text-slate-700';
+  return 'bg-amber-100 text-amber-900';
+}
+
+export function summarizeAdjustmentSuggestions(
+  suggestions: Array<{ kind: string; adjustment?: EbaySaleAdjustment }>
+): { refundLike: number; payoutFix: number; fee: number; restock: number; total: number } {
+  const rows = suggestions.filter((s) => s.kind === 'adjustment' && s.adjustment);
+  let refundLike = 0;
+  let payoutFix = 0;
+  let fee = 0;
+  let restock = 0;
+  for (const row of rows) {
+    const k = row.adjustment!.kind;
+    if (k === 'restock_after_refund') restock += 1;
+    else if (isRefundLikeAdjustmentKind(k)) refundLike += 1;
+    else if (k === 'fee_adjustment') fee += 1;
+    else payoutFix += 1;
+  }
+  return { refundLike, payoutFix, fee, restock, total: rows.length };
 }
 
 export function hasRestockAfterRefundAdjustment(item: InventoryItem): boolean {

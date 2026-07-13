@@ -18,7 +18,7 @@ import type { EbayOrderRecord } from '../services/ebayOrderIndex';
 import type { OrderLinkSuggestion, OrderLinkSuggestionKind } from '../utils/ebayOrderLinkAnalysis';
 import { getLinePayout } from '../utils/ebayOrderPayout';
 import { describeFinancialEvent } from '../utils/ebayOrderFinancial';
-import { isRestockAfterRefundAdjustment } from '../utils/ebaySaleAdjustments';
+import { isRestockAfterRefundAdjustment, getAdjustmentSuggestionLabel, getAdjustmentSuggestionBadgeClass } from '../utils/ebaySaleAdjustments';
 import { scoreListingTitleMatch } from '../utils/ebayListingMatch';
 import { formatEUR } from '../utils/formatMoney';
 
@@ -37,13 +37,15 @@ function isRestockRow(row: OrderLinkSuggestion): boolean {
 function kindLabel(kind: OrderLinkSuggestionKind, row?: OrderLinkSuggestion): string {
   if (kind === 'mark_sold') return 'Mark sold';
   if (kind === 'link') return 'Link order';
-  if (kind === 'adjustment') return row && isRestockRow(row) ? 'Restock after refund' : 'Return / refund';
+  if (kind === 'adjustment' && row?.adjustment) return getAdjustmentSuggestionLabel(row.adjustment);
+  if (kind === 'adjustment') return 'Adjustment';
   return 'Fix payout';
 }
 
-function kindBadgeClass(kind: OrderLinkSuggestionKind): string {
+function kindBadgeClass(kind: OrderLinkSuggestionKind, row?: OrderLinkSuggestion): string {
   if (kind === 'mark_sold') return 'bg-emerald-100 text-emerald-800';
   if (kind === 'link') return 'bg-blue-100 text-blue-800';
+  if (kind === 'adjustment' && row?.adjustment) return getAdjustmentSuggestionBadgeClass(row.adjustment);
   if (kind === 'adjustment') return 'bg-rose-100 text-rose-900';
   return 'bg-amber-100 text-amber-900';
 }
@@ -200,7 +202,7 @@ const EbaySalesMatchReviewModal: React.FC<Props> = ({
         <div className="shrink-0 px-4 sm:px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white flex items-start justify-between gap-3">
           <div className="min-w-0 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${kindBadgeClass(kind)}`}>
+              <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${kindBadgeClass(kind, row)}`}>
                 {kindLabel(kind, row)}
               </span>
               <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
