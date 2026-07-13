@@ -51,7 +51,7 @@ function buildChunks(fromDate: string, toDate: string): { from: string; to: stri
   return chunks;
 }
 
-function summaryToRecord(o: EbayOrderSummary): EbayOrderRecord {
+export function ebaySummaryToRecord(o: EbayOrderSummary): EbayOrderRecord {
   const lineTotal = o.lineItems.reduce((sum, li) => sum + (li.lineItemCost || 0), 0);
   return {
     orderId: o.orderId,
@@ -111,7 +111,7 @@ export async function backfillEbayOrders(
     try {
       const orders = await listEbayOrders(chunk.from, chunk.to);
       ordersFetched += orders.length;
-      const records = orders.map(summaryToRecord);
+      const records = orders.map(ebaySummaryToRecord);
       const result = upsertEbayOrders(records);
       added += result.added;
       merged += result.merged;

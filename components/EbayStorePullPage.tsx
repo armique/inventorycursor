@@ -12,6 +12,7 @@ import {
   RefreshCw,
   ShoppingBag,
   Tag,
+  GitCompare,
   TrendingDown,
 } from 'lucide-react';
 import { InventoryItem, TaxMode } from '../types';
@@ -28,11 +29,12 @@ import EbayStorePullImportTab from './EbayStorePullImportTab';
 import EbayStorePullSoldTab from './EbayStorePullSoldTab';
 import EbayStorePullOrdersTab from './EbayStorePullOrdersTab';
 import EbayStorePullPurchasesTab from './EbayStorePullPurchasesTab';
+import EbayOrderSourceCompareTab from './EbayOrderSourceCompareTab';
 import EbayToolProgressBar, { type EbayToolProgress } from './EbayToolProgressBar';
 import type { Expense } from '../types';
 
 type PhotoMode = 'none' | 'all' | 'pick';
-type PullTab = 'sync' | 'import' | 'sold' | 'orders' | 'purchases';
+type PullTab = 'sync' | 'import' | 'sold' | 'orders' | 'purchases' | 'compare';
 
 interface Props {
   items: InventoryItem[];
@@ -96,6 +98,12 @@ const TABS: { id: PullTab; label: string; icon: React.ReactNode; hint: string }[
     hint: 'Fetch eBay orders and match inventory — mark forgotten sales, link order IDs, fix net payout',
   },
   {
+    id: 'compare',
+    label: 'API vs CSV',
+    icon: <GitCompare size={14} />,
+    hint: 'Compare isolated API and CSV snapshots — find orders missing from Transaktionsbericht',
+  },
+  {
     id: 'purchases',
     label: 'Purchases',
     icon: <ShoppingBag size={14} />,
@@ -119,7 +127,7 @@ const EbayStorePullPage: React.FC<Props> = ({
     const t = searchParams.get('tab');
     if (t === 'sales') setTab('orders');
     else if (t === 'purchases') setTab('purchases');
-    else if (t === 'sync' || t === 'import' || t === 'sold' || t === 'orders') setTab(t);
+    else if (t === 'sync' || t === 'import' || t === 'sold' || t === 'orders' || t === 'compare' || t === 'purchases') setTab(t);
   }, [searchParams]);
   const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -391,6 +399,8 @@ const EbayStorePullPage: React.FC<Props> = ({
         />
       ) : tab === 'orders' ? (
         <EbayStorePullOrdersTab items={items} taxMode={taxMode} onUpdate={onUpdate} />
+      ) : tab === 'compare' ? (
+        <EbayOrderSourceCompareTab />
       ) : tab === 'purchases' ? (
         <EbayStorePullPurchasesTab items={items} onAddExpense={onAddExpense} />
       ) : (
