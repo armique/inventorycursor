@@ -5,8 +5,10 @@ import { getLinePayout } from './ebayOrderPayout';
 import { getOrderEffectiveNet, isOrderCancelled, isOrderFullyRefunded, unappliedOrderEvents, hasPostSaleRefund } from './ebayOrderFinancial';
 import {
   buildAdjustmentFromEvent,
+  buildRestockAfterRefundAdjustment,
   getAppliedEventIds,
   getEffectiveSellPrice,
+  hasRestockAfterRefundAdjustment,
   round2,
 } from './ebaySaleAdjustments';
 
@@ -25,6 +27,10 @@ export interface OrderLinkSuggestion {
   netKnown: boolean;
   priceDelta: number | null;
   totalScore: number;
+  /** After full refund restock — new buy price (EK + cancellation cost). */
+  suggestedBuyPrice?: number;
+  /** For restock suggestions — target inventory status. */
+  suggestedStatus?: ItemStatus;
   /** For adjustment suggestions — auditable post-sale correction. */
   adjustment?: EbaySaleAdjustment;
   adjustmentReason?: string;
@@ -174,6 +180,28 @@ function findAdjustmentSuggestions(
   const payout = getLinePayout(order, lineItem);
   const current = getEffectiveSellPrice(item) ?? item.sellPrice ?? 0;
   const targetNet = payout.netKnown ? payout.sellPrice : null;
+  const orderNet = getOrderEffectiveNet(order);
+
+  // Full refund + item still sold → restock, capitalize cancellation loss into buy price.
+  if (
+    isOrderFullyRefunded(order) &&
+    item.status === ItemStatus.SOLD &&
+    !hasRestockAfterRefundAdjustment(item) &&
+    orderNet != null
+  ) {
+    const adjustment = buildRestockAfterRefundAdjustment(item, order, orderNet);
+    suggestions.push(
+      makeSuggestion('adjustment', item, match, match.matchScore + 240, {
+        adjustment,
+        adjustmentReason: adjustment.reason,
+        suggestedSellPrice: 0,
+        suggestedBuyPrice: adjustment.buyPriceAfter,
+        suggestedStatus: ItemStatus.IN_STOCK,
+        priceDelta: adjustment.amount,
+      })
+    );
+    return;
+  }
 
   // Prefer one correction to signed Bestelleinnahmen (includes refunds) over per-event tweaks.
   if (targetNet != null && Math.abs(current - targetNet) >= REPRICE_MIN_DELTA) {

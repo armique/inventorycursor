@@ -14,7 +14,7 @@ import { runEbaySalesSync, peekEbaySalesSync } from '../services/ebaySalesSync';
 import { hasEbayToken } from '../services/ebayService';
 import type { BackfillProgress } from '../services/ebayOrderBackfill';
 import { applyEbayOrderMatchToItem } from '../utils/applyEbayOrderMatch';
-import { applyEbaySaleAdjustmentToItem } from '../utils/ebaySaleAdjustments';
+import { applyEbaySaleAdjustmentToItem, isRestockAfterRefundAdjustment } from '../utils/ebaySaleAdjustments';
 import {
   type OrderLinkSuggestion,
   type OrderLinkSuggestionKind,
@@ -38,10 +38,14 @@ function matchKindLabel(kind: OrderLinkSuggestion['match']['matchKind']): string
   return 'Title';
 }
 
-function kindLabel(kind: OrderLinkSuggestionKind): string {
+function isRestockRow(row: OrderLinkSuggestion): boolean {
+  return Boolean(row.adjustment && isRestockAfterRefundAdjustment(row.adjustment));
+}
+
+function kindLabel(kind: OrderLinkSuggestionKind, row?: OrderLinkSuggestion): string {
   if (kind === 'mark_sold') return 'Mark sold';
   if (kind === 'link') return 'Link order';
-  if (kind === 'adjustment') return 'Return/refund';
+  if (kind === 'adjustment') return row && isRestockRow(row) ? 'Restock after refund' : 'Return/refund';
   return 'Fix payout';
 }
 
@@ -196,9 +200,10 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
         return next;
       });
       const marked = rows.filter((r) => r.kind === 'mark_sold').length;
-      const adjusted = rows.filter((r) => r.kind === 'adjustment').length;
+      const restocked = rows.filter((r) => isRestockRow(r)).length;
+      const adjusted = rows.filter((r) => r.kind === 'adjustment' && !isRestockRow(r)).length;
       setMessage(
-        `Applied ${rows.length} row(s)${marked ? ` — ${marked} marked sold` : ''}${adjusted ? ` — ${adjusted} adjustment(s) documented` : ''}. Original sell price preserved for audit.`
+        `Applied ${rows.length} row(s)${marked ? ` — ${marked} marked sold` : ''}${restocked ? ` — ${restocked} restocked after refund` : ''}${adjusted ? ` — ${adjusted} adjustment(s) documented` : ''}.`
       );
       setReviewRow(null);
     } catch (e: unknown) {
@@ -371,7 +376,7 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
                   <div className="flex-1 min-w-0 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${kindBadgeClass(kind)}`}>
-                        {kindLabel(kind)}
+                        {kindLabel(kind, row)}
                       </span>
                       <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
                         {matchKindLabel(matchKind)} · {row.totalScore}
@@ -379,7 +384,10 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
                       {kind === 'mark_sold' && (
                         <span className="text-[9px] font-bold uppercase text-emerald-700">In stock → sold</span>
                       )}
-                      {kind === 'adjustment' && (
+                      {isRestockRow(row) && (
+                        <span className="text-[9px] font-bold uppercase text-indigo-700">Sold → in stock · EK + fee</span>
+                      )}
+                      {kind === 'adjustment' && !isRestockRow(row) && (
                         <span className="text-[9px] font-bold uppercase text-rose-700">Document adjustment</span>
                       )}
                     </div>
@@ -410,29 +418,47 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
                     </p>
                   </div>
                   <div className="text-right shrink-0 space-y-0.5">
-                    <p className="text-[9px] font-black uppercase text-slate-400">Payout</p>
-                    {kind !== 'mark_sold' && (
-                      <p className="text-xs text-slate-500 tabular-nums">
-                        {row.currentSellPrice != null ? `€${formatEUR(row.currentSellPrice)}` : '—'}
-                      </p>
-                    )}
-                    <p className="text-sm font-black text-emerald-700 tabular-nums flex items-center justify-end gap-1">
-                      {kind !== 'mark_sold' && row.currentSellPrice != null && (
-                        <ArrowRight size={12} className="text-slate-400" />
-                      )}
-                      €{formatEUR(row.suggestedSellPrice)}
-                    </p>
-                    {!row.netKnown && (
-                      <p className="text-[9px] font-bold text-amber-700">Gross (import Payments CSV)</p>
-                    )}
-                    {row.priceDelta != null && Math.abs(row.priceDelta) >= 0.02 && kind !== 'mark_sold' && (
-                      <p
-                        className={`text-[10px] font-bold tabular-nums ${
-                          row.priceDelta < 0 ? 'text-red-600' : 'text-emerald-600'
-                        }`}
-                      >
-                        {row.priceDelta > 0 ? '+' : ''}€{formatEUR(row.priceDelta)}
-                      </p>
+                    {isRestockRow(row) ? (
+                      <>
+                        <p className="text-[9px] font-black uppercase text-slate-400">Buy price (EK)</p>
+                        <p className="text-xs text-slate-500 tabular-nums">€{formatEUR(item.buyPrice)}</p>
+                        <p className="text-sm font-black text-indigo-700 tabular-nums flex items-center justify-end gap-1">
+                          <ArrowRight size={12} className="text-slate-400" />
+                          €{formatEUR(row.suggestedBuyPrice ?? item.buyPrice)}
+                        </p>
+                        {row.adjustment?.buyPriceDelta != null && row.adjustment.buyPriceDelta > 0 && (
+                          <p className="text-[10px] font-bold text-rose-600 tabular-nums">
+                            +€{formatEUR(row.adjustment.buyPriceDelta)} fee
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-[9px] font-black uppercase text-slate-400">Payout</p>
+                        {kind !== 'mark_sold' && (
+                          <p className="text-xs text-slate-500 tabular-nums">
+                            {row.currentSellPrice != null ? `€${formatEUR(row.currentSellPrice)}` : '—'}
+                          </p>
+                        )}
+                        <p className="text-sm font-black text-emerald-700 tabular-nums flex items-center justify-end gap-1">
+                          {kind !== 'mark_sold' && row.currentSellPrice != null && (
+                            <ArrowRight size={12} className="text-slate-400" />
+                          )}
+                          €{formatEUR(row.suggestedSellPrice)}
+                        </p>
+                        {!row.netKnown && (
+                          <p className="text-[9px] font-bold text-amber-700">Gross (import Payments CSV)</p>
+                        )}
+                        {row.priceDelta != null && Math.abs(row.priceDelta) >= 0.02 && kind !== 'mark_sold' && (
+                          <p
+                            className={`text-[10px] font-bold tabular-nums ${
+                              row.priceDelta < 0 ? 'text-red-600' : 'text-emerald-600'
+                            }`}
+                          >
+                            {row.priceDelta > 0 ? '+' : ''}€{formatEUR(row.priceDelta)}
+                          </p>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
@@ -450,7 +476,13 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
                     onClick={() => void applySuggestions([row])}
                     className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[10px] font-black uppercase hover:bg-emerald-700 disabled:opacity-50"
                   >
-                    {kind === 'adjustment' ? 'Apply adjustment' : kind === 'mark_sold' ? 'Mark sold & apply' : 'Apply'}
+                    {isRestockRow(row)
+                      ? 'Restock & apply fee'
+                      : kind === 'adjustment'
+                        ? 'Apply adjustment'
+                        : kind === 'mark_sold'
+                          ? 'Mark sold & apply'
+                          : 'Apply'}
                   </button>
                   <button
                     type="button"

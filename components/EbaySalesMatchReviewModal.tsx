@@ -18,6 +18,7 @@ import type { EbayOrderRecord } from '../services/ebayOrderIndex';
 import type { OrderLinkSuggestion, OrderLinkSuggestionKind } from '../utils/ebayOrderLinkAnalysis';
 import { getLinePayout } from '../utils/ebayOrderPayout';
 import { describeFinancialEvent } from '../utils/ebayOrderFinancial';
+import { isRestockAfterRefundAdjustment } from '../utils/ebaySaleAdjustments';
 import { scoreListingTitleMatch } from '../utils/ebayListingMatch';
 import { formatEUR } from '../utils/formatMoney';
 
@@ -29,10 +30,14 @@ interface Props {
   onDismiss: (row: OrderLinkSuggestion) => void;
 }
 
-function kindLabel(kind: OrderLinkSuggestionKind): string {
+function isRestockRow(row: OrderLinkSuggestion): boolean {
+  return Boolean(row.adjustment && isRestockAfterRefundAdjustment(row.adjustment));
+}
+
+function kindLabel(kind: OrderLinkSuggestionKind, row?: OrderLinkSuggestion): string {
   if (kind === 'mark_sold') return 'Mark sold';
   if (kind === 'link') return 'Link order';
-  if (kind === 'adjustment') return 'Return / refund';
+  if (kind === 'adjustment') return row && isRestockRow(row) ? 'Restock after refund' : 'Return / refund';
   return 'Fix payout';
 }
 
@@ -196,7 +201,7 @@ const EbaySalesMatchReviewModal: React.FC<Props> = ({
           <div className="min-w-0 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
               <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${kindBadgeClass(kind)}`}>
-                {kindLabel(kind)}
+                {kindLabel(kind, row)}
               </span>
               <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
                 {matchKindLabel(matchKind)} · score {matchScore}
@@ -301,11 +306,17 @@ const EbaySalesMatchReviewModal: React.FC<Props> = ({
                     <dd className="font-bold text-slate-900">€{formatEUR(item.buyPrice)}</dd>
                   </div>
                   <div className="rounded-lg bg-slate-50 p-2 border border-slate-100">
-                    <dt className="text-[9px] font-black uppercase text-slate-400">Current sell</dt>
-                    <dd className="font-bold text-slate-900">
-                      {row.currentSellPrice != null ? `€${formatEUR(row.currentSellPrice)}` : '—'}
-                    </dd>
+                    <dt className="text-[9px] font-black uppercase text-slate-400">Status</dt>
+                    <dd className="font-bold text-slate-900">{item.status}</dd>
                   </div>
+                  {!isRestockRow(row) && (
+                    <div className="rounded-lg bg-slate-50 p-2 border border-slate-100">
+                      <dt className="text-[9px] font-black uppercase text-slate-400">Current sell</dt>
+                      <dd className="font-bold text-slate-900">
+                        {row.currentSellPrice != null ? `€${formatEUR(row.currentSellPrice)}` : '—'}
+                      </dd>
+                    </div>
+                  )}
                   <div className="rounded-lg bg-slate-50 p-2 border border-slate-100">
                     <dt className="text-[9px] font-black uppercase text-slate-400">eBay SKU</dt>
                     <dd className="font-bold text-slate-800 truncate">{item.ebaySku || '—'}</dd>
@@ -315,13 +326,32 @@ const EbaySalesMatchReviewModal: React.FC<Props> = ({
                     <dd className="font-bold text-slate-800 truncate">{item.ebayOrderId || '—'}</dd>
                   </div>
                 </dl>
-                {kind !== 'mark_sold' && (
-                  <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-2 flex items-center justify-between gap-2">
-                    <span className="text-[10px] font-black uppercase text-emerald-800">Suggested payout</span>
-                    <span className="text-lg font-black text-emerald-700 tabular-nums">
-                      €{formatEUR(row.suggestedSellPrice)}
-                    </span>
+                {isRestockRow(row) ? (
+                  <div className="rounded-lg bg-indigo-50 border border-indigo-100 p-2 flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-black uppercase text-indigo-800">After apply</span>
+                    <div className="text-right">
+                      <p className="text-[10px] font-bold text-indigo-900">In Stock · sell cleared</p>
+                      <p className="text-lg font-black text-indigo-700 tabular-nums">
+                        EK €{formatEUR(item.buyPrice)}
+                        <ArrowRight size={12} className="inline mx-1 text-slate-400" />
+                        €{formatEUR(row.suggestedBuyPrice ?? item.buyPrice)}
+                      </p>
+                      {row.adjustment?.buyPriceDelta != null && row.adjustment.buyPriceDelta > 0 && (
+                        <p className="text-[10px] font-bold text-rose-700">
+                          +€{formatEUR(row.adjustment.buyPriceDelta)} cancellation fee
+                        </p>
+                      )}
+                    </div>
                   </div>
+                ) : (
+                  kind !== 'mark_sold' && (
+                    <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-2 flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-black uppercase text-emerald-800">Suggested payout</span>
+                      <span className="text-lg font-black text-emerald-700 tabular-nums">
+                        €{formatEUR(row.suggestedSellPrice)}
+                      </span>
+                    </div>
+                  )
                 )}
               </div>
             </section>
@@ -506,20 +536,33 @@ const EbaySalesMatchReviewModal: React.FC<Props> = ({
           </div>
 
           {/* Payout preview for apply */}
-          {kind !== 'mark_sold' && row.currentSellPrice != null && (
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-bold text-emerald-900">If you apply this suggestion</span>
-              <div className="flex items-center gap-2 text-sm font-black tabular-nums">
-                <span className="text-slate-500">€{formatEUR(row.currentSellPrice)}</span>
-                <ArrowRight size={14} className="text-slate-400" />
-                <span className="text-emerald-700">€{formatEUR(row.suggestedSellPrice)}</span>
-                {row.priceDelta != null && Math.abs(row.priceDelta) >= 0.02 && (
-                  <span className={row.priceDelta < 0 ? 'text-red-600' : 'text-emerald-600'}>
-                    ({row.priceDelta > 0 ? '+' : ''}€{formatEUR(row.priceDelta)})
-                  </span>
+          {isRestockRow(row) ? (
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-bold text-indigo-900">If you apply this suggestion</span>
+              <div className="text-sm font-black tabular-nums text-indigo-800">
+                Sold → In Stock · buy €{formatEUR(item.buyPrice)} → €{formatEUR(row.suggestedBuyPrice ?? item.buyPrice)}
+                {row.adjustment?.buyPriceDelta != null && row.adjustment.buyPriceDelta > 0 && (
+                  <span className="text-rose-700"> (+€{formatEUR(row.adjustment.buyPriceDelta)} fee)</span>
                 )}
               </div>
             </div>
+          ) : (
+            kind !== 'mark_sold' &&
+            row.currentSellPrice != null && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-bold text-emerald-900">If you apply this suggestion</span>
+                <div className="flex items-center gap-2 text-sm font-black tabular-nums">
+                  <span className="text-slate-500">€{formatEUR(row.currentSellPrice)}</span>
+                  <ArrowRight size={14} className="text-slate-400" />
+                  <span className="text-emerald-700">€{formatEUR(row.suggestedSellPrice)}</span>
+                  {row.priceDelta != null && Math.abs(row.priceDelta) >= 0.02 && (
+                    <span className={row.priceDelta < 0 ? 'text-red-600' : 'text-emerald-600'}>
+                      ({row.priceDelta > 0 ? '+' : ''}€{formatEUR(row.priceDelta)})
+                    </span>
+                  )}
+                </div>
+              </div>
+            )
           )}
         </div>
 
@@ -532,7 +575,13 @@ const EbaySalesMatchReviewModal: React.FC<Props> = ({
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-[11px] font-black uppercase tracking-wide hover:bg-emerald-700 disabled:opacity-50"
           >
             {applying ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-            {kind === 'adjustment' ? 'Apply adjustment' : kind === 'mark_sold' ? 'Mark sold & apply' : 'Confirm & apply'}
+            {isRestockRow(row)
+              ? 'Restock & apply fee'
+              : kind === 'adjustment'
+                ? 'Apply adjustment'
+                : kind === 'mark_sold'
+                  ? 'Mark sold & apply'
+                  : 'Confirm & apply'}
           </button>
           <button
             type="button"

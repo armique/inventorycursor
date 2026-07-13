@@ -17,7 +17,9 @@ import { classifyTransactionType, sumFinancialEventNet, getOrderEffectiveNet, is
 import {
   applyEbaySaleAdjustmentToItem,
   buildAdjustmentFromEvent,
+  buildRestockAfterRefundAdjustment,
   getOriginalSellPrice,
+  hasRestockAfterRefundAdjustment,
   sumAdjustmentAmounts,
 } from '../utils/ebaySaleAdjustments';
 import type { EbayOrderFinancialEvent, EbayOrderRecord } from '../services/ebayOrderIndex';
@@ -459,6 +461,31 @@ function runCsvImportTests(): void {
   assertClose(gpuApplied.originalSellPrice!, 23.63, 'preserves pre-refund sale proceeds');
   assertClose(gpuApplied.profit!, -16.73, 'profit = net payout minus buy price');
   assert(gpuApplied.feeAmount === 0, 'no separate fee when net known from CSV');
+
+  const soldGpu = baseItem({
+    id: 'gpu-sold',
+    buyPrice: 10,
+    status: ItemStatus.SOLD,
+    sellPrice: 23.63,
+    originalSellPrice: 23.63,
+    profit: 13.63,
+    ebayOrderId: '26-14576-17166',
+    platformSold: 'ebay.de',
+  });
+  const restockAdj = buildRestockAfterRefundAdjustment(soldGpu, refundedGpu, -6.73);
+  assert(restockAdj.kind === 'restock_after_refund', 'restock adjustment kind');
+  assertClose(restockAdj.buyPriceDelta!, 6.73, 'cancellation cost from order net');
+  assertClose(restockAdj.buyPriceAfter!, 16.73, 'buy price after fee capitalization');
+  const restocked = applyEbaySaleAdjustmentToItem(soldGpu, restockAdj, 'SmallBusiness');
+  assert(restocked.status === ItemStatus.IN_STOCK, 'restock moves item to active inventory');
+  assertClose(restocked.buyPrice, 16.73, 'buy price includes cancellation fee');
+  assert(restocked.sellPrice === undefined, 'clears sell price after restock');
+  assert(restocked.profit === undefined, 'clears profit after restock');
+  assert(restocked.ebayOrderId === '26-14576-17166', 'keeps order id for audit');
+  assert(hasRestockAfterRefundAdjustment(restocked), 'stores restock adjustment');
+  assert(restocked.comment2.includes('Buy price +€6.73'), 'documents fee in comment');
+  const gpuAnalysis = buildOrderLinkAnalysis([soldGpu], [refundedGpu]);
+  assert(gpuAnalysis.suggestions.some((s) => s.adjustment?.kind === 'restock_after_refund'), 'suggests restock for refunded sold GPU');
 }
 
 function runAdjustmentTests(): void {

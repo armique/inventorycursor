@@ -66,7 +66,9 @@ export type EbaySaleAdjustmentKind =
   | 'return'
   | 'cancellation'
   | 'fee_adjustment'
-  | 'payout_correction';
+  | 'payout_correction'
+  /** Full refund — item returns to stock; order loss capitalized into buy price. */
+  | 'restock_after_refund';
 
 export interface EbaySaleAdjustment {
   id: string;
@@ -85,6 +87,12 @@ export interface EbaySaleAdjustment {
   sellPriceAfter: number;
   feeBefore?: number;
   feeAfter?: number;
+  /** When set, apply moves item back to In Stock and adds buyPriceDelta to buy price. */
+  revertToStock?: boolean;
+  buyPriceBefore?: number;
+  buyPriceAfter?: number;
+  /** Positive EUR added to buy price (DHL label, cancellation fees, etc.). */
+  buyPriceDelta?: number;
 }
 
 export interface InventoryItem {
