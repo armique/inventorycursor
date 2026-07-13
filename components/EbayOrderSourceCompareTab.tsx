@@ -4,6 +4,7 @@ import {
   AlertCircle,
   AlertTriangle,
   CalendarRange,
+  Check,
   CheckCircle2,
   Copy,
   Database,
@@ -14,6 +15,7 @@ import {
   Search,
   Trash2,
   Upload,
+  X,
 } from 'lucide-react';
 import { hasEbayToken } from '../services/ebayService';
 import { parseEbayOrderCsv } from '../services/ebayOrderCsvImport';
@@ -41,20 +43,39 @@ function todayISO(): string {
   return new Date().toISOString().split('T')[0];
 }
 
-type TableFilter = 'api_only' | 'csv_only' | 'gaps' | 'both_diff' | 'all';
+type TableFilter = 'api_only' | 'csv_only' | 'gaps' | 'both' | 'both_field_diffs' | 'all';
+
+const FILTER_HELP: Record<TableFilter, string> = {
+  api_only: 'Orders in the API snapshot that are NOT in your CSV — these are missing from Transaktionsbericht.',
+  csv_only: 'Orders in the CSV snapshot that the API backfill did not return.',
+  gaps: 'All orders missing from one side or the other.',
+  both: 'Orders whose order ID appears in both API and CSV snapshots.',
+  both_field_diffs: 'In both snapshots, but buyer/date/gross differ slightly between sources.',
+  all: 'Every unique order ID across both snapshots.',
+};
 
 const STATUS_LABEL: Record<SnapshotSyncStatus, string> = {
-  api_only: 'API only',
-  csv_only: 'CSV only',
-  both: 'OK',
-  both_diff: 'Both · diff',
+  api_only: 'Not in CSV',
+  csv_only: 'Not in API',
+  both: 'In both',
 };
 
 function rowHighlight(status: SnapshotSyncStatus): string {
   if (status === 'api_only') return 'bg-blue-50 hover:bg-blue-100/80 border-l-4 border-l-blue-500';
   if (status === 'csv_only') return 'bg-emerald-50/80 hover:bg-emerald-100/60 border-l-4 border-l-emerald-500';
-  if (status === 'both_diff') return 'bg-amber-50/80 hover:bg-amber-100/60 border-l-4 border-l-amber-400';
-  return 'hover:bg-slate-50 border-l-4 border-l-transparent';
+  return 'hover:bg-slate-50 border-l-4 border-l-emerald-300';
+}
+
+function PresenceCell({ present }: { present: boolean }) {
+  return present ? (
+    <span className="inline-flex items-center gap-0.5 text-emerald-700 font-black" title="Yes">
+      <Check size={14} strokeWidth={3} />
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-0.5 text-red-600 font-black" title="No">
+      <X size={14} strokeWidth={3} />
+    </span>
+  );
 }
 
 const EbayOrderSourceCompareTab: React.FC = () => {
@@ -115,7 +136,8 @@ const EbayOrderSourceCompareTab: React.FC = () => {
     if (filter === 'api_only') rows = report.apiOnly;
     else if (filter === 'csv_only') rows = report.csvOnly;
     else if (filter === 'gaps') rows = [...report.apiOnly, ...report.csvOnly];
-    else if (filter === 'both_diff') rows = report.rows.filter((r) => r.status === 'both_diff');
+    else if (filter === 'both') rows = report.rows.filter((r) => r.status === 'both');
+    else if (filter === 'both_field_diffs') rows = report.rows.filter((r) => r.status === 'both' && r.hasFieldDiffs);
     const q = search.trim().toLowerCase();
     if (!q) return rows;
     return rows.filter(
@@ -297,13 +319,14 @@ const EbayOrderSourceCompareTab: React.FC = () => {
 
       {ready && (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
             {[
-              { id: 'api_only' as const, label: 'In API, not CSV', value: report.apiOnlyCount, ring: 'ring-blue-400', bg: 'bg-blue-50 border-blue-200' },
-              { id: 'csv_only' as const, label: 'In CSV, not API', value: report.csvOnlyCount, ring: 'ring-emerald-400', bg: 'bg-emerald-50 border-emerald-200' },
-              { id: 'gaps' as const, label: 'All gaps', value: report.apiOnlyCount + report.csvOnlyCount, ring: 'ring-amber-400', bg: 'bg-amber-50 border-amber-200' },
-              { id: 'both_diff' as const, label: 'Both · differ', value: report.bothDiffCount, ring: 'ring-amber-300', bg: 'bg-white border-slate-200' },
-              { id: 'all' as const, label: 'All rows', value: report.rows.length, ring: 'ring-slate-300', bg: 'bg-white border-slate-200' },
+              { id: 'api_only' as const, label: 'Not in CSV', sub: 'API ✓ CSV ✗', value: report.apiOnlyCount, ring: 'ring-blue-400', bg: 'bg-blue-50 border-blue-200' },
+              { id: 'csv_only' as const, label: 'Not in API', sub: 'API ✗ CSV ✓', value: report.csvOnlyCount, ring: 'ring-emerald-400', bg: 'bg-emerald-50 border-emerald-200' },
+              { id: 'both' as const, label: 'In both', sub: 'API ✓ CSV ✓', value: report.bothCount, ring: 'ring-slate-400', bg: 'bg-white border-slate-200' },
+              { id: 'gaps' as const, label: 'All gaps', sub: 'Either missing', value: report.apiOnlyCount + report.csvOnlyCount, ring: 'ring-amber-400', bg: 'bg-amber-50 border-amber-200' },
+              { id: 'both_field_diffs' as const, label: 'Field diffs', sub: 'In both, details differ', value: report.bothWithFieldDiffsCount, ring: 'ring-amber-300', bg: 'bg-white border-slate-200' },
+              { id: 'all' as const, label: 'All rows', sub: 'Full list', value: report.rows.length, ring: 'ring-slate-300', bg: 'bg-white border-slate-200' },
             ].map((s) => (
               <button
                 key={s.id}
@@ -312,17 +335,31 @@ const EbayOrderSourceCompareTab: React.FC = () => {
                 className={`rounded-xl border p-3 text-left ${s.bg} ${filter === s.id ? `ring-2 ${s.ring}` : ''}`}
               >
                 <p className="text-[9px] font-black uppercase text-slate-500 leading-tight">{s.label}</p>
-                <p className="text-2xl font-black text-slate-900">{s.value}</p>
+                <p className="text-[8px] text-slate-400 font-bold mt-0.5">{s.sub}</p>
+                <p className="text-2xl font-black text-slate-900 mt-1">{s.value}</p>
               </button>
             ))}
           </div>
+
+          <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5">
+            <span className="font-black text-slate-800">Showing {tableRows.length} row(s): </span>
+            {FILTER_HELP[filter]}
+            {apiSnap && csvSnap && (
+              <span className="block mt-1 text-[11px] text-slate-500">
+                API snapshot: {report.apiCount} orders · CSV snapshot: {report.csvCount} orders ·{' '}
+                <strong className="text-blue-700">{report.apiOnlyCount} not in CSV</strong> ·{' '}
+                <strong className="text-emerald-700">{report.csvOnlyCount} not in API</strong> ·{' '}
+                <strong>{report.bothCount} in both</strong>
+              </span>
+            )}
+          </p>
 
           {report.apiOnlyCount > 0 && filter === 'api_only' && (
             <div className="flex flex-wrap items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3">
               <AlertTriangle size={16} className="text-blue-600 shrink-0" />
               <p className="text-xs text-blue-950 flex-1">
-                <strong>{report.apiOnlyCount}</strong> orders are in the API snapshot but not in your CSV — highlighted below.
-                Common causes: CSV date range shorter, cancelled/unpaid orders, or missing Bestellnummer in Transaktionsbericht.
+                These <strong>{report.apiOnlyCount}</strong> rows have <strong>API ✓</strong> and <strong>CSV ✗</strong> — they are
+                your missing-from-CSV orders. Your CSV file covers 2025 only while API runs through 2026 — re-export CSV with a wider range to reduce gaps.
               </p>
               <button type="button" onClick={() => void copyApiOnlyIds()} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-700 text-white text-[10px] font-black uppercase">
                 <Copy size={12} /> Copy IDs
@@ -340,10 +377,12 @@ const EbayOrderSourceCompareTab: React.FC = () => {
 
           <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
             <div className="overflow-x-auto max-h-[min(65vh,560px)] overflow-y-auto">
-              <table className="w-full text-left text-xs min-w-[960px]">
+              <table className="w-full text-left text-xs min-w-[1020px]">
                 <thead className="sticky top-0 z-10 bg-slate-100 border-b border-slate-200">
                   <tr className="text-[10px] font-black uppercase text-slate-500 tracking-wide">
-                    <th className="px-3 py-2.5">Status</th>
+                    <th className="px-3 py-2.5 text-center" title="Present in API snapshot">API</th>
+                    <th className="px-3 py-2.5 text-center" title="Present in CSV snapshot">CSV</th>
+                    <th className="px-3 py-2.5">Sync</th>
                     <th className="px-3 py-2.5">Order ID</th>
                     <th className="px-3 py-2.5">Date (API / CSV)</th>
                     <th className="px-3 py-2.5">Buyer (API)</th>
@@ -358,15 +397,17 @@ const EbayOrderSourceCompareTab: React.FC = () => {
                 <tbody className="divide-y divide-slate-100">
                   {tableRows.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="px-4 py-12 text-center text-slate-500">
+                      <td colSpan={12} className="px-4 py-12 text-center text-slate-500">
                         No rows for this filter{search ? ' — clear search' : ''}.
                       </td>
                     </tr>
                   ) : (
                     tableRows.map((row) => (
                       <tr key={row.orderId} className={rowHighlight(row.status)}>
+                        <td className="px-3 py-2 text-center"><PresenceCell present={row.inApi} /></td>
+                        <td className="px-3 py-2 text-center"><PresenceCell present={row.inCsv} /></td>
                         <td className="px-3 py-2 font-black whitespace-nowrap">
-                          <span className={row.status === 'api_only' ? 'text-blue-700' : row.status === 'csv_only' ? 'text-emerald-700' : 'text-slate-600'}>
+                          <span className={row.status === 'api_only' ? 'text-blue-700' : row.status === 'csv_only' ? 'text-emerald-700' : 'text-slate-700'}>
                             {STATUS_LABEL[row.status]}
                           </span>
                         </td>

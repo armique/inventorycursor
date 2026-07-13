@@ -1,13 +1,14 @@
 import type { EbayOrderRecord } from '../services/ebayOrderIndex';
 import { getOrderEffectiveNet } from './ebayOrderFinancial';
 
-export type SnapshotSyncStatus = 'api_only' | 'csv_only' | 'both' | 'both_diff';
+export type SnapshotSyncStatus = 'api_only' | 'csv_only' | 'both';
 
 export interface SnapshotCompareRow {
   orderId: string;
   status: SnapshotSyncStatus;
   inApi: boolean;
   inCsv: boolean;
+  hasFieldDiffs: boolean;
   dateApi: string | null;
   dateCsv: string | null;
   buyerApi: string;
@@ -31,7 +32,7 @@ export interface SnapshotCompareReport {
   apiOnlyCount: number;
   csvOnlyCount: number;
   bothCount: number;
-  bothDiffCount: number;
+  bothWithFieldDiffsCount: number;
   rows: SnapshotCompareRow[];
   apiOnly: SnapshotCompareRow[];
   csvOnly: SnapshotCompareRow[];
@@ -86,19 +87,26 @@ export function compareApiCsvSnapshots(
     let status: SnapshotSyncStatus;
     if (inApi && !inCsv) status = 'api_only';
     else if (!inApi && inCsv) status = 'csv_only';
-    else if (diffs.length) status = 'both_diff';
     else status = 'both';
+
+    const hasFieldDiffs = diffs.length > 0;
 
     const flags: string[] = [];
     if (status === 'api_only') {
-      flags.push('Missing in CSV — not in Transaktionsbericht export or no Bestellnummer row.');
+      flags.push('Not in CSV export — order ID missing from Transaktionsbericht.');
       if (api?.cancelState) flags.push(`Cancel: ${api.cancelState}`);
       if (api?.orderPaymentStatus && api.orderPaymentStatus !== 'PAID') {
         flags.push(`Payment: ${api.orderPaymentStatus}`);
       }
     }
     if (status === 'csv_only') {
-      flags.push('Missing in API — widen backfill range or order never returned by Fulfillment API.');
+      flags.push('Not in API backfill — widen date range or order not returned by Fulfillment API.');
+    }
+    if (status === 'both' && hasFieldDiffs) {
+      flags.push('Present in both — minor field differences (buyer/date/gross).');
+    }
+    if (status === 'both' && !hasFieldDiffs) {
+      flags.push('Present in both — order ID matched.');
     }
 
     rows.push({
@@ -106,6 +114,7 @@ export function compareApiCsvSnapshots(
       status,
       inApi,
       inCsv,
+      hasFieldDiffs,
       dateApi: api?.creationDate ?? null,
       dateCsv: csv?.creationDate ?? null,
       buyerApi: buyerLabel(api),
@@ -125,7 +134,7 @@ export function compareApiCsvSnapshots(
 
   rows.sort((a, b) => {
     const rank = (s: SnapshotSyncStatus) =>
-      s === 'api_only' ? 0 : s === 'csv_only' ? 1 : s === 'both_diff' ? 2 : 3;
+      s === 'api_only' ? 0 : s === 'csv_only' ? 1 : 2;
     const dr = rank(a.status) - rank(b.status);
     if (dr !== 0) return dr;
     return (b.dateApi || b.dateCsv || '').localeCompare(a.dateApi || a.dateCsv || '');
@@ -133,6 +142,7 @@ export function compareApiCsvSnapshots(
 
   const apiOnly = rows.filter((r) => r.status === 'api_only');
   const csvOnly = rows.filter((r) => r.status === 'csv_only');
+  const bothRows = rows.filter((r) => r.status === 'both');
 
   return {
     generatedAt: new Date().toISOString(),
@@ -140,8 +150,8 @@ export function compareApiCsvSnapshots(
     csvCount: csvOrders.length,
     apiOnlyCount: apiOnly.length,
     csvOnlyCount: csvOnly.length,
-    bothCount: rows.filter((r) => r.status === 'both').length,
-    bothDiffCount: rows.filter((r) => r.status === 'both_diff').length,
+    bothCount: bothRows.length,
+    bothWithFieldDiffsCount: bothRows.filter((r) => r.hasFieldDiffs).length,
     rows,
     apiOnly,
     csvOnly,
