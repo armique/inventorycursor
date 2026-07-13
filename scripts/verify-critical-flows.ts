@@ -258,6 +258,32 @@ function runEbayAnalysisTests(): void {
   const r2 = buildOrderLinkAnalysis([unlinked], [order]);
   assert(r2.suggestions.some((s) => s.kind === 'link'), 'link suggestion for unlinked sold');
 
+  const cpu4790Order: EbayOrderRecord = {
+    orderId: '18-12345-67890',
+    creationDate: '2023-06-12',
+    buyer: { username: 'cpu_buyer', fullName: 'Hans Mueller' },
+    lineItems: [{ sku: null, title: 'Intel Core i7-4790K Prozessor SR14H 4,0GHz', lineItemCost: 44 }],
+    grossTotal: 44,
+    netTotal: 39.99,
+    feeTotal: 4.01,
+    sources: ['csv'],
+    importedAt: '',
+  };
+  const forgottenCpu = baseItem({
+    id: 'cpu-4790',
+    name: 'i7 4790K',
+    status: ItemStatus.SOLD,
+    sellPrice: 39.99,
+    sellDate: '2023-06-12',
+    buyPrice: 8,
+    platformSold: undefined,
+    paymentType: undefined,
+  });
+  const cpuLink = buildOrderLinkAnalysis([forgottenCpu], [cpu4790Order]);
+  assert(cpuLink.suggestions.some((s) => s.kind === 'link'), 'links sold CPU by title + price without ebay metadata');
+  const cpuSuggestion = cpuLink.suggestions.find((s) => s.kind === 'link');
+  assert(cpuSuggestion?.match.order.orderId === '18-12345-67890', 'matches correct order id');
+
   const linked = baseItem({
     id: 'linked',
     ebaySku: 'GPU-99',

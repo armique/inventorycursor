@@ -131,7 +131,9 @@ export interface InventoryItem {
   
   // Platform Specific Sales Data
   kleinanzeigenChatUrl?: string;
-  kleinanzeigenChatImage?: string; // Base64 or URL
+  kleinanzeigenChatImage?: string; // Base64 or URL — archived to Firebase on save when signed in
+  /** eBay order screenshot used to parse sale details (Firebase Storage URL after save). */
+  ebayOrderScreenshotUrl?: string;
   ebayUsername?: string;
   ebayOrderId?: string;
   /** First recorded net/gross sell price when linked via eBay sync — never overwritten (Finanzamt audit). */

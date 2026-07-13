@@ -7,8 +7,9 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
   Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone, Camera, Gift, User
 } from 'lucide-react';
-import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo } from '../types';
+import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, TaxMode } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
+import { computeItemProfitBeforeOverhead } from '../services/financialAggregation';
 import { itemMatchesSalePlatformFilter, isMissingExplicitSalePlatform, MISSING_PLATFORM_FILTER, SALE_PLATFORM_OPTIONS, formatItemSalePlatform, formatSalePlatformLabel } from '../utils/salePlatform';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { getCompatibleItemsForItem } from '../services/compatibility';
@@ -1340,14 +1341,11 @@ const InventoryList: React.FC<Props> = ({
     let totalTax = 0;
     let totalNetRevenue = 0;
     let totalProfit = 0;
+    let cashMargin = 0;
 
     const soldItems = (splitView ? sortedSoldItems : sortedItems).filter((i) => isRealizedDisposal(i));
-    // For financial stats we only want to count *real* items once.
-    // PC builds / Bundles are just containers whose economics live in their child items,
-    // so we ignore rows where isPC / isBundle is true to avoid double-counting revenue & profit.
     const soldAtomicItems = soldItems.filter(i => !i.isPC && !i.isBundle);
     
-    // Calculate gross revenue and tax for all sold atomic items
     soldAtomicItems.forEach(item => {
         const sell = item.sellPrice || 0;
         if (sell === 0) return;
@@ -1371,32 +1369,24 @@ const InventoryList: React.FC<Props> = ({
         totalGross += sell;
         totalTax += tax;
         totalNetRevenue += netSell;
+        cashMargin += computeItemProfitBeforeOverhead(item, 'SmallBusiness');
     });
 
-    // Calculate profit only for the same atomic set
     soldAtomicItems.forEach(item => {
-        const sell = item.sellPrice || 0;
-        const buy = item.buyPrice || 0;
-        const fee = item.feeAmount || 0;
-        
-        let netSell = sell;
-        if (businessSettings.taxMode === 'RegularVAT') {
-            netSell = sell / 1.19;
-        } else if (businessSettings.taxMode === 'DifferentialVAT') {
-            const margin = sell - buy;
-            if (margin > 0) {
-                const netMargin = margin / 1.19;
-                netSell = sell - (margin - netMargin);
-            } else {
-                netSell = sell;
-            }
-        }
-        
-        totalProfit += (netSell - buy - fee);
+        totalProfit += computeItemProfitBeforeOverhead(item, businessSettings.taxMode);
     });
 
-    return { totalGross, totalTax, totalNetRevenue, totalProfit };
+    return { totalGross, totalTax, totalNetRevenue, totalProfit, cashMargin };
   }, [sortedItems, sortedSoldItems, splitView, businessSettings.taxMode, showFinancials]);
+
+  const profitForDisplay = useCallback(
+    (item: InventoryItem): number | null => {
+      if (item.isPC || item.isBundle) return null;
+      if (!showFinancials || item.sellPrice == null) return item.profit ?? null;
+      return computeItemProfitBeforeOverhead(item, businessSettings.taxMode);
+    },
+    [showFinancials, businessSettings.taxMode]
+  );
 
   // -- HANDLERS --
 
@@ -2525,8 +2515,8 @@ const InventoryList: React.FC<Props> = ({
           </td>
         );
       }
-      case 'profit':
-        // Bundles/PCs don't have profit - profit is only in child items
+      case 'profit': {
+        const displayProfit = profitForDisplay(item);
         if (item.isPC || item.isBundle) {
           return (
             <td key={id} className="text-left text-xs font-bold text-slate-300" style={style} title="Bundles/PCs don't have profit. Expand to see component margins.">
@@ -2535,10 +2525,11 @@ const InventoryList: React.FC<Props> = ({
           );
         }
         return (
-          <td key={id} className={`text-left font-black ${item.profit && item.profit > 0 ? 'text-emerald-600' : item.profit && item.profit < 0 ? 'text-red-500' : 'text-slate-300'}`} style={style}>
-             {item.profit ? `€${formatEUR(item.profit)}` : '-'}
+          <td key={id} className={`text-left font-black ${displayProfit && displayProfit > 0 ? 'text-emerald-600' : displayProfit && displayProfit < 0 ? 'text-red-500' : 'text-slate-300'}`} style={style}>
+             {displayProfit != null ? `€${formatEUR(displayProfit)}` : '-'}
           </td>
         );
+      }
       case 'timeGauge': {
         const now = Date.now();
         const row = getTimeGaugeRow(item, now, items);
@@ -3100,50 +3091,13 @@ const InventoryList: React.FC<Props> = ({
 
   return (
     <div className="h-full min-h-0 flex flex-col gap-1 overflow-hidden animate-in fade-in relative">
-      {showFinancials && financialStats && (
-        <div className="shrink-0 flex flex-wrap items-center gap-x-3 gap-y-0.5 px-2 py-1 rounded-lg border border-slate-200 bg-white text-[11px]">
-          <span className="inline-flex items-baseline gap-1">
-            <span className="text-[9px] font-black uppercase text-slate-400">Gross</span>
-            <span className="font-black text-slate-900">€{formatEUR(financialStats.totalGross)}</span>
-          </span>
-          <span className="inline-flex items-baseline gap-1">
-            <span className="text-[9px] font-black uppercase text-slate-400">VAT</span>
-            <span className="font-black text-red-500">-€{formatEUR(financialStats.totalTax)}</span>
-          </span>
-          <span className="inline-flex items-baseline gap-1">
-            <span className="text-[9px] font-black uppercase text-slate-400">Net</span>
-            <span className="font-black text-blue-600">€{formatEUR(financialStats.totalNetRevenue)}</span>
-          </span>
-          <span className="inline-flex items-baseline gap-1">
-            <span className="text-[9px] font-black uppercase text-slate-400">Profit</span>
-            <span className={`font-black ${financialStats.totalProfit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-              {financialStats.totalProfit >= 0 ? '+' : ''}€{formatEUR(financialStats.totalProfit)}
-            </span>
-          </span>
-          <div className="ml-auto flex rounded-md border border-slate-200 bg-slate-50 p-0.5">
-            <button
-              type="button"
-              onClick={() => onBusinessSettingsChange({ ...businessSettings, taxMode: 'SmallBusiness' })}
-              className={`px-2 py-0.5 rounded text-[9px] font-black uppercase transition-all ${businessSettings.taxMode === 'SmallBusiness' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
-            >
-              Kleinunt.
-            </button>
-            <button
-              type="button"
-              onClick={() => onBusinessSettingsChange({ ...businessSettings, taxMode: 'DifferentialVAT' })}
-              className={`px-2 py-0.5 rounded text-[9px] font-black uppercase transition-all ${businessSettings.taxMode === 'DifferentialVAT' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
-            >
-              Diff.
-            </button>
-            <button
-              type="button"
-              onClick={() => onBusinessSettingsChange({ ...businessSettings, taxMode: 'RegularVAT' })}
-              className={`px-2 py-0.5 rounded text-[9px] font-black uppercase transition-all ${businessSettings.taxMode === 'RegularVAT' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
-            >
-              VAT
-            </button>
-          </div>
-        </div>
+      {showFinancials && financialStats && !splitView && (
+        <SoldFinancialBar
+          stats={financialStats}
+          taxMode={businessSettings.taxMode}
+          businessSettings={businessSettings}
+          onBusinessSettingsChange={onBusinessSettingsChange}
+        />
       )}
 
       <header className="shrink-0 space-y-1">
@@ -3789,9 +3743,9 @@ const InventoryList: React.FC<Props> = ({
                         {hasUserPhotos ? <><Camera size={8} /> {userPhotoCount > 1 ? `${userPhotoCount} photos` : 'Photo'}</> : <><ImageOff size={8} /> No photo</>}
                       </span>
                       <span>Sold {item.sellDate || '—'} · €{item.sellPrice != null ? formatEUR(item.sellPrice) : '—'}</span>
-                      {item.profit != null && (
-                        <span className={item.profit >= 0 ? ' text-emerald-600' : ' text-red-600'}>
-                          {' '}· {item.profit >= 0 ? '+' : ''}€{formatEUR(item.profit)}
+                      {profitForDisplay(item) != null && (
+                        <span className={(profitForDisplay(item) ?? 0) >= 0 ? ' text-emerald-600' : ' text-red-600'}>
+                          {' '}· {(profitForDisplay(item) ?? 0) >= 0 ? '+' : ''}€{formatEUR(profitForDisplay(item)!)}
                         </span>
                       )}
                     </p>
@@ -3928,6 +3882,17 @@ const InventoryList: React.FC<Props> = ({
             paneItems={sortedSoldItems}
             paneStatus="SOLD"
             paneLabel="Sold"
+            paneExtra={
+              financialStats ? (
+                <SoldFinancialBar
+                  stats={financialStats}
+                  taxMode={businessSettings.taxMode}
+                  businessSettings={businessSettings}
+                  onBusinessSettingsChange={onBusinessSettingsChange}
+                  compact
+                />
+              ) : null
+            }
             scrollRef={soldTableRef}
             visibleColumns={visibleColumns}
             columnWidths={effectiveColumnWidths}
@@ -4769,10 +4734,100 @@ const InventoryTableRow = React.memo(
     prev.renderRowCells === next.renderRowCells
 );
 
+type SoldFinancialBarProps = {
+  stats: {
+    totalGross: number;
+    totalTax: number;
+    totalNetRevenue: number;
+    totalProfit: number;
+    cashMargin: number;
+  };
+  taxMode: TaxMode;
+  businessSettings: BusinessSettings;
+  onBusinessSettingsChange: (settings: BusinessSettings) => void;
+  compact?: boolean;
+};
+
+const SoldFinancialBar: React.FC<SoldFinancialBarProps> = ({
+  stats,
+  taxMode,
+  businessSettings,
+  onBusinessSettingsChange,
+  compact,
+}) => {
+  const profitLabel =
+    taxMode === 'SmallBusiness' ? 'Cash profit' : taxMode === 'DifferentialVAT' ? 'After diff. VAT' : 'After VAT';
+  const showCashMargin = taxMode !== 'SmallBusiness';
+
+  return (
+    <div
+      className={`shrink-0 flex flex-wrap items-center gap-x-3 gap-y-1 px-2 py-1.5 rounded-lg border border-slate-200 bg-white ${
+        compact ? 'text-[10px]' : 'text-[11px]'
+      }`}
+    >
+      <span className="inline-flex items-baseline gap-1">
+        <span className="text-[9px] font-black uppercase text-slate-400">Gross</span>
+        <span className="font-black text-slate-900">€{formatEUR(stats.totalGross)}</span>
+      </span>
+      {taxMode !== 'SmallBusiness' && (
+        <span className="inline-flex items-baseline gap-1">
+          <span className="text-[9px] font-black uppercase text-slate-400">VAT</span>
+          <span className="font-black text-red-500">-€{formatEUR(stats.totalTax)}</span>
+        </span>
+      )}
+      {showCashMargin && (
+        <span className="inline-flex items-baseline gap-1" title="Sell − buy − fees (no VAT reserve)">
+          <span className="text-[9px] font-black uppercase text-slate-400">Cash</span>
+          <span className="font-black text-slate-700">€{formatEUR(stats.cashMargin)}</span>
+        </span>
+      )}
+      <span className="inline-flex items-baseline gap-1">
+        <span className="text-[9px] font-black uppercase text-slate-400">{profitLabel}</span>
+        <span className={`font-black ${stats.totalProfit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+          {stats.totalProfit >= 0 ? '+' : ''}€{formatEUR(stats.totalProfit)}
+        </span>
+      </span>
+      <div className={`${compact ? '' : 'ml-auto'} flex rounded-md border border-slate-200 bg-slate-50 p-0.5`}>
+        <button
+          type="button"
+          onClick={() => onBusinessSettingsChange({ ...businessSettings, taxMode: 'SmallBusiness' })}
+          className={`px-2 py-0.5 rounded text-[9px] font-black uppercase transition-all ${
+            taxMode === 'SmallBusiness' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'
+          }`}
+          title="Cash income — no VAT reserve on margin"
+        >
+          Kleinunt.
+        </button>
+        <button
+          type="button"
+          onClick={() => onBusinessSettingsChange({ ...businessSettings, taxMode: 'DifferentialVAT' })}
+          className={`px-2 py-0.5 rounded text-[9px] font-black uppercase transition-all ${
+            taxMode === 'DifferentialVAT' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'
+          }`}
+          title="Differenzbesteuerung — VAT on margin"
+        >
+          Diff.
+        </button>
+        <button
+          type="button"
+          onClick={() => onBusinessSettingsChange({ ...businessSettings, taxMode: 'RegularVAT' })}
+          className={`px-2 py-0.5 rounded text-[9px] font-black uppercase transition-all ${
+            taxMode === 'RegularVAT' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'
+          }`}
+          title="Regular 19% VAT on sell price"
+        >
+          VAT
+        </button>
+      </div>
+    </div>
+  );
+};
+
 type InventoryListTablePaneProps = {
   paneItems: InventoryItem[];
   paneStatus: StatusFilter;
   paneLabel?: string;
+  paneExtra?: React.ReactNode;
   scrollRef: React.RefObject<HTMLDivElement | null>;
   visibleColumns: ColumnId[];
   columnWidths: Record<string, number>;
@@ -4794,6 +4849,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
   paneItems,
   paneStatus,
   paneLabel,
+  paneExtra,
   scrollRef,
   visibleColumns,
   columnWidths,
@@ -4832,9 +4888,12 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
       className={`flex flex-col min-h-0 min-w-0 rounded-xl border border-slate-100 shadow-sm bg-white overflow-hidden ${className}`}
     >
       {paneLabel && (
-        <div className="shrink-0 flex items-center justify-between px-4 lg:px-6 py-2.5 border-b border-slate-100 bg-slate-50/60">
-          <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">{paneLabel}</span>
-          <span className="text-[10px] font-bold text-slate-400">{paneItems.length} items</span>
+        <div className="shrink-0 flex flex-col gap-2 px-4 lg:px-6 py-2.5 border-b border-slate-100 bg-slate-50/60">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">{paneLabel}</span>
+            <span className="text-[10px] font-bold text-slate-400">{paneItems.length} items</span>
+          </div>
+          {paneExtra}
         </div>
       )}
       <div ref={attachScrollRef} className="flex-1 min-h-0 overflow-x-auto overflow-y-auto custom-scrollbar pb-3">

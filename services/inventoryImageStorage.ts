@@ -522,3 +522,11 @@ export async function persistInventoryImageFiles(
 
   return out;
 }
+
+/** Persist sale-proof screenshot (eBay order, Kleinanzeigen chat) to Firebase Storage or compressed data URL. */
+export async function persistSaleProofImage(source: string, itemId: string): Promise<string> {
+  const trimmed = source.trim();
+  if (!trimmed) return '';
+  if (isFirebaseStorageInventoryUrl(trimmed)) return trimmed;
+  return persistOneInventoryImageUrl(trimmed, itemId.trim() || 'shared');
+}

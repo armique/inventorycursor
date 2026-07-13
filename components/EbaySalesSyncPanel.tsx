@@ -265,7 +265,8 @@ const EbaySalesSyncPanel: React.FC<Props> = ({ items, taxMode, onUpdate, onCache
           <h3 className="text-sm font-black text-slate-900">eBay sales sync</h3>
           <p className="text-xs text-slate-600 mt-1">
             Matches your inventory against cached eBay orders. Catches items you{' '}
-            <span className="font-bold">forgot to mark sold</span>, links missing order IDs on past sales, and
+            <span className="font-bold">forgot to mark sold</span>, links missing order IDs on past sales (by SKU, title, or
+            sell price), and
             fixes sell prices to the <span className="font-bold">net payout</span> (after fees) when Payments CSV
             data is in the cache, and documents <span className="font-bold">returns, refunds, and cancellations</span>{' '}
             as auditable adjustments without erasing the original sale. Nothing applies until you confirm.

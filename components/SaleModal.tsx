@@ -6,6 +6,7 @@ import { mapKleinanzeigenPaymentMethod, parseKleinanzeigenChatFromImageInput } f
 import { fetchEbayOrder } from '../services/ebayService';
 import { findEbayOrderById } from '../services/ebayOrderIndex';
 import { customerFromEbayOrder } from '../utils/ebayOrderBuyerData';
+import { persistSaleProofImage, urlNeedsPhotoArchive } from '../services/inventoryImageStorage';
 import { InventoryItem, ItemStatus, PaymentType, CustomerInfo, Platform, TaxMode } from '../types';
 import { SALE_PLATFORM_OPTIONS } from '../utils/salePlatform';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
@@ -15,7 +16,7 @@ interface Props {
   taxMode?: TaxMode;
   /** sell = mark in-stock item sold; editBuyer = update buyer/sale metadata on already-sold item */
   mode?: 'sell' | 'editBuyer';
-  onSave: (updatedItem: InventoryItem, splitOffItem?: InventoryItem) => void;
+  onSave: (updatedItem: InventoryItem, splitOffItem?: InventoryItem) => void | Promise<void>;
   onClose: () => void;
 }
 
@@ -66,6 +67,8 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
   const [kaChatParseError, setKaChatParseError] = useState<string | null>(null);
   const [orderIdLookupLoading, setOrderIdLookupLoading] = useState(false);
   const [orderIdLookupMessage, setOrderIdLookupMessage] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const applyEbayOrderBuyerFields = useCallback(
     (fields: {
@@ -297,7 +300,8 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
     return sell - buy - fee;
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (saving) return;
     const finalFee = hasFee ? feeAmount : 0;
     
     const isBatchItem = !isEditBuyer && item.quantity != null && item.quantity > 1;
@@ -312,87 +316,110 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
     
     const profit = totalSellPrice != null ? calculateProfit(totalSellPrice, totalBuyPrice, finalFee) : item.profit;
 
-    const buyerFields = {
-      paymentType,
-      platformSold,
-      hasFee,
-      feeAmount: finalFee,
-      comment2: comment,
-      customer,
-      ebayUsername,
-      ebayOrderId,
-      kleinanzeigenChatUrl,
-      kleinanzeigenChatImage,
-    };
+    const splitSoldId =
+      isBatchItem && qtySold < item.quantity! ? `${item.id}-sold-${Date.now()}` : item.id;
+    const archiveItemId = isEditBuyer ? item.id : splitSoldId;
 
-    if (isEditBuyer) {
-      onSave({
-        ...item,
-        ...buyerFields,
-        sellPrice: totalSellPrice,
-        sellDate: saleDate,
-        profit: profit != null ? parseFloat(profit.toFixed(2)) : item.profit,
-      });
+    setSaving(true);
+    setSaveError(null);
+    try {
+      let archivedKaImage = kleinanzeigenChatImage.trim();
+      if (archivedKaImage && urlNeedsPhotoArchive(archivedKaImage)) {
+        archivedKaImage = await persistSaleProofImage(archivedKaImage, archiveItemId);
+      }
+
+      let ebayOrderScreenshotUrl = item.ebayOrderScreenshotUrl;
+      const screenshotSrc = orderScreenshotSource.trim();
+      if (screenshotSrc) {
+        ebayOrderScreenshotUrl = await persistSaleProofImage(screenshotSrc, archiveItemId);
+      }
+
+      const buyerFields = {
+        paymentType,
+        platformSold,
+        hasFee,
+        feeAmount: finalFee,
+        comment2: comment,
+        customer,
+        ebayUsername,
+        ebayOrderId,
+        kleinanzeigenChatUrl,
+        kleinanzeigenChatImage: archivedKaImage || undefined,
+        ebayOrderScreenshotUrl,
+      };
+
+      if (isEditBuyer) {
+        await onSave({
+          ...item,
+          ...buyerFields,
+          sellPrice: totalSellPrice,
+          sellDate: saleDate,
+          profit: profit != null ? parseFloat(profit.toFixed(2)) : item.profit,
+        });
+        onClose();
+        return;
+      }
+
+      if (isBatchItem && qtySold < item.quantity!) {
+        const updatedOriginal: InventoryItem = {
+          ...item,
+          quantity: item.quantity! - qtySold,
+        };
+
+        const splitOffSold: InventoryItem = {
+          ...item,
+          id: splitSoldId,
+          name: `${item.name} (Sold x${qtySold})`,
+          status: ItemStatus.SOLD,
+          quantity: qtySold,
+          buyPrice: totalBuyPrice,
+          sellPrice: totalSellPrice,
+          sellDate: saleDate,
+          paymentType,
+          platformSold,
+          hasFee,
+          feeAmount: finalFee,
+          comment2: comment,
+          customer,
+          profit: profit != null ? parseFloat(profit.toFixed(2)) : undefined,
+          ebayUsername,
+          ebayOrderId,
+          kleinanzeigenChatUrl,
+          kleinanzeigenChatImage: archivedKaImage || undefined,
+          ebayOrderScreenshotUrl,
+          storeVisible: false,
+        };
+
+        await onSave(updatedOriginal, splitOffSold);
+      } else {
+        await onSave({
+          ...item,
+          buyPrice: isBatchItem ? totalBuyPrice : item.buyPrice,
+          sellPrice: totalSellPrice,
+          sellDate: saleDate,
+          paymentType,
+          platformSold,
+          hasFee,
+          feeAmount: finalFee,
+          comment2: comment,
+          customer,
+          status: ItemStatus.SOLD,
+          storeVisible: false,
+          profit: profit != null ? parseFloat(profit.toFixed(2)) : undefined,
+          ebayUsername,
+          ebayOrderId,
+          kleinanzeigenChatUrl,
+          kleinanzeigenChatImage: archivedKaImage || undefined,
+          ebayOrderScreenshotUrl,
+          quantity: qtySold,
+        });
+      }
       onClose();
-      return;
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Could not save sale proof image');
+    } finally {
+      setSaving(false);
     }
-
-    if (isBatchItem && qtySold < item.quantity!) {
-      // Split: remaining stock stays in original item
-      const updatedOriginal: InventoryItem = {
-        ...item,
-        quantity: item.quantity! - qtySold,
-      };
-
-      // Split off: sold part gets created as a new SOLD item
-      const splitOffSold: InventoryItem = {
-        ...item,
-        id: `${item.id}-sold-${Date.now()}`,
-        name: `${item.name} (Sold x${qtySold})`,
-        status: ItemStatus.SOLD,
-        quantity: qtySold,
-        buyPrice: totalBuyPrice,
-        sellPrice: totalSellPrice,
-        sellDate: saleDate,
-        paymentType,
-        platformSold,
-        hasFee,
-        feeAmount: finalFee,
-        comment2: comment,
-        customer,
-        profit: profit != null ? parseFloat(profit.toFixed(2)) : undefined,
-        ebayUsername,
-        ebayOrderId,
-        kleinanzeigenChatUrl,
-        kleinanzeigenChatImage,
-        storeVisible: false,
-      };
-
-      onSave(updatedOriginal, splitOffSold);
-    } else {
-      // Full sale of single item or entire batch
-      onSave({
-        ...item,
-        buyPrice: isBatchItem ? totalBuyPrice : item.buyPrice,
-        sellPrice: totalSellPrice,
-        sellDate: saleDate,
-        paymentType,
-        platformSold,
-        hasFee,
-        feeAmount: finalFee,
-        comment2: comment,
-        customer,
-        status: ItemStatus.SOLD,
-        storeVisible: false,
-        profit: profit != null ? parseFloat(profit.toFixed(2)) : undefined,
-        ebayUsername,
-        ebayOrderId,
-        kleinanzeigenChatUrl,
-        kleinanzeigenChatImage,
-        quantity: qtySold,
-      });
-    }
-    onClose();
   };
 
   return (
@@ -684,12 +711,31 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
           </div>
         </div>
 
-        <footer className="p-8 bg-slate-50/50 border-t border-slate-100 flex gap-4 shrink-0">
-          <button onClick={onClose} className="flex-1 py-4 font-black text-xs uppercase text-slate-400">Cancel</button>
-          <button onClick={handleSave} className="flex-[2] py-4 bg-slate-900 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-xl flex items-center justify-center gap-2">
-            <CheckCircle2 size={18}/>
-            {isEditBuyer ? 'Save buyer data' : 'Save & Mark Sold'}
+        <footer className="p-8 bg-slate-50/50 border-t border-slate-100 flex flex-col gap-3 shrink-0">
+          {saveError && (
+            <p className="text-xs font-bold text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-2">{saveError}</p>
+          )}
+          {(item.ebayOrderScreenshotUrl || (isEditBuyer && item.kleinanzeigenChatImage)) && (
+            <div className="flex flex-wrap gap-2">
+              {item.ebayOrderScreenshotUrl && (
+                <a
+                  href={item.ebayOrderScreenshotUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[10px] font-bold text-indigo-700 hover:underline"
+                >
+                  View saved eBay order screenshot
+                </a>
+              )}
+            </div>
+          )}
+          <div className="flex gap-4">
+          <button onClick={onClose} disabled={saving} className="flex-1 py-4 font-black text-xs uppercase text-slate-400 disabled:opacity-50">Cancel</button>
+          <button onClick={() => void handleSave()} disabled={saving} className="flex-[2] py-4 bg-slate-900 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-xl flex items-center justify-center gap-2 disabled:opacity-50">
+            {saving ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18}/>}
+            {saving ? 'Saving…' : isEditBuyer ? 'Save buyer data' : 'Save & Mark Sold'}
           </button>
+          </div>
         </footer>
       </div>
     </div>

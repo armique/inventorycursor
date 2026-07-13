@@ -356,6 +356,7 @@ const LARGE_ITEM_FIELDS = [
   "receiptUrl",
   "kleinanzeigenChatImage",
   "kleinanzeigenBuyChatImage",
+  "ebayOrderScreenshotUrl",
   "marketDescription",
 ] as const;
 

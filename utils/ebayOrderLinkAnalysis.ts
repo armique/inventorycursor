@@ -2,6 +2,7 @@ import { InventoryItem, ItemStatus, type EbaySaleAdjustment } from '../types';
 import type { EbayOrderLineItem, EbayOrderRecord } from '../services/ebayOrderIndex';
 import { findMatchingOrdersForItem, type EbayOrderMatch } from './ebayOrderMatch';
 import { getLinePayout } from './ebayOrderPayout';
+import { sellPriceAlignsWithPayout, sellPriceMatchBonus } from './ebayOrderPriceMatch';
 import { getOrderEffectiveNet, isOrderCancelled, isOrderFullyRefunded, unappliedOrderEvents, hasPostSaleRefund } from './ebayOrderFinancial';
 import {
   buildAdjustmentFromEvent,
@@ -59,13 +60,35 @@ export function lineItemClaimKey(orderId: string, line: EbayOrderLineItem): stri
 
 export function isEbayRelatedItem(item: InventoryItem): boolean {
   const platform = (item.platformSold || '').toLowerCase();
+  const payment = (item.paymentType || '').toLowerCase();
   return Boolean(
     item.ebaySku ||
       item.ebayListingId ||
       item.ebayUsername ||
       item.ebayOrderId ||
-      platform.includes('ebay')
+      platform.includes('ebay') ||
+      payment.includes('ebay')
   );
+}
+
+function isClearlyNonEbaySale(item: InventoryItem): boolean {
+  const platform = (item.platformSold || '').toLowerCase();
+  const payment = (item.paymentType || '').toLowerCase();
+  if (platform.includes('kleinanzeigen') || payment.includes('kleinanzeigen')) return true;
+  if (platform === 'in person' || payment === 'cash') return true;
+  if (payment === 'bank transfer' && !platform.includes('ebay')) return true;
+  return false;
+}
+
+/** Sold row with sell price but no order id — likely eBay if title+price match an order. */
+function isPriceLinkSoldCandidate(item: InventoryItem): boolean {
+  if (item.isPC || item.isBundle) return false;
+  if (item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED) return false;
+  if (item.ebayOrderId?.trim()) return false;
+  if (isEbayRelatedItem(item)) return false;
+  if (item.sellPrice == null || item.sellPrice <= 0) return false;
+  if (isClearlyNonEbaySale(item)) return false;
+  return true;
 }
 
 function isSoldEbayCandidate(item: InventoryItem): boolean {
@@ -148,10 +171,80 @@ function makeSuggestion(
   };
 }
 
-function minScoreForMatch(kind: OrderLinkSuggestionKind, matchKind: EbayOrderMatch['matchKind']): number {
+function minScoreForMatch(
+  kind: OrderLinkSuggestionKind,
+  matchKind: EbayOrderMatch['matchKind'],
+  priceBonus: number
+): number {
   if (matchKind === 'listingId' || matchKind === 'sku') return 40;
+  if (priceBonus >= 85) {
+    if (kind === 'link') return 35;
+    if (kind === 'mark_sold') return 48;
+  }
   if (kind === 'mark_sold') return 62;
   return 55;
+}
+
+type AssignGreedyOptions = {
+  /** Only keep rows where sell price closely matches order payout. */
+  requirePriceAlign?: boolean;
+  minPriceBonus?: number;
+  /** Minimum title match score (before price bonus). */
+  minTitleScore?: number;
+};
+
+function assignGreedy(
+  kind: OrderLinkSuggestionKind,
+  items: InventoryItem[],
+  orders: EbayOrderRecord[],
+  reservedLines: Set<string>,
+  suggestions: OrderLinkSuggestion[],
+  dateField: 'sellDate' | 'none',
+  options?: AssignGreedyOptions
+): void {
+  const candidateRows: { item: InventoryItem; match: EbayOrderMatch; totalScore: number }[] = [];
+
+  for (const item of items) {
+    for (const match of findMatchingOrdersForItem(item, orders)) {
+      if (options?.minTitleScore != null && match.matchScore < options.minTitleScore) continue;
+
+      const key = lineItemClaimKey(match.order.orderId, match.lineItem);
+      if (reservedLines.has(key)) continue;
+
+      const payout = getLinePayout(match.order, match.lineItem);
+      const itemSell = item.sellPrice ?? null;
+      const priceBonus = itemSell != null ? sellPriceMatchBonus(itemSell, payout) : 0;
+
+      if (options?.requirePriceAlign) {
+        if (itemSell == null || priceBonus < (options.minPriceBonus ?? 85)) continue;
+        if (!sellPriceAlignsWithPayout(itemSell, payout)) continue;
+      }
+
+      const dateBonus =
+        dateField === 'sellDate'
+          ? dateProximityBonus(item.sellDate, match.order.creationDate)
+          : orderRecencyBonus(match.order.creationDate);
+      candidateRows.push({ item, match, totalScore: match.matchScore + dateBonus + priceBonus });
+    }
+  }
+
+  candidateRows.sort((a, b) => b.totalScore - a.totalScore);
+  const assignedItems = new Set<string>();
+
+  for (const row of candidateRows) {
+    if (assignedItems.has(row.item.id)) continue;
+
+    const payout = getLinePayout(row.match.order, row.match.lineItem);
+    const priceBonus = row.item.sellPrice != null ? sellPriceMatchBonus(row.item.sellPrice, payout) : 0;
+    if (row.totalScore < minScoreForMatch(kind, row.match.matchKind, priceBonus)) continue;
+
+    const key = lineItemClaimKey(row.match.order.orderId, row.match.lineItem);
+    if (reservedLines.has(key)) continue;
+
+    assignedItems.add(row.item.id);
+    reservedLines.add(key);
+    suggestions.push(makeSuggestion(kind, row.item, row.match, row.totalScore));
+  }
 }
 
 const REPRICE_MIN_DELTA = 0.02;
@@ -297,44 +390,6 @@ function findAdjustmentSuggestions(
   );
 }
 
-function assignGreedy(
-  kind: OrderLinkSuggestionKind,
-  items: InventoryItem[],
-  orders: EbayOrderRecord[],
-  reservedLines: Set<string>,
-  suggestions: OrderLinkSuggestion[],
-  dateField: 'sellDate' | 'none'
-): void {
-  const candidateRows: { item: InventoryItem; match: EbayOrderMatch; totalScore: number }[] = [];
-
-  for (const item of items) {
-    for (const match of findMatchingOrdersForItem(item, orders)) {
-      const key = lineItemClaimKey(match.order.orderId, match.lineItem);
-      if (reservedLines.has(key)) continue;
-      const dateBonus =
-        dateField === 'sellDate'
-          ? dateProximityBonus(item.sellDate, match.order.creationDate)
-          : orderRecencyBonus(match.order.creationDate);
-      candidateRows.push({ item, match, totalScore: match.matchScore + dateBonus });
-    }
-  }
-
-  candidateRows.sort((a, b) => b.totalScore - a.totalScore);
-  const assignedItems = new Set<string>();
-
-  for (const row of candidateRows) {
-    if (assignedItems.has(row.item.id)) continue;
-    if (row.totalScore < minScoreForMatch(kind, row.match.matchKind)) continue;
-
-    const key = lineItemClaimKey(row.match.order.orderId, row.match.lineItem);
-    if (reservedLines.has(key)) continue;
-
-    assignedItems.add(row.item.id);
-    reservedLines.add(key);
-    suggestions.push(makeSuggestion(kind, row.item, row.match, row.totalScore));
-  }
-}
-
 export function buildOrderLinkAnalysis(items: InventoryItem[], orders: EbayOrderRecord[]): OrderLinkAnalysisResult {
   const inStockItems = items.filter(isMarkSoldCandidate);
   const soldEbay = items.filter(isSoldEbayCandidate);
@@ -348,8 +403,16 @@ export function buildOrderLinkAnalysis(items: InventoryItem[], orders: EbayOrder
   // 1) In stock but eBay order exists → mark sold + fill order data.
   assignGreedy('mark_sold', inStockItems, orders, reservedLines, suggestions, 'none');
 
-  // 2) Already sold, missing order id → link order + fix payout.
+  // 2) Already sold on eBay, missing order id → link order + buyer/payout.
   assignGreedy('link', unlinkedSold, orders, reservedLines, suggestions, 'sellDate');
+
+  // 2b) Sold without eBay metadata — match by product title + sell price (e.g. i7 4790K @ €39.99).
+  const priceLinkSold = items.filter(isPriceLinkSoldCandidate);
+  assignGreedy('link', priceLinkSold, orders, reservedLines, suggestions, 'sellDate', {
+    requirePriceAlign: true,
+    minPriceBonus: 85,
+    minTitleScore: 35,
+  });
 
   // 3) Already linked — post-sale refunds/returns or payout drift.
   for (const item of alreadyLinked) {
