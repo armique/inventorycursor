@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "name": "Premium Noir — Editorial",
+  "family": "generic",
+  "layout": "hero-left",
+  "variant": "premium",
+  "author": "DeInventory",
+  "source": "builtin-pack",
+  "theme": {
+    "bgFrom": "#050508",
+    "bgTo": "#12121a",
+    "accent": "#d4b87a",
+    "accentSoft": "rgba(212, 184, 122, 0.24)",
+    "text": "#faf9f7",
+    "textMuted": "#9b9aa8",
+    "surface": "rgba(255, 255, 255, 0.05)",
+    "surfaceBorder": "rgba(212, 184, 122, 0.32)"
+  },
+  "usps": [
+    "Premium Qualität",
+    "Geprüft & verpackt",
+    "Versand aus Deutschland",
+    "Seriöser Verkauf"
+  ],
+  "tagline": "Curated Hardware · Listings That Convert",
+  "showPrice": true,
+  "showSpecs": true,
+  "maxSpecs": 5
+}

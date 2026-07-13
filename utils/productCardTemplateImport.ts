@@ -8,6 +8,7 @@ export interface ProductCardTemplateExport {
   name: string;
   family: ProductCardFamily;
   layout: 'hero-left' | 'hero-center';
+  variant?: 'standard' | 'premium';
   theme: ProductCardTheme;
   usps: string[];
   tagline?: string;
@@ -43,6 +44,7 @@ export function parseProductCardTemplateJson(raw: unknown): ProductCardTemplate 
     name: obj.name.trim(),
     family: obj.family,
     layout: obj.layout === 'hero-center' ? 'hero-center' : 'hero-left',
+    variant: obj.variant === 'premium' ? 'premium' : 'standard',
     theme: {
       bgFrom: obj.theme.bgFrom,
       bgTo: obj.theme.bgTo,
@@ -77,6 +79,7 @@ export function exportProductCardTemplateJson(template: ProductCardTemplate): st
     name: template.name,
     family: template.family,
     layout: template.layout,
+    variant: template.variant,
     theme: template.theme,
     usps: template.usps,
     tagline: template.tagline,
@@ -90,6 +93,7 @@ export function exportProductCardTemplateJson(template: ProductCardTemplate): st
 
 /** Built-in pack filenames served from /product-card-templates/ */
 export const BUILTIN_TEMPLATE_PACK_FILES = [
+  'premium-noir-editorial.json',
   'kleinanzeigen-minimal.json',
   'ebay-bold-orange.json',
   '3d-print-soft-mint.json',
@@ -103,7 +107,14 @@ export async function loadBuiltinTemplatePack(): Promise<ProductCardTemplate[]> 
       const res = await fetch(`/product-card-templates/${file}`);
       if (!res.ok) continue;
       const json = await res.json();
-      out.push(parseProductCardTemplateJson(json));
+      const parsed = parseProductCardTemplateJson(json);
+      const stableId = file.replace(/\.json$/i, '');
+      out.push({
+        ...parsed,
+        id: stableId,
+        isBuiltin: true,
+        createdAt: 'builtin-pack',
+      });
     } catch {
       /* skip broken pack file */
     }

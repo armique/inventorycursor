@@ -23,6 +23,8 @@ export interface ProductCardTemplate {
   theme: ProductCardTheme;
   usps: string[];
   layout: 'hero-left' | 'hero-center';
+  /** Premium canvas treatment — deeper shadows, glass surfaces, editorial typography. */
+  variant?: 'standard' | 'premium';
   showPrice: boolean;
   showSpecs: boolean;
   maxSpecs: number;
@@ -79,7 +81,8 @@ function builtinTemplate(
   id: string,
   name: string,
   family: ProductCardFamily,
-  layout: ProductCardTemplate['layout'] = 'hero-left'
+  layout: ProductCardTemplate['layout'] = 'hero-left',
+  variant: ProductCardTemplate['variant'] = 'standard'
 ): ProductCardTemplate {
   return {
     id,
@@ -88,6 +91,7 @@ function builtinTemplate(
     theme: { ...THEMES[family] },
     usps: [...DEFAULT_USPS[family]],
     layout,
+    variant,
     showPrice: true,
     showSpecs: true,
     maxSpecs: 6,
@@ -96,7 +100,40 @@ function builtinTemplate(
   };
 }
 
+const PREMIUM_NOIR_THEME: ProductCardTheme = {
+  bgFrom: '#050508',
+  bgTo: '#12121a',
+  accent: '#d4b87a',
+  accentSoft: 'rgba(212, 184, 122, 0.24)',
+  text: '#faf9f7',
+  textMuted: '#9b9aa8',
+  surface: 'rgba(255, 255, 255, 0.05)',
+  surfaceBorder: 'rgba(212, 184, 122, 0.32)',
+};
+
+export const PREMIUM_NOIR_EDITORIAL_TEMPLATE: ProductCardTemplate = {
+  id: 'premium-noir-editorial',
+  name: 'Premium Noir — Editorial',
+  family: 'generic',
+  theme: { ...PREMIUM_NOIR_THEME },
+  usps: [
+    'Premium Qualität',
+    'Geprüft & verpackt',
+    'Versand aus Deutschland',
+    'Seriöser Verkauf',
+  ],
+  layout: 'hero-left',
+  variant: 'premium',
+  showPrice: true,
+  showSpecs: true,
+  maxSpecs: 5,
+  tagline: 'Curated Hardware · Listings That Convert',
+  createdAt: 'builtin',
+  isBuiltin: true,
+};
+
 export const BUILTIN_PRODUCT_CARD_TEMPLATES: ProductCardTemplate[] = [
+  PREMIUM_NOIR_EDITORIAL_TEMPLATE,
   builtinTemplate('pc-dark', 'PC Hardware — Premium Dark', 'pc', 'hero-left'),
   builtinTemplate('pc-center', 'PC Hardware — Hero Center', 'pc', 'hero-center'),
   builtinTemplate('3d-emerald', '3D Print — Emerald Premium', '3d', 'hero-left'),
@@ -106,6 +143,14 @@ export const BUILTIN_PRODUCT_CARD_TEMPLATES: ProductCardTemplate[] = [
 
 export function suggestTemplateForItem(item: InventoryItem): ProductCardTemplate {
   const family = detectProductCardFamily(item);
+  const premium = BUILTIN_PRODUCT_CARD_TEMPLATES.find((t) => t.id === 'premium-noir-editorial');
+  if (premium) {
+    return {
+      ...premium,
+      usps: [...DEFAULT_USPS[family]],
+      family,
+    };
+  }
   const match =
     BUILTIN_PRODUCT_CARD_TEMPLATES.find((t) => t.family === family && t.layout === 'hero-left') ||
     BUILTIN_PRODUCT_CARD_TEMPLATES.find((t) => t.family === family) ||

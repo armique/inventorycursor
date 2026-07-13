@@ -33,6 +33,7 @@ import {
   renderProductCardToCanvas,
 } from '../services/productCardRenderer';
 import { detectProductCardFamily } from '../utils/productCardContent';
+import { loadBuiltinTemplatePack } from '../utils/productCardTemplateImport';
 import ProductPhotoEnhancePanel from './ProductPhotoEnhancePanel';
 
 interface Props {
@@ -95,6 +96,19 @@ const ProductCardGeneratorModal: React.FC<Props> = ({
   useEffect(() => {
     void refreshPreview();
   }, [refreshPreview]);
+
+  useEffect(() => {
+    void loadBuiltinTemplatePack().then((pack) => {
+      if (!pack.length) return;
+      setTemplates((prev) => {
+        const byId = new Map<string, ProductCardTemplate>();
+        for (const t of [...pack, ...prev]) {
+          if (!byId.has(t.id)) byId.set(t.id, t);
+        }
+        return Array.from(byId.values());
+      });
+    });
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
