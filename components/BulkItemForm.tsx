@@ -16,6 +16,12 @@ import { CATEGORY_IMAGES, searchAllHardware, HardwareMetadata } from '../service
 import { generateItemSpecs, getSpecsAIProvider, requestAIJson } from '../services/specsAI';
 import { mergeAiSpecsIntoEssential, resolveEssentialSpecKeys } from '../services/essentialSpecFields';
 import { correctGpuVramInSpecs, shouldApplyGpuVramCorrection } from '../services/gpuVramCorrection';
+import {
+  buildRamKitSpecs,
+  extractRamKitInfo,
+  parseBulkLineQuantityAndName,
+  resolveRamInventoryQuantity,
+} from '../utils/ramKitParse';
 import { filesToDataUrls, prepareInventoryImagesForStorage } from '../utils/imageImport';
 
 interface Props {
@@ -80,12 +86,14 @@ type TextImportMode = 'AS_IS' | 'AI';
 interface ParsedTextItem {
   name: string;
   quantity?: number;
+  /** Quantity from line prefix before AI/normalization (e.g. "3x …" → 3). */
+  lineQuantity?: number;
   category?: string;
   subCategory?: string;
   note?: string;
+  vendor?: string;
   isDefective?: boolean;
   specs?: Record<string, string | number>;
-  vendor?: string;
 }
 
 const CATEGORY_KEYS = Object.keys(HIERARCHY_CATEGORIES);
@@ -141,7 +149,7 @@ function inferCategoryFromName(name: string): { category: string; subCategory: s
     return { category: 'Components', subCategory: 'Graphics Cards' };
   if (/(intel core|ryzen|threadripper|cpu|prozessor)/i.test(n)) return { category: 'Components', subCategory: 'Processors' };
   if (MOTHERBOARD_PATTERN.test(n) || /socket\s?(am|lga)/i.test(n)) return { category: 'Components', subCategory: 'Motherboards' };
-  if (/(ddr[2345]|ram\b|memory\b|\d+x\d+\s*gb|12800u|10600u|1333u|2rx8|1rx8|jedec|hynix|samsung m\d|kingston khx|sk hynix)/i.test(n))
+  if (/(ddr[2345]|ram\b|memory\b|\d+\s*[x×]\s*\d+\s*gb|12800u|10600u|1333u|2rx8|1rx8|jedec|hynix|samsung m\d|kingston khx|sk hynix|crucial)/i.test(n))
     return { category: 'Components', subCategory: 'RAM' };
   if (/(ssd|hdd|nvme|m\.2|tb\b|gb\b)/i.test(n)) return { category: 'Components', subCategory: 'Storage (SSD/HDD)' };
   if (/(netzteil|power supply|psu|watt|80\+)/i.test(n)) return { category: 'Components', subCategory: 'Power Supplies' };
@@ -160,10 +168,7 @@ function parseBulkTextLines(input: string): string[] {
 }
 
 function parseQuantityAndName(rawLine: string): { name: string; quantity: number } {
-  /** e.g. "2x ASUS GPU", "8x4GB Hynix …" (no space after ×) */
-  const m = rawLine.match(/^(\d+)\s*[x×]\s*(.+)$/i);
-  if (!m) return { name: rawLine, quantity: 1 };
-  return { quantity: Math.max(1, parseInt(m[1], 10) || 1), name: m[2].trim() };
+  return parseBulkLineQuantityAndName(rawLine);
 }
 
 function reconcileCategory(name: string, category?: string, subCategory?: string): { category: string; subCategory: string } {
@@ -178,7 +183,7 @@ function reconcileCategory(name: string, category?: string, subCategory?: string
   if (/(ssd|nvme|m\.2|hdd|sata)/i.test(n)) {
     return { category: 'Components', subCategory: 'Storage (SSD/HDD)' };
   }
-  if (/(ddr4|ddr5|ram|memory)/i.test(n)) {
+  if (/(ddr4|ddr5|ram|memory|\d+\s*[x×]\s*\d+\s*gb|crucial)/i.test(n)) {
     return { category: 'Components', subCategory: 'RAM' };
   }
   if (MOTHERBOARD_PATTERN.test(n)) {
@@ -192,19 +197,6 @@ function reconcileCategory(name: string, category?: string, subCategory?: string
     return guessed;
   }
   return { category: aiCategory, subCategory: aiSub };
-}
-
-function extractRamStickInfo(name: string): { sticks: number; perStickGB: number | null } | null {
-  const n = name.toLowerCase();
-  if (!/(ddr[2345]|ram\b|memory\b|\d+x\d+\s*gb|12800u|10600u|2rx8|1rx8)/i.test(n)) return null;
-  const explicitKit = n.match(/(\d+)\s*[x×]\s*(\d+)\s*gb/i);
-  if (explicitKit) {
-    return {
-      sticks: Math.max(1, parseInt(explicitKit[1], 10) || 1),
-      perStickGB: Math.max(1, parseInt(explicitKit[2], 10) || 0) || null,
-    };
-  }
-  return null;
 }
 
 const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORIES, onAddCategory, categoryFields = {} }) => {
@@ -368,24 +360,18 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
     for (const row of parsed) {
       const baseName = (row.name || '').trim();
       if (!baseName) continue;
-      const parsedQty = Math.max(1, Math.floor(Number(row.quantity || 1) || 1));
+      const lineQty = Math.max(1, Math.floor(Number(row.lineQuantity ?? row.quantity ?? 1) || 1));
+      const requestedQty = Math.max(1, Math.floor(Number(row.quantity ?? lineQty) || 1));
       const rec = importMode === 'AS_IS'
         ? { category: newCategory, subCategory: normalizeSubCategory(newCategory, newSubCategory) }
         : reconcileCategory(baseName, row.category, row.subCategory);
-      const ramInfo = extractRamStickInfo(baseName);
-      const quantity = ramInfo ? Math.max(parsedQty, ramInfo.sticks) : parsedQty;
-      for (let i = 0; i < quantity; i++) {
-        const ramSpecs = ramInfo
-          ? {
-              Capacity: ramInfo.perStickGB ? `${ramInfo.perStickGB}GB` : undefined,
-              Modules: `${quantity}x`,
-              Kit: ramInfo.perStickGB ? `${quantity}x${ramInfo.perStickGB}GB` : `${quantity} modules`,
-            }
-          : {};
-        let mergedSpecs: Record<string, string | number> = {
-          ...(row.specs || {}),
-          ...Object.fromEntries(Object.entries(ramSpecs).filter(([, v]) => v !== undefined)),
-        };
+      const ramKit = rec.subCategory === 'RAM' ? extractRamKitInfo(baseName) : null;
+      const inventoryQty = resolveRamInventoryQuantity(requestedQty, ramKit, lineQty);
+      for (let i = 0; i < inventoryQty; i++) {
+        let mergedSpecs: Record<string, string | number> = { ...(row.specs || {}) };
+        if (ramKit) {
+          mergedSpecs = { ...mergedSpecs, ...buildRamKitSpecs(ramKit) };
+        }
         if (shouldApplyGpuVramCorrection(rec.subCategory, baseName)) {
           mergedSpecs = correctGpuVramInSpecs(baseName, undefined, mergedSpecs);
         }
@@ -412,7 +398,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
     if (!lines.length) return;
     const parsed = lines.map((line) => {
       const { name, quantity } = parseQuantityAndName(line);
-      return { name, quantity } as ParsedTextItem;
+      return { name, quantity, lineQuantity: quantity } as ParsedTextItem;
     });
     applyParsedItems(parsed, 'AS_IS');
   };
@@ -434,7 +420,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
       const parsed = lines.map((line) => {
         const { name, quantity } = parseQuantityAndName(line);
         const guessed = inferCategoryFromName(name);
-        return { name, quantity, category: guessed.category, subCategory: guessed.subCategory } as ParsedTextItem;
+        return { name, quantity, lineQuantity: quantity, category: guessed.category, subCategory: guessed.subCategory } as ParsedTextItem;
       });
       applyParsedItems(parsed, 'AI');
       return;
@@ -454,7 +440,7 @@ Rules:
 - Parse quantity from prefixes like "2x ..." or "8x4GB ...". If no quantity, use 1.
 - IMPORTANT: Do not classify CPUs, SSD/NVMe drives, RAM, or motherboards as Graphics Cards.
 - IMPORTANT: Motherboards are often listed only by chipset/model (for example A320M, B450, B550, X570, Z690, Z790, H610) without the word "motherboard". Classify those as category "Components" and subCategory "Motherboards".
-- RAM kits: patterns like "2x 32GB" or "8x4GB" — set quantity to the stick count when that is the intent.
+- RAM kits (e.g. "Crucial 2x8GB", "8x4GB Hynix"): ONE inventory line per kit with quantity=1 unless the line starts with a purchase count like "3x Crucial 2x8GB" (then quantity=3). Never set quantity to the stick/module count. In specs use Modules (number of sticks), GB per Stick, and Kit Capacity (modules × GB per stick).
 - Put only essential specs in "specs" (VRAM for GPUs, GB for RAM, wattage for PSUs). Use {} if none.
 - Graphics cards: VRAM = GPU memory for that chip (not system RAM).
 
@@ -466,13 +452,18 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
       if (!parsed.length) {
         throw new Error('AI returned no parse results.');
       }
+      parsed = parsed.map((item, i) => {
+        const line = lines[i];
+        const lineQuantity = line ? parseQuantityAndName(line).quantity : 1;
+        return { ...item, lineQuantity };
+      });
       const aiCount = parsed.length;
       if (parsed.length < lines.length) {
         for (let i = parsed.length; i < lines.length; i++) {
           const line = lines[i]!;
           const { name, quantity } = parseQuantityAndName(line);
           const guessed = inferCategoryFromName(name);
-          parsed.push({ name, quantity, category: guessed.category, subCategory: guessed.subCategory });
+          parsed.push({ name, quantity, lineQuantity: quantity, category: guessed.category, subCategory: guessed.subCategory });
         }
       }
       applyParsedItems(parsed, 'AI');
@@ -486,7 +477,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
       const fallback = lines.map((line) => {
         const { name, quantity } = parseQuantityAndName(line);
         const guessed = inferCategoryFromName(name);
-        return { name, quantity, category: guessed.category, subCategory: guessed.subCategory } as ParsedTextItem;
+        return { name, quantity, lineQuantity: quantity, category: guessed.category, subCategory: guessed.subCategory } as ParsedTextItem;
       });
       applyParsedItems(fallback, 'AI');
       setBulkTextStatus('AI parse failed, added with local smart detection. Please review before confirm.');
