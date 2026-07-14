@@ -32,6 +32,84 @@ export function extractRamKitInfo(name: string): RamKitInfo | null {
   return { modules, gbPerStick };
 }
 
+const RAM_BRANDS = [
+  'sk hynix',
+  'g.skill',
+  'gskill',
+  'teamgroup',
+  'silicon power',
+  'crucial',
+  'kingston',
+  'corsair',
+  'hynix',
+  'micron',
+  'samsung',
+  'vengeance',
+  'ballistix',
+  'patriot',
+  'adata',
+  'xpg',
+  'lexar',
+  'apacer',
+  'transcend',
+  'geil',
+  'pny',
+  'fury',
+  'trident',
+];
+
+function titleCaseBrand(brand: string): string {
+  return brand
+    .split(/\s+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
+function extractRamBrand(name: string): string | null {
+  const lower = name.toLowerCase();
+  const sorted = [...RAM_BRANDS].sort((a, b) => b.length - a.length);
+  for (const brand of sorted) {
+    const re = new RegExp(`\\b${brand.replace(/\./g, '\\.')}\\b`, 'i');
+    const match = name.match(re);
+    if (match) return titleCaseBrand(match[0]);
+  }
+  const tokens = name.split(/\s+/).filter(Boolean);
+  for (const token of tokens) {
+    if (/^ddr\d$/i.test(token)) continue;
+    if (/^\d/.test(token)) continue;
+    if (/gb$/i.test(token)) continue;
+    if (/^[x×]$/i.test(token)) continue;
+    return titleCaseBrand(token);
+  }
+  return null;
+}
+
+function extractMemoryType(name: string): string | null {
+  const match = name.match(/\b(ddr[2345])\b/i);
+  return match ? match[1]!.toUpperCase() : null;
+}
+
+export function formatRamKitDisplayName(rawName: string, kit: RamKitInfo): string {
+  const remainder = rawName
+    .replace(RAM_KIT_IN_NAME, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const brand = extractRamBrand(remainder) || extractRamBrand(rawName);
+  const memoryType = extractMemoryType(remainder) || extractMemoryType(rawName);
+  const kitTotalGb = kit.modules * kit.gbPerStick;
+  const kitPart = `${kit.modules}x${kit.gbPerStick}GB`;
+
+  const parts: string[] = [];
+  if (brand) parts.push(brand);
+  parts.push(`${kitTotalGb}GB`);
+  parts.push(`(${kitPart})`);
+  if (memoryType) parts.push(memoryType);
+  parts.push('RAM');
+
+  return parts.join(' ');
+}
+
 export function buildRamKitSpecs(kit: RamKitInfo): Record<string, string> {
   const kitCapacityGb = kit.modules * kit.gbPerStick;
   return {

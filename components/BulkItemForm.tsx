@@ -19,6 +19,7 @@ import { correctGpuVramInSpecs, shouldApplyGpuVramCorrection } from '../services
 import {
   buildRamKitSpecs,
   extractRamKitInfo,
+  formatRamKitDisplayName,
   parseBulkLineQuantityAndName,
   resolveRamInventoryQuantity,
 } from '../utils/ramKitParse';
@@ -367,6 +368,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
         : reconcileCategory(baseName, row.category, row.subCategory);
       const ramKit = rec.subCategory === 'RAM' ? extractRamKitInfo(baseName) : null;
       const inventoryQty = resolveRamInventoryQuantity(requestedQty, ramKit, lineQty);
+      const displayName = ramKit ? formatRamKitDisplayName(baseName, ramKit) : baseName;
       for (let i = 0; i < inventoryQty; i++) {
         let mergedSpecs: Record<string, string | number> = { ...(row.specs || {}) };
         if (ramKit) {
@@ -377,7 +379,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
         }
         appended.push({
           id: `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${i}`,
-          name: baseName,
+          name: displayName,
           category: rec.category,
           subCategory: rec.subCategory,
           note: row.note || '',
