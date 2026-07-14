@@ -41,7 +41,7 @@ export const STYLE_PRESETS: StylePreset[] = [
     typographyId: "apple-clean",
     titleTypographyId: "apple-hero",
     titleColorId: "theme",
-    backgroundTexture: "studio",
+    backgroundTexture: "ai-moonstone",
   },
   {
     id: "dark-gaming",
@@ -111,7 +111,7 @@ export const STYLE_PRESETS: StylePreset[] = [
     typographyId: "apple-clean",
     titleTypographyId: "apple-hero",
     titleColorId: "theme",
-    backgroundTexture: "spotlight",
+    backgroundTexture: "ai-warm-linen",
   },
   {
     id: "icon-focus",
@@ -125,7 +125,7 @@ export const STYLE_PRESETS: StylePreset[] = [
     typographyId: "apple-clean",
     titleTypographyId: "apple-hero",
     titleColorId: "theme",
-    backgroundTexture: "dot-matrix",
+    backgroundTexture: "ai-powder-blue",
   },
   {
     id: "futuristic-hud",
@@ -153,7 +153,7 @@ export const STYLE_PRESETS: StylePreset[] = [
     typographyId: "stripe-pro",
     titleTypographyId: "stripe-display",
     titleColorId: "ocean",
-    backgroundTexture: "silk-waves",
+    backgroundTexture: "ai-soft-silk",
   },
   {
     id: "no-text-iconic",

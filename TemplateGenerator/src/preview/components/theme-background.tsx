@@ -8,13 +8,17 @@ const NOISE_SVG = `url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='h
 export function ThemeBackground() {
   const backgroundTextureId = usePreviewStore((s) => s.backgroundTextureId);
   const texture = getBackgroundTexture(backgroundTextureId);
+  const isLight = texture.tone === "light";
 
   return (
     <>
       <div
         className="absolute inset-0"
         style={{
-          background: "var(--t-bg-gradient, var(--t-base))",
+          background: isLight
+            ? "#faf9f7"
+            : "var(--t-bg-gradient, var(--t-base))",
+          opacity: isLight && texture.image ? 0.35 : 1,
         }}
       />
 
@@ -29,16 +33,30 @@ export function ThemeBackground() {
         />
       )}
 
-      <div
-        className="absolute inset-0 opacity-70"
-        style={{
-          background: `
+      {!isLight && (
+        <div
+          className="absolute inset-0 opacity-70"
+          style={{
+            background: `
             radial-gradient(ellipse 50% 38% at 50% 42%, rgba(var(--t-bloom), 0.1) 0%, transparent 68%),
             radial-gradient(ellipse 35% 28% at 12% 18%, rgba(var(--t-glow-primary), 0.14) 0%, transparent 62%),
             radial-gradient(ellipse 32% 26% at 88% 82%, rgba(var(--t-glow-secondary), 0.12) 0%, transparent 58%)
           `,
-        }}
-      />
+          }}
+        />
+      )}
+
+      {isLight && (
+        <div
+          className="absolute inset-0 opacity-40"
+          style={{
+            background: `
+            radial-gradient(ellipse 55% 42% at 50% 38%, rgba(255,255,255,0.55) 0%, transparent 68%),
+            radial-gradient(ellipse 40% 32% at 15% 20%, rgba(var(--t-glow-primary), 0.06) 0%, transparent 62%)
+          `,
+          }}
+        />
+      )}
 
       {texture.layers.map((layer, i) => (
         <div key={i} className="absolute inset-0" style={layer} />
@@ -47,21 +65,26 @@ export function ThemeBackground() {
       <div
         className="absolute inset-0"
         style={{
-          background: `radial-gradient(ellipse 92% 80% at 50% 50%, transparent 42%, var(--t-vignette) 100%)`,
+          background: isLight
+            ? `radial-gradient(ellipse 92% 80% at 50% 50%, transparent 55%, rgba(0,0,0,0.05) 100%)`
+            : `radial-gradient(ellipse 92% 80% at 50% 50%, transparent 42%, var(--t-vignette) 100%)`,
         }}
       />
 
       <div
-        className="absolute inset-0 opacity-60"
+        className="absolute inset-0"
         style={{
-          background: `linear-gradient(180deg, var(--t-glass) 0%, transparent 22%, transparent 78%, rgba(0,0,0,0.06) 100%)`,
+          opacity: isLight ? 0.35 : 0.6,
+          background: isLight
+            ? `linear-gradient(180deg, rgba(255,255,255,0.25) 0%, transparent 30%, transparent 70%, rgba(0,0,0,0.03) 100%)`
+            : `linear-gradient(180deg, var(--t-glass) 0%, transparent 22%, transparent 78%, rgba(0,0,0,0.06) 100%)`,
         }}
       />
 
       <div
         className="absolute inset-0 mix-blend-overlay"
         style={{
-          opacity: "var(--t-noise-opacity)",
+          opacity: isLight ? "0.08" : "var(--t-noise-opacity)",
           backgroundImage: NOISE_SVG,
           backgroundSize: "200px 200px",
         }}

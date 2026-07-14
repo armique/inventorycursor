@@ -6,6 +6,8 @@ import type { CSSProperties } from "react";
  * Colors reference the active theme's CSS vars (--t-glow-*, --t-bloom, etc.)
  * so every texture automatically recolors to match the selected theme.
  */
+export type BackgroundTextureTone = "light" | "dark";
+
 export type BackgroundTexture = {
   id: string;
   label: string;
@@ -13,6 +15,8 @@ export type BackgroundTexture = {
   swatch: string;
   /** When set, an AI-generated image is used as the full background surface. */
   image?: string;
+  /** Light tones skip heavy dark overlays so pastels stay clean. */
+  tone?: BackgroundTextureTone;
   layers: CSSProperties[];
 };
 
@@ -32,6 +36,7 @@ function img(
   label: string,
   description: string,
   image: string,
+  tone: BackgroundTextureTone = "dark",
   layers: CSSProperties[] = []
 ): BackgroundTexture {
   return {
@@ -40,6 +45,7 @@ function img(
     description,
     swatch: `url("${image}") center / cover`,
     image,
+    tone,
     layers,
   };
 }
@@ -303,9 +309,74 @@ export const BACKGROUND_TEXTURES: BackgroundTexture[] = [
     "ai-soft-silk",
     "Pastel Silk",
     "AI · light airy gradient",
-    "/textures/tex-soft-silk-light.png"
+    "/textures/tex-soft-silk-light.png",
+    "light"
+  ),
+  img(
+    "ai-champagne-pearl",
+    "Champagne Pearl",
+    "AI · ivory · warm gold sheen",
+    "/textures/tex-champagne-pearl.png",
+    "light"
+  ),
+  img(
+    "ai-rose-quartz",
+    "Rose Quartz",
+    "AI · blush pink silk",
+    "/textures/tex-rose-quartz.png",
+    "light"
+  ),
+  img(
+    "ai-lavender-mist",
+    "Lavender Mist",
+    "AI · periwinkle · lilac",
+    "/textures/tex-lavender-mist.png",
+    "light"
+  ),
+  img(
+    "ai-sage-mint",
+    "Sage Mint",
+    "AI · pale green · spa luxury",
+    "/textures/tex-sage-mint.png",
+    "light"
+  ),
+  img(
+    "ai-moonstone",
+    "Moonstone",
+    "AI · pearl white · iridescent",
+    "/textures/tex-moonstone.png",
+    "light"
+  ),
+  img(
+    "ai-warm-linen",
+    "Warm Linen",
+    "AI · oatmeal · natural beige",
+    "/textures/tex-warm-linen.png",
+    "light"
+  ),
+  img(
+    "ai-powder-blue",
+    "Powder Blue",
+    "AI · dusty cerulean · airy",
+    "/textures/tex-powder-blue.png",
+    "light"
+  ),
+  img(
+    "ai-pale-gold",
+    "Pale Gold",
+    "AI · champagne shimmer · ivory",
+    "/textures/tex-pale-gold-shimmer.png",
+    "light"
   ),
 ];
+
+export const LIGHT_BACKGROUND_TEXTURES = BACKGROUND_TEXTURES.filter(
+  (t) => t.tone === "light"
+);
+
+export const DARK_BACKGROUND_TEXTURES = BACKGROUND_TEXTURES.filter(
+  (t) => t.tone !== "light"
+);
 
 export type BackgroundTextureId = (typeof BACKGROUND_TEXTURES)[number]["id"];
 

@@ -23,9 +23,12 @@ import {
 import {
   BACKGROUND_TEXTURES,
   CARD_THEMES,
+  DARK_BACKGROUND_TEXTURES,
+  LIGHT_BACKGROUND_TEXTURES,
   SPEC_CARD_STYLES,
   THEME_LIST,
 } from "@/themes";
+import type { BackgroundTexture } from "@/themes";
 import { cn } from "@/lib/utils";
 
 const SPEC_LAYOUTS: {
@@ -107,27 +110,21 @@ export function PreviewControls() {
             {BACKGROUND_TEXTURES.length} textures
           </span>
         </div>
-        <div className="grid grid-cols-3 gap-2">
-          {BACKGROUND_TEXTURES.map((texture) => (
-            <button
-              key={texture.id}
-              type="button"
-              onClick={() => setBackgroundTexture(texture.id)}
-              className={cn(
-                "group relative h-14 overflow-hidden rounded-xl border transition-all",
-                backgroundTextureId === texture.id
-                  ? "border-white/25 ring-2 ring-amber-500/40"
-                  : "border-white/[0.08] hover:border-white/15"
-              )}
-              style={{ background: texture.swatch }}
-              title={`${texture.label} — ${texture.description}`}
-            >
-              <span className="absolute inset-x-0 bottom-0 bg-black/55 px-1 py-1 text-[8px] font-medium leading-tight text-white/90 backdrop-blur-sm">
-                {texture.label}
-              </span>
-            </button>
-          ))}
-        </div>
+
+        <TexturePickerGroup
+          label="Pastel & Light"
+          textures={LIGHT_BACKGROUND_TEXTURES}
+          activeId={backgroundTextureId}
+          onSelect={setBackgroundTexture}
+        />
+
+        <TexturePickerGroup
+          label="Dark & Rich"
+          textures={DARK_BACKGROUND_TEXTURES}
+          activeId={backgroundTextureId}
+          onSelect={setBackgroundTexture}
+        />
+
         <p className="text-[10px] text-muted-foreground">
           {
             BACKGROUND_TEXTURES.find((t) => t.id === backgroundTextureId)
@@ -362,5 +359,50 @@ export function PreviewControls() {
         </div>
       </section>
     </>
+  );
+}
+
+function TexturePickerGroup({
+  label,
+  textures,
+  activeId,
+  onSelect,
+}: {
+  label: string;
+  textures: BackgroundTexture[];
+  activeId: string;
+  onSelect: (id: string) => void;
+}) {
+  if (textures.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/80">
+        {label}
+      </p>
+      <div className="grid grid-cols-3 gap-2">
+        {textures.map((texture) => (
+          <button
+            key={texture.id}
+            type="button"
+            onClick={() => onSelect(texture.id)}
+            className={cn(
+              "group relative h-14 overflow-hidden rounded-xl border transition-all",
+              activeId === texture.id
+                ? texture.tone === "light"
+                  ? "border-white/30 ring-2 ring-rose-300/50"
+                  : "border-white/25 ring-2 ring-amber-500/40"
+                : "border-white/[0.08] hover:border-white/15"
+            )}
+            style={{ background: texture.swatch }}
+            title={`${texture.label} — ${texture.description}`}
+          >
+            <span className="absolute inset-x-0 bottom-0 bg-black/55 px-1 py-1 text-[8px] font-medium leading-tight text-white/90 backdrop-blur-sm">
+              {texture.label}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

@@ -55,7 +55,10 @@ export {
 export {
   BACKGROUND_TEXTURES,
   BACKGROUND_TEXTURE_MAP,
+  LIGHT_BACKGROUND_TEXTURES,
+  DARK_BACKGROUND_TEXTURES,
   getBackgroundTexture,
   type BackgroundTexture,
   type BackgroundTextureId,
+  type BackgroundTextureTone,
 } from "./background-textures";
