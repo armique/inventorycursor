@@ -22,6 +22,7 @@ import {
   formatRamKitDisplayName,
   parseBulkLineQuantityAndName,
   resolveRamInventoryQuantity,
+  resolveRamKitInfo,
 } from '../utils/ramKitParse';
 import { filesToDataUrls, prepareInventoryImagesForStorage } from '../utils/imageImport';
 
@@ -89,6 +90,8 @@ interface ParsedTextItem {
   quantity?: number;
   /** Quantity from line prefix before AI/normalization (e.g. "3x …" → 3). */
   lineQuantity?: number;
+  /** Original bulk text line — used when AI strips kit size from the name. */
+  sourceLine?: string;
   category?: string;
   subCategory?: string;
   note?: string;
@@ -366,9 +369,13 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
       const rec = importMode === 'AS_IS'
         ? { category: newCategory, subCategory: normalizeSubCategory(newCategory, newSubCategory) }
         : reconcileCategory(baseName, row.category, row.subCategory);
-      const ramKit = rec.subCategory === 'RAM' ? extractRamKitInfo(baseName) : null;
+      const ramKit =
+        rec.subCategory === 'RAM'
+          ? resolveRamKitInfo(baseName, { sourceLine: row.sourceLine, specs: row.specs })
+          : null;
       const inventoryQty = resolveRamInventoryQuantity(requestedQty, ramKit, lineQty);
-      const displayName = ramKit ? formatRamKitDisplayName(baseName, ramKit) : baseName;
+      const nameForFormat = row.sourceLine?.trim() || baseName;
+      const displayName = ramKit ? formatRamKitDisplayName(nameForFormat, ramKit) : baseName;
       for (let i = 0; i < inventoryQty; i++) {
         let mergedSpecs: Record<string, string | number> = { ...(row.specs || {}) };
         if (ramKit) {
@@ -400,7 +407,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
     if (!lines.length) return;
     const parsed = lines.map((line) => {
       const { name, quantity } = parseQuantityAndName(line);
-      return { name, quantity, lineQuantity: quantity } as ParsedTextItem;
+      return { name, quantity, lineQuantity: quantity, sourceLine: line } as ParsedTextItem;
     });
     applyParsedItems(parsed, 'AS_IS');
   };
@@ -422,7 +429,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
       const parsed = lines.map((line) => {
         const { name, quantity } = parseQuantityAndName(line);
         const guessed = inferCategoryFromName(name);
-        return { name, quantity, lineQuantity: quantity, category: guessed.category, subCategory: guessed.subCategory } as ParsedTextItem;
+        return { name, quantity, lineQuantity: quantity, sourceLine: line, category: guessed.category, subCategory: guessed.subCategory } as ParsedTextItem;
       });
       applyParsedItems(parsed, 'AI');
       return;
@@ -457,7 +464,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
       parsed = parsed.map((item, i) => {
         const line = lines[i];
         const lineQuantity = line ? parseQuantityAndName(line).quantity : 1;
-        return { ...item, lineQuantity };
+        return { ...item, lineQuantity, sourceLine: line };
       });
       const aiCount = parsed.length;
       if (parsed.length < lines.length) {
@@ -465,7 +472,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
           const line = lines[i]!;
           const { name, quantity } = parseQuantityAndName(line);
           const guessed = inferCategoryFromName(name);
-          parsed.push({ name, quantity, lineQuantity: quantity, category: guessed.category, subCategory: guessed.subCategory });
+          parsed.push({ name, quantity, lineQuantity: quantity, sourceLine: line, category: guessed.category, subCategory: guessed.subCategory });
         }
       }
       applyParsedItems(parsed, 'AI');
@@ -479,7 +486,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
       const fallback = lines.map((line) => {
         const { name, quantity } = parseQuantityAndName(line);
         const guessed = inferCategoryFromName(name);
-        return { name, quantity, lineQuantity: quantity, category: guessed.category, subCategory: guessed.subCategory } as ParsedTextItem;
+        return { name, quantity, lineQuantity: quantity, sourceLine: line, category: guessed.category, subCategory: guessed.subCategory } as ParsedTextItem;
       });
       applyParsedItems(fallback, 'AI');
       setBulkTextStatus('AI parse failed, added with local smart detection. Please review before confirm.');

@@ -32,6 +32,59 @@ export function extractRamKitInfo(name: string): RamKitInfo | null {
   return { modules, gbPerStick };
 }
 
+function parseGbValue(value: unknown): number | null {
+  const match = String(value ?? '').match(/(\d+)\s*gb\b/i);
+  return match ? Math.max(1, parseInt(match[1]!, 10) || 0) || null : null;
+}
+
+function parseModuleCount(value: unknown): number | null {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  const kit = raw.match(/(\d+)\s*[x×]/i);
+  if (kit) return Math.max(1, parseInt(kit[1]!, 10) || 0) || null;
+  const num = parseInt(raw.replace(/x$/i, ''), 10);
+  return Number.isFinite(num) && num > 0 ? num : null;
+}
+
+/** Build kit info from AI specs when the simplified name dropped "2x8GB". */
+export function extractRamKitFromSpecs(specs?: Record<string, string | number>): RamKitInfo | null {
+  if (!specs) return null;
+
+  for (const value of Object.values(specs)) {
+    const fromKitField = extractRamKitInfo(String(value));
+    if (fromKitField) return fromKitField;
+  }
+
+  const modules =
+    parseModuleCount(specs.Modules ?? specs.modules) ??
+    parseModuleCount(specs.Kit ?? specs.kit);
+  const gbPerStick = parseGbValue(
+    specs['GB per Stick'] ?? specs['GB Per Stick'] ?? specs['Gb per Stick'] ?? specs.Capacity ?? specs.capacity
+  );
+  const kitCapacityGb = parseGbValue(specs['Kit Capacity'] ?? specs['Kit capacity']);
+
+  if (modules && gbPerStick) return { modules, gbPerStick };
+  if (modules && kitCapacityGb && kitCapacityGb % modules === 0) {
+    return { modules, gbPerStick: kitCapacityGb / modules };
+  }
+  if (gbPerStick && kitCapacityGb && kitCapacityGb % gbPerStick === 0) {
+    return { modules: kitCapacityGb / gbPerStick, gbPerStick };
+  }
+
+  return null;
+}
+
+export function resolveRamKitInfo(
+  name: string,
+  options?: { sourceLine?: string; specs?: Record<string, string | number> }
+): RamKitInfo | null {
+  return (
+    extractRamKitInfo(name) ??
+    (options?.sourceLine ? extractRamKitInfo(options.sourceLine) : null) ??
+    extractRamKitFromSpecs(options?.specs)
+  );
+}
+
 const RAM_BRANDS = [
   'sk hynix',
   'g.skill',
