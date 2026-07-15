@@ -180,7 +180,17 @@ const App: React.FC = () => {
   // Dynamic Categories
   const [categories, setCategories] = useState<Record<string, string[]>>(() => {
     const saved = localStorage.getItem('custom_categories');
-    return saved ? JSON.parse(saved) : DEFAULT_CATEGORIES;
+    const base = saved ? JSON.parse(saved) : { ...DEFAULT_CATEGORIES };
+    // Ensure Lot Bundle exists under Bundle (user taxonomy + lot grouping)
+    if (!base.Bundle) base.Bundle = [...(DEFAULT_CATEGORIES.Bundle || [])];
+    if (!base.Bundle.includes('Lot Bundle')) {
+      base.Bundle = ['Lot Bundle', ...base.Bundle];
+    }
+    if (!base.PC) base.PC = [...(DEFAULT_CATEGORIES.PC || [])];
+    if (!base.PC.includes('Custom Built PC')) {
+      base.PC = ['Custom Built PC', ...base.PC];
+    }
+    return base;
   });
 
   const [categoryFields, setCategoryFields] = useState<Record<string, string[]>>(() => {

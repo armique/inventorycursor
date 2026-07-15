@@ -659,7 +659,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
             id: bundleId,
             name: nameToUse,
             category: 'Bundle',
-            subCategory: 'Component Set',
+            subCategory: 'Lot Bundle',
             status: ItemStatus.IN_STOCK,
             buyPrice: totalBuy,
             buyDate: buyDate,

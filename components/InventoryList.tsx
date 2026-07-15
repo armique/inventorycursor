@@ -592,6 +592,18 @@ const InventoryList: React.FC<Props> = ({
   // Visibility toggle for items that are part of a PC / bundle composition
   const [showInComposition, setShowInComposition] = useState<boolean>(() => loadState<boolean>('show_in_composition', true));
 
+  /** Expanded bundle/PC rows showing nested children (active + sold). */
+  const [expandedBundles, setExpandedBundles] = useState<Set<string>>(() => new Set());
+
+  const toggleBundleExpanded = useCallback((id: string) => {
+    setExpandedBundles((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
   // Sort State
   const [sortConfig, setSortConfig] = useState<SortConfig>(() => {
      const saved = localStorage.getItem(`${persistenceKey}_sort_config`);
@@ -719,6 +731,32 @@ const InventoryList: React.FC<Props> = ({
     manualWidthColumns, salePlatformFilter, salePaymentFilter, amountFilter, specFilters, specRangeFilters, showInComposition,
     columnOrder, hiddenColumnIds, splitView, quickCategoryPins, persistenceKey,
   ]);
+
+  // Auto-expand bundle/PC rows when search matches a nested child
+  useEffect(() => {
+    const q = searchTerm.trim();
+    if (q.length < 2) return;
+    const toExpand: string[] = [];
+    for (const item of items) {
+      if (!item.isPC && !item.isBundle) continue;
+      const children = getChildren(item, items);
+      if (children.some((c) => matchesInventorySearch(c, q))) {
+        toExpand.push(item.id);
+      }
+    }
+    if (toExpand.length === 0) return;
+    setExpandedBundles((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const id of toExpand) {
+        if (!next.has(id)) {
+          next.add(id);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [searchTerm, items]);
 
   // Close spec filters panel when clicking outside
   useEffect(() => {
@@ -1358,8 +1396,8 @@ const InventoryList: React.FC<Props> = ({
       // Include editValue (not just which field is being edited) while this row is the one being
       // edited — otherwise the key stays identical across every keystroke, the row's React.memo
       // sees "no change," and the input silently stops updating after the very first keystroke.
-      `${editingCell?.itemId === item.id ? `${editingCell.field}:${editValue}` : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}`,
-    [editingCell, editValue, listingGenId, parsingSingleId, priceSuggestId]
+      `${editingCell?.itemId === item.id ? `${editingCell.field}:${editValue}` : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${(item.isPC || item.isBundle) && expandedBundles.has(item.id) ? 'exp' : 'col'}`,
+    [editingCell, editValue, listingGenId, parsingSingleId, priceSuggestId, expandedBundles]
   );
 
   const showFinancials = splitView || (statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS');
@@ -1630,10 +1668,11 @@ const InventoryList: React.FC<Props> = ({
     if (components.length === 0) {
        onDelete(bundle.id);
     } else {
-       const isRetroBundle = bundle.subCategory === 'Retro Bundle';
+       const restoreAsSold =
+         isRealizedDisposal(bundle) || bundle.subCategory === 'Retro Bundle';
 
        const updates = components.map(c => {
-          if (isRetroBundle) {
+          if (restoreAsSold) {
              return {
                 ...c,
                 status: ItemStatus.SOLD,
@@ -1694,6 +1733,11 @@ const InventoryList: React.FC<Props> = ({
       } else {
         setStatusFilter('ACTIVE');
       }
+      setExpandedBundles((prev) => {
+        const next = new Set(prev);
+        next.add(parent.id);
+        return next;
+      });
       setScrollTargetItemId(parent.id);
     },
     []
@@ -2112,6 +2156,7 @@ const InventoryList: React.FC<Props> = ({
         const searchActiveForNest = searchQuery.length >= 2;
         const isGroupedContainerRow =
           (item.isPC || item.isBundle) && childItems.length > 0 && !compositionFlatView;
+        const isBundleBodyExpanded = isGroupedContainerRow && expandedBundles.has(item.id);
         const isSoldContainerRow = isGroupedContainerRow && isRealizedDisposal(item);
         const formatChildListDate = (child: InventoryItem) => {
           const raw = isSoldContainerRow
@@ -2167,6 +2212,24 @@ const InventoryList: React.FC<Props> = ({
                 </div>
                 <div className="flex-1 min-w-0">
                    <div className="flex items-center gap-2 w-full min-w-0">
+                      {isGroupedContainerRow && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleBundleExpanded(item.id);
+                          }}
+                          className="shrink-0 p-0.5 rounded-md text-slate-400 hover:text-purple-700 hover:bg-purple-50 transition-colors"
+                          title={isBundleBodyExpanded ? 'Collapse contents' : 'Expand contents'}
+                          aria-expanded={isBundleBodyExpanded}
+                        >
+                          {isBundleBodyExpanded ? (
+                            <ChevronDown size={14} strokeWidth={2.5} />
+                          ) : (
+                            <ChevronRight size={14} strokeWidth={2.5} />
+                          )}
+                        </button>
+                      )}
                       {isEditingName ? (
                         <input
                           autoFocus
@@ -2357,7 +2420,7 @@ const InventoryList: React.FC<Props> = ({
                         )}
                       </div>
                    )}
-                   {isGroupedContainerRow && (
+                   {isBundleBodyExpanded && (
                       <div className="mt-2 ml-0.5 pl-3 border-l-2 border-purple-200/90 bg-purple-50/50 rounded-r-lg py-1 space-y-0.5 max-w-full">
                          {childItems.map((child) => {
                             const childHit =
@@ -3854,6 +3917,7 @@ const InventoryList: React.FC<Props> = ({
               const mobileSearchActive = mobileSearchQuery.length >= 2;
               const isSoldContainerRow =
                 (item.isPC || item.isBundle) && isRealizedDisposal(item) && mobileChildItems.length > 0;
+              const isMobileBundleExpanded = isSoldContainerRow && expandedBundles.has(item.id);
               const mobileSoldTotals = isSoldContainerRow
                 ? getSoldContainerDisplayTotals(item, items, businessSettings.taxMode)
                 : null;
@@ -3881,7 +3945,31 @@ const InventoryList: React.FC<Props> = ({
                     </span>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-black text-slate-900 text-sm leading-snug">{item.name}</p>
+                    <div className="flex items-start gap-1.5">
+                      {isSoldContainerRow && (
+                        <button
+                          type="button"
+                          onClick={() => toggleBundleExpanded(item.id)}
+                          className="shrink-0 mt-0.5 p-0.5 rounded-md text-slate-400 hover:text-purple-700 hover:bg-purple-50"
+                          title={isMobileBundleExpanded ? 'Collapse contents' : 'Expand contents'}
+                          aria-expanded={isMobileBundleExpanded}
+                        >
+                          {isMobileBundleExpanded ? (
+                            <ChevronDown size={14} strokeWidth={2.5} />
+                          ) : (
+                            <ChevronRight size={14} strokeWidth={2.5} />
+                          )}
+                        </button>
+                      )}
+                      <p className="font-black text-slate-900 text-sm leading-snug min-w-0">
+                        {item.name}
+                        {isSoldContainerRow && (
+                          <span className="ml-1.5 text-[9px] font-medium text-slate-500">
+                            ({mobileChildItems.length} items)
+                          </span>
+                        )}
+                      </p>
+                    </div>
                     <p className="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-1.5">
                       <span
                         className={`inline-flex items-center gap-0.5 text-[9px] font-bold uppercase px-1 py-0.5 rounded ${
@@ -3939,7 +4027,7 @@ const InventoryList: React.FC<Props> = ({
                         </span>
                       </div>
                     )}
-                    {isSoldContainerRow && (
+                    {isMobileBundleExpanded && (
                       <div className="mt-2 pl-3 border-l-2 border-purple-200/90 bg-purple-50/50 rounded-r-lg py-1 space-y-0.5">
                         {mobileChildItems.map((child) => {
                           const childHit =
@@ -4051,6 +4139,7 @@ const InventoryList: React.FC<Props> = ({
             highlightedItemId={highlightedItemId}
             rowHeightEstimate={rowHeightEstimate}
             bulkBarSpacer={selectedIds.length > 0}
+            expandedBundles={expandedBundles}
           />
           <InventoryListTablePane
             key="split-sold"
@@ -4082,6 +4171,7 @@ const InventoryList: React.FC<Props> = ({
             highlightedItemId={highlightedItemId}
             rowHeightEstimate={rowHeightEstimate}
             bulkBarSpacer={selectedIds.length > 0}
+            expandedBundles={expandedBundles}
           />
         </div>
       ) : (
@@ -4104,6 +4194,7 @@ const InventoryList: React.FC<Props> = ({
           highlightedItemId={highlightedItemId}
           rowHeightEstimate={rowHeightEstimate}
           bulkBarSpacer={selectedIds.length > 0}
+          expandedBundles={expandedBundles}
           className={statusFilter === 'SOLD' ? 'hidden lg:flex flex-1' : 'flex flex-1'}
         />
         </div>
@@ -4659,7 +4750,7 @@ const InventoryList: React.FC<Props> = ({
                <h3 className="text-xl font-black text-slate-900 mb-2">Unbundle Asset?</h3>
                <p className="text-sm text-slate-500 mb-2">"{bundleToDismantle.name}" will be deleted.</p>
                <p className="text-xs text-slate-400 mb-6 font-medium">
-                  {bundleToDismantle.subCategory === 'Retro Bundle' 
+                  {isRealizedDisposal(bundleToDismantle) || bundleToDismantle.subCategory === 'Retro Bundle'
                     ? 'Components will be restored to Sales History.' 
                     : 'Components will return to Active Inventory.'}
                </p>
@@ -4763,6 +4854,7 @@ type InventoryTableBodyProps = {
   scrollElement: HTMLDivElement | null;
   rowHeightEstimate: number;
   bulkBarSpacer: boolean;
+  expandedBundles: Set<string>;
 };
 
 const InventoryTableBody = React.memo(function InventoryTableBody({
@@ -4775,6 +4867,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
   scrollElement,
   rowHeightEstimate,
   bulkBarSpacer,
+  expandedBundles,
 }: InventoryTableBodyProps) {
   const useVirtual = sortedItems.length > INVENTORY_VIRTUAL_THRESHOLD;
 
@@ -4796,6 +4889,10 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
         h += 22;
       }
       if (item.parentContainerId || item.status === ItemStatus.IN_COMPOSITION) h += 22;
+      if (expandedBundles.has(item.id) && (item.isPC || item.isBundle)) {
+        const childCount = Math.max(1, item.componentIds?.length ?? 3);
+        h += childCount * 28 + 20;
+      }
       return h;
     },
     overscan: 5,
@@ -4808,7 +4905,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
     const ro = new ResizeObserver(() => rowVirtualizer.measure());
     ro.observe(scrollElement);
     return () => ro.disconnect();
-  }, [scrollElement, useVirtual, sortedItems, rowVirtualizer]);
+  }, [scrollElement, useVirtual, sortedItems, rowVirtualizer, expandedBundles]);
 
   if (sortedItems.length === 0) {
     return (
@@ -5034,6 +5131,7 @@ type InventoryListTablePaneProps = {
   highlightedItemId: string | null;
   rowHeightEstimate: number;
   bulkBarSpacer: boolean;
+  expandedBundles: Set<string>;
   className?: string;
 };
 
@@ -5056,6 +5154,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
   highlightedItemId,
   rowHeightEstimate,
   bulkBarSpacer,
+  expandedBundles,
   className = 'flex flex-1',
 }) => {
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
@@ -5192,6 +5291,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
             scrollElement={scrollElement}
             rowHeightEstimate={rowHeightEstimate}
             bulkBarSpacer={bulkBarSpacer}
+            expandedBundles={expandedBundles}
           />
         </table>
       </div>

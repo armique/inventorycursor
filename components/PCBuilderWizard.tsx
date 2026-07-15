@@ -242,7 +242,11 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
         id: parentId,
         name: buildName,
         category: resolvedMode === 'bundle' ? 'Bundle' : 'PC',
-        subCategory: resolvedMode === 'bundle' ? (existingParent?.subCategory || 'Custom Bundle') : 'Custom Built PC',
+        subCategory: resolvedMode === 'bundle'
+          ? (!existingParent?.subCategory || existingParent.subCategory === 'Custom Bundle'
+              ? 'Lot Bundle'
+              : existingParent.subCategory)
+          : 'Custom Built PC',
         status: ItemStatus.IN_STOCK,
         buyPrice: totalCost,
         // No buyDate - containers don't have buy dates, only their components do
@@ -251,7 +255,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
         componentIds: allParts.map(i => i.id),
         comment1: `${resolvedMode === 'bundle' ? 'Bundle Contents' : 'Custom Build Specs'}:\n${allParts.map(i => `- ${i.name}`).join('\n')}`,
         comment2: !resolvedMode && performance ? `AI Performance Estimate:\n${performance.summary}` : performance && resolvedMode !== 'bundle' ? `AI Performance Estimate:\n${performance.summary}` : '',
-        vendor: resolvedMode === 'bundle' ? 'Custom Bundle' : 'Custom Build',
+        vendor: resolvedMode === 'bundle' ? 'Lot Bundle' : 'Custom Build',
         imageUrl,
         imageUrls: imageUrls?.length ? imageUrls : undefined,
      };

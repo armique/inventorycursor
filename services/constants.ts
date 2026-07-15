@@ -7,7 +7,7 @@ export const DEFAULT_CATEGORIES: Record<string, string[]> = {
   'Peripherals': ['Monitors', 'Keyboards', 'Mice', 'Headsets', 'Microphones', 'Webcams'],
   'Network': ['Routers', 'Switches', 'NAS', 'Cables'],
   'Software': ['OS Licenses', 'Office', 'Antivirus'],
-  'Bundle': ['PC Bundle', 'Peripheral Bundle', 'Component Set'],
+  'Bundle': ['Lot Bundle', 'PC Bundle', 'Peripheral Bundle', 'Component Set'],
   'Misc': ['Cables', 'Adapters', 'Tools', 'Merchandise', 'Spare Parts']
 };
 

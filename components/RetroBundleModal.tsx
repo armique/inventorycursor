@@ -73,7 +73,7 @@ const RetroBundleModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
       id: bundleId,
       name: bundleName,
       category: 'Bundle',
-      subCategory: 'Retro Bundle',
+      subCategory: 'Lot Bundle',
       status: ItemStatus.SOLD, 
       buyPrice: totalBuy,
       sellPrice: totalSell,

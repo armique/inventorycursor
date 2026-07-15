@@ -51,7 +51,7 @@ const SmartBundleSuggester: React.FC<Props> = ({ items, onCreateBundle }) => {
       buyPrice: totalCost,
       // No buyDate - bundles don't have buy dates, only their components do
       category: 'Bundle',
-      subCategory: 'Smart Bundle',
+      subCategory: 'Lot Bundle',
       status: ItemStatus.IN_STOCK,
       comment1: `AI Suggested Bundle:\n${suggestion.reasoning}\n\nContents:\n${components.map(c => `+ ${c.name}`).join('\n')}`,
       comment2: '',

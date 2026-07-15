@@ -64,6 +64,7 @@ export const ESSENTIAL_SPEC_FIELDS: Record<string, string[]> = {
   'Software:Antivirus': ['Seats'],
 
   // Bundle
+  'Bundle:Lot Bundle': ['Contents'],
   'Bundle:PC Bundle': ['CPU', 'GPU', 'RAM'],
   'Bundle:Peripheral Bundle': ['Contents'],
   'Bundle:Component Set': ['Contents'],
