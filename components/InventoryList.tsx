@@ -103,6 +103,42 @@ function quickCategoryPinId(category: string, subCategory?: string): string {
   return subCategory ? `${category}::${subCategory}` : `${category}::`;
 }
 
+/** Parent rows that own children (PC builds, lot bundles, etc.). */
+function isInventoryContainer(item: InventoryItem): boolean {
+  return Boolean(
+    item.isPC ||
+      item.isBundle ||
+      (item.componentIds && item.componentIds.length > 0)
+  );
+}
+
+function containerRowClassName(item: InventoryItem, isSelected: boolean, highlighted: boolean): string {
+  const parts = ['group/row transition-colors'];
+  if (highlighted) {
+    parts.push('ring-2 ring-amber-400 ring-inset bg-amber-50/40 animate-pulse');
+    return parts.join(' ');
+  }
+  if (isSelected) {
+    parts.push('bg-blue-50/35');
+  }
+  if (item.isPC) {
+    parts.push(
+      isSelected
+        ? 'bg-indigo-100/50 hover:bg-indigo-100/70 shadow-[inset_3px_0_0_0_#4f46e5]'
+        : 'bg-indigo-50/55 hover:bg-indigo-50/90 shadow-[inset_3px_0_0_0_#6366f1]'
+    );
+  } else if (isInventoryContainer(item)) {
+    parts.push(
+      isSelected
+        ? 'bg-violet-100/50 hover:bg-violet-100/70 shadow-[inset_3px_0_0_0_#7c3aed]'
+        : 'bg-violet-50/60 hover:bg-violet-50/95 shadow-[inset_3px_0_0_0_#8b5cf6]'
+    );
+  } else if (!isSelected) {
+    parts.push('hover:bg-slate-50/50');
+  }
+  return parts.join(' ');
+}
+
 function specValuesMatch(a: string | number, b: string | number): boolean {
   if (typeof a === 'number' && typeof b === 'number') return a === b;
   return String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
@@ -2219,14 +2255,18 @@ const InventoryList: React.FC<Props> = ({
                             e.stopPropagation();
                             toggleBundleExpanded(item.id);
                           }}
-                          className="shrink-0 p-0.5 rounded-md text-slate-400 hover:text-purple-700 hover:bg-purple-50 transition-colors"
+                          className={`shrink-0 p-0.5 rounded-md transition-colors ${
+                            item.isPC
+                              ? 'text-indigo-600 hover:text-indigo-800 hover:bg-indigo-100/80'
+                              : 'text-violet-600 hover:text-violet-800 hover:bg-violet-100/80'
+                          }`}
                           title={isBundleBodyExpanded ? 'Collapse contents' : 'Expand contents'}
                           aria-expanded={isBundleBodyExpanded}
                         >
                           {isBundleBodyExpanded ? (
-                            <ChevronDown size={14} strokeWidth={2.5} />
+                            <ChevronDown size={15} strokeWidth={2.75} />
                           ) : (
-                            <ChevronRight size={14} strokeWidth={2.5} />
+                            <ChevronRight size={15} strokeWidth={2.75} />
                           )}
                         </button>
                       )}
@@ -2245,7 +2285,9 @@ const InventoryList: React.FC<Props> = ({
                         />
                       ) : (
                         <p
-                      className={`${dense ? 'text-xs' : 'text-sm'} font-black text-slate-900 truncate group-hover/cell:text-blue-600 transition-colors flex-1 min-w-0`}
+                      className={`${dense ? 'text-xs' : 'text-sm'} font-black truncate group-hover/cell:text-blue-600 transition-colors flex-1 min-w-0 ${
+                        item.isPC ? 'text-indigo-950' : isInventoryContainer(item) ? 'text-violet-950' : 'text-slate-900'
+                      }`}
                           title="Double click to rename"
                           onDoubleClick={(e) => {
                             e.stopPropagation();
@@ -2285,8 +2327,24 @@ const InventoryList: React.FC<Props> = ({
                          </span>
                       )}
                       {item.isDraft && <span className="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-black uppercase flex items-center gap-1"><StickyNote size={8}/> Draft</span>}
-                      {item.isBundle && <span className="text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-black uppercase">Bundle</span>}
-                      {item.isPC && <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-black uppercase">PC Build</span>}
+                      {item.isBundle && (
+                        <span className="inline-flex items-center gap-0.5 text-[9px] bg-violet-600 text-white px-1.5 py-0.5 rounded font-black uppercase shadow-sm shadow-violet-200/80">
+                          <Layers size={9} className="shrink-0" /> Bundle
+                          {childItems.length > 0 ? ` · ${childItems.length}` : ''}
+                        </span>
+                      )}
+                      {item.isPC && (
+                        <span className="inline-flex items-center gap-0.5 text-[9px] bg-indigo-600 text-white px-1.5 py-0.5 rounded font-black uppercase shadow-sm shadow-indigo-200/80">
+                          <Monitor size={9} className="shrink-0" /> PC Build
+                          {childItems.length > 0 ? ` · ${childItems.length}` : ''}
+                        </span>
+                      )}
+                      {!item.isPC && !item.isBundle && isInventoryContainer(item) && (
+                        <span className="inline-flex items-center gap-0.5 text-[9px] bg-violet-600 text-white px-1.5 py-0.5 rounded font-black uppercase shadow-sm shadow-violet-200/80">
+                          <Package size={9} className="shrink-0" /> Container
+                          {item.componentIds?.length ? ` · ${item.componentIds.length}` : ''}
+                        </span>
+                      )}
                       {isContainerMember(item) && !showMembershipBadge && (
                         <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-black uppercase">
                           In composition
@@ -2307,9 +2365,6 @@ const InventoryList: React.FC<Props> = ({
                         </span>
                       )}
                       <span className="text-[10px] text-slate-400 font-bold uppercase truncate">{item.vendor}</span>
-                      {isGroupedContainerRow && (
-                         <span className="text-[9px] text-slate-500 font-medium">({childItems.length} items)</span>
-                      )}
                    </div>
                    {item.status === ItemStatus.SOLD && (() => {
                       const hasBuyerInfo = Boolean(item.customer?.name || item.ebayUsername || item.ebayOrderId);
@@ -2421,7 +2476,11 @@ const InventoryList: React.FC<Props> = ({
                       </div>
                    )}
                    {isBundleBodyExpanded && (
-                      <div className="mt-2 ml-0.5 pl-3 border-l-2 border-purple-200/90 bg-purple-50/50 rounded-r-lg py-1 space-y-0.5 max-w-full">
+                      <div className={`mt-2 ml-0.5 pl-3 border-l-2 rounded-r-lg py-1 space-y-0.5 max-w-full ${
+                        item.isPC
+                          ? 'border-indigo-300 bg-indigo-50/60'
+                          : 'border-violet-300 bg-violet-50/60'
+                      }`}>
                          {childItems.map((child) => {
                             const childHit =
                               searchActiveForNest && matchesInventorySearch(child, searchQuery);
@@ -2439,10 +2498,16 @@ const InventoryList: React.FC<Props> = ({
                                 className={`flex items-center justify-between gap-2 py-1 px-2 rounded-md transition-colors ${
                                   childHit
                                     ? 'bg-amber-100/80 ring-1 ring-amber-200/80'
-                                    : 'hover:bg-purple-100/60'
+                                    : item.isPC
+                                      ? 'hover:bg-indigo-100/70'
+                                      : 'hover:bg-violet-100/70'
                                 }`}
                               >
-                                <span className="text-[11px] font-medium text-slate-700 truncate min-w-0 group-hover/child:text-purple-800">
+                                <span className={`text-[11px] font-medium truncate min-w-0 ${
+                                  item.isPC
+                                    ? 'text-indigo-900 group-hover/child:text-indigo-950'
+                                    : 'text-violet-900 group-hover/child:text-violet-950'
+                                }`}>
                                   {child.name}
                                 </span>
                                 <span className="text-[10px] font-semibold text-slate-500 shrink-0 tabular-nums flex items-center gap-1">
@@ -2457,7 +2522,9 @@ const InventoryList: React.FC<Props> = ({
                             );
                          })}
                          {!isSoldContainerRow && (
-                           <p className="px-2 pt-0.5 text-[9px] font-bold uppercase tracking-wider text-purple-600/80">
+                           <p className={`px-2 pt-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                             item.isPC ? 'text-indigo-600/90' : 'text-violet-600/90'
+                           }`}>
                              Total cost €{formatEUR(item.buyPrice)} · {childItems.length} parts
                            </p>
                          )}
@@ -3928,7 +3995,16 @@ const InventoryList: React.FC<Props> = ({
                 return raw ? new Date(raw).toLocaleDateString() : '—';
               };
               return (
-              <div key={item.id} className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm space-y-3">
+              <div
+                key={item.id}
+                className={`rounded-2xl border p-4 shadow-sm space-y-3 ${
+                  item.isPC
+                    ? 'bg-indigo-50/70 border-indigo-200 shadow-[inset_3px_0_0_0_#6366f1]'
+                    : isSoldContainerRow
+                      ? 'bg-violet-50/70 border-violet-200 shadow-[inset_3px_0_0_0_#8b5cf6]'
+                      : 'bg-white border-slate-100'
+                }`}
+              >
                 <div className="flex gap-3 items-start">
                   <div
                     className={`relative shrink-0 rounded-xl ${
@@ -3950,25 +4026,36 @@ const InventoryList: React.FC<Props> = ({
                         <button
                           type="button"
                           onClick={() => toggleBundleExpanded(item.id)}
-                          className="shrink-0 mt-0.5 p-0.5 rounded-md text-slate-400 hover:text-purple-700 hover:bg-purple-50"
+                          className={`shrink-0 mt-0.5 p-0.5 rounded-md ${
+                            item.isPC
+                              ? 'text-indigo-600 hover:text-indigo-800 hover:bg-indigo-100'
+                              : 'text-violet-600 hover:text-violet-800 hover:bg-violet-100'
+                          }`}
                           title={isMobileBundleExpanded ? 'Collapse contents' : 'Expand contents'}
                           aria-expanded={isMobileBundleExpanded}
                         >
                           {isMobileBundleExpanded ? (
-                            <ChevronDown size={14} strokeWidth={2.5} />
+                            <ChevronDown size={14} strokeWidth={2.75} />
                           ) : (
-                            <ChevronRight size={14} strokeWidth={2.5} />
+                            <ChevronRight size={14} strokeWidth={2.75} />
                           )}
                         </button>
                       )}
-                      <p className="font-black text-slate-900 text-sm leading-snug min-w-0">
+                      <div className="min-w-0">
+                      <p className={`font-black text-sm leading-snug ${
+                        item.isPC ? 'text-indigo-950' : isSoldContainerRow ? 'text-violet-950' : 'text-slate-900'
+                      }`}>
                         {item.name}
-                        {isSoldContainerRow && (
-                          <span className="ml-1.5 text-[9px] font-medium text-slate-500">
-                            ({mobileChildItems.length} items)
-                          </span>
-                        )}
                       </p>
+                      {isSoldContainerRow && (
+                        <span className={`mt-1 inline-flex items-center gap-0.5 text-[9px] font-black uppercase px-1.5 py-0.5 rounded text-white ${
+                          item.isPC ? 'bg-indigo-600' : 'bg-violet-600'
+                        }`}>
+                          {item.isPC ? <Monitor size={9} /> : <Layers size={9} />}
+                          {item.isPC ? 'PC Build' : 'Bundle'} · {mobileChildItems.length}
+                        </span>
+                      )}
+                      </div>
                     </div>
                     <p className="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-1.5">
                       <span
@@ -4028,7 +4115,11 @@ const InventoryList: React.FC<Props> = ({
                       </div>
                     )}
                     {isMobileBundleExpanded && (
-                      <div className="mt-2 pl-3 border-l-2 border-purple-200/90 bg-purple-50/50 rounded-r-lg py-1 space-y-0.5">
+                      <div className={`mt-2 pl-3 border-l-2 rounded-r-lg py-1 space-y-0.5 ${
+                        item.isPC
+                          ? 'border-indigo-300 bg-indigo-50/70'
+                          : 'border-violet-300 bg-violet-50/70'
+                      }`}>
                         {mobileChildItems.map((child) => {
                           const childHit =
                             mobileSearchActive && matchesInventorySearch(child, mobileSearchQuery);
@@ -5006,9 +5097,8 @@ const InventoryTableRow = React.memo(
         ref={measureRef}
         data-index={virtualIndex}
         data-inventory-item-id={item.id}
-        className={`hover:bg-slate-50/50 group/row ${isSelected ? 'bg-blue-50/20' : ''} ${
-          highlighted ? 'ring-2 ring-amber-400 ring-inset bg-amber-50/40 animate-pulse' : ''
-        }`}
+        data-container={isInventoryContainer(item) ? (item.isPC ? 'pc' : 'bundle') : undefined}
+        className={containerRowClassName(item, isSelected, Boolean(highlighted))}
       >
         {renderRowCells(item, isSelected)}
       </tr>
