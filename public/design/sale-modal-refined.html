@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mark as Sold — 5 Refined Concepts (from #10)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+          },
+          boxShadow: {
+            soft: '0 1px 2px rgb(15 23 42 / 0.04), 0 8px 24px -8px rgb(15 23 42 / 0.12)',
+            lift: '0 2px 4px rgb(15 23 42 / 0.04), 0 16px 40px -12px rgb(15 23 42 / 0.18)',
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    .tabular { font-variant-numeric: tabular-nums; }
+    .shell { background: rgb(15 23 42 / 0.03); border: 1px solid rgb(15 23 42 / 0.06); }
+    .inner { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.7); }
+    @media (prefers-reduced-motion: reduce) {
+      * { transition: none !important; animation: none !important; }
+    }
+  </style>
+</head>
+<body class="bg-[#F4F5F7] text-slate-900 font-sans antialiased min-h-dvh">
+  <header class="sticky top-0 z-40 bg-white/90 backdrop-blur-xl border-b border-slate-200/80 px-4 py-5 sm:px-8">
+    <div class="max-w-[1500px] mx-auto">
+      <p class="text-[10px] font-semibold uppercase tracking-[0.18em] text-violet-600 mb-1">Senior redesign · Soft Structuralism · Bento tiles</p>
+      <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight">5 refined Mark as sold concepts</h1>
+      <p class="text-sm text-slate-600 mt-2 max-w-3xl leading-relaxed">
+        Built from your pick of <strong>#10</strong>, with your notes applied:
+        <span class="text-slate-800">top row = 3 tiles (Price · Profit · Shipping)</span>,
+        <span class="text-slate-800">Choose photo + Paste URL</span>,
+        and <span class="text-slate-800">buyer data always visible</span>.
+        Reply with <strong>A / B / C / D / E</strong> to implement.
+      </p>
+    </div>
+  </header>
+
+  <main class="max-w-[1500px] mx-auto px-4 py-10 sm:px-8 space-y-16">
+
+    <!-- A -->
+    <section id="a" class="scroll-mt-28">
+      <div class="flex flex-wrap items-end justify-between gap-3 mb-5">
+        <div class="flex items-start gap-3">
+          <span class="w-9 h-9 rounded-xl bg-slate-900 text-white text-sm font-extrabold flex items-center justify-center shrink-0">A</span>
+          <div>
+            <h2 class="text-lg font-extrabold tracking-tight">Classic bento + buyer strip</h2>
+            <p class="text-xs text-slate-500 mt-0.5">Closest to #10 · shipping on top · URL/photo as twin tiles · buyer as full-width strip</p>
+          </div>
+        </div>
+        <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-100 px-2.5 py-1 rounded-full">Recommended start</span>
+      </div>
+      <div class="shell rounded-[1.75rem] p-2 sm:p-2.5 max-w-[480px] mx-auto shadow-soft">
+        <div class="inner bg-white rounded-[calc(1.75rem-0.4rem)] p-4 space-y-2.5">
+          <div class="flex justify-between items-start">
+            <div>
+              <h3 class="text-sm font-extrabold">Mark as sold</h3>
+              <p class="text-[10px] text-slate-400 truncate max-w-[260px]">Intel Core i7-4790K</p>
+            </div>
+            <button class="w-8 h-8 rounded-lg text-slate-400 hover:bg-slate-50" aria-label="Close">✕</button>
+          </div>
+
+          <!-- Top 3 tiles -->
+          <div class="grid grid-cols-3 gap-2">
+            <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-100/80 min-h-[68px]">
+              <span class="text-[8px] font-bold uppercase tracking-wider text-slate-400">Price</span>
+              <p class="text-base font-extrabold tabular mt-0.5">€115,00</p>
+            </div>
+            <div class="p-2.5 rounded-xl bg-emerald-50 border border-emerald-100 min-h-[68px]">
+              <span class="text-[8px] font-bold uppercase tracking-wider text-emerald-700">Profit</span>
+              <p class="text-base font-extrabold tabular text-emerald-700 mt-0.5">+€42,31</p>
+            </div>
+            <button class="p-2.5 rounded-xl bg-sky-50 border border-sky-200 min-h-[68px] text-left hover:border-sky-300 transition-colors">
+              <span class="text-[8px] font-bold uppercase tracking-wider text-sky-700">Shipping</span>
+              <p class="text-xs font-bold text-sky-800 mt-1">Click to add</p>
+            </button>
+          </div>
+
+          <div class="grid grid-cols-3 gap-1.5">
+            <button class="py-2.5 min-h-[44px] rounded-xl bg-slate-900 text-white text-[8px] font-extrabold uppercase">eBay</button>
+            <button class="py-2.5 min-h-[44px] rounded-xl border border-slate-200 text-[8px] font-extrabold uppercase text-slate-500">KA</button>
+            <button class="py-2.5 min-h-[44px] rounded-xl border border-slate-200 text-[8px] font-extrabold uppercase text-slate-500">Person</button>
+          </div>
+
+          <button class="w-full py-3 min-h-[48px] rounded-xl bg-indigo-600 text-white text-[10px] font-extrabold uppercase tracking-wide">Parse screenshot</button>
+          <div class="grid grid-cols-2 gap-2">
+            <button class="py-2.5 min-h-[44px] rounded-xl border-2 border-dashed border-slate-200 text-[8px] font-bold uppercase text-slate-600 hover:border-indigo-300 hover:bg-indigo-50/40 transition-colors">Choose photo</button>
+            <button class="py-2.5 min-h-[44px] rounded-xl border-2 border-dashed border-slate-200 text-[8px] font-bold uppercase text-slate-600 hover:border-indigo-300 hover:bg-indigo-50/40 transition-colors">Paste URL</button>
+          </div>
+
+          <!-- Buyer -->
+          <div class="rounded-xl border border-slate-200 p-2.5 space-y-2 bg-slate-50/60">
+            <span class="text-[8px] font-bold uppercase tracking-wider text-slate-400">Buyer data</span>
+            <div class="grid grid-cols-2 gap-2">
+              <input class="px-2.5 py-2 rounded-lg border border-slate-200 bg-white text-xs font-semibold" placeholder="Buyer name" value="Tolga Palaz" />
+              <select class="px-2.5 py-2 rounded-lg border border-slate-200 bg-white text-[10px] font-semibold text-slate-600"><option>ebay.de</option></select>
+            </div>
+            <textarea class="w-full px-2.5 py-2 rounded-lg border border-slate-200 bg-white text-xs font-semibold resize-none h-12" placeholder="Shipping address">Musterstraße 12, 80331 München</textarea>
+          </div>
+
+          <div class="grid grid-cols-[1fr_1.5fr] gap-2 pt-0.5">
+            <button class="py-3 min-h-[48px] rounded-xl border border-slate-200 bg-white text-[10px] font-bold uppercase text-slate-500">Cancel</button>
+            <button class="py-3 min-h-[48px] rounded-xl bg-violet-600 text-white text-[10px] font-extrabold uppercase">Mark sold</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- B -->
+    <section id="b" class="scroll-mt-28">
+      <div class="flex items-start gap-3 mb-5">
+        <span class="w-9 h-9 rounded-xl bg-violet-600 text-white text-sm font-extrabold flex items-center justify-center shrink-0">B</span>
+        <div>
+          <h2 class="text-lg font-extrabold tracking-tight">Asymmetric top · shipping spans</h2>
+          <p class="text-xs text-slate-500 mt-0.5">Price+Profit stack left · Shipping tall tile right · buyer in 2-col with payment</p>
+        </div>
+      </div>
+      <div class="shell rounded-[1.75rem] p-2.5 max-w-[480px] mx-auto shadow-soft">
+        <div class="inner bg-white rounded-[calc(1.75rem-0.4rem)] p-4 space-y-2.5">
+          <div class="flex justify-between items-start">
+            <div>
+              <h3 class="text-sm font-extrabold">Mark as sold</h3>
+              <p class="text-[10px] text-slate-400">ASRock Z97 Killer</p>
+            </div>
+            <button class="w-8 h-8 rounded-lg text-slate-400" aria-label="Close">✕</button>
+          </div>
+
+          <div class="grid grid-cols-3 grid-rows-2 gap-2">
+            <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+              <span class="text-[8px] font-bold uppercase text-slate-400">Price</span>
+              <p class="text-sm font-extrabold tabular">€115,00</p>
+            </div>
+            <div class="p-2.5 rounded-xl bg-emerald-50 border border-emerald-100">
+              <span class="text-[8px] font-bold uppercase text-emerald-700">Profit</span>
+              <p class="text-sm font-extrabold tabular text-emerald-700">+€42</p>
+            </div>
+            <button class="row-span-2 p-2.5 rounded-xl bg-sky-50 border-2 border-sky-200 text-left flex flex-col">
+              <span class="text-[8px] font-bold uppercase text-sky-700">Shipping paid</span>
+              <p class="text-lg font-extrabold tabular text-sky-900 mt-auto">€7,69</p>
+              <span class="text-[8px] font-bold text-sky-600 mt-1">Turn off</span>
+            </button>
+            <div class="col-span-2 p-1 rounded-xl bg-slate-100 grid grid-cols-3 gap-1">
+              <button class="py-2 rounded-lg bg-white shadow-sm text-[8px] font-extrabold uppercase">eBay</button>
+              <button class="py-2 rounded-lg text-[8px] font-extrabold uppercase text-slate-500">KA</button>
+              <button class="py-2 rounded-lg text-[8px] font-extrabold uppercase text-slate-500">Person</button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2">
+            <button class="col-span-1 py-2.5 min-h-[44px] rounded-xl border-2 border-dashed border-slate-200 text-[8px] font-bold uppercase text-slate-600">Choose photo</button>
+            <button class="col-span-1 py-2.5 min-h-[44px] rounded-xl border-2 border-dashed border-slate-200 text-[8px] font-bold uppercase text-slate-600">Paste URL</button>
+            <button class="col-span-1 py-2.5 min-h-[44px] rounded-xl bg-indigo-600 text-white text-[8px] font-extrabold uppercase">Parse</button>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <input class="px-2.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold" placeholder="Buyer name" />
+            <select class="px-2.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-[10px] font-semibold"><option>Payment</option></select>
+          </div>
+          <textarea class="w-full px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold resize-none h-11" placeholder="Address"></textarea>
+
+          <div class="grid grid-cols-[1fr_1.5fr] gap-2">
+            <button class="py-3 rounded-xl border text-[10px] font-bold uppercase text-slate-500">Cancel</button>
+            <button class="py-3 rounded-xl bg-violet-600 text-white text-[10px] font-extrabold uppercase">Mark sold</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- C -->
+    <section id="c" class="scroll-mt-28">
+      <div class="flex items-start gap-3 mb-5">
+        <span class="w-9 h-9 rounded-xl bg-emerald-600 text-white text-sm font-extrabold flex items-center justify-center shrink-0">C</span>
+        <div>
+          <h2 class="text-lg font-extrabold tracking-tight">Date in the triad · buyer card</h2>
+          <p class="text-xs text-slate-500 mt-0.5">Top = Price · Date · Shipping · Profit as slim banner · buyer as elevated card</p>
+        </div>
+      </div>
+      <div class="shell rounded-[1.75rem] p-2.5 max-w-[480px] mx-auto shadow-soft">
+        <div class="inner bg-white rounded-[calc(1.75rem-0.4rem)] p-4 space-y-2.5">
+          <div class="flex justify-between items-start">
+            <div>
+              <h3 class="text-sm font-extrabold">Mark as sold</h3>
+              <p class="text-[10px] text-slate-400">Crucial 16GB DDR4</p>
+            </div>
+            <button class="w-8 h-8 text-slate-400" aria-label="Close">✕</button>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2">
+            <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-100 min-h-[68px]">
+              <span class="text-[8px] font-bold uppercase text-slate-400">Price</span>
+              <p class="text-base font-extrabold tabular mt-0.5">€115</p>
+            </div>
+            <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-100 min-h-[68px]">
+              <span class="text-[8px] font-bold uppercase text-slate-400">Date</span>
+              <p class="text-xs font-bold mt-1.5">10 Jul 2025</p>
+            </div>
+            <button class="p-2.5 rounded-xl border border-dashed border-sky-300 bg-sky-50/50 min-h-[68px] text-left">
+              <span class="text-[8px] font-bold uppercase text-sky-700">Shipping</span>
+              <p class="text-[10px] font-bold text-slate-400 mt-1">Add cost</p>
+            </button>
+          </div>
+
+          <div class="flex items-center justify-between px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-100">
+            <span class="text-[9px] font-bold uppercase text-emerald-700">Est. profit</span>
+            <span class="text-sm font-extrabold tabular text-emerald-700">+€42,31</span>
+          </div>
+
+          <div class="grid grid-cols-3 gap-1.5">
+            <button class="py-2.5 rounded-xl bg-slate-900 text-white text-[8px] font-extrabold uppercase min-h-[44px]">eBay</button>
+            <button class="py-2.5 rounded-xl border text-[8px] font-extrabold uppercase text-slate-500 min-h-[44px]">KA</button>
+            <button class="py-2.5 rounded-xl border text-[8px] font-extrabold uppercase text-slate-500 min-h-[44px]">Person</button>
+          </div>
+
+          <button class="w-full py-2.5 rounded-xl bg-indigo-600 text-white text-[9px] font-extrabold uppercase min-h-[44px]">Parse screenshot</button>
+          <div class="grid grid-cols-2 gap-2">
+            <button class="py-2.5 rounded-xl border-2 border-dashed text-[8px] font-bold uppercase text-slate-600 min-h-[44px]">Choose photo</button>
+            <button class="py-2.5 rounded-xl border-2 border-dashed text-[8px] font-bold uppercase text-slate-600 min-h-[44px]">Paste URL</button>
+          </div>
+
+          <div class="rounded-2xl bg-white border border-slate-200 shadow-soft p-3 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-[8px] font-bold uppercase tracking-wider text-slate-400">Buyer (invoice)</span>
+              <span class="text-[8px] font-semibold text-slate-400">Required for invoice</span>
+            </div>
+            <input class="w-full px-2.5 py-2 rounded-lg bg-slate-50 border border-slate-200 text-xs font-semibold" placeholder="Full name" />
+            <textarea class="w-full px-2.5 py-2 rounded-lg bg-slate-50 border border-slate-200 text-xs font-semibold resize-none h-12" placeholder="Address"></textarea>
+            <select class="w-full px-2.5 py-2 rounded-lg bg-slate-50 border border-slate-200 text-[10px] font-semibold"><option>Payment method</option></select>
+          </div>
+
+          <div class="grid grid-cols-[1fr_1.5fr] gap-2">
+            <button class="py-3 rounded-xl border text-[10px] font-bold uppercase text-slate-500">Cancel</button>
+            <button class="py-3 rounded-xl bg-violet-600 text-white text-[10px] font-extrabold uppercase">Mark sold</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- D -->
+    <section id="d" class="scroll-mt-28">
+      <div class="flex items-start gap-3 mb-5">
+        <span class="w-9 h-9 rounded-xl bg-indigo-600 text-white text-sm font-extrabold flex items-center justify-center shrink-0">D</span>
+        <div>
+          <h2 class="text-lg font-extrabold tracking-tight">Proof dock + buyer dock</h2>
+          <p class="text-xs text-slate-500 mt-0.5">Two labeled docks (Proof · Buyer) · top triad unchanged · densest scan path</p>
+        </div>
+      </div>
+      <div class="shell rounded-[1.75rem] p-2.5 max-w-[480px] mx-auto shadow-soft">
+        <div class="inner bg-white rounded-[calc(1.75rem-0.4rem)] p-4 space-y-2.5">
+          <div class="flex justify-between">
+            <div>
+              <h3 class="text-sm font-extrabold">Mark as sold</h3>
+              <p class="text-[10px] text-slate-400">Li-Teon 128GB SSD</p>
+            </div>
+            <button class="text-slate-400" aria-label="Close">✕</button>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2">
+            <div class="p-2 rounded-xl bg-slate-50 border border-slate-100"><span class="text-[7px] font-bold uppercase text-slate-400">Price</span><p class="text-sm font-extrabold tabular">€115</p></div>
+            <div class="p-2 rounded-xl bg-emerald-50 border border-emerald-100"><span class="text-[7px] font-bold uppercase text-emerald-700">Profit</span><p class="text-sm font-extrabold tabular text-emerald-700">+€42</p></div>
+            <button class="p-2 rounded-xl bg-sky-50 border border-sky-200 text-left"><span class="text-[7px] font-bold uppercase text-sky-700">Ship</span><p class="text-[10px] font-bold text-sky-800 mt-0.5">Tap</p></button>
+          </div>
+
+          <div class="grid grid-cols-3 gap-1">
+            <button class="py-2 rounded-lg bg-slate-900 text-white text-[8px] font-extrabold uppercase min-h-[40px]">eBay</button>
+            <button class="py-2 rounded-lg border text-[8px] font-extrabold uppercase text-slate-500 min-h-[40px]">KA</button>
+            <button class="py-2 rounded-lg border text-[8px] font-extrabold uppercase text-slate-500 min-h-[40px]">Person</button>
+          </div>
+
+          <div class="rounded-xl border border-indigo-100 bg-indigo-50/40 p-2 space-y-2">
+            <span class="text-[8px] font-bold uppercase tracking-wider text-indigo-700">Proof</span>
+            <button class="w-full py-2.5 rounded-lg bg-indigo-600 text-white text-[9px] font-extrabold uppercase min-h-[44px]">Parse screenshot</button>
+            <div class="grid grid-cols-2 gap-1.5">
+              <button class="py-2 rounded-lg border-2 border-dashed border-indigo-200 bg-white text-[8px] font-bold uppercase text-indigo-700 min-h-[44px]">Choose photo</button>
+              <button class="py-2 rounded-lg border-2 border-dashed border-indigo-200 bg-white text-[8px] font-bold uppercase text-indigo-700 min-h-[44px]">Paste URL</button>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-slate-200 bg-slate-50/80 p-2 space-y-2">
+            <span class="text-[8px] font-bold uppercase tracking-wider text-slate-400">Buyer</span>
+            <div class="grid grid-cols-2 gap-1.5">
+              <input class="px-2 py-2 rounded-lg border bg-white text-xs font-semibold" placeholder="Name" />
+              <select class="px-2 py-2 rounded-lg border bg-white text-[10px] font-semibold"><option>Payment</option></select>
+            </div>
+            <textarea class="w-full px-2 py-2 rounded-lg border bg-white text-xs font-semibold resize-none h-10" placeholder="Address"></textarea>
+          </div>
+
+          <div class="grid grid-cols-[1fr_1.5fr] gap-2">
+            <button class="py-3 rounded-xl border text-[10px] font-bold uppercase text-slate-500">Cancel</button>
+            <button class="py-3 rounded-xl bg-violet-600 text-white text-[10px] font-extrabold uppercase">Mark sold</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- E -->
+    <section id="e" class="scroll-mt-28">
+      <div class="flex items-start gap-3 mb-5">
+        <span class="w-9 h-9 rounded-xl bg-slate-800 text-white text-sm font-extrabold flex items-center justify-center shrink-0">E</span>
+        <div>
+          <h2 class="text-lg font-extrabold tracking-tight">Inline URL field · photo tile</h2>
+          <p class="text-xs text-slate-500 mt-0.5">Paste URL as editable field tile · Choose photo as action tile · buyer always on · date under price</p>
+        </div>
+      </div>
+      <div class="shell rounded-[1.75rem] p-2.5 max-w-[480px] mx-auto shadow-lift">
+        <div class="inner bg-white rounded-[calc(1.75rem-0.4rem)] p-4 space-y-2.5">
+          <div class="flex justify-between items-start">
+            <div>
+              <h3 class="text-sm font-extrabold">Mark as sold</h3>
+              <p class="text-[10px] text-slate-400">Core i7-4790K · Z97 Killer · 128GB</p>
+            </div>
+            <button class="w-8 h-8 rounded-lg hover:bg-slate-50 text-slate-400" aria-label="Close">✕</button>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2">
+            <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-100 min-h-[72px]">
+              <span class="text-[8px] font-bold uppercase text-slate-400">Price</span>
+              <p class="text-base font-extrabold tabular">€115</p>
+              <p class="text-[8px] text-slate-400 mt-0.5">10 Jul 2025</p>
+            </div>
+            <div class="p-2.5 rounded-xl bg-emerald-50 border border-emerald-100 min-h-[72px]">
+              <span class="text-[8px] font-bold uppercase text-emerald-700">Profit</span>
+              <p class="text-base font-extrabold tabular text-emerald-700">+€42</p>
+            </div>
+            <button class="p-2.5 rounded-xl bg-sky-50 border border-sky-200 min-h-[72px] text-left">
+              <span class="text-[8px] font-bold uppercase text-sky-700">Shipping</span>
+              <p class="text-xs font-bold text-slate-400 mt-1">Click to add</p>
+            </button>
+          </div>
+
+          <div class="grid grid-cols-3 gap-1.5">
+            <button class="py-2.5 rounded-xl bg-slate-900 text-white text-[8px] font-extrabold uppercase min-h-[44px]">eBay</button>
+            <button class="py-2.5 rounded-xl border text-[8px] font-extrabold uppercase text-slate-500 min-h-[44px]">KA</button>
+            <button class="py-2.5 rounded-xl border text-[8px] font-extrabold uppercase text-slate-500 min-h-[44px]">Person</button>
+          </div>
+
+          <div class="grid grid-cols-[1.4fr_1fr] gap-2">
+            <div class="p-2 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 flex flex-col justify-center min-h-[52px]">
+              <span class="text-[7px] font-bold uppercase text-slate-400 mb-0.5">Paste URL</span>
+              <input class="bg-transparent text-[10px] font-semibold text-slate-700 outline-none w-full" placeholder="https://i.imgur.com/…" />
+            </div>
+            <button class="p-2 rounded-xl border-2 border-dashed border-slate-200 text-[8px] font-bold uppercase text-slate-600 min-h-[52px] hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors">Choose photo</button>
+          </div>
+          <button class="w-full py-2.5 rounded-xl bg-indigo-600 text-white text-[9px] font-extrabold uppercase min-h-[44px]">Parse screenshot</button>
+
+          <div class="grid grid-cols-2 gap-2">
+            <input class="px-2.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold" placeholder="Buyer name" />
+            <select class="px-2.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-[10px] font-semibold"><option>Payment</option></select>
+          </div>
+          <textarea class="w-full px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold resize-none h-11" placeholder="Shipping address"></textarea>
+
+          <div class="grid grid-cols-[1fr_1.5fr] gap-2">
+            <button class="py-3 rounded-xl border text-[10px] font-bold uppercase text-slate-500">Cancel</button>
+            <button class="py-3 rounded-xl bg-violet-600 text-white text-[10px] font-extrabold uppercase">Mark sold</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Compare -->
+    <section class="bg-white rounded-2xl border border-slate-200/80 shadow-soft p-6 overflow-x-auto">
+      <h2 class="font-extrabold text-lg mb-4">Compare</h2>
+      <table class="w-full text-xs text-left">
+        <thead>
+          <tr class="text-[9px] uppercase tracking-wider text-slate-400 border-b">
+            <th class="py-2 pr-4">#</th>
+            <th class="py-2 pr-4">Top 3</th>
+            <th class="py-2 pr-4">Photo / URL</th>
+            <th class="py-2 pr-4">Buyer</th>
+            <th class="py-2">Feel</th>
+          </tr>
+        </thead>
+        <tbody class="text-slate-700 divide-y divide-slate-100">
+          <tr>
+            <td class="py-2.5 font-extrabold">A</td>
+            <td class="py-2.5">Price · Profit · Shipping</td>
+            <td class="py-2.5">Twin dashed tiles</td>
+            <td class="py-2.5">Labeled strip</td>
+            <td class="py-2.5 text-slate-500">Safest evolution of #10</td>
+          </tr>
+          <tr>
+            <td class="py-2.5 font-extrabold">B</td>
+            <td class="py-2.5">Price · Profit + tall Shipping</td>
+            <td class="py-2.5">Photo · URL · Parse row</td>
+            <td class="py-2.5">Inline 2-col</td>
+            <td class="py-2.5 text-slate-500">Asymmetric bento</td>
+          </tr>
+          <tr>
+            <td class="py-2.5 font-extrabold">C</td>
+            <td class="py-2.5">Price · Date · Shipping</td>
+            <td class="py-2.5">Twin tiles + parse</td>
+            <td class="py-2.5">Elevated card</td>
+            <td class="py-2.5 text-slate-500">Date-first · invoice-clear</td>
+          </tr>
+          <tr>
+            <td class="py-2.5 font-extrabold">D</td>
+            <td class="py-2.5">Price · Profit · Ship</td>
+            <td class="py-2.5">Proof dock</td>
+            <td class="py-2.5">Buyer dock</td>
+            <td class="py-2.5 text-slate-500">Sectioned docks</td>
+          </tr>
+          <tr>
+            <td class="py-2.5 font-extrabold">E</td>
+            <td class="py-2.5">Price(+date) · Profit · Shipping</td>
+            <td class="py-2.5">URL field tile + photo</td>
+            <td class="py-2.5">Always visible</td>
+            <td class="py-2.5 text-slate-500">Best paste-URL UX</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <footer class="text-center text-[10px] text-slate-400 pb-10">
+    Open <code class="bg-slate-200/80 px-1.5 py-0.5 rounded">http://localhost:5173/design/sale-modal-refined.html</code>
+  </footer>
+</body>
+</html>

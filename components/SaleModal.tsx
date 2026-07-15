@@ -66,7 +66,7 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
   const [orderScreenshotSource, setOrderScreenshotSource] = useState('');
   const [orderScreenshotParsing, setOrderScreenshotParsing] = useState(false);
   const [orderScreenshotError, setOrderScreenshotError] = useState<string | null>(null);
-  const [ebayScreenshotDragOver, setEbayScreenshotDragOver] = useState(false);
+  const [ebayScreenshotDragOver, setScreenshotDragOver] = useState(false);
   const [kaChatParsing, setKaChatParsing] = useState(false);
   const [kaChatParseError, setKaChatParseError] = useState<string | null>(null);
   const [orderIdLookupLoading, setOrderIdLookupLoading] = useState(false);
@@ -149,19 +149,35 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
   }, [isEditBuyer, ebayOrderId, customer.name, customer.address, fillFromOrderId]);
 
   useEffect(() => {
-    if (platformSold !== 'ebay.de') setEbayScreenshotDragOver(false);
+    if (platformSold !== 'ebay.de' && platformSold !== 'kleinanzeigen.de') setScreenshotDragOver(false);
   }, [platformSold]);
+
+  const disableSellerShipping = () => {
+    setSellerPaidShipping(false);
+    setSellerShippingAmount('');
+  };
 
   const handleChatImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 2 * 1024 * 1024) return alert("Image too large. Max 2MB.");
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setKleinanzeigenChatImage(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+    if (file) loadKleinanzeigenChatFile(file);
+    e.target.value = '';
+  };
+
+  const loadKleinanzeigenChatFile = (file: File) => {
+    if (file.size > 6 * 1024 * 1024) {
+      setKaChatParseError('Screenshot too large. Max 6MB.');
+      return;
     }
+    if (!file.type.startsWith('image/')) {
+      setKaChatParseError('Please choose an image file (PNG, JPG, WebP, …).');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setKleinanzeigenChatImage(reader.result as string);
+      setKaChatParseError(null);
+    };
+    reader.readAsDataURL(file);
   };
 
   const loadOrderScreenshotFile = (file: File) => {
@@ -188,40 +204,46 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
     e.target.value = '';
   };
 
-  const isEbayScreenshotDropActive = platformSold === 'ebay.de';
+  const isScreenshotDropActive = platformSold === 'ebay.de' || platformSold === 'kleinanzeigen.de';
 
-  const handleEbayScreenshotDragOverCapture = (e: React.DragEvent) => {
-    if (!isEbayScreenshotDropActive) return;
+  const handleScreenshotDragOverCapture = (e: React.DragEvent) => {
+    if (!isScreenshotDropActive) return;
     if (![...e.dataTransfer.types].includes('Files')) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
   };
 
-  const handleEbayScreenshotDragEnterCapture = (e: React.DragEvent) => {
-    if (!isEbayScreenshotDropActive) return;
+  const handleScreenshotDragEnterCapture = (e: React.DragEvent) => {
+    if (!isScreenshotDropActive) return;
     if (![...e.dataTransfer.types].includes('Files')) return;
     e.preventDefault();
-    setEbayScreenshotDragOver(true);
+    setScreenshotDragOver(true);
   };
 
-  const handleEbayScreenshotDragLeaveCapture = (e: React.DragEvent) => {
-    if (!isEbayScreenshotDropActive) return;
+  const handleScreenshotDragLeaveCapture = (e: React.DragEvent) => {
+    if (!isScreenshotDropActive) return;
     const rel = e.relatedTarget as Node | null;
     if (rel && (e.currentTarget as HTMLElement).contains(rel)) return;
-    setEbayScreenshotDragOver(false);
+    setScreenshotDragOver(false);
   };
 
-  const handleEbayScreenshotDropCapture = (e: React.DragEvent) => {
-    if (!isEbayScreenshotDropActive) return;
+  const handleScreenshotDropCapture = (e: React.DragEvent) => {
+    if (!isScreenshotDropActive) return;
     if (![...e.dataTransfer.types].includes('Files')) return;
     e.preventDefault();
     e.stopPropagation();
-    setEbayScreenshotDragOver(false);
+    setScreenshotDragOver(false);
     const file = [...e.dataTransfer.files].find((f) => f.type.startsWith('image/'));
-    if (file) loadOrderScreenshotFile(file);
-    else if (e.dataTransfer.files.length > 0) {
-      setOrderScreenshotError('Please drop an image file (PNG, JPG, WebP, …).');
+    if (!file) {
+      if (e.dataTransfer.files.length > 0) {
+        const msg = 'Please drop an image file (PNG, JPG, WebP, …).';
+        if (platformSold === 'ebay.de') setOrderScreenshotError(msg);
+        else setKaChatParseError(msg);
+      }
+      return;
     }
+    if (platformSold === 'ebay.de') loadOrderScreenshotFile(file);
+    else loadKleinanzeigenChatFile(file);
   };
 
   const handleParseOrderScreenshot = async () => {
@@ -462,14 +484,14 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
   return (
     <div
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/60 p-0 sm:p-4 pb-safe"
-      onDragEnterCapture={handleEbayScreenshotDragEnterCapture}
-      onDragLeaveCapture={handleEbayScreenshotDragLeaveCapture}
-      onDragOverCapture={handleEbayScreenshotDragOverCapture}
-      onDropCapture={handleEbayScreenshotDropCapture}
+      onDragEnterCapture={handleScreenshotDragEnterCapture}
+      onDragLeaveCapture={handleScreenshotDragLeaveCapture}
+      onDragOverCapture={handleScreenshotDragOverCapture}
+      onDropCapture={handleScreenshotDropCapture}
     >
       <div
         className={`bg-white w-full max-w-[520px] rounded-t-2xl sm:rounded-2xl shadow-2xl border overflow-hidden flex flex-col max-h-[92dvh] sm:max-h-[88vh] transition-shadow duration-150 ${
-          ebayScreenshotDragOver && isEbayScreenshotDropActive
+          ebayScreenshotDragOver && isScreenshotDropActive
             ? 'border-indigo-400 ring-4 ring-indigo-300/40 shadow-indigo-100'
             : 'border-slate-100'
         }`}
@@ -491,21 +513,21 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
           </button>
         </header>
 
-        <div className="px-4 py-3 space-y-2 overflow-y-auto scrollbar-hide flex-1">
-          {/* Bento 2×2 — price, date, profit, shipping */}
-          <div className="grid grid-cols-2 gap-2">
+        <div className="px-4 py-3 space-y-2.5 overflow-y-auto scrollbar-hide flex-1">
+          {/* Option E: top triad — Price(+date) · Profit · Shipping */}
+          <div className={`grid gap-2 ${isEditBuyer ? 'grid-cols-2' : 'grid-cols-3'}`}>
             <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 min-h-[72px]">
               <label className="text-[8px] font-black uppercase tracking-wider text-slate-400">
-                {isBatchItem ? 'Unit price' : 'Price €'}
+                {isBatchItem ? 'Unit price' : 'Price'}
               </label>
               {isBatchItem ? (
-                <div className="mt-1 flex gap-1.5 items-center">
+                <div className="mt-1 flex gap-1 items-center">
                   <input
                     type="number"
                     min={1}
                     max={item.quantity}
                     aria-label="Quantity to sell"
-                    className="w-10 px-1 py-1 bg-white border border-slate-200 rounded-lg font-bold text-xs text-center tabular-nums"
+                    className="w-9 px-0.5 py-0.5 bg-white border border-slate-200 rounded-md font-bold text-[10px] text-center tabular-nums"
                     value={quantityToSell}
                     onChange={(e) =>
                       setQuantityToSell(
@@ -514,12 +536,12 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
                     }
                   />
                   <div className="relative flex-1 min-w-0">
-                    <Euro className="absolute left-1.5 top-1/2 -translate-y-1/2 text-slate-300" size={11} />
+                    <Euro className="absolute left-1 top-1/2 -translate-y-1/2 text-slate-300" size={10} />
                     <input
                       type="text"
                       inputMode="decimal"
                       placeholder="0.00"
-                      className="w-full pl-5 pr-1 py-1 bg-white border border-slate-200 rounded-lg font-bold text-sm tabular-nums"
+                      className="w-full pl-4 pr-0.5 py-0.5 bg-white border border-slate-200 rounded-md font-bold text-sm tabular-nums outline-none"
                       value={unitPrice}
                       onChange={(e) => setUnitPrice(e.target.value)}
                     />
@@ -527,32 +549,22 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
                 </div>
               ) : (
                 <div className="relative mt-0.5">
-                  <Euro className="absolute left-0 top-1/2 -translate-y-1/2 text-slate-300" size={13} />
+                  <Euro className="absolute left-0 top-1/2 -translate-y-1/2 text-slate-300" size={12} />
                   <input
                     type="text"
                     inputMode="decimal"
                     placeholder="0.00"
-                    className="w-full pl-4 pr-0 py-0.5 bg-transparent font-bold text-lg tabular-nums text-slate-900 outline-none"
+                    className="w-full pl-4 pr-0 py-0 bg-transparent font-extrabold text-base tabular-nums text-slate-900 outline-none"
                     value={salePrice}
                     onChange={(e) => setSalePrice(e.target.value)}
                   />
                 </div>
               )}
-              {isBatchItem && (
-                <p className="text-[8px] text-slate-400 font-bold mt-0.5 tabular-nums">
-                  ×{quantityToSell} = €{((quantityToSell * (parseFloat(unitPrice) || 0)).toFixed(2))}
-                </p>
-              )}
-            </div>
-
-            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 min-h-[72px]">
-              <label htmlFor="sale-date" className="text-[8px] font-black uppercase tracking-wider text-slate-400">
-                Date
-              </label>
               <input
                 id="sale-date"
                 type="date"
-                className="mt-1 w-full bg-transparent font-bold text-sm text-slate-900 outline-none"
+                aria-label="Sale date"
+                className="mt-1 w-full bg-transparent text-[8px] font-bold text-slate-400 outline-none"
                 value={saleDate}
                 onChange={(e) => setSaleDate(e.target.value)}
               />
@@ -560,9 +572,9 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
 
             {!isEditBuyer && (
               <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-100 min-h-[72px]">
-                <p className="text-[8px] font-black uppercase tracking-wider text-emerald-700">Profit est.</p>
+                <p className="text-[8px] font-black uppercase tracking-wider text-emerald-700">Profit</p>
                 <p
-                  className={`text-lg font-black tabular-nums mt-0.5 ${
+                  className={`text-base font-extrabold tabular-nums mt-0.5 ${
                     previewProfit == null
                       ? 'text-slate-300'
                       : previewProfit >= 0
@@ -577,250 +589,286 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
               </div>
             )}
 
-            <label
-              className={`p-2.5 rounded-xl border min-h-[72px] cursor-pointer transition-colors block ${
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                if (!sellerPaidShipping) setSellerPaidShipping(true);
+              }}
+              onKeyDown={(e) => {
+                if (!sellerPaidShipping && (e.key === 'Enter' || e.key === ' ')) {
+                  e.preventDefault();
+                  setSellerPaidShipping(true);
+                }
+              }}
+              className={`p-2.5 rounded-xl border min-h-[72px] transition-colors text-left ${
                 sellerPaidShipping
-                  ? 'bg-sky-50 border-sky-200'
-                  : 'bg-slate-50 border-slate-100 hover:border-sky-200'
-              } ${isEditBuyer ? 'col-span-2' : ''}`}
+                  ? 'bg-sky-50 border-sky-200 cursor-default'
+                  : 'bg-slate-50 border-slate-100 hover:border-sky-200 cursor-pointer'
+              }`}
             >
-              <input
-                type="checkbox"
-                className="sr-only"
-                checked={sellerPaidShipping}
-                onChange={(e) => setSellerPaidShipping(e.target.checked)}
-              />
-              <span className="text-[8px] font-black uppercase tracking-wider text-sky-700 flex items-center gap-1">
-                <Truck size={10} />
-                Shipping paid
-              </span>
+              <div className="flex items-start justify-between gap-0.5">
+                <span className="text-[8px] font-black uppercase tracking-wider text-sky-700 flex items-center gap-0.5">
+                  <Truck size={9} />
+                  Shipping
+                </span>
+                {sellerPaidShipping && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      disableSellerShipping();
+                    }}
+                    className="text-[7px] font-black uppercase text-sky-600 hover:text-sky-900 shrink-0 px-1 py-0.5 rounded hover:bg-sky-100"
+                  >
+                    Off
+                  </button>
+                )}
+              </div>
               {sellerPaidShipping ? (
-                <div className="relative mt-1">
-                  <Euro className="absolute left-0 top-1/2 -translate-y-1/2 text-sky-400" size={12} />
+                <div className="relative mt-1" onClick={(e) => e.stopPropagation()}>
+                  <Euro className="absolute left-0 top-1/2 -translate-y-1/2 text-sky-400" size={11} />
                   <input
                     type="text"
                     inputMode="decimal"
                     placeholder="0.00"
-                    className="w-full pl-4 pr-0 py-0.5 bg-transparent font-bold text-sm tabular-nums text-sky-900 outline-none"
+                    aria-label="Shipping cost you paid"
+                    className="w-full pl-3.5 pr-0 py-0 bg-transparent font-bold text-sm tabular-nums text-sky-900 outline-none"
                     value={sellerShippingAmount}
                     onChange={(e) => setSellerShippingAmount(e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
+                    autoFocus
                   />
                 </div>
               ) : (
-                <p className="text-xs font-bold text-slate-400 mt-1">Tap to add</p>
+                <p className="text-[10px] font-bold text-slate-400 mt-1">Click to add</p>
               )}
-            </label>
+            </div>
           </div>
 
-          {/* Platform block */}
-          <div className="p-2.5 rounded-xl border border-slate-200 space-y-2">
-            <div className="flex justify-between items-center gap-2">
-              <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 shrink-0">Platform</span>
-              <div className="flex flex-wrap gap-1 justify-end">
-                {quickPlatforms.map((p) => (
-                  <button
-                    key={p.value}
-                    type="button"
-                    onClick={() => {
-                      setPlatformSold(p.value);
-                      if (p.value === 'In Person' && paymentType === 'ebay.de') setPaymentType('Cash');
-                    }}
-                    className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase transition-all ${
-                      platformSold === p.value
-                        ? 'bg-slate-900 text-white'
-                        : 'border border-slate-200 text-slate-500 hover:bg-slate-50'
-                    }`}
-                  >
-                    {p.value === 'ebay.de' ? 'eBay' : p.value === 'kleinanzeigen.de' ? 'KA' : 'In person'}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <select
-              className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg font-bold text-[10px] outline-none"
-              value={platformSold}
-              onChange={(e) => setPlatformSold(e.target.value as Platform)}
-              aria-label="All platforms"
-            >
-              {SALE_PLATFORM_OPTIONS.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
+          {/* Platform tiles */}
+          <div className="grid grid-cols-3 gap-1.5">
+            {quickPlatforms.map((p) => (
+              <button
+                key={p.value}
+                type="button"
+                onClick={() => {
+                  setPlatformSold(p.value);
+                  if (p.value === 'In Person' && paymentType === 'ebay.de') setPaymentType('Cash');
+                }}
+                className={`py-2.5 min-h-[44px] rounded-xl text-[8px] font-extrabold uppercase transition-colors ${
+                  platformSold === p.value
+                    ? 'bg-slate-900 text-white'
+                    : 'border border-slate-200 text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                {p.value === 'ebay.de' ? 'eBay' : p.value === 'kleinanzeigen.de' ? 'KA' : 'Person'}
+              </button>
+            ))}
+          </div>
+          <select
+            className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-[10px] outline-none"
+            value={platformSold}
+            onChange={(e) => setPlatformSold(e.target.value as Platform)}
+            aria-label="All platforms"
+          >
+            {SALE_PLATFORM_OPTIONS.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+          </select>
 
-            {platformSold === 'In Person' && (
-              <p className="text-[10px] text-violet-800 bg-violet-50 rounded-lg px-2 py-1 border border-violet-100">
-                Local pickup — cash or bank transfer typical.
-              </p>
-            )}
+          {platformSold === 'In Person' && (
+            <p className="text-[10px] text-violet-800 bg-violet-50 rounded-xl px-2.5 py-1.5 border border-violet-100">
+              Local pickup — cash or bank transfer typical.
+            </p>
+          )}
 
-            {platformSold === 'kleinanzeigen.de' && (
-              <div className="space-y-1.5 pt-0.5">
-                <input
-                  type="text"
-                  placeholder="Chat link (optional)"
-                  className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold outline-none focus:border-blue-500"
-                  value={kleinanzeigenChatUrl}
-                  onChange={(e) => setKleinanzeigenChatUrl(e.target.value)}
-                />
-                <div className="flex gap-1">
-                  <div className="relative flex-1 min-w-0">
-                    <input
-                      type="text"
-                      placeholder="Chat screenshot URL"
-                      className="w-full px-2 py-1.5 pr-7 bg-white border border-slate-200 rounded-lg text-[10px] font-bold outline-none focus:border-blue-500"
-                      value={kleinanzeigenChatImage}
-                      onChange={(e) => {
-                        setKleinanzeigenChatImage(e.target.value);
-                        setKaChatParseError(null);
-                      }}
-                    />
-                    <label className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 cursor-pointer text-slate-400 hover:text-blue-500">
-                      <Upload size={11} />
-                      <input type="file" accept="image/*" className="hidden" onChange={handleChatImageUpload} />
-                    </label>
-                  </div>
-                  {kleinanzeigenChatImage && (
-                    <a
-                      href={kleinanzeigenChatImage}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="w-7 h-7 rounded-lg overflow-hidden border border-slate-200 shrink-0"
-                    >
-                      <img src={kleinanzeigenChatImage} className="w-full h-full object-cover" alt="" />
-                    </a>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleParseKleinanzeigenChat}
-                    disabled={kaChatParsing || !kleinanzeigenChatImage.trim()}
-                    className="shrink-0 px-2 py-1.5 bg-emerald-600 text-white rounded-lg text-[8px] font-black uppercase hover:bg-emerald-700 disabled:opacity-50"
-                  >
-                    {kaChatParsing ? '…' : 'Parse'}
-                  </button>
-                </div>
-                {kaChatParseError && <p className="text-[9px] text-red-600 font-bold">{kaChatParseError}</p>}
-              </div>
-            )}
-
-            {platformSold === 'ebay.de' && (
-              <div className="space-y-1.5 pt-0.5">
+          {platformSold === 'kleinanzeigen.de' && (
+            <div className="space-y-2">
+              <input
+                type="text"
+                placeholder="Chat link (optional)"
+                className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-bold outline-none focus:border-emerald-400"
+                value={kleinanzeigenChatUrl}
+                onChange={(e) => setKleinanzeigenChatUrl(e.target.value)}
+              />
+              <div className="grid grid-cols-[1.4fr_1fr] gap-2">
                 <div
-                  className={`flex items-center gap-2 rounded-lg border border-dashed px-2 py-1.5 pointer-events-none select-none ${
-                    ebayScreenshotDragOver ? 'border-indigo-500 bg-indigo-50/80' : 'border-slate-200 bg-white/80'
+                  className={`p-2 rounded-xl border-2 border-dashed min-h-[52px] flex flex-col justify-center ${
+                    ebayScreenshotDragOver
+                      ? 'border-emerald-500 bg-emerald-50/80'
+                      : 'border-slate-200 bg-slate-50/50'
                   }`}
                 >
-                  <ImagePlus
-                    className={`shrink-0 ${ebayScreenshotDragOver ? 'text-indigo-600' : 'text-slate-400'}`}
-                    size={14}
-                  />
-                  <span className="text-[9px] font-bold text-slate-500">Drop screenshot or paste URL below</span>
-                </div>
-                <div className="flex flex-wrap gap-1">
+                  <span className="text-[7px] font-bold uppercase text-slate-400 mb-0.5">Paste URL</span>
                   <input
                     type="text"
-                    placeholder="Screenshot URL"
-                    className="flex-1 min-w-[8rem] px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold outline-none focus:border-blue-500"
+                    placeholder="https://i.imgur.com/…"
+                    className="bg-transparent text-[10px] font-semibold text-slate-700 outline-none w-full"
+                    value={kleinanzeigenChatImage.startsWith('data:') ? '' : kleinanzeigenChatImage}
+                    onChange={(e) => {
+                      setKleinanzeigenChatImage(e.target.value);
+                      setKaChatParseError(null);
+                    }}
+                  />
+                </div>
+                <label className="p-2 rounded-xl border-2 border-dashed border-slate-200 text-[8px] font-bold uppercase text-slate-600 min-h-[52px] flex flex-col items-center justify-center gap-0.5 cursor-pointer hover:border-emerald-300 hover:bg-emerald-50/30 transition-colors">
+                  <Upload size={14} className="text-slate-400" />
+                  Choose photo
+                  <input type="file" accept="image/*" className="hidden" onChange={handleChatImageUpload} />
+                </label>
+              </div>
+              <button
+                type="button"
+                onClick={handleParseKleinanzeigenChat}
+                disabled={kaChatParsing || !kleinanzeigenChatImage.trim()}
+                className="w-full py-2.5 min-h-[44px] rounded-xl bg-emerald-600 text-white text-[9px] font-extrabold uppercase hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {kaChatParsing ? <Loader2 size={14} className="animate-spin" /> : <ImagePlus size={14} />}
+                {kaChatParsing ? 'Parsing…' : 'Parse screenshot'}
+              </button>
+              {kleinanzeigenChatImage.startsWith('data:') && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-[9px] text-emerald-700 font-bold">Photo loaded — click Parse.</p>
+                  <a
+                    href={kleinanzeigenChatImage}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-7 h-7 rounded-lg overflow-hidden border border-slate-200 shrink-0"
+                  >
+                    <img src={kleinanzeigenChatImage} className="w-full h-full object-cover" alt="" />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setKleinanzeigenChatImage('');
+                      setKaChatParseError(null);
+                    }}
+                    className="text-[9px] font-bold text-emerald-700 hover:underline"
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+              {kaChatParseError && <p className="text-[9px] text-red-600 font-bold">{kaChatParseError}</p>}
+            </div>
+          )}
+
+          {platformSold === 'ebay.de' && (
+            <div className="space-y-2">
+              <div className="grid grid-cols-[1.4fr_1fr] gap-2">
+                <div
+                  className={`p-2 rounded-xl border-2 border-dashed min-h-[52px] flex flex-col justify-center ${
+                    ebayScreenshotDragOver
+                      ? 'border-indigo-500 bg-indigo-50/80'
+                      : 'border-slate-200 bg-slate-50/50'
+                  }`}
+                >
+                  <span className="text-[7px] font-bold uppercase text-slate-400 mb-0.5">Paste URL</span>
+                  <input
+                    type="text"
+                    placeholder="https://i.imgur.com/…"
+                    className="bg-transparent text-[10px] font-semibold text-slate-700 outline-none w-full"
                     value={orderScreenshotSource.startsWith('data:') ? '' : orderScreenshotSource}
                     onChange={(e) => {
                       setOrderScreenshotSource(e.target.value);
                       setOrderScreenshotError(null);
                     }}
                   />
-                  <label className="flex items-center gap-1 px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[8px] font-black uppercase cursor-pointer hover:bg-slate-50 text-slate-600 shrink-0">
-                    <Upload size={10} />
-                    Upload
-                    <input type="file" accept="image/*" className="hidden" onChange={handleOrderScreenshotUpload} />
-                  </label>
+                </div>
+                <label className="p-2 rounded-xl border-2 border-dashed border-slate-200 text-[8px] font-bold uppercase text-slate-600 min-h-[52px] flex flex-col items-center justify-center gap-0.5 cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors">
+                  <Upload size={14} className="text-slate-400" />
+                  Choose photo
+                  <input type="file" accept="image/*" className="hidden" onChange={handleOrderScreenshotUpload} />
+                </label>
+              </div>
+              <button
+                type="button"
+                onClick={handleParseOrderScreenshot}
+                disabled={orderScreenshotParsing}
+                className="w-full py-2.5 min-h-[44px] rounded-xl bg-indigo-600 text-white text-[9px] font-extrabold uppercase hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {orderScreenshotParsing ? <Loader2 size={14} className="animate-spin" /> : <ImagePlus size={14} />}
+                {orderScreenshotParsing ? 'Parsing…' : 'Parse screenshot'}
+              </button>
+              {orderScreenshotSource.startsWith('data:') && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-[9px] text-indigo-700 font-bold">Photo loaded — click Parse.</p>
                   <button
                     type="button"
-                    onClick={handleParseOrderScreenshot}
-                    disabled={orderScreenshotParsing}
-                    className="px-2 py-1.5 bg-indigo-600 text-white rounded-lg text-[8px] font-black uppercase hover:bg-indigo-700 disabled:opacity-50 shrink-0"
+                    onClick={() => {
+                      setOrderScreenshotSource('');
+                      setOrderScreenshotError(null);
+                    }}
+                    className="text-[9px] font-bold text-indigo-600 hover:underline"
                   >
-                    {orderScreenshotParsing ? '…' : 'Parse'}
+                    Clear
                   </button>
                 </div>
-                {orderScreenshotSource.startsWith('data:') && (
-                  <div className="flex items-center gap-2">
-                    <p className="text-[9px] text-slate-500">Image loaded.</p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setOrderScreenshotSource('');
-                        setOrderScreenshotError(null);
-                      }}
-                      className="text-[9px] font-bold text-indigo-600 hover:underline"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                )}
-                {orderScreenshotError && (
-                  <p className="text-[9px] text-red-600 font-medium">{orderScreenshotError}</p>
-                )}
-                <div className="grid grid-cols-2 gap-1">
+              )}
+              {orderScreenshotError && (
+                <p className="text-[9px] text-red-600 font-medium">{orderScreenshotError}</p>
+              )}
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  placeholder="eBay user"
+                  className="px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-bold outline-none focus:border-indigo-400"
+                  value={ebayUsername}
+                  onChange={(e) => setEbayUsername(e.target.value)}
+                />
+                <div className="flex gap-1 min-w-0">
                   <input
                     type="text"
-                    placeholder="eBay user"
-                    className="px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold outline-none focus:border-blue-500"
-                    value={ebayUsername}
-                    onChange={(e) => setEbayUsername(e.target.value)}
+                    placeholder="Order ID"
+                    className="flex-1 min-w-0 px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-bold outline-none focus:border-indigo-400"
+                    value={ebayOrderId}
+                    onChange={(e) => {
+                      setEbayOrderId(e.target.value);
+                      setOrderIdLookupMessage(null);
+                    }}
+                    onBlur={() => {
+                      if (ebayOrderId.trim()) void fillFromOrderId(ebayOrderId, { silent: true });
+                    }}
                   />
-                  <div className="flex gap-1 min-w-0">
-                    <input
-                      type="text"
-                      placeholder="Order ID"
-                      className="flex-1 min-w-0 px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold outline-none focus:border-blue-500"
-                      value={ebayOrderId}
-                      onChange={(e) => {
-                        setEbayOrderId(e.target.value);
-                        setOrderIdLookupMessage(null);
-                      }}
-                      onBlur={() => {
-                        if (ebayOrderId.trim()) void fillFromOrderId(ebayOrderId, { silent: true });
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => void fillFromOrderId(ebayOrderId)}
-                      disabled={orderIdLookupLoading || !ebayOrderId.trim()}
-                      className="shrink-0 px-1.5 py-1.5 bg-slate-800 text-white rounded-lg text-[8px] font-black uppercase hover:bg-slate-900 disabled:opacity-50"
-                      title="Fill buyer from order cache or eBay API"
-                    >
-                      {orderIdLookupLoading ? <Loader2 size={10} className="animate-spin" /> : 'Load'}
-                    </button>
-                  </div>
-                </div>
-                {orderIdLookupMessage && (
-                  <p
-                    className={`text-[9px] font-bold ${
-                      orderIdLookupMessage.includes('filled') || orderIdLookupMessage.includes('Filled')
-                        ? 'text-emerald-600'
-                        : 'text-slate-500'
-                    }`}
+                  <button
+                    type="button"
+                    onClick={() => void fillFromOrderId(ebayOrderId)}
+                    disabled={orderIdLookupLoading || !ebayOrderId.trim()}
+                    className="shrink-0 px-2 py-2 bg-slate-800 text-white rounded-xl text-[8px] font-black uppercase hover:bg-slate-900 disabled:opacity-50"
+                    title="Fill buyer from order cache or eBay API"
                   >
-                    {orderIdLookupMessage}
-                  </p>
-                )}
+                    {orderIdLookupLoading ? <Loader2 size={10} className="animate-spin" /> : 'Load'}
+                  </button>
+                </div>
               </div>
-            )}
-          </div>
+              {orderIdLookupMessage && (
+                <p
+                  className={`text-[9px] font-bold ${
+                    orderIdLookupMessage.includes('filled') || orderIdLookupMessage.includes('Filled')
+                      ? 'text-emerald-600'
+                      : 'text-slate-500'
+                  }`}
+                >
+                  {orderIdLookupMessage}
+                </p>
+              )}
+            </div>
+          )}
 
-          {/* Buyer row */}
+          {/* Buyer — always visible */}
           <div className="grid grid-cols-2 gap-2">
             <input
               type="text"
               placeholder="Buyer name"
-              className="px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none focus:border-violet-300"
+              className="px-2.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:border-violet-300"
               value={customer.name}
               onChange={(e) => setCustomer({ ...customer, name: e.target.value })}
             />
             <div className="relative">
               <select
-                className="w-full h-full px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-xs outline-none appearance-none cursor-pointer pr-7"
+                className="w-full h-full px-2.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-[10px] outline-none appearance-none cursor-pointer pr-7"
                 value={paymentType}
                 onChange={(e) => setPaymentType(e.target.value as PaymentType)}
                 aria-label="Payment method"
@@ -831,13 +879,16 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
                   </option>
                 ))}
               </select>
-              <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <ChevronDown
+                size={12}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+              />
             </div>
           </div>
           <textarea
             placeholder="Shipping address"
             rows={2}
-            className="w-full px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold resize-none outline-none focus:border-violet-300"
+            className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold resize-none outline-none focus:border-violet-300"
             value={customer.address}
             onChange={(e) => setCustomer({ ...customer, address: e.target.value })}
           />
@@ -859,24 +910,26 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
           )}
         </div>
 
-        <footer className="px-4 py-3 border-t border-slate-100 shrink-0 flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={saving}
-            className="px-3 py-2 text-[10px] font-bold uppercase text-slate-500 hover:text-slate-700 disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleSave()}
-            disabled={saving}
-            className="px-5 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-black text-[10px] uppercase tracking-wide shadow-md flex items-center gap-1.5 disabled:opacity-50 transition-colors"
-          >
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-            {saving ? 'Saving…' : isEditBuyer ? 'Save' : 'Mark sold'}
-          </button>
+        <footer className="px-4 py-3 border-t border-slate-100 shrink-0">
+          <div className="grid grid-cols-[1fr_1.5fr] gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={saving}
+              className="py-3 min-h-[48px] rounded-xl border border-slate-200 bg-white text-[10px] font-bold uppercase text-slate-500 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleSave()}
+              disabled={saving}
+              className="py-3 min-h-[48px] rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-extrabold text-[10px] uppercase tracking-wide shadow-md flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors"
+            >
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+              {saving ? 'Saving…' : isEditBuyer ? 'Save' : 'Mark sold'}
+            </button>
+          </div>
         </footer>
       </div>
     </div>
