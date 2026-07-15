@@ -62,19 +62,44 @@ export function getParentContainer(item: InventoryItem, items: InventoryItem[]):
   );
 }
 
-/** Hide sold bundle/PC component rows — they render nested under the parent in the sold list. */
-export function shouldHideSoldContainerChildInList(
+/** Hide bundle/PC component rows — they render nested under the parent. */
+export function shouldHideContainerChildInList(
   item: InventoryItem,
   items: InventoryItem[],
-  statusFilter: 'ACTIVE' | 'SOLD' | 'DRAFTS' | 'ALL',
-  searchActive: boolean
+  opts?: { showInComposition?: boolean }
 ): boolean {
-  if (statusFilter !== 'SOLD' || searchActive) return false;
+  if (opts?.showInComposition) return false;
   if (item.isBundle || item.isPC) return false;
   const parent = getParentContainer(item, items);
   if (!parent || (!parent.isBundle && !parent.isPC)) return false;
-  if (!isRealizedDisposal(parent)) return false;
   return true;
+}
+
+/** @deprecated Use shouldHideContainerChildInList — kept for call-site compatibility. */
+export function shouldHideSoldContainerChildInList(
+  item: InventoryItem,
+  items: InventoryItem[],
+  _statusFilter: 'ACTIVE' | 'SOLD' | 'DRAFTS' | 'ALL',
+  searchActive: boolean
+): boolean {
+  // Search no longer un-hides children; parents are included when a child matches.
+  void searchActive;
+  return shouldHideContainerChildInList(item, items);
+}
+
+/**
+ * Bundle/PC matches search when its own fields match OR any nested child matches.
+ * Used so searching "i7-4790K" surfaces the parent PC/bundle row.
+ */
+export function containerOrChildMatchesSearch(
+  item: InventoryItem,
+  items: InventoryItem[],
+  query: string,
+  matchesFn: (item: InventoryItem, query: string) => boolean
+): boolean {
+  if (matchesFn(item, query)) return true;
+  if (!item.isBundle && !item.isPC) return false;
+  return getChildren(item, items).some((c) => matchesFn(c, query));
 }
 
 export type SoldContainerDisplayTotals = {

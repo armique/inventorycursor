@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, TaxMode } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
-import { computeItemProfitBeforeOverhead, getChildren, getSoldContainerDisplayTotals, shouldHideSoldContainerChildInList } from '../services/financialAggregation';
+import { computeItemProfitBeforeOverhead, getChildren, getSoldContainerDisplayTotals, shouldHideContainerChildInList, containerOrChildMatchesSearch } from '../services/financialAggregation';
 import { itemMatchesSalePlatformFilter, isMissingExplicitSalePlatform, MISSING_PLATFORM_FILTER, SALE_PLATFORM_OPTIONS, formatItemSalePlatform, formatSalePlatformLabel } from '../utils/salePlatform';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { getCompatibleItemsForItem } from '../services/compatibility';
@@ -25,7 +25,6 @@ import {
   amountFilterSummary,
 } from '../utils/inventoryAmountFilter';
 import { copyKleinanzeigenListing } from '../utils/copyKleinanzeigenListing';
-import { bundleComponentBreakdown } from '../utils/bundleProfitBreakdown';
 import { cycleInventoryItemPresence, getItemPresenceCycleState, getItemUserPhotoCount, normalizeImageList, prepareInventoryImagesForStorage } from '../utils/imageImport';
 import { exportInventoryToExcel } from '../services/excelExportService';
 import { getRecentItemIds, addRecentItemId } from '../services/recentItemsService';
@@ -425,10 +424,9 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
       matchesStatus = true;
     }
     if (!matchesStatus) return false;
-    // Sold bundle/PC components render nested under the parent — hide duplicate top-level rows.
-    if (shouldHideSoldContainerChildInList(item, items, statusFilter, searchActive)) return false;
-    // Hide nested parts unless searching or "in composition" flat view is enabled.
-    if (item.parentContainerId && !searchActive && !showInComposition) return false;
+    // Bundle/PC components always render nested under the parent — never as top-level rows
+    // (unless "in composition" flat view). Search includes the parent when a child matches.
+    if (shouldHideContainerChildInList(item, items, { showInComposition })) return false;
     if (!searchActive && !showInComposition && item.status === ItemStatus.IN_COMPOSITION) return false;
 
     // While actively searching, ignore the category filter entirely so search is always global —
@@ -443,7 +441,13 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
       if (!matchParentAndSub && !matchSubAsTopLevel) return false;
     }
 
-    if (searchActive && !matchesInventorySearch(item, query)) return false;
+    if (searchActive) {
+      if (item.isBundle || item.isPC) {
+        if (!containerOrChildMatchesSearch(item, items, query, matchesInventorySearch)) return false;
+      } else if (!matchesInventorySearch(item, query)) {
+        return false;
+      }
+    }
 
     // Spec and date filters are browsing aids — skip them during search so a suggestion click always reveals the row.
     if (!searchActive && timeFilter !== 'ALL') {
@@ -829,7 +833,6 @@ const InventoryList: React.FC<Props> = ({
   };
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [expandedBundles, setExpandedBundles] = useState<Set<string>>(new Set());
   const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null);
   const [scrollTargetItemId, setScrollTargetItemId] = useState<string | null>(null);
   
@@ -1355,8 +1358,8 @@ const InventoryList: React.FC<Props> = ({
       // Include editValue (not just which field is being edited) while this row is the one being
       // edited — otherwise the key stays identical across every keystroke, the row's React.memo
       // sees "no change," and the input silently stops updating after the very first keystroke.
-      `${editingCell?.itemId === item.id ? `${editingCell.field}:${editValue}` : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${expandedBundles.has(item.id) ? 'open' : 'shut'}`,
-    [editingCell, editValue, listingGenId, parsingSingleId, priceSuggestId, expandedBundles]
+      `${editingCell?.itemId === item.id ? `${editingCell.field}:${editValue}` : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}`,
+    [editingCell, editValue, listingGenId, parsingSingleId, priceSuggestId]
   );
 
   const showFinancials = splitView || (statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS');
@@ -1683,7 +1686,7 @@ const InventoryList: React.FC<Props> = ({
       setTimeFilter('ALL');
       setCategoryFilter('ALL');
       setSubCategoryFilter('');
-      setShowInComposition(true);
+      setShowInComposition(false);
       if (isRealizedDisposal(parent)) {
         setStatusFilter('SOLD');
       } else if (parent.isDraft) {
@@ -1691,11 +1694,6 @@ const InventoryList: React.FC<Props> = ({
       } else {
         setStatusFilter('ACTIVE');
       }
-      setExpandedBundles((prev) => {
-        const next = new Set(prev);
-        next.add(parent.id);
-        return next;
-      });
       setScrollTargetItemId(parent.id);
     },
     []
@@ -1708,7 +1706,7 @@ const InventoryList: React.FC<Props> = ({
     setTimeFilter('ALL');
     setCategoryFilter('ALL');
     setSubCategoryFilter('');
-    setShowInComposition(true);
+    setShowInComposition(false);
     if (isRealizedDisposal(target)) {
       setStatusFilter('SOLD');
     } else if (target.isDraft) {
@@ -2105,28 +2103,20 @@ const InventoryList: React.FC<Props> = ({
           </td>
         );
       case 'item':
-        const isExpanded = expandedBundles.has(item.id);
         const childItems = (item.isPC || item.isBundle)
           ? getChildren(item, items)
           : [];
-        const toggleExpand = (e: React.MouseEvent) => {
-          e.stopPropagation();
-          const newExpanded = new Set(expandedBundles);
-          if (isExpanded) {
-            newExpanded.delete(item.id);
-          } else {
-            newExpanded.add(item.id);
-          }
-          setExpandedBundles(newExpanded);
-        };
         const isEditingName = editingCell?.itemId === item.id && editingCell?.field === 'item';
         const compositionFlatView = showInComposition && searchTerm.trim().length < 2;
-        const isSoldContainerRow =
-          (item.isPC || item.isBundle) && isRealizedDisposal(item) && childItems.length > 0;
-        const canExpandBundle =
-          (item.isPC || item.isBundle) && childItems.length > 0 && !compositionFlatView && !isSoldContainerRow;
+        const searchQuery = searchTerm.trim();
+        const searchActiveForNest = searchQuery.length >= 2;
+        const isGroupedContainerRow =
+          (item.isPC || item.isBundle) && childItems.length > 0 && !compositionFlatView;
+        const isSoldContainerRow = isGroupedContainerRow && isRealizedDisposal(item);
         const formatChildListDate = (child: InventoryItem) => {
-          const raw = child.sellDate || child.containerSoldDate || child.buyDate;
+          const raw = isSoldContainerRow
+            ? child.sellDate || child.containerSoldDate || child.buyDate
+            : child.buyDate || child.sellDate;
           return raw ? new Date(raw).toLocaleDateString() : '—';
         };
         const parentContainer = resolveParentContainer(item, containersById, containerByChildId);
@@ -2206,18 +2196,6 @@ const InventoryList: React.FC<Props> = ({
                           {item.name}
                         </p>
                       )}
-                      {canExpandBundle && (
-                        <button
-                          type="button"
-                          onClick={toggleExpand}
-                          className="p-1 mr-3 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
-                          title={isExpanded ? 'Collapse components' : 'Expand to show components'}
-                          aria-expanded={isExpanded}
-                          aria-label={isExpanded ? 'Collapse bundle components' : 'Expand bundle components'}
-                        >
-                          {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                        </button>
-                      )}
                    </div>
                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                       {hasUserPhotos ? (
@@ -2266,7 +2244,7 @@ const InventoryList: React.FC<Props> = ({
                         </span>
                       )}
                       <span className="text-[10px] text-slate-400 font-bold uppercase truncate">{item.vendor}</span>
-                      {canExpandBundle && (
+                      {isGroupedContainerRow && (
                          <span className="text-[9px] text-slate-500 font-medium">({childItems.length} items)</span>
                       )}
                    </div>
@@ -2379,9 +2357,12 @@ const InventoryList: React.FC<Props> = ({
                         )}
                       </div>
                    )}
-                   {isSoldContainerRow && (
+                   {isGroupedContainerRow && (
                       <div className="mt-2 ml-0.5 pl-3 border-l-2 border-purple-200/90 bg-purple-50/50 rounded-r-lg py-1 space-y-0.5 max-w-full">
-                         {childItems.map((child) => (
+                         {childItems.map((child) => {
+                            const childHit =
+                              searchActiveForNest && matchesInventorySearch(child, searchQuery);
+                            return (
                             <button
                               key={child.id}
                               type="button"
@@ -2391,85 +2372,32 @@ const InventoryList: React.FC<Props> = ({
                               }}
                               className="w-full text-left group/child"
                             >
-                              <div className="flex items-center justify-between gap-2 py-1 px-2 rounded-md hover:bg-purple-100/60 transition-colors">
+                              <div
+                                className={`flex items-center justify-between gap-2 py-1 px-2 rounded-md transition-colors ${
+                                  childHit
+                                    ? 'bg-amber-100/80 ring-1 ring-amber-200/80'
+                                    : 'hover:bg-purple-100/60'
+                                }`}
+                              >
                                 <span className="text-[11px] font-medium text-slate-700 truncate min-w-0 group-hover/child:text-purple-800">
                                   {child.name}
                                 </span>
                                 <span className="text-[10px] font-semibold text-slate-500 shrink-0 tabular-nums flex items-center gap-1">
+                                  {!isSoldContainerRow && child.buyPrice != null && (
+                                    <span className="text-slate-600">€{formatEUR(child.buyPrice)}</span>
+                                  )}
                                   <Calendar size={9} className="opacity-60" />
                                   {formatChildListDate(child)}
                                 </span>
                               </div>
                             </button>
-                         ))}
-                      </div>
-                   )}
-                   {isExpanded && childItems.length > 0 && !isSoldContainerRow && (
-                      <div className="mt-3 ml-4 pl-4 border-l-2 border-slate-200 space-y-2">
-                         <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Components:</p>
-                         {childItems.map(child => {
-                            const breakdown = bundleComponentBreakdown(item, items).find((b) => b.item.id === child.id);
-                            const childMargin = breakdown?.profit ?? (child.profit != null ? child.profit : (child.sellPrice && child.buyPrice ? child.sellPrice - child.buyPrice - (child.feeAmount || 0) : null));
-                            return (
-                               <button
-                                 key={child.id}
-                                 type="button"
-                                 onClick={(e) => {
-                                   e.stopPropagation();
-                                   handleEditClick(child);
-                                 }}
-                                 className="w-full text-left"
-                               >
-                                 <div className="flex items-center justify-between gap-2 text-xs bg-slate-50 hover:bg-slate-100 p-2 rounded-lg transition-colors">
-                                   <span className="font-medium text-slate-700 truncate flex-1">
-                                     {child.name}
-                                   </span>
-                                   <div className="flex items-center gap-3 text-[10px] shrink-0">
-                                      {childMargin != null && (
-                                         <span className={`font-bold px-1.5 py-0.5 rounded ${childMargin >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                                            {childMargin >= 0 ? '+' : ''}€{formatEUR(childMargin)}
-                                         </span>
-                                      )}
-                                      {child.buyDate && (
-                                         <span className="flex items-center gap-1 text-slate-500">
-                                            <Calendar size={10} />
-                                            Buy: {new Date(child.buyDate).toLocaleDateString()}
-                                            {child.buyPrice != null && (
-                                              <span className="font-semibold text-slate-600">· €{formatEUR(child.buyPrice)}</span>
-                                            )}
-                                         </span>
-                                      )}
-                                      {child.sellDate && (
-                                         <span className="flex items-center gap-1 text-emerald-600">
-                                            <Calendar size={10} />
-                                            Sold: {new Date(child.sellDate).toLocaleDateString()}
-                                         </span>
-                                      )}
-                                   </div>
-                                 </div>
-                               </button>
                             );
                          })}
-                         {/* Total margin summary */}
-                         {(() => {
-                            const totalMargin = childItems.reduce((sum, child) => {
-                               const childMargin = child.profit != null ? child.profit : (child.sellPrice && child.buyPrice ? child.sellPrice - child.buyPrice - (child.feeAmount || 0) : 0);
-                               return sum + childMargin;
-                            }, 0);
-                            if (totalMargin !== 0 || childItems.some(c => c.sellPrice)) {
-                               return (
-                                  <div className="mt-2 pt-2 border-t border-slate-200 bg-slate-100/50 p-2 rounded-lg">
-                                     <div className="flex items-center justify-between">
-                                        <span className="text-[9px] font-black uppercase text-slate-600 tracking-widest">Total Margin:</span>
-                                        <span className={`text-sm font-black ${totalMargin >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                                           {totalMargin >= 0 ? '+' : ''}€{formatEUR(totalMargin)}
-                                        </span>
-                                     </div>
-                                  </div>
-                               );
-                            }
-                            return null;
-                         })()}
+                         {!isSoldContainerRow && (
+                           <p className="px-2 pt-0.5 text-[9px] font-bold uppercase tracking-wider text-purple-600/80">
+                             Total cost €{formatEUR(item.buyPrice)} · {childItems.length} parts
+                           </p>
+                         )}
                       </div>
                    )}
                 </div>
@@ -3922,6 +3850,8 @@ const InventoryList: React.FC<Props> = ({
               const tradeReceived = resolveTradeReceivedItems(item, itemsById);
               const tradeSource = resolveTradeSourceItem(item, itemsById);
               const mobileChildItems = (item.isPC || item.isBundle) ? getChildren(item, items) : [];
+              const mobileSearchQuery = searchTerm.trim();
+              const mobileSearchActive = mobileSearchQuery.length >= 2;
               const isSoldContainerRow =
                 (item.isPC || item.isBundle) && isRealizedDisposal(item) && mobileChildItems.length > 0;
               const mobileSoldTotals = isSoldContainerRow
@@ -4011,21 +3941,29 @@ const InventoryList: React.FC<Props> = ({
                     )}
                     {isSoldContainerRow && (
                       <div className="mt-2 pl-3 border-l-2 border-purple-200/90 bg-purple-50/50 rounded-r-lg py-1 space-y-0.5">
-                        {mobileChildItems.map((child) => (
+                        {mobileChildItems.map((child) => {
+                          const childHit =
+                            mobileSearchActive && matchesInventorySearch(child, mobileSearchQuery);
+                          return (
                           <button
                             key={child.id}
                             type="button"
                             onClick={() => handleEditClick(child)}
                             className="w-full text-left"
                           >
-                            <div className="flex items-center justify-between gap-2 py-1 px-2 rounded-md active:bg-purple-100/60">
+                            <div
+                              className={`flex items-center justify-between gap-2 py-1 px-2 rounded-md ${
+                                childHit ? 'bg-amber-100/80 ring-1 ring-amber-200/80' : 'active:bg-purple-100/60'
+                              }`}
+                            >
                               <span className="text-[11px] font-medium text-slate-700 truncate">{child.name}</span>
                               <span className="text-[10px] font-semibold text-slate-500 shrink-0 tabular-nums">
                                 {formatMobileChildDate(child)}
                               </span>
                             </div>
                           </button>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
