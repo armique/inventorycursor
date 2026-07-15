@@ -460,9 +460,10 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
       matchesStatus = true;
     }
     if (!matchesStatus) return false;
-    // Bundle/PC components always render nested under the parent — never as top-level rows
-    // (unless "in composition" flat view). Search includes the parent when a child matches.
-    if (shouldHideContainerChildInList(item, items, { showInComposition })) return false;
+    // Bundle/PC/lot components always nest under the parent — never as top-level rows.
+    // Search still surfaces the parent when a child matches.
+    if (shouldHideContainerChildInList(item, items)) return false;
+    // Orphan "in composition" rows (no parent container) respect the visibility toggle.
     if (!searchActive && !showInComposition && item.status === ItemStatus.IN_COMPOSITION) return false;
 
     // While actively searching, ignore the category filter entirely so search is always global —
@@ -625,8 +626,8 @@ const InventoryList: React.FC<Props> = ({
   const filtersPanelRef = useRef<HTMLDivElement>(null);
   const filtersButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Visibility toggle for items that are part of a PC / bundle composition
-  const [showInComposition, setShowInComposition] = useState<boolean>(() => loadState<boolean>('show_in_composition', true));
+  // Visibility toggle for orphan "In Composition" items (container children always nest under parent)
+  const [showInComposition, setShowInComposition] = useState<boolean>(() => loadState<boolean>('show_in_composition', false));
 
   /** Expanded bundle/PC rows showing nested children (active + sold). */
   const [expandedBundles, setExpandedBundles] = useState<Set<string>>(() => new Set());
@@ -1281,8 +1282,9 @@ const InventoryList: React.FC<Props> = ({
       else matchesStatus = true;
       if (!matchesStatus) return false;
 
-      // Optional visibility toggle for "In Composition" items
+      // Optional visibility toggle for orphan "In Composition" items (container children always nest)
       if (!showInComposition && item.status === ItemStatus.IN_COMPOSITION) return false;
+      if (shouldHideContainerChildInList(item, items)) return false;
       if (categoryFilter !== 'ALL' || subCategoryFilter) {
         const matchParentAndSub = categoryFilter !== 'ALL' && item.category === categoryFilter && (!subCategoryFilter || item.subCategory === subCategoryFilter);
         const matchSubAsTopLevel = subCategoryFilter && item.category === subCategoryFilter;
@@ -2183,15 +2185,12 @@ const InventoryList: React.FC<Props> = ({
           </td>
         );
       case 'item':
-        const childItems = (item.isPC || item.isBundle)
-          ? getChildren(item, items)
-          : [];
+        const isContainerRow = isInventoryContainer(item);
+        const childItems = isContainerRow ? getChildren(item, items) : [];
         const isEditingName = editingCell?.itemId === item.id && editingCell?.field === 'item';
-        const compositionFlatView = showInComposition && searchTerm.trim().length < 2;
         const searchQuery = searchTerm.trim();
         const searchActiveForNest = searchQuery.length >= 2;
-        const isGroupedContainerRow =
-          (item.isPC || item.isBundle) && childItems.length > 0 && !compositionFlatView;
+        const isGroupedContainerRow = isContainerRow && childItems.length > 0;
         const isBundleBodyExpanded = isGroupedContainerRow && expandedBundles.has(item.id);
         const isSoldContainerRow = isGroupedContainerRow && isRealizedDisposal(item);
         const formatChildListDate = (child: InventoryItem) => {
@@ -3047,7 +3046,7 @@ const InventoryList: React.FC<Props> = ({
      setSelectedIds([]);
   };
 
-  const hasActiveFilters = statusFilter !== 'ACTIVE' || categoryFilter !== 'ALL' || subCategoryFilter || timeFilter !== 'ALL' || salePlatformFilter !== 'ALL' || salePaymentFilter !== 'ALL' || isAmountFilterActive(amountFilter) || activeSpecFilterCount > 0 || !showInComposition;
+  const hasActiveFilters = statusFilter !== 'ACTIVE' || categoryFilter !== 'ALL' || subCategoryFilter || timeFilter !== 'ALL' || salePlatformFilter !== 'ALL' || salePaymentFilter !== 'ALL' || isAmountFilterActive(amountFilter) || activeSpecFilterCount > 0;
   const clearAllFilters = () => {
     setStatusFilter('ACTIVE');
     setCategoryFilter('ALL');
@@ -3497,10 +3496,14 @@ const InventoryList: React.FC<Props> = ({
                    ? 'border-slate-200 text-slate-600 bg-white hover:bg-slate-50'
                    : 'border-blue-500 text-blue-600 bg-blue-50'
                }`}
-               title={showInComposition ? 'Hide items that are in a PC/bundle composition' : 'Show items that are in a PC/bundle composition'}
+               title={
+                 showInComposition
+                   ? 'Hide orphan in-composition items (bundle/PC parts always nest under their parent)'
+                   : 'Show orphan in-composition items (bundle/PC parts always nest under their parent)'
+               }
             >
                <Hourglass size={11} />
-               {showInComposition ? 'In composition: shown' : 'In composition: hidden'}
+               {showInComposition ? 'Orphans: shown' : 'Orphans: hidden'}
             </button>
             {(splitView || (statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS')) && (
                <>
@@ -3979,11 +3982,11 @@ const InventoryList: React.FC<Props> = ({
               const showMembershipBadge = Boolean(parentKind && parentContainer && !item.isPC && !item.isBundle);
               const tradeReceived = resolveTradeReceivedItems(item, itemsById);
               const tradeSource = resolveTradeSourceItem(item, itemsById);
-              const mobileChildItems = (item.isPC || item.isBundle) ? getChildren(item, items) : [];
+              const mobileChildItems = isInventoryContainer(item) ? getChildren(item, items) : [];
               const mobileSearchQuery = searchTerm.trim();
               const mobileSearchActive = mobileSearchQuery.length >= 2;
               const isSoldContainerRow =
-                (item.isPC || item.isBundle) && isRealizedDisposal(item) && mobileChildItems.length > 0;
+                isInventoryContainer(item) && isRealizedDisposal(item) && mobileChildItems.length > 0;
               const isMobileBundleExpanded = isSoldContainerRow && expandedBundles.has(item.id);
               const mobileSoldTotals = isSoldContainerRow
                 ? getSoldContainerDisplayTotals(item, items, businessSettings.taxMode)
@@ -4042,11 +4045,15 @@ const InventoryList: React.FC<Props> = ({
                         </button>
                       )}
                       <div className="min-w-0">
-                      <p className={`font-black text-sm leading-snug ${
+                      <button
+                        type="button"
+                        onClick={() => handleEditClick(item)}
+                        className={`font-black text-sm leading-snug text-left w-full ${
                         item.isPC ? 'text-indigo-950' : isSoldContainerRow ? 'text-violet-950' : 'text-slate-900'
-                      }`}>
+                      }`}
+                      >
                         {item.name}
-                      </p>
+                      </button>
                       {isSoldContainerRow && (
                         <span className={`mt-1 inline-flex items-center gap-0.5 text-[9px] font-black uppercase px-1.5 py-0.5 rounded text-white ${
                           item.isPC ? 'bg-indigo-600' : 'bg-violet-600'

@@ -62,13 +62,12 @@ export function getParentContainer(item: InventoryItem, items: InventoryItem[]):
   );
 }
 
-/** Hide bundle/PC component rows — they render nested under the parent. */
+/** Hide bundle/PC component rows — they always render nested under the parent. */
 export function shouldHideContainerChildInList(
   item: InventoryItem,
   items: InventoryItem[],
-  opts?: { showInComposition?: boolean }
+  _opts?: { showInComposition?: boolean }
 ): boolean {
-  if (opts?.showInComposition) return false;
   if (item.isBundle || item.isPC) return false;
   const parent = getParentContainer(item, items);
   if (!parent || (!parent.isBundle && !parent.isPC)) return false;
