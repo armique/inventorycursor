@@ -3,6 +3,7 @@
  * All money math uses JavaScript numbers (IEEE-754); display uses formatEUR() separately — commas never enter calculations.
  */
 import { InventoryItem, ItemStatus, TaxMode } from '../types';
+import { isRealizedDisposal } from '../utils/itemDisposition';
 
 export function roundMoney(n: number): number {
   const x = Number(n);
@@ -47,6 +48,69 @@ export function isBundleSoldOnParentOnly(parent: InventoryItem, items: Inventory
   const children = getChildren(parent, items);
   if (children.length === 0) return false;
   return children.some((c) => c.status === ItemStatus.IN_COMPOSITION);
+}
+
+export function getParentContainer(item: InventoryItem, items: InventoryItem[]): InventoryItem | undefined {
+  if (item.parentContainerId) {
+    const direct = items.find((i) => i.id === item.parentContainerId);
+    if (direct) return direct;
+  }
+  return items.find(
+    (p) =>
+      (p.isBundle || p.isPC) &&
+      (p.componentIds || []).includes(item.id)
+  );
+}
+
+/** Hide sold bundle/PC component rows — they render nested under the parent in the sold list. */
+export function shouldHideSoldContainerChildInList(
+  item: InventoryItem,
+  items: InventoryItem[],
+  statusFilter: 'ACTIVE' | 'SOLD' | 'DRAFTS' | 'ALL',
+  searchActive: boolean
+): boolean {
+  if (statusFilter !== 'SOLD' || searchActive) return false;
+  if (item.isBundle || item.isPC) return false;
+  const parent = getParentContainer(item, items);
+  if (!parent || (!parent.isBundle && !parent.isPC)) return false;
+  if (!isRealizedDisposal(parent)) return false;
+  return true;
+}
+
+export type SoldContainerDisplayTotals = {
+  sellPrice: number | null;
+  profit: number | null;
+};
+
+/** Aggregated sell price + profit for a sold bundle/PC row in the inventory list. */
+export function getSoldContainerDisplayTotals(
+  container: InventoryItem,
+  items: InventoryItem[],
+  taxMode: TaxMode
+): SoldContainerDisplayTotals {
+  if (!isRealizedDisposal(container)) return { sellPrice: null, profit: null };
+  const children = getChildren(container, items);
+  if (children.length === 0) {
+    const sellPrice = Number(container.sellPrice) || 0;
+    if (!sellPrice) return { sellPrice: null, profit: null };
+    return {
+      sellPrice: roundMoney(sellPrice),
+      profit: roundMoney(computeItemProfitBeforeOverhead(container, taxMode)),
+    };
+  }
+  if (isSoldWithProportionalChildren(container, items)) {
+    const sellPrice = children.reduce((s, c) => s + (Number(c.sellPrice) || 0), 0);
+    const profit = children.reduce((s, c) => s + computeItemProfitBeforeOverhead(c, taxMode), 0);
+    return { sellPrice: roundMoney(sellPrice), profit: roundMoney(profit) };
+  }
+  const parentSell = Number(container.sellPrice) || 0;
+  if (parentSell > 0) {
+    return {
+      sellPrice: roundMoney(parentSell),
+      profit: roundMoney(computeItemProfitBeforeOverhead(container, taxMode)),
+    };
+  }
+  return { sellPrice: null, profit: null };
 }
 
 /** Sold / traded revenue & profit: same rows as Finanzamt ware sheet. */

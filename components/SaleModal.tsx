@@ -463,93 +463,93 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
       onDropCapture={handleEbayScreenshotDropCapture}
     >
       <div
-        className={`bg-white w-full max-w-2xl rounded-t-[2rem] sm:rounded-[3rem] shadow-2xl border overflow-hidden flex flex-col max-h-[92dvh] sm:max-h-[90vh] transition-shadow duration-150 ${
+        className={`bg-white w-full max-w-2xl rounded-t-2xl sm:rounded-2xl shadow-2xl border overflow-hidden flex flex-col max-h-[92dvh] sm:max-h-[88vh] transition-shadow duration-150 ${
           ebayScreenshotDragOver && isEbayScreenshotDropActive
             ? 'border-indigo-400 ring-4 ring-indigo-300/40 shadow-indigo-100'
             : 'border-slate-100'
         }`}
       >
-        <header className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/30 shrink-0">
-          <div>
-            <h2 className="text-2xl font-black text-slate-900 tracking-tight">
-              {isEditBuyer ? 'Buyer & sale details' : 'Finalize Transaction'}
+        <header className="px-4 py-3 sm:px-5 sm:py-3.5 border-b border-slate-100 flex justify-between items-center bg-slate-50/40 shrink-0">
+          <div className="min-w-0 pr-2">
+            <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight truncate">
+              {isEditBuyer ? 'Buyer & sale details' : 'Mark as sold'}
             </h2>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">
-              {isEditBuyer ? 'Update buyer data for invoice / records' : 'Invoice Generation Engine'}
+            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5 truncate">
+              {item.name}
             </p>
           </div>
-          <button onClick={onClose} className="p-3 hover:bg-white rounded-2xl transition-all text-slate-400"><X size={24} /></button>
+          <button onClick={onClose} className="p-2 hover:bg-white rounded-xl transition-all text-slate-400 shrink-0"><X size={20} /></button>
         </header>
 
-        <div className="p-8 space-y-8 overflow-y-auto scrollbar-hide flex-1">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="space-y-6">
+        <div className="px-4 py-4 sm:px-5 sm:py-4 space-y-4 overflow-y-auto scrollbar-hide flex-1">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-5">
+            <div className="space-y-3">
               {item.quantity != null && item.quantity > 1 ? (
                 <>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Quantity & Unit Price</label>
-                    <div className="flex gap-3">
-                      <div className="w-28">
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-0.5">Quantity & unit price</label>
+                    <div className="flex gap-2">
+                      <div className="w-20 shrink-0">
                         <input
                           type="number"
                           min="1"
                           max={item.quantity}
-                          className="w-full px-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-lg text-center"
+                          className="w-full px-2 py-2 bg-slate-50 border border-slate-200 rounded-xl font-black text-base text-center"
                           value={quantityToSell}
                           onChange={(e) => setQuantityToSell(Math.max(1, Math.min(item.quantity || 1, parseInt(e.target.value) || 1)))}
                         />
-                        <span className="text-[9px] text-slate-400 font-bold block text-center mt-1">of {item.quantity} in stock</span>
+                        <span className="text-[8px] text-slate-400 font-bold block text-center mt-0.5">of {item.quantity}</span>
                       </div>
-                      <div className="relative flex-1">
-                        <Euro className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                      <div className="relative flex-1 min-w-0">
+                        <Euro className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
                         <input
                           type="text"
                           inputMode="decimal"
                           placeholder="0.00"
-                          className="w-full pl-10 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-lg"
+                          className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-black text-base"
                           value={unitPrice}
                           onChange={(e) => setUnitPrice(e.target.value)}
                         />
-                        <span className="text-[9px] text-slate-400 font-bold block mt-1 ml-1">
-                          Total Revenue: €{((quantityToSell * (parseFloat(unitPrice) || 0))).toFixed(2)}
+                        <span className="text-[8px] text-slate-400 font-bold block mt-0.5 ml-0.5">
+                          Total: €{((quantityToSell * (parseFloat(unitPrice) || 0))).toFixed(2)}
                         </span>
                       </div>
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Sale Date</label>
-                    <input type="date" className="w-full px-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} />
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-0.5">Sale date</label>
+                    <input type="date" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} />
                   </div>
                 </>
               ) : (
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Price & Date</label>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-0.5">Price & date</label>
                   <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <Euro className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                      <input type="text" inputMode="decimal" placeholder="0.00" className="w-full pl-10 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-lg" value={salePrice} onChange={(e) => setSalePrice(e.target.value)} />
+                    <div className="relative flex-1 min-w-0">
+                      <Euro className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
+                      <input type="text" inputMode="decimal" placeholder="0.00" className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-black text-base" value={salePrice} onChange={(e) => setSalePrice(e.target.value)} />
                     </div>
-                    <input type="date" className="flex-1 px-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} />
+                    <input type="date" className="w-[9.5rem] shrink-0 px-2 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} />
                   </div>
                 </div>
               )}
 
-              <div className="space-y-3">
+              <div className="space-y-2">
                 <label
-                  className={`flex items-start gap-3 p-4 border rounded-2xl cursor-pointer transition-all ${
+                  className={`flex items-center gap-2.5 px-3 py-2 border rounded-xl cursor-pointer transition-all ${
                     sellerPaidShipping
                       ? 'border-sky-300 bg-sky-50/80'
                       : 'border-slate-200 hover:bg-slate-50'
                   }`}
                 >
                   <div
-                    className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${
+                    className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all ${
                       sellerPaidShipping
                         ? 'bg-sky-500 border-sky-500 text-white'
                         : 'border-slate-300 bg-white'
                     }`}
                   >
-                    {sellerPaidShipping && <Check size={14} />}
+                    {sellerPaidShipping && <Check size={12} />}
                   </div>
                   <input
                     type="checkbox"
@@ -558,29 +558,25 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
                     onChange={(e) => setSellerPaidShipping(e.target.checked)}
                   />
                   <div className="flex-1 min-w-0">
-                    <p className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                      <Truck size={14} className="text-sky-600 shrink-0" />
+                    <p className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                      <Truck size={12} className="text-sky-600 shrink-0" />
                       I paid for shipping
                     </p>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
-                      Use when the buyer paid you a lump sum (e.g. PayPal €115) that includes postage you
-                      bought separately — we deduct shipping from revenue before profit.
+                    <p className="text-[9px] text-slate-500 leading-snug">
+                      Deduct postage from lump-sum payment before profit.
                     </p>
                   </div>
                 </label>
 
                 {sellerPaidShipping && (
-                  <div className="animate-in slide-in-from-top-2 fade-in pl-1">
-                    <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest mb-1 block">
-                      Shipping cost you paid (€)
-                    </label>
+                  <div className="animate-in slide-in-from-top-2 fade-in">
                     <div className="relative">
-                      <Euro className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                      <Euro className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
                       <input
                         type="text"
                         inputMode="decimal"
-                        placeholder="7.69"
-                        className="w-full pl-10 pr-4 py-4 bg-white border-2 border-sky-100 rounded-2xl outline-none focus:border-sky-400 font-black text-lg text-slate-900"
+                        placeholder="Shipping cost (€)"
+                        className="w-full pl-8 pr-3 py-2 bg-white border border-sky-100 rounded-xl outline-none focus:border-sky-400 font-bold text-sm text-slate-900"
                         value={sellerShippingAmount}
                         onChange={(e) => setSellerShippingAmount(e.target.value)}
                         onClick={(e) => e.stopPropagation()}
@@ -590,9 +586,9 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
                 )}
               </div>
 
-              <div className="space-y-3">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2"><Globe size={12}/> Sold On</label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <div className="space-y-2">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-0.5 flex items-center gap-1.5"><Globe size={11}/> Sold on</label>
+                <div className="flex flex-wrap gap-1.5">
                    {SALE_PLATFORM_OPTIONS.filter((p) => ['ebay.de', 'kleinanzeigen.de', 'In Person'].includes(p.value)).map((p) => (
                       <button
                         key={p.value}
@@ -601,14 +597,14 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
                           setPlatformSold(p.value);
                           if (p.value === 'In Person' && paymentType === 'ebay.de') setPaymentType('Cash');
                         }}
-                        className={`py-3 rounded-xl border text-[10px] font-black uppercase transition-all ${platformSold === p.value ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-100 text-slate-500 hover:bg-slate-50'}`}
+                        className={`px-3 py-1.5 rounded-lg border text-[9px] font-black uppercase transition-all ${platformSold === p.value ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}
                       >
                         {p.value === 'In Person' ? 'In person' : p.label}
                       </button>
                    ))}
                 </div>
                 <select
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs outline-none"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs outline-none"
                   value={platformSold}
                   onChange={(e) => setPlatformSold(e.target.value as Platform)}
                 >
@@ -619,133 +615,128 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
               </div>
 
               {platformSold === 'In Person' && (
-                 <div className="p-4 bg-violet-50 rounded-2xl border border-violet-100 text-xs text-violet-900">
-                    Local pickup / buyer came to your place. Cash or bank transfer is typical — buyer details below can go on the invoice.
+                 <div className="px-3 py-2 bg-violet-50 rounded-xl border border-violet-100 text-[10px] text-violet-900 leading-snug">
+                    Local pickup — cash or bank transfer typical.
                  </div>
               )}
 
               {platformSold === 'kleinanzeigen.de' && (
-                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                 <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
                     <div className="space-y-1">
-                       <label className="text-[9px] font-black uppercase text-slate-400 ml-1 flex items-center gap-1"><LinkIcon size={10}/> Chat Link</label>
+                       <label className="text-[8px] font-black uppercase text-slate-400 flex items-center gap-1"><LinkIcon size={9}/> Chat link</label>
                        <input
                           type="text"
                           placeholder="https://www.kleinanzeigen.de/..."
-                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none focus:border-blue-500"
                           value={kleinanzeigenChatUrl}
                           onChange={e => setKleinanzeigenChatUrl(e.target.value)}
                        />
                     </div>
                     <div className="space-y-1">
-                       <label className="text-[9px] font-black uppercase text-slate-400 ml-1 flex items-center gap-1"><MessageCircle size={10}/> Screenshot</label>
-                       <div className="flex gap-2">
-                          <div className="relative flex-1">
+                       <label className="text-[8px] font-black uppercase text-slate-400 flex items-center gap-1"><MessageCircle size={9}/> Screenshot</label>
+                       <div className="flex gap-1.5">
+                          <div className="relative flex-1 min-w-0">
                              <input
                                 type="text"
-                                placeholder="Upload or paste URL..."
-                                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
+                                placeholder="Upload or paste URL…"
+                                className="w-full px-2.5 py-1.5 pr-8 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none focus:border-blue-500"
                                 value={kleinanzeigenChatImage}
                                 onChange={e => { setKleinanzeigenChatImage(e.target.value); setKaChatParseError(null); }}
                              />
-                             <div className="absolute right-2 top-1/2 -translate-y-1/2">
-                                <label className="p-1.5 cursor-pointer text-slate-400 hover:text-blue-500 transition-colors bg-slate-50 rounded-lg border border-slate-200">
-                                   <Upload size={12}/>
-                                   <input type="file" accept="image/*" className="hidden" onChange={handleChatImageUpload}/>
-                                </label>
-                             </div>
+                             <label className="absolute right-1 top-1/2 -translate-y-1/2 p-1 cursor-pointer text-slate-400 hover:text-blue-500 transition-colors">
+                                <Upload size={11}/>
+                                <input type="file" accept="image/*" className="hidden" onChange={handleChatImageUpload}/>
+                             </label>
                           </div>
                           {kleinanzeigenChatImage && (
-                             <a href={kleinanzeigenChatImage} target="_blank" rel="noreferrer" className="w-9 h-9 rounded-lg overflow-hidden border border-slate-200 shrink-0 bg-white">
+                             <a href={kleinanzeigenChatImage} target="_blank" rel="noreferrer" className="w-8 h-8 rounded-lg overflow-hidden border border-slate-200 shrink-0 bg-white">
                                 <img src={kleinanzeigenChatImage} className="w-full h-full object-cover" alt="" />
                              </a>
                           )}
+                          <button
+                             type="button"
+                             onClick={handleParseKleinanzeigenChat}
+                             disabled={kaChatParsing || !kleinanzeigenChatImage.trim()}
+                             className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 bg-emerald-600 text-white rounded-lg text-[9px] font-black uppercase hover:bg-emerald-700 disabled:opacity-50"
+                          >
+                             <Sparkles size={11} className={kaChatParsing ? 'animate-spin' : ''} />
+                             {kaChatParsing ? '…' : 'Parse'}
+                          </button>
                        </div>
-                       <button
-                          type="button"
-                          onClick={handleParseKleinanzeigenChat}
-                          disabled={kaChatParsing || !kleinanzeigenChatImage.trim()}
-                          className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50"
-                       >
-                          <Sparkles size={12} className={kaChatParsing ? 'animate-spin' : ''} />
-                          {kaChatParsing ? 'Parsing chat…' : 'Parse chat (AI)'}
-                       </button>
                        {kaChatParseError && (
-                          <p className="text-[10px] text-red-600 font-bold mt-1">{kaChatParseError}</p>
+                          <p className="text-[9px] text-red-600 font-bold">{kaChatParseError}</p>
                        )}
                     </div>
                  </div>
               )}
 
               {platformSold === 'ebay.de' && (
-                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                 <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
                     <div className="space-y-1">
-                       <label className="text-[9px] font-black uppercase text-slate-400 ml-1 flex items-center gap-1"><Sparkles size={10}/> Order screenshot (AI)</label>
+                       <label className="text-[8px] font-black uppercase text-slate-400 flex items-center gap-1"><Sparkles size={9}/> Order screenshot (AI)</label>
                        <div
-                          className={`mt-2 flex flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed px-4 py-5 text-center pointer-events-none select-none transition-colors ${
+                          className={`flex items-center justify-center gap-2 rounded-lg border border-dashed px-3 py-2 text-center pointer-events-none select-none transition-colors ${
                              ebayScreenshotDragOver
                                 ? 'border-indigo-500 bg-indigo-50/80'
                                 : 'border-slate-200 bg-white/80'
                           }`}
                        >
-                          <ImagePlus className={`shrink-0 ${ebayScreenshotDragOver ? 'text-indigo-600' : 'text-slate-400'}`} size={22} strokeWidth={1.75} />
-                          <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">
-                             Drop screenshot here
+                          <ImagePlus className={`shrink-0 ${ebayScreenshotDragOver ? 'text-indigo-600' : 'text-slate-400'}`} size={16} strokeWidth={1.75} />
+                          <span className="text-[9px] font-bold text-slate-500">
+                             Drop screenshot or use URL / upload below
                           </span>
-                          <span className="text-[9px] text-slate-400">or use URL / Upload below — max 6MB</span>
                        </div>
-                       <div className="flex flex-col sm:flex-row gap-2 mt-2">
+                       <div className="flex flex-wrap gap-1.5">
                           <input
                              type="text"
-                             placeholder="https://i.imgur.com/....jpg"
-                             className="flex-1 min-w-0 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
+                             placeholder="https://i.imgur.com/….jpg"
+                             className="flex-1 min-w-[10rem] px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none focus:border-blue-500"
                              value={orderScreenshotSource.startsWith('data:') ? '' : orderScreenshotSource}
                              onChange={(e) => { setOrderScreenshotSource(e.target.value); setOrderScreenshotError(null); }}
                           />
-                          <div className="flex gap-2 shrink-0">
-                             <label className="flex items-center justify-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase cursor-pointer hover:bg-slate-50 text-slate-600">
-                                <Upload size={12}/>
-                                Upload
-                                <input type="file" accept="image/*" className="hidden" onChange={handleOrderScreenshotUpload} />
-                             </label>
-                             <button
-                                type="button"
-                                onClick={handleParseOrderScreenshot}
-                                disabled={orderScreenshotParsing}
-                                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                             >
-                                <Sparkles size={12}/>
-                                {orderScreenshotParsing ? 'Parsing…' : 'Parse'}
-                             </button>
-                          </div>
+                          <label className="flex items-center gap-1 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-[9px] font-black uppercase cursor-pointer hover:bg-slate-50 text-slate-600 shrink-0">
+                             <Upload size={11}/>
+                             Upload
+                             <input type="file" accept="image/*" className="hidden" onChange={handleOrderScreenshotUpload} />
+                          </label>
+                          <button
+                             type="button"
+                             onClick={handleParseOrderScreenshot}
+                             disabled={orderScreenshotParsing}
+                             className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-600 text-white rounded-lg text-[9px] font-black uppercase hover:bg-indigo-700 disabled:opacity-50 shrink-0"
+                          >
+                             <Sparkles size={11}/>
+                             {orderScreenshotParsing ? 'Parsing…' : 'Parse'}
+                          </button>
                        </div>
                        {orderScreenshotSource.startsWith('data:') && (
-                          <div className="flex items-center gap-2 ml-1 flex-wrap">
-                             <p className="text-[10px] text-slate-500">Image loaded from device — click Parse.</p>
-                             <button type="button" onClick={() => { setOrderScreenshotSource(''); setOrderScreenshotError(null); }} className="text-[10px] font-bold text-indigo-600 hover:underline">Clear</button>
+                          <div className="flex items-center gap-2 flex-wrap">
+                             <p className="text-[9px] text-slate-500">Image loaded — click Parse.</p>
+                             <button type="button" onClick={() => { setOrderScreenshotSource(''); setOrderScreenshotError(null); }} className="text-[9px] font-bold text-indigo-600 hover:underline">Clear</button>
                           </div>
                        )}
                        {orderScreenshotError && (
-                          <p className="text-xs text-red-600 font-medium ml-1">{orderScreenshotError}</p>
+                          <p className="text-[10px] text-red-600 font-medium">{orderScreenshotError}</p>
                        )}
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                       <div className="space-y-1">
-                          <label className="text-[9px] font-black uppercase text-slate-400 ml-1 flex items-center gap-1"><User size={10}/> eBay User</label>
+                    <div className="grid grid-cols-2 gap-2">
+                       <div className="space-y-1 min-w-0">
+                          <label className="text-[8px] font-black uppercase text-slate-400 flex items-center gap-1"><User size={9}/> eBay user</label>
                           <input
                              type="text"
                              placeholder="buyer_123"
-                             className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
+                             className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none focus:border-blue-500"
                              value={ebayUsername}
                              onChange={e => setEbayUsername(e.target.value)}
                           />
                        </div>
-                       <div className="space-y-1">
-                          <label className="text-[9px] font-black uppercase text-slate-400 ml-1 flex items-center gap-1"><Hash size={10}/> Order ID</label>
-                          <div className="flex gap-2">
+                       <div className="space-y-1 min-w-0">
+                          <label className="text-[8px] font-black uppercase text-slate-400 flex items-center gap-1"><Hash size={9}/> Order ID</label>
+                          <div className="flex gap-1">
                             <input
                                type="text"
                                placeholder="12-34567-89012"
-                               className="flex-1 min-w-0 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
+                               className="flex-1 min-w-0 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none focus:border-blue-500"
                                value={ebayOrderId}
                                onChange={(e) => {
                                  setEbayOrderId(e.target.value);
@@ -759,15 +750,15 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
                               type="button"
                               onClick={() => void fillFromOrderId(ebayOrderId)}
                               disabled={orderIdLookupLoading || !ebayOrderId.trim()}
-                              className="shrink-0 flex items-center gap-1 px-2.5 py-2 bg-slate-800 text-white rounded-xl text-[9px] font-black uppercase hover:bg-slate-900 disabled:opacity-50"
+                              className="shrink-0 flex items-center gap-0.5 px-2 py-1.5 bg-slate-800 text-white rounded-lg text-[8px] font-black uppercase hover:bg-slate-900 disabled:opacity-50"
                               title="Fill buyer from order cache or eBay API"
                             >
-                              {orderIdLookupLoading ? <Loader2 size={12} className="animate-spin" /> : <Database size={12} />}
+                              {orderIdLookupLoading ? <Loader2 size={11} className="animate-spin" /> : <Database size={11} />}
                               Load
                             </button>
                           </div>
                           {orderIdLookupMessage && (
-                            <p className={`text-[10px] font-bold mt-1 ${orderIdLookupMessage.includes('filled') || orderIdLookupMessage.includes('Filled') ? 'text-emerald-600' : 'text-slate-500'}`}>
+                            <p className={`text-[9px] font-bold ${orderIdLookupMessage.includes('filled') || orderIdLookupMessage.includes('Filled') ? 'text-emerald-600' : 'text-slate-500'}`}>
                               {orderIdLookupMessage}
                             </p>
                           )}
@@ -776,79 +767,66 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
                  </div>
               )}
 
-              <div className="space-y-3">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Payment Method</label>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-0.5">Payment method</label>
                 <div className="relative">
                    <select
-                      className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-xs outline-none appearance-none cursor-pointer"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs outline-none appearance-none cursor-pointer"
                       value={paymentType}
                       onChange={(e) => setPaymentType(e.target.value as PaymentType)}
                    >
                       {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
                    </select>
-                   <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
+                   <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
                 </div>
               </div>
             </div>
 
-            <div className="space-y-4">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2"><User size={12}/> Buyer Data (For Invoice)</label>
-              <input type="text" placeholder="Buyer Full Name" className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold" value={customer.name} onChange={e => setCustomer({...customer, name: e.target.value})} />
-              <textarea placeholder="Full Shipping Address" rows={3} className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold" value={customer.address} onChange={e => setCustomer({...customer, address: e.target.value})} />
+            <div className="space-y-2">
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-0.5 flex items-center gap-1.5"><User size={11}/> Buyer (invoice)</label>
+              <input type="text" placeholder="Buyer full name" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold" value={customer.name} onChange={e => setCustomer({...customer, name: e.target.value})} />
+              <textarea placeholder="Shipping address" rows={2} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold resize-none" value={customer.address} onChange={e => setCustomer({...customer, address: e.target.value})} />
             </div>
           </div>
         </div>
 
-        <footer className="p-8 bg-slate-50/50 border-t border-slate-100 flex flex-col gap-3 shrink-0">
-          {previewReceived != null && previewProfit != null && !isEditBuyer && (
-            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs space-y-1">
-              <div className="flex justify-between text-slate-600">
-                <span>Amount received</span>
-                <span className="font-bold">€{formatEUR(previewReceived)}</span>
-              </div>
-              {previewShipping > 0 && (
-                <>
-                  <div className="flex justify-between text-sky-700">
-                    <span>Shipping you paid</span>
-                    <span className="font-bold">−€{formatEUR(previewShipping)}</span>
-                  </div>
-                  <div className="flex justify-between text-slate-800 border-t border-slate-100 pt-1">
-                    <span className="font-bold">Revenue for profit</span>
-                    <span className="font-black">€{formatEUR(previewRevenue ?? 0)}</span>
-                  </div>
-                </>
-              )}
-              <div className="flex justify-between pt-1">
-                <span className="font-bold text-slate-700">Est. profit</span>
-                <span className={`font-black ${previewProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                  {previewProfit >= 0 ? '+' : ''}€{formatEUR(previewProfit)}
+        <footer className="px-4 py-3 sm:px-5 bg-slate-50/60 border-t border-slate-100 shrink-0 space-y-2">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            {previewReceived != null && previewProfit != null && !isEditBuyer && (
+              <>
+                <span className="text-[10px] text-slate-600">
+                  Received <strong className="text-slate-800">€{formatEUR(previewReceived)}</strong>
                 </span>
-              </div>
-            </div>
-          )}
+                {previewShipping > 0 && (
+                  <span className="text-[10px] text-sky-700">
+                    Shipping −€{formatEUR(previewShipping)} → revenue €{formatEUR(previewRevenue ?? 0)}
+                  </span>
+                )}
+                <span className={`text-[10px] font-black ${previewProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                  Profit {previewProfit >= 0 ? '+' : ''}€{formatEUR(previewProfit)}
+                </span>
+              </>
+            )}
+            {(item.ebayOrderScreenshotUrl || (isEditBuyer && item.kleinanzeigenChatImage)) && item.ebayOrderScreenshotUrl && (
+              <a
+                href={item.ebayOrderScreenshotUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[9px] font-bold text-indigo-700 hover:underline"
+              >
+                View saved screenshot
+              </a>
+            )}
+          </div>
           {saveError && (
-            <p className="text-xs font-bold text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-2">{saveError}</p>
+            <p className="text-[10px] font-bold text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-1.5">{saveError}</p>
           )}
-          {(item.ebayOrderScreenshotUrl || (isEditBuyer && item.kleinanzeigenChatImage)) && (
-            <div className="flex flex-wrap gap-2">
-              {item.ebayOrderScreenshotUrl && (
-                <a
-                  href={item.ebayOrderScreenshotUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[10px] font-bold text-indigo-700 hover:underline"
-                >
-                  View saved eBay order screenshot
-                </a>
-              )}
-            </div>
-          )}
-          <div className="flex gap-4">
-          <button onClick={onClose} disabled={saving} className="flex-1 py-4 font-black text-xs uppercase text-slate-400 disabled:opacity-50">Cancel</button>
-          <button onClick={() => void handleSave()} disabled={saving} className="flex-[2] py-4 bg-slate-900 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-xl flex items-center justify-center gap-2 disabled:opacity-50">
-            {saving ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18}/>}
-            {saving ? 'Saving…' : isEditBuyer ? 'Save buyer data' : 'Save & Mark Sold'}
-          </button>
+          <div className="flex items-center justify-end gap-2">
+            <button onClick={onClose} disabled={saving} className="px-4 py-2 font-bold text-[10px] uppercase text-slate-500 hover:text-slate-700 disabled:opacity-50">Cancel</button>
+            <button onClick={() => void handleSave()} disabled={saving} className="px-5 py-2 bg-slate-900 text-white rounded-xl font-black text-[10px] uppercase tracking-wide shadow-lg flex items-center gap-1.5 disabled:opacity-50">
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14}/>}
+              {saving ? 'Saving…' : isEditBuyer ? 'Save' : 'Mark sold'}
+            </button>
           </div>
         </footer>
       </div>

@@ -5,6 +5,7 @@ import {
   KLEINANZEIGEN_CHAT_SCREENSHOT_EXTRACTION_PROMPT,
   parseExtractedSaleDate,
 } from '../lib/kleinanzeigenChatScreenshotPrompt.js';
+import { callGeminiVisionJson } from '../lib/geminiVisionClient.js';
 import { normalizeImgurImageUrl } from './ebayOrderScreenshotAI';
 
 export interface ParsedKleinanzeigenChatScreenshot {
@@ -53,7 +54,7 @@ async function parseViaServerApi(body: {
   mimeType?: string;
 }): Promise<ParsedKleinanzeigenChatScreenshot | null> {
   try {
-    const res = await fetch('/api/parse-kleinanzeigen-chat-screenshot', {
+    const res = await fetch('/api/gemini?route=ka-screenshot', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -66,6 +67,18 @@ async function parseViaServerApi(body: {
     if (e instanceof Error && !e.message.includes('Failed to fetch')) throw e;
   }
   return null;
+}
+
+async function parseWithGemini(mime: string, base64: string): Promise<ParsedKleinanzeigenChatScreenshot> {
+  const apiKey = clientGeminiKey();
+  if (!apiKey) throw new Error('VITE_GEMINI_API_KEY not set');
+  const { parsed } = await callGeminiVisionJson({
+    apiKey,
+    prompt: KLEINANZEIGEN_CHAT_SCREENSHOT_EXTRACTION_PROMPT,
+    mime,
+    base64,
+  });
+  return normalizeParsed(parsed);
 }
 
 export function mapKleinanzeigenPaymentMethod(raw: string | null): import('../types').PaymentType {
@@ -103,6 +116,14 @@ export async function parseKleinanzeigenChatFromImageInput(rawInput: string): Pr
     parsed = await parseViaServerApi({ imageUrl: normalizedHttpUrl });
   }
   if (parsed) return parsed;
+
+  if (geminiBase64 && clientGeminiKey()) {
+    try {
+      return await parseWithGemini(geminiMime, geminiBase64);
+    } catch (e) {
+      throw e instanceof Error ? e : new Error(String(e));
+    }
+  }
 
   if (!clientGeminiKey()) {
     throw new Error('No AI key configured. Add GEMINI_API_KEY on Vercel or VITE_GEMINI_API_KEY locally.');

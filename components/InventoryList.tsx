@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, TaxMode } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
-import { computeItemProfitBeforeOverhead } from '../services/financialAggregation';
+import { computeItemProfitBeforeOverhead, getChildren, getSoldContainerDisplayTotals, shouldHideSoldContainerChildInList } from '../services/financialAggregation';
 import { itemMatchesSalePlatformFilter, isMissingExplicitSalePlatform, MISSING_PLATFORM_FILTER, SALE_PLATFORM_OPTIONS, formatItemSalePlatform, formatSalePlatformLabel } from '../utils/salePlatform';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { getCompatibleItemsForItem } from '../services/compatibility';
@@ -425,6 +425,8 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
       matchesStatus = true;
     }
     if (!matchesStatus) return false;
+    // Sold bundle/PC components render nested under the parent — hide duplicate top-level rows.
+    if (shouldHideSoldContainerChildInList(item, items, statusFilter, searchActive)) return false;
     // Hide nested parts unless searching or "in composition" flat view is enabled.
     if (item.parentContainerId && !searchActive && !showInComposition) return false;
     if (!searchActive && !showInComposition && item.status === ItemStatus.IN_COMPOSITION) return false;
@@ -2104,11 +2106,8 @@ const InventoryList: React.FC<Props> = ({
         );
       case 'item':
         const isExpanded = expandedBundles.has(item.id);
-        const childItems = (item.isPC || item.isBundle) && (item.componentIds || []) 
-          ? items.filter(i => 
-              (item.componentIds && item.componentIds.includes(i.id)) || 
-              i.parentContainerId === item.id
-            )
+        const childItems = (item.isPC || item.isBundle)
+          ? getChildren(item, items)
           : [];
         const toggleExpand = (e: React.MouseEvent) => {
           e.stopPropagation();
@@ -2122,8 +2121,14 @@ const InventoryList: React.FC<Props> = ({
         };
         const isEditingName = editingCell?.itemId === item.id && editingCell?.field === 'item';
         const compositionFlatView = showInComposition && searchTerm.trim().length < 2;
+        const isSoldContainerRow =
+          (item.isPC || item.isBundle) && isRealizedDisposal(item) && childItems.length > 0;
         const canExpandBundle =
-          (item.isPC || item.isBundle) && childItems.length > 0 && !compositionFlatView;
+          (item.isPC || item.isBundle) && childItems.length > 0 && !compositionFlatView && !isSoldContainerRow;
+        const formatChildListDate = (child: InventoryItem) => {
+          const raw = child.sellDate || child.containerSoldDate || child.buyDate;
+          return raw ? new Date(raw).toLocaleDateString() : '—';
+        };
         const parentContainer = resolveParentContainer(item, containersById, containerByChildId);
         const parentKind = getContainerKind(parentContainer);
         const showMembershipBadge = Boolean(parentKind && parentContainer && !item.isPC && !item.isBundle);
@@ -2374,7 +2379,32 @@ const InventoryList: React.FC<Props> = ({
                         )}
                       </div>
                    )}
-                   {isExpanded && childItems.length > 0 && (
+                   {isSoldContainerRow && (
+                      <div className="mt-2 ml-0.5 pl-3 border-l-2 border-purple-200/90 bg-purple-50/50 rounded-r-lg py-1 space-y-0.5 max-w-full">
+                         {childItems.map((child) => (
+                            <button
+                              key={child.id}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEditClick(child);
+                              }}
+                              className="w-full text-left group/child"
+                            >
+                              <div className="flex items-center justify-between gap-2 py-1 px-2 rounded-md hover:bg-purple-100/60 transition-colors">
+                                <span className="text-[11px] font-medium text-slate-700 truncate min-w-0 group-hover/child:text-purple-800">
+                                  {child.name}
+                                </span>
+                                <span className="text-[10px] font-semibold text-slate-500 shrink-0 tabular-nums flex items-center gap-1">
+                                  <Calendar size={9} className="opacity-60" />
+                                  {formatChildListDate(child)}
+                                </span>
+                              </div>
+                            </button>
+                         ))}
+                      </div>
+                   )}
+                   {isExpanded && childItems.length > 0 && !isSoldContainerRow && (
                       <div className="mt-3 ml-4 pl-4 border-l-2 border-slate-200 space-y-2">
                          <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Components:</p>
                          {childItems.map(child => {
@@ -2546,14 +2576,23 @@ const InventoryList: React.FC<Props> = ({
             )}
           </td>
         );
-      case 'sellPrice':
+      case 'sellPrice': {
         const isEditingSell = editingCell?.itemId === item.id && editingCell?.field === 'sellPrice';
+        const soldContainerSell =
+          (item.isPC || item.isBundle) && isRealizedDisposal(item)
+            ? getSoldContainerDisplayTotals(item, items, businessSettings.taxMode).sellPrice
+            : null;
+        const displaySellPrice = soldContainerSell ?? item.sellPrice;
         return (
           <td 
             key={id} 
             className="text-left font-bold text-slate-600 cursor-pointer hover:bg-blue-50/30 transition-colors" 
             style={style}
-            title="Double click to edit"
+            title={
+              soldContainerSell != null
+                ? 'Bundle total sell price (sum of components)'
+                : 'Double click to edit'
+            }
             onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, 'sellPrice', item.sellPrice || 0); }}
           >
             {isEditingSell ? (
@@ -2569,10 +2608,11 @@ const InventoryList: React.FC<Props> = ({
                  onClick={e => e.stopPropagation()}
                />
             ) : (
-               item.sellPrice ? `€${formatEUR(item.sellPrice)}` : '-'
+               displaySellPrice ? `€${formatEUR(displaySellPrice)}` : '-'
             )}
           </td>
         );
+      }
       case 'storePrice': {
         // Public asking price shown on the storefront — deliberately separate from Sell Price
         // (which is your internal target/realized sale price used for profit tracking).
@@ -2604,8 +2644,24 @@ const InventoryList: React.FC<Props> = ({
         );
       }
       case 'profit': {
-        const displayProfit = profitForDisplay(item);
+        const soldContainerProfit =
+          (item.isPC || item.isBundle) && isRealizedDisposal(item)
+            ? getSoldContainerDisplayTotals(item, items, businessSettings.taxMode).profit
+            : null;
+        const displayProfit = soldContainerProfit ?? profitForDisplay(item);
         if (item.isPC || item.isBundle) {
+          if (soldContainerProfit != null) {
+            return (
+              <td
+                key={id}
+                className={`text-left font-black ${soldContainerProfit > 0 ? 'text-emerald-600' : soldContainerProfit < 0 ? 'text-red-500' : 'text-slate-300'}`}
+                style={style}
+                title="Bundle total profit (sum of component margins)"
+              >
+                €{formatEUR(soldContainerProfit)}
+              </td>
+            );
+          }
           return (
             <td key={id} className="text-left text-xs font-bold text-slate-300" style={style} title="Bundles/PCs don't have profit. Expand to see component margins.">
               -
@@ -3865,6 +3921,18 @@ const InventoryList: React.FC<Props> = ({
               const showMembershipBadge = Boolean(parentKind && parentContainer && !item.isPC && !item.isBundle);
               const tradeReceived = resolveTradeReceivedItems(item, itemsById);
               const tradeSource = resolveTradeSourceItem(item, itemsById);
+              const mobileChildItems = (item.isPC || item.isBundle) ? getChildren(item, items) : [];
+              const isSoldContainerRow =
+                (item.isPC || item.isBundle) && isRealizedDisposal(item) && mobileChildItems.length > 0;
+              const mobileSoldTotals = isSoldContainerRow
+                ? getSoldContainerDisplayTotals(item, items, businessSettings.taxMode)
+                : null;
+              const mobileDisplaySell = mobileSoldTotals?.sellPrice ?? item.sellPrice;
+              const mobileDisplayProfit = mobileSoldTotals?.profit ?? profitForDisplay(item);
+              const formatMobileChildDate = (child: InventoryItem) => {
+                const raw = child.sellDate || child.containerSoldDate || child.buyDate;
+                return raw ? new Date(raw).toLocaleDateString() : '—';
+              };
               return (
               <div key={item.id} className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm space-y-3">
                 <div className="flex gap-3 items-start">
@@ -3892,10 +3960,10 @@ const InventoryList: React.FC<Props> = ({
                       >
                         {hasUserPhotos ? <><Camera size={8} /> {userPhotoCount > 1 ? `${userPhotoCount} photos` : 'Photo'}</> : <><ImageOff size={8} /> No photo</>}
                       </span>
-                      <span>Sold {item.sellDate || '—'} · €{item.sellPrice != null ? formatEUR(item.sellPrice) : '—'}</span>
-                      {profitForDisplay(item) != null && (
-                        <span className={(profitForDisplay(item) ?? 0) >= 0 ? ' text-emerald-600' : ' text-red-600'}>
-                          {' '}· {(profitForDisplay(item) ?? 0) >= 0 ? '+' : ''}€{formatEUR(profitForDisplay(item)!)}
+                      <span>Sold {item.sellDate || '—'} · €{mobileDisplaySell != null ? formatEUR(mobileDisplaySell) : '—'}</span>
+                      {mobileDisplayProfit != null && (
+                        <span className={(mobileDisplayProfit ?? 0) >= 0 ? ' text-emerald-600' : ' text-red-600'}>
+                          {' '}· {(mobileDisplayProfit ?? 0) >= 0 ? '+' : ''}€{formatEUR(mobileDisplayProfit!)}
                         </span>
                       )}
                     </p>
@@ -3939,6 +4007,25 @@ const InventoryList: React.FC<Props> = ({
                         <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-black uppercase">
                           In composition
                         </span>
+                      </div>
+                    )}
+                    {isSoldContainerRow && (
+                      <div className="mt-2 pl-3 border-l-2 border-purple-200/90 bg-purple-50/50 rounded-r-lg py-1 space-y-0.5">
+                        {mobileChildItems.map((child) => (
+                          <button
+                            key={child.id}
+                            type="button"
+                            onClick={() => handleEditClick(child)}
+                            className="w-full text-left"
+                          >
+                            <div className="flex items-center justify-between gap-2 py-1 px-2 rounded-md active:bg-purple-100/60">
+                              <span className="text-[11px] font-medium text-slate-700 truncate">{child.name}</span>
+                              <span className="text-[10px] font-semibold text-slate-500 shrink-0 tabular-nums">
+                                {formatMobileChildDate(child)}
+                              </span>
+                            </div>
+                          </button>
+                        ))}
                       </div>
                     )}
                   </div>

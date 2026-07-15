@@ -20,11 +20,10 @@ const tinyPngB64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
 const models = [
-  'gemini-2.0-flash',
   'gemini-2.5-flash',
-  'gemini-flash-latest',
-  'gemini-2.0-flash-001',
+  'gemini-3-flash-preview',
   'gemini-2.0-flash-lite',
+  'gemini-2.0-flash',
 ];
 const payload = {
   contents: [

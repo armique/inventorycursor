@@ -57,9 +57,15 @@ async function loadHandler(pathname: string): Promise<{ handler: (req: ApiReques
     const mod = await import('./api/images.js');
     return { handler: mod.default };
   }
-  if (pathname === '/api/gemini') {
+  if (pathname === '/api/gemini' || pathname === '/api/parse-ebay-order-screenshot' || pathname === '/api/parse-kleinanzeigen-chat-screenshot') {
     const mod = await import('./api/gemini.js');
-    return { handler: mod.default };
+    const route =
+      pathname.includes('ebay') || pathname.includes('parse-ebay')
+        ? 'ebay-screenshot'
+        : pathname.includes('kleinanzeigen') || pathname.includes('ka-screenshot')
+          ? 'ka-screenshot'
+          : undefined;
+    return { handler: mod.default, route };
   }
   return null;
 }

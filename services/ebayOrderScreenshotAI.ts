@@ -1,6 +1,6 @@
 /**
  * Parse eBay order screenshots (e.g. Seller Hub / Verkäufer-Cockpit) via vision models.
- * Production: prefers /api/parse-ebay-order-screenshot (server fetches URLs, fixes Imgur CORS).
+ * Production: prefers /api/gemini?route=ebay-screenshot (server fetches URLs, fixes Imgur CORS).
  * Fallback: browser → Gemini (VITE_GEMINI_API_KEY) or OpenAI.
  */
 
@@ -8,6 +8,7 @@ import {
   EBAY_ORDER_SCREENSHOT_EXTRACTION_PROMPT,
   parseExtractedSaleDate,
 } from '../lib/ebayOrderScreenshotPrompt.js';
+import { callGeminiVisionJson } from '../lib/geminiVisionClient.js';
 
 export interface ParsedEbayOrderScreenshot {
   ebayOrderId: string | null;
@@ -111,7 +112,7 @@ async function parseViaServerApi(body: {
   mimeType?: string;
 }): Promise<ServerParseOutcome> {
   try {
-    const res = await fetch('/api/parse-ebay-order-screenshot', {
+    const res = await fetch('/api/gemini?route=ebay-screenshot', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -125,95 +126,17 @@ async function parseViaServerApi(body: {
   }
 }
 
-const GEMINI_VISION_MODELS = [
-  'gemini-2.0-flash',
-  'gemini-2.5-flash',
-  'gemini-flash-latest',
-  'gemini-2.0-flash-001',
-  'gemini-2.0-flash-lite',
-] as const;
-
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
 async function parseWithGemini(mime: string, base64: string): Promise<ParsedEbayOrderScreenshot> {
   const apiKey = clientGeminiKey();
   if (!apiKey) throw new Error('VITE_GEMINI_API_KEY not set');
 
-  const body = JSON.stringify({
-    contents: [
-      {
-        parts: [
-          { text: EBAY_ORDER_SCREENSHOT_EXTRACTION_PROMPT },
-          {
-            inlineData: {
-              mimeType: mime,
-              data: base64,
-            },
-          },
-        ],
-      },
-    ],
-    generationConfig: {
-      responseMimeType: 'application/json',
-      temperature: 0.1,
-      maxOutputTokens: 1024,
-    },
+  const { parsed } = await callGeminiVisionJson({
+    apiKey,
+    prompt: EBAY_ORDER_SCREENSHOT_EXTRACTION_PROMPT,
+    mime,
+    base64,
   });
-
-  const errors: string[] = [];
-  for (const model of GEMINI_VISION_MODELS) {
-    let handled = false;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body,
-        }
-      );
-      const raw = await res.text();
-      if (!res.ok) {
-        const transient = res.status === 429 || res.status === 500 || res.status === 503;
-        if (res.status === 404) {
-          errors.push(`${model}: ${res.status}`);
-          handled = true;
-          break;
-        }
-        if (transient && attempt < 3) {
-          await sleep(250 * attempt);
-          continue;
-        }
-        if (transient) {
-          errors.push(`${model}: ${res.status}`);
-          handled = true;
-          break;
-        }
-        throw new Error(`Gemini: ${res.status} ${raw.slice(0, 300)}`);
-      }
-      let data: {
-        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-        promptFeedback?: { blockReason?: string };
-      };
-      try {
-        data = JSON.parse(raw) as typeof data;
-      } catch {
-        throw new Error('Gemini returned invalid JSON envelope');
-      }
-      const cand = data.candidates?.[0];
-      if (!cand) {
-        errors.push(`${model}: blocked (${data.promptFeedback?.blockReason || 'unknown'})`);
-        handled = true;
-        break;
-      }
-      const text = cand.content?.parts?.[0]?.text?.trim() || '{}';
-      const parsed = JSON.parse(text) as unknown;
-      return normalizeParsed(parsed);
-    }
-    if (!handled) continue;
-  }
-
-  throw new Error(`Gemini: no model worked (${errors.join('; ')})`);
+  return normalizeParsed(parsed);
 }
 
 async function parseWithOpenAI(imageUrl: string): Promise<ParsedEbayOrderScreenshot> {
