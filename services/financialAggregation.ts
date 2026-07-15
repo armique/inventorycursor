@@ -74,9 +74,20 @@ export function shouldSkipContainerForPurchaseCogs(item: InventoryItem, allItems
   return children.length > 0;
 }
 
+/** Shipping you paid (label, carrier) — deducted from sellPrice for profit, not from recorded payout. */
+export function getSellerShippingDeduction(item: InventoryItem): number {
+  if (!item.sellerPaidShipping) return 0;
+  return roundMoney(Number(item.sellerShippingAmount) || 0);
+}
+
+export function getEffectiveSellPriceForProfit(item: InventoryItem): number {
+  const sell = Number(item.sellPrice) || 0;
+  return roundMoney(Math.max(0, sell - getSellerShippingDeduction(item)));
+}
+
 /** Per-line profit (fees included) for dashboard / checks — matches SaleModal logic. */
 export function computeItemProfitBeforeOverhead(item: InventoryItem, taxMode: TaxMode): number {
-  const sell = Number(item.sellPrice) || 0;
+  const sell = getEffectiveSellPriceForProfit(item);
   const buy = Number(item.buyPrice) || 0;
   const fee = Number(item.feeAmount) || 0;
   if (taxMode === 'RegularVAT') {

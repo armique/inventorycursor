@@ -1,6 +1,6 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { X, Euro, CheckCircle2, User, Globe, ChevronDown, Link as LinkIcon, MessageCircle, Hash, Upload, Sparkles, ImagePlus, Loader2, Database } from 'lucide-react';
+import { X, Euro, CheckCircle2, User, Globe, ChevronDown, Link as LinkIcon, MessageCircle, Hash, Upload, Sparkles, ImagePlus, Loader2, Database, Truck, Check } from 'lucide-react';
 import { parseEbayOrderFromImageInput } from '../services/ebayOrderScreenshotAI';
 import { mapKleinanzeigenPaymentMethod, parseKleinanzeigenChatFromImageInput } from '../services/kleinanzeigenChatScreenshotAI';
 import { fetchEbayOrder } from '../services/ebayService';
@@ -40,6 +40,10 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
   const [platformSold, setPlatformSold] = useState<Platform>(item.platformSold || 'ebay.de');
   const [hasFee, setHasFee] = useState(item.hasFee || false);
   const [feeAmount, setFeeAmount] = useState(item.feeAmount || 0);
+  const [sellerPaidShipping, setSellerPaidShipping] = useState(item.sellerPaidShipping || false);
+  const [sellerShippingAmount, setSellerShippingAmount] = useState(
+    item.sellerShippingAmount != null ? String(item.sellerShippingAmount) : ''
+  );
   const [comment, setComment] = useState(item.comment2 || '');
 
   const [quantityToSell, setQuantityToSell] = useState<number>(item.quantity || 1);
@@ -303,6 +307,11 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
   const handleSave = async () => {
     if (saving) return;
     const finalFee = hasFee ? feeAmount : 0;
+    const parsedShipping = parseLocaleNumber(sellerShippingAmount);
+    const finalShipping =
+      sellerPaidShipping && sellerShippingAmount.trim() !== '' && Number.isFinite(parsedShipping)
+        ? Math.max(0, parsedShipping)
+        : 0;
     
     const isBatchItem = !isEditBuyer && item.quantity != null && item.quantity > 1;
     const qtySold = isBatchItem ? quantityToSell : 1;
@@ -313,8 +322,10 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
     
     const totalSellPrice = unitPriceNum != null ? unitPriceNum * qtySold : item.sellPrice;
     const totalBuyPrice = isBatchItem ? item.buyPrice * qtySold : item.buyPrice;
-    
-    const profit = totalSellPrice != null ? calculateProfit(totalSellPrice, totalBuyPrice, finalFee) : item.profit;
+    const revenueForProfit =
+      totalSellPrice != null ? Math.max(0, totalSellPrice - finalShipping) : undefined;
+    const profit =
+      revenueForProfit != null ? calculateProfit(revenueForProfit, totalBuyPrice, finalFee) : item.profit;
 
     const splitSoldId =
       isBatchItem && qtySold < item.quantity! ? `${item.id}-sold-${Date.now()}` : item.id;
@@ -339,6 +350,8 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
         platformSold,
         hasFee,
         feeAmount: finalFee,
+        sellerPaidShipping: finalShipping > 0,
+        sellerShippingAmount: finalShipping > 0 ? finalShipping : undefined,
         comment2: comment,
         customer,
         ebayUsername,
@@ -422,6 +435,25 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
     }
   };
 
+  const previewQty = item.quantity != null && item.quantity > 1 ? quantityToSell : 1;
+  const previewRawPrice = item.quantity != null && item.quantity > 1 ? unitPrice : salePrice;
+  const previewUnit = parseLocaleNumber(previewRawPrice);
+  const previewReceived =
+    previewRawPrice.trim() !== '' && Number.isFinite(previewUnit)
+      ? previewUnit * previewQty
+      : item.sellPrice;
+  const previewShipping =
+    sellerPaidShipping && sellerShippingAmount.trim() !== ''
+      ? Math.max(0, parseLocaleNumber(sellerShippingAmount) || 0)
+      : 0;
+  const previewRevenue =
+    previewReceived != null ? Math.max(0, previewReceived - previewShipping) : null;
+  const previewBuy =
+    item.quantity != null && item.quantity > 1 ? item.buyPrice * previewQty : item.buyPrice;
+  const previewFee = hasFee ? feeAmount : 0;
+  const previewProfit =
+    previewRevenue != null ? calculateProfit(previewRevenue, previewBuy, previewFee) : null;
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/60 p-0 sm:p-4 pb-safe"
@@ -501,6 +533,62 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
                   </div>
                 </div>
               )}
+
+              <div className="space-y-3">
+                <label
+                  className={`flex items-start gap-3 p-4 border rounded-2xl cursor-pointer transition-all ${
+                    sellerPaidShipping
+                      ? 'border-sky-300 bg-sky-50/80'
+                      : 'border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <div
+                    className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${
+                      sellerPaidShipping
+                        ? 'bg-sky-500 border-sky-500 text-white'
+                        : 'border-slate-300 bg-white'
+                    }`}
+                  >
+                    {sellerPaidShipping && <Check size={14} />}
+                  </div>
+                  <input
+                    type="checkbox"
+                    className="hidden"
+                    checked={sellerPaidShipping}
+                    onChange={(e) => setSellerPaidShipping(e.target.checked)}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                      <Truck size={14} className="text-sky-600 shrink-0" />
+                      I paid for shipping
+                    </p>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
+                      Use when the buyer paid you a lump sum (e.g. PayPal €115) that includes postage you
+                      bought separately — we deduct shipping from revenue before profit.
+                    </p>
+                  </div>
+                </label>
+
+                {sellerPaidShipping && (
+                  <div className="animate-in slide-in-from-top-2 fade-in pl-1">
+                    <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest mb-1 block">
+                      Shipping cost you paid (€)
+                    </label>
+                    <div className="relative">
+                      <Euro className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="7.69"
+                        className="w-full pl-10 pr-4 py-4 bg-white border-2 border-sky-100 rounded-2xl outline-none focus:border-sky-400 font-black text-lg text-slate-900"
+                        value={sellerShippingAmount}
+                        onChange={(e) => setSellerShippingAmount(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
 
               <div className="space-y-3">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2"><Globe size={12}/> Sold On</label>
@@ -712,6 +800,32 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
         </div>
 
         <footer className="p-8 bg-slate-50/50 border-t border-slate-100 flex flex-col gap-3 shrink-0">
+          {previewReceived != null && previewProfit != null && !isEditBuyer && (
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs space-y-1">
+              <div className="flex justify-between text-slate-600">
+                <span>Amount received</span>
+                <span className="font-bold">€{formatEUR(previewReceived)}</span>
+              </div>
+              {previewShipping > 0 && (
+                <>
+                  <div className="flex justify-between text-sky-700">
+                    <span>Shipping you paid</span>
+                    <span className="font-bold">−€{formatEUR(previewShipping)}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-800 border-t border-slate-100 pt-1">
+                    <span className="font-bold">Revenue for profit</span>
+                    <span className="font-black">€{formatEUR(previewRevenue ?? 0)}</span>
+                  </div>
+                </>
+              )}
+              <div className="flex justify-between pt-1">
+                <span className="font-bold text-slate-700">Est. profit</span>
+                <span className={`font-black ${previewProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                  {previewProfit >= 0 ? '+' : ''}€{formatEUR(previewProfit)}
+                </span>
+              </div>
+            </div>
+          )}
           {saveError && (
             <p className="text-xs font-bold text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-2">{saveError}</p>
           )}

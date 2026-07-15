@@ -153,6 +153,9 @@ export interface InventoryItem {
   
   hasFee?: boolean;
   feeAmount?: number;
+  /** Buyer paid this gross amount; when sellerPaidShipping, shipping is deducted for profit only. */
+  sellerPaidShipping?: boolean;
+  sellerShippingAmount?: number;
   
   // Receipt / Proof of Purchase
   hasReceipt?: boolean;

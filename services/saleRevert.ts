@@ -35,7 +35,7 @@ export function applySaleRevert(items: InventoryItem[], itemId: string): Invento
   return items.map((i) => {
     if (i.id !== itemId) return i;
     if (i.status !== ItemStatus.SOLD) return i;
-    const { sellPrice, sellDate, profit, paymentType, platformSold, feeAmount, hasFee, invoiceNumber, customer, ebayOrderId, ...rest } = i;
+    const { sellPrice, sellDate, profit, paymentType, platformSold, feeAmount, hasFee, sellerPaidShipping, sellerShippingAmount, invoiceNumber, customer, ebayOrderId, ...rest } = i;
     return {
       ...rest,
       status: ItemStatus.IN_STOCK,
@@ -46,6 +46,8 @@ export function applySaleRevert(items: InventoryItem[], itemId: string): Invento
       platformSold: undefined,
       feeAmount: undefined,
       hasFee: false,
+      sellerPaidShipping: false,
+      sellerShippingAmount: undefined,
       invoiceNumber: undefined,
       customer: undefined,
       ebayOrderId: undefined,

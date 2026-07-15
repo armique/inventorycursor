@@ -38,6 +38,8 @@ const ReturnModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
         paymentType: undefined,
         feeAmount: undefined,
         hasFee: false,
+        sellerPaidShipping: false,
+        sellerShippingAmount: undefined,
         giftRecipient: undefined,
         giftRelation: undefined,
         comment2: (item.comment2 || '') + returnNote,

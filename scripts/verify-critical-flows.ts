@@ -186,6 +186,16 @@ function runProfitTests(): void {
     hasFee: false,
   });
   assertClose(computeItemProfitBeforeOverhead(gifted, 'SmallBusiness'), 50, 'gift profit = market value - buy');
+  const withShipping = baseItem({
+    status: ItemStatus.SOLD,
+    sellPrice: 115,
+    buyPrice: 50,
+    sellerPaidShipping: true,
+    sellerShippingAmount: 7.69,
+    feeAmount: 0,
+    hasFee: false,
+  });
+  assertClose(computeItemProfitBeforeOverhead(withShipping, 'SmallBusiness'), 57.31, 'seller shipping deducted from received');
   assert(isRealizedDisposal(gifted), 'gift is realized disposal');
   assert(dispositionDate({ ...gifted, sellDate: '2025-07-04' }) === '2025-07-04', 'gift uses sellDate');
 }
