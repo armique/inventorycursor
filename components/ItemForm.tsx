@@ -8,13 +8,13 @@ import {
   MessageCircle, Link as LinkIcon, Upload, Search, Database, 
   Cpu, Monitor, HardDrive, Zap, Wind, AlertCircle, CheckCircle2, Copy,
   Fan, Lightbulb, Keyboard, Mouse, Tv, MoreHorizontal, Cable, Laptop as LaptopIcon, Wrench,
-  Wand2, Sliders, X, History, Sparkles
+  Wand2, Sliders, X, History, Sparkles, Repeat2, Package, FileText
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, Platform, PaymentType } from '../types';
 import { SALE_PLATFORM_OPTIONS } from '../utils/salePlatform';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 import { CATEGORY_IMAGES, getSpecOptions } from '../services/hardwareDB';
-import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
+import { generateItemSpecs, getSpecsAIProvider, suggestPriceFromSoldListings, type SoldPriceSuggestion } from '../services/specsAI';
 import { getCompatibleItemsForItem } from '../services/compatibility';
 import { mergeAiSpecsIntoEssential, resolveEssentialSpecKeys, filterSpecsToEssentialKeys } from '../services/essentialSpecFields';
 import { getCompatibilityWarnings } from '../utils/compatibilityWarnings';
@@ -25,8 +25,22 @@ import { searchProductPhotos, getImageSearchProviders, ImageSearchResult, ImageS
 import { getCachedProductPhoto, setCachedProductPhoto } from '../services/firebaseService';
 import { fetchMyEbayListings, getEbayUsername, ebayListingToPriceMatch, type EbayMyListing, type EbayListingPriceMatch } from '../services/ebayService';
 import { matchEbayListingsForItem } from '../utils/ebayListingMatch';
+import { getInventorySoldPriceBand } from '../utils/inventorySoldComps';
+import { findDuplicateCandidates } from '../utils/duplicateMatch';
+import {
+  applyTemplateFields,
+  buildHistoryPresets,
+  loadLastAddTemplate,
+  loadSavedPresets,
+  saveLastAddTemplate,
+  upsertSavedPreset,
+  type ItemAddTemplate,
+} from '../utils/itemAddTemplates';
 import EbayListingPriceModal from './EbayListingPriceModal';
 import ProductCardGeneratorModal from './ProductCardGeneratorModal';
+
+/** How quantity is applied when creating a new item. */
+type QtyMode = 'single' | 'stock' | 'clones';
 
 interface Props {
   items: InventoryItem[];
@@ -49,6 +63,7 @@ const PAYMENT_METHODS: PaymentType[] = [
   'Cash',
   'Bank Transfer',
   'Trade',
+  'Gift',
   'Other'
 ];
 
@@ -143,8 +158,20 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   const [aiDetectMessage, setAiDetectMessage] = useState<string | null>(null);
   const [aiDetectError, setAiDetectError] = useState<string | null>(null);
   const [quantityToCreate, setQuantityToCreate] = useState<number>(1);
+  const [qtyMode, setQtyMode] = useState<QtyMode>('single');
   /** Spec fields the user explicitly switched from the AI-filled preset dropdown to manual typing. */
   const [customSpecKeys, setCustomSpecKeys] = useState<Set<string>>(new Set());
+
+  const [sellPriceText, setSellPriceText] = useState('');
+  const [storePriceText, setStorePriceText] = useState('');
+  const [duplicateDismissed, setDuplicateDismissed] = useState(false);
+  const [updateTargetId, setUpdateTargetId] = useState<string | null>(null);
+  const [linkContainerId, setLinkContainerId] = useState<string>('');
+  const [aiPriceLoading, setAiPriceLoading] = useState(false);
+  const [aiPriceHint, setAiPriceHint] = useState<SoldPriceSuggestion | null>(null);
+  const [aiPriceError, setAiPriceError] = useState<string | null>(null);
+  const [lastTemplate, setLastTemplate] = useState<ItemAddTemplate | null>(() => loadLastAddTemplate());
+  const [savedPresets, setSavedPresets] = useState<ItemAddTemplate[]>(() => loadSavedPresets());
 
   const [photoSearchResults, setPhotoSearchResults] = useState<ImageSearchResult[] | null>(null);
   const [photoSearching, setPhotoSearching] = useState(false);
@@ -198,6 +225,21 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   }, [formData.buyPrice, formData.id]);
 
   useEffect(() => {
+    const sp = formData.sellPrice;
+    setSellPriceText(sp === undefined || sp === null ? '' : String(sp));
+  }, [formData.sellPrice, formData.id]);
+
+  useEffect(() => {
+    const sp = formData.storePrice;
+    setStorePriceText(sp === undefined || sp === null ? '' : String(sp));
+  }, [formData.storePrice, formData.id]);
+
+  useEffect(() => {
+    setDuplicateDismissed(false);
+    setUpdateTargetId(null);
+  }, [formData.name]);
+
+  useEffect(() => {
     setCustomSpecKeys(new Set());
   }, [id, initialData?.id]);
 
@@ -245,6 +287,37 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     [items, formData.name, formData.id]
   );
 
+  const isCreatingNew = !initialData && !id && !updateTargetId;
+
+  const duplicateCandidates = useMemo(() => {
+    if (!isCreatingNew || duplicateDismissed) return [];
+    return findDuplicateCandidates(items, formData.name || '', formData.id, 4);
+  }, [items, formData.name, formData.id, isCreatingNew, duplicateDismissed]);
+
+  const soldPriceBand = useMemo(
+    () =>
+      getInventorySoldPriceBand(items, formData.name || '', {
+        category: formData.category,
+        subCategory: formData.subCategory,
+      }),
+    [items, formData.name, formData.category, formData.subCategory]
+  );
+
+  const historyPresets = useMemo(() => buildHistoryPresets(items, 6), [items]);
+
+  const openContainers = useMemo(
+    () =>
+      items.filter(
+        (i) =>
+          (i.isPC || i.isBundle) &&
+          (i.status === ItemStatus.IN_STOCK ||
+            i.status === ItemStatus.IN_COMPOSITION ||
+            i.status === ItemStatus.ORDERED) &&
+          !i.isDraft
+      ),
+    [items]
+  );
+
   const learnedCategory = useMemo(
     () => (formData.name?.trim() ? suggestCategoryFromCorrections(formData.name) : null),
     [formData.name]
@@ -262,13 +335,82 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       platformBought: template.platformBought ?? prev.platformBought,
       buyPaymentType: template.buyPaymentType ?? prev.buyPaymentType,
       comment1: template.comment1 ?? prev.comment1,
+      sellPrice: template.sellPrice ?? prev.sellPrice,
+      storePrice: template.storePrice ?? prev.storePrice,
+      hasOVP: template.hasOVP ?? prev.hasOVP,
+      usesDifferentialVat: template.usesDifferentialVat ?? prev.usesDifferentialVat,
     }));
     setConfigStep('DONE');
     setNameSuggestionsOpen(false);
     setCategorySearchOpen(false);
+    setDuplicateDismissed(true);
+    setUpdateTargetId(null);
     setAiDetectMessage(`Loaded from inventory: ${template.category} / ${template.subCategory || '—'}`);
     setAiDetectError(null);
   }, []);
+
+  const applyPurchaseTemplate = useCallback((tpl: ItemAddTemplate, keepName = true) => {
+    setFormData((prev) => applyTemplateFields(prev, tpl, { keepName }));
+    setConfigStep('DONE');
+    setAiDetectMessage(`Template applied: ${tpl.label}`);
+  }, []);
+
+  const openExistingForUpdate = useCallback((item: InventoryItem) => {
+    setFormData(item);
+    setUpdateTargetId(item.id);
+    setConfigStep('DONE');
+    setDuplicateDismissed(true);
+    setQtyMode('single');
+    setQuantityToCreate(item.quantity && item.quantity > 1 ? item.quantity : 1);
+    setAiDetectMessage(`Editing existing: ${item.name}`);
+  }, []);
+
+  const addStockToExisting = useCallback(
+    (item: InventoryItem, addQty: number) => {
+      const add = Math.max(1, Math.floor(addQty));
+      const nextQty = (item.quantity && item.quantity > 0 ? item.quantity : 1) + add;
+      const updated: InventoryItem = { ...item, quantity: nextQty };
+      onSave([updated]);
+      setAiDetectMessage(`Added ${add} to stock of “${item.name}” → qty ${nextQty}`);
+      if (onClose) onClose();
+      else navigate(-1);
+    },
+    [onSave, onClose, navigate]
+  );
+
+  const handleFetchAiPriceHint = async () => {
+    if (!formData.name?.trim()) return;
+    setAiPriceLoading(true);
+    setAiPriceError(null);
+    try {
+      const result = await suggestPriceFromSoldListings(formData.name, formData.isDefective ? 'defective' : 'used');
+      setAiPriceHint(result);
+    } catch (e: unknown) {
+      setAiPriceError((e as Error)?.message || 'Could not fetch price hint.');
+      setAiPriceHint(null);
+    } finally {
+      setAiPriceLoading(false);
+    }
+  };
+
+  const handleReceiptUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const reader = new FileReader();
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('read failed'));
+        reader.readAsDataURL(file);
+      });
+      if (!dataUrl) throw new Error('empty');
+      setFormData((prev) => ({ ...prev, hasReceipt: true, receiptUrl: dataUrl }));
+    } catch {
+      alert('Could not attach receipt.');
+    } finally {
+      e.target.value = '';
+    }
+  };
 
   const handleAiDetectCategory = async () => {
     const name = (formData.name || '').trim();
@@ -616,14 +758,18 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     e.preventDefault();
     if (!formData.name) return;
 
-    const isEditingExisting = Boolean(initialData || id);
+    const isEditingExisting = Boolean(initialData || id || updateTargetId);
 
     const buyParsed = parseLocaleNumber(buyPriceText);
     const buyPriceResolved = Number.isFinite(buyParsed) ? buyParsed : 0;
+    const sellParsed = parseLocaleNumber(sellPriceText);
+    const sellPriceResolved = sellPriceText.trim() === '' || !Number.isFinite(sellParsed) ? undefined : sellParsed;
+    const storeParsed = parseLocaleNumber(storePriceText);
+    const storePriceResolved = storePriceText.trim() === '' || !Number.isFinite(storeParsed) ? undefined : storeParsed;
 
     const normalizedImages = normalizeImageList([formData.imageUrl, ...(formData.imageUrls || [])]);
     const fallbackImage = CATEGORY_IMAGES[formData.subCategory || formData.category || 'Components'];
-    const saveItemId = formData.id || `item-${Date.now()}`;
+    const saveItemId = updateTargetId || formData.id || `item-${Date.now()}`;
 
     const specsBase =
       isRamItem(formData.category, formData.subCategory) && formData.specs
@@ -647,40 +793,96 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       storedImages = normalizedImages;
     }
 
+    let status = formData.status || ItemStatus.IN_STOCK;
+    let parentContainerId = formData.parentContainerId;
+    let componentLinkUpdates: InventoryItem[] = [];
+
+    if (linkContainerId && !isEditingExisting) {
+      status = ItemStatus.IN_COMPOSITION;
+      parentContainerId = linkContainerId;
+    } else if (status === ItemStatus.IN_COMPOSITION && linkContainerId) {
+      parentContainerId = linkContainerId;
+    }
+
+    const qtyValue = Math.max(1, Math.floor(quantityToCreate) || 1);
+    const stockQuantity =
+      isEditingExisting
+        ? formData.quantity
+        : qtyMode === 'stock'
+          ? qtyValue
+          : qtyMode === 'single'
+            ? undefined
+            : undefined;
+
     const base: InventoryItem = {
       ...formData as InventoryItem,
       buyPrice: buyPriceResolved,
+      sellPrice: sellPriceResolved,
+      storePrice: storePriceResolved,
       id: saveItemId,
+      status,
+      parentContainerId,
+      quantity: stockQuantity !== undefined ? stockQuantity : formData.quantity,
       imageUrl: storedImages[0] || fallbackImage,
       imageUrls: storedImages.length ? storedImages : [fallbackImage],
       specs: specsOut ?? {},
       specsAiSuggested: aiSuggested && Object.keys(aiSuggested).length ? aiSuggested : undefined,
     };
 
+    if (status === ItemStatus.SOLD || status === ItemStatus.TRADED || status === ItemStatus.GIFTED) {
+      if (!base.sellDate) base.sellDate = new Date().toISOString().split('T')[0];
+      if (sellPriceResolved != null) base.sellPrice = sellPriceResolved;
+    }
+
+    if (parentContainerId) {
+      const container = items.find((i) => i.id === parentContainerId);
+      if (container) {
+        const ids = Array.from(new Set([...(container.componentIds || []), base.id]));
+        componentLinkUpdates = [{ ...container, componentIds: ids }];
+      }
+    }
+
     let itemsToSave: InventoryItem[] = [];
-    // If editing an existing item, or quantity is 1, just save one
-    if (isEditingExisting || quantityToCreate <= 1) {
-      itemsToSave = [base];
+    if (isEditingExisting || qtyMode !== 'clones' || qtyValue <= 1) {
+      itemsToSave = [base, ...componentLinkUpdates];
     } else {
-      // Creating multiple new identical items
-      const count = Math.max(1, Math.floor(quantityToCreate));
-      itemsToSave = Array.from({ length: count }).map((_, index) => ({
+      const count = qtyValue;
+      const clones = Array.from({ length: count }).map((_, index) => ({
         ...base,
         id: `item-${Date.now()}-${index}`,
+        quantity: undefined,
+        parentContainerId: index === 0 ? parentContainerId : undefined,
       }));
+      if (parentContainerId && clones.length) {
+        const container = items.find((i) => i.id === parentContainerId);
+        if (container) {
+          const ids = Array.from(new Set([...(container.componentIds || []), ...clones.map((c) => c.id)]));
+          componentLinkUpdates = [{ ...container, componentIds: ids }];
+          clones.forEach((c) => {
+            c.parentContainerId = parentContainerId;
+            c.status = ItemStatus.IN_COMPOSITION;
+          });
+        }
+      }
+      itemsToSave = [...clones, ...componentLinkUpdates];
     }
 
     onSave(itemsToSave);
+
+    if (!isEditingExisting) {
+      saveLastAddTemplate(base);
+      setLastTemplate(loadLastAddTemplate());
+    }
 
     const prevCategory = initialData?.category;
     if (formData.category && prevCategory && formData.category !== prevCategory && formData.name) {
       recordCategoryCorrection(formData.name, formData.category);
     }
     
-    // When creating multiple new items, stay on the form so the user can keep adding
-    if (!isEditingExisting && quantityToCreate > 1) {
-      // Keep the form open. Optionally, clear the quantity back to 1.
+    // When creating multiple new clone items, stay on the form so the user can keep adding
+    if (!isEditingExisting && qtyMode === 'clones' && qtyValue > 1) {
       setQuantityToCreate(1);
+      setQtyMode('single');
       return;
     }
 
@@ -937,6 +1139,13 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
 
   const containerClass = isModal ? "h-full flex flex-col" : "max-w-4xl mx-auto space-y-6 pb-16 animate-in fade-in duration-400";
   const isSold = formData.status === ItemStatus.SOLD || formData.status === ItemStatus.TRADED || formData.status === ItemStatus.GIFTED;
+  const showSaleFields = isSold;
+  const showOrderHint = formData.status === ItemStatus.ORDERED;
+  const showGiftFields = formData.status === ItemStatus.GIFTED;
+  const marginHint =
+    sellPriceText.trim() && Number.isFinite(parseLocaleNumber(sellPriceText))
+      ? parseLocaleNumber(sellPriceText) - (Number.isFinite(parseLocaleNumber(buyPriceText)) ? parseLocaleNumber(buyPriceText) : 0)
+      : null;
 
   return (
     <div className={containerClass}>
@@ -954,7 +1163,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                 {id ? 'Edit Item' : 'New Asset'}
               </h1>
               <p className="text-xs text-slate-500 font-bold">
-                Quick add for inventory: name, price, condition, marketplaces & specs.
+                Add with pricing, status, templates, duplicate check & PC/Bundle links.
               </p>
             </div>
           </div>
@@ -988,6 +1197,153 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
            <form onSubmit={handleSave} className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
               <div className="lg:col-span-7 space-y-4">
                  <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 space-y-4">
+                    {/* Templates */}
+                    {isCreatingNew && (lastTemplate || historyPresets.length > 0 || savedPresets.length > 0) && (
+                      <div className="space-y-2 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-indigo-700 flex items-center gap-1.5">
+                            <Repeat2 size={12} /> Templates
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const label = window.prompt('Preset name', `${formData.subCategory || formData.category || 'Preset'}${formData.vendor ? ` · ${formData.vendor}` : ''}`);
+                              if (!label?.trim()) return;
+                              const next = upsertSavedPreset({
+                                label: label.trim(),
+                                category: formData.category,
+                                subCategory: formData.subCategory,
+                                vendor: formData.vendor,
+                                platformBought: formData.platformBought,
+                                buyPaymentType: formData.buyPaymentType,
+                                hasOVP: formData.hasOVP,
+                                usesDifferentialVat: formData.usesDifferentialVat,
+                                savedAt: new Date().toISOString(),
+                              });
+                              setSavedPresets(next);
+                            }}
+                            className="text-[10px] font-bold text-indigo-600 hover:underline"
+                          >
+                            Save current as preset
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {lastTemplate && (
+                            <button
+                              type="button"
+                              onClick={() => applyPurchaseTemplate(lastTemplate, true)}
+                              className="px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700"
+                              title={lastTemplate.label}
+                            >
+                              Repeat last
+                            </button>
+                          )}
+                          {savedPresets.map((p) => (
+                            <button
+                              key={`saved-${p.label}`}
+                              type="button"
+                              onClick={() => applyPurchaseTemplate(p, true)}
+                              className="px-2.5 py-1.5 rounded-lg bg-white border border-indigo-200 text-indigo-800 text-[10px] font-bold hover:bg-indigo-50"
+                            >
+                              {p.label}
+                            </button>
+                          ))}
+                          {historyPresets.map((p) => (
+                            <button
+                              key={`hist-${p.label}`}
+                              type="button"
+                              onClick={() => applyPurchaseTemplate(p, true)}
+                              className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 text-[10px] font-bold hover:bg-slate-50"
+                            >
+                              {p.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Duplicate control */}
+                    {isCreatingNew && duplicateCandidates.length > 0 && (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 space-y-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-amber-800 flex items-center gap-1.5">
+                              <AlertCircle size={12} /> Possible duplicates
+                            </p>
+                            <p className="text-[11px] text-amber-900/80 mt-0.5">
+                              Same product may already exist — choose how to continue.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setDuplicateDismissed(true)}
+                            className="text-[10px] font-bold text-amber-700 hover:underline shrink-0"
+                          >
+                            Create as new
+                          </button>
+                        </div>
+                        <ul className="space-y-2">
+                          {duplicateCandidates.map((dup) => (
+                            <li key={dup.item.id} className="rounded-lg bg-white border border-amber-100 p-2.5 space-y-2">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-bold text-slate-900 truncate">{dup.item.name}</p>
+                                  <p className="text-[10px] text-slate-500">
+                                    {dup.confidence}% · {dup.reason} · {dup.item.status}
+                                    {dup.item.quantity != null && dup.item.quantity > 1 ? ` · qty ${dup.item.quantity}` : ''}
+                                    {dup.item.buyPrice != null ? ` · buy €${formatEUR(dup.item.buyPrice)}` : ''}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => applyItemFromHistory(dup.item)}
+                                  className="px-2 py-1 rounded-md bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-slate-200"
+                                >
+                                  Use as template
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openExistingForUpdate(dup.item)}
+                                  className="px-2 py-1 rounded-md bg-blue-600 text-white text-[10px] font-bold hover:bg-blue-700"
+                                >
+                                  Update existing
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => addStockToExisting(dup.item, qtyMode === 'stock' || qtyMode === 'clones' ? quantityToCreate : 1)}
+                                  className="px-2 py-1 rounded-md bg-emerald-600 text-white text-[10px] font-bold hover:bg-emerald-700"
+                                >
+                                  Add to stock qty
+                                </button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {updateTargetId && (
+                      <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] font-bold text-blue-900 flex items-center justify-between gap-2">
+                        <span>Updating existing item — save will overwrite that card.</span>
+                        <button
+                          type="button"
+                          className="text-blue-700 hover:underline"
+                          onClick={() => {
+                            setUpdateTargetId(null);
+                            setFormData((prev) => ({
+                              ...prev,
+                              id: undefined,
+                              status: ItemStatus.IN_STOCK,
+                            }));
+                          }}
+                        >
+                          Cancel update
+                        </button>
+                      </div>
+                    )}
+
                     {/* Basic Info */}
                    <div className="space-y-3">
                       <div className="space-y-1.5">
@@ -1038,13 +1394,70 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                             )}
                           </div>
                        </div>
-                       <div className="grid grid-cols-3 gap-2.5">
+
+                       {/* Status on create / edit */}
+                       <div className="space-y-1.5">
+                         <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Status</label>
+                         <div className="flex flex-wrap gap-1.5">
+                           {([
+                             ItemStatus.IN_STOCK,
+                             ItemStatus.ORDERED,
+                             ItemStatus.SOLD,
+                             ItemStatus.TRADED,
+                             ItemStatus.GIFTED,
+                             ItemStatus.IN_COMPOSITION,
+                           ] as ItemStatus[]).map((st) => (
+                             <button
+                               key={st}
+                               type="button"
+                               onClick={() => {
+                                 setFormData((prev) => ({
+                                   ...prev,
+                                   status: st,
+                                   ...(st === ItemStatus.SOLD || st === ItemStatus.TRADED || st === ItemStatus.GIFTED
+                                     ? { sellDate: prev.sellDate || new Date().toISOString().split('T')[0] }
+                                     : {}),
+                                   ...(st === ItemStatus.TRADED ? { paymentType: 'Trade' as PaymentType } : {}),
+                                   ...(st === ItemStatus.GIFTED ? { paymentType: 'Gift' as PaymentType } : {}),
+                                 }));
+                                 if (st === ItemStatus.IN_COMPOSITION && openContainers[0] && !linkContainerId) {
+                                   setLinkContainerId(openContainers[0].id);
+                                 }
+                               }}
+                               className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${
+                                 formData.status === st
+                                   ? 'bg-slate-900 text-white border-slate-900'
+                                   : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                               }`}
+                             >
+                               {st}
+                             </button>
+                           ))}
+                         </div>
+                         {showOrderHint && (
+                           <p className="text-[10px] text-amber-700 font-bold">Ordered — buy date = order / expected arrival.</p>
+                         )}
+                       </div>
+
+                       {/* Pricing economy block */}
+                       <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 space-y-3">
+                         <div className="flex items-center justify-between gap-2 flex-wrap">
+                           <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-1.5">
+                             <Calculator size={12} /> Pricing
+                           </p>
+                           {marginHint != null && (
+                             <p className={`text-[10px] font-black ${marginHint >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                               Target margin €{formatEUR(marginHint)}
+                             </p>
+                           )}
+                         </div>
+                         <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
                           <div className="space-y-1.5">
-                             <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Buy Price (€)</label>
+                             <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Buy (€)</label>
                              <input
                                 type="text"
                                 inputMode="decimal"
-                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-base outline-none focus:border-blue-500 focus:bg-white transition-all"
+                                className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl font-black text-base outline-none focus:border-blue-500 transition-all"
                                 value={buyPriceText}
                                 onChange={(e) => setBuyPriceText(e.target.value)}
                                 onBlur={() => {
@@ -1064,26 +1477,253 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                              />
                           </div>
                           <div className="space-y-1.5">
+                             <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">
+                               {showSaleFields ? 'Sold (€)' : 'Target sell (€)'}
+                             </label>
+                             <input
+                                type="text"
+                                inputMode="decimal"
+                                className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl font-black text-base outline-none focus:border-blue-500 transition-all"
+                                value={sellPriceText}
+                                placeholder="—"
+                                onChange={(e) => setSellPriceText(e.target.value)}
+                                onBlur={() => {
+                                  if (sellPriceText.trim() === '') {
+                                    setFormData((prev) => ({ ...prev, sellPrice: undefined }));
+                                    return;
+                                  }
+                                  const n = parseLocaleNumber(sellPriceText);
+                                  if (Number.isFinite(n)) {
+                                    setFormData((prev) => ({ ...prev, sellPrice: n }));
+                                    setSellPriceText(String(n));
+                                  }
+                                }}
+                             />
+                          </div>
+                          <div className="space-y-1.5">
+                             <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Store (€)</label>
+                             <input
+                                type="text"
+                                inputMode="decimal"
+                                className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl font-black text-base outline-none focus:border-blue-500 transition-all"
+                                value={storePriceText}
+                                placeholder="—"
+                                onChange={(e) => setStorePriceText(e.target.value)}
+                                onBlur={() => {
+                                  if (storePriceText.trim() === '') {
+                                    setFormData((prev) => ({ ...prev, storePrice: undefined }));
+                                    return;
+                                  }
+                                  const n = parseLocaleNumber(storePriceText);
+                                  if (Number.isFinite(n)) {
+                                    setFormData((prev) => ({ ...prev, storePrice: n }));
+                                    setStorePriceText(String(n));
+                                  }
+                                }}
+                             />
+                          </div>
+                          <div className="space-y-1.5">
                              <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Buy Date</label>
                              <input
                                 type="date"
-                                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-blue-500 focus:bg-white transition-all"
+                                className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-blue-500 transition-all"
                                 value={formData.buyDate}
                                 onChange={e => setFormData({ ...formData, buyDate: e.target.value })}
                              />
                           </div>
-                          {!initialData && !id && (
-                            <div className="space-y-1.5">
-                              <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Quantity</label>
-                              <input
-                                type="number"
-                                min={1}
-                                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-sm outline-none focus:border-blue-500 focus:bg-white transition-all"
-                                value={quantityToCreate}
-                                onChange={e => setQuantityToCreate(Number(e.target.value) || 1)}
-                              />
-                            </div>
-                          )}
+                         </div>
+
+                         {soldPriceBand && (
+                           <div className="rounded-lg bg-white border border-emerald-100 px-3 py-2 space-y-1.5">
+                             <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">
+                               Your sold comps ({soldPriceBand.count})
+                             </p>
+                             <p className="text-xs text-slate-700 font-bold">
+                               €{formatEUR(soldPriceBand.low)} – €{formatEUR(soldPriceBand.high)}
+                               <span className="text-slate-400 font-medium"> · median </span>
+                               €{formatEUR(soldPriceBand.median)}
+                               <span className="text-slate-400 font-medium"> · avg </span>
+                               €{formatEUR(soldPriceBand.average)}
+                             </p>
+                             <div className="flex flex-wrap gap-1.5">
+                               <button
+                                 type="button"
+                                 onClick={() => {
+                                   setSellPriceText(String(soldPriceBand.median));
+                                   setFormData((prev) => ({ ...prev, sellPrice: soldPriceBand.median }));
+                                 }}
+                                 className="px-2 py-1 rounded-md bg-emerald-600 text-white text-[10px] font-bold"
+                               >
+                                 Use median as target
+                               </button>
+                               <button
+                                 type="button"
+                                 onClick={() => {
+                                   setStorePriceText(String(soldPriceBand.median));
+                                   setFormData((prev) => ({ ...prev, storePrice: soldPriceBand.median }));
+                                 }}
+                                 className="px-2 py-1 rounded-md bg-white border border-emerald-200 text-emerald-800 text-[10px] font-bold"
+                               >
+                                 Use as store price
+                               </button>
+                             </div>
+                           </div>
+                         )}
+
+                         <div className="flex flex-wrap items-center gap-2">
+                           <button
+                             type="button"
+                             onClick={() => void handleFetchAiPriceHint()}
+                             disabled={aiPriceLoading || !formData.name?.trim()}
+                             className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                           >
+                             <Wand2 size={11} className={aiPriceLoading ? 'animate-spin' : ''} />
+                             {aiPriceLoading ? 'Estimating…' : 'AI eBay sold hint'}
+                           </button>
+                           {aiPriceHint && (
+                             <>
+                               <span className="text-[11px] font-bold text-slate-600">
+                                 AI €{formatEUR(aiPriceHint.priceLow)}–€{formatEUR(aiPriceHint.priceHigh)} (avg €{formatEUR(aiPriceHint.priceAverage)})
+                               </span>
+                               <button
+                                 type="button"
+                                 onClick={() => {
+                                   setSellPriceText(String(aiPriceHint.priceAverage));
+                                   setFormData((prev) => ({ ...prev, sellPrice: aiPriceHint.priceAverage }));
+                                 }}
+                                 className="text-[10px] font-bold text-blue-600 hover:underline"
+                               >
+                                 Apply avg
+                               </button>
+                             </>
+                           )}
+                           {aiPriceError && <span className="text-[10px] font-bold text-red-600">{aiPriceError}</span>}
+                         </div>
+                       </div>
+
+                       {/* Quantity modes */}
+                       {(isCreatingNew || updateTargetId || id || initialData) && (
+                         <div className="rounded-xl border border-slate-200 p-3 space-y-2.5">
+                           <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+                             <Package size={12} /> Quantity
+                           </p>
+                           {isCreatingNew && (
+                             <div className="flex flex-wrap gap-1.5">
+                               {(
+                                 [
+                                   { id: 'single' as QtyMode, label: '1 unit (unique)' },
+                                   { id: 'stock' as QtyMode, label: '1 card · stock qty' },
+                                   { id: 'clones' as QtyMode, label: 'N separate cards' },
+                                 ] as const
+                               ).map((m) => (
+                                 <button
+                                   key={m.id}
+                                   type="button"
+                                   onClick={() => setQtyMode(m.id)}
+                                   className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold border ${
+                                     qtyMode === m.id
+                                       ? 'bg-slate-900 text-white border-slate-900'
+                                       : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                                   }`}
+                                 >
+                                   {m.label}
+                                 </button>
+                               ))}
+                             </div>
+                           )}
+                           {(qtyMode !== 'single' || !isCreatingNew) && (
+                             <div className="flex items-end gap-3">
+                               <div className="space-y-1.5 w-28">
+                                 <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
+                                   {isCreatingNew
+                                     ? qtyMode === 'stock'
+                                       ? 'Stock qty'
+                                       : 'Cards to create'
+                                     : 'Stock qty'}
+                                 </label>
+                                 <input
+                                   type="number"
+                                   min={1}
+                                   className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-sm outline-none focus:border-blue-500"
+                                   value={isCreatingNew ? quantityToCreate : formData.quantity ?? 1}
+                                   onChange={(e) => {
+                                     const n = Math.max(1, Number(e.target.value) || 1);
+                                     if (isCreatingNew) setQuantityToCreate(n);
+                                     else setFormData((prev) => ({ ...prev, quantity: n }));
+                                   }}
+                                 />
+                               </div>
+                               <p className="text-[10px] text-slate-500 font-medium pb-2">
+                                 {isCreatingNew && qtyMode === 'stock' && 'One inventory card with quantity on the store.'}
+                                 {isCreatingNew && qtyMode === 'clones' && 'Creates N identical separate items (unique serials / defects).'}
+                                 {!isCreatingNew && 'Store stock quantity (undefined = 1).'}
+                               </p>
+                             </div>
+                           )}
+                         </div>
+                       )}
+
+                       {/* Links: receipt + PC/Bundle */}
+                       <div className="rounded-xl border border-slate-200 p-3 space-y-3">
+                         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+                           <LinkIcon size={12} /> Links
+                         </p>
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                           <div className="space-y-1.5">
+                             <label className="text-[10px] font-bold text-slate-500 flex items-center gap-1">
+                               <FileText size={11} /> Receipt / proof
+                             </label>
+                             <div className="flex flex-wrap items-center gap-2">
+                               <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-600 cursor-pointer hover:bg-slate-50">
+                                 <Upload size={11} />
+                                 {formData.hasReceipt ? 'Replace' : 'Attach'}
+                                 <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handleReceiptUpload} />
+                               </label>
+                               {formData.hasReceipt && formData.receiptUrl && (
+                                 <button
+                                   type="button"
+                                   onClick={() => setFormData((prev) => ({ ...prev, hasReceipt: false, receiptUrl: undefined }))}
+                                   className="text-[10px] font-bold text-red-600 hover:underline"
+                                 >
+                                   Remove
+                                 </button>
+                               )}
+                               {formData.hasReceipt && (
+                                 <span className="text-[10px] font-bold text-emerald-700">Attached</span>
+                               )}
+                             </div>
+                           </div>
+                           <div className="space-y-1.5">
+                             <label className="text-[10px] font-bold text-slate-500">Add into PC / Bundle</label>
+                             <select
+                               className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-xs outline-none"
+                               value={linkContainerId || formData.parentContainerId || ''}
+                               onChange={(e) => {
+                                 const v = e.target.value;
+                                 setLinkContainerId(v);
+                                 if (v) {
+                                   setFormData((prev) => ({ ...prev, status: ItemStatus.IN_COMPOSITION, parentContainerId: v }));
+                                 } else {
+                                   setFormData((prev) => ({
+                                     ...prev,
+                                     parentContainerId: undefined,
+                                     status: prev.status === ItemStatus.IN_COMPOSITION ? ItemStatus.IN_STOCK : prev.status,
+                                   }));
+                                 }
+                               }}
+                             >
+                               <option value="">— Not linked —</option>
+                               {openContainers.map((c) => (
+                                 <option key={c.id} value={c.id}>
+                                   {c.isPC ? 'PC' : 'Bundle'}: {c.name}
+                                 </option>
+                               ))}
+                             </select>
+                             {openContainers.length === 0 && (
+                               <p className="text-[10px] text-slate-400">No open PC/Bundle yet — create one in Compose first.</p>
+                             )}
+                           </div>
+                         </div>
                        </div>
                     </div>
 
@@ -1563,6 +2203,16 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                          </button>
                       </div>
 
+                      <div className="col-span-2 space-y-1">
+                         <label className="text-[10px] font-bold text-slate-400">Vendor / seller</label>
+                         <input
+                            className="w-full px-3 py-2.5 bg-slate-50 rounded-xl font-bold text-xs outline-none focus:bg-white focus:ring-1 focus:ring-blue-400"
+                            value={formData.vendor || ''}
+                            onChange={(e) => setFormData({ ...formData, vendor: e.target.value })}
+                            placeholder="e.g. shop name or username"
+                         />
+                      </div>
+
                       <div className="space-y-1">
                          <label className="text-[10px] font-bold text-slate-400">Source Platform</label>
                          <select
@@ -1662,11 +2312,20 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                     </div>
                  </div>
 
-                 {isSold && (
+                 {showSaleFields && (
                     <div className="bg-emerald-50/60 p-4 rounded-2xl border border-emerald-100 space-y-2.5 animate-in slide-in-from-bottom-2 fade-in">
                        <h3 className="font-black text-xs uppercase tracking-widest text-emerald-600">Sales Info</h3>
 
                        <div className="grid grid-cols-2 gap-2.5">
+                         <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-emerald-700/70">Sell Date</label>
+                            <input
+                               type="date"
+                               className="w-full px-3 py-2.5 bg-white text-emerald-900 border border-emerald-200 rounded-xl font-bold text-xs outline-none"
+                               value={formData.sellDate || ''}
+                               onChange={e => setFormData({ ...formData, sellDate: e.target.value })}
+                            />
+                         </div>
                          <div className="space-y-1">
                             <label className="text-[10px] font-bold text-emerald-700/70">Sold On</label>
                             <select
@@ -1681,7 +2340,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                             </select>
                          </div>
 
-                         <div className="space-y-1">
+                         <div className="space-y-1 col-span-2">
                             <label className="text-[10px] font-bold text-emerald-700/70">Payment Received</label>
                             <select
                                className="w-full px-3 py-2.5 bg-white text-emerald-900 border border-emerald-200 rounded-xl font-bold text-xs outline-none"
@@ -1692,6 +2351,37 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                             </select>
                          </div>
                        </div>
+                       {showGiftFields && (
+                         <div className="grid grid-cols-2 gap-2.5 pt-1">
+                           <div className="space-y-1">
+                             <label className="text-[10px] font-bold text-emerald-700/70">Gift recipient</label>
+                             <input
+                               className="w-full px-3 py-2.5 bg-white border border-emerald-200 rounded-xl font-bold text-xs outline-none"
+                               value={formData.giftRecipient || ''}
+                               onChange={(e) => setFormData({ ...formData, giftRecipient: e.target.value })}
+                               placeholder="e.g. daughter, friend"
+                             />
+                           </div>
+                           <div className="space-y-1">
+                             <label className="text-[10px] font-bold text-emerald-700/70">Relation</label>
+                             <select
+                               className="w-full px-3 py-2.5 bg-white border border-emerald-200 rounded-xl font-bold text-xs outline-none"
+                               value={formData.giftRelation || ''}
+                               onChange={(e) =>
+                                 setFormData({
+                                   ...formData,
+                                   giftRelation: (e.target.value || undefined) as InventoryItem['giftRelation'],
+                                 })
+                               }
+                             >
+                               <option value="">—</option>
+                               <option value="family">Family</option>
+                               <option value="friend">Friend</option>
+                               <option value="other">Other</option>
+                             </select>
+                           </div>
+                         </div>
+                       )}
                     </div>
                  )}
               </div>
