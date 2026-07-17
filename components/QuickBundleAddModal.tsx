@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Plus, Search, X, Check, Layers, Package, Monitor } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
 import { formatEUR } from '../utils/formatMoney';
@@ -42,11 +41,15 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape') return;
+      if (selectedIds.length > 0) {
+        if (!window.confirm('Discard selected parts and close?')) return;
+      }
+      onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, selectedIds.length]);
 
   const alreadyInSeed = useMemo(() => {
     if (!seedIsContainer) return new Set<string>();
@@ -217,175 +220,176 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
     onClose();
   };
 
-  const modal = (
+  const requestClose = () => {
+    if (selectedIds.length > 0) {
+      if (!window.confirm('Discard selected parts and close?')) return;
+    }
+    onClose();
+  };
+
+  /** Inline panel under the asset name — no backdrop; does not close on outside click. */
+  return (
     <div
-      className="fixed inset-0 z-[220] flex items-end sm:items-center justify-center bg-slate-900/55 backdrop-blur-[2px] p-3 sm:p-6"
-      onClick={onClose}
+      className="mt-2 w-full max-w-xl rounded-xl border border-violet-200 bg-white shadow-lg shadow-violet-500/10 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150"
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      role="dialog"
+      aria-label="Add parts to bundle"
     >
-      <div
-        className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95 duration-150"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-4 py-3 border-b border-slate-100 flex items-start justify-between gap-3 shrink-0">
-          <div className="min-w-0">
-            <h3 className="text-sm font-black text-slate-900 tracking-tight">
-              {seedIsPc
-                ? 'Add parts to PC'
-                : seedIsContainer
-                  ? 'Add parts to container'
-                  : 'Make Bundle / Mixed Bundle'}
-            </h3>
-            <p className="text-[11px] text-slate-500 font-medium truncate mt-0.5" title={seed.name}>
-              {seed.category}
-              {seed.subCategory ? ` / ${seed.subCategory}` : ''} · {seed.name}
-            </p>
+      <div className="px-3 py-2 border-b border-violet-100 bg-violet-50/80 flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h3 className="text-[11px] font-black text-violet-950 tracking-tight uppercase">
+            {seedIsPc
+              ? 'Add parts to PC'
+              : seedIsContainer
+                ? 'Add parts to container'
+                : 'Make Bundle / Mixed Bundle'}
+          </h3>
+          <p className="text-[10px] text-violet-800/70 font-medium truncate mt-0.5">
+            Stays open until Cancel / Add — click outside won&apos;t close it
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={requestClose}
+          className="p-1 rounded-md text-violet-400 hover:bg-violet-100 hover:text-violet-800"
+          aria-label="Close"
+        >
+          <X size={14} />
+        </button>
+      </div>
+
+      <div className="px-3 py-2.5 space-y-2.5">
+        {!seedIsPc && (
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={() => setKind('bundle')}
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black border transition-colors ${
+                kind === 'bundle'
+                  ? 'bg-violet-600 text-white border-violet-600'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <Layers size={11} /> Bundle
+            </button>
+            <button
+              type="button"
+              onClick={() => setKind('mixed')}
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black border transition-colors ${
+                kind === 'mixed'
+                  ? 'bg-amber-600 text-white border-amber-600'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <Package size={11} /> Mixed Bundle
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-            aria-label="Close"
-          >
-            <X size={16} />
-          </button>
+        )}
+
+        {seedIsPc && (
+          <p className="text-[10px] text-indigo-700 font-bold bg-indigo-50 border border-indigo-100 rounded-lg px-2 py-1 inline-flex items-center gap-1.5">
+            <Monitor size={11} /> Adding into this PC build
+          </p>
+        )}
+
+        <div className="relative">
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            autoFocus
+            className="w-full pl-8 pr-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none focus:border-violet-400 focus:bg-white"
+            placeholder="Search any category…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.stopPropagation();
+                requestClose();
+              }
+            }}
+          />
         </div>
 
-        <div className="px-4 py-3 space-y-3 overflow-y-auto flex-1 min-h-0">
-          {!seedIsPc && (
-            <div className="space-y-1.5">
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Becomes</p>
-              <div className="flex flex-wrap gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setKind('bundle')}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-black border transition-colors ${
-                    kind === 'bundle'
-                      ? 'bg-violet-600 text-white border-violet-600'
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  <Layers size={12} /> Bundle
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setKind('mixed')}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-black border transition-colors ${
-                    kind === 'mixed'
-                      ? 'bg-amber-600 text-white border-amber-600'
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  <Package size={12} /> Mixed Bundle
-                </button>
-              </div>
-              <p className="text-[10px] text-slate-500">
-                {kind === 'bundle'
-                  ? 'No defective parts · Bundle from any category.'
-                  : 'Defective parts allowed · flat Mixed Bundle.'}
-              </p>
-            </div>
-          )}
-
-          {seedIsPc && (
-            <p className="text-[10px] text-indigo-700 font-bold bg-indigo-50 border border-indigo-100 rounded-lg px-2.5 py-1.5 inline-flex items-center gap-1.5">
-              <Monitor size={12} /> Adding into this PC build
-            </p>
-          )}
-
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              autoFocus
-              className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-violet-400 focus:bg-white"
-              placeholder="Search any category in active inventory…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
+        {selectedItems.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {selectedItems.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => toggle(item.id)}
+                className="inline-flex items-center gap-1 pl-1 pr-1.5 py-0.5 rounded-md bg-violet-50 border border-violet-200 text-[9px] font-bold text-violet-900 max-w-full"
+                title="Click to remove"
+              >
+                <ItemThumbnail item={item} className="w-3.5 h-3.5 rounded object-cover" size={14} />
+                <span className="truncate max-w-[7rem]">{item.name}</span>
+                <X size={9} className="shrink-0 opacity-60" />
+              </button>
+            ))}
           </div>
+        )}
 
-          {selectedItems.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {selectedItems.map((item) => (
+        <ul className="space-y-0.5 max-h-44 overflow-y-auto rounded-lg border border-slate-100 bg-slate-50/60 p-0.5">
+          {candidates.length === 0 && (
+            <li className="px-2 py-4 text-center text-[10px] font-bold text-slate-400">
+              No matching active items
+            </li>
+          )}
+          {candidates.map((item) => {
+            const on = selectedIds.includes(item.id);
+            return (
+              <li key={item.id}>
                 <button
-                  key={item.id}
                   type="button"
                   onClick={() => toggle(item.id)}
-                  className="inline-flex items-center gap-1 pl-1.5 pr-2 py-1 rounded-lg bg-violet-50 border border-violet-200 text-[10px] font-bold text-violet-900 max-w-full"
-                  title="Click to remove"
+                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors ${
+                    on ? 'bg-violet-100/90 border border-violet-200' : 'hover:bg-white border border-transparent'
+                  }`}
                 >
-                  <ItemThumbnail item={item} className="w-4 h-4 rounded object-cover" size={16} />
-                  <span className="truncate max-w-[9rem]">{item.name}</span>
-                  <X size={10} className="shrink-0 opacity-60" />
-                </button>
-              ))}
-            </div>
-          )}
-
-          <ul className="space-y-1 max-h-64 overflow-y-auto rounded-xl border border-slate-100 bg-slate-50/50 p-1">
-            {candidates.length === 0 && (
-              <li className="px-3 py-6 text-center text-xs font-bold text-slate-400">
-                No matching active items
-              </li>
-            )}
-            {candidates.map((item) => {
-              const on = selectedIds.includes(item.id);
-              return (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    onClick={() => toggle(item.id)}
-                    className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-colors ${
-                      on ? 'bg-violet-100/80 border border-violet-200' : 'hover:bg-white border border-transparent'
+                  <ItemThumbnail item={item} className="w-7 h-7 rounded object-cover border border-slate-100 shrink-0" size={28} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] font-bold text-slate-900 truncate">{item.name}</p>
+                    <p className="text-[9px] text-slate-500 truncate">
+                      {item.subCategory || item.category}
+                      {item.isDefective ? ' · defekt' : ''}
+                      {' · '}€{formatEUR(Number(item.buyPrice || 0))}
+                    </p>
+                  </div>
+                  <span
+                    className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${
+                      on ? 'bg-violet-600 border-violet-600 text-white' : 'border-slate-300 bg-white'
                     }`}
                   >
-                    <ItemThumbnail item={item} className="w-8 h-8 rounded-md object-cover border border-slate-100 shrink-0" size={32} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-bold text-slate-900 truncate">{item.name}</p>
-                      <p className="text-[10px] text-slate-500 truncate">
-                        {item.subCategory || item.category}
-                        {item.isDefective ? ' · defekt' : ''}
-                        {' · '}€{formatEUR(Number(item.buyPrice || 0))}
-                      </p>
-                    </div>
-                    <span
-                      className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${
-                        on ? 'bg-violet-600 border-violet-600 text-white' : 'border-slate-300 bg-white'
-                      }`}
-                    >
-                      {on && <Check size={12} />}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
+                    {on && <Check size={10} />}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
 
-        <div className="px-4 py-3 border-t border-slate-100 flex items-center gap-2 shrink-0 bg-white">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleConfirm}
-            disabled={selectedItems.length === 0}
-            className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-black uppercase tracking-widest hover:bg-black disabled:opacity-40"
-          >
-            <Plus size={14} />
-            {seedIsContainer
-              ? `Add ${selectedItems.length || ''}`.trim()
-              : `Create ${kind === 'mixed' ? 'Mixed Bundle' : 'Bundle'} (+${selectedItems.length})`}
-          </button>
-        </div>
+      <div className="px-3 py-2 border-t border-slate-100 flex items-center gap-2 bg-white">
+        <button
+          type="button"
+          onClick={requestClose}
+          className="px-3 py-2 rounded-lg border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={handleConfirm}
+          disabled={selectedItems.length === 0}
+          className="flex-1 inline-flex items-center justify-center gap-1 py-2 rounded-lg bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest hover:bg-black disabled:opacity-40"
+        >
+          <Plus size={12} />
+          {seedIsContainer
+            ? `Add ${selectedItems.length || ''}`.trim()
+            : `Create ${kind === 'mixed' ? 'Mixed Bundle' : 'Bundle'} (+${selectedItems.length})`}
+        </button>
       </div>
     </div>
   );
-
-  return createPortal(modal, document.body);
 };
 
 export default QuickBundleAddModal;

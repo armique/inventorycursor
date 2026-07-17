@@ -2275,7 +2275,18 @@ const InventoryList: React.FC<Props> = ({
                     onClick={(e) => {
                       e.stopPropagation();
                       // Parts already inside a container → add more to that parent
-                      setQuickBundleSeed(parentOfItem && !item.isPC && !item.isBundle ? parentOfItem : item);
+                      const seed =
+                        parentOfItem && !item.isPC && !item.isBundle ? parentOfItem : item;
+                      setQuickBundleSeed(seed);
+                      if (seed.isPC || seed.isBundle) {
+                        setCollapsedBundles((prev) => {
+                          if (!prev.has(seed.id)) return prev;
+                          const next = new Set(prev);
+                          next.delete(seed.id);
+                          return next;
+                        });
+                      }
+                      setScrollTargetItemId(seed.id);
                     }}
                     className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 hover:border-violet-300`}
                     title={
@@ -2589,6 +2600,23 @@ const InventoryList: React.FC<Props> = ({
                           />
                         )}
                       </div>
+                   )}
+                   {quickBundleSeed?.id === item.id && (
+                      <QuickBundleAddModal
+                        seed={quickBundleSeed}
+                        items={items}
+                        onClose={() => setQuickBundleSeed(null)}
+                        onApply={(updates) => {
+                          onUpdate(updates);
+                          setToast(
+                            updates.some((u) => (u.isBundle || u.isPC) && u.componentIds)
+                              ? `Updated · ${updates.find((u) => u.isBundle || u.isPC)?.name || 'saved'}`
+                              : 'Bundle saved'
+                          );
+                          setTimeout(() => setToast(null), 2200);
+                          setQuickBundleSeed(null);
+                        }}
+                      />
                    )}
                    {isBundleBodyExpanded && (
                       <div className={`mt-2 ml-0.5 pl-3 border-l-2 rounded-r-lg py-1 space-y-0.5 max-w-full ${
@@ -4558,23 +4586,6 @@ const InventoryList: React.FC<Props> = ({
         onChoose={handleComposeTypeChosen}
         onClose={() => setShowComposeType(false)}
       />
-      {quickBundleSeed && (
-        <QuickBundleAddModal
-          seed={quickBundleSeed}
-          items={items}
-          onClose={() => setQuickBundleSeed(null)}
-          onApply={(updates) => {
-            onUpdate(updates);
-            setToast(
-              updates.some((u) => u.isBundle && u.componentIds)
-                ? `Bundle updated · ${updates.find((u) => u.isBundle)?.name || 'saved'}`
-                : 'Bundle saved'
-            );
-            setTimeout(() => setToast(null), 2200);
-            setQuickBundleSeed(null);
-          }}
-        />
-      )}
       {showRetroBundle && (
         <RetroBundleModal
             items={items.filter(i => selectedIds.includes(i.id))}
