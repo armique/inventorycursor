@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Search, X, Check, Layers, Package } from 'lucide-react';
+import { Plus, Search, X, Check, Layers, Package, Monitor } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
 import { formatEUR } from '../utils/formatMoney';
 import { buildContainerTitle } from '../utils/buildTitle';
@@ -9,7 +9,7 @@ import { isInventoryContainer } from '../utils/containerMembership';
 import ItemThumbnail from './ItemThumbnail';
 import { itemMatchesBuilderSearch } from '../utils/builderSlotMatch';
 
-export type QuickBundleKind = 'bundle' | 'mixed';
+export type QuickBundleKind = 'bundle' | 'mixed' | 'pc';
 
 interface Props {
   seed: InventoryItem;
@@ -23,17 +23,19 @@ function roundMoney(n: number): number {
 }
 
 function defaultKind(seed: InventoryItem): QuickBundleKind {
+  if (seed.isPC || seed.category === 'PC') return 'pc';
   if (isMixedBundleContainer(seed) || seed.isDefective) return 'mixed';
   if (seed.isBundle || seed.category === 'Bundle') return 'bundle';
   return 'bundle';
 }
 
 /**
- * Flags-column “+” flow: pick Bundle / Mixed Bundle, search active inventory,
- * attach parts — creating a container or expanding an existing one.
+ * Flags-column “+” flow: pick Bundle / Mixed Bundle (or add to PC),
+ * search any category in active inventory, attach parts.
  */
 const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply }) => {
-  const seedIsContainer = isInventoryContainer(seed) && !seed.isPC;
+  const seedIsPc = seed.isPC || seed.category === 'PC';
+  const seedIsContainer = isInventoryContainer(seed);
   const [kind, setKind] = useState<QuickBundleKind>(() => defaultKind(seed));
   const [query, setQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -58,6 +60,7 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
   const candidates = useMemo(() => {
     const q = query.trim();
     const out: InventoryItem[] = [];
+    const allowDefective = kind === 'mixed';
     for (const item of items) {
       if (item.id === seed.id) continue;
       if (item.isDraft) continue;
@@ -65,12 +68,12 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
       if (item.parentContainerId && item.parentContainerId !== seed.id) continue;
       if (alreadyInSeed.has(item.id)) continue;
       if (item.status !== ItemStatus.IN_STOCK && item.status !== ItemStatus.ORDERED) continue;
-      if (kind === 'bundle' && item.isDefective) continue;
+      if (!allowDefective && item.isDefective) continue;
       if (q && !itemMatchesBuilderSearch(item, q)) continue;
       out.push(item);
     }
     out.sort((a, b) => a.name.localeCompare(b.name));
-    return out.slice(0, 40);
+    return out.slice(0, 60);
   }, [items, seed.id, alreadyInSeed, kind, query]);
 
   const selectedItems = useMemo(
@@ -83,7 +86,7 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
   };
 
   useEffect(() => {
-    if (kind !== 'bundle') return;
+    if (kind === 'mixed') return;
     setSelectedIds((prev) =>
       prev.filter((id) => {
         const it = items.find((i) => i.id === id);
@@ -98,16 +101,19 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
       return;
     }
 
-    if (kind === 'bundle') {
+    if (kind !== 'mixed') {
       const defective = selectedItems.filter((i) => i.isDefective);
-      if (defective.length || (!seedIsContainer && seed.isDefective)) {
-        alert('Bundle cannot include defective parts — switch to Mixed Bundle or deselect them.');
+      if (defective.length || (!seedIsContainer && seed.isDefective && kind === 'bundle')) {
+        alert(
+          kind === 'pc'
+            ? 'PC cannot include defective parts — switch to Mixed Bundle or deselect them.'
+            : 'Bundle cannot include defective parts — switch to Mixed Bundle or deselect them.'
+        );
         return;
       }
     }
 
-    const isMixed = kind === 'mixed';
-
+    // Add into existing PC / Bundle / Mixed
     if (seedIsContainer) {
       const existingParts = items.filter(
         (i) =>
@@ -119,23 +125,44 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
       }
       const buyTotal = roundMoney(allParts.reduce((s, i) => s + Number(i.buyPrice || 0), 0));
       const defectiveCount = allParts.filter((i) => i.isDefective).length;
-      const parent: InventoryItem = {
+
+      let parent: InventoryItem = {
         ...seed,
-        category: isMixed ? 'Mixed Bundle' : 'Bundle',
-        isBundle: true,
-        isPC: false,
-        vendor: isMixed ? 'Mixed Bundle' : seed.vendor === 'Mixed Bundle' ? 'Bundle' : seed.vendor || 'Bundle',
         componentIds: allParts.map((p) => p.id),
         buyPrice: buyTotal,
-        comment1: isMixed
-          ? `Mixed Bundle (${allParts.length} items)${defectiveCount ? ` · ${defectiveCount} defekt` : ''}.`
-          : `Bundle (${allParts.length} items).`,
-        comment2: allParts
-          .map((i) => `- ${i.name}${i.isDefective ? ' [defekt]' : ''}`)
-          .join('\n')
-          .slice(0, 2000),
       };
-      delete (parent as { subCategory?: string }).subCategory;
+
+      if (seedIsPc || kind === 'pc') {
+        parent = {
+          ...parent,
+          category: 'PC',
+          isPC: true,
+          isBundle: false,
+          comment1: `PC Build (${allParts.length} parts).`,
+          comment2: allParts
+            .map((i) => `- ${i.name}`)
+            .join('\n')
+            .slice(0, 2000),
+        };
+        delete (parent as { subCategory?: string }).subCategory;
+      } else {
+        const isMixed = kind === 'mixed';
+        parent = {
+          ...parent,
+          category: isMixed ? 'Mixed Bundle' : 'Bundle',
+          isBundle: true,
+          isPC: false,
+          vendor: isMixed ? 'Mixed Bundle' : seed.vendor === 'Mixed Bundle' ? 'Bundle' : seed.vendor || 'Bundle',
+          comment1: isMixed
+            ? `Mixed Bundle (${allParts.length} items)${defectiveCount ? ` · ${defectiveCount} defekt` : ''}.`
+            : `Bundle (${allParts.length} items).`,
+          comment2: allParts
+            .map((i) => `- ${i.name}${i.isDefective ? ' [defekt]' : ''}`)
+            .join('\n')
+            .slice(0, 2000),
+        };
+        delete (parent as { subCategory?: string }).subCategory;
+      }
 
       const updatedNew = selectedItems.map((comp) => ({
         ...comp,
@@ -147,12 +174,14 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
       return;
     }
 
-    // Create new container; seed + selected become children
+    // Create new Bundle / Mixed from any category seed
+    const createKind: 'bundle' | 'mixed' = kind === 'mixed' ? 'mixed' : 'bundle';
     const parts = [seed, ...selectedItems];
     const parentId = `bundle-quick-${Date.now()}`;
-    const title = buildContainerTitle(kind, parts);
+    const title = buildContainerTitle(createKind, parts);
     const buyTotal = roundMoney(parts.reduce((s, i) => s + Number(i.buyPrice || 0), 0));
     const defectiveCount = parts.filter((i) => i.isDefective).length;
+    const isMixed = createKind === 'mixed';
 
     const parent: InventoryItem = {
       id: parentId,
@@ -200,10 +229,15 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
         <div className="px-4 py-3 border-b border-slate-100 flex items-start justify-between gap-3 shrink-0">
           <div className="min-w-0">
             <h3 className="text-sm font-black text-slate-900 tracking-tight">
-              {seedIsContainer ? 'Add parts to container' : 'Make Bundle / Mixed Bundle'}
+              {seedIsPc
+                ? 'Add parts to PC'
+                : seedIsContainer
+                  ? 'Add parts to container'
+                  : 'Make Bundle / Mixed Bundle'}
             </h3>
             <p className="text-[11px] text-slate-500 font-medium truncate mt-0.5" title={seed.name}>
-              Seed: {seed.name}
+              {seed.category}
+              {seed.subCategory ? ` / ${seed.subCategory}` : ''} · {seed.name}
             </p>
           </div>
           <button
@@ -217,45 +251,53 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
         </div>
 
         <div className="px-4 py-3 space-y-3 overflow-y-auto flex-1 min-h-0">
-          <div className="space-y-1.5">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Becomes</p>
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                type="button"
-                onClick={() => setKind('bundle')}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-black border transition-colors ${
-                  kind === 'bundle'
-                    ? 'bg-violet-600 text-white border-violet-600'
-                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                <Layers size={12} /> Bundle
-              </button>
-              <button
-                type="button"
-                onClick={() => setKind('mixed')}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-black border transition-colors ${
-                  kind === 'mixed'
-                    ? 'bg-amber-600 text-white border-amber-600'
-                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                <Package size={12} /> Mixed Bundle
-              </button>
+          {!seedIsPc && (
+            <div className="space-y-1.5">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Becomes</p>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setKind('bundle')}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-black border transition-colors ${
+                    kind === 'bundle'
+                      ? 'bg-violet-600 text-white border-violet-600'
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <Layers size={12} /> Bundle
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setKind('mixed')}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-black border transition-colors ${
+                    kind === 'mixed'
+                      ? 'bg-amber-600 text-white border-amber-600'
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <Package size={12} /> Mixed Bundle
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-500">
+                {kind === 'bundle'
+                  ? 'No defective parts · Bundle from any category.'
+                  : 'Defective parts allowed · flat Mixed Bundle.'}
+              </p>
             </div>
-            <p className="text-[10px] text-slate-500">
-              {kind === 'bundle'
-                ? 'No defective parts · slot-style Bundle.'
-                : 'Defective parts allowed · flat Mixed Bundle.'}
+          )}
+
+          {seedIsPc && (
+            <p className="text-[10px] text-indigo-700 font-bold bg-indigo-50 border border-indigo-100 rounded-lg px-2.5 py-1.5 inline-flex items-center gap-1.5">
+              <Monitor size={12} /> Adding into this PC build
             </p>
-          </div>
+          )}
 
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               autoFocus
               className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-violet-400 focus:bg-white"
-              placeholder="Search active inventory…"
+              placeholder="Search any category in active inventory…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />

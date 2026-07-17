@@ -1,5 +1,5 @@
 import React from 'react';
-import { BoxSelect, Crosshair, ExternalLink, Layers, Monitor } from 'lucide-react';
+import { BoxSelect, Crosshair, ExternalLink, Layers, Monitor, X } from 'lucide-react';
 import {
   ContainerKind,
   getContainerKindLabel,
@@ -12,6 +12,8 @@ type Props = {
   parentName: string;
   onOpen: () => void;
   onLocate?: () => void;
+  /** Remove this item from the parent PC/bundle back to active inventory */
+  onRemoveFromContainer?: () => void;
   /** Inline chip in inventory rows (default) vs banner in edit modal */
   variant?: 'inline' | 'banner';
   className?: string;
@@ -33,6 +35,7 @@ const ContainerMembershipBadge: React.FC<Props> = ({
   parentName,
   onOpen,
   onLocate,
+  onRemoveFromContainer,
   variant = 'inline',
   className = '',
 }) => {
@@ -65,6 +68,17 @@ const ContainerMembershipBadge: React.FC<Props> = ({
             >
               <Crosshair size={12} />
               Find
+            </button>
+          )}
+          {onRemoveFromContainer && (
+            <button
+              type="button"
+              onClick={onRemoveFromContainer}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 transition-colors"
+              title={`Remove from ${fullKind.toLowerCase()}`}
+            >
+              <X size={12} />
+              Remove
             </button>
           )}
           <button
@@ -110,6 +124,20 @@ const ContainerMembershipBadge: React.FC<Props> = ({
           aria-label={`Find ${fullKind.toLowerCase()} in list`}
         >
           <Crosshair size={10} />
+        </button>
+      )}
+      {onRemoveFromContainer && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemoveFromContainer();
+          }}
+          className="inline-flex items-center justify-center px-1 py-0.5 border-l border-black/10 text-red-600 hover:bg-red-50 transition-colors shrink-0"
+          title={`Remove from ${fullKind.toLowerCase()} — back to inventory`}
+          aria-label={`Remove from ${fullKind.toLowerCase()}`}
+        >
+          <X size={10} strokeWidth={2.5} />
         </button>
       )}
     </span>

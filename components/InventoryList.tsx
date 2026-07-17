@@ -1767,6 +1767,48 @@ const InventoryList: React.FC<Props> = ({
     setBundleToDismantle(null);
   };
 
+  /** Remove one child from a PC / Bundle / Mixed Bundle → back to active stock; parent buy total recalculates. */
+  const handleRemoveFromContainer = useCallback(
+    (child: InventoryItem, parent: InventoryItem) => {
+      if (!parent || child.id === parent.id) return;
+      const remaining = items.filter(
+        (i) =>
+          i.id !== child.id &&
+          (((parent.componentIds || []).includes(i.id) || i.parentContainerId === parent.id) &&
+            !i.isPC &&
+            !i.isBundle)
+      );
+      const buyTotal = Math.round(remaining.reduce((s, i) => s + Number(i.buyPrice || 0), 0) * 100) / 100;
+      const restoreAsSold = isRealizedDisposal(parent) || parent.subCategory === 'Retro Bundle';
+      const restored: InventoryItem = restoreAsSold
+        ? { ...child, parentContainerId: undefined, status: ItemStatus.SOLD }
+        : {
+            ...child,
+            parentContainerId: undefined,
+            status: ItemStatus.IN_STOCK,
+            sellPrice: undefined,
+            sellDate: undefined,
+            profit: undefined,
+            paymentType: undefined,
+            platformSold: undefined,
+            containerSoldDate: undefined,
+          };
+      const updatedParent: InventoryItem = {
+        ...parent,
+        componentIds: remaining.map((p) => p.id),
+        buyPrice: buyTotal,
+        comment2: remaining
+          .map((i) => `- ${i.name}${i.isDefective ? ' [defekt]' : ''}`)
+          .join('\n')
+          .slice(0, 2000),
+      };
+      onUpdate([updatedParent, restored]);
+      setToast(`Removed “${child.name}” → active inventory · container €${formatEUR(buyTotal)}`);
+      setTimeout(() => setToast(null), 2400);
+    },
+    [items, onUpdate]
+  );
+
   const handleEditClick = (item: InventoryItem) => {
     addRecentItemId(item.id);
     if (item.isPC || item.isBundle) {
@@ -2210,20 +2252,17 @@ const InventoryList: React.FC<Props> = ({
                 <Receipt size={13} strokeWidth={2.25} />
               </button>
 
-              {/* Quick Bundle / Mixed Bundle from Flags */}
+              {/* Quick Bundle / Mixed Bundle / add-to-PC from Flags — any category */}
               {(() => {
-                const canQuickBundle =
-                  !item.isPC &&
-                  !item.parentContainerId &&
-                  (item.status === ItemStatus.IN_STOCK ||
-                    item.status === ItemStatus.ORDERED ||
-                    ((item.isBundle || item.category === 'Bundle' || item.category === 'Mixed Bundle') &&
-                      item.status === ItemStatus.IN_STOCK));
+                const parentOfItem = resolveParentContainer(item, containersById, containerByChildId);
+                const soldLike =
+                  isRealizedDisposal(item) || item.status === ItemStatus.GIFTED;
+                const canQuickBundle = !soldLike;
                 if (!canQuickBundle) {
                   return (
                     <span
                       className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-transparent opacity-30`}
-                      title="Bundle + unavailable for this item"
+                      title="Bundle + unavailable for sold/gifted items"
                       aria-hidden
                     >
                       <Plus size={13} />
@@ -2235,10 +2274,19 @@ const InventoryList: React.FC<Props> = ({
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setQuickBundleSeed(item);
+                      // Parts already inside a container → add more to that parent
+                      setQuickBundleSeed(parentOfItem && !item.isPC && !item.isBundle ? parentOfItem : item);
                     }}
                     className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 hover:border-violet-300`}
-                    title="Add inventory parts → Bundle / Mixed Bundle"
+                    title={
+                      parentOfItem && !item.isPC && !item.isBundle
+                        ? `Add parts to ${parentOfItem.isPC ? 'PC' : 'bundle'}: ${parentOfItem.name}`
+                        : item.isPC
+                          ? 'Add parts to this PC'
+                          : item.isBundle
+                            ? 'Add parts to this bundle'
+                            : 'Turn into Bundle / Mixed Bundle — search any category'
+                    }
                   >
                     <Plus size={13} strokeWidth={2.5} />
                   </button>
@@ -2514,6 +2562,11 @@ const InventoryList: React.FC<Props> = ({
                           parentName={parentContainer.name}
                           onOpen={() => openParentContainer(parentContainer)}
                           onLocate={() => focusContainerInList(parentContainer)}
+                          onRemoveFromContainer={
+                            isRealizedDisposal(parentContainer)
+                              ? undefined
+                              : () => handleRemoveFromContainer(item, parentContainer)
+                          }
                         />
                       </div>
                    )}
@@ -2547,24 +2600,25 @@ const InventoryList: React.FC<Props> = ({
                             const childHit =
                               searchActiveForNest && matchesInventorySearch(child, searchQuery);
                             return (
-                            <button
+                            <div
                               key={child.id}
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleEditClick(child);
-                              }}
-                              className="w-full text-left group/child"
-                            >
-                              <div
-                                className={`flex items-center justify-between gap-2 py-1 px-2 rounded-md transition-colors ${
+                              className={`flex items-center justify-between gap-1 py-1 px-1.5 rounded-md transition-colors ${
                                   childHit
                                     ? 'bg-amber-100/80 ring-1 ring-amber-200/80'
                                     : item.isPC
                                       ? 'hover:bg-indigo-100/70'
                                       : 'hover:bg-violet-100/70'
                                 }`}
+                            >
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditClick(child);
+                                }}
+                                className="flex-1 min-w-0 text-left group/child"
                               >
+                                <div className="flex items-center justify-between gap-2">
                                 <span className={`text-[11px] font-medium truncate min-w-0 ${
                                   item.isPC
                                     ? 'text-indigo-900 group-hover/child:text-indigo-950'
@@ -2579,8 +2633,23 @@ const InventoryList: React.FC<Props> = ({
                                   <Calendar size={9} className="opacity-60" />
                                   {formatChildListDate(child)}
                                 </span>
-                              </div>
-                            </button>
+                                </div>
+                              </button>
+                              {!isSoldContainerRow && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveFromContainer(child, item);
+                                  }}
+                                  className="shrink-0 p-1 rounded-md text-red-500 hover:bg-red-50 hover:text-red-700 transition-colors"
+                                  title="Remove from container — back to active inventory"
+                                  aria-label={`Remove ${child.name} from container`}
+                                >
+                                  <Trash2 size={12} strokeWidth={2.25} />
+                                </button>
+                              )}
+                            </div>
                             );
                          })}
                          {!isSoldContainerRow && (
@@ -4178,6 +4247,11 @@ const InventoryList: React.FC<Props> = ({
                           parentName={parentContainer.name}
                           onOpen={() => openParentContainer(parentContainer)}
                           onLocate={() => focusContainerInList(parentContainer)}
+                          onRemoveFromContainer={
+                            isRealizedDisposal(parentContainer)
+                              ? undefined
+                              : () => handleRemoveFromContainer(item, parentContainer)
+                          }
                         />
                       </div>
                     )}
@@ -4218,23 +4292,37 @@ const InventoryList: React.FC<Props> = ({
                           const childHit =
                             mobileSearchActive && matchesInventorySearch(child, mobileSearchQuery);
                           return (
-                          <button
+                          <div
                             key={child.id}
-                            type="button"
-                            onClick={() => handleEditClick(child)}
-                            className="w-full text-left"
+                            className={`flex items-center gap-1 py-1 px-1.5 rounded-md ${
+                              childHit ? 'bg-amber-100/80 ring-1 ring-amber-200/80' : 'active:bg-purple-100/60'
+                            }`}
                           >
-                            <div
-                              className={`flex items-center justify-between gap-2 py-1 px-2 rounded-md ${
-                                childHit ? 'bg-amber-100/80 ring-1 ring-amber-200/80' : 'active:bg-purple-100/60'
-                              }`}
+                            <button
+                              type="button"
+                              onClick={() => handleEditClick(child)}
+                              className="flex-1 min-w-0 text-left"
                             >
-                              <span className="text-[11px] font-medium text-slate-700 truncate">{child.name}</span>
-                              <span className="text-[10px] font-semibold text-slate-500 shrink-0 tabular-nums">
-                                {formatMobileChildDate(child)}
-                              </span>
-                            </div>
-                          </button>
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[11px] font-medium text-slate-700 truncate">{child.name}</span>
+                                <span className="text-[10px] font-semibold text-slate-500 shrink-0 tabular-nums">
+                                  {formatMobileChildDate(child)}
+                                </span>
+                              </div>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRemoveFromContainer(child, item);
+                              }}
+                              className="shrink-0 p-1.5 rounded-md text-red-500 hover:bg-red-50"
+                              title="Remove from container"
+                              aria-label={`Remove ${child.name}`}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
                           );
                         })}
                       </div>
