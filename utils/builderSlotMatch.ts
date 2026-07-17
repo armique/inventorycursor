@@ -128,7 +128,7 @@ export function getBuilderPickerBlockReason(
   }
 ): string | null {
   if (item.isDefective && !opts.isLotBundle) {
-    return 'Defective — blocked in PC builds. Use Compose → Lot Bundle instead.';
+    return 'Defective — blocked in PC / Bundle. Use Compose → Mixed Bundle instead.';
   }
 
   if ((item.category === 'Bundle' && item.subCategory === 'PC Bundle') || item.category === 'PC Bundle') {
@@ -144,8 +144,8 @@ export function getBuilderPickerBlockReason(
   if (item.status === ItemStatus.IN_COMPOSITION && item.parentContainerId) {
     const parent = opts.containersById.get(item.parentContainerId);
     const label = parent?.name?.trim() || 'Another build/bundle';
-    if (parent?.isBundle && parent.subCategory === 'Lot Bundle') {
-      return `Already in lot bundle: ${label}`;
+    if (parent?.category === 'Mixed Bundle' || parent?.subCategory === 'Lot Bundle') {
+      return `Already in mixed bundle: ${label}`;
     }
     if (parent?.isBundle) return `Already in bundle: ${label}`;
     if (parent?.isPC) return `Already in PC build: ${label}`;

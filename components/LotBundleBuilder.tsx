@@ -12,6 +12,7 @@ import {
   isEligibleForBuilderPicker,
   itemMatchesBuilderSearch,
 } from '../utils/builderSlotMatch';
+import { buildContainerTitle } from '../utils/buildTitle';
 
 interface Props {
   items: InventoryItem[];
@@ -19,8 +20,8 @@ interface Props {
 }
 
 /**
- * Dedicated Lot Bundle screen — flat part bag, no PC slots / compatibility.
- * Defective parts are allowed (unlike PC Build).
+ * Mixed Bundle screen (formerly Lot Bundle) — flat part bag, no PC slots.
+ * Defective parts are allowed (unlike PC / Bundle).
  */
 const LotBundleBuilder: React.FC<Props> = ({ items, onSave }) => {
   const navigate = useNavigate();
@@ -30,10 +31,11 @@ const LotBundleBuilder: React.FC<Props> = ({ items, onSave }) => {
   const editingContainer = editId ? items.find((i) => i.id === editId) : undefined;
 
   const photoItemIdRef = useRef(editId || `bundle-lot-draft-${Date.now()}`);
-  const [bundleName, setBundleName] = useState('Lot Bundle');
+  const [bundleName, setBundleName] = useState('Mixed Bundle');
   const [selected, setSelected] = useState<InventoryItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
+  const [nameTouched, setNameTouched] = useState(false);
   const [listingDraft, setListingDraft] = useState<{
     parent: InventoryItem;
     parts: InventoryItem[];
@@ -42,6 +44,7 @@ const LotBundleBuilder: React.FC<Props> = ({ items, onSave }) => {
   useEffect(() => {
     if (editId && editingContainer) {
       setBundleName(editingContainer.name);
+      setNameTouched(true);
       const components = items.filter(
         (i) =>
           (editingContainer.componentIds && editingContainer.componentIds.includes(i.id)) ||
@@ -54,9 +57,18 @@ const LotBundleBuilder: React.FC<Props> = ({ items, onSave }) => {
     const initial: InventoryItem[] | undefined = location.state?.initialParts;
     if (initial?.length) {
       setSelected(initial);
-      setBundleName(`Lot Bundle (${initial.length} items)`);
+      setBundleName(buildContainerTitle('mixed', initial));
     }
   }, [editId, editingContainer, items, location.state]);
+
+  useEffect(() => {
+    if (editId || nameTouched) return;
+    if (!selected.length) {
+      setBundleName('Mixed Bundle');
+      return;
+    }
+    setBundleName(buildContainerTitle('mixed', selected));
+  }, [selected, editId, nameTouched]);
 
   const containersById = useMemo(() => {
     const map = new Map<string, InventoryItem>();
@@ -122,24 +134,25 @@ const LotBundleBuilder: React.FC<Props> = ({ items, onSave }) => {
         }
       }
 
+      const title = bundleName.trim() || buildContainerTitle('mixed', selected);
       const baseParent: InventoryItem = {
         ...(editingContainer || {}),
         id: parentId,
-        name: bundleName.trim(),
-        category: 'Bundle',
-        subCategory: 'Lot Bundle',
+        name: title,
+        category: 'Mixed Bundle',
         status: ItemStatus.IN_STOCK,
         buyPrice: Math.round(total * 100) / 100,
         buyDate: editingContainer?.buyDate || '',
         isPC: false,
         isBundle: true,
         componentIds: selected.map((i) => i.id),
-        comment1: `Lot bundle (${selected.length} items)${defectiveCount ? ` · ${defectiveCount} defekt` : ''}.`,
+        comment1: `Mixed Bundle (${selected.length} items)${defectiveCount ? ` · ${defectiveCount} defekt` : ''}.`,
         comment2: selected
           .map((i) => `- ${i.name}${i.isDefective ? ' [defekt]' : ''}`)
           .join('\n')
           .slice(0, 2000),
-        vendor: 'Lot Bundle',
+        vendor: 'Mixed Bundle',
+        marketTitle: title,
         imageUrl: userPhotos[0] || selected[0]?.imageUrl || getCategoryImageUrl({ category: 'Components' }) || undefined,
         imageUrls: userPhotos.length ? userPhotos : undefined,
       };
@@ -189,12 +202,12 @@ const LotBundleBuilder: React.FC<Props> = ({ items, onSave }) => {
     if (selected.length === 0) return alert('Add at least one part.');
 
     const parentId = editId || `bundle-lot-${Date.now()}`;
+    const title = bundleName.trim() || buildContainerTitle('mixed', selected);
     const draftParent: InventoryItem = {
       ...(editingContainer || {}),
       id: parentId,
-      name: bundleName.trim(),
-      category: 'Bundle',
-      subCategory: 'Lot Bundle',
+      name: title,
+      category: 'Mixed Bundle',
       status: ItemStatus.IN_STOCK,
       buyPrice: Math.round(total * 100) / 100,
       buyDate: editingContainer?.buyDate || '',
@@ -203,6 +216,7 @@ const LotBundleBuilder: React.FC<Props> = ({ items, onSave }) => {
       isPC: false,
       isBundle: true,
       componentIds: selected.map((i) => i.id),
+      marketTitle: title,
       imageUrl: photos[0] || selected[0]?.imageUrl,
       imageUrls: photos.length ? photos : undefined,
     };
@@ -224,10 +238,10 @@ const LotBundleBuilder: React.FC<Props> = ({ items, onSave }) => {
             <div>
               <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
                 <Package size={22} className="text-amber-600" />
-                {editId ? 'Edit Lot Bundle' : 'Lot Bundle'}
+                {editId ? 'Edit Mixed Bundle' : 'Mixed Bundle'}
               </h1>
               <p className="text-sm text-slate-500 font-bold">
-                Loose parts bag · no PC slots · defective parts allowed
+                Any parts & qty · no slots · defective allowed
               </p>
             </div>
           </div>
@@ -250,17 +264,21 @@ const LotBundleBuilder: React.FC<Props> = ({ items, onSave }) => {
       <div className="flex flex-1 gap-4 overflow-hidden min-h-0">
         <div className="w-[340px] flex flex-col gap-3 shrink-0 overflow-y-auto">
           <div className="bg-white p-4 rounded-2xl border border-slate-200">
-            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Lot name</label>
+            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Mixed name</label>
             <input
               className="w-full mt-2 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-black text-base outline-none"
               value={bundleName}
-              onChange={(e) => setBundleName(e.target.value)}
+              onChange={(e) => {
+                setNameTouched(true);
+                setBundleName(e.target.value);
+              }}
             />
+            <p className="text-[10px] text-slate-400 font-bold mt-1">Auto title ≤65 chars (eBay / Kleinanzeigen)</p>
           </div>
 
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 flex gap-2 text-[11px] font-bold text-amber-900">
             <AlertTriangle size={16} className="shrink-0 mt-0.5" />
-            Defect policy: defective / for-parts items can be included in lot bundles. Not allowed in PC builds.
+            Defective parts allowed here. PC and Bundle builds block them.
           </div>
 
           <div className="bg-white p-4 rounded-2xl border border-slate-200 flex-1 min-h-0 flex flex-col">

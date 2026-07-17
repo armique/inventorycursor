@@ -49,15 +49,15 @@ const SmartBundleSuggester: React.FC<Props> = ({ items, onCreateBundle }) => {
       id: bundleId,
       name: suggestion.title,
       buyPrice: totalCost,
-      // No buyDate - bundles don't have buy dates, only their components do
-      category: 'Bundle',
-      subCategory: 'Lot Bundle',
+      buyDate: '',
+      category: 'Mixed Bundle',
       status: ItemStatus.IN_STOCK,
-      comment1: `AI Suggested Bundle:\n${suggestion.reasoning}\n\nContents:\n${components.map(c => `+ ${c.name}`).join('\n')}`,
+      comment1: `AI Suggested Mixed Bundle:\n${suggestion.reasoning}\n\nContents:\n${components.map(c => `+ ${c.name}`).join('\n')}`,
       comment2: '',
       isBundle: true,
+      isPC: false,
       componentIds: components.map(c => c.id),
-      vendor: 'AI Bundle'
+      vendor: 'Mixed Bundle'
     };
 
     onCreateBundle(newBundle, components.map(c => c.id));

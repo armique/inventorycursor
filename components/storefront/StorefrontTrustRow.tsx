@@ -12,15 +12,31 @@ export interface TrustRowItem {
 interface Props {
   darkMode: boolean;
   items: TrustRowItem[];
+  /** Live facts from inventory (stock count, region). */
+  liveFacts?: { inStockCount?: number; regionLabel?: string };
 }
 
-const StorefrontTrustRow: React.FC<Props> = ({ darkMode, items }) => {
-  if (items.length === 0) return null;
+const StorefrontTrustRow: React.FC<Props> = ({ darkMode, items, liveFacts }) => {
+  if (items.length === 0 && !liveFacts?.inStockCount) return null;
+
+  const factCards: TrustRowItem[] = [];
+  if (liveFacts?.inStockCount != null && liveFacts.inStockCount > 0) {
+    factCards.push({
+      id: 'live-stock',
+      icon: 'BadgeCheck',
+      title: `${liveFacts.inStockCount}+ Artikel`,
+      description: liveFacts.regionLabel
+        ? `Aktuell auf Lager · ${liveFacts.regionLabel}`
+        : 'Aktuell geprüft und auf Lager',
+    });
+  }
+
+  const all = [...factCards, ...items].slice(0, 4);
 
   return (
     <section className={`border-t ${darkMode ? 'border-zinc-800' : 'border-zinc-200/80'}`}>
       <div className="mx-auto max-w-7xl w-full px-4 sm:px-6 py-12 grid grid-cols-2 lg:grid-cols-4 gap-8 text-center">
-        {items.map((item) => {
+        {all.map((item) => {
           const Icon = TRUST_ICONS[item.icon] || ShieldCheck;
           return (
             <div key={item.id}>

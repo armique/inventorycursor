@@ -762,8 +762,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
           const parentBundle: InventoryItem = {
             id: bundleId,
             name: nameToUse,
-            category: 'Bundle',
-            subCategory: 'Lot Bundle',
+            category: 'Mixed Bundle',
             status: ItemStatus.IN_STOCK,
             buyPrice: totalBuy,
             buyDate: buyDate,

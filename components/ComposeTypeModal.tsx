@@ -1,7 +1,7 @@
 import React from 'react';
-import { Monitor, Package, History, X } from 'lucide-react';
+import { Monitor, Package, Boxes, History, X } from 'lucide-react';
 
-export type ComposeType = 'pc' | 'lot' | 'sold';
+export type ComposeType = 'pc' | 'bundle' | 'mixed' | 'sold';
 
 interface Props {
   open: boolean;
@@ -22,21 +22,28 @@ const OPTIONS: {
   {
     type: 'pc',
     title: 'PC Build',
-    desc: 'Fixed slots · compatibility checks · defective parts blocked',
+    desc: 'Full PC from inventory · slots + compatibility · no defective parts',
     icon: <Monitor size={22} />,
     accent: 'border-teal-300 hover:border-teal-500 hover:bg-teal-50',
   },
   {
-    type: 'lot',
-    title: 'Lot Bundle',
-    desc: 'Loose bag of parts · any qty mix · defective parts allowed',
+    type: 'bundle',
+    title: 'Bundle / Aufrustkit',
+    desc: 'PC-style kit · same rules as PC · title includes PC Bundle or Aufrustkit',
     icon: <Package size={22} />,
+    accent: 'border-violet-300 hover:border-violet-500 hover:bg-violet-50',
+  },
+  {
+    type: 'mixed',
+    title: 'Mixed Bundle',
+    desc: 'Any parts & quantities · defective allowed · no slot rules',
+    icon: <Boxes size={22} />,
     accent: 'border-amber-300 hover:border-amber-500 hover:bg-amber-50',
   },
   {
     type: 'sold',
     title: 'Sold group',
-    desc: 'Group already-sold items into a retro lot for history & profit',
+    desc: 'Group already-sold items into a retro mixed bundle',
     icon: <History size={22} />,
     accent: 'border-slate-300 hover:border-slate-500 hover:bg-slate-50',
     soldOnly: true,
@@ -59,7 +66,7 @@ const ComposeTypeModal: React.FC<Props> = ({
           <div>
             <h2 className="text-xl font-black text-slate-900">Compose</h2>
             <p className="text-xs font-bold text-slate-500 mt-1">
-              {selectedCount} selected — choose PC, Lot, or Sold group
+              {selectedCount} selected — PC, Bundle, Mixed, or Sold group
             </p>
           </div>
           <button
@@ -89,11 +96,6 @@ const ComposeTypeModal: React.FC<Props> = ({
               </div>
             </button>
           ))}
-          {!allowSold && (
-            <p className="text-[10px] text-slate-400 font-bold px-1">
-              Tip: select sold items to enable “Sold group”.
-            </p>
-          )}
         </div>
       </div>
     </div>

@@ -21,10 +21,13 @@ import {
   itemMatchesBuilderSearch,
   itemRelevantToBuilderSlot,
 } from '../utils/builderSlotMatch';
+import { buildContainerTitle, ensureBundleTitleTag } from '../utils/buildTitle';
 
 interface Props {
   items: InventoryItem[];
   onSave: (items: InventoryItem[]) => void;
+  /** PC build or PC-style Bundle (Aufrustkit). Both block defective parts. */
+  buildKind?: 'pc' | 'bundle';
 }
 
 const SLOTS = [
@@ -105,19 +108,20 @@ function getBuildNameFromParts(parts: Record<string, InventoryItem[]>): string {
   return name.length > MAX_NAME_LENGTH ? name.slice(0, MAX_NAME_LENGTH - 2) + '…' : name;
 }
 
-const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
+const PCBuilderWizard: React.FC<Props> = ({ items, onSave, buildKind = 'pc' }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const editId = searchParams.get('editId');
   const editingContainer = editId ? items.find((i) => i.id === editId) : undefined;
-  const photoItemIdRef = useRef(editId || `pc-draft-${Date.now()}`);
+  const photoItemIdRef = useRef(editId || `${buildKind}-draft-${Date.now()}`);
   const photoStorageItemId = editId || photoItemIdRef.current;
 
-  /** PC Builder screen only — lot/bundle edits go through LotBundleBuilder via BuilderEntry. */
+  const isBundleKind = buildKind === 'bundle';
   const resolvedMode = 'pc' as const;
   const isLotBundle = false;
-  const [buildName, setBuildName] = useState('New Gaming PC');
+  const [buildName, setBuildName] = useState(isBundleKind ? 'PC Bundle' : 'PC');
+  const [preferAufrustkit, setPreferAufrustkit] = useState(false);
   const [parts, setParts] = useState<Record<string, InventoryItem[]>>({});
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -179,11 +183,18 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
     }
   }, [editId, location.state, items]);
 
-  // Auto-name from parts for new PC builds only
+  // Auto-name from parts (CPU/GPU/RAM/storage/cooling) within marketplace title limit
   useEffect(() => {
     if (editId || userEditedNameRef.current) return;
-    setBuildName(getBuildNameFromParts(parts));
-  }, [parts, editId]);
+    const allParts = Object.values(parts).flat() as InventoryItem[];
+    if (!allParts.length) {
+      setBuildName(isBundleKind ? (preferAufrustkit ? 'Aufrustkit' : 'PC Bundle') : 'PC');
+      return;
+    }
+    setBuildName(
+      buildContainerTitle(isBundleKind ? 'bundle' : 'pc', allParts, { preferAufrustkit })
+    );
+  }, [parts, editId, isBundleKind, preferAufrustkit]);
 
   const handleRunEstimate = async () => {
      const allParts = Object.values(parts).flat() as InventoryItem[];
@@ -209,24 +220,29 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
        parts['CASE']?.[0]?.imageUrl || getCategoryImageUrl({ category: 'Cases' }) || undefined;
      const imageUrl = userPhotos[0] || autoImageUrl || existingParent?.imageUrl;
      const imageUrls = userPhotos.length ? userPhotos : existingParent?.imageUrls;
-     return {
+     const title = isBundleKind
+       ? ensureBundleTitleTag(buildName, preferAufrustkit)
+       : buildName;
+     const parent: InventoryItem = {
         ...(existingParent || {}),
         id: parentId,
-        name: buildName,
-        category: 'PC',
-        subCategory: 'Custom Built PC',
+        name: title,
+        category: isBundleKind ? 'Bundle' : 'PC',
         status: ItemStatus.IN_STOCK,
         buyPrice: totalCost,
         buyDate: existingParent?.buyDate || '',
-        isPC: true,
-        isBundle: false,
-        componentIds: allParts.map((i) => i.id),
-        comment1: `Custom Build Specs:\n${allParts.map((i) => `- ${i.name}`).join('\n')}`,
+        comment1: `${isBundleKind ? 'Bundle' : 'PC'} Specs:\n${allParts.map((i) => `- ${i.name}`).join('\n')}`,
         comment2: performance ? `AI Performance Estimate:\n${performance.summary}` : '',
-        vendor: 'Custom Build',
+        isPC: !isBundleKind,
+        isBundle: isBundleKind,
+        componentIds: allParts.map((i) => i.id),
+        vendor: isBundleKind ? (preferAufrustkit ? 'Aufrustkit' : 'PC Bundle') : 'Custom Build',
+        marketTitle: title,
         imageUrl,
         imageUrls: imageUrls?.length ? imageUrls : undefined,
      };
+     delete parent.subCategory;
+     return parent;
   };
 
   const commitPcSave = async (parentOverride?: InventoryItem) => {
@@ -249,10 +265,9 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
            ...parentOverride,
            id: parentId,
            componentIds: allParts.map((i) => i.id),
-           isPC: true,
-           isBundle: false,
-           category: 'PC',
-           subCategory: 'Custom Built PC',
+           isPC: !isBundleKind,
+           isBundle: isBundleKind,
+           category: isBundleKind ? 'Bundle' : 'PC',
          }
        : buildParentDraft(allParts, userPhotos);
 
@@ -288,7 +303,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
      const defective = allParts.filter((p) => p.isDefective);
      if (defective.length > 0) {
        return alert(
-         `PC builds cannot include defective parts (${defective.length}). Remove them or use Compose → Lot Bundle.`
+         `${isBundleKind ? 'Bundles' : 'PC builds'} cannot include defective parts (${defective.length}). Use Compose → Mixed Bundle.`
        );
      }
 
@@ -390,7 +405,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
   const togglePart = (item: InventoryItem) => {
      if (!selectedSlot) return;
      if (item.isDefective) {
-       alert('Defective parts are blocked in PC builds. Use Compose → Lot Bundle.');
+       alert('Defective parts are blocked in PC / Bundle. Use Compose → Mixed Bundle.');
        return;
      }
      const slotDef = SLOTS.find(s => s.id === selectedSlot);
@@ -672,11 +687,11 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
       {!isCompactEdit && (
         <button
           type="button"
-          onClick={() => navigate('/panel/builder?mode=lot')}
+          onClick={() => navigate('/panel/builder?mode=mixed')}
           className="px-3 py-1.5 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-[10px] font-black uppercase tracking-widest hover:bg-amber-100"
-          title="Open Lot Bundle builder (defective parts allowed)"
+          title="Open Mixed Bundle (defective parts allowed)"
         >
-          Lot Bundle →
+          Mixed Bundle →
         </button>
       )}
       <div className={`text-right ${isCompactEdit ? 'px-5 py-2.5 rounded-xl' : 'px-6 py-2 rounded-2xl shadow-lg'} bg-slate-900 text-white`}>
@@ -728,7 +743,9 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
                 <ArrowLeft size={22}/>
               </button>
               <div className="min-w-0">
-                <h1 className="text-2xl font-black text-slate-900 truncate">Edit PC Build</h1>
+                <h1 className="text-2xl font-black text-slate-900 truncate">
+                  {isBundleKind ? 'Edit Bundle' : 'Edit PC Build'}
+                </h1>
                 <p className="text-sm text-slate-500 font-bold truncate">Photos + parts · defective blocked</p>
               </div>
             </div>
@@ -795,10 +812,16 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
              <button onClick={() => navigate(-1)} className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-400 hover:text-slate-900 transition-all"><ArrowLeft size={22}/></button>
              <div>
                 <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-                  {editId ? 'Edit PC Build' : 'PC Builder'}
+                  {editId
+                    ? isBundleKind
+                      ? 'Edit Bundle'
+                      : 'Edit PC Build'
+                    : isBundleKind
+                      ? 'Bundle / Aufrustkit'
+                      : 'PC Builder'}
                 </h1>
                 <p className="text-sm text-slate-500 font-bold">
-                  Slots + compatibility · defective parts blocked (use Lot Bundle for those)
+                  Slots + compatibility · no defective · Mixed Bundle for defekt parts
                 </p>
              </div>
           </div>
@@ -820,17 +843,50 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
           
           {/* LEFT: SLOTS */}
           <div className="w-[360px] xl:w-[390px] flex flex-col gap-3 shrink-0 overflow-y-auto pb-6 scrollbar-hide">
-             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Build Name</label>
+             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-2">
+                <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">
+                  {isBundleKind ? 'Bundle name' : 'Build name'}
+                </label>
                 <input 
-                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-black text-base outline-none focus:ring-2 focus:ring-slate-100 transition-all mt-2"
+                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-black text-base outline-none focus:ring-2 focus:ring-slate-100 transition-all"
                    value={buildName}
                    onChange={e => {
                      userEditedNameRef.current = true;
                      setBuildName(e.target.value);
                    }}
-                   placeholder="My Gaming PC"
+                   placeholder={isBundleKind ? 'PC Bundle · …' : 'PC · …'}
                 />
+                <p className="text-[10px] text-slate-400 font-bold px-1">
+                  Auto: CPU · GPU · RAM · DDR/MHz · M.2/SSD · AIO/Air (max 65 for eBay/KA)
+                </p>
+                {isBundleKind && (
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPreferAufrustkit(false);
+                        userEditedNameRef.current = false;
+                      }}
+                      className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase ${
+                        !preferAufrustkit ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      PC Bundle
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPreferAufrustkit(true);
+                        userEditedNameRef.current = false;
+                      }}
+                      className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase ${
+                        preferAufrustkit ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      Aufrustkit
+                    </button>
+                  </div>
+                )}
              </div>
 
              <div className="space-y-3">

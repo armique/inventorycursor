@@ -1,23 +1,33 @@
 import { InventoryItem, ItemStatus } from '../types';
+import { isMixedBundleContainer } from './containerTaxonomy';
 
-export type ContainerKind = 'lot' | 'bundle' | 'pc';
+export type ContainerKind = 'mixed' | 'bundle' | 'pc';
+
+/** @deprecated use 'mixed' — kept for call sites during transition */
+export type LegacyLotKind = 'lot';
 
 export function isInventoryContainer(item: InventoryItem): boolean {
-  return Boolean(item.isPC || item.isBundle || item.category === 'Bundle');
+  return Boolean(
+    item.isPC ||
+      item.isBundle ||
+      item.category === 'Bundle' ||
+      item.category === 'Mixed Bundle' ||
+      item.category === 'PC'
+  );
 }
 
 export function getContainerKind(container: InventoryItem | undefined | null): ContainerKind | null {
   if (!container) return null;
-  if (container.isPC) return 'pc';
-  if (container.subCategory === 'Lot Bundle') return 'lot';
+  if (container.isPC || container.category === 'PC') return 'pc';
+  if (isMixedBundleContainer(container)) return 'mixed';
   if (container.isBundle || container.category === 'Bundle') return 'bundle';
   return null;
 }
 
 export function getContainerKindLabel(kind: ContainerKind): string {
   switch (kind) {
-    case 'lot':
-      return 'Lot bundle';
+    case 'mixed':
+      return 'Mixed Bundle';
     case 'bundle':
       return 'Bundle';
     case 'pc':
@@ -27,8 +37,8 @@ export function getContainerKindLabel(kind: ContainerKind): string {
 
 export function getContainerKindShortLabel(kind: ContainerKind): string {
   switch (kind) {
-    case 'lot':
-      return 'Lot';
+    case 'mixed':
+      return 'Mixed';
     case 'bundle':
       return 'Bundle';
     case 'pc':
@@ -44,7 +54,7 @@ export function buildContainersById(items: InventoryItem[]): Map<string, Invento
   return map;
 }
 
-/** Reverse index: child item id → parent PC/bundle/lot container. */
+/** Reverse index: child item id → parent PC/bundle/mixed container. */
 export function buildContainerByChildId(items: InventoryItem[]): Map<string, InventoryItem> {
   const map = new Map<string, InventoryItem>();
   for (const container of items) {
@@ -78,20 +88,11 @@ export function containerMembershipStyles(kind: ContainerKind): {
   dot: string;
 } {
   switch (kind) {
-    case 'lot':
-      return {
-        badge: 'bg-amber-100 text-amber-800 border-amber-200/80',
-        dot: 'bg-amber-500',
-      };
+    case 'mixed':
+      return { badge: 'bg-amber-100 text-amber-800 border-amber-200', dot: 'bg-amber-500' };
     case 'bundle':
-      return {
-        badge: 'bg-purple-100 text-purple-700 border-purple-200/80',
-        dot: 'bg-purple-500',
-      };
+      return { badge: 'bg-violet-100 text-violet-800 border-violet-200', dot: 'bg-violet-500' };
     case 'pc':
-      return {
-        badge: 'bg-indigo-100 text-indigo-700 border-indigo-200/80',
-        dot: 'bg-indigo-500',
-      };
+      return { badge: 'bg-teal-100 text-teal-800 border-teal-200', dot: 'bg-teal-500' };
   }
 }

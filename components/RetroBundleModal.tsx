@@ -72,23 +72,23 @@ const RetroBundleModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
     const newBundle: InventoryItem = {
       id: bundleId,
       name: bundleName,
-      category: 'Bundle',
-      subCategory: 'Lot Bundle',
+      category: 'Mixed Bundle',
       status: ItemStatus.SOLD, 
       buyPrice: totalBuy,
+      buyDate: '',
       sellPrice: totalSell,
       profit: margin, // Note: This is pre-tax profit. Dashboard calculates tax dynamically.
       feeAmount: totalFees,
       hasFee: hasFees,
       sellDate: sellDate,
-      // No buyDate - bundles don't have buy dates, only their components do
       platformSold: platform,
       paymentType: payment,
       isBundle: true,
+      isPC: false,
       componentIds: items.map(i => i.id),
-      comment1: `Retroactive Bundle of ${items.length} items.`,
+      comment1: `Retroactive Mixed Bundle of ${items.length} items.`,
       comment2: '',
-      vendor: 'Combined'
+      vendor: 'Mixed Bundle'
     };
 
     const updatedComponents = items.map(i => ({

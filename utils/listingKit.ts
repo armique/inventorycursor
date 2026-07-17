@@ -22,11 +22,17 @@ export function buildListingKitDraft(
   parent: InventoryItem,
   parts: InventoryItem[]
 ): ListingKitDraft {
-  const isLot = parent.isBundle || parent.subCategory === 'Lot Bundle';
+  const isMixed =
+    parent.category === 'Mixed Bundle' || parent.subCategory === 'Lot Bundle';
+  const isBundle = parent.isBundle && !isMixed;
   const title =
     parent.marketTitle?.trim() ||
     parent.name?.trim() ||
-    (isLot ? `Lot Bundle (${parts.length} Teile)` : 'PC Build');
+    (isMixed
+      ? `Mixed Bundle (${parts.length} Teile)`
+      : isBundle
+        ? 'PC Bundle'
+        : 'PC Build');
 
   const bulletsFromParts = parts
     .map(shortSpecLine)
@@ -55,7 +61,7 @@ export function buildListingKitDraft(
 
   const total = parts.reduce((s, p) => s + Number(p.buyPrice || 0), 0);
   const body = [
-    isLot ? 'Lot / Bundle:' : 'PC Build:',
+    isMixed ? 'Mixed Bundle:' : isBundle ? 'PC Bundle:' : 'PC Build:',
     ...bullets.map((b) => `• ${b}`),
     '',
     parent.sellPrice

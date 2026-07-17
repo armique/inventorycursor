@@ -1,9 +1,9 @@
 import React, { Suspense } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
-  Package, PlusCircle, Settings, RefreshCw, Briefcase, Trash2, CloudUpload, LayoutDashboard,
+  Package, PlusCircle, Settings, RefreshCw, Trash2, CloudUpload, LayoutDashboard,
   Layers, Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe,
-  Printer, LayoutTemplate, PackageSearch, Sparkles,
+  Printer, LayoutTemplate, PackageSearch, Sparkles, Monitor, Boxes, ChevronDown, Plus,
 } from 'lucide-react';
 import PanelBreadcrumbs from './PanelBreadcrumbs';
 import { usePanelLocale } from '../context/PanelLocaleContext';
@@ -45,6 +45,8 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   usePanelKeyboardShortcuts();
   const [signingIn, setSigningIn] = React.useState(false);
   const [showOnboarding, setShowOnboarding] = React.useState(() => !isOnboardingComplete());
+  const [addMenuOpen, setAddMenuOpen] = React.useState(true);
+  const [moreNavOpen, setMoreNavOpen] = React.useState(false);
   const { reminder: ebayReminder, dismiss: dismissEbayReminder, checksRemaining } = useEbayListingReminder();
 
   React.useEffect(() => {
@@ -120,56 +122,134 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     );
   }
 
-  const nav = [
-    { to: '/panel/dashboard', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
-    { to: '/panel/inventory', icon: <Package size={20} />, label: 'Inventory' },
-    { to: '/panel/add', icon: <PlusCircle size={20} />, label: 'Add Item' },
-    { to: '/panel/add-bulk', icon: <Layers size={20} />, label: 'Bulk Entry' },
-    { to: '/panel/3d-print', icon: <Printer size={20} />, label: '3D Print' },
-    { to: '/panel/builder', icon: <Briefcase size={20} />, label: 'Builder' },
-    { to: '/panel/ebay-store-pull', icon: <PackageSearch size={20} />, label: 'eBay Tools' },
-    { to: '/panel/invoices', icon: <Receipt size={20} />, label: 'Invoice Manager' },
-    { to: '/panel/action-history', icon: <History size={20} />, label: 'Action history' },
-    { to: '/panel/expenses', icon: <RefreshCw size={20} />, label: 'Expenses' },
-    { to: '/panel/import', icon: <CloudUpload size={20} />, label: 'Import CSV' },
-    { to: '/panel/trash', icon: <Trash2 size={20} />, label: 'Trash' },
-    { to: '/panel/store-management', icon: <Globe size={20} />, label: 'Store management' },
-    { to: '/panel/storefront-configurator', icon: <LayoutTemplate size={20} />, label: 'Storefront configurator' },
-    { to: '/panel/product-card-generator', icon: <Sparkles size={20} />, label: 'Product card generator' },
-    { to: '/panel/settings', icon: <Settings size={20} />, label: 'Settings', alert: !isCloudEnabled },
+  const primaryNav = [
+    { to: '/panel/dashboard', icon: <LayoutDashboard size={18} />, label: 'Dashboard' },
+    { to: '/panel/inventory', icon: <Package size={18} />, label: 'Inventory' },
+    { to: '/panel/ebay-store-pull', icon: <PackageSearch size={18} />, label: 'eBay Tools', alert: !!ebayReminder },
+    { to: '/panel/settings', icon: <Settings size={18} />, label: 'Settings', alert: !isCloudEnabled },
   ];
 
-  const navWithAlerts = nav.map((entry) =>
-    entry.to === '/panel/ebay-store-pull' && ebayReminder ? { ...entry, alert: true } : entry
-  );
+  const moreNav = [
+    { to: '/panel/add-bulk', icon: <Layers size={16} />, label: 'Bulk Entry' },
+    { to: '/panel/3d-print', icon: <Printer size={16} />, label: '3D Print' },
+    { to: '/panel/invoices', icon: <Receipt size={16} />, label: 'Invoices' },
+    { to: '/panel/action-history', icon: <History size={16} />, label: 'Action history' },
+    { to: '/panel/expenses', icon: <RefreshCw size={16} />, label: 'Expenses' },
+    { to: '/panel/import', icon: <CloudUpload size={16} />, label: 'Import CSV' },
+    { to: '/panel/trash', icon: <Trash2 size={16} />, label: 'Trash' },
+    { to: '/panel/store-management', icon: <Globe size={16} />, label: 'Store' },
+    { to: '/panel/storefront-configurator', icon: <LayoutTemplate size={16} />, label: 'Storefront config' },
+    { to: '/panel/product-card-generator', icon: <Sparkles size={16} />, label: 'Product cards' },
+  ];
+
+  const addOptions = [
+    { to: '/panel/add', icon: <PlusCircle size={16} />, label: 'Single item', hint: 'One product' },
+    { to: '/panel/builder?mode=pc', icon: <Monitor size={16} />, label: 'PC Build', hint: 'Slots · no defekt' },
+    { to: '/panel/builder?mode=bundle', icon: <Package size={16} />, label: 'Bundle', hint: 'PC Bundle / Aufrustkit' },
+    { to: '/panel/builder?mode=mixed', icon: <Boxes size={16} />, label: 'Mixed Bundle', hint: 'Any parts · defekt OK' },
+  ];
 
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 font-sans">
       {showOnboarding && <OnboardingWizard onComplete={() => setShowOnboarding(false)} />}
       {/* DESKTOP SIDEBAR */}
-      <aside className="w-64 bg-gradient-to-b from-slate-900 to-slate-800 text-white flex flex-col hidden md:flex border-r border-slate-700/50">
-        <div className="p-6 space-y-4">
-          <Link to="/panel/dashboard" className="text-xl font-display font-black tracking-tighter flex items-center gap-2 text-white hover:text-white">
-            <Package className="text-brand-400" /> DeInventory
+      <aside className="w-[17.5rem] bg-slate-950 text-white flex flex-col hidden md:flex border-r border-white/5">
+        <div className="p-5 space-y-3">
+          <Link to="/panel/dashboard" className="text-lg font-display font-black tracking-tight flex items-center gap-2 text-white">
+            <span className="w-8 h-8 rounded-lg bg-brand-500/20 text-brand-300 flex items-center justify-center">
+              <Package size={18} />
+            </span>
+            DeInventory
           </Link>
           <GlobalSearch items={items} expenses={expenses} businessSettings={businessSettings} />
         </div>
-        <nav className="flex-1 px-4 space-y-2 overflow-y-auto scrollbar-hide">
-          {navWithAlerts.map(({ to, icon, label, alert }) => {
-            const isActive = location.pathname === to;
+
+        {/* ADD MENU — primary create actions */}
+        <div className="px-4 mb-3">
+          <button
+            type="button"
+            onClick={() => setAddMenuOpen((v) => !v)}
+            className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-black text-xs uppercase tracking-widest transition-colors"
+          >
+            <span className="inline-flex items-center gap-2">
+              <Plus size={16} /> Add item
+            </span>
+            <ChevronDown size={14} className={`transition-transform ${addMenuOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {addMenuOpen && (
+            <div className="mt-2 rounded-2xl border border-white/10 bg-white/5 p-1.5 space-y-0.5">
+              {addOptions.map((opt) => {
+                const active =
+                  location.pathname + (location.search || '') === opt.to ||
+                  (opt.to.includes('mode=') && location.pathname === '/panel/builder' && location.search.includes(opt.to.split('?')[1] || ''));
+                return (
+                  <Link
+                    key={opt.to}
+                    to={opt.to}
+                    className={`flex items-start gap-2.5 px-3 py-2.5 rounded-xl transition-colors ${
+                      active ? 'bg-white text-slate-900' : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    <span className={`mt-0.5 ${active ? 'text-brand-600' : 'text-brand-300'}`}>{opt.icon}</span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-bold leading-tight">{opt.label}</span>
+                      <span className={`block text-[10px] font-semibold ${active ? 'text-slate-500' : 'text-slate-500'}`}>
+                        {opt.hint}
+                      </span>
+                    </span>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <nav className="flex-1 px-4 space-y-1 overflow-y-auto scrollbar-hide pb-4">
+          <p className="px-3 pt-1 pb-1.5 text-[9px] font-black uppercase tracking-[0.2em] text-slate-500">Navigate</p>
+          {primaryNav.map(({ to, icon, label, alert }) => {
+            const isActive = location.pathname === to || (to !== '/panel/dashboard' && location.pathname.startsWith(to));
             return (
               <Link
                 key={to}
                 to={to}
-                className={`flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all relative ${isActive ? 'bg-brand-600 text-white shadow-lg ring-1 ring-brand-500/30' : 'text-slate-400 hover:bg-slate-700/80 hover:text-white'}`}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl font-bold text-sm transition-all relative ${
+                  isActive ? 'bg-white/10 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'
+                }`}
               >
                 {icon} {label}
-                {alert && <span className="absolute right-3 top-3 w-2 h-2 bg-red-500 rounded-full animate-pulse border-2 border-slate-900" />}
+                {alert && <span className="absolute right-3 top-3 w-2 h-2 bg-red-500 rounded-full animate-pulse" />}
               </Link>
             );
           })}
+
+          <button
+            type="button"
+            onClick={() => setMoreNavOpen((v) => !v)}
+            className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-slate-500 hover:text-slate-300 text-xs font-black uppercase tracking-widest mt-2"
+          >
+            More
+            <ChevronDown size={14} className={`transition-transform ${moreNavOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {moreNavOpen && (
+            <div className="space-y-0.5 pb-2">
+              {moreNav.map(({ to, icon, label }) => {
+                const isActive = location.pathname === to;
+                return (
+                  <Link
+                    key={to}
+                    to={to}
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
+                      isActive ? 'bg-white/10 text-white' : 'text-slate-500 hover:bg-white/5 hover:text-slate-300'
+                    }`}
+                  >
+                    {icon} {label}
+                  </Link>
+                );
+              })}
+            </div>
+          )}
         </nav>
-        <div className="p-4 border-t border-slate-800">
+        <div className="p-4 border-t border-white/5">
           {ebayReminder && (
             <EbaySoldReminderWidget
               reminder={ebayReminder}
@@ -281,14 +361,13 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
       {/* MOBILE BOTTOM NAVIGATION */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-[120] border-t border-slate-200 bg-white/95 backdrop-blur-sm pb-safe">
         <div className="flex justify-around items-stretch py-1 min-h-[56px]">
-          {nav
-            .filter((item) =>
-              ['/panel/dashboard', '/panel/inventory', '/panel/builder', '/panel/settings'].includes(
-                item.to
-              )
-            )
-            .map(({ to, icon, label }) => {
-              const isActive = location.pathname === to;
+          {[
+            { to: '/panel/dashboard', icon: <LayoutDashboard size={18} />, label: 'Home' },
+            { to: '/panel/inventory', icon: <Package size={18} />, label: 'Stock' },
+            { to: '/panel/add', icon: <Plus size={18} />, label: 'Add' },
+            { to: '/panel/settings', icon: <Settings size={18} />, label: 'Settings' },
+          ].map(({ to, icon, label }) => {
+              const isActive = location.pathname === to || (to === '/panel/add' && location.pathname.startsWith('/panel/builder'));
               return (
                 <Link
                   key={to}

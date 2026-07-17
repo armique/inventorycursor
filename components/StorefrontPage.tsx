@@ -544,7 +544,17 @@ const StorefrontPage: React.FC = () => {
           </div>
         );
       case 'trustRow':
-        return <StorefrontTrustRow key="trustRow" darkMode={darkMode} items={activeTrustItems} />;
+        return (
+          <StorefrontTrustRow
+            key="trustRow"
+            darkMode={darkMode}
+            items={activeTrustItems}
+            liveFacts={{
+              inStockCount: items.length,
+              regionLabel: lang === 'de' ? 'Deutschland' : 'Germany',
+            }}
+          />
+        );
       default:
         return null;
     }

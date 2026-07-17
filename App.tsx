@@ -34,6 +34,7 @@ import {
 import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchFromCloud } from './services/firebaseService';
 import { pullOrderIndexFromCloud } from './services/ebayOrderIndex';
 import { DEFAULT_CATEGORIES } from './services/constants';
+import { migrateCategoriesRecord, migrateContainerItem } from './utils/containerTaxonomy';
 import { appendPriceHistoryIfChanged } from './services/priceHistory';
 import { computeItemProfitBeforeOverhead } from './services/financialAggregation';
 import { syncContainerBuyTotalsFromComponents } from './services/containerAggregates';
@@ -181,15 +182,10 @@ const App: React.FC = () => {
   const [categories, setCategories] = useState<Record<string, string[]>>(() => {
     const saved = localStorage.getItem('custom_categories');
     const base = saved ? JSON.parse(saved) : { ...DEFAULT_CATEGORIES };
-    // Ensure Lot Bundle exists under Bundle (user taxonomy + lot grouping)
-    if (!base.Bundle) base.Bundle = [...(DEFAULT_CATEGORIES.Bundle || [])];
-    if (!base.Bundle.includes('Lot Bundle')) {
-      base.Bundle = ['Lot Bundle', ...base.Bundle];
-    }
-    if (!base.PC) base.PC = [...(DEFAULT_CATEGORIES.PC || [])];
-    if (!base.PC.includes('Custom Built PC')) {
-      base.PC = ['Custom Built PC', ...base.PC];
-    }
+    // PC / Bundle / Mixed Bundle — no subcategories
+    base.PC = [];
+    base.Bundle = [];
+    base['Mixed Bundle'] = [];
     return base;
   });
 
@@ -464,13 +460,13 @@ const App: React.FC = () => {
     const mergedAH = mergeActionHistoryFromLocal(remoteAH, localAH).slice(-ACTION_HISTORY_LIMIT);
     setActionHistory(mergedAH);
     actionHistoryRef.current = mergedAH;
-    setItems(inv);
-    setTrash(tr);
+    setItems(inv.map(migrateContainerItem));
+    setTrash(tr.map(migrateContainerItem));
     setExpenses(exp);
     setRecurringExpenses(recurring);
     setBusinessSettings(prev => ({ ...prev, ...sets }));
     setMonthlyGoal(goal);
-    setCategories(cats);
+    setCategories(migrateCategoriesRecord(cats));
     setCategoryFields(fields);
     scheduleBackgroundWork(() =>
       persistSnapshotToLocalStorage({
@@ -523,11 +519,13 @@ const App: React.FC = () => {
   }, [applyRemoteData, shouldApplyRemoteSnapshot]);
 
   const loadLocalData = () => {
-    const localItems = JSON.parse(localStorage.getItem('inventory_items') || '[]');
-    setItems(localItems);
-    setTrash(JSON.parse(localStorage.getItem('inventory_trash') || '[]'));
+    const localItems = JSON.parse(localStorage.getItem('inventory_items') || '[]') as InventoryItem[];
+    setItems(localItems.map(migrateContainerItem));
+    const localTrash = JSON.parse(localStorage.getItem('inventory_trash') || '[]') as InventoryItem[];
+    setTrash(localTrash.map(migrateContainerItem));
     setExpenses(JSON.parse(localStorage.getItem('inventory_expenses') || '[]'));
     setRecurringExpenses(JSON.parse(localStorage.getItem('recurring_expenses') || '[]'));
+    setCategories((prev) => migrateCategoriesRecord(prev));
   };
 
   // One-time migration: merge Peripherals > Optical Drives into Components > Optical Drives, then remove Optical Drives from Peripherals

@@ -19,7 +19,7 @@ type Props = {
 
 const kindIcon = (kind: ContainerKind, size: number) => {
   switch (kind) {
-    case 'lot':
+    case 'mixed':
       return <BoxSelect size={size} className="shrink-0" />;
     case 'bundle':
       return <Layers size={size} className="shrink-0" />;

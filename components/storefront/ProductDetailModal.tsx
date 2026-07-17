@@ -59,7 +59,7 @@ const ProductDetailModal: React.FC<Props> = ({
         <div className="min-h-full flex flex-col lg:flex-row lg:items-stretch max-w-7xl mx-auto w-full">
           {/* Gallery column */}
           <div
-            className={`relative lg:w-[55%] xl:w-[58%] min-h-[45vh] lg:min-h-screen flex flex-col ${
+            className={`relative lg:w-[55%] xl:w-[58%] min-h-[52vh] sm:min-h-[45vh] lg:min-h-screen flex flex-col ${
               darkMode ? 'bg-zinc-900' : 'bg-zinc-100'
             }`}
             onClick={(e) => e.stopPropagation()}
@@ -254,7 +254,25 @@ const ProductDetailModal: React.FC<Props> = ({
               )}
             </div>
 
-            <div className={`shrink-0 p-6 sm:p-8 border-t sticky bottom-0 ${darkMode ? 'border-zinc-800 bg-zinc-950/95 backdrop-blur' : 'border-zinc-200 bg-white/95 backdrop-blur'}`}>
+            <div
+              className={`shrink-0 p-4 sm:p-6 border-t sticky bottom-0 z-30 pb-[max(1rem,env(safe-area-inset-bottom))] ${
+                darkMode ? 'border-zinc-800 bg-zinc-950/95 backdrop-blur' : 'border-zinc-200 bg-white/95 backdrop-blur'
+              }`}
+            >
+              <div className="flex items-center gap-3 mb-3 lg:hidden">
+                {hasPrice ? (
+                  <p className="text-xl font-black tabular-nums text-brand-600">
+                    {formatEUR(Number(price))} €
+                  </p>
+                ) : (
+                  <p className={`text-sm font-semibold ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                    {texts.priceOnRequest}
+                  </p>
+                )}
+                <p className={`text-[10px] font-bold uppercase tracking-wide truncate flex-1 ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                  {item.name}
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={onContact}

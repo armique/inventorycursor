@@ -26,6 +26,7 @@ import {
 } from '../utils/inventoryAmountFilter';
 import { copyKleinanzeigenListing } from '../utils/copyKleinanzeigenListing';
 import { cycleInventoryItemPresence, getItemPresenceCycleState, getItemUserPhotoCount, normalizeImageList, prepareInventoryImagesForStorage } from '../utils/imageImport';
+import { photoQcSummary } from '../utils/photoQc';
 import { exportInventoryToExcel } from '../services/excelExportService';
 import { getRecentItemIds, addRecentItemId } from '../services/recentItemsService';
 import { generateStoreDescription } from '../services/specsAI';
@@ -406,6 +407,8 @@ const PAYMENT_METHODS: PaymentType[] = [
   'Other'
 ];
 
+type SmartPreset = 'no_photo' | 'presence_unknown' | 'no_specs' | 'defective' | 'aging' | null;
+
 type InventoryListFilterParams = {
   items: InventoryItem[];
   statusFilter: StatusFilter;
@@ -422,6 +425,7 @@ type InventoryListFilterParams = {
   showInComposition: boolean;
   timeGaugeSortKeyMap: Map<string, number>;
   amountFilter: AmountFilterState;
+  smartPreset: SmartPreset;
 };
 
 function filterAndSortInventoryItems(params: InventoryListFilterParams): InventoryItem[] {
@@ -441,6 +445,7 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
     showInComposition,
     timeGaugeSortKeyMap,
     amountFilter,
+    smartPreset,
   } = params;
 
   const query = searchTerm.trim();
@@ -461,7 +466,20 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
       matchesStatus = true;
     }
     if (!matchesStatus) return false;
-    // Bundle/PC/lot components always nest under the parent — never as top-level rows.
+
+    if (smartPreset === 'no_photo' && getItemUserPhotoCount(item) > 0) return false;
+    if (smartPreset === 'presence_unknown' && getItemPresenceCycleState(item) !== 'unknown') return false;
+    if (smartPreset === 'no_specs' && item.specs && Object.keys(item.specs).length > 0) return false;
+    if (smartPreset === 'defective' && !item.isDefective) return false;
+    if (smartPreset === 'aging') {
+      const key = item.buyDate || '';
+      if (!key) return false;
+      const bought = new Date(key);
+      const ageDays = (Date.now() - bought.getTime()) / (1000 * 60 * 60 * 24);
+      if (!(ageDays > 90) || isRealizedDisposal(item)) return false;
+    }
+
+    // Bundle/PC/mixed components always nest under the parent — never as top-level rows.
     // Search still surfaces the parent when a child matches.
     if (shouldHideContainerChildInList(item, items)) return false;
     // Orphan "in composition" rows (no parent container) respect the visibility toggle.
@@ -715,8 +733,16 @@ const InventoryList: React.FC<Props> = ({
   }, [statusFilter]);
 
   type ListDensity = 'comfortable' | 'compact';
-  const [listDensity, setListDensity] = useState<ListDensity>(() => loadState<ListDensity>('list_density', 'compact'));
-  useEffect(() => localStorage.setItem(`${persistenceKey}_list_density`, JSON.stringify(listDensity)), [listDensity, persistenceKey]);
+  const [listDensity, setListDensity] = useState<ListDensity>(() => {
+    const global = localStorage.getItem('panel_list_density');
+    if (global === 'comfortable' || global === 'compact') return global;
+    return loadState<ListDensity>('list_density', 'compact');
+  });
+  useEffect(() => {
+    localStorage.setItem(`${persistenceKey}_list_density`, JSON.stringify(listDensity));
+    localStorage.setItem('panel_list_density', listDensity);
+  }, [listDensity, persistenceKey]);
+  const [smartPreset, setSmartPreset] = useState<SmartPreset>(null);
   const [showAISpecsModal, setShowAISpecsModal] = useState(false);
   const [showBulkAddPhotosModal, setShowBulkAddPhotosModal] = useState(false);
   const [addPhotosTargetIds, setAddPhotosTargetIds] = useState<string[]>([]);
@@ -1386,6 +1412,7 @@ const InventoryList: React.FC<Props> = ({
       specRangeFilters,
       showInComposition,
       timeGaugeSortKeyMap,
+      smartPreset,
     }),
     [
       items,
@@ -1402,6 +1429,7 @@ const InventoryList: React.FC<Props> = ({
       specRangeFilters,
       showInComposition,
       timeGaugeSortKeyMap,
+      smartPreset,
     ]
   );
 
@@ -1860,14 +1888,16 @@ const InventoryList: React.FC<Props> = ({
       return;
     }
 
-    if (type === 'pc') {
+    if (type === 'pc' || type === 'bundle') {
       const validItems = selectedItemsList.filter(
         (i) =>
           !i.isDefective &&
           (i.status === ItemStatus.IN_STOCK || i.status === ItemStatus.ORDERED)
       );
       if (validItems.length === 0) {
-        alert('No valid items for a PC build (defective parts are blocked — use Lot Bundle).');
+        alert(
+          `No valid items for a ${type === 'bundle' ? 'Bundle' : 'PC'} (defective blocked — use Mixed Bundle).`
+        );
         return;
       }
       if (validItems.length < selectedItemsList.length) {
@@ -1880,20 +1910,20 @@ const InventoryList: React.FC<Props> = ({
           return;
         }
       }
-      navigate('/panel/builder?mode=pc', { state: { initialParts: validItems } });
+      navigate(`/panel/builder?mode=${type}`, { state: { initialParts: validItems } });
       setSelectedIds([]);
       return;
     }
 
-    // Lot Bundle — defective allowed
+    // Mixed Bundle — defective allowed
     const validItems = selectedItemsList.filter(
       (i) => i.status === ItemStatus.IN_STOCK || i.status === ItemStatus.ORDERED
     );
     if (validItems.length === 0) {
-      alert('Lot bundle needs In Stock / Ordered items.');
+      alert('Mixed Bundle needs In Stock / Ordered items.');
       return;
     }
-    navigate('/panel/builder?mode=lot', { state: { initialParts: validItems } });
+    navigate('/panel/builder?mode=mixed', { state: { initialParts: validItems } });
     setSelectedIds([]);
   };
 
@@ -2061,18 +2091,27 @@ const InventoryList: React.FC<Props> = ({
               })()}
 
               {/* Add photos (replaces former defective quick button slot) */}
+              {(() => {
+                const qc = photoQcSummary(item);
+                return (
               <button
                 type="button"
                 onClick={() => openAddPhotosModal([item.id])}
                 className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors ${
-                  getItemUserPhotoCount(item) > 0
+                  !qc.ok && qc.issues.some((i) => i.level === 'error')
+                    ? 'border-rose-300 bg-rose-50 text-rose-600 hover:bg-rose-100'
+                    : !qc.ok
+                    ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                    : getItemUserPhotoCount(item) > 0
                     ? 'border-blue-300 bg-blue-50 text-blue-600 hover:bg-blue-100'
                     : 'border-slate-200 bg-white text-slate-500 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50/50'
                 }`}
-                title="Add photos (upload, URL, or Imgur album)"
+                title={qc.ok ? 'Photos OK — click to add more' : `Photo QC: ${qc.label}`}
               >
                 <Camera size={13} strokeWidth={2.25} />
               </button>
+                );
+              })()}
 
               <button
                 type="button"
@@ -3708,7 +3747,30 @@ const InventoryList: React.FC<Props> = ({
                   </div>
                )}
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex flex-wrap items-center gap-1">
+               {(
+                 [
+                   ['no_photo', 'No photo'],
+                   ['presence_unknown', '? Presence'],
+                   ['no_specs', 'No specs'],
+                   ['defective', 'Defekt'],
+                   ['aging', '>90d'],
+                 ] as const
+               ).map(([id, label]) => (
+                 <button
+                   key={id}
+                   type="button"
+                   onClick={() => setSmartPreset((p) => (p === id ? null : id))}
+                   className={`px-2 py-1 rounded-lg border text-[9px] font-black uppercase tracking-wide ${
+                     smartPreset === id
+                       ? 'bg-amber-500 text-white border-amber-500'
+                       : 'bg-white text-slate-500 border-slate-200 hover:border-amber-300'
+                   }`}
+                   title={`Smart filter: ${label}`}
+                 >
+                   {label}
+                 </button>
+               ))}
                <button
                  type="button"
                  onClick={() => setShowAISpecsModal(true)}
@@ -3725,9 +3787,12 @@ const InventoryList: React.FC<Props> = ({
                  type="button"
                  onClick={() => setListDensity((d) => (d === 'compact' ? 'comfortable' : 'compact'))}
                  className={`p-1.5 rounded-lg border flex items-center gap-1 ${listDensity === 'compact' ? 'bg-slate-900 text-white border-slate-900' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
-                 title={listDensity === 'compact' ? 'Switch to comfortable view (more spacing)' : 'Compact view – denser list'}
+                 title={listDensity === 'compact' ? 'Comfortable: more spacing' : 'Compact: denser list'}
                >
-                 <List size={14} /> <span className="text-[10px] font-bold uppercase">Compact</span>
+                 <List size={14} />{' '}
+                 <span className="text-[10px] font-bold uppercase">
+                   {listDensity === 'compact' ? 'Compact' : 'Comfort'}
+                 </span>
                </button>
                <button
                  type="button"
@@ -4462,8 +4527,9 @@ const InventoryList: React.FC<Props> = ({
                      <div className="space-y-4">
                         <div className="flex justify-between items-end">
                            <div>
-                              <p className="text-[10px] font-bold text-slate-400 uppercase">€{formatEUR(Number(priceSuggestResult.priceLow))} – €{formatEUR(Number(priceSuggestResult.priceHigh))}</p>
-                              <p className="text-2xl font-black text-emerald-600">€{formatEUR(Number(priceSuggestResult.priceAverage))}</p>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase">Sold comps band (eBay.de)</p>
+                              <p className="text-sm font-black text-slate-700">€{formatEUR(Number(priceSuggestResult.priceLow))} – €{formatEUR(Number(priceSuggestResult.priceHigh))}</p>
+                              <p className="text-2xl font-black text-emerald-600 mt-1">€{formatEUR(Number(priceSuggestResult.priceAverage))} avg</p>
                            </div>
                            <a href={ebaySoldSearchUrl(priceSuggestModalItem.name)} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1">
                               eBay.de <ArrowRight size={12}/>
