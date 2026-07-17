@@ -7,7 +7,7 @@ import {
   MessageCircle, Link as LinkIcon, Upload, Search, Database, 
   Cpu, Monitor, HardDrive, Zap, Wind, AlertCircle, CheckCircle2, Copy,
   Fan, Lightbulb, Keyboard, Mouse, Tv, MoreHorizontal, Cable, Laptop as LaptopIcon, Wrench,
-  Sparkles, Loader2, Package
+  Sparkles, Loader2, Package, Ban
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, Platform, PaymentType } from '../types';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
@@ -18,12 +18,17 @@ import { mergeAiSpecsIntoEssential, resolveEssentialSpecKeys } from '../services
 import { correctGpuVramInSpecs, shouldApplyGpuVramCorrection } from '../services/gpuVramCorrection';
 import {
   buildRamKitSpecs,
-  extractRamKitInfo,
   formatRamKitDisplayName,
   parseBulkLineQuantityAndName,
   resolveRamInventoryQuantity,
   resolveRamKitInfo,
 } from '../utils/ramKitParse';
+import {
+  formatDefectSplitNote,
+  lineHasDefectKeyword,
+  resolveDefectCounts,
+  stripConditionAnnotations,
+} from '../utils/bulkTextParse';
 import { filesToDataUrls, prepareInventoryImagesForStorage } from '../utils/imageImport';
 
 interface Props {
@@ -78,12 +83,19 @@ interface DraftItem {
   note: string;
   manualCost?: number; // If set, overrides auto-split
   specs?: Record<string, string | number>;
+  specsAiSuggested?: Record<string, string | number>;
   vendor?: string;
   isDefective?: boolean;
+  /** When true, Confirm Import skips AI tech-spec parsing for this row. */
+  skipAiSpecs?: boolean;
+  /** Original paste line — used to re-apply defect flags after specs parse. */
+  sourceLine?: string;
 }
 
 type CostSplitMode = 'EQUAL' | 'SMART';
 type TextImportMode = 'AS_IS' | 'AI';
+/** How to expand Nx lines into the review list. */
+type BulkQtyMode = 'INDIVIDUAL' | 'LOT';
 
 interface ParsedTextItem {
   name: string;
@@ -151,11 +163,15 @@ function inferCategoryFromName(name: string): { category: string; subCategory: s
   const n = name.toLowerCase();
   if (/(rtx|gtx|radeon|rx\s?\d{3,5}|quadro|tesla|firepro|nvidia\s+[qkmt]|graphics card|grafikkarte)/i.test(n))
     return { category: 'Components', subCategory: 'Graphics Cards' };
-  if (/(intel core|ryzen|threadripper|cpu|prozessor)/i.test(n)) return { category: 'Components', subCategory: 'Processors' };
+  if (/\b(i[3579]|intel\s*core|ryzen|threadripper|cpu|prozessor)\b/i.test(n) && !/mainboard|motherboard|prodesk|optiplex|elitedesk|business\s*pc/i.test(n))
+    return { category: 'Components', subCategory: 'Processors' };
   if (MOTHERBOARD_PATTERN.test(n) || /socket\s?(am|lga)/i.test(n)) return { category: 'Components', subCategory: 'Motherboards' };
-  if (/(ddr[2345]|ram\b|memory\b|\d+\s*[x×]\s*\d+\s*gb|12800u|10600u|1333u|2rx8|1rx8|jedec|hynix|samsung m\d|kingston khx|sk hynix|crucial)/i.test(n))
+  if (/(ddr[2345]|ram\b|memory\b|\d+\s*[x×]\s*\d+\s*gb|12800u|10600u|1333u|2rx8|1rx8|jedec|hynix|samsung m\d|kingston (?:khx|acr)|sk hynix|crucial|mhz)/i.test(n) && !/prodesk|optiplex|elitedesk|business\s*pc|mainboard|motherboard/i.test(n))
     return { category: 'Components', subCategory: 'RAM' };
-  if (/(ssd|hdd|nvme|m\.2|tb\b|gb\b)/i.test(n)) return { category: 'Components', subCategory: 'Storage (SSD/HDD)' };
+  if (/(prodesk|optiplex|elitedesk|business\s*pc|desktop\s*pc|mini\s*pc)\b/i.test(n))
+    return { category: 'PC', subCategory: 'Pre-Built PC' };
+  if (/(dvd|bluray|blu-ray|optical|oddd|gud\d)/i.test(n)) return { category: 'Misc', subCategory: 'Spare Parts' };
+  if (/(ssd|hdd|nvme|m\.2|\b\d+\s*tb\b)/i.test(n)) return { category: 'Components', subCategory: 'Storage (SSD/HDD)' };
   if (/(netzteil|power supply|psu|watt|80\+)/i.test(n)) return { category: 'Components', subCategory: 'Power Supplies' };
   if (/(geh[aä]use|case|micro-atx|matx|atx case)/i.test(n)) return { category: 'Components', subCategory: 'Cases' };
   if (/(aio|k[uü]hler|cooler|liquid freezer|fan|l[uü]fter|120mm|140mm)/i.test(n)) return { category: 'Components', subCategory: 'Cooling' };
@@ -181,13 +197,16 @@ function reconcileCategory(name: string, category?: string, subCategory?: string
   const aiSub = normalizeSubCategory(aiCategory, subCategory || guessed.subCategory);
 
   const n = name.toLowerCase();
-  if (/(intel core|ryzen|threadripper|cpu|prozessor)/i.test(n)) {
+  if (/(prodesk|optiplex|elitedesk|business\s*pc|desktop\s*pc|mini\s*pc)\b/i.test(n)) {
+    return { category: 'PC', subCategory: 'Pre-Built PC' };
+  }
+  if (/\b(i[3579]|intel\s*core|ryzen|threadripper|cpu|prozessor)\b/i.test(n) && !/mainboard|motherboard|prodesk|optiplex|elitedesk|business\s*pc/i.test(n)) {
     return { category: 'Components', subCategory: 'Processors' };
   }
   if (/(ssd|nvme|m\.2|hdd|sata)/i.test(n)) {
     return { category: 'Components', subCategory: 'Storage (SSD/HDD)' };
   }
-  if (/(ddr4|ddr5|ram|memory|\d+\s*[x×]\s*\d+\s*gb|crucial)/i.test(n)) {
+  if (/(ddr4|ddr5|ram|memory|\d+\s*[x×]\s*\d+\s*gb|crucial)/i.test(n) && !/mainboard|motherboard|prodesk|business\s*pc/i.test(n)) {
     return { category: 'Components', subCategory: 'RAM' };
   }
   if (MOTHERBOARD_PATTERN.test(n)) {
@@ -198,6 +217,9 @@ function reconcileCategory(name: string, category?: string, subCategory?: string
     return guessed;
   }
   if (aiCategory === 'Components' && aiSub === 'Graphics Cards' && guessed.subCategory !== 'Graphics Cards') {
+    return guessed;
+  }
+  if (guessed.category === 'PC' && aiCategory !== 'PC') {
     return guessed;
   }
   return { category: aiCategory, subCategory: aiSub };
@@ -249,6 +271,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
   const [bulkText, setBulkText] = useState('');
   const [bulkTextBusy, setBulkTextBusy] = useState(false);
   const [bulkTextStatus, setBulkTextStatus] = useState<string | null>(null);
+  const [bulkQtyMode, setBulkQtyMode] = useState<BulkQtyMode>('INDIVIDUAL');
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
 
   // Search Logic
@@ -362,8 +385,11 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
   const applyParsedItems = (parsed: ParsedTextItem[], importMode: TextImportMode) => {
     const appended: DraftItem[] = [];
     for (const row of parsed) {
-      const baseName = (row.name || '').trim();
-      if (!baseName) continue;
+      const rawName = (row.name || '').trim();
+      if (!rawName) continue;
+      const sourceLine = (row.sourceLine || '').trim();
+      const conditionText = `${sourceLine} ${rawName} ${row.note || ''}`;
+      const baseName = stripConditionAnnotations(rawName) || rawName;
       const lineQty = Math.max(1, Math.floor(Number(row.lineQuantity ?? row.quantity ?? 1) || 1));
       const requestedQty = Math.max(1, Math.floor(Number(row.quantity ?? lineQty) || 1));
       const rec = importMode === 'AS_IS'
@@ -371,35 +397,78 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
         : reconcileCategory(baseName, row.category, row.subCategory);
       const ramKit =
         rec.subCategory === 'RAM'
-          ? resolveRamKitInfo(baseName, { sourceLine: row.sourceLine, specs: row.specs })
+          ? resolveRamKitInfo(baseName, { sourceLine, specs: row.specs })
           : null;
       const inventoryQty = resolveRamInventoryQuantity(requestedQty, ramKit, lineQty);
-      const nameForFormat = row.sourceLine?.trim() || baseName;
-      const displayName = ramKit ? formatRamKitDisplayName(nameForFormat, ramKit) : baseName;
-      for (let i = 0; i < inventoryQty; i++) {
-        let mergedSpecs: Record<string, string | number> = { ...(row.specs || {}) };
-        if (ramKit) {
-          mergedSpecs = { ...mergedSpecs, ...buildRamKitSpecs(ramKit) };
-        }
-        if (shouldApplyGpuVramCorrection(rec.subCategory, baseName)) {
-          mergedSpecs = correctGpuVramInSpecs(baseName, undefined, mergedSpecs);
-        }
+      const nameForFormat = stripConditionAnnotations(sourceLine) || sourceLine || baseName;
+      const displayName = ramKit
+        ? formatRamKitDisplayName(nameForFormat, ramKit)
+        : baseName;
+      const { working, defective } = resolveDefectCounts(
+        inventoryQty,
+        conditionText,
+        row.isDefective
+      );
+      const splitNote = formatDefectSplitNote(working, defective);
+
+      let mergedSpecs: Record<string, string | number> = { ...(row.specs || {}) };
+      if (ramKit) {
+        mergedSpecs = { ...mergedSpecs, ...buildRamKitSpecs(ramKit) };
+      }
+      if (shouldApplyGpuVramCorrection(rec.subCategory, baseName)) {
+        mergedSpecs = correctGpuVramInSpecs(baseName, undefined, mergedSpecs);
+      }
+
+      const pushDraft = (opts: { name: string; isDefective: boolean; note: string }) => {
         appended.push({
-          id: `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${i}`,
-          name: displayName,
+          id: `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${appended.length}`,
+          name: opts.name,
           category: rec.category,
           subCategory: rec.subCategory,
-          note: row.note || '',
-          specs: mergedSpecs,
+          note: opts.note,
+          specs: { ...mergedSpecs },
           vendor: row.vendor,
-          isDefective: !!row.isDefective,
+          isDefective: opts.isDefective,
+          sourceLine: sourceLine || undefined,
+        });
+      };
+
+      const baseNote = (row.note || '').trim();
+      const mergeNote = (...parts: string[]) => parts.filter(Boolean).join(' · ');
+
+      if (bulkQtyMode === 'LOT' && inventoryQty > 1) {
+        const lotName = `${inventoryQty}x ${displayName}`;
+        const lotDefective = defective > 0 && working === 0;
+        pushDraft({
+          name: lotName,
+          isDefective: lotDefective || (!!row.isDefective && defective === inventoryQty),
+          note: mergeNote(baseNote, splitNote || (lineHasDefectKeyword(conditionText) ? 'defekt' : '')),
+        });
+        continue;
+      }
+
+      for (let i = 0; i < working; i++) {
+        pushDraft({
+          name: displayName,
+          isDefective: false,
+          note: baseNote,
+        });
+      }
+      for (let i = 0; i < defective; i++) {
+        pushDraft({
+          name: displayName,
+          isDefective: true,
+          note: mergeNote(baseNote, 'defekt'),
         });
       }
     }
     if (!appended.length) return;
     setItems((prev) => [...prev, ...appended]);
     setBulkText('');
-    setBulkTextStatus(`Added ${appended.length} item(s) to review list. Edit if needed, then confirm import.`);
+    const modeLabel = bulkQtyMode === 'LOT' ? 'as lot(s)' : 'individually';
+    setBulkTextStatus(
+      `Added ${appended.length} item(s) ${modeLabel} to review list. Edit if needed, then confirm import.`
+    );
   };
 
   const handleAddBulkTextAsIs = () => {
@@ -447,9 +516,12 @@ Rules:
 - Keep categories limited to: ${CATEGORY_KEYS.join(', ')}
 - SubCategory should fit the category and be concise.
 - Parse quantity from prefixes like "2x ..." or "8x4GB ...". If no quantity, use 1.
+- Leading "2x Product" / "4x Product" is a PURCHASE count (how many units bought), not a RAM kit size. Example: "2x Samsung … 4GB" → quantity=2, name without the "2x".
 - IMPORTANT: Do not classify CPUs, SSD/NVMe drives, RAM, or motherboards as Graphics Cards.
 - IMPORTANT: Motherboards are often listed only by chipset/model (for example A320M, B450, B550, X570, Z690, Z790, H610) without the word "motherboard". Classify those as category "Components" and subCategory "Motherboards".
+- Pre-built desktops (ProDesk, OptiPlex, EliteDesk, "Business PC") → category "PC", subCategory "Pre-Built PC".
 - RAM kits (e.g. "Crucial 2x8GB", "8x4GB Hynix"): ONE inventory line per kit with quantity=1 unless the line starts with a purchase count like "3x Crucial 2x8GB" (then quantity=3). Never set quantity to the stick/module count. In specs use Modules (number of sticks), GB per Stick, and Kit Capacity (modules × GB per stick).
+- Defective: set isDefective=true if the line mentions defect/defekt/defective/not working/не работает/kaputt/for parts (any language). If the line has a split like "(2 working, 2 defekt)", set isDefective=false and put that text in note (the app expands OK vs Defekt rows). Strip condition parentheses from name.
 - Put only essential specs in "specs" (VRAM for GPUs, GB for RAM, wattage for PSUs). Use {} if none.
 - Graphics cards: VRAM = GPU memory for that chip (not system RAM).
 
@@ -578,10 +650,10 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
       }
     }
 
-    // Parse tech specs with AI for items that don't have specs yet
+    // Parse tech specs with AI for items that don't have specs yet (skip per-row opt-out)
     if (parseSpecsBeforeImport && aiAvailable) {
       const needSpecs = itemsToImport.filter(
-        (d) => !d.specs || Object.keys(d.specs).length === 0
+        (d) => !d.skipAiSpecs && (!d.specs || Object.keys(d.specs).length === 0)
       );
       if (needSpecs.length > 0) {
         setParsingSpecs(true);
@@ -602,10 +674,17 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                 draft.subCategory,
                 categoryFields
               );
+              const prev = updated[idx];
+              const conditionText = `${prev.sourceLine || ''} ${prev.name} ${prev.note || ''}`;
+              const stillDefective =
+                !!prev.isDefective ||
+                (lineHasDefectKeyword(conditionText) &&
+                  resolveDefectCounts(1, conditionText, prev.isDefective).defective > 0);
               updated[idx] = {
-                ...updated[idx],
+                ...prev,
                 specs: mergedSpecs,
                 specsAiSuggested: Object.keys(mergedSpecs).length ? { ...mergedSpecs } : undefined,
+                isDefective: stillDefective,
                 ...(result.standardizedName && { name: result.standardizedName }),
                 ...(result.vendor && { vendor: result.vendor }),
               };
@@ -615,7 +694,18 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
             // Keep original item, don't block import
           }
         }
-        itemsToImport = updated;
+        // After specs: re-assert defect flags from source text for every imported draft
+        itemsToImport = updated.map((d) => {
+          const conditionText = `${d.sourceLine || ''} ${d.name} ${d.note || ''}`;
+          if (d.isDefective) return d;
+          if (
+            lineHasDefectKeyword(conditionText) &&
+            resolveDefectCounts(1, conditionText, false).defective > 0
+          ) {
+            return { ...d, isDefective: true };
+          }
+          return d;
+        });
         setParseProgress(null);
         setParsingSpecs(false);
       }
@@ -784,6 +874,32 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                      <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
+                          onClick={() => setBulkQtyMode('INDIVIDUAL')}
+                          className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${
+                            bulkQtyMode === 'INDIVIDUAL'
+                              ? 'bg-slate-900 text-white'
+                              : 'bg-slate-50 text-slate-500 border border-slate-200 hover:border-slate-300'
+                          }`}
+                          title="2x / 4x → separate inventory rows (split working vs defekt)"
+                        >
+                          Separately (Nx → N)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBulkQtyMode('LOT')}
+                          className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${
+                            bulkQtyMode === 'LOT'
+                              ? 'bg-slate-900 text-white'
+                              : 'bg-slate-50 text-slate-500 border border-slate-200 hover:border-slate-300'
+                          }`}
+                          title="Keep each line as one lot item (e.g. 4x Kingston…)"
+                        >
+                          1 lot as written
+                        </button>
+                     </div>
+                     <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
                           onClick={handleAddBulkTextAsIs}
                           disabled={!bulkText.trim() || bulkTextBusy}
                           className="py-2.5 rounded-xl bg-slate-100 text-slate-700 text-[10px] font-black uppercase tracking-wide hover:bg-slate-200 disabled:opacity-50"
@@ -800,6 +916,11 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                           Parse With AI
                         </button>
                      </div>
+                     <p className="text-[10px] text-slate-400">
+                       {bulkQtyMode === 'INDIVIDUAL'
+                         ? 'Nx lines expand to N items. “(2 working, 2 defekt)” → 2 OK + 2 Defekt.'
+                         : 'Each Nx line becomes one lot item named like “4x Product…”.'}
+                     </p>
                      {bulkTextStatus && <p className="text-[10px] text-slate-500">{bulkTextStatus}</p>}
                   </div>
 
@@ -1081,6 +1202,9 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                              <div className="flex items-center gap-2">
                                 <p className="font-black text-slate-900 text-sm truncate">{item.name}</p>
                                 <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-[9px] font-bold uppercase">{item.subCategory || item.category}</span>
+                                {item.skipAiSpecs && (
+                                  <span className="bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded text-[8px] font-black uppercase">No AI specs</span>
+                                )}
                              </div>
                              {item.note && <p className="text-[10px] text-slate-400 truncate">{item.note}</p>}
                            </div>
@@ -1119,6 +1243,28 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                              />
                           </div>
 
+                          <button
+                            type="button"
+                            title={
+                              item.skipAiSpecs
+                                ? 'AI tech specs skipped — click to allow parsing'
+                                : 'Skip AI tech specs for this item'
+                            }
+                            onClick={() =>
+                              setItems((prev) =>
+                                prev.map((x) =>
+                                  x.id === item.id ? { ...x, skipAiSpecs: !x.skipAiSpecs } : x
+                                )
+                              )
+                            }
+                            className={`p-2 rounded-xl transition-all ${
+                              item.skipAiSpecs
+                                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                                : 'text-slate-300 hover:text-amber-600 hover:bg-amber-50'
+                            }`}
+                          >
+                            <Ban size={14} />
+                          </button>
                           <button
                             type="button"
                             onClick={() => setEditingItemId((curr) => (curr === item.id ? null : item.id))}
