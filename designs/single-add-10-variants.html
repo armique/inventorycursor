@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>10 вариантов — одиночное добавление товара</title>
+  <style>
+    :root {
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: #e2e8f0;
+      --bg: #f1f5f9;
+      --card: #ffffff;
+      --teal: #0d9488;
+      --teal-soft: #ccfbf1;
+      --amber: #d97706;
+      --rose: #e11d48;
+      --ok: #059669;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.4;
+    }
+    header.page {
+      position: sticky; top: 0; z-index: 20;
+      background: rgba(15, 23, 42, 0.92);
+      color: #fff;
+      backdrop-filter: blur(8px);
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+    }
+    header.page h1 { margin: 0; font-size: 1.1rem; letter-spacing: -0.02em; }
+    header.page p { margin: .35rem 0 0; font-size: .8rem; color: #94a3b8; max-width: 52rem; }
+    nav.toc {
+      display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .75rem;
+    }
+    nav.toc a {
+      color: #e2e8f0; text-decoration: none; font-size: .7rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .04em;
+      padding: .35rem .55rem; border-radius: 999px; background: rgba(255,255,255,.08);
+    }
+    nav.toc a:hover { background: rgba(13,148,136,.45); }
+    main { max-width: 920px; margin: 0 auto; padding: 1.25rem; display: grid; gap: 2rem; }
+    section.variant {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 1.25rem;
+      overflow: hidden;
+      box-shadow: 0 1px 2px rgba(15,23,42,.04);
+    }
+    .variant-head {
+      padding: .9rem 1.1rem;
+      border-bottom: 1px solid var(--line);
+      display: flex; gap: .75rem; align-items: flex-start;
+      background: #f8fafc;
+    }
+    .badge {
+      flex-shrink: 0;
+      width: 2rem; height: 2rem; border-radius: .65rem;
+      display: grid; place-items: center;
+      font-size: .75rem; font-weight: 900; color: #fff; background: var(--teal);
+    }
+    .variant-head h2 { margin: 0; font-size: .95rem; }
+    .variant-head p { margin: .2rem 0 0; font-size: .75rem; color: var(--muted); }
+    .mock { padding: 1rem 1.1rem 1.25rem; }
+    .hint { font-size: .7rem; color: var(--muted); margin: 0 0 .75rem; }
+    label.lbl { display: block; font-size: .65rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: .3rem; }
+    input, select, textarea {
+      width: 100%; border: 1px solid var(--line); border-radius: .7rem;
+      padding: .55rem .7rem; font: inherit; font-size: .85rem; background: #fff;
+    }
+    input:focus, select:focus, textarea:focus { outline: 2px solid #99f6e4; border-color: var(--teal); }
+    .row { display: grid; gap: .65rem; }
+    .row-2 { grid-template-columns: 1fr 1fr; }
+    .row-3 { grid-template-columns: 1fr 1fr 1fr; }
+    @media (max-width: 640px) { .row-2, .row-3 { grid-template-columns: 1fr; } }
+    .chips { display: flex; flex-wrap: wrap; gap: .35rem; }
+    .chip {
+      border: 1px solid var(--line); background: #fff; border-radius: 999px;
+      padding: .35rem .65rem; font-size: .7rem; font-weight: 700; cursor: pointer; color: #475569;
+    }
+    .chip.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+    .chip.soft.on { background: var(--teal-soft); color: #0f766e; border-color: #5eead4; }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
+      border: 0; border-radius: .75rem; padding: .7rem 1rem; font-weight: 800; font-size: .75rem;
+      text-transform: uppercase; letter-spacing: .06em; cursor: pointer;
+    }
+    .btn-primary { background: var(--teal); color: #fff; width: 100%; }
+    .btn-ghost { background: #f1f5f9; color: #334155; }
+    .btn-danger-soft { background: #fff1f2; color: var(--rose); border: 1px solid #fecdd3; }
+    .stack { display: grid; gap: .75rem; }
+    .split { display: grid; grid-template-columns: 1.2fr .8fr; gap: .85rem; }
+    @media (max-width: 720px) { .split { grid-template-columns: 1fr; } }
+    .photo {
+      aspect-ratio: 1; border: 1.5px dashed #cbd5e1; border-radius: 1rem;
+      display: grid; place-items: center; color: var(--muted); font-size: .75rem; font-weight: 700;
+      background: #f8fafc;
+    }
+    .seg {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: .25rem;
+      background: #f1f5f9; padding: .25rem; border-radius: .85rem;
+    }
+    .seg button {
+      border: 0; background: transparent; border-radius: .65rem; padding: .5rem .25rem;
+      font-size: .65rem; font-weight: 800; text-transform: uppercase; color: #64748b; cursor: pointer;
+    }
+    .seg button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+    .stepper { display: flex; gap: .35rem; margin-bottom: .85rem; }
+    .step {
+      flex: 1; height: 4px; border-radius: 99px; background: #e2e8f0;
+    }
+    .step.on { background: var(--teal); }
+    .pill-toggle {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: .55rem .7rem; border: 1px solid var(--line); border-radius: .75rem; font-size: .8rem; font-weight: 700;
+    }
+    .switch {
+      width: 2.2rem; height: 1.2rem; border-radius: 99px; background: #cbd5e1; position: relative;
+    }
+    .switch::after {
+      content: ""; position: absolute; top: 2px; left: 2px; width: .9rem; height: .9rem;
+      border-radius: 50%; background: #fff;
+    }
+    .switch.on { background: var(--ok); }
+    .switch.on::after { left: auto; right: 2px; }
+    .mini { font-size: .65rem; color: var(--muted); }
+    .footer-bar {
+      display: flex; gap: .5rem; align-items: center; margin-top: .85rem;
+      padding-top: .85rem; border-top: 1px solid var(--line);
+    }
+    .kbd {
+      font-size: .65rem; font-weight: 800; padding: .15rem .4rem; border-radius: .35rem;
+      background: #e2e8f0; color: #475569;
+    }
+    .search-wrap { position: relative; }
+    .search-wrap span {
+      position: absolute; left: .65rem; top: 50%; transform: translateY(-50%);
+      font-size: .75rem; color: #94a3b8;
+    }
+    .search-wrap input { padding-left: 1.85rem; }
+    .rail {
+      display: grid; grid-template-columns: 3.2rem 1fr; gap: .75rem; align-items: start;
+    }
+    .rail-nav { display: grid; gap: .35rem; }
+    .rail-nav button {
+      width: 3.2rem; height: 3.2rem; border-radius: .85rem; border: 1px solid var(--line);
+      background: #fff; font-size: .7rem; font-weight: 900; cursor: pointer; color: #64748b;
+    }
+    .rail-nav button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+    .drawer-sheet {
+      border: 1px solid var(--line); border-radius: 1rem; padding: .75rem; background: #f8fafc;
+    }
+    .command {
+      display: flex; gap: .5rem; align-items: center;
+      border: 1px solid var(--line); border-radius: .85rem; padding: .55rem .7rem; background: #fff;
+      font-size: .85rem;
+    }
+    .command strong { color: var(--teal); }
+    footer.note {
+      text-align: center; color: var(--muted); font-size: .75rem; padding: 0 1rem 2rem;
+    }
+  </style>
+</head>
+<body>
+  <header class="page">
+    <h1>10 вариантов дизайна — одиночное добавление товара</h1>
+    <p>
+      Цель: меню удобнее, компактнее, интуитивнее. Один экран = один концепт.
+      Откройте файл в браузере и сравните. Поля кликабельны (демо).
+    </p>
+    <nav class="toc">
+      <a href="#v1">1. Essentials</a>
+      <a href="#v2">2. Chips</a>
+      <a href="#v3">3. Steps</a>
+      <a href="#v4">4. Split</a>
+      <a href="#v5">5. Command</a>
+      <a href="#v6">6. Bottom sheet</a>
+      <a href="#v7">7. Rail</a>
+      <a href="#v8">8. Smart detect</a>
+      <a href="#v9">9. Keyboard</a>
+      <a href="#v10">10. Minimal</a>
+    </nav>
+  </header>
+
+  <main>
+
+    <!-- ========== 1 ========== -->
+    <section class="variant" id="v1">
+      <div class="variant-head">
+        <div class="badge">1</div>
+        <div>
+          <h2>Essentials-first (рекомендую как базу)</h2>
+          <p>Сверху только имя + цена + категория. Всё остальное — «Ещё». Минимум шума.</p>
+        </div>
+      </div>
+      <div class="mock">
+        <p class="hint">Почему удобно: 80% добавлений — 3 поля. Остальное не мешает.</p>
+        <div class="stack">
+          <div>
+            <label class="lbl">Название</label>
+            <input value="Kingston ACR24D4U1S1ME-8X 8GB DDR4 2133" />
+          </div>
+          <div class="row row-2">
+            <div>
+              <label class="lbl">Цена покупки €</label>
+              <input value="12,50" />
+            </div>
+            <div>
+              <label class="lbl">Категория</label>
+              <select><option>Components → RAM</option><option>PC</option><option>Misc</option></select>
+            </div>
+          </div>
+          <button class="btn btn-ghost" type="button">+ Ещё: дата, платформа, фото, defekt, specs</button>
+          <button class="btn btn-primary" type="button">Сохранить товар</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 2 ========== -->
+    <section class="variant" id="v2">
+      <div class="variant-head">
+        <div class="badge">2</div>
+        <div>
+          <h2>Quick category chips</h2>
+          <p>Категория = крупные чипы (GPU/CPU/RAM…), без длинного select.</p>
+        </div>
+      </div>
+      <div class="mock">
+        <p class="hint">Интуитивно для склада: палец/мышь выбирает тип за 1 клик.</p>
+        <div class="stack">
+          <div>
+            <label class="lbl">Тип детали</label>
+            <div class="chips">
+              <button class="chip" type="button">GPU</button>
+              <button class="chip" type="button">CPU</button>
+              <button class="chip on soft" type="button">RAM</button>
+              <button class="chip" type="button">Mobo</button>
+              <button class="chip" type="button">SSD</button>
+              <button class="chip" type="button">PSU</button>
+              <button class="chip" type="button">PC</button>
+              <button class="chip" type="button">Misc</button>
+            </div>
+          </div>
+          <div>
+            <label class="lbl">Название</label>
+            <input placeholder="Вставь название или артикул…" />
+          </div>
+          <div class="row row-3">
+            <div><label class="lbl">€ EK</label><input placeholder="0,00" /></div>
+            <div><label class="lbl">Дата</label><input type="date" /></div>
+            <div><label class="lbl">Где купил</label><select><option>Kleinanzeigen</option><option>eBay</option></select></div>
+          </div>
+          <div class="pill-toggle"><span>Defekt / for parts</span><div class="switch"></div></div>
+          <button class="btn btn-primary" type="button">Добавить</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 3 ========== -->
+    <section class="variant" id="v3">
+      <div class="variant-head">
+        <div class="badge">3</div>
+        <div>
+          <h2>3 шага (What → Money → Extra)</h2>
+          <p>Прогресс-бар; на шаге 1 только идентификация товара.</p>
+        </div>
+      </div>
+      <div class="mock">
+        <div class="stepper"><div class="step on"></div><div class="step on"></div><div class="step"></div></div>
+        <p class="hint">Сейчас шаг 2/3 — деньги. Меньше когнитивной нагрузки для новичков.</p>
+        <div class="stack">
+          <div class="mini">Товар: <strong>Samsung M378A5143EB1-CPB 4GB</strong> · RAM</div>
+          <div class="row row-2">
+            <div><label class="lbl">Заплатил €</label><input value="8,00" /></div>
+            <div><label class="lbl">Оплата</label><select><option>Cash</option><option>Paypal</option></select></div>
+          </div>
+          <div class="footer-bar">
+            <button class="btn btn-ghost" type="button">← Назад</button>
+            <button class="btn btn-primary" type="button" style="flex:1">Далее: фото &amp; specs →</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 4 ========== -->
+    <section class="variant" id="v4">
+      <div class="variant-head">
+        <div class="badge">4</div>
+        <div>
+          <h2>Split: фото слева / поля справа</h2>
+          <p>Компактная карточка как в мессенджере объявлений.</p>
+        </div>
+      </div>
+      <div class="mock">
+        <div class="split">
+          <div class="stack">
+            <div><label class="lbl">Название</label><input value="Intel i5-6500" /></div>
+            <div class="chips">
+              <button class="chip on" type="button">CPU</button>
+              <button class="chip" type="button">Detect AI</button>
+            </div>
+            <div class="row row-2">
+              <div><label class="lbl">€</label><input value="25" /></div>
+              <div><label class="lbl">Платформа</label><select><option>eBay.de</option></select></div>
+            </div>
+            <button class="btn btn-primary" type="button">Save</button>
+          </div>
+          <div>
+            <div class="photo">+ Фото<br /><span class="mini">или Ctrl+V</span></div>
+            <p class="mini" style="margin:.4rem 0 0;text-align:center">1 фото = достаточно для старта</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 5 ========== -->
+    <section class="variant" id="v5">
+      <div class="variant-head">
+        <div class="badge">5</div>
+        <div>
+          <h2>Command-line paste</h2>
+          <p>Одна строка: <code>название | цена | категория</code> — парсится сразу.</p>
+        </div>
+      </div>
+      <div class="mock">
+        <p class="hint">Максимально быстро с телефона после покупки на KA.</p>
+        <div class="stack">
+          <div>
+            <label class="lbl">Быстрый ввод</label>
+            <div class="command">
+              <strong>→</strong>
+              <span style="flex:1">HP ProDesk G4 MT | 45 | PC</span>
+            </div>
+          </div>
+          <div class="drawer-sheet stack">
+            <div class="mini">Распознано</div>
+            <div><strong>HP ProDesk G4 MT</strong></div>
+            <div class="chips">
+              <span class="chip on soft">PC</span>
+              <span class="chip">€45,00</span>
+              <span class="chip">Heute</span>
+            </div>
+          </div>
+          <button class="btn btn-primary" type="button">Подтвердить добавление</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 6 ========== -->
+    <section class="variant" id="v6">
+      <div class="variant-head">
+        <div class="badge">6</div>
+        <div>
+          <h2>Mobile bottom sheet</h2>
+          <p>Нижняя «шторка»: сегменты What / Buy / Media.</p>
+        </div>
+      </div>
+      <div class="mock" style="max-width:380px;margin:0 auto;border:1px solid var(--line);border-radius:1.5rem;padding:1rem;background:#0f172a;">
+        <div style="background:#fff;border-radius:1.1rem;padding:.85rem;">
+          <div class="seg" style="margin-bottom:.75rem;">
+            <button class="on" type="button">What</button>
+            <button type="button">Buy</button>
+            <button type="button">Media</button>
+            <button type="button">More</button>
+          </div>
+          <div class="stack">
+            <div class="search-wrap">
+              <span>⌕</span>
+              <input placeholder="Название товара…" value="Dell Mainboard 1155" />
+            </div>
+            <div class="chips">
+              <button class="chip on soft" type="button">Mobo</button>
+              <button class="chip" type="button">AI detect</button>
+            </div>
+            <button class="btn btn-primary" type="button">Далее</button>
+          </div>
+        </div>
+        <p class="mini" style="color:#94a3b8;text-align:center;margin:.65rem 0 0">Большие зоны нажатия · один фокус</p>
+      </div>
+    </section>
+
+    <!-- ========== 7 ========== -->
+    <section class="variant" id="v7">
+      <div class="variant-head">
+        <div class="badge">7</div>
+        <div>
+          <h2>Icon rail (левая навигация секций)</h2>
+          <p>Секции формы как иконки: Info / € / 📷 / Specs — без длинного скролла.</p>
+        </div>
+      </div>
+      <div class="mock">
+        <div class="rail">
+          <div class="rail-nav">
+            <button class="on" type="button" title="Info">Aa</button>
+            <button type="button" title="Money">€</button>
+            <button type="button" title="Photos">▣</button>
+            <button type="button" title="Specs">≡</button>
+          </div>
+          <div class="stack">
+            <div><label class="lbl">Название</label><input value="HP Multi DVD GUD1N" /></div>
+            <div><label class="lbl">Категория</label><select><option>Misc → Spare Parts</option></select></div>
+            <div class="pill-toggle"><span>В наличии (? → present)</span><div class="switch on"></div></div>
+            <div class="footer-bar">
+              <button class="btn btn-ghost" type="button">Specs</button>
+              <button class="btn btn-primary" type="button" style="flex:1">Save</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 8 ========== -->
+    <section class="variant" id="v8">
+      <div class="variant-head">
+        <div class="badge">8</div>
+        <div>
+          <h2>Smart detect banner</h2>
+          <p>Вставил имя → сразу предложили категорию, specs, похожие из склада.</p>
+        </div>
+      </div>
+      <div class="mock">
+        <div class="stack">
+          <div><label class="lbl">Название</label><input value="2x Kingston ACRE2D4U251ME-8X 8GB DDR4" /></div>
+          <div class="drawer-sheet">
+            <div class="mini">AI / local detect</div>
+            <strong>Components · RAM</strong>
+            <div class="chips" style="margin-top:.45rem">
+              <span class="chip on soft">8GB</span>
+              <span class="chip on soft">DDR4</span>
+              <span class="chip on soft">Qty ×2?</span>
+              <button class="chip" type="button">Принять</button>
+              <button class="chip" type="button">Изменить</button>
+            </div>
+            <p class="mini" style="margin:.5rem 0 0">Похоже в складе: 1× Kingston 8GB DDR4 — открыть?</p>
+          </div>
+          <div class="row row-2">
+            <div><label class="lbl">€ за штуку</label><input value="6,00" /></div>
+            <div><label class="lbl">Кол-во</label><input value="2" /></div>
+          </div>
+          <button class="btn btn-primary" type="button">Добавить 2 позиции</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 9 ========== -->
+    <section class="variant" id="v9">
+      <div class="variant-head">
+        <div class="badge">9</div>
+        <div>
+          <h2>Keyboard-first power user</h2>
+          <p>Tab-порядок + хоткеи. Компактная сетка без декора.</p>
+        </div>
+      </div>
+      <div class="mock">
+        <p class="hint"><span class="kbd">Enter</span> сохранить · <span class="kbd">Ctrl+Shift+D</span> defekt · <span class="kbd">/</span> фокус в имя</p>
+        <div class="stack">
+          <div class="row row-2">
+            <div style="grid-column:1/-1"><label class="lbl">Name <span class="kbd">/</span></label><input autofocus placeholder="…" /></div>
+            <div><label class="lbl">Cat</label><select><option>RAM</option><option>CPU</option></select></div>
+            <div><label class="lbl">€</label><input /></div>
+            <div><label class="lbl">Date</label><input type="date" /></div>
+            <div><label class="lbl">Pay</label><select><option>Cash</option></select></div>
+          </div>
+          <div class="footer-bar">
+            <button class="btn btn-danger-soft" type="button">Defekt</button>
+            <button class="btn btn-primary" type="button" style="flex:1">Save <span class="kbd" style="background:rgba(255,255,255,.25);color:#fff">↵</span></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 10 ========== -->
+    <section class="variant" id="v10">
+      <div class="variant-head">
+        <div class="badge">10</div>
+        <div>
+          <h2>Ultra-minimal one column</h2>
+          <p>Только имя → авто-всё остальное → одна кнопка. Идеал «добавить за 5 секунд».</p>
+        </div>
+      </div>
+      <div class="mock" style="max-width:420px;margin:0 auto;">
+        <div class="stack">
+          <div style="text-align:center;padding:.5rem 0 .25rem">
+            <div style="font-size:1.4rem;font-weight:900;letter-spacing:-.03em">Новый товар</div>
+            <p class="mini">Категория и specs подтянутся сами</p>
+          </div>
+          <input style="padding:1rem;font-size:1rem;border-radius:1rem;text-align:center" placeholder="Название или артикул" />
+          <input style="padding:.75rem;border-radius:1rem;text-align:center" placeholder="Цена € (необязательно)" />
+          <button class="btn btn-primary" type="button" style="padding:1rem;border-radius:1rem">Добавить в склад</button>
+          <button class="btn btn-ghost" type="button">Открыть полную форму</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="note">
+    Рекомендация для DeInventory: взять <strong>#1 Essentials-first</strong> + чипы из <strong>#2</strong> + detect-баннер из <strong>#8</strong>.
+    Файл: <code>designs/single-add-10-variants.html</code>
+  </footer>
+
+  <script>
+    document.querySelectorAll('.chip').forEach((el) => {
+      el.addEventListener('click', () => {
+        const group = el.parentElement;
+        if (!group) return;
+        if (el.textContent.includes('Detect') || el.textContent.includes('Принять') || el.textContent.includes('Изменить') || el.textContent.includes('открыть')) return;
+        group.querySelectorAll('.chip').forEach((c) => c.classList.remove('on', 'soft'));
+        el.classList.add('on', 'soft');
+      });
+    });
+    document.querySelectorAll('.seg button').forEach((el) => {
+      el.addEventListener('click', () => {
+        el.parentElement.querySelectorAll('button').forEach((b) => b.classList.remove('on'));
+        el.classList.add('on');
+      });
+    });
+    document.querySelectorAll('.rail-nav button').forEach((el) => {
+      el.addEventListener('click', () => {
+        el.parentElement.querySelectorAll('button').forEach((b) => b.classList.remove('on'));
+        el.classList.add('on');
+      });
+    });
+    document.querySelectorAll('.switch').forEach((el) => {
+      el.addEventListener('click', () => el.classList.toggle('on'));
+    });
+  </script>
+</body>
+</html>
