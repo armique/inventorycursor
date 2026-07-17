@@ -41,6 +41,7 @@ import GiftModal from './GiftModal';
 import CrossPostingModal from './CrossPostingModal';
 import RetroBundleModal from './RetroBundleModal';
 import ComposeTypeModal, { type ComposeType } from './ComposeTypeModal';
+import QuickBundleAddModal from './QuickBundleAddModal';
 import EditItemModal from './EditItemModal';
 import ItemForm from './ItemForm';
 import ItemThumbnail from './ItemThumbnail';
@@ -180,7 +181,8 @@ interface SortConfig {
 /** Inv column: icon buttons in one row (28px each + 4px gaps, matching the actual `gap-1` grid + cell padding). */
 const PRESENCE_ICON_SIZE_PX = 28;
 const PRESENCE_ICON_GAP_PX = 4;
-const PRESENCE_ICON_COUNT = 5;
+/** Presence · Photos · Card · € · Store · Orders · Quick Bundle (+) */
+const PRESENCE_ICON_COUNT = 7;
 const PRESENCE_COL_WIDTH =
   PRESENCE_ICON_COUNT * PRESENCE_ICON_SIZE_PX +
   (PRESENCE_ICON_COUNT - 1) * PRESENCE_ICON_GAP_PX +
@@ -961,6 +963,7 @@ const InventoryList: React.FC<Props> = ({
   const [bulkGenerateProgress, setBulkGenerateProgress] = useState<string | null>(null);
   const [showRetroBundle, setShowRetroBundle] = useState(false);
   const [showComposeType, setShowComposeType] = useState(false);
+  const [quickBundleSeed, setQuickBundleSeed] = useState<InventoryItem | null>(null);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [showNewItemModal, setShowNewItemModal] = useState(false);
   const [searchSuggestionsOpen, setSearchSuggestionsOpen] = useState(false);
@@ -2044,7 +2047,7 @@ const InventoryList: React.FC<Props> = ({
         return (
           <td key={id} className="inv-col-icons border-r border-slate-100/90 align-middle" style={style} onClick={(e) => e.stopPropagation()}>
             <div
-              className={`grid grid-cols-5 ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-items-start shrink-0`}
+              className={`grid grid-cols-7 ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-items-start shrink-0`}
               style={{ width: PRESENCE_ICON_COUNT * PRESENCE_ICON_SIZE_PX + (PRESENCE_ICON_COUNT - 1) * PRESENCE_ICON_GAP_PX }}
             >
               {/* Physical presence: present → lost → defective → unknown */}
@@ -2206,6 +2209,41 @@ const InventoryList: React.FC<Props> = ({
               >
                 <Receipt size={13} strokeWidth={2.25} />
               </button>
+
+              {/* Quick Bundle / Mixed Bundle from Flags */}
+              {(() => {
+                const canQuickBundle =
+                  !item.isPC &&
+                  !item.parentContainerId &&
+                  (item.status === ItemStatus.IN_STOCK ||
+                    item.status === ItemStatus.ORDERED ||
+                    ((item.isBundle || item.category === 'Bundle' || item.category === 'Mixed Bundle') &&
+                      item.status === ItemStatus.IN_STOCK));
+                if (!canQuickBundle) {
+                  return (
+                    <span
+                      className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-transparent opacity-30`}
+                      title="Bundle + unavailable for this item"
+                      aria-hidden
+                    >
+                      <Plus size={13} />
+                    </span>
+                  );
+                }
+                return (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setQuickBundleSeed(item);
+                    }}
+                    className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 hover:border-violet-300`}
+                    title="Add inventory parts → Bundle / Mixed Bundle"
+                  >
+                    <Plus size={13} strokeWidth={2.5} />
+                  </button>
+                );
+              })()}
             </div>
           </td>
         );
@@ -4432,6 +4470,23 @@ const InventoryList: React.FC<Props> = ({
         onChoose={handleComposeTypeChosen}
         onClose={() => setShowComposeType(false)}
       />
+      {quickBundleSeed && (
+        <QuickBundleAddModal
+          seed={quickBundleSeed}
+          items={items}
+          onClose={() => setQuickBundleSeed(null)}
+          onApply={(updates) => {
+            onUpdate(updates);
+            setToast(
+              updates.some((u) => u.isBundle && u.componentIds)
+                ? `Bundle updated · ${updates.find((u) => u.isBundle)?.name || 'saved'}`
+                : 'Bundle saved'
+            );
+            setTimeout(() => setToast(null), 2200);
+            setQuickBundleSeed(null);
+          }}
+        />
+      )}
       {showRetroBundle && (
         <RetroBundleModal
             items={items.filter(i => selectedIds.includes(i.id))}
