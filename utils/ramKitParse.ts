@@ -1,8 +1,14 @@
-/** RAM kit patterns like "2x8GB", "8x4 GB", "2×16gb" embedded in a product name. */
-const RAM_KIT_IN_NAME = /(\d+)\s*[x×]\s*(\d+)\s*gb\b/i;
+/**
+ * RAM kit patterns like "2x8GB", "8x4 GB", "2×16gb" in a product name.
+ * Must NOT match model suffixes such as "ACR24D4U1S1ME-8X 8GB" (the -8X is part of the P/N).
+ */
+const RAM_KIT_IN_NAME = /(?<![A-Za-z0-9-])(\d+)\s*[x×]\s*(\d+)\s*gb\b/i;
 
-/** Leading kit prefix — not a purchase quantity (e.g. "2x8GB Crucial" is one kit, not two items). */
-const RAM_KIT_LINE_PREFIX = /^(\d+)\s*[x×]\s*(\d+)\s*(gb|tb)\b/i;
+/**
+ * Leading glued kit prefix only: "2x8GB Crucial" = one kit.
+ * Spaced "2x 8GB Samsung" is a purchase count of 2× 8GB sticks (qty always leads in bulk paste).
+ */
+const RAM_KIT_LINE_PREFIX = /^(\d+)[x×](\d+)\s*(gb|tb)\b/i;
 
 const RAM_NAME_HINT =
   /(ddr[2345]|ram\b|memory\b|dimm|sodimm|rdimm|jedec|12800|10600|1333|2rx8|1rx8|crucial|kingston|corsair|g\.?skill|hynix|micron|samsung|vengeance|trident|ballistix)/i;
@@ -74,15 +80,28 @@ export function extractRamKitFromSpecs(specs?: Record<string, string | number>):
   return null;
 }
 
+/** Model P/N tails like "-8X" must never be read as kit module counts. */
+const MODEL_PN_X_SUFFIX = /-[0-9]+x\b/i;
+
 export function resolveRamKitInfo(
   name: string,
   options?: { sourceLine?: string; specs?: Record<string, string | number> }
 ): RamKitInfo | null {
-  return (
-    extractRamKitInfo(name) ??
-    (options?.sourceLine ? extractRamKitInfo(options.sourceLine) : null) ??
-    extractRamKitFromSpecs(options?.specs)
-  );
+  const fromName = extractRamKitInfo(name);
+  if (fromName) return fromName;
+
+  // Kit patterns only in the product name AFTER stripping leading purchase "Nx".
+  // Otherwise "2x 8GB Samsung" (qty 2) is misread as a 2x8GB kit via the source line.
+  if (options?.sourceLine) {
+    const { name: afterPurchaseQty } = parseBulkLineQuantityAndName(options.sourceLine);
+    const fromLine = extractRamKitInfo(afterPurchaseQty);
+    if (fromLine) return fromLine;
+  }
+
+  const blob = `${name} ${options?.sourceLine || ''}`;
+  if (MODEL_PN_X_SUFFIX.test(blob)) return null;
+
+  return extractRamKitFromSpecs(options?.specs);
 }
 
 const RAM_BRANDS = [
@@ -174,13 +193,16 @@ export function buildRamKitSpecs(kit: RamKitInfo): Record<string, string> {
 
 /**
  * Split a bulk line into purchase quantity vs product name.
+ * Purchase qty is always the leading "Nx …". Everything else (model -8X, mid-line 2x8GB kits) is ignored for qty.
  * "3x Crucial 2x8GB" → qty 3, name "Crucial 2x8GB"
- * "2x8GB Crucial" → qty 1 (kit size, not two inventory rows)
+ * "2x 8GB Samsung" → qty 2, name "8GB Samsung" (not a kit)
+ * "2x8GB Crucial" → qty 1 (glued kit prefix only)
  */
 export function parseBulkLineQuantityAndName(rawLine: string): { name: string; quantity: number } {
   const trimmed = rawLine.trim();
   if (!trimmed) return { name: '', quantity: 1 };
 
+  // Glued kit at line start only (2x8GB…), not spaced "2x 8GB …"
   if (RAM_KIT_LINE_PREFIX.test(trimmed)) {
     return { name: trimmed, quantity: 1 };
   }

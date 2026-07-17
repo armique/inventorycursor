@@ -52,6 +52,14 @@ describe('ramKitParse', () => {
     expect(formatRamKitDisplayName('2x8GB Crucial DDR4', kit!)).toBe('Crucial 16GB (2x8GB) DDR4 RAM');
   });
 
+  it('does not treat leading purchase 2x 8GB as a kit via sourceLine', () => {
+    expect(
+      resolveRamKitInfo('8GB Samsung 2400 MHz', {
+        sourceLine: '2x 8GB Samsung 2400 MHz',
+      })
+    ).toBeNull();
+  });
+
   it('resolves kit from AI specs when name and line lack kit pattern', () => {
     const kit = resolveRamKitInfo('Ballistix DDR4', {
       specs: { Modules: '2', 'GB per Stick': '8GB', 'Kit Capacity': '16GB' },
@@ -64,5 +72,31 @@ describe('ramKitParse', () => {
     const kit = { modules: 2, gbPerStick: 8 };
     expect(resolveRamInventoryQuantity(2, kit, 1)).toBe(1);
     expect(resolveRamInventoryQuantity(3, kit, 3)).toBe(3);
+  });
+
+  it('does not treat model suffix -8X before 8GB as an 8x8GB kit', () => {
+    expect(extractRamKitInfo('Kingston ACR24D4U1S1ME-8X 8GB DDR4 2133MHz')).toBeNull();
+    expect(extractRamKitInfo('Kingston ACRE2D4U251ME-8X 8GB DDR4 2666MHz')).toBeNull();
+    expect(
+      resolveRamKitInfo('Kingston ACR24D4U1S1ME-8X 8GB DDR4', {
+        sourceLine: '2x Kingston ACR24D4U1S1ME-8X 8GB DDR4 2133MHz (1 working, 1 defekt)',
+      })
+    ).toBeNull();
+  });
+
+  it('treats spaced 2x 8GB as purchase qty, not a kit line', () => {
+    expect(parseBulkLineQuantityAndName('2x 8GB Samsung 2400 MHz')).toEqual({
+      name: '8GB Samsung 2400 MHz',
+      quantity: 2,
+    });
+    expect(extractRamKitInfo('8GB Samsung 2400 MHz')).toBeNull();
+  });
+
+  it('still recognizes glued 2x8GB kit prefix and mid-name kits', () => {
+    expect(parseBulkLineQuantityAndName('2x8GB Crucial DDR4')).toEqual({
+      name: '2x8GB Crucial DDR4',
+      quantity: 1,
+    });
+    expect(extractRamKitInfo('Crucial 2x8GB DDR4')).toEqual({ modules: 2, gbPerStick: 8 });
   });
 });

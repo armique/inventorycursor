@@ -200,6 +200,9 @@ function reconcileCategory(name: string, category?: string, subCategory?: string
   if (/(prodesk|optiplex|elitedesk|business\s*pc|desktop\s*pc|mini\s*pc)\b/i.test(n)) {
     return { category: 'PC', subCategory: 'Pre-Built PC' };
   }
+  if (/(dvd|bluray|blu-ray|optical|oddd|gud\d)/i.test(n)) {
+    return { category: 'Misc', subCategory: 'Spare Parts' };
+  }
   if (/\b(i[3579]|intel\s*core|ryzen|threadripper|cpu|prozessor)\b/i.test(n) && !/mainboard|motherboard|prodesk|optiplex|elitedesk|business\s*pc/i.test(n)) {
     return { category: 'Components', subCategory: 'Processors' };
   }
@@ -389,21 +392,25 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
       if (!rawName) continue;
       const sourceLine = (row.sourceLine || '').trim();
       const conditionText = `${sourceLine} ${rawName} ${row.note || ''}`;
+      // Purchase qty always from leading "Nx" on the paste line — never from AI / model "-8X"
+      const fromLine = sourceLine
+        ? parseQuantityAndName(sourceLine)
+        : { name: rawName, quantity: Math.max(1, Math.floor(Number(row.lineQuantity ?? row.quantity ?? 1) || 1)) };
+      const lineQty = Math.max(1, Math.floor(fromLine.quantity || 1));
+      const productFromLine = stripConditionAnnotations(fromLine.name) || fromLine.name;
       const baseName = stripConditionAnnotations(rawName) || rawName;
-      const lineQty = Math.max(1, Math.floor(Number(row.lineQuantity ?? row.quantity ?? 1) || 1));
-      const requestedQty = Math.max(1, Math.floor(Number(row.quantity ?? lineQty) || 1));
       const rec = importMode === 'AS_IS'
         ? { category: newCategory, subCategory: normalizeSubCategory(newCategory, newSubCategory) }
-        : reconcileCategory(baseName, row.category, row.subCategory);
+        : reconcileCategory(productFromLine || baseName, row.category, row.subCategory);
       const ramKit =
         rec.subCategory === 'RAM'
-          ? resolveRamKitInfo(baseName, { sourceLine, specs: row.specs })
+          ? resolveRamKitInfo(productFromLine || baseName, { sourceLine, specs: row.specs })
           : null;
-      const inventoryQty = resolveRamInventoryQuantity(requestedQty, ramKit, lineQty);
-      const nameForFormat = stripConditionAnnotations(sourceLine) || sourceLine || baseName;
+      const inventoryQty = resolveRamInventoryQuantity(lineQty, ramKit, lineQty);
+      // Prefer original paste product name so AI can't rename "-8X 8GB" into "64GB (8x8GB)"
       const displayName = ramKit
-        ? formatRamKitDisplayName(nameForFormat, ramKit)
-        : baseName;
+        ? formatRamKitDisplayName(productFromLine || baseName, ramKit)
+        : (productFromLine || baseName);
       const { working, defective } = resolveDefectCounts(
         inventoryQty,
         conditionText,
@@ -414,9 +421,15 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
       let mergedSpecs: Record<string, string | number> = { ...(row.specs || {}) };
       if (ramKit) {
         mergedSpecs = { ...mergedSpecs, ...buildRamKitSpecs(ramKit) };
+      } else if (rec.subCategory === 'RAM') {
+        // Drop AI-invented kit fields when this is a single-stick / non-kit line
+        const dropKeys = new Set(['Modules', 'modules', 'Kit', 'kit', 'Kit Capacity', 'Kit capacity']);
+        mergedSpecs = Object.fromEntries(
+          Object.entries(mergedSpecs).filter(([key]) => !dropKeys.has(key))
+        );
       }
-      if (shouldApplyGpuVramCorrection(rec.subCategory, baseName)) {
-        mergedSpecs = correctGpuVramInSpecs(baseName, undefined, mergedSpecs);
+      if (shouldApplyGpuVramCorrection(rec.subCategory, displayName)) {
+        mergedSpecs = correctGpuVramInSpecs(displayName, undefined, mergedSpecs);
       }
 
       const pushDraft = (opts: { name: string; isDefective: boolean; note: string }) => {
@@ -433,7 +446,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
         });
       };
 
-      const baseNote = (row.note || '').trim();
+      const baseNote = stripConditionAnnotations((row.note || '').trim());
       const mergeNote = (...parts: string[]) => parts.filter(Boolean).join(' · ');
 
       if (bulkQtyMode === 'LOT' && inventoryQty > 1) {
@@ -442,7 +455,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
         pushDraft({
           name: lotName,
           isDefective: lotDefective || (!!row.isDefective && defective === inventoryQty),
-          note: mergeNote(baseNote, splitNote || (lineHasDefectKeyword(conditionText) ? 'defekt' : '')),
+          note: mergeNote(baseNote, splitNote || (lineHasDefectKeyword(conditionText) && !splitNote ? 'defekt' : '')),
         });
         continue;
       }
@@ -458,7 +471,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
         pushDraft({
           name: displayName,
           isDefective: true,
-          note: mergeNote(baseNote, 'defekt'),
+          note: baseNote,
         });
       }
     }
@@ -516,7 +529,8 @@ Rules:
 - Keep categories limited to: ${CATEGORY_KEYS.join(', ')}
 - SubCategory should fit the category and be concise.
 - Parse quantity from prefixes like "2x ..." or "8x4GB ...". If no quantity, use 1.
-- Leading "2x Product" / "4x Product" is a PURCHASE count (how many units bought), not a RAM kit size. Example: "2x Samsung … 4GB" → quantity=2, name without the "2x".
+- Leading "2x Product" / "4x Product" is a PURCHASE count (how many units bought), not a RAM kit size. Example: "2x Samsung … 4GB" → quantity=2, name without the "2x". Spaced "2x 8GB Samsung" → quantity=2, single 8GB sticks (NOT a 2x8GB kit).
+- Model codes like "ACR24D4U1S1ME-8X" or "…-8X 8GB": the "-8X" is part of the part number, NEVER modules=8. Keep the full model string in name.
 - IMPORTANT: Do not classify CPUs, SSD/NVMe drives, RAM, or motherboards as Graphics Cards.
 - IMPORTANT: Motherboards are often listed only by chipset/model (for example A320M, B450, B550, X570, Z690, Z790, H610) without the word "motherboard". Classify those as category "Components" and subCategory "Motherboards".
 - Pre-built desktops (ProDesk, OptiPlex, EliteDesk, "Business PC") → category "PC", subCategory "Pre-Built PC".
