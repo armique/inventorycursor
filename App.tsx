@@ -14,7 +14,7 @@ const SettingsPage = lazy(() => import('./components/SettingsPage'));
 const SheetsImport = lazy(() => import('./components/SheetsImport'));
 const ExpenseManager = lazy(() => import('./components/ExpenseManager'));
 const TrashPage = lazy(() => import('./components/TrashPage'));
-const PCBuilderWizard = lazy(() => import('./components/PCBuilderWizard'));
+const BuilderEntry = lazy(() => import('./components/BuilderEntry'));
 const StoreManagementPage = lazy(() => import('./components/StoreManagementPage'));
 const StorefrontConfiguratorPage = lazy(() => import('./components/StorefrontConfiguratorPage'));
 const LegalPage = lazy(() => import('./components/LegalPage'));
@@ -1293,7 +1293,7 @@ const App: React.FC = () => {
           <Route path="add" element={<ItemForm onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="add-bulk" element={<BulkItemForm onSave={handleUpdate} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="edit/:id" element={<ItemForm onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
-          <Route path="builder" element={<PCBuilderWizard items={items} onSave={handleUpdate} />} />
+          <Route path="builder" element={<BuilderEntry items={items} onSave={handleUpdate} />} />
           <Route path="3d-print" element={<ThreeDPrintPage items={items} onSave={handleUpdate} categories={categories} onAddExpense={handleAddExpense} />} />
           <Route path="ebay-store-pull" element={<EbayStorePullPage items={items} categories={categories} categoryFields={categoryFields} taxMode={businessSettings.taxMode} onUpdate={handleUpdate} onPublishCatalog={publishStoreCatalogNow} onAddExpense={handleAddExpense} />} />
           <Route path="invoices" element={<InvoiceManager items={items} businessSettings={businessSettings} />} />

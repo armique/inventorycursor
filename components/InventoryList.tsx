@@ -39,6 +39,7 @@ import TradeModal from './TradeModal';
 import GiftModal from './GiftModal';
 import CrossPostingModal from './CrossPostingModal';
 import RetroBundleModal from './RetroBundleModal';
+import ComposeTypeModal, { type ComposeType } from './ComposeTypeModal';
 import EditItemModal from './EditItemModal';
 import ItemForm from './ItemForm';
 import ItemThumbnail from './ItemThumbnail';
@@ -933,6 +934,7 @@ const InventoryList: React.FC<Props> = ({
   const [bulkGenerateDescriptions, setBulkGenerateDescriptions] = useState(false);
   const [bulkGenerateProgress, setBulkGenerateProgress] = useState<string | null>(null);
   const [showRetroBundle, setShowRetroBundle] = useState(false);
+  const [showComposeType, setShowComposeType] = useState(false);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [showNewItemModal, setShowNewItemModal] = useState(false);
   const [searchSuggestionsOpen, setSearchSuggestionsOpen] = useState(false);
@@ -1827,88 +1829,71 @@ const InventoryList: React.FC<Props> = ({
     }
   }, [items, categoryFields, onUpdate]);
 
-  const handleBuildFromSelection = (e?: React.MouseEvent) => {
+  const openComposeChooser = (e?: React.MouseEvent) => {
     if (e) {
-       e.preventDefault();
-       e.stopPropagation();
+      e.preventDefault();
+      e.stopPropagation();
     }
-    
-    const selectedItemsList = items.filter(i => selectedIds.includes(i.id));
-    const isSalesMode = selectedItemsList.some((i) => isRealizedDisposal(i));
-
-    if (isSalesMode) {
-       if (selectedItemsList.length < 2) {
-          alert("Select at least 2 items to bundle.");
-          return;
-       }
-       setShowRetroBundle(true);
-       return;
-    }
-    
-    const validItems = selectedItemsList.filter(i => 
-      !i.isDefective &&
-      (i.status === ItemStatus.IN_STOCK || 
-      isRealizedDisposal(i))
-    );
-    
-    if (validItems.length === 0) {
-      alert("No valid items selected for composition (defective items are excluded).");
+    if (selectedIds.length === 0) {
+      alert('Select at least one item first.');
       return;
     }
-    
-    navigate('/panel/builder', { state: { initialParts: validItems } });
+    setShowComposeType(true);
   };
 
-  const handleCreateLotBundleFromSelection = () => {
+  const handleComposeTypeChosen = (type: ComposeType) => {
+    setShowComposeType(false);
     const selectedItemsList = items.filter((i) => selectedIds.includes(i.id));
-    if (selectedItemsList.length < 2) {
-      alert('Select at least 2 items to create a lot bundle.');
+
+    if (type === 'sold') {
+      if (selectedItemsList.length < 2) {
+        alert('Select at least 2 sold items to group.');
+        return;
+      }
+      setShowRetroBundle(true);
       return;
     }
 
     const blocked = selectedItemsList.filter((i) => i.parentContainerId || i.isBundle || i.isPC);
     if (blocked.length > 0) {
-      alert('Some selected items are already inside another bundle/PC or are containers. Please select standalone items only.');
+      alert('Some selected items are already inside another bundle/PC or are containers.');
       return;
     }
 
-    const invalidStatus = selectedItemsList.filter(
-      (i) => i.status !== ItemStatus.IN_STOCK && i.status !== ItemStatus.ORDERED
+    if (type === 'pc') {
+      const validItems = selectedItemsList.filter(
+        (i) =>
+          !i.isDefective &&
+          (i.status === ItemStatus.IN_STOCK || i.status === ItemStatus.ORDERED)
+      );
+      if (validItems.length === 0) {
+        alert('No valid items for a PC build (defective parts are blocked — use Lot Bundle).');
+        return;
+      }
+      if (validItems.length < selectedItemsList.length) {
+        const skipped = selectedItemsList.length - validItems.length;
+        if (
+          !window.confirm(
+            `${skipped} item(s) skipped (defective or wrong status). Continue with ${validItems.length} part(s)?`
+          )
+        ) {
+          return;
+        }
+      }
+      navigate('/panel/builder?mode=pc', { state: { initialParts: validItems } });
+      setSelectedIds([]);
+      return;
+    }
+
+    // Lot Bundle — defective allowed
+    const validItems = selectedItemsList.filter(
+      (i) => i.status === ItemStatus.IN_STOCK || i.status === ItemStatus.ORDERED
     );
-    if (invalidStatus.length > 0) {
-      alert('Lot bundle can only be created from In Stock / Ordered items.');
+    if (validItems.length === 0) {
+      alert('Lot bundle needs In Stock / Ordered items.');
       return;
     }
-
-    const suggested = `Lot Bundle (${selectedItemsList.length} items)`;
-    const bundleName = (window.prompt('Lot bundle name:', suggested) || '').trim() || suggested;
-    const ts = Date.now();
-    const bundleId = `bundle-lot-${ts}`;
-    const totalBuy = selectedItemsList.reduce((sum, i) => sum + Number(i.buyPrice || 0), 0);
-
-    const bundle: InventoryItem = {
-      id: bundleId,
-      name: bundleName,
-      category: 'Bundle',
-      subCategory: 'Lot Bundle',
-      status: ItemStatus.IN_STOCK,
-      buyPrice: Math.round(totalBuy * 100) / 100,
-      buyDate: new Date().toISOString().slice(0, 10),
-      isBundle: true,
-      componentIds: selectedItemsList.map((i) => i.id),
-      comment1: `Generic lot bundle (${selectedItemsList.length} items).`,
-      comment2: selectedItemsList.map((i) => `- ${i.name}`).join('\n').slice(0, 2000),
-      imageUrl: selectedItemsList.find((i) => i.imageUrl)?.imageUrl,
-      imageUrls: selectedItemsList.find((i) => i.imageUrls?.length)?.imageUrls,
-    };
-
-    const updates: InventoryItem[] = selectedItemsList.map((i) => ({
-      ...i,
-      status: ItemStatus.IN_COMPOSITION,
-      parentContainerId: bundleId,
-    }));
-
-    onUpdate([bundle, ...updates]);
+    navigate('/panel/builder?mode=lot', { state: { initialParts: validItems } });
     setSelectedIds([]);
   };
 
@@ -3252,8 +3237,7 @@ const InventoryList: React.FC<Props> = ({
     };
     return [
       { id: 'photos', label: 'Add photos', icon: <Camera size={16} />, onClick: () => openAddPhotosModal(deferredSelectedIds), variant: 'primary' },
-      { id: 'compose', label: 'Compose Bundle', icon: <Monitor size={16} />, onClick: handleBuildFromSelection, variant: 'primary' },
-      { id: 'lot', label: 'Lot Bundle', icon: <Package size={16} />, onClick: handleCreateLotBundleFromSelection, variant: 'violet' },
+      { id: 'compose', label: 'Compose', icon: <Monitor size={16} />, onClick: openComposeChooser, variant: 'primary' },
       { id: 'category', label: 'Set category', icon: <Layers size={16} />, onClick: () => setShowBulkCategoryEdit(true), variant: 'primary' },
       { id: 'publish', label: 'Publish store', icon: <Globe size={16} />, onClick: () => handleBulkStoreVisible(true), variant: 'emerald' },
       { id: 'visible', label: 'Store visible', icon: <Eye size={16} />, onClick: () => setShowBulkStoreVisible(true), variant: 'primary' },
@@ -3286,8 +3270,7 @@ const InventoryList: React.FC<Props> = ({
     bulkGenerateDescriptions,
     bulkGenerateProgress,
     selectedHasSoldOrTraded,
-    handleBuildFromSelection,
-    handleCreateLotBundleFromSelection,
+    openComposeChooser,
     handleBulkStoreVisible,
     handleBulkGenerateDescriptions,
     openAddPhotosModal,
@@ -4377,12 +4360,19 @@ const InventoryList: React.FC<Props> = ({
         </div>
       )}
 
+      <ComposeTypeModal
+        open={showComposeType}
+        selectedCount={selectedIds.length}
+        allowSold={items.some((i) => selectedIds.includes(i.id) && isRealizedDisposal(i))}
+        onChoose={handleComposeTypeChosen}
+        onClose={() => setShowComposeType(false)}
+      />
       {showRetroBundle && (
-         <RetroBundleModal 
+        <RetroBundleModal
             items={items.filter(i => selectedIds.includes(i.id))}
             onConfirm={handleCreateRetroBundle}
             onClose={() => setShowRetroBundle(false)}
-         />
+        />
       )}
 
       {showBulkSalesEdit && (

@@ -128,7 +128,7 @@ export function getBuilderPickerBlockReason(
   }
 ): string | null {
   if (item.isDefective && !opts.isLotBundle) {
-    return 'Marked defective — only lot bundles can include faulty parts';
+    return 'Defective — blocked in PC builds. Use Compose → Lot Bundle instead.';
   }
 
   if ((item.category === 'Bundle' && item.subCategory === 'PC Bundle') || item.category === 'PC Bundle') {

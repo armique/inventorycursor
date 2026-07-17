@@ -12,13 +12,13 @@ import { estimatePCPerformance, PerformanceEstimate } from '../services/geminiSe
 import ItemThumbnail, { getCategoryImageUrl } from './ItemThumbnail';
 import { isCompatibleWithBuild } from '../services/compatibility';
 import BuildItemPhotosPanel from './BuildItemPhotosPanel';
+import ListingKitModal from './ListingKitModal';
 import { getItemUserPhotoUrls, prepareInventoryImagesForStorage } from '../utils/imageImport';
 import {
   findBuilderSlotForComponent,
   getBuilderPickerBlockReason,
   isEligibleForBuilderPicker,
   itemMatchesBuilderSearch,
-  itemMatchesBuilderSlot,
   itemRelevantToBuilderSlot,
 } from '../utils/builderSlotMatch';
 
@@ -42,9 +42,9 @@ const SLOTS = [
   { id: 'MISC', label: 'Accessories', category: 'Misc', icon: <Plus size={20}/>, required: false, multiple: true },
 ];
 
-/** PC builds keep single-item slots; bundles allow any number per slot (e.g. lot of motherboards). */
-function slotAllowsMultiple(slot: (typeof SLOTS)[number], mode: 'pc' | 'bundle'): boolean {
-  return Boolean(slot.multiple) || mode === 'bundle';
+/** PC builds: only RAM / Storage / Fans / Misc allow multiple. */
+function slotAllowsMultiple(slot: (typeof SLOTS)[number]): boolean {
+  return Boolean(slot.multiple);
 }
 
 const MAX_NAME_LENGTH = 52;
@@ -111,24 +111,22 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
   const [searchParams] = useSearchParams();
   const editId = searchParams.get('editId');
   const editingContainer = editId ? items.find((i) => i.id === editId) : undefined;
-  const photoItemIdRef = useRef(
-    editId || `${searchParams.get('mode') === 'bundle' ? 'bundle' : 'pc'}-draft-${Date.now()}`
-  );
+  const photoItemIdRef = useRef(editId || `pc-draft-${Date.now()}`);
   const photoStorageItemId = editId || photoItemIdRef.current;
 
-  const [mode, setMode] = useState<'pc' | 'bundle'>(() => {
-    if (searchParams.get('mode') === 'bundle') return 'bundle';
-    return 'pc';
-  });
-  /** When editing, always follow the container type — avoids PC compatibility rules on lot bundles. */
-  const resolvedMode: 'pc' | 'bundle' =
-    editingContainer != null ? (editingContainer.isBundle ? 'bundle' : 'pc') : mode;
-  const isLotBundle = editingContainer?.subCategory === 'Lot Bundle';
+  /** PC Builder screen only — lot/bundle edits go through LotBundleBuilder via BuilderEntry. */
+  const resolvedMode = 'pc' as const;
+  const isLotBundle = false;
   const [buildName, setBuildName] = useState('New Gaming PC');
   const [parts, setParts] = useState<Record<string, InventoryItem[]>>({});
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [buildPhotos, setBuildPhotos] = useState<string[]>([]);
+  const [showIncompatible, setShowIncompatible] = useState(true);
+  const [listingDraft, setListingDraft] = useState<{
+    parent: InventoryItem;
+    parts: InventoryItem[];
+  } | null>(null);
   
   const isCompactEdit = Boolean(editId);
   const [performance, setPerformance] = useState<PerformanceEstimate | null>(null);
@@ -141,7 +139,6 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
     if (editId) {
       const pc = items.find(i => i.id === editId);
       if (pc) {
-        setMode(pc.isBundle ? 'bundle' : 'pc');
         setBuildName(pc.name);
         const existingParts: Record<string, InventoryItem[]> = {};
         
@@ -182,11 +179,11 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
     }
   }, [editId, location.state, items]);
 
-  // Auto-name from parts for new PC builds only — never overwrite lot/custom bundle names or edits
+  // Auto-name from parts for new PC builds only
   useEffect(() => {
-    if (editId || resolvedMode === 'bundle' || userEditedNameRef.current) return;
+    if (editId || userEditedNameRef.current) return;
     setBuildName(getBuildNameFromParts(parts));
-  }, [parts, resolvedMode, editId]);
+  }, [parts, editId]);
 
   const handleRunEstimate = async () => {
      const allParts = Object.values(parts).flat() as InventoryItem[];
@@ -204,27 +201,39 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
      }
   };
 
-  const handleSave = async () => {
-     if (!buildName) return alert("Enter a name for the build.");
-     
-     const allParts = Object.values(parts).flat() as InventoryItem[];
-     if (allParts.length === 0) return alert("Build is empty.");
-
+  const buildParentDraft = (allParts: InventoryItem[], userPhotos: string[]): InventoryItem => {
      const existingParent = editId ? items.find((i) => i.id === editId) : undefined;
-     const isLotBundle = existingParent?.subCategory === 'Lot Bundle';
-
-     if (resolvedMode === 'bundle' && !isLotBundle && allParts.length > 12) {
-       return alert("Bundles in this builder are limited to 12 items. Remove some parts or use a full PC build instead.");
-     }
-
      const totalCost = allParts.reduce((sum, i) => sum + i.buyPrice, 0);
-     
-     const parentId = editId || (resolvedMode === 'bundle' ? `bundle-${Date.now()}` : `pc-${Date.now()}`);
-     
+     const parentId = editId || `pc-${Date.now()}`;
      const autoImageUrl =
-       resolvedMode === 'bundle'
-         ? allParts[0]?.imageUrl || getCategoryImageUrl({ category: allParts[0]?.category || 'Components' }) || undefined
-         : parts['CASE']?.[0]?.imageUrl || getCategoryImageUrl({ category: 'Cases' }) || undefined;
+       parts['CASE']?.[0]?.imageUrl || getCategoryImageUrl({ category: 'Cases' }) || undefined;
+     const imageUrl = userPhotos[0] || autoImageUrl || existingParent?.imageUrl;
+     const imageUrls = userPhotos.length ? userPhotos : existingParent?.imageUrls;
+     return {
+        ...(existingParent || {}),
+        id: parentId,
+        name: buildName,
+        category: 'PC',
+        subCategory: 'Custom Built PC',
+        status: ItemStatus.IN_STOCK,
+        buyPrice: totalCost,
+        buyDate: existingParent?.buyDate || '',
+        isPC: true,
+        isBundle: false,
+        componentIds: allParts.map((i) => i.id),
+        comment1: `Custom Build Specs:\n${allParts.map((i) => `- ${i.name}`).join('\n')}`,
+        comment2: performance ? `AI Performance Estimate:\n${performance.summary}` : '',
+        vendor: 'Custom Build',
+        imageUrl,
+        imageUrls: imageUrls?.length ? imageUrls : undefined,
+     };
+  };
+
+  const commitPcSave = async (parentOverride?: InventoryItem) => {
+     const allParts = Object.values(parts).flat() as InventoryItem[];
+     const existingParent = editId ? items.find((i) => i.id === editId) : undefined;
+     const parentId = parentOverride?.id || editId || `pc-${Date.now()}`;
+
      let userPhotos = buildPhotos.length > 0 ? buildPhotos : getItemUserPhotoUrls(existingParent || {});
      if (userPhotos.length) {
        try {
@@ -233,56 +242,60 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
          /* keep existing URLs */
        }
      }
-     const imageUrl = userPhotos[0] || autoImageUrl || existingParent?.imageUrl;
-     const imageUrls = userPhotos.length ? userPhotos : existingParent?.imageUrls;
 
-     // Parent Item (PC or Bundle)
-     const parentItem: InventoryItem = {
-        ...(existingParent || {}),
-        id: parentId,
-        name: buildName,
-        category: resolvedMode === 'bundle' ? 'Bundle' : 'PC',
-        subCategory: resolvedMode === 'bundle'
-          ? (!existingParent?.subCategory || existingParent.subCategory === 'Custom Bundle'
-              ? 'Lot Bundle'
-              : existingParent.subCategory)
-          : 'Custom Built PC',
-        status: ItemStatus.IN_STOCK,
-        buyPrice: totalCost,
-        // No buyDate - containers don't have buy dates, only their components do
-        isPC: resolvedMode !== 'bundle',
-        isBundle: resolvedMode === 'bundle',
-        componentIds: allParts.map(i => i.id),
-        comment1: `${resolvedMode === 'bundle' ? 'Bundle Contents' : 'Custom Build Specs'}:\n${allParts.map(i => `- ${i.name}`).join('\n')}`,
-        comment2: !resolvedMode && performance ? `AI Performance Estimate:\n${performance.summary}` : performance && resolvedMode !== 'bundle' ? `AI Performance Estimate:\n${performance.summary}` : '',
-        vendor: resolvedMode === 'bundle' ? 'Lot Bundle' : 'Custom Build',
-        imageUrl,
-        imageUrls: imageUrls?.length ? imageUrls : undefined,
-     };
+     const parentItem = parentOverride
+       ? {
+           ...buildParentDraft(allParts, userPhotos),
+           ...parentOverride,
+           id: parentId,
+           componentIds: allParts.map((i) => i.id),
+           isPC: true,
+           isBundle: false,
+           category: 'PC',
+           subCategory: 'Custom Built PC',
+         }
+       : buildParentDraft(allParts, userPhotos);
 
-     // Update Components
-     const updatedComponents = allParts.map(comp => ({
+     const updatedComponents = allParts.map((comp) => ({
         ...comp,
         status: ItemStatus.IN_COMPOSITION,
-        parentContainerId: parentId
+        parentContainerId: parentItem.id,
      }));
 
-     // Handle Removed Components (if editing)
      let removedComponents: InventoryItem[] = [];
      if (editId) {
-        const previousComponents = items.filter(i => i.parentContainerId === editId);
-        const currentIds = new Set(allParts.map(i => i.id));
+        const previousComponents = items.filter((i) => i.parentContainerId === editId);
+        const currentIds = new Set(allParts.map((i) => i.id));
         removedComponents = previousComponents
-           .filter(i => !currentIds.has(i.id))
-           .map(i => ({
+           .filter((i) => !currentIds.has(i.id))
+           .map((i) => ({
               ...i,
               status: ItemStatus.IN_STOCK,
-              parentContainerId: undefined
+              parentContainerId: undefined,
            } as InventoryItem));
      }
 
      onSave([parentItem, ...updatedComponents, ...removedComponents]);
      navigate('/panel/inventory');
+  };
+
+  const handleSave = async () => {
+     if (!buildName) return alert('Enter a name for the build.');
+
+     const allParts = Object.values(parts).flat() as InventoryItem[];
+     if (allParts.length === 0) return alert('Build is empty.');
+
+     const defective = allParts.filter((p) => p.isDefective);
+     if (defective.length > 0) {
+       return alert(
+         `PC builds cannot include defective parts (${defective.length}). Remove them or use Compose → Lot Bundle.`
+       );
+     }
+
+     const existingParent = editId ? items.find((i) => i.id === editId) : undefined;
+     let userPhotos = buildPhotos.length > 0 ? buildPhotos : getItemUserPhotoUrls(existingParent || {});
+     const draft = buildParentDraft(allParts, userPhotos);
+     setListingDraft({ parent: draft, parts: allParts });
   };
 
   const containersById = useMemo(() => {
@@ -298,7 +311,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
     const slotDef = SLOTS.find((s) => s.id === selectedSlot);
     if (!slotDef) return { available: [], blocked: [] };
 
-    const bundleMode = resolvedMode === 'bundle';
+    const bundleMode = false;
     const searching = searchQuery.trim().length > 0;
     const available: InventoryItem[] = [];
     const blocked: { item: InventoryItem; reason: string }[] = [];
@@ -349,42 +362,57 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
   const availableItems = pickerResults.available;
   const blockedPickerItems = pickerResults.blocked;
 
-  // Only show items compatible with current build (e.g. Intel CPU → only Intel motherboards)
-  const availableWithCompatibility = useMemo(() => {
-    if (!selectedSlot) return [];
-    if (resolvedMode === 'bundle') {
-      return availableItems.map((item) => ({ item, compatible: true as const }));
+  /** Compatible + incompatible with human-readable reasons (PC only). */
+  const pickerCompatibility = useMemo(() => {
+    if (!selectedSlot) {
+      return {
+        compatible: [] as { item: InventoryItem; compatible: true }[],
+        incompatible: [] as { item: InventoryItem; compatible: false; reason: string }[],
+      };
     }
-    return availableItems
-      .map(item => ({ item, ...isCompatibleWithBuild(item, selectedSlot, parts) }))
-      .filter(x => x.compatible)
-      .map(x => ({ item: x.item, compatible: true as const }));
-  }, [availableItems, selectedSlot, parts, resolvedMode]);
-  const hiddenIncompatibleCount = useMemo(() => {
-    if (!selectedSlot || resolvedMode === 'bundle') return 0;
-    return availableItems.filter(item => !isCompatibleWithBuild(item, selectedSlot, parts).compatible).length;
-  }, [availableItems, selectedSlot, parts, resolvedMode]);
+    const compatible: { item: InventoryItem; compatible: true }[] = [];
+    const incompatible: { item: InventoryItem; compatible: false; reason: string }[] = [];
+    for (const item of availableItems) {
+      const result = isCompatibleWithBuild(item, selectedSlot, parts);
+      if (result.compatible) {
+        compatible.push({ item, compatible: true });
+      } else {
+        incompatible.push({
+          item,
+          compatible: false,
+          reason: result.reason || 'Not compatible with current build',
+        });
+      }
+    }
+    return { compatible, incompatible };
+  }, [availableItems, selectedSlot, parts]);
 
   const togglePart = (item: InventoryItem) => {
      if (!selectedSlot) return;
+     if (item.isDefective) {
+       alert('Defective parts are blocked in PC builds. Use Compose → Lot Bundle.');
+       return;
+     }
      const slotDef = SLOTS.find(s => s.id === selectedSlot);
      if (!slotDef) return;
+
+     const compat = isCompatibleWithBuild(item, selectedSlot, parts);
+     const already = parts[selectedSlot]?.some((p) => p.id === item.id);
+     if (!already && !compat.compatible) {
+       alert(compat.reason || 'Not compatible with current build');
+       return;
+     }
 
      setParts(prev => {
         const current = prev[selectedSlot] || [];
         const isSelected = current.find(i => i.id === item.id);
         
         if (isSelected) {
-           // Remove
            return { ...prev, [selectedSlot]: current.filter(i => i.id !== item.id) };
+        } else if (slotAllowsMultiple(slotDef)) {
+           return { ...prev, [selectedSlot]: [...current, item] };
         } else {
-           // Add — bundles allow multiple items per slot (e.g. lot of motherboards)
-           if (slotAllowsMultiple(slotDef, resolvedMode)) {
-              return { ...prev, [selectedSlot]: [...current, item] };
-           } else {
-              // Replace single slot (PC build only)
-              return { ...prev, [selectedSlot]: [item] };
-           }
+           return { ...prev, [selectedSlot]: [item] };
         }
      });
   };
@@ -419,7 +447,9 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
       >
         <div className="flex items-center gap-2 mb-1">
           <div className={`${compact ? 'p-1.5 rounded-lg' : 'p-2 rounded-xl'} ${hasItems ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-50 text-slate-400'}`}>
-            {React.cloneElement(slot.icon as React.ReactElement, { size: compact ? 23 : 20 })}
+            {React.cloneElement(slot.icon as React.ReactElement<{ size?: number }>, {
+              size: compact ? 23 : 20,
+            })}
           </div>
           <div className="flex-1 min-w-0">
             <p className={`font-black text-slate-900 truncate ${compact ? 'text-base' : 'text-sm'}`}>{slot.label}</p>
@@ -484,11 +514,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
               {SLOTS.find(s => s.id === selectedSlot)?.label}
             </h3>
             <p className={`text-slate-500 font-bold ${compact ? 'text-sm' : 'text-[10px]'}`}>
-              {resolvedMode === 'bundle'
-                ? isLotBundle
-                  ? 'Click to add or remove items — defective parts allowed in lot bundles'
-                  : 'Click to add or remove items — defective parts excluded'
-                : 'Click ✓ to remove · compatible items only'}
+              Compatible items first · defective blocked · reasons shown below
             </p>
           </div>
           <button type="button" onClick={() => setSelectedSlot(null)} className="p-1.5 hover:bg-slate-200 rounded-full shrink-0"><X size={compact ? 22 : 20}/></button>
@@ -520,10 +546,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
             </div>
           ) : (
             <>
-              {hiddenIncompatibleCount > 0 && (
-                <p className="text-[9px] text-slate-500 font-bold mb-1 px-1">{hiddenIncompatibleCount} incompatible hidden</p>
-              )}
-              {availableWithCompatibility.map(({ item }) => {
+              {pickerCompatibility.compatible.map(({ item }) => {
                 const isSelected = parts[selectedSlot!]?.some(p => p.id === item.id);
                 return (
                   <div
@@ -552,6 +575,49 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
                   </div>
                 );
               })}
+
+              {pickerCompatibility.incompatible.length > 0 && (
+                <div className="pt-3 mt-1 space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowIncompatible((v) => !v)}
+                    className="w-full flex items-center justify-between px-1 text-[10px] font-black uppercase tracking-widest text-rose-700"
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      <AlertTriangle size={12} />
+                      Incompatible ({pickerCompatibility.incompatible.length})
+                    </span>
+                    <span className="text-rose-500">{showIncompatible ? 'Hide' : 'Show'}</span>
+                  </button>
+                  {showIncompatible &&
+                    pickerCompatibility.incompatible.map(({ item, reason }) => (
+                      <div
+                        key={`incompat-${item.id}`}
+                        className={`flex items-start gap-3 ${compact ? 'p-3 rounded-xl' : 'p-4 rounded-2xl'} border border-rose-200 bg-rose-50/70`}
+                        title={reason}
+                      >
+                        <ItemThumbnail
+                          item={item}
+                          className={`${compact ? 'w-14 h-14' : 'w-12 h-12'} rounded-lg object-cover bg-slate-100 shrink-0 opacity-70`}
+                          size={compact ? 53 : 48}
+                          useCategoryImage
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className={`font-black text-slate-800 ${compact ? 'text-base' : 'text-xs'} leading-snug`}>
+                            {item.name}
+                          </p>
+                          <p className={`text-slate-500 font-bold ${compact ? 'text-xs' : 'text-[9px]'} mt-0.5`}>
+                            {item.subCategory || item.category} • €{formatEUR(Number(item.buyPrice))}
+                          </p>
+                          <p className={`inline-flex items-start gap-1 mt-1.5 text-rose-800 font-bold ${compact ? 'text-xs' : 'text-[10px]'}`}>
+                            <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+                            {reason}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
 
               {blockedPickerItems.length > 0 && (
                 <div className="pt-3 mt-2 border-t border-slate-200 space-y-2">
@@ -604,26 +670,14 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
   const headerActions = (
     <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
       {!isCompactEdit && (
-        <div className="flex items-center bg-slate-100 rounded-2xl p-1 text-[10px] font-black uppercase tracking-widest">
-          <button
-            type="button"
-            onClick={() => setMode('pc')}
-            className={`px-3 py-1.5 rounded-xl transition-colors ${
-              mode === 'pc' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            PC Build
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('bundle')}
-            className={`px-3 py-1.5 rounded-xl transition-colors ${
-              mode === 'bundle' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            Bundle
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => navigate('/panel/builder?mode=lot')}
+          className="px-3 py-1.5 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-[10px] font-black uppercase tracking-widest hover:bg-amber-100"
+          title="Open Lot Bundle builder (defective parts allowed)"
+        >
+          Lot Bundle →
+        </button>
       )}
       <div className={`text-right ${isCompactEdit ? 'px-5 py-2.5 rounded-xl' : 'px-6 py-2 rounded-2xl shadow-lg'} bg-slate-900 text-white`}>
         <p className="text-xs font-black uppercase tracking-widest text-slate-400">Total</p>
@@ -674,10 +728,8 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
                 <ArrowLeft size={22}/>
               </button>
               <div className="min-w-0">
-                <h1 className="text-2xl font-black text-slate-900 truncate">
-                  {resolvedMode === 'bundle' ? 'Edit Bundle' : 'Edit Build'}
-                </h1>
-                <p className="text-sm text-slate-500 font-bold truncate">Photos + parts in one place</p>
+                <h1 className="text-2xl font-black text-slate-900 truncate">Edit PC Build</h1>
+                <p className="text-sm text-slate-500 font-bold truncate">Photos + parts · defective blocked</p>
               </div>
             </div>
             {headerActions}
@@ -716,6 +768,20 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
             </div>
           </div>
         </div>
+        {listingDraft && (
+          <ListingKitModal
+            parent={listingDraft.parent}
+            parts={listingDraft.parts}
+            onSkip={() => {
+              setListingDraft(null);
+              void commitPcSave();
+            }}
+            onApply={(updated) => {
+              setListingDraft(null);
+              void commitPcSave(updated);
+            }}
+          />
+        )}
       </div>
     );
   }
@@ -729,20 +795,10 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
              <button onClick={() => navigate(-1)} className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-400 hover:text-slate-900 transition-all"><ArrowLeft size={22}/></button>
              <div>
                 <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-                  {editId
-                    ? resolvedMode === 'bundle'
-                      ? 'Edit Bundle'
-                      : 'Edit Build'
-                    : resolvedMode === 'bundle'
-                      ? 'Bundle Builder'
-                      : 'PC Builder'}
+                  {editId ? 'Edit PC Build' : 'PC Builder'}
                 </h1>
                 <p className="text-sm text-slate-500 font-bold">
-                  {resolvedMode === 'bundle'
-                    ? isLotBundle
-                      ? 'Lot bundle — add as many items as you need per slot'
-                      : 'Group parts into a sellable bundle — add as many items as you need per slot'
-                    : 'Assemble & Track Custom PCs'}
+                  Slots + compatibility · defective parts blocked (use Lot Bundle for those)
                 </p>
              </div>
           </div>
@@ -830,6 +886,21 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave }) => {
           </div>
 
        </div>
+
+       {listingDraft && (
+         <ListingKitModal
+           parent={listingDraft.parent}
+           parts={listingDraft.parts}
+           onSkip={() => {
+             setListingDraft(null);
+             void commitPcSave();
+           }}
+           onApply={(updated) => {
+             setListingDraft(null);
+             void commitPcSave(updated);
+           }}
+         />
+       )}
     </div>
   );
 };
