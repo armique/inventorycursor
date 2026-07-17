@@ -2040,19 +2040,19 @@ const InventoryList: React.FC<Props> = ({
                     ? 'Lost (click → defective)'
                     : cycleState === 'defective'
                     ? 'Defective (click → clear)'
-                    : 'Not checked (click → present)'
+                    : '? Presence not set — click to mark present / lost / defective'
                 }
               >
                 {cycleState === 'defective' ? (
                   <AlertCircle size={13} className="text-amber-600" />
+                ) : cycleState === 'unknown' ? (
+                  <span className="text-[11px] font-black leading-none text-slate-500">?</span>
                 ) : (
                 <span
                   className={`w-2.5 h-2.5 rounded-full ${
                     cycleState === 'present'
                       ? 'bg-emerald-500'
-                      : cycleState === 'lost'
-                      ? 'bg-red-500'
-                      : 'bg-slate-300'
+                      : 'bg-red-500'
                   }`}
                 />
                 )}
