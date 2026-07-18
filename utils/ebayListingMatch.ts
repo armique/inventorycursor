@@ -1,6 +1,6 @@
 import type { EbayMyListing } from '../services/ebayService';
 
-function normalize(text: string): string {
+export function normalizeListingText(text: string): string {
   return text
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, ' ')
@@ -9,22 +9,32 @@ function normalize(text: string): string {
 }
 
 function tokenize(text: string): string[] {
-  return normalize(text)
+  return normalizeListingText(text)
     .split(' ')
     .filter((t) => t.length > 1);
 }
 
-/** CPU/GPU/RAM model fragments — e.g. i7-4790k, 4790k, rtx 4070 ti */
-function extractModelTokens(text: string): string[] {
+/** CPU/GPU/RAM/mobo/storage model fragments — e.g. i7-4790k, Ryzen 5 5600, B550, 1TB */
+export function extractModelTokens(text: string): string[] {
   const compact = text.toLowerCase().replace(/[^a-z0-9]/g, '');
   const out = new Set<string>();
   const patterns = [
-    /\bi[3579][\s-]?\d{4,5}k?\b/gi,
+    /\bi[3579][\s-]?\d{3,5}k?\b/gi,
     /\b\d{4,5}k\b/gi,
+    /\bryzen\s*[3579]\s*\d{3,4}[a-z]{0,3}\b/gi,
+    /\br[3579][\s-]?\d{3,4}[a-z]{0,3}\b/gi,
+    /\bthreadripper\s*\d{4}[a-z]?\b/gi,
+    /\bxeon\s*[e\-]?\d{4,5}[a-z0-9\-]*\b/gi,
     /\brtx\s?\d{4}(?:\s?(?:ti|super|s))?\b/gi,
     /\bgtx\s?\d{3,4}(?:\s?ti)?\b/gi,
     /\brx\s?\d{4}(?:\s?xt)?\b/gi,
     /\bct\d{2}g[a-z0-9]+\b/gi,
+    // Chipset / board codes: B450, H81M-K, X570, Z690
+    /\b(?:a|b|h|x|z)\d{2,3}[a-z]?(?:-[a-z0-9]+)?\b/gi,
+    // Board product lines with chipset
+    /\b(?:prime|tuf|rog|strix|pro|gaming|aorus|mag|mpg|tomahawk|steel\s*legend)\s+[a-z0-9\-]+\b/gi,
+    // Storage capacity
+    /\b\d+\s*(?:gb|tb)\b/gi,
   ];
   for (const re of patterns) {
     const m = text.match(re);
@@ -32,11 +42,11 @@ function extractModelTokens(text: string): string[] {
       for (const hit of m) out.add(hit.replace(/\s+/g, '').replace(/-/g, '').toLowerCase());
     }
   }
-  if (compact.length >= 5 && compact.length <= 24) out.add(compact);
+  if (compact.length >= 5 && compact.length <= 28) out.add(compact);
   return [...out];
 }
 
-function titleContainsModel(titleNorm: string, model: string): boolean {
+export function titleContainsModel(titleNorm: string, model: string): boolean {
   const titleCompact = titleNorm.replace(/\s/g, '');
   const modelCompact = model.replace(/\s/g, '').replace(/-/g, '');
   if (modelCompact.length < 4) return false;
@@ -55,10 +65,10 @@ export function scoreListingTitleMatch(
   }
 
   const itemTokens = tokenize(itemName);
-  const titleNorm = normalize(listingTitle);
+  const titleNorm = normalizeListingText(listingTitle);
   if (!itemTokens.length || !titleNorm) return 0;
 
-  const itemNorm = normalize(itemName);
+  const itemNorm = normalizeListingText(itemName);
   if (titleNorm.includes(itemNorm) || itemNorm.includes(titleNorm)) {
     return 500 + itemTokens.length * 10;
   }
