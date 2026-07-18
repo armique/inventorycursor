@@ -68,6 +68,7 @@ import {
 } from '../utils/containerMembership';
 import { resolveTradeReceivedItems, resolveTradeSourceItem } from '../utils/tradeLinks';
 import { formatPlatformBoughtLabel } from '../utils/purchaseSource';
+import { ensureModelCodesInName } from '../utils/preserveModelCodes';
 import TradeLinkBadge from './TradeLinkBadge';
 
 interface Props {
@@ -1977,7 +1978,9 @@ const InventoryList: React.FC<Props> = ({
         specs: newSpecs,
         specsAiSuggested: Object.keys(newSpecs).length ? { ...newSpecs } : undefined,
       };
-      if (result.standardizedName) updates.name = result.standardizedName;
+      if (result.standardizedName) {
+        updates.name = ensureModelCodesInName(item.name, result.standardizedName);
+      }
       if (result.vendor) updates.vendor = result.vendor;
       const merged = { ...item, ...updates };
       onUpdate(items.map((i) => (i.id === item.id ? merged : i)));

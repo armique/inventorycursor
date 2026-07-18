@@ -30,6 +30,7 @@ import {
 import { getCompatibilityWarnings } from '../utils/compatibilityWarnings';
 import { recordCategoryCorrection, suggestCategoryFromCorrections } from '../services/categoryCorrections';
 import { detectItemCategory, searchInventoryItemsForAdd } from '../utils/itemCategoryDetect';
+import { ensureModelCodesInName } from '../utils/preserveModelCodes';
 import { filesToDataUrls, prepareInventoryImagesForStorage, getItemUserPhotoCount, isCategoryPlaceholderImage } from '../utils/imageImport';
 import { searchProductPhotos, getImageSearchProviders, ImageSearchResult, ImageSearchProvider } from '../services/imageSearchService';
 import { getCachedProductPhoto, setCachedProductPhoto } from '../services/firebaseService';
@@ -444,7 +445,8 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       const result = await detectItemCategory(name, categories);
       setFormData((prev) => ({
         ...prev,
-        name: result.standardizedName || name,
+        // Expand brand/series if AI offers it, but never drop the typed model/P/N
+        name: ensureModelCodesInName(name, result.standardizedName),
         category: result.category,
         subCategory: result.subCategory,
       }));

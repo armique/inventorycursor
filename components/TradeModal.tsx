@@ -29,6 +29,7 @@ import { allocateRemainderEuros, TradeSplitMode } from '../services/tradeAllocat
 import { resolveEssentialSpecKeys, mergeAiSpecsIntoEssential } from '../services/essentialSpecFields';
 import { toLocalCalendarDateKey } from '../utils/calendarDate';
 import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
+import { ensureModelCodesInName } from '../utils/preserveModelCodes';
 import ItemThumbnail, { CategoryIconBox } from './ItemThumbnail';
 
 function localDatetimeInputValue(d = new Date()): string {
@@ -161,7 +162,9 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
               ? {
                   ...i,
                   specs: mergedSpecs,
-                  ...(result.standardizedName ? { name: result.standardizedName } : {}),
+                  ...(result.standardizedName
+                    ? { name: ensureModelCodesInName(d.name, result.standardizedName) }
+                    : {}),
                   ...(result.vendor ? { parsedVendor: result.vendor } : {})
                 }
               : i
@@ -336,7 +339,9 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
               drafts[idx] = {
                 ...drafts[idx],
                 specs: mergedSpecs,
-                ...(result.standardizedName ? { name: result.standardizedName } : {}),
+                ...(result.standardizedName
+                  ? { name: ensureModelCodesInName(row.name, result.standardizedName) }
+                  : {}),
                 ...(result.vendor ? { parsedVendor: result.vendor } : {})
               };
             }
