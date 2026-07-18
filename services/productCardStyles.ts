@@ -10,14 +10,8 @@ import {
 export type ProductCardStyleId =
   | 'apple-studio-white'
   | 'noir-editorial'
-  | 'tech-spec-grid'
-  | 'marketplace-hero'
-  | 'soft-nordic'
-  | 'frosted-glass'
   | 'industrial-mono'
-  | 'steel-gradient'
-  | 'catalog-classic'
-  | 'blueprint-precision';
+  | 'steel-gradient';
 
 export interface ProductCardStyle {
   id: ProductCardStyleId;
