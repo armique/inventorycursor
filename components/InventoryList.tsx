@@ -489,10 +489,9 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
     // Orphan "in composition" rows (no parent container) respect the visibility toggle.
     if (!searchActive && !showInComposition && item.status === ItemStatus.IN_COMPOSITION) return false;
 
-    // While actively searching, ignore the category filter entirely so search is always global —
-    // otherwise a category filter left active from earlier browsing (e.g. a quick-category pin)
-    // silently hides matching items in other categories with no indication why.
-    if (!searchActive && (categoryFilter !== 'ALL' || subCategoryFilter)) {
+    // Category pins stay strict during search: Bundle + "MT" only matches Bundle items that
+    // contain "MT". Clear the pin (or pick All) to search across categories.
+    if (categoryFilter !== 'ALL' || subCategoryFilter) {
       const matchParentAndSub =
         categoryFilter !== 'ALL' &&
         item.category === categoryFilter &&
@@ -4257,7 +4256,8 @@ const InventoryList: React.FC<Props> = ({
           {sortedItems.length === 0 ? (
             <div className="py-16 text-center opacity-40">
               <Package size={40} className="mx-auto mb-3 text-slate-300" />
-              <p className="font-bold text-slate-400 text-sm">No sold items match filters</p>
+              <p className="font-bold text-slate-400 text-sm">No matches found</p>
+              <p className="text-xs text-slate-400 mt-1">Try clearing search or category filters</p>
             </div>
           ) : (
             sortedItems.map((item) => {
@@ -5330,7 +5330,8 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
         <tr>
           <td colSpan={visibleColumns.length} className="p-20 text-center opacity-40">
             <Package size={48} className="mx-auto mb-4 text-slate-300" />
-            <p className="font-bold text-slate-400">No items found matching current filters</p>
+            <p className="font-bold text-slate-400">No matches found</p>
+            <p className="text-sm text-slate-400 mt-1">Try clearing search or category filters</p>
           </td>
         </tr>
       </tbody>
