@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import type { GeneratedProductCardEntry, InventoryItem } from '../types';
 import {
+  downloadProductCardEntries,
   downloadProductCardEntry,
   groupProductCardGalleryByItem,
   isProductCardGalleryCloudReady,
@@ -58,6 +59,8 @@ const ProductCardGalleryPage: React.FC<Props> = ({ items, onUpdate }) => {
   const [entries, setEntries] = useState<GeneratedProductCardEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [downloadingItemId, setDownloadingItemId] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -131,6 +134,34 @@ const ProductCardGalleryPage: React.FC<Props> = ({ items, onUpdate }) => {
       setError(e instanceof Error ? e.message : 'Delete failed');
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const downloadAllForItem = async (
+    itemId: string,
+    itemName: string,
+    groupEntries: GeneratedProductCardEntry[]
+  ) => {
+    if (!groupEntries.length) return;
+    setDownloadingItemId(itemId);
+    setDownloadProgress(`0 / ${groupEntries.length}`);
+    setError(null);
+    try {
+      const { ok, failed } = await downloadProductCardEntries(groupEntries, {
+        onProgress: (done, total) => setDownloadProgress(`${done} / ${total}`),
+      });
+      if (failed && !ok) {
+        setError(`Could not download cards for ${itemName}`);
+      } else if (failed) {
+        showToast(`Downloaded ${ok} of ${groupEntries.length} for ${itemName}`);
+      } else {
+        showToast(`Downloaded ${ok} card${ok === 1 ? '' : 's'} · ${itemName}`);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Download failed');
+    } finally {
+      setDownloadingItemId(null);
+      setDownloadProgress(null);
     }
   };
 
@@ -222,14 +253,36 @@ const ProductCardGalleryPage: React.FC<Props> = ({ items, onUpdate }) => {
                       </p>
                     </div>
                   </div>
-                  {live && (
-                    <Link
-                      to={`/panel/edit/${group.itemId}`}
-                      className="text-[10px] font-black uppercase text-emerald-700 hover:underline"
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      disabled={
+                        group.entries.length === 0 || downloadingItemId === group.itemId
+                      }
+                      onClick={() =>
+                        void downloadAllForItem(group.itemId, group.itemName, group.entries)
+                      }
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      title="Download every card for this product"
                     >
-                      Open item
-                    </Link>
-                  )}
+                      {downloadingItemId === group.itemId ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        <Download size={12} />
+                      )}
+                      {downloadingItemId === group.itemId && downloadProgress
+                        ? downloadProgress
+                        : `Download all (${group.entries.length})`}
+                    </button>
+                    {live && (
+                      <Link
+                        to={`/panel/edit/${group.itemId}`}
+                        className="text-[10px] font-black uppercase text-emerald-700 hover:underline"
+                      >
+                        Open item
+                      </Link>
+                    )}
+                  </div>
                 </div>
                 <div className="p-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
                   {group.entries.map((entry) => (
