@@ -7,7 +7,7 @@ import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSort
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone, Camera, Gift, User
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks,   Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone, Camera, Gift, User, Wand2
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, TaxMode } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
@@ -49,6 +49,7 @@ import InvoiceView from './InvoiceView';
 import InventoryAISpecsPanel from './InventoryAISpecsPanel';
 import AddPhotosModal, { type AddPhotosApplyOptions } from './AddPhotosModal';
 import ProductCardGeneratorModal from './ProductCardGeneratorModal';
+import GeminiProductCardModal from './GeminiProductCardModal';
 import BulkSelectionBar, { type BulkAction } from './BulkSelectionBar';
 import { generateItemSpecs } from '../services/specsAI';
 import { getStorefrontHiddenReason, isPublishedOnStorefront } from '../utils/storefrontCatalog';
@@ -182,8 +183,8 @@ interface SortConfig {
 /** Inv column: icon buttons in one row (28px each + 4px gaps, matching the actual `gap-1` grid + cell padding). */
 const PRESENCE_ICON_SIZE_PX = 28;
 const PRESENCE_ICON_GAP_PX = 4;
-/** Presence · Photos · Card · € · Store · Orders · Quick Bundle (+) */
-const PRESENCE_ICON_COUNT = 7;
+/** Presence · Photos · Template card · Gemini card · € · Store · Orders · Quick Bundle (+) */
+const PRESENCE_ICON_COUNT = 8;
 const PRESENCE_COL_WIDTH =
   PRESENCE_ICON_COUNT * PRESENCE_ICON_SIZE_PX +
   (PRESENCE_ICON_COUNT - 1) * PRESENCE_ICON_GAP_PX +
@@ -750,6 +751,7 @@ const InventoryList: React.FC<Props> = ({
   const [showBulkAddPhotosModal, setShowBulkAddPhotosModal] = useState(false);
   const [addPhotosTargetIds, setAddPhotosTargetIds] = useState<string[]>([]);
   const [cardGenItem, setCardGenItem] = useState<InventoryItem | null>(null);
+  const [geminiCardItem, setGeminiCardItem] = useState<InventoryItem | null>(null);
 
   // -- INLINE EDITING STATE --
   const [editingCell, setEditingCell] = useState<{ itemId: string, field: ColumnId } | null>(null);
@@ -2174,7 +2176,7 @@ const InventoryList: React.FC<Props> = ({
         return (
           <td key={id} className="inv-col-icons border-r border-slate-100/90 align-middle" style={style} onClick={(e) => e.stopPropagation()}>
             <div
-              className={`grid grid-cols-7 ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-items-start shrink-0`}
+              className={`grid grid-cols-8 ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-items-start shrink-0`}
               style={{ width: PRESENCE_ICON_COUNT * PRESENCE_ICON_SIZE_PX + (PRESENCE_ICON_COUNT - 1) * PRESENCE_ICON_GAP_PX }}
             >
               {/* Physical presence: present → lost → defective → unknown */}
@@ -2250,9 +2252,21 @@ const InventoryList: React.FC<Props> = ({
                   setCardGenItem(item);
                 }}
                 className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors border-indigo-200 bg-indigo-50/80 text-indigo-700 hover:bg-indigo-100`}
-                title="Generate premium product card (eBay / Kleinanzeigen)"
+                title="Template product card studio (layouts)"
               >
                 <Sparkles size={13} strokeWidth={2.25} />
+              </button>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setGeminiCardItem(item);
+                }}
+                className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100`}
+                title="Generate premium product card with Gemini AI"
+              >
+                <Wand2 size={13} strokeWidth={2.25} />
               </button>
 
               {/* Live eBay listing price (seller store / account) */}
@@ -4219,6 +4233,30 @@ const InventoryList: React.FC<Props> = ({
           }
           onClose={() => setCardGenItem(null)}
           onApplyAsMainPhoto={handleApplyProductCardPhoto}
+        />
+      )}
+      {geminiCardItem && (
+        <GeminiProductCardModal
+          item={geminiCardItem}
+          categoryFields={
+            (categoryFields || {})[`${geminiCardItem.category}:${geminiCardItem.subCategory}`] ||
+            (categoryFields || {})[geminiCardItem.category]
+          }
+          onClose={() => setGeminiCardItem(null)}
+          onApplyAsMainPhoto={async (url) => {
+            const merged = normalizeImageList([
+              url,
+              geminiCardItem.imageUrl,
+              ...(geminiCardItem.imageUrls || []),
+            ]);
+            await onUpdate({
+              ...geminiCardItem,
+              imageUrl: merged[0],
+              imageUrls: merged,
+            });
+            setToast('Gemini product card set as main photo');
+            setTimeout(() => setToast(null), 2200);
+          }}
         />
       )}
 
