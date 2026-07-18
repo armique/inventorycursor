@@ -35,6 +35,7 @@ import {
   stripConditionAnnotations,
 } from '../utils/bulkTextParse';
 import { filesToDataUrls, prepareInventoryImagesForStorage } from '../utils/imageImport';
+import { persistSaleProofImage } from '../services/inventoryImageStorage';
 
 interface Props {
   onSave: (newItems: InventoryItem[]) => void;
@@ -733,6 +734,16 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
     }
 
     const timestamp = Date.now();
+    const buyChatUrl = chatUrl.trim();
+    let buyChatImage = chatImage.trim();
+    if (buyChatImage) {
+      try {
+        buyChatImage = await persistSaleProofImage(buyChatImage, `bulk-${timestamp}`);
+      } catch (err) {
+        console.warn('Buy chat screenshot archive failed, keeping local copy', err);
+      }
+    }
+
     const childItems: InventoryItem[] = itemsToImport.map((draft, index) => {
       const finalCost = draft.manualCost !== undefined ? draft.manualCost : (autoCostsById[draft.id] ?? 0);
       return {
@@ -752,8 +763,8 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
         hasOVP: !addAsBundle && allItemsHaveOVP || undefined,
         platformBought: platform,
         buyPaymentType: normalizeBuyPaymentForPlatform(platform, payment),
-        kleinanzeigenBuyChatUrl: chatUrl,
-        kleinanzeigenBuyChatImage: chatImage,
+        kleinanzeigenBuyChatUrl: buyChatUrl || undefined,
+        kleinanzeigenBuyChatImage: buyChatImage || undefined,
         imageUrl: galleryUrls[0] || CATEGORY_IMAGES[draft.subCategory || draft.category] || CATEGORY_IMAGES[draft.category],
         imageUrls: galleryUrls.length
           ? galleryUrls
@@ -782,8 +793,8 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
             hasIOShield: bundleHasIOShield || undefined,
             platformBought: platform,
             buyPaymentType: normalizeBuyPaymentForPlatform(platform, payment),
-            kleinanzeigenBuyChatUrl: chatUrl,
-            kleinanzeigenBuyChatImage: chatImage,
+            kleinanzeigenBuyChatUrl: buyChatUrl || undefined,
+            kleinanzeigenBuyChatImage: buyChatImage || undefined,
             imageUrl: childItems[0]?.imageUrl || CATEGORY_IMAGES['Components'],
             imageUrls: childItems[0]?.imageUrls || [CATEGORY_IMAGES['Components']]
           };
@@ -1104,32 +1115,49 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
 
             {/* Optional proof — platform & payment are in the header */}
             <div className="bg-slate-50 p-6 rounded-[2.5rem] border border-slate-200 space-y-4">
-               <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 flex items-center gap-2"><Globe size={12}/> Optional purchase proof</h3>
+               <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 flex items-center gap-2"><MessageCircle size={12}/> Seller chat & purchase proof</h3>
                <p className="text-[10px] text-slate-500 font-medium leading-snug">
-                 Source and payment are set in the top bar (same as single-item add). Add a chat link or screenshot if you bought on Kleinanzeigen.
+                 Save the seller chat link and/or a screenshot of the conversation so you can find who you bought from. Applied to every item in this import.
                </p>
-               
-               {platform === 'kleinanzeigen.de' && (
-                  <div className="pt-2 border-t border-slate-200/50 space-y-3">
-                     <div className="flex gap-2">
-                        <input 
-                           placeholder="Chat URL..."
-                           className="flex-1 p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
-                           value={chatUrl}
-                           onChange={e => setChatUrl(e.target.value)}
-                        />
-                        <label className="p-2 bg-white border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100">
-                           <Upload size={14} className="text-slate-400"/>
-                           <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload}/>
-                        </label>
-                     </div>
-                     {chatImage && (
-                        <div className="flex items-center gap-2 text-[10px] text-emerald-600 bg-emerald-50 p-2 rounded-xl border border-emerald-100">
-                           <CheckCircle2 size={12}/> Screenshot Attached
-                        </div>
-                     )}
+
+               <div className="pt-2 border-t border-slate-200/50 space-y-3">
+                  <input
+                     placeholder="Chat URL (Kleinanzeigen / messenger link)…"
+                     className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
+                     value={chatUrl}
+                     onChange={(e) => setChatUrl(e.target.value)}
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                     <label className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100 text-[10px] font-bold uppercase tracking-widest text-slate-600">
+                        <Upload size={14} className="text-slate-400"/>
+                        {chatImage ? 'Replace screenshot' : 'Attach screenshot'}
+                        <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload}/>
+                     </label>
+                     {chatImage ? (
+                        <>
+                           <a
+                             href={chatImage}
+                             target="_blank"
+                             rel="noreferrer"
+                             className="w-10 h-10 rounded-xl overflow-hidden border border-emerald-200 shrink-0"
+                             title="Open screenshot"
+                           >
+                             <img src={chatImage} alt="" className="w-full h-full object-cover" />
+                           </a>
+                           <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 font-bold">
+                              <CheckCircle2 size={12}/> Screenshot attached
+                           </span>
+                           <button
+                             type="button"
+                             onClick={() => setChatImage('')}
+                             className="text-[10px] font-bold text-red-600 hover:underline"
+                           >
+                             Remove
+                           </button>
+                        </>
+                     ) : null}
                   </div>
-               )}
+               </div>
 
                <div className="pt-2 border-t border-slate-200/50 space-y-2">
                   <div className="flex items-center justify-between">

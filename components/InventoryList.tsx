@@ -69,6 +69,7 @@ import {
 import { resolveTradeReceivedItems, resolveTradeSourceItem } from '../utils/tradeLinks';
 import { formatPlatformBoughtLabel } from '../utils/purchaseSource';
 import TradeLinkBadge from './TradeLinkBadge';
+import ItemChatProofBadges from './ItemChatProofBadges';
 
 interface Props {
   items: InventoryItem[];
@@ -945,6 +946,7 @@ const InventoryList: React.FC<Props> = ({
   // Modals
   const [itemToSell, setItemToSell] = useState<InventoryItem | null>(null);
   const [itemToEditBuyer, setItemToEditBuyer] = useState<InventoryItem | null>(null);
+  const [chatProofPreview, setChatProofPreview] = useState<{ url: string; label: string } | null>(null);
   const [itemToReturn, setItemToReturn] = useState<InventoryItem | null>(null);
   const [itemToTrade, setItemToTrade] = useState<InventoryItem | null>(null);
   const [itemToGift, setItemToGift] = useState<InventoryItem | null>(null);
@@ -2587,6 +2589,10 @@ const InventoryList: React.FC<Props> = ({
                       )}
                       <span className="text-[10px] text-slate-400 font-bold uppercase truncate">{item.vendor}</span>
                    </div>
+                   <ItemChatProofBadges
+                     item={item}
+                     onPreviewImage={(url, label) => setChatProofPreview({ url, label })}
+                   />
                    {item.status === ItemStatus.SOLD && (() => {
                       const hasBuyerInfo = Boolean(item.customer?.name || item.ebayUsername || item.ebayOrderId);
                       const openBuyerEditor = (e: React.MouseEvent) => {
@@ -4759,6 +4765,47 @@ const InventoryList: React.FC<Props> = ({
             onApply={handleBulkTag}
             onClose={() => setShowBulkTag(false)}
          />
+      )}
+
+      {chatProofPreview && createPortal(
+         <div
+           className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/70 backdrop-blur-md p-4"
+           onClick={() => setChatProofPreview(null)}
+         >
+            <div
+              className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+               <div className="p-3 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                  <h3 className="font-black text-slate-900 text-sm">{chatProofPreview.label} chat screenshot</h3>
+                  <div className="flex items-center gap-2">
+                     <a
+                       href={chatProofPreview.url}
+                       target="_blank"
+                       rel="noreferrer"
+                       className="text-[10px] font-bold uppercase text-emerald-700 hover:underline"
+                     >
+                       Open full size
+                     </a>
+                     <button
+                       type="button"
+                       onClick={() => setChatProofPreview(null)}
+                       className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl"
+                     >
+                       <X size={18} />
+                     </button>
+                  </div>
+               </div>
+               <div className="p-3 max-h-[80vh] overflow-auto bg-slate-100">
+                  <img
+                    src={chatProofPreview.url}
+                    alt={`${chatProofPreview.label} chat screenshot`}
+                    className="max-w-full max-h-[75vh] mx-auto object-contain rounded-lg"
+                  />
+               </div>
+            </div>
+         </div>,
+         document.body
       )}
 
       {priceSuggestModalItem && createPortal(

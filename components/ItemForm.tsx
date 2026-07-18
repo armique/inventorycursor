@@ -31,6 +31,7 @@ import { getCompatibilityWarnings } from '../utils/compatibilityWarnings';
 import { recordCategoryCorrection, suggestCategoryFromCorrections } from '../services/categoryCorrections';
 import { detectItemCategory, searchInventoryItemsForAdd } from '../utils/itemCategoryDetect';
 import { filesToDataUrls, prepareInventoryImagesForStorage, getItemUserPhotoCount, isCategoryPlaceholderImage } from '../utils/imageImport';
+import { persistSaleProofImage } from '../services/inventoryImageStorage';
 import { searchProductPhotos, getImageSearchProviders, ImageSearchResult, ImageSearchProvider } from '../services/imageSearchService';
 import { getCachedProductPhoto, setCachedProductPhoto } from '../services/firebaseService';
 import { fetchMyEbayListings, getEbayUsername, ebayListingToPriceMatch, type EbayMyListing, type EbayListingPriceMatch } from '../services/ebayService';
@@ -812,6 +813,16 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       storedImages = normalizedImages;
     }
 
+    const buyChatUrl = (formData.kleinanzeigenBuyChatUrl || '').trim();
+    let buyChatImage = (formData.kleinanzeigenBuyChatImage || '').trim();
+    if (buyChatImage) {
+      try {
+        buyChatImage = await persistSaleProofImage(buyChatImage, saveItemId);
+      } catch (err) {
+        console.warn('Buy chat screenshot archive failed, keeping local copy', err);
+      }
+    }
+
     let status = formData.status || ItemStatus.IN_STOCK;
     let parentContainerId = formData.parentContainerId;
     let componentLinkUpdates: InventoryItem[] = [];
@@ -854,6 +865,8 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       specsAiSuggested: aiSuggested && Object.keys(aiSuggested).length ? aiSuggested : undefined,
       platformBought,
       buyPaymentType,
+      kleinanzeigenBuyChatUrl: buyChatUrl || undefined,
+      kleinanzeigenBuyChatImage: buyChatImage || undefined,
     };
 
     if (status === ItemStatus.SOLD || status === ItemStatus.TRADED || status === ItemStatus.GIFTED) {
@@ -2283,6 +2296,76 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                          >
                             {PAYMENT_METHODS.map(p => <option key={p} value={p}>{p}</option>)}
                          </select>
+                      </div>
+
+                      <div className="col-span-2 pt-1 border-t border-slate-100 space-y-2">
+                         <label className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
+                           <MessageCircle size={11} /> Seller chat (link or screenshot)
+                         </label>
+                         <p className="text-[10px] text-slate-500 font-medium leading-snug">
+                           Save the chat URL or a screenshot so you can find who you bought from later.
+                         </p>
+                         <input
+                            className="w-full px-3 py-2.5 bg-slate-50 rounded-xl font-bold text-xs outline-none focus:bg-white focus:ring-1 focus:ring-blue-400"
+                            value={formData.kleinanzeigenBuyChatUrl || ''}
+                            onChange={(e) =>
+                              setFormData({ ...formData, kleinanzeigenBuyChatUrl: e.target.value })
+                            }
+                            placeholder="https://www.kleinanzeigen.de/s-nachrichten/…"
+                         />
+                         <div className="flex flex-wrap items-center gap-2">
+                            <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-600 cursor-pointer hover:bg-slate-50">
+                              <Upload size={11} />
+                              {formData.kleinanzeigenBuyChatImage ? 'Replace screenshot' : 'Attach screenshot'}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  const reader = new FileReader();
+                                  reader.onloadend = () => {
+                                    setFormData((prev) => ({
+                                      ...prev,
+                                      kleinanzeigenBuyChatImage: String(reader.result || ''),
+                                    }));
+                                  };
+                                  reader.readAsDataURL(file);
+                                  e.target.value = '';
+                                }}
+                              />
+                            </label>
+                            {formData.kleinanzeigenBuyChatImage ? (
+                              <>
+                                <a
+                                  href={formData.kleinanzeigenBuyChatImage}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="w-9 h-9 rounded-lg overflow-hidden border border-slate-200 shrink-0"
+                                  title="Open screenshot"
+                                >
+                                  <img
+                                    src={formData.kleinanzeigenBuyChatImage}
+                                    alt=""
+                                    className="w-full h-full object-cover"
+                                  />
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setFormData((prev) => ({
+                                      ...prev,
+                                      kleinanzeigenBuyChatImage: undefined,
+                                    }))
+                                  }
+                                  className="text-[10px] font-bold text-red-600 hover:underline"
+                                >
+                                  Remove
+                                </button>
+                              </>
+                            ) : null}
+                         </div>
                       </div>
                     </div>
                  </div>

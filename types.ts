@@ -147,9 +147,9 @@ export interface InventoryItem {
   /** Active eBay listing ID last synced via Store Pull (avoids re-matching sold/relisted duplicates). */
   ebayListingId?: string;
 
-  // Platform Specific Buy Data
+  // Platform Specific Buy Data — seller chat link / conversation screenshot (to find who you bought from)
   kleinanzeigenBuyChatUrl?: string;
-  kleinanzeigenBuyChatImage?: string; // Base64 or URL
+  kleinanzeigenBuyChatImage?: string; // Base64 or Firebase URL — archived on save when signed in
   
   hasFee?: boolean;
   feeAmount?: number;
