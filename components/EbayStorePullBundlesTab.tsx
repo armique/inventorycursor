@@ -1,4 +1,5 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertCircle,
   CheckCircle2,
@@ -6,13 +7,22 @@ import {
   Layers,
   Loader2,
   Package,
+  Plus,
   RefreshCw,
+  Replace,
+  Search,
+  Trash2,
+  X,
 } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
-import { fetchMyEbayListings, getEbayUsername } from '../services/ebayService';
+import { fetchMyEbayListings, getEbayUsername, type EbayMyListing } from '../services/ebayService';
 import {
   buildEbayBundleParsePlan,
+  isFreeBundlePart,
+  rankFreePartsForListingRole,
   type EbayBundleParsePlan,
+  type EbayBundlePartMatch,
+  type EbayBundlePartRole,
   type EbayBundleSuggestion,
 } from '../utils/ebayBundleParsePlan';
 import { getStorePullRoundedPrice } from '../utils/ebayBulkSyncPlan';
@@ -27,11 +37,78 @@ interface Props {
   onUpdate: (items: InventoryItem[]) => void;
 }
 
+interface EditablePart {
+  itemId: string;
+  role: EbayBundlePartRole;
+  score: number;
+}
+
 interface RowState {
   selected: boolean;
   name: string;
+  /** True once the user typed a custom name — stop auto-renaming */
+  nameManual: boolean;
   includePhotos: boolean;
   includePrice: boolean;
+  parts: EditablePart[];
+}
+
+type PickerState = {
+  suggestionId: string;
+  role: EbayBundlePartRole | 'any';
+  /** When set, selecting a candidate replaces this part */
+  replaceItemId?: string;
+};
+
+const ROLE_OPTIONS: Array<{ id: EbayBundlePartRole | 'any'; label: string }> = [
+  { id: 'mobo', label: 'Mobo' },
+  { id: 'cpu', label: 'CPU' },
+  { id: 'ram', label: 'RAM' },
+  { id: 'gpu', label: 'GPU' },
+  { id: 'storage', label: 'Storage' },
+  { id: 'any', label: 'Any' },
+];
+
+function partsToEditable(parts: EbayBundlePartMatch[]): EditablePart[] {
+  return parts.map((p) => ({ itemId: p.item.id, role: p.role, score: p.score }));
+}
+
+function resolveParts(
+  parts: EditablePart[],
+  inventory: InventoryItem[]
+): Array<{ item: InventoryItem; role: EbayBundlePartRole; score: number }> {
+  const out: Array<{ item: InventoryItem; role: EbayBundlePartRole; score: number }> = [];
+  for (const p of parts) {
+    const item = inventory.find((it) => it.id === p.itemId);
+    if (!item) continue;
+    out.push({ item, role: p.role, score: p.score });
+  }
+  return out;
+}
+
+function editWarnings(parts: EditablePart[]): string[] {
+  const roles = new Set(parts.map((p) => p.role));
+  const w: string[] = [];
+  if (!roles.has('mobo')) w.push('No motherboard selected');
+  if (!roles.has('cpu')) w.push('No CPU selected');
+  if (!roles.has('ram')) w.push('No RAM selected');
+  if (parts.length < 2) w.push('Need at least 2 parts');
+  if (!roles.has('mobo') && !roles.has('cpu')) w.push('Need motherboard or CPU');
+  return w;
+}
+
+function autoTitleForParts(
+  suggestion: EbayBundleSuggestion,
+  parts: EditablePart[],
+  inventory: InventoryItem[]
+): string {
+  const resolved = resolveParts(parts, inventory).map((p) => p.item);
+  if (resolved.length < 1) return suggestion.suggestedName;
+  const kind = suggestion.kind === 'mixed' ? 'mixed' : 'bundle';
+  return (
+    buildContainerTitle(kind, resolved, { preferAufrustkit: suggestion.preferAufrustkit }) ||
+    suggestion.suggestedName
+  );
 }
 
 const EbayStorePullBundlesTab: React.FC<Props> = ({ items, onUpdate }) => {
@@ -42,6 +119,10 @@ const EbayStorePullBundlesTab: React.FC<Props> = ({ items, onUpdate }) => {
   const [plan, setPlan] = useState<EbayBundleParsePlan | null>(null);
   const [rowState, setRowState] = useState<Record<string, RowState>>({});
   const [progress, setProgress] = useState<EbayToolProgress | null>(null);
+  const [picker, setPicker] = useState<PickerState | null>(null);
+  const [pickerQuery, setPickerQuery] = useState('');
+
+  const freeParts = useMemo(() => items.filter(isFreeBundlePart), [items]);
 
   const analyze = useCallback(async () => {
     setLoading(true);
@@ -49,6 +130,7 @@ const EbayStorePullBundlesTab: React.FC<Props> = ({ items, onUpdate }) => {
     setApplyMessage(null);
     setPlan(null);
     setRowState({});
+    setPicker(null);
     setProgress({ label: 'Fetching your eBay store listings…', done: 0, total: 3 });
     try {
       const listings = await fetchMyEbayListings();
@@ -76,8 +158,10 @@ const EbayStorePullBundlesTab: React.FC<Props> = ({ items, onUpdate }) => {
         initial[s.id] = {
           selected: true,
           name: s.suggestedName,
+          nameManual: false,
           includePhotos: s.listing.imageUrls.length > 0,
           includePrice: s.listing.price != null && s.listing.price > 0,
+          parts: partsToEditable(s.parts),
         };
       }
       setRowState(initial);
@@ -98,6 +182,89 @@ const EbayStorePullBundlesTab: React.FC<Props> = ({ items, onUpdate }) => {
     setRowState((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
   };
 
+  const setPartsForRow = (suggestion: EbayBundleSuggestion, nextParts: EditablePart[]) => {
+    setRowState((prev) => {
+      const row = prev[suggestion.id];
+      if (!row) return prev;
+      const name = row.nameManual
+        ? row.name
+        : autoTitleForParts(suggestion, nextParts, items);
+      return {
+        ...prev,
+        [suggestion.id]: { ...row, parts: nextParts, name },
+      };
+    });
+  };
+
+  const removePart = (suggestion: EbayBundleSuggestion, itemId: string) => {
+    const row = rowState[suggestion.id];
+    if (!row) return;
+    setPartsForRow(
+      suggestion,
+      row.parts.filter((p) => p.itemId !== itemId)
+    );
+  };
+
+  const claimedIdsOutside = (suggestionId: string): Set<string> => {
+    const claimed = new Set<string>();
+    for (const [id, row] of Object.entries(rowState)) {
+      if (id === suggestionId) continue;
+      if (!row.selected) continue;
+      for (const p of row.parts) claimed.add(p.itemId);
+    }
+    return claimed;
+  };
+
+  const pickerListing: EbayMyListing | null = useMemo(() => {
+    if (!picker || !plan) return null;
+    return plan.suggestions.find((s) => s.id === picker.suggestionId)?.listing ?? null;
+  }, [picker, plan]);
+
+  const pickerCandidates = useMemo(() => {
+    if (!picker || !pickerListing) return [] as EbayBundlePartMatch[];
+    const row = rowState[picker.suggestionId];
+    const exclude = claimedIdsOutside(picker.suggestionId);
+    // Allow replacing current card's parts except the one being replaced stays selectable
+    for (const p of row?.parts || []) {
+      if (p.itemId !== picker.replaceItemId) exclude.add(p.itemId);
+    }
+    return rankFreePartsForListingRole(
+      pickerListing,
+      freeParts,
+      picker.role,
+      exclude,
+      pickerQuery,
+      50
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- claimedIdsOutside reads rowState
+  }, [picker, pickerListing, freeParts, pickerQuery, rowState]);
+
+  useEffect(() => {
+    if (!picker) setPickerQuery('');
+  }, [picker]);
+
+  const pickCandidate = (match: EbayBundlePartMatch) => {
+    if (!picker || !plan) return;
+    const suggestion = plan.suggestions.find((s) => s.id === picker.suggestionId);
+    if (!suggestion) return;
+    const row = rowState[suggestion.id];
+    if (!row) return;
+
+    let next = [...row.parts];
+    if (picker.replaceItemId) {
+      next = next.filter((p) => p.itemId !== picker.replaceItemId);
+    }
+    if (!next.some((p) => p.itemId === match.item.id)) {
+      next.push({
+        itemId: match.item.id,
+        role: picker.role === 'any' ? match.role : picker.role,
+        score: match.score,
+      });
+    }
+    setPartsForRow(suggestion, next);
+    setPicker(null);
+  };
+
   const applySelected = async () => {
     if (!selected.length) return;
     setApplying(true);
@@ -116,16 +283,23 @@ const EbayStorePullBundlesTab: React.FC<Props> = ({ items, onUpdate }) => {
         const row = rowState[suggestion.id];
         if (!row) continue;
 
-        const parts = suggestion.parts
-          .map((p) => items.find((it) => it.id === p.item.id) || p.item)
+        const parts = resolveParts(row.parts, items)
+          .map((p) => p.item)
           .filter((p) => !claimedPartIds.has(p.id) && isStillFree(p));
 
-        if (parts.length < 2) {
+        const roles = new Set(
+          resolveParts(row.parts, items)
+            .filter((p) => parts.some((x) => x.id === p.item.id))
+            .map((p) => p.role)
+        );
+        const hasCore = roles.has('mobo') || roles.has('cpu');
+
+        if (parts.length < 2 || !hasCore) {
           setProgress({
             label: 'Creating bundles from eBay…',
             done: i + 1,
             total,
-            detail: `Skipped ${suggestion.listing.title.slice(0, 40)}… (parts unavailable)`,
+            detail: `Skipped ${suggestion.listing.title.slice(0, 40)}… (need ≥2 parts + mobo/CPU)`,
           });
           continue;
         }
@@ -207,11 +381,10 @@ const EbayStorePullBundlesTab: React.FC<Props> = ({ items, onUpdate }) => {
         onUpdate(updates);
         const created = updates.filter((u) => u.isBundle).length;
         setApplyMessage(`Created ${created} bundle${created === 1 ? '' : 's'} with eBay photos & links.`);
-        // Refresh plan against current items + leftover
         setPlan(null);
         setRowState({});
       } else {
-        setError('No bundles created — matched parts may already be in use.');
+        setError('No bundles created — check part selection (need ≥2 free parts including mobo or CPU).');
       }
     } catch (e: unknown) {
       setError((e as Error)?.message || 'Failed to create bundles.');
@@ -240,9 +413,8 @@ const EbayStorePullBundlesTab: React.FC<Props> = ({ items, onUpdate }) => {
               >
                 ebay.de/usr/{getEbayUsername()}
               </a>
-              . When inventory has matching free parts (mobo / CPU / RAM / …) that are not yet in a
-              bundle, you get proposals. Confirm → creates the bundle, links the listing, and imports
-              eBay photos.
+              . Matching uses model/chipset/DDR signals. For each proposal you can remove wrong parts
+              or pick replacements from free inventory before confirm.
             </p>
           </div>
           <button
@@ -299,7 +471,7 @@ const EbayStorePullBundlesTab: React.FC<Props> = ({ items, onUpdate }) => {
           <p className="text-sm font-bold text-slate-700">No bundle proposals right now</p>
           <p className="text-[11px] text-slate-500 font-medium mt-1 max-w-md mx-auto">
             Either bundle-like listings already have containers, or free inventory parts don’t match
-            listing titles closely enough.
+            listing titles closely enough. You can still re-scan after adding free parts.
           </p>
         </div>
       )}
@@ -354,6 +526,13 @@ const EbayStorePullBundlesTab: React.FC<Props> = ({ items, onUpdate }) => {
               if (!row) return null;
               const listingUrl =
                 s.listing.listingUrl || `https://www.ebay.de/itm/${s.listing.listingId}`;
+              const resolved = resolveParts(row.parts, items);
+              const liveWarnings = [
+                ...s.warnings.filter((w) => !/No (motherboard|CPU|RAM) matched/i.test(w)),
+                ...editWarnings(row.parts),
+              ];
+              const uniqueWarnings = [...new Set(liveWarnings)];
+
               return (
                 <div
                   key={s.id}
@@ -403,7 +582,9 @@ const EbayStorePullBundlesTab: React.FC<Props> = ({ items, onUpdate }) => {
                       <input
                         type="text"
                         value={row.name}
-                        onChange={(e) => updateRow(s.id, { name: e.target.value })}
+                        onChange={(e) =>
+                          updateRow(s.id, { name: e.target.value, nameManual: true })
+                        }
                         className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-900"
                         placeholder="Bundle name"
                       />
@@ -428,27 +609,88 @@ const EbayStorePullBundlesTab: React.FC<Props> = ({ items, onUpdate }) => {
                           Set store price
                         </label>
                       </div>
-                      {s.warnings.length > 0 && (
+                      {uniqueWarnings.length > 0 && (
                         <p className="text-[10px] font-medium text-amber-700">
-                          {s.warnings.join(' · ')}
+                          {uniqueWarnings.join(' · ')}
                         </p>
                       )}
-                      <div className="flex flex-wrap gap-2 pt-1">
-                        {s.parts.map((p) => (
-                          <div
-                            key={p.item.id}
-                            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-50 border border-slate-100 max-w-full"
-                            title={`Score ${p.score}`}
+
+                      <div className="space-y-1.5 pt-1">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                            Parts ({resolved.length})
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPicker({ suggestionId: s.id, role: 'any' })
+                            }
+                            className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-violet-700 hover:text-violet-900"
                           >
-                            <ItemThumbnail item={p.item} size={22} />
-                            <span className="text-[10px] font-black uppercase text-violet-600">
-                              {p.role}
-                            </span>
-                            <span className="text-[10px] font-bold text-slate-700 truncate max-w-[10rem]">
-                              {p.item.name}
-                            </span>
-                          </div>
-                        ))}
+                            <Plus size={12} /> Add part
+                          </button>
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          {resolved.length === 0 && (
+                            <p className="text-[10px] text-slate-400 font-medium">
+                              No parts — add from inventory search.
+                            </p>
+                          )}
+                          {resolved.map((p) => (
+                            <div
+                              key={p.item.id}
+                              className="flex items-center gap-2 px-2 py-1.5 rounded-xl bg-slate-50 border border-slate-100"
+                              title={`Score ${p.score}`}
+                            >
+                              <ItemThumbnail item={p.item} size={28} />
+                              <span className="text-[10px] font-black uppercase text-violet-600 w-14 shrink-0">
+                                {p.role}
+                              </span>
+                              <span className="text-[11px] font-bold text-slate-800 truncate flex-1 min-w-0">
+                                {p.item.name}
+                              </span>
+                              <span className="text-[9px] font-bold text-slate-400 shrink-0">
+                                {p.score}
+                              </span>
+                              <button
+                                type="button"
+                                title="Replace from inventory"
+                                onClick={() =>
+                                  setPicker({
+                                    suggestionId: s.id,
+                                    role: p.role,
+                                    replaceItemId: p.item.id,
+                                  })
+                                }
+                                className="p-1 rounded-lg text-slate-400 hover:text-violet-700 hover:bg-violet-50"
+                              >
+                                <Replace size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                title="Remove part"
+                                onClick={() => removePart(s, p.item.id)}
+                                className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex flex-wrap gap-1 pt-0.5">
+                          {ROLE_OPTIONS.filter((r) => r.id !== 'any').map((r) => (
+                            <button
+                              key={r.id}
+                              type="button"
+                              onClick={() =>
+                                setPicker({ suggestionId: s.id, role: r.id })
+                              }
+                              className="px-2 py-0.5 rounded-md border border-slate-200 text-[9px] font-black uppercase text-slate-500 hover:border-violet-300 hover:text-violet-700"
+                            >
+                              + {r.label}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -473,6 +715,101 @@ const EbayStorePullBundlesTab: React.FC<Props> = ({ items, onUpdate }) => {
           </ul>
         </details>
       )}
+
+      {picker &&
+        pickerListing &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[240] flex items-end sm:items-center justify-center bg-slate-900/50 p-3"
+            onClick={() => setPicker(null)}
+          >
+            <div
+              className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 max-h-[85vh] flex flex-col overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-4 py-3 border-b border-slate-100 flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <h3 className="text-sm font-black text-slate-900">
+                    {picker.replaceItemId ? 'Replace part' : 'Add part'}
+                  </h3>
+                  <p className="text-[10px] text-slate-500 font-medium truncate mt-0.5">
+                    {pickerListing.title}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPicker(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"
+                  aria-label="Close"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="px-4 py-3 space-y-2 border-b border-slate-50">
+                <div className="flex flex-wrap gap-1">
+                  {ROLE_OPTIONS.map((r) => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => setPicker((p) => (p ? { ...p, role: r.id } : p))}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase ${
+                        picker.role === r.id
+                          ? 'bg-violet-600 text-white'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="relative">
+                  <Search
+                    size={14}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  />
+                  <input
+                    type="search"
+                    value={pickerQuery}
+                    onChange={(e) => setPickerQuery(e.target.value)}
+                    placeholder="Search free inventory…"
+                    className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-xs font-medium outline-none focus:ring-2 focus:ring-violet-200"
+                    autoFocus
+                  />
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-2 space-y-1 min-h-0">
+                {pickerCandidates.length === 0 ? (
+                  <p className="text-[11px] text-slate-500 font-medium text-center py-8">
+                    No free parts match this filter.
+                  </p>
+                ) : (
+                  pickerCandidates.map((c) => (
+                    <button
+                      key={c.item.id}
+                      type="button"
+                      onClick={() => pickCandidate(c)}
+                      className="w-full flex items-center gap-2 px-2 py-2 rounded-xl hover:bg-violet-50 text-left"
+                    >
+                      <ItemThumbnail item={c.item} size={32} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[11px] font-bold text-slate-800 truncate">{c.item.name}</p>
+                        <p className="text-[9px] font-medium text-slate-400">
+                          {c.role}
+                          {c.item.subCategory ? ` · ${c.item.subCategory}` : ''}
+                          {c.score > 0 ? ` · score ${c.score}` : ''}
+                        </p>
+                      </div>
+                      <span className="text-[9px] font-black uppercase text-violet-700 shrink-0">
+                        {picker.replaceItemId ? 'Use' : 'Add'}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 };
@@ -480,6 +817,7 @@ const EbayStorePullBundlesTab: React.FC<Props> = ({ items, onUpdate }) => {
 function isStillFree(item: InventoryItem): boolean {
   if (item.status !== ItemStatus.IN_STOCK) return false;
   if (item.isPC || item.isBundle || item.parentContainerId) return false;
+  if (item.isDefective) return false;
   return true;
 }
 
