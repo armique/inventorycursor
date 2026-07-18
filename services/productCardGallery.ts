@@ -329,8 +329,7 @@ export async function getProductCardBlob(
   throw new Error('Could not resolve gallery image');
 }
 
-export async function downloadProductCardEntry(entry: GeneratedProductCardEntry): Promise<void> {
-  const { blob, fileName } = await getProductCardBlob(entry);
+function triggerBlobDownload(blob: Blob, fileName: string): void {
   const objectUrl = URL.createObjectURL(blob);
   try {
     const a = document.createElement('a');
@@ -341,8 +340,72 @@ export async function downloadProductCardEntry(entry: GeneratedProductCardEntry)
     a.click();
     a.remove();
   } finally {
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 2500);
   }
+}
+
+export async function downloadProductCardEntry(entry: GeneratedProductCardEntry): Promise<void> {
+  const { blob, fileName } = await getProductCardBlob(entry);
+  triggerBlobDownload(blob, fileName);
+}
+
+function uniquifyFileNames(names: string[]): string[] {
+  const seen = new Map<string, number>();
+  return names.map((name) => {
+    const count = seen.get(name) || 0;
+    seen.set(name, count + 1);
+    if (count === 0) return name;
+    const dot = name.lastIndexOf('.');
+    if (dot <= 0) return `${name}-${count + 1}`;
+    return `${name.slice(0, dot)}-${count + 1}${name.slice(dot)}`;
+  });
+}
+
+/**
+ * Download every card for a product (or any entry list), one file after another.
+ * Filenames stay product/style-based; duplicates get -2, -3 suffixes.
+ */
+export async function downloadProductCardEntries(
+  entries: GeneratedProductCardEntry[],
+  options?: { onProgress?: (done: number, total: number) => void }
+): Promise<{ ok: number; failed: number }> {
+  const list = entries.filter(Boolean);
+  if (!list.length) return { ok: 0, failed: 0 };
+
+  const prepared: Array<{ blob: Blob; fileName: string } | null> = [];
+  for (const entry of list) {
+    try {
+      prepared.push(await getProductCardBlob(entry));
+    } catch {
+      prepared.push(null);
+    }
+  }
+
+  const okNames = uniquifyFileNames(
+    prepared.map((p, i) => p?.fileName || `card-${i + 1}.jpg`)
+  );
+
+  let ok = 0;
+  let failed = 0;
+  for (let i = 0; i < prepared.length; i++) {
+    const row = prepared[i];
+    if (!row) {
+      failed++;
+      options?.onProgress?.(i + 1, prepared.length);
+      continue;
+    }
+    try {
+      triggerBlobDownload(row.blob, okNames[i]!);
+      ok++;
+      // Brief gap so browsers don't coalesce / block multiple downloads
+      await new Promise((r) => setTimeout(r, 280));
+    } catch {
+      failed++;
+    }
+    options?.onProgress?.(i + 1, prepared.length);
+  }
+
+  return { ok, failed };
 }
 
 /** Merge cloud + local gallery; newest first. Optionally filter by item. */
