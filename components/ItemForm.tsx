@@ -370,7 +370,12 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   }, []);
 
   const openExistingForUpdate = useCallback((item: InventoryItem) => {
-    setFormData(item);
+    const platformBought = item.platformBought || 'kleinanzeigen.de';
+    setFormData({
+      ...item,
+      platformBought,
+      buyPaymentType: normalizeBuyPaymentForPlatform(platformBought, item.buyPaymentType),
+    });
     setUpdateTargetId(item.id);
     setConfigStep('DONE');
     setDuplicateDismissed(true);
