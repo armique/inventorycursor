@@ -964,6 +964,29 @@ const InventoryList: React.FC<Props> = ({
   const [showRetroBundle, setShowRetroBundle] = useState(false);
   const [showComposeType, setShowComposeType] = useState(false);
   const [quickBundleSeed, setQuickBundleSeed] = useState<InventoryItem | null>(null);
+  const quickBundleSeedRef = useRef<InventoryItem | null>(null);
+  useEffect(() => {
+    quickBundleSeedRef.current = quickBundleSeed;
+  }, [quickBundleSeed]);
+
+  const openQuickBundlePanel = useCallback((seed: InventoryItem) => {
+    // Cancel any pending row-click → Edit PC Build / Edit Item navigation
+    if (rowClickTimeoutRef.current != null) {
+      window.clearTimeout(rowClickTimeoutRef.current);
+      rowClickTimeoutRef.current = null;
+    }
+    setQuickBundleSeed(seed);
+    if (seed.isPC || seed.isBundle) {
+      setCollapsedBundles((prev) => {
+        if (!prev.has(seed.id)) return prev;
+        const next = new Set(prev);
+        next.delete(seed.id);
+        return next;
+      });
+    }
+    setScrollTargetItemId(seed.id);
+  }, []);
+
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [showNewItemModal, setShowNewItemModal] = useState(false);
   const [searchSuggestionsOpen, setSearchSuggestionsOpen] = useState(false);
@@ -1719,10 +1742,14 @@ const InventoryList: React.FC<Props> = ({
   // Delayed row click handler so double-click can enter inline rename
   const handleRowClick = (item: InventoryItem, isEditingName: boolean) => {
     if (isEditingName) return;
+    // Don't open Edit / PC Builder while the Flags “+” add panel is open
+    if (quickBundleSeed) return;
     // If there's already a pending click, do nothing (double-click handler will take over)
     if (rowClickTimeoutRef.current != null) return;
     rowClickTimeoutRef.current = window.setTimeout(() => {
       rowClickTimeoutRef.current = null;
+      // Re-check: panel may have opened during the delay
+      if (quickBundleSeedRef.current) return;
       handleEditClick(item);
     }, 220);
   };
@@ -1810,6 +1837,8 @@ const InventoryList: React.FC<Props> = ({
   );
 
   const handleEditClick = (item: InventoryItem) => {
+    // Flags “+” panel open — never navigate away into PC Builder / edit modal
+    if (quickBundleSeedRef.current) return;
     addRecentItemId(item.id);
     if (item.isPC || item.isBundle) {
       navigate(`/panel/builder?editId=${item.id}`); 
@@ -2277,16 +2306,7 @@ const InventoryList: React.FC<Props> = ({
                       // Parts already inside a container → add more to that parent
                       const seed =
                         parentOfItem && !item.isPC && !item.isBundle ? parentOfItem : item;
-                      setQuickBundleSeed(seed);
-                      if (seed.isPC || seed.isBundle) {
-                        setCollapsedBundles((prev) => {
-                          if (!prev.has(seed.id)) return prev;
-                          const next = new Set(prev);
-                          next.delete(seed.id);
-                          return next;
-                        });
-                      }
-                      setScrollTargetItemId(seed.id);
+                      openQuickBundlePanel(seed);
                     }}
                     className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 hover:border-violet-300`}
                     title={
@@ -2329,7 +2349,14 @@ const InventoryList: React.FC<Props> = ({
         const userPhotoCount = getItemUserPhotoCount(item);
         const hasUserPhotos = userPhotoCount > 0;
         return (
-          <td key={id} style={style} onClick={() => handleRowClick(item, isEditingName)}>
+          <td
+            key={id}
+            style={style}
+            onClick={() => {
+              if (quickBundleSeed) return;
+              handleRowClick(item, isEditingName);
+            }}
+          >
              <div className="flex items-start gap-1.5 cursor-pointer group/cell w-full py-0.5">
                 <div
                   className={`relative shrink-0 rounded-md cursor-pointer hover:opacity-90 transition-opacity ${
