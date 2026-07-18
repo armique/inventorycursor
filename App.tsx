@@ -77,6 +77,7 @@ type AppSyncSnapshot = {
 const PRESERVE_FROM_OLD_IF_UPDATE_MISSING: (keyof InventoryItem)[] = [
   'imageUrl', 'imageUrls', 'storeGalleryUrls', 'storeDescription', 'storeVisible', 'storeOnSale', 'storeSalePrice',
   'specs', 'componentIds', 'comment1', 'comment2', 'vendor', 'hasOVP', 'hasIOShield',
+  'platformBought', 'buyPaymentType', 'kleinanzeigenBuyChatUrl', 'kleinanzeigenBuyChatImage',
 ];
 
 function GitHubOAuthCallback() {

@@ -10,6 +10,11 @@ import {
   Sparkles, Loader2, Package, Ban
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, Platform, PaymentType } from '../types';
+import {
+  defaultBuyPaymentForPlatform,
+  normalizeBuyPaymentForPlatform,
+  paymentAfterPlatformChange,
+} from '../utils/purchaseSource';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { CATEGORY_IMAGES, searchAllHardware, HardwareMetadata } from '../services/hardwareDB';
@@ -239,7 +244,9 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
   const [rowCostDrafts, setRowCostDrafts] = useState<Record<string, string>>({});
   const [buyDate, setBuyDate] = useState(new Date().toISOString().split('T')[0]);
   const [platform, setPlatform] = useState<Platform>('kleinanzeigen.de');
-  const [payment, setPayment] = useState<PaymentType>('Cash');
+  const [payment, setPayment] = useState<PaymentType>(() =>
+    defaultBuyPaymentForPlatform('kleinanzeigen.de')
+  );
   
   // Shared Evidence
   const [chatUrl, setChatUrl] = useState('');
@@ -744,7 +751,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
         parentContainerId: addAsBundle ? `bundle-${timestamp}` : undefined,
         hasOVP: !addAsBundle && allItemsHaveOVP || undefined,
         platformBought: platform,
-        buyPaymentType: payment,
+        buyPaymentType: normalizeBuyPaymentForPlatform(platform, payment),
         kleinanzeigenBuyChatUrl: chatUrl,
         kleinanzeigenBuyChatImage: chatImage,
         imageUrl: galleryUrls[0] || CATEGORY_IMAGES[draft.subCategory || draft.category] || CATEGORY_IMAGES[draft.category],
@@ -774,7 +781,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
             hasOVP: bundleHasOVP || undefined,
             hasIOShield: bundleHasIOShield || undefined,
             platformBought: platform,
-            buyPaymentType: payment,
+            buyPaymentType: normalizeBuyPaymentForPlatform(platform, payment),
             kleinanzeigenBuyChatUrl: chatUrl,
             kleinanzeigenBuyChatImage: chatImage,
             imageUrl: childItems[0]?.imageUrl || CATEGORY_IMAGES['Components'],
@@ -840,11 +847,16 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
               <select 
                  className="w-full max-w-[11rem] py-1.5 bg-transparent font-bold text-xs outline-none text-slate-800 border border-slate-200 rounded-xl px-2"
                  value={platform}
-                 onChange={(e) => setPlatform(e.target.value as Platform)}
+                 onChange={(e) => {
+                   const next = e.target.value as Platform;
+                   setPlatform(next);
+                   setPayment((prev) => paymentAfterPlatformChange(next, prev));
+                 }}
               >
                  <option value="kleinanzeigen.de">Kleinanzeigen</option>
                  <option value="ebay.de">eBay</option>
                  <option value="Amazon">Amazon</option>
+                 <option value="In Person">In Person</option>
                  <option value="Other">Other</option>
               </select>
            </div>
@@ -853,7 +865,12 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
               <select 
                  className="w-full max-w-[13rem] py-1.5 bg-transparent font-bold text-xs outline-none text-slate-800 border border-slate-200 rounded-xl px-2"
                  value={payment}
-                 onChange={(e) => setPayment(e.target.value as PaymentType)}
+                 onChange={(e) =>
+                   setPayment(
+                     normalizeBuyPaymentForPlatform(platform, e.target.value as PaymentType) ||
+                       (e.target.value as PaymentType)
+                   )
+                 }
               >
                  {PAYMENT_METHODS.map((p) => (
                    <option key={p} value={p}>{p}</option>
