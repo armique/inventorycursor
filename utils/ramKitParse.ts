@@ -145,14 +145,6 @@ function extractRamBrand(name: string): string | null {
     const match = name.match(re);
     if (match) return titleCaseBrand(match[0]);
   }
-  const tokens = name.split(/\s+/).filter(Boolean);
-  for (const token of tokens) {
-    if (/^ddr\d$/i.test(token)) continue;
-    if (/^\d/.test(token)) continue;
-    if (/gb$/i.test(token)) continue;
-    if (/^[x×]$/i.test(token)) continue;
-    return titleCaseBrand(token);
-  }
   return null;
 }
 
@@ -161,34 +153,257 @@ function extractMemoryType(name: string): string | null {
   return match ? match[1]!.toUpperCase() : null;
 }
 
-export function formatRamKitDisplayName(rawName: string, kit: RamKitInfo): string {
+/**
+ * Extract RAM speed in MHz from free text / spec values.
+ * Accepts: 3200MHz, 3200 MHz, 3200MT/s, DDR4-3200, PC4-25600, etc.
+ * Does not invent a speed when none is present.
+ */
+export function extractRamSpeedMHz(text: string): number | null {
+  if (!text?.trim()) return null;
+  const t = text.replace(/\s+/g, ' ');
+
+  const mhz = t.match(/\b([1-9]\d{2,4})\s*MHz\b/i);
+  if (mhz) {
+    const n = parseInt(mhz[1]!, 10);
+    if (n >= 800 && n <= 10000) return n;
+  }
+
+  const mts = t.match(/\b([1-9]\d{2,4})\s*MT\/?s\b/i);
+  if (mts) {
+    const n = parseInt(mts[1]!, 10);
+    if (n >= 800 && n <= 10000) return n;
+  }
+
+  const ddrRated = t.match(/\bDDR[2345][- ](\d{3,5})\b/i);
+  if (ddrRated) {
+    const n = parseInt(ddrRated[1]!, 10);
+    if (n >= 800 && n <= 10000) return n;
+  }
+
+  // PC3-12800 ≈ 1600, PC4-25600 ≈ 3200 (transfer rate / 8)
+  const pc = t.match(/\bPC([34])[- ]?(\d{3,5})\b/i);
+  if (pc) {
+    const transfer = parseInt(pc[2]!, 10);
+    if (Number.isFinite(transfer) && transfer >= 6400) {
+      const speed = Math.round(transfer / 8);
+      if (speed >= 800 && speed <= 10000) return speed;
+    }
+  }
+
+  return null;
+}
+
+/** Prefer Speed from AI/user specs, then fall back to free-text extraction. */
+export function extractRamSpeedFromSpecs(
+  specs: Record<string, string | number> | undefined,
+  ...texts: Array<string | undefined | null>
+): number | null {
+  if (specs) {
+    for (const [key, value] of Object.entries(specs)) {
+      if (!/speed|frequency|takt|clock/i.test(key)) continue;
+      const fromSpec = extractRamSpeedMHz(String(value ?? ''));
+      if (fromSpec) return fromSpec;
+    }
+  }
+  for (const text of texts) {
+    if (!text) continue;
+    const fromText = extractRamSpeedMHz(text);
+    if (fromText) return fromText;
+  }
+  return null;
+}
+
+function extractSingleStickCapacityGb(text: string): number | null {
+  // Prefer standalone "8GB" not part of a kit pattern already handled elsewhere
+  const m = text.match(/\b(\d+)\s*GB\b/i);
+  if (!m) return null;
+  const n = parseInt(m[1]!, 10);
+  return n > 0 ? n : null;
+}
+
+/**
+ * Strict inventory name from parsed RAM facts only — no marketing rewrite.
+ * Kit:   Crucial 16GB (2x8GB) DDR4 3200MHz
+ * Stick: Samsung 8GB DDR4 2400MHz
+ */
+export function formatRamInventoryName(opts: {
+  brand?: string | null;
+  capacityGb: number;
+  modules?: number;
+  gbPerStick?: number;
+  memoryType?: string | null;
+  speedMhz?: number | null;
+}): string {
+  const brand = (opts.brand || '').trim() || null;
+  const memoryType = (opts.memoryType || '').trim().toUpperCase() || null;
+  const speedMhz =
+    opts.speedMhz != null && Number.isFinite(opts.speedMhz) && opts.speedMhz > 0
+      ? Math.round(opts.speedMhz)
+      : null;
+
+  const modules = opts.modules ?? 1;
+  const gbPerStick = opts.gbPerStick ?? opts.capacityGb;
+  const isKit = modules >= 2;
+
+  const parts: string[] = [];
+  if (brand) parts.push(brand);
+
+  if (isKit) {
+    parts.push(`${opts.capacityGb}GB (${modules}x${gbPerStick}GB)`);
+  } else {
+    parts.push(`${opts.capacityGb}GB`);
+  }
+
+  if (memoryType) parts.push(memoryType);
+  if (speedMhz) parts.push(`${speedMhz}MHz`);
+  // Only add generic "RAM" when we have no DDR type (keeps the name informative)
+  if (!memoryType) parts.push('RAM');
+
+  return parts.join(' ');
+}
+
+/**
+ * Build a strict display name from raw text + kit info.
+ * Uses only brand / kit size / DDR / speed found in the text (or optional overrides).
+ */
+export function formatRamKitDisplayName(
+  rawName: string,
+  kit: RamKitInfo,
+  options?: {
+    sourceLine?: string;
+    specs?: Record<string, string | number>;
+    speedMhz?: number | null;
+    memoryType?: string | null;
+    brand?: string | null;
+  }
+): string {
+  const blob = [rawName, options?.sourceLine].filter(Boolean).join(' ');
   const remainder = rawName
     .replace(RAM_KIT_IN_NAME, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  const brand = extractRamBrand(remainder) || extractRamBrand(rawName);
-  const memoryType = extractMemoryType(remainder) || extractMemoryType(rawName);
-  const kitTotalGb = kit.modules * kit.gbPerStick;
-  const kitPart = `${kit.modules}x${kit.gbPerStick}GB`;
+  const brand =
+    options?.brand ||
+    extractRamBrand(remainder) ||
+    extractRamBrand(rawName) ||
+    extractRamBrand(blob);
+  const memoryType =
+    options?.memoryType ||
+    extractMemoryType(remainder) ||
+    extractMemoryType(rawName) ||
+    extractMemoryType(blob) ||
+    (options?.specs
+      ? extractMemoryType(String(options.specs['Memory Type'] ?? options.specs.memoryType ?? ''))
+      : null);
+  const speedMhz =
+    options?.speedMhz ??
+    extractRamSpeedFromSpecs(options?.specs, rawName, options?.sourceLine, blob);
 
-  const parts: string[] = [];
-  if (brand) parts.push(brand);
-  parts.push(`${kitTotalGb}GB`);
-  parts.push(`(${kitPart})`);
-  if (memoryType) parts.push(memoryType);
-  parts.push('RAM');
-
-  return parts.join(' ');
+  return formatRamInventoryName({
+    brand,
+    capacityGb: kit.modules * kit.gbPerStick,
+    modules: kit.modules,
+    gbPerStick: kit.gbPerStick,
+    memoryType,
+    speedMhz,
+  });
 }
 
-export function buildRamKitSpecs(kit: RamKitInfo): Record<string, string> {
+/**
+ * Strict name for a single-stick (non-kit) RAM line.
+ * Returns null if capacity/brand facts can't be extracted.
+ */
+export function formatRamStickDisplayName(
+  rawName: string,
+  options?: {
+    sourceLine?: string;
+    specs?: Record<string, string | number>;
+    speedMhz?: number | null;
+  }
+): string | null {
+  const blob = [rawName, options?.sourceLine].filter(Boolean).join(' ');
+  if (!looksLikeRamProduct(blob) && !looksLikeRamProduct(rawName)) return null;
+
+  const capacityGb =
+    parseGbValue(options?.specs?.['GB per Stick']) ||
+    parseGbValue(options?.specs?.Capacity) ||
+    parseGbValue(options?.specs?.['Kit Capacity']) ||
+    extractSingleStickCapacityGb(rawName) ||
+    extractSingleStickCapacityGb(blob);
+  if (!capacityGb) return null;
+
+  const brand = extractRamBrand(rawName) || extractRamBrand(blob);
+  const memoryType =
+    extractMemoryType(rawName) ||
+    extractMemoryType(blob) ||
+    (options?.specs
+      ? extractMemoryType(String(options.specs['Memory Type'] ?? options.specs.memoryType ?? ''))
+      : null);
+  const speedMhz =
+    options?.speedMhz ??
+    extractRamSpeedFromSpecs(options?.specs, rawName, options?.sourceLine, blob);
+
+  return formatRamInventoryName({
+    brand,
+    capacityGb,
+    modules: 1,
+    gbPerStick: capacityGb,
+    memoryType,
+    speedMhz,
+  });
+}
+
+export function buildRamKitSpecs(
+  kit: RamKitInfo,
+  options?: {
+    speedMhz?: number | null;
+    memoryType?: string | null;
+    sourceText?: string;
+  }
+): Record<string, string> {
   const kitCapacityGb = kit.modules * kit.gbPerStick;
-  return {
+  const specs: Record<string, string> = {
     Modules: String(kit.modules),
     'GB per Stick': `${kit.gbPerStick}GB`,
     'Kit Capacity': `${kitCapacityGb}GB`,
   };
+
+  const memoryType =
+    options?.memoryType ||
+    (options?.sourceText ? extractMemoryType(options.sourceText) : null);
+  if (memoryType) specs['Memory Type'] = memoryType;
+
+  const speed =
+    options?.speedMhz ??
+    (options?.sourceText ? extractRamSpeedMHz(options.sourceText) : null);
+  if (speed) specs.Speed = `${speed}MHz`;
+
+  return specs;
+}
+
+/** Merge Speed / Memory Type into specs from text. Never invents missing speed. */
+export function enrichRamSpecsFromText(
+  specs: Record<string, string | number> | undefined,
+  ...texts: Array<string | undefined | null>
+): Record<string, string | number> {
+  const next: Record<string, string | number> = { ...(specs || {}) };
+  const joined = texts.filter(Boolean).join(' ');
+
+  if (!String(next['Memory Type'] ?? '').trim()) {
+    const mt = extractMemoryType(joined);
+    if (mt) next['Memory Type'] = mt;
+  }
+
+  const existingSpeed = extractRamSpeedMHz(String(next.Speed ?? next.speed ?? ''));
+  const parsedSpeed = extractRamSpeedFromSpecs(next, ...texts);
+  if (parsedSpeed) {
+    next.Speed = `${parsedSpeed}MHz`;
+  } else if (existingSpeed) {
+    next.Speed = `${existingSpeed}MHz`;
+  }
+
+  return next;
 }
 
 /**
@@ -228,4 +443,29 @@ export function resolveRamInventoryQuantity(
   if (!kit) return qty;
   if (qty === kit.modules && lineQuantity === 1) return 1;
   return qty;
+}
+
+/**
+ * After AI specs parse: force a strict RAM name from parsed facts (never keep a free AI rename).
+ * Returns undefined when the item does not look like RAM / lacks capacity facts.
+ */
+export function buildStrictRamStandardizedName(
+  originalName: string,
+  specs?: Record<string, string | number>,
+  categoryContext?: string
+): string | undefined {
+  const isRamContext =
+    /ram/i.test(categoryContext || '') ||
+    looksLikeRamProduct(originalName) ||
+    !!(specs && (specs.Modules != null || specs['Kit Capacity'] != null || specs['GB per Stick'] != null));
+
+  if (!isRamContext) return undefined;
+
+  const kit = resolveRamKitInfo(originalName, { specs });
+  if (kit) {
+    return formatRamKitDisplayName(originalName, kit, { specs });
+  }
+
+  const stick = formatRamStickDisplayName(originalName, { specs });
+  return stick || undefined;
 }

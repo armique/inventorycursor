@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildRamKitSpecs,
+  buildStrictRamStandardizedName,
+  enrichRamSpecsFromText,
   extractRamKitInfo,
+  extractRamSpeedMHz,
   formatRamKitDisplayName,
+  formatRamStickDisplayName,
   parseBulkLineQuantityAndName,
   resolveRamInventoryQuantity,
   resolveRamKitInfo,
@@ -35,10 +39,25 @@ describe('ramKitParse', () => {
     });
   });
 
+  it('includes Speed and Memory Type in kit specs when source text has them', () => {
+    expect(
+      buildRamKitSpecs(
+        { modules: 2, gbPerStick: 8 },
+        { sourceText: 'Crucial 2x8GB DDR4 3200MHz' }
+      )
+    ).toEqual({
+      Modules: '2',
+      'GB per Stick': '8GB',
+      'Kit Capacity': '16GB',
+      'Memory Type': 'DDR4',
+      Speed: '3200MHz',
+    });
+  });
+
   it('formats display name with brand, kit total, module breakdown, and DDR type', () => {
     const kit = extractRamKitInfo('2×8GB Crucial DDR4');
     expect(kit).toEqual({ modules: 2, gbPerStick: 8 });
-    expect(formatRamKitDisplayName('2×8GB Crucial DDR4', kit!)).toBe('Crucial 16GB (2x8GB) DDR4 RAM');
+    expect(formatRamKitDisplayName('2×8GB Crucial DDR4', kit!)).toBe('Crucial 16GB (2x8GB) DDR4');
   });
 
   it('formats name when kit pattern is in the middle', () => {
@@ -46,10 +65,24 @@ describe('ramKitParse', () => {
     expect(formatRamKitDisplayName('crucial 2x8gb', kit!)).toBe('Crucial 16GB (2x8GB) RAM');
   });
 
+  it('formats kit name with speed when present', () => {
+    const kit = extractRamKitInfo('Crucial 2x8GB DDR4 3200MHz');
+    expect(formatRamKitDisplayName('Crucial 2x8GB DDR4 3200MHz', kit!)).toBe(
+      'Crucial 16GB (2x8GB) DDR4 3200MHz'
+    );
+  });
+
+  it('formats kit name from DDR4-2666 rating', () => {
+    const kit = extractRamKitInfo('Kingston 2x8GB DDR4-2666');
+    expect(formatRamKitDisplayName('Kingston 2x8GB DDR4-2666', kit!)).toBe(
+      'Kingston 16GB (2x8GB) DDR4 2666MHz'
+    );
+  });
+
   it('resolves kit from original source line when AI simplified the name', () => {
     const kit = resolveRamKitInfo('Crucial DDR4', { sourceLine: '2x8GB Crucial DDR4' });
     expect(kit).toEqual({ modules: 2, gbPerStick: 8 });
-    expect(formatRamKitDisplayName('2x8GB Crucial DDR4', kit!)).toBe('Crucial 16GB (2x8GB) DDR4 RAM');
+    expect(formatRamKitDisplayName('2x8GB Crucial DDR4', kit!)).toBe('Crucial 16GB (2x8GB) DDR4');
   });
 
   it('does not treat leading purchase 2x 8GB as a kit via sourceLine', () => {
@@ -60,12 +93,24 @@ describe('ramKitParse', () => {
     ).toBeNull();
   });
 
+  it('formats single-stick name with speed from purchase line', () => {
+    expect(
+      formatRamStickDisplayName('8GB Samsung 2400 MHz', {
+        sourceLine: '2x 8GB Samsung 2400 MHz',
+      })
+    ).toBe('Samsung 8GB 2400MHz RAM');
+  });
+
+  it('formats single-stick name with DDR and speed', () => {
+    expect(formatRamStickDisplayName('Samsung 8GB DDR4 2400 MHz')).toBe('Samsung 8GB DDR4 2400MHz');
+  });
+
   it('resolves kit from AI specs when name and line lack kit pattern', () => {
     const kit = resolveRamKitInfo('Ballistix DDR4', {
       specs: { Modules: '2', 'GB per Stick': '8GB', 'Kit Capacity': '16GB' },
     });
     expect(kit).toEqual({ modules: 2, gbPerStick: 8 });
-    expect(formatRamKitDisplayName('Ballistix DDR4', kit!)).toBe('Ballistix 16GB (2x8GB) DDR4 RAM');
+    expect(formatRamKitDisplayName('Ballistix DDR4', kit!)).toBe('Ballistix 16GB (2x8GB) DDR4');
   });
 
   it('corrects AI-style quantity=module count to one kit', () => {
@@ -98,5 +143,36 @@ describe('ramKitParse', () => {
       quantity: 1,
     });
     expect(extractRamKitInfo('Crucial 2x8GB DDR4')).toEqual({ modules: 2, gbPerStick: 8 });
+  });
+
+  it('extracts speed from MHz, MT/s, DDR-rated, and PC4 transfer rates', () => {
+    expect(extractRamSpeedMHz('3200MHz')).toBe(3200);
+    expect(extractRamSpeedMHz('2400 MHz')).toBe(2400);
+    expect(extractRamSpeedMHz('2666 MT/s')).toBe(2666);
+    expect(extractRamSpeedMHz('DDR4-3200')).toBe(3200);
+    expect(extractRamSpeedMHz('PC4-25600')).toBe(3200);
+    expect(extractRamSpeedMHz('Crucial 16GB DDR4')).toBeNull();
+  });
+
+  it('enriches specs with Speed from text without inventing it', () => {
+    expect(enrichRamSpecsFromText({}, 'Crucial 2x8GB DDR4 3200MHz')).toEqual({
+      'Memory Type': 'DDR4',
+      Speed: '3200MHz',
+    });
+    expect(enrichRamSpecsFromText({ Modules: '2' }, 'Crucial 2x8GB')).toEqual({
+      Modules: '2',
+    });
+  });
+
+  it('builds strict standardized name from AI specs and rejects marketing rename input', () => {
+    expect(
+      buildStrictRamStandardizedName('Ballistix Sport LT Amazing Kit', {
+        Modules: '2',
+        'GB per Stick': '8GB',
+        'Kit Capacity': '16GB',
+        'Memory Type': 'DDR4',
+        Speed: '2400MHz',
+      }, 'Components / RAM')
+    ).toBe('Ballistix 16GB (2x8GB) DDR4 2400MHz');
   });
 });

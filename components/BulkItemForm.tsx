@@ -23,7 +23,10 @@ import { mergeAiSpecsIntoEssential, resolveEssentialSpecKeys } from '../services
 import { correctGpuVramInSpecs, shouldApplyGpuVramCorrection } from '../services/gpuVramCorrection';
 import {
   buildRamKitSpecs,
+  buildStrictRamStandardizedName,
+  enrichRamSpecsFromText,
   formatRamKitDisplayName,
+  formatRamStickDisplayName,
   parseBulkLineQuantityAndName,
   resolveRamInventoryQuantity,
   resolveRamKitInfo,
@@ -414,10 +417,18 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
           ? resolveRamKitInfo(productFromLine || baseName, { sourceLine, specs: row.specs })
           : null;
       const inventoryQty = resolveRamInventoryQuantity(lineQty, ramKit, lineQty);
-      // Prefer original paste product name so AI can't rename "-8X 8GB" into "64GB (8x8GB)"
+      // Strict structured name from parsed facts only — AI must not invent marketing titles
       const displayName = ramKit
-        ? formatRamKitDisplayName(productFromLine || baseName, ramKit)
-        : (productFromLine || baseName);
+        ? formatRamKitDisplayName(productFromLine || baseName, ramKit, {
+            sourceLine,
+            specs: row.specs,
+          })
+        : rec.subCategory === 'RAM'
+          ? formatRamStickDisplayName(productFromLine || baseName, {
+              sourceLine,
+              specs: row.specs,
+            }) || productFromLine || baseName
+          : productFromLine || baseName;
       const { working, defective } = resolveDefectCounts(
         inventoryQty,
         conditionText,
@@ -427,12 +438,25 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
 
       let mergedSpecs: Record<string, string | number> = { ...(row.specs || {}) };
       if (ramKit) {
-        mergedSpecs = { ...mergedSpecs, ...buildRamKitSpecs(ramKit) };
+        mergedSpecs = {
+          ...mergedSpecs,
+          ...buildRamKitSpecs(ramKit, {
+            sourceText: `${sourceLine} ${productFromLine || baseName}`,
+          }),
+        };
       } else if (rec.subCategory === 'RAM') {
         // Drop AI-invented kit fields when this is a single-stick / non-kit line
         const dropKeys = new Set(['Modules', 'modules', 'Kit', 'kit', 'Kit Capacity', 'Kit capacity']);
         mergedSpecs = Object.fromEntries(
           Object.entries(mergedSpecs).filter(([key]) => !dropKeys.has(key))
+        );
+      }
+      if (rec.subCategory === 'RAM') {
+        mergedSpecs = enrichRamSpecsFromText(
+          mergedSpecs,
+          sourceLine,
+          productFromLine || baseName,
+          displayName
         );
       }
       if (shouldApplyGpuVramCorrection(rec.subCategory, displayName)) {
@@ -541,9 +565,10 @@ Rules:
 - IMPORTANT: Do not classify CPUs, SSD/NVMe drives, RAM, or motherboards as Graphics Cards.
 - IMPORTANT: Motherboards are often listed only by chipset/model (for example A320M, B450, B550, X570, Z690, Z790, H610) without the word "motherboard". Classify those as category "Components" and subCategory "Motherboards".
 - Pre-built desktops (ProDesk, OptiPlex, EliteDesk, "Business PC") → category "PC", subCategory "Pre-Built PC".
-- RAM kits (e.g. "Crucial 2x8GB", "8x4GB Hynix"): ONE inventory line per kit with quantity=1 unless the line starts with a purchase count like "3x Crucial 2x8GB" (then quantity=3). Never set quantity to the stick/module count. In specs use Modules (number of sticks), GB per Stick, and Kit Capacity (modules × GB per stick).
+- RAM kits (e.g. "Crucial 2x8GB", "8x4GB Hynix"): ONE inventory line per kit with quantity=1 unless the line starts with a purchase count like "3x Crucial 2x8GB" (then quantity=3). Never set quantity to the stick/module count. In specs use Modules (number of sticks), GB per Stick, Kit Capacity (modules × GB per stick), Memory Type (DDR3/DDR4/DDR5), and Speed when present (e.g. "3200MHz", "DDR4-2666", "2400 MHz" → Speed "3200MHz"/"2666MHz"/"2400MHz"). Never invent Speed if the line does not state it.
+- RAM name MUST be a strict fact string only — do NOT invent marketing titles. Pattern: "Brand Capacity (NxYGB) DDRx SpeedMHz" for kits, or "Brand Capacity DDRx SpeedMHz" for single sticks. Examples: "Crucial 16GB (2x8GB) DDR4 3200MHz", "Samsung 8GB DDR4 2400MHz". Omit Speed from the name when unknown. Keep full model/P/N codes when present (e.g. ACR24D4U1S1ME-8X).
 - Defective: set isDefective=true if the line mentions defect/defekt/defective/not working/не работает/kaputt/for parts (any language). If the line has a split like "(2 working, 2 defekt)", set isDefective=false and put that text in note (the app expands OK vs Defekt rows). Strip condition parentheses from name.
-- Put only essential specs in "specs" (VRAM for GPUs, GB for RAM, wattage for PSUs). Use {} if none.
+- Put only essential specs in "specs" (VRAM for GPUs, GB/Speed/Memory Type for RAM, wattage for PSUs). Use {} if none.
 - Graphics cards: VRAM = GPU memory for that chip (not system RAM).
 
 Input lines:
@@ -701,12 +726,33 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                 !!prev.isDefective ||
                 (lineHasDefectKeyword(conditionText) &&
                   resolveDefectCounts(1, conditionText, prev.isDefective).defective > 0);
+              const isRam = /ram/i.test(draft.subCategory || '');
+              const ramSpecs = isRam
+                ? enrichRamSpecsFromText(
+                    mergedSpecs,
+                    prev.sourceLine,
+                    prev.name,
+                    result.standardizedName
+                  )
+                : mergedSpecs;
+              const strictRamName = isRam
+                ? buildStrictRamStandardizedName(
+                    prev.name,
+                    ramSpecs,
+                    `${draft.category} / ${draft.subCategory}`
+                  )
+                : undefined;
               updated[idx] = {
                 ...prev,
-                specs: mergedSpecs,
-                specsAiSuggested: Object.keys(mergedSpecs).length ? { ...mergedSpecs } : undefined,
+                specs: ramSpecs,
+                specsAiSuggested: Object.keys(ramSpecs).length ? { ...ramSpecs } : undefined,
                 isDefective: stillDefective,
-                ...(result.standardizedName && { name: result.standardizedName }),
+                // RAM: never accept free AI rename — only strict parsed fact names
+                ...(strictRamName
+                  ? { name: strictRamName }
+                  : !isRam && result.standardizedName
+                    ? { name: result.standardizedName }
+                    : {}),
                 ...(result.vendor && { vendor: result.vendor }),
               };
             }

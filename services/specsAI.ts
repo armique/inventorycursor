@@ -8,6 +8,10 @@
 import { correctGpuVramInSpecs } from './gpuVramCorrection';
 import { filterSpecsToEssentialKeys } from './essentialSpecFields';
 import { loadAISettings } from './aiSettings';
+import {
+  buildStrictRamStandardizedName,
+  enrichRamSpecsFromText,
+} from '../utils/ramKitParse';
 
 const getEnv = (key: string): string => {
   try {
@@ -160,7 +164,11 @@ Return a valid JSON object with this exact structure (no markdown, no code fence
 
 Rules: specs values can be string or number. Only include keys allowed above.
 
-GRAPHICS CARDS (GPUs): For the "VRAM" field, use the exact frame-buffer memory of that GPU model only (e.g. RTX 5070 has 12GB VRAM). Do not use system RAM, total memory across unrelated devices, or another GPU tier. If the product name includes a GB figure next to the chip name (e.g. "RTX 5070 12GB"), that GB value is the VRAM.`;
+GRAPHICS CARDS (GPUs): For the "VRAM" field, use the exact frame-buffer memory of that GPU model only (e.g. RTX 5070 has 12GB VRAM). Do not use system RAM, total memory across unrelated devices, or another GPU tier. If the product name includes a GB figure next to the chip name (e.g. "RTX 5070 12GB"), that GB value is the VRAM.
+
+RAM / MEMORY:
+- If Speed is an allowed key and the product name or known rating states a clock (3200MHz, DDR4-2666, 2400 MHz, PC4-25600), put it in Speed as e.g. "3200MHz". Never invent Speed.
+- standardizedName must be a strict fact string only (no marketing rewrite): "Brand Capacity (NxYGB) DDRx SpeedMHz" for kits, or "Brand Capacity DDRx SpeedMHz" for single sticks. Examples: "Crucial 16GB (2x8GB) DDR4 3200MHz", "Samsung 8GB DDR4 2400MHz". Omit Speed when unknown. Keep real model/P/N codes when present.`;
 }
 
 export interface GenerateSpecsResult {
@@ -366,9 +374,21 @@ export async function generateItemSpecs(
     try {
       const raw = await callProviderSpecs(provider, prompt);
       const corrected = correctGpuVramInSpecs(name, raw.standardizedName, raw.specs || {});
+      let specs = filterSpecsToEssentialKeys(corrected, knownKeys);
+      const isRam = /ram/i.test(rawCategory) || /ram|memory|ddr[2345]/i.test(name);
+      if (isRam) {
+        specs = enrichRamSpecsFromText(specs, name, raw.standardizedName);
+        const strictName = buildStrictRamStandardizedName(name, specs, rawCategory);
+        return {
+          ...raw,
+          specs,
+          // Never keep a free AI rename for RAM — only a strict parsed fact name
+          standardizedName: strictName || undefined,
+        };
+      }
       return {
         ...raw,
-        specs: filterSpecsToEssentialKeys(corrected, knownKeys),
+        specs,
       };
     } catch (e) {
       lastError = e instanceof Error ? e : new Error(String(e));
