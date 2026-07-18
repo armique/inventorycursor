@@ -19,22 +19,22 @@ import {
   type ProductCardProviderId,
   type ProductCardProviderInfo,
 } from '../services/productCardGemini';
-import {
-  filesToDataUrls,
-  getItemUserPhotoUrls,
-  prepareInventoryImagesForStorage,
-} from '../utils/imageImport';
+import { filesToDataUrls, getItemUserPhotoUrls } from '../utils/imageImport';
 import {
   DEFAULT_PRODUCT_CARD_STYLE_ID,
   PRODUCT_CARD_STYLES,
   type ProductCardStyleId,
 } from '../services/productCardStyles';
 import {
+  buildProductCardFileName,
+  downloadProductCardEntry,
   isProductCardGalleryCloudReady,
   listProductCardGallery,
   removeProductCardFromGallery,
+  resolveProductCardImageUrl,
   saveGeneratedProductCard,
 } from '../services/productCardGallery';
+import { resolveUrlForInventoryMainPhoto } from '../utils/applyProductCardAsMainPhoto';
 
 interface Props {
   item: InventoryItem;
@@ -65,7 +65,9 @@ const GeminiProductCardModal: React.FC<Props> = ({
   const [started, setStarted] = useState(false);
   const [savingGallery, setSavingGallery] = useState(false);
   const [galleryNote, setGalleryNote] = useState<string | null>(null);
+  const [savedEntry, setSavedEntry] = useState<GeneratedProductCardEntry | null>(null);
   const [gallery, setGallery] = useState<GeneratedProductCardEntry[]>([]);
+  const [galleryThumbs, setGalleryThumbs] = useState<Record<string, string>>({});
   const [galleryLoading, setGalleryLoading] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
   const [galleryScope, setGalleryScope] = useState<'item' | 'all'>('item');
@@ -76,11 +78,24 @@ const GeminiProductCardModal: React.FC<Props> = ({
     return [];
   }, [customPhotos, useItemPhotos, itemPhotos]);
 
+  const styleName = PRODUCT_CARD_STYLES.find((s) => s.id === styleId)?.name;
+
   const reloadGallery = async (scope: 'item' | 'all' = galleryScope) => {
     setGalleryLoading(true);
     try {
       const list = await listProductCardGallery(scope === 'item' ? item.id : undefined);
       setGallery(list);
+      const thumbs: Record<string, string> = {};
+      await Promise.all(
+        list.slice(0, 36).map(async (e) => {
+          try {
+            thumbs[e.id] = await resolveProductCardImageUrl(e);
+          } catch {
+            /* skip */
+          }
+        })
+      );
+      setGalleryThumbs(thumbs);
     } catch {
       /* ignore */
     } finally {
@@ -103,7 +118,7 @@ const GeminiProductCardModal: React.FC<Props> = ({
 
   useEffect(() => {
     if (showGallery) void reloadGallery(galleryScope);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when panel/scope opens
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showGallery, galleryScope, item.id]);
 
   const onPickFiles = async (files: FileList | null) => {
@@ -124,7 +139,7 @@ const GeminiProductCardModal: React.FC<Props> = ({
   const persistToGallery = async (
     dataUrl: string,
     info: { provider?: string; model?: string; styleName?: string }
-  ) => {
+  ): Promise<GeneratedProductCardEntry | null> => {
     setSavingGallery(true);
     setGalleryNote(null);
     try {
@@ -137,14 +152,17 @@ const GeminiProductCardModal: React.FC<Props> = ({
         styleId,
         styleName: info.styleName,
       });
+      setSavedEntry(entry);
       setGalleryNote(
         entry.cloudStored
-          ? 'Saved to cloud gallery (high quality)'
-          : 'Saved to local gallery — sign in to sync to cloud'
+          ? 'Saved to cloud gallery (high quality) — credits safe'
+          : 'Saved locally (IndexedDB) — sign in to also sync to cloud'
       );
-      if (showGallery) void reloadGallery(galleryScope);
+      void reloadGallery(galleryScope);
+      return entry;
     } catch (e) {
       setGalleryNote(e instanceof Error ? e.message : 'Could not save to gallery');
+      return null;
     } finally {
       setSavingGallery(false);
     }
@@ -155,6 +173,7 @@ const GeminiProductCardModal: React.FC<Props> = ({
     setLoading(true);
     setError(null);
     setPreview(null);
+    setSavedEntry(null);
     setGalleryNote(null);
     try {
       const result = await generateProductCard(item, categoryFields, {
@@ -163,6 +182,7 @@ const GeminiProductCardModal: React.FC<Props> = ({
         photos: activePhotos,
         editFromPhoto: activePhotos.length > 0,
       });
+      // Show preview immediately so UX feels fast
       setPreview(result.dataUrl);
       setMeta(
         [
@@ -175,15 +195,21 @@ const GeminiProductCardModal: React.FC<Props> = ({
           .filter(Boolean)
           .join(' · ')
       );
-      // Auto-save paid generations so they are never lost
-      void persistToGallery(result.dataUrl, {
+      setLoading(false);
+
+      // Guaranteed save before user can lose the paid generation
+      setSavingGallery(true);
+      const entry = await persistToGallery(result.dataUrl, {
         provider: result.provider,
         model: result.model,
         styleName: result.styleName,
       });
+      if (entry?.cloudStored && entry.imageUrl.startsWith('http')) {
+        // Prefer durable URL for later Apply (avoids re-encoding huge data URLs)
+        setPreview(entry.imageUrl);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Generation failed');
-    } finally {
       setLoading(false);
     }
   };
@@ -196,50 +222,74 @@ const GeminiProductCardModal: React.FC<Props> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const apply = async (url?: string) => {
+  const apply = async (url?: string, entry?: GeneratedProductCardEntry | null) => {
     const src = url || preview;
-    if (!src) return;
+    if (!src && !entry && !savedEntry) return;
     setApplying(true);
+    setError(null);
     try {
-      const prepared = await prepareInventoryImagesForStorage([src], { itemId: item.id });
-      await onApplyAsMainPhoto(prepared[0] || src);
+      const prepared = await resolveUrlForInventoryMainPhoto(
+        src || '',
+        item.id,
+        entry || savedEntry
+      );
+      await onApplyAsMainPhoto(prepared);
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not save card');
+      console.error('Apply AI card failed:', e);
+      setError(
+        e instanceof Error
+          ? e.message
+          : 'Could not set as main photo. The card is still in Gallery — open Gallery and try Use again.'
+      );
     } finally {
       setApplying(false);
     }
   };
 
-  const download = (url?: string) => {
-    const src = url || preview;
-    if (!src) return;
+  const downloadPreview = async () => {
+    if (savedEntry) {
+      try {
+        await downloadProductCardEntry(savedEntry);
+        return;
+      } catch {
+        /* fall through */
+      }
+    }
+    if (!preview) return;
     const a = document.createElement('a');
-    a.href = src;
-    a.download = `${item.name.replace(/[^\w\-]+/g, '_').slice(0, 48)}_card.png`;
+    a.href = preview;
+    a.download = buildProductCardFileName(item.name, styleName || savedEntry?.styleName, savedEntry?.createdAt);
     a.click();
   };
 
-  const pickFromGallery = (entry: GeneratedProductCardEntry) => {
-    setPreview(entry.imageUrl);
-    setMeta(
-      [
-        entry.styleName || entry.styleId,
-        entry.provider,
-        entry.model,
-        entry.cloudStored ? 'from cloud gallery' : 'from gallery',
-        new Date(entry.createdAt).toLocaleString(),
-      ]
-        .filter(Boolean)
-        .join(' · ')
-    );
-    setStarted(true);
-    setShowGallery(false);
+  const pickFromGallery = async (entry: GeneratedProductCardEntry) => {
+    try {
+      const url = galleryThumbs[entry.id] || (await resolveProductCardImageUrl(entry));
+      setPreview(url);
+      setSavedEntry(entry);
+      setMeta(
+        [
+          entry.styleName || entry.styleId,
+          entry.provider,
+          entry.model,
+          entry.cloudStored ? 'from cloud gallery' : 'from gallery',
+          new Date(entry.createdAt).toLocaleString(),
+        ]
+          .filter(Boolean)
+          .join(' · ')
+      );
+      setStarted(true);
+      setShowGallery(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not open gallery image');
+    }
   };
 
   const deleteGalleryEntry = async (id: string) => {
     await removeProductCardFromGallery(id);
     setGallery((prev) => prev.filter((e) => e.id !== id));
+    if (savedEntry?.id === id) setSavedEntry(null);
   };
 
   const providerList: ProductCardProviderInfo[] =
@@ -251,6 +301,7 @@ const GeminiProductCardModal: React.FC<Props> = ({
         ];
 
   const cloudReady = isProductCardGalleryCloudReady();
+  const applyBlocked = applying || savingGallery;
 
   return createPortal(
     <div
@@ -306,7 +357,7 @@ const GeminiProductCardModal: React.FC<Props> = ({
                     Card history
                   </p>
                   <p className="text-[10px] text-slate-500 font-medium mt-0.5">
-                    Paid generations are kept here so you can reuse them anytime.
+                    Every paid generation is kept here automatically.
                   </p>
                 </div>
                 <div className="flex gap-1">
@@ -338,7 +389,7 @@ const GeminiProductCardModal: React.FC<Props> = ({
                 <Cloud size={11} className={cloudReady ? 'text-emerald-600' : 'text-slate-400'} />
                 {cloudReady
                   ? 'Cloud sync on — high-quality files in Firebase Storage'
-                  : 'Local only — sign in to store high-quality copies in the cloud'}
+                  : 'Local IndexedDB backup on — sign in to sync high-quality copies'}
               </p>
               {galleryLoading ? (
                 <div className="flex justify-center py-10 text-slate-400">
@@ -353,19 +404,25 @@ const GeminiProductCardModal: React.FC<Props> = ({
                   {gallery.map((entry) => (
                     <div
                       key={entry.id}
-                      className="rounded-xl border border-slate-200 overflow-hidden bg-slate-50 group"
+                      className="rounded-xl border border-slate-200 overflow-hidden bg-slate-50"
                     >
                       <button
                         type="button"
-                        onClick={() => pickFromGallery(entry)}
+                        onClick={() => void pickFromGallery(entry)}
                         className="block w-full text-left"
                         title="Use this card"
                       >
-                        <img
-                          src={entry.imageUrl}
-                          alt={entry.itemName}
-                          className="w-full aspect-square object-cover bg-white"
-                        />
+                        {galleryThumbs[entry.id] ? (
+                          <img
+                            src={galleryThumbs[entry.id]}
+                            alt={entry.itemName}
+                            className="w-full aspect-square object-cover bg-white"
+                          />
+                        ) : (
+                          <div className="w-full aspect-square flex items-center justify-center bg-slate-100 text-slate-400">
+                            <Images size={18} />
+                          </div>
+                        )}
                       </button>
                       <div className="px-2 py-1.5 space-y-1">
                         <p className="text-[9px] font-bold text-slate-700 truncate" title={entry.itemName}>
@@ -374,19 +431,19 @@ const GeminiProductCardModal: React.FC<Props> = ({
                         <p className="text-[9px] text-slate-400 font-medium truncate">
                           {entry.styleName || entry.styleId || '—'} ·{' '}
                           {new Date(entry.createdAt).toLocaleDateString()}
-                          {entry.cloudStored ? ' · cloud' : ''}
+                          {entry.cloudStored ? ' · cloud' : ' · local'}
                         </p>
                         <div className="flex gap-1">
                           <button
                             type="button"
-                            onClick={() => pickFromGallery(entry)}
+                            onClick={() => void apply(galleryThumbs[entry.id], entry)}
                             className="flex-1 py-1 rounded-md bg-slate-900 text-white text-[9px] font-black uppercase"
                           >
                             Use
                           </button>
                           <button
                             type="button"
-                            onClick={() => download(entry.imageUrl)}
+                            onClick={() => void downloadProductCardEntry(entry)}
                             className="p-1 rounded-md border border-slate-200 text-slate-500 hover:bg-white"
                             title="Download"
                           >
@@ -561,11 +618,9 @@ const GeminiProductCardModal: React.FC<Props> = ({
               {error && !loading && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 space-y-2">
                   <p className="text-xs font-bold text-amber-900 whitespace-pre-wrap">{error}</p>
-                  {/429|quota/i.test(error) ? (
-                    <p className="text-[10px] text-amber-800/80">
-                      Quota/rate limit — switch provider or retry later.
-                    </p>
-                  ) : null}
+                  <p className="text-[10px] text-amber-800/80">
+                    If you already generated a card, open Gallery — it should still be saved.
+                  </p>
                 </div>
               )}
 
@@ -595,7 +650,7 @@ const GeminiProductCardModal: React.FC<Props> = ({
 
               {!started && !loading && !error && (
                 <p className="text-[11px] text-slate-500 font-medium text-center py-4">
-                  Upload photo → pick style → generate. Each card is auto-saved to your gallery.
+                  Upload photo → pick style → generate. Each card is auto-saved before you apply it.
                 </p>
               )}
             </>
@@ -614,7 +669,7 @@ const GeminiProductCardModal: React.FC<Props> = ({
             <button
               type="button"
               onClick={() => void run()}
-              disabled={loading || uploading}
+              disabled={loading || uploading || savingGallery}
               className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase hover:bg-emerald-700 disabled:opacity-50"
             >
               {loading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
@@ -624,7 +679,7 @@ const GeminiProductCardModal: React.FC<Props> = ({
               <>
                 <button
                   type="button"
-                  onClick={() => download()}
+                  onClick={() => void downloadPreview()}
                   className="inline-flex items-center gap-1 px-3 py-2 rounded-xl border border-slate-200 text-[10px] font-black uppercase text-slate-600 hover:bg-slate-50"
                 >
                   <Download size={12} /> Download
@@ -632,11 +687,16 @@ const GeminiProductCardModal: React.FC<Props> = ({
                 <button
                   type="button"
                   onClick={() => void apply()}
-                  disabled={applying}
+                  disabled={applyBlocked}
+                  title={savingGallery ? 'Wait until the card is saved to gallery' : undefined}
                   className="flex-1 inline-flex items-center justify-center gap-1 py-2 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase hover:bg-slate-800 disabled:opacity-50"
                 >
-                  {applying ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-                  Use as main photo
+                  {applying || savingGallery ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <Check size={12} />
+                  )}
+                  {savingGallery ? 'Saving…' : 'Use as main photo'}
                 </button>
               </>
             )}

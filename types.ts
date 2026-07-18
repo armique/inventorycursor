@@ -244,13 +244,20 @@ export interface GeneratedProductCardEntry {
   id: string;
   itemId: string;
   itemName: string;
-  /** Durable Firebase Storage URL or local data URL fallback */
+  /**
+   * Durable image reference:
+   * - https://… Firebase Storage URL
+   * - idb:{id} IndexedDB blob (local guaranteed copy)
+   * - data:… legacy fallback
+   */
   imageUrl: string;
   createdAt: string;
   provider?: string;
   model?: string;
   styleId?: string;
   styleName?: string;
+  /** Suggested download / Storage file name */
+  fileName?: string;
   /** true when stored in Firebase Storage (not only local) */
   cloudStored?: boolean;
 }

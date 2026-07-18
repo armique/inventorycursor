@@ -43,6 +43,19 @@ export function isFirebaseStorageInventoryUrl(url: string): boolean {
   return s.includes('/items%2F') || s.includes('/items/');
 }
 
+/** Durable Firebase Storage URLs for inventory items OR AI product-card gallery. */
+export function isDurableFirebaseStorageUrl(url: string): boolean {
+  const s = url.trim();
+  if (!s.startsWith('https://')) return false;
+  if (!s.includes('firebasestorage.googleapis.com') && !s.includes('firebasestorage.app')) return false;
+  return (
+    s.includes('/items%2F') ||
+    s.includes('/items/') ||
+    s.includes('/product-cards%2F') ||
+    s.includes('/product-cards/')
+  );
+}
+
 function isRemoteHttpUrl(url: string): boolean {
   const s = url.trim();
   return s.startsWith('https://') || s.startsWith('http://');
@@ -65,7 +78,7 @@ export function urlNeedsPhotoArchive(url: string | undefined | null): boolean {
   if (!s) return false;
   if (s === CLOUD_OMITTED_PLACEHOLDER) return false;
   if (isCategoryPlaceholderImage(s)) return false;
-  if (isFirebaseStorageInventoryUrl(s)) return false;
+  if (isFirebaseStorageInventoryUrl(s) || isDurableFirebaseStorageUrl(s)) return false;
   return isRemoteHttpUrl(s) || isDataImageUrl(s);
 }
 
@@ -432,7 +445,10 @@ async function persistOneInventoryImageUrl(
   const trimmed = url.trim();
   if (!trimmed) return trimmed;
 
-  if (isFirebaseStorageInventoryUrl(trimmed)) return trimmed;
+  // Already durable in Storage (inventory photos or AI card gallery) — do not re-fetch/re-encode
+  if (isDurableFirebaseStorageUrl(trimmed) || isFirebaseStorageInventoryUrl(trimmed)) {
+    return trimmed;
+  }
 
   if (!options?.force) {
     const cached = sourceUrlCache.get(trimmed);

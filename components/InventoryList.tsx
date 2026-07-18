@@ -4210,11 +4210,14 @@ const InventoryList: React.FC<Props> = ({
               geminiCardItem.imageUrl,
               ...(geminiCardItem.imageUrls || []),
             ]);
-            await onUpdate({
-              ...geminiCardItem,
-              imageUrl: merged[0],
-              imageUrls: merged,
-            });
+            // handleUpdate expects InventoryItem[] — a bare object crashed with .forEach
+            await onUpdate([
+              {
+                ...geminiCardItem,
+                imageUrl: merged[0],
+                imageUrls: merged,
+              },
+            ]);
             setToast('AI product card set as main photo');
             setTimeout(() => setToast(null), 2200);
           }}

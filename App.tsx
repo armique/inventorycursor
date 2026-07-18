@@ -22,6 +22,7 @@ const InvoiceManager = lazy(() => import('./components/InvoiceManager'));
 const ActionHistoryPage = lazy(() => import('./components/ActionHistoryPage'));
 const EbayStorePullPage = lazy(() => import('./components/EbayStorePullPage'));
 const ThreeDPrintPage = lazy(() => import('./components/ThreeDPrintPage'));
+const ProductCardGalleryPage = lazy(() => import('./components/ProductCardGalleryPage'));
 import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense, DashboardPreferences, ActionHistoryEntry, TaxMode, ItemUpdateOptions } from './types';
 import {
   loadDashboardPreferencesFromLocalStorage,
@@ -1292,6 +1293,10 @@ const App: React.FC = () => {
           <Route path="builder" element={<BuilderEntry items={items} onSave={handleUpdate} />} />
           <Route path="3d-print" element={<ThreeDPrintPage items={items} onSave={handleUpdate} categories={categories} onAddExpense={handleAddExpense} />} />
           <Route path="ebay-store-pull" element={<EbayStorePullPage items={items} categories={categories} categoryFields={categoryFields} taxMode={businessSettings.taxMode} onUpdate={handleUpdate} onPublishCatalog={publishStoreCatalogNow} onAddExpense={handleAddExpense} />} />
+          <Route
+            path="card-gallery"
+            element={<ProductCardGalleryPage items={items} onUpdate={handleUpdate} />}
+          />
           <Route path="invoices" element={<InvoiceManager items={items} businessSettings={businessSettings} />} />
           <Route
             path="action-history"

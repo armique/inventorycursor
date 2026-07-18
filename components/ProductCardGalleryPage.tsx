@@ -1,0 +1,304 @@
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  Check,
+  Cloud,
+  Download,
+  Images,
+  Loader2,
+  Package,
+  Trash2,
+  RefreshCw,
+} from 'lucide-react';
+import type { GeneratedProductCardEntry, InventoryItem } from '../types';
+import {
+  downloadProductCardEntry,
+  groupProductCardGalleryByItem,
+  isProductCardGalleryCloudReady,
+  listProductCardGallery,
+  removeProductCardFromGallery,
+  resolveProductCardImageUrl,
+} from '../services/productCardGallery';
+import {
+  mergeMainPhotoOntoItem,
+  resolveUrlForInventoryMainPhoto,
+} from '../utils/applyProductCardAsMainPhoto';
+
+interface Props {
+  items: InventoryItem[];
+  onUpdate: (items: InventoryItem[]) => void | Promise<void>;
+}
+
+const Thumb: React.FC<{ entry: GeneratedProductCardEntry }> = ({ entry }) => {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void resolveProductCardImageUrl(entry)
+      .then((url) => {
+        if (!cancelled) setSrc(url);
+      })
+      .catch(() => {
+        if (!cancelled) setSrc(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [entry]);
+  if (!src) {
+    return (
+      <div className="w-full aspect-square bg-slate-100 flex items-center justify-center text-slate-300">
+        <Images size={20} />
+      </div>
+    );
+  }
+  return <img src={src} alt={entry.itemName} className="w-full aspect-square object-cover bg-white" />;
+};
+
+const ProductCardGalleryPage: React.FC<Props> = ({ items, onUpdate }) => {
+  const [entries, setEntries] = useState<GeneratedProductCardEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+
+  const itemById = useMemo(() => {
+    const m = new Map<string, InventoryItem>();
+    items.forEach((i) => m.set(i.id, i));
+    return m;
+  }, [items]);
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setEntries(await listProductCardGallery());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load gallery');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  const groups = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const filtered = q
+      ? entries.filter(
+          (e) =>
+            e.itemName.toLowerCase().includes(q) ||
+            (e.styleName || '').toLowerCase().includes(q) ||
+            (e.fileName || '').toLowerCase().includes(q)
+        )
+      : entries;
+    return groupProductCardGalleryByItem(filtered);
+  }, [entries, query]);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    window.setTimeout(() => setToast(null), 2400);
+  };
+
+  const applyEntry = async (entry: GeneratedProductCardEntry) => {
+    const item = itemById.get(entry.itemId);
+    if (!item) {
+      setError('Item not found in inventory (deleted?). You can still download the card.');
+      return;
+    }
+    setBusyId(entry.id);
+    setError(null);
+    try {
+      const url = await resolveUrlForInventoryMainPhoto('', item.id, entry);
+      await onUpdate([mergeMainPhotoOntoItem(item, url)]);
+      showToast(`Applied to ${item.name}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not apply card');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const deleteEntry = async (id: string) => {
+    setBusyId(id);
+    try {
+      await removeProductCardFromGallery(id);
+      setEntries((prev) => prev.filter((e) => e.id !== id));
+      showToast('Card removed from gallery');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Delete failed');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const cloudReady = isProductCardGalleryCloudReady();
+
+  return (
+    <div className="max-w-5xl mx-auto space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+            <Images className="text-emerald-600" size={22} /> Card gallery
+          </h1>
+          <p className="text-sm text-slate-500 font-medium mt-1 max-w-xl">
+            Paid AI generations, grouped by product. Re-apply, download, or delete anytime.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void reload()}
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-[10px] font-black uppercase text-slate-600 hover:bg-slate-50"
+        >
+          <RefreshCw size={12} /> Refresh
+        </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium text-slate-500">
+        <span className="inline-flex items-center gap-1">
+          <Cloud size={12} className={cloudReady ? 'text-emerald-600' : 'text-slate-400'} />
+          {cloudReady ? 'Cloud + local backup' : 'Local IndexedDB backup (sign in for cloud)'}
+        </span>
+        <span className="text-slate-300">·</span>
+        <span>
+          {entries.length} card{entries.length === 1 ? '' : 's'} · {groups.length} product
+          {groups.length === 1 ? '' : 's'}
+        </span>
+      </div>
+
+      <input
+        type="search"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search by product or style…"
+        className="w-full max-w-md px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium outline-none focus:ring-2 focus:ring-emerald-200"
+      />
+
+      {error && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex justify-center py-20 text-slate-400">
+          <Loader2 size={28} className="animate-spin" />
+        </div>
+      ) : groups.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-white py-16 text-center">
+          <Images size={36} className="mx-auto text-slate-300 mb-3" />
+          <p className="text-sm font-bold text-slate-600">No saved cards yet</p>
+          <p className="text-xs text-slate-400 font-medium mt-1">
+            Generate an AI product card from Inventory — it will show up here automatically.
+          </p>
+          <Link
+            to="/panel/inventory"
+            className="inline-flex mt-4 px-4 py-2 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase"
+          >
+            Open inventory
+          </Link>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {groups.map((group) => {
+            const live = itemById.get(group.itemId);
+            return (
+              <section
+                key={group.itemId}
+                className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm"
+              >
+                <div className="px-4 py-3 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2 bg-slate-50/80">
+                  <div className="min-w-0 flex items-start gap-2">
+                    <Package size={16} className="text-emerald-600 mt-0.5 shrink-0" />
+                    <div className="min-w-0">
+                      <h2 className="text-sm font-black text-slate-900 truncate" title={group.itemName}>
+                        {group.itemName}
+                      </h2>
+                      <p className="text-[10px] text-slate-400 font-medium">
+                        {group.entries.length} generation{group.entries.length === 1 ? '' : 's'}
+                        {!live ? ' · item not in inventory' : ''}
+                      </p>
+                    </div>
+                  </div>
+                  {live && (
+                    <Link
+                      to={`/panel/edit/${group.itemId}`}
+                      className="text-[10px] font-black uppercase text-emerald-700 hover:underline"
+                    >
+                      Open item
+                    </Link>
+                  )}
+                </div>
+                <div className="p-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+                  {group.entries.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="rounded-xl border border-slate-200 overflow-hidden bg-slate-50"
+                    >
+                      <Thumb entry={entry} />
+                      <div className="px-2 py-2 space-y-1.5">
+                        <p className="text-[9px] font-bold text-slate-600 truncate">
+                          {entry.styleName || entry.styleId || 'AI card'}
+                        </p>
+                        <p className="text-[9px] text-slate-400 font-medium truncate" title={entry.fileName}>
+                          {new Date(entry.createdAt).toLocaleString()}
+                          {entry.cloudStored ? ' · cloud' : ' · local'}
+                        </p>
+                        <div className="flex gap-1">
+                          <button
+                            type="button"
+                            disabled={!live || busyId === entry.id}
+                            onClick={() => void applyEntry(entry)}
+                            className="flex-1 inline-flex items-center justify-center gap-0.5 py-1.5 rounded-lg bg-slate-900 text-white text-[9px] font-black uppercase disabled:opacity-40"
+                          >
+                            {busyId === entry.id ? (
+                              <Loader2 size={10} className="animate-spin" />
+                            ) : (
+                              <Check size={10} />
+                            )}
+                            Apply
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busyId === entry.id}
+                            onClick={() => void downloadProductCardEntry(entry)}
+                            className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-white"
+                            title={entry.fileName || 'Download'}
+                          >
+                            <Download size={12} />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busyId === entry.id}
+                            onClick={() => void deleteEntry(entry.id)}
+                            className="p-1.5 rounded-lg border border-slate-200 text-rose-500 hover:bg-rose-50"
+                            title="Delete"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
+
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-[180] pointer-events-none">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-slate-900 text-white text-xs font-bold shadow-lg">
+            <Check size={14} className="text-emerald-400" />
+            {toast}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ProductCardGalleryPage;
