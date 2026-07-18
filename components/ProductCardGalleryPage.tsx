@@ -1,7 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import {
   Check,
+  ChevronLeft,
+  ChevronRight,
   Cloud,
   Download,
   Images,
@@ -9,6 +12,7 @@ import {
   Package,
   Trash2,
   RefreshCw,
+  X,
 } from 'lucide-react';
 import type { GeneratedProductCardEntry, InventoryItem } from '../types';
 import {
@@ -30,7 +34,10 @@ interface Props {
   onUpdate: (items: InventoryItem[]) => void | Promise<void>;
 }
 
-const Thumb: React.FC<{ entry: GeneratedProductCardEntry }> = ({ entry }) => {
+const Thumb: React.FC<{
+  entry: GeneratedProductCardEntry;
+  onOpen?: () => void;
+}> = ({ entry, onOpen }) => {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -45,6 +52,7 @@ const Thumb: React.FC<{ entry: GeneratedProductCardEntry }> = ({ entry }) => {
       cancelled = true;
     };
   }, [entry]);
+
   if (!src) {
     return (
       <div className="w-full aspect-square bg-slate-100 flex items-center justify-center text-slate-300">
@@ -52,7 +60,21 @@ const Thumb: React.FC<{ entry: GeneratedProductCardEntry }> = ({ entry }) => {
       </div>
     );
   }
-  return <img src={src} alt={entry.itemName} className="w-full aspect-square object-cover bg-white" />;
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="block w-full text-left cursor-zoom-in focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+      title="View full size"
+    >
+      <img
+        src={src}
+        alt={entry.itemName}
+        className="w-full aspect-square object-cover bg-white transition-opacity hover:opacity-90"
+      />
+    </button>
+  );
 };
 
 const ProductCardGalleryPage: React.FC<Props> = ({ items, onUpdate }) => {
@@ -64,6 +86,12 @@ const ProductCardGalleryPage: React.FC<Props> = ({ items, onUpdate }) => {
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const [preview, setPreview] = useState<{
+    entry: GeneratedProductCardEntry;
+    siblings: GeneratedProductCardEntry[];
+  } | null>(null);
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   const itemById = useMemo(() => {
     const m = new Map<string, InventoryItem>();
@@ -100,6 +128,49 @@ const ProductCardGalleryPage: React.FC<Props> = ({ items, onUpdate }) => {
     return groupProductCardGalleryByItem(filtered);
   }, [entries, query]);
 
+  useEffect(() => {
+    if (!preview) {
+      setPreviewSrc(null);
+      return;
+    }
+    let cancelled = false;
+    setPreviewLoading(true);
+    setPreviewSrc(null);
+    void resolveProductCardImageUrl(preview.entry)
+      .then((url) => {
+        if (!cancelled) setPreviewSrc(url);
+      })
+      .catch(() => {
+        if (!cancelled) setPreviewSrc(null);
+      })
+      .finally(() => {
+        if (!cancelled) setPreviewLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [preview]);
+
+  useEffect(() => {
+    if (!preview) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setPreview(null);
+        return;
+      }
+      const siblings = preview.siblings;
+      const idx = siblings.findIndex((s) => s.id === preview.entry.id);
+      if (e.key === 'ArrowLeft' && idx > 0) {
+        setPreview({ entry: siblings[idx - 1]!, siblings });
+      }
+      if (e.key === 'ArrowRight' && idx >= 0 && idx < siblings.length - 1) {
+        setPreview({ entry: siblings[idx + 1]!, siblings });
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [preview]);
+
   const showToast = (msg: string) => {
     setToast(msg);
     window.setTimeout(() => setToast(null), 2400);
@@ -129,6 +200,7 @@ const ProductCardGalleryPage: React.FC<Props> = ({ items, onUpdate }) => {
     try {
       await removeProductCardFromGallery(id);
       setEntries((prev) => prev.filter((e) => e.id !== id));
+      if (preview?.entry.id === id) setPreview(null);
       showToast('Card removed from gallery');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Delete failed');
@@ -166,6 +238,9 @@ const ProductCardGalleryPage: React.FC<Props> = ({ items, onUpdate }) => {
   };
 
   const cloudReady = isProductCardGalleryCloudReady();
+  const previewIndex = preview
+    ? preview.siblings.findIndex((s) => s.id === preview.entry.id)
+    : -1;
 
   return (
     <div className="max-w-5xl mx-auto space-y-5">
@@ -175,7 +250,7 @@ const ProductCardGalleryPage: React.FC<Props> = ({ items, onUpdate }) => {
             <Images className="text-emerald-600" size={22} /> Card gallery
           </h1>
           <p className="text-sm text-slate-500 font-medium mt-1 max-w-xl">
-            Paid AI generations, grouped by product. Re-apply, download, or delete anytime.
+            Paid AI generations, grouped by product. Click a photo to view full size.
           </p>
         </div>
         <button
@@ -290,7 +365,10 @@ const ProductCardGalleryPage: React.FC<Props> = ({ items, onUpdate }) => {
                       key={entry.id}
                       className="rounded-xl border border-slate-200 overflow-hidden bg-slate-50"
                     >
-                      <Thumb entry={entry} />
+                      <Thumb
+                        entry={entry}
+                        onOpen={() => setPreview({ entry, siblings: group.entries })}
+                      />
                       <div className="px-2 py-2 space-y-1.5">
                         <p className="text-[9px] font-bold text-slate-600 truncate">
                           {entry.styleName || entry.styleId || 'AI card'}
@@ -350,6 +428,111 @@ const ProductCardGalleryPage: React.FC<Props> = ({ items, onUpdate }) => {
           </div>
         </div>
       )}
+
+      {preview &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-950/85 p-3 sm:p-6"
+            onClick={() => setPreview(null)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Card preview"
+          >
+            <button
+              type="button"
+              onClick={() => setPreview(null)}
+              className="absolute top-3 right-3 sm:top-5 sm:right-5 p-2 rounded-xl bg-white/10 text-white hover:bg-white/20"
+              aria-label="Close"
+            >
+              <X size={20} />
+            </button>
+
+            {previewIndex > 0 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPreview({
+                    entry: preview.siblings[previewIndex - 1]!,
+                    siblings: preview.siblings,
+                  });
+                }}
+                className="absolute left-2 sm:left-4 p-2 rounded-xl bg-white/10 text-white hover:bg-white/20"
+                aria-label="Previous"
+              >
+                <ChevronLeft size={22} />
+              </button>
+            )}
+            {previewIndex >= 0 && previewIndex < preview.siblings.length - 1 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPreview({
+                    entry: preview.siblings[previewIndex + 1]!,
+                    siblings: preview.siblings,
+                  });
+                }}
+                className="absolute right-2 sm:right-4 p-2 rounded-xl bg-white/10 text-white hover:bg-white/20"
+                aria-label="Next"
+              >
+                <ChevronRight size={22} />
+              </button>
+            )}
+
+            <div
+              className="relative w-full max-w-4xl max-h-[90vh] flex flex-col items-center gap-3"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="relative w-full flex-1 min-h-0 flex items-center justify-center rounded-2xl overflow-hidden bg-black/40">
+                {previewLoading && (
+                  <Loader2 size={28} className="absolute animate-spin text-white/70" />
+                )}
+                {previewSrc ? (
+                  <img
+                    src={previewSrc}
+                    alt={preview.entry.itemName}
+                    className="max-w-full max-h-[75vh] object-contain"
+                  />
+                ) : (
+                  !previewLoading && (
+                    <p className="text-sm text-white/70 font-medium py-20">Could not load image</p>
+                  )
+                )}
+              </div>
+              <div className="w-full flex flex-wrap items-center justify-between gap-2 text-white/90 px-1">
+                <div className="min-w-0">
+                  <p className="text-sm font-bold truncate">{preview.entry.itemName}</p>
+                  <p className="text-[11px] text-white/60 font-medium">
+                    {preview.entry.styleName || preview.entry.styleId || 'AI card'}
+                    {' · '}
+                    {new Date(preview.entry.createdAt).toLocaleString()}
+                    {preview.siblings.length > 1
+                      ? ` · ${previewIndex + 1} / ${preview.siblings.length}`
+                      : ''}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void downloadProductCardEntry(preview.entry)}
+                    className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-white text-slate-900 text-[10px] font-black uppercase"
+                  >
+                    <Download size={12} /> Download
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreview(null)}
+                    className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-white/15 text-white text-[10px] font-black uppercase hover:bg-white/25"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 };
