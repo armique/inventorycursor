@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Download, Loader2, Sparkles, X, Check } from 'lucide-react';
+import { Download, Loader2, Sparkles, X, Check, Upload, Image as ImageIcon } from 'lucide-react';
 import type { InventoryItem } from '../types';
 import {
   fetchProductCardProviders,
@@ -8,7 +8,11 @@ import {
   type ProductCardProviderId,
   type ProductCardProviderInfo,
 } from '../services/productCardGemini';
-import { prepareInventoryImagesForStorage } from '../utils/imageImport';
+import {
+  filesToDataUrls,
+  getItemUserPhotoUrls,
+  prepareInventoryImagesForStorage,
+} from '../utils/imageImport';
 import {
   DEFAULT_PRODUCT_CARD_STYLE_ID,
   PRODUCT_CARD_STYLES,
@@ -28,15 +32,26 @@ const GeminiProductCardModal: React.FC<Props> = ({
   onClose,
   onApplyAsMainPhoto,
 }) => {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const itemPhotos = useMemo(() => getItemUserPhotoUrls(item).slice(0, 3), [item]);
+  const [customPhotos, setCustomPhotos] = useState<string[]>([]);
+  const [useItemPhotos, setUseItemPhotos] = useState(true);
   const [provider, setProvider] = useState<ProductCardProviderId>('openai');
   const [providers, setProviders] = useState<ProductCardProviderInfo[]>([]);
   const [styleId, setStyleId] = useState<ProductCardStyleId>(DEFAULT_PRODUCT_CARD_STYLE_ID);
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [meta, setMeta] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
   const [started, setStarted] = useState(false);
+
+  const activePhotos = useMemo(() => {
+    if (customPhotos.length) return customPhotos.slice(0, 3);
+    if (useItemPhotos) return itemPhotos;
+    return [];
+  }, [customPhotos, useItemPhotos, itemPhotos]);
 
   useEffect(() => {
     void fetchProductCardProviders().then((list) => {
@@ -49,16 +64,42 @@ const GeminiProductCardModal: React.FC<Props> = ({
     });
   }, []);
 
+  const onPickFiles = async (files: FileList | null) => {
+    if (!files?.length) return;
+    setUploading(true);
+    setError(null);
+    try {
+      const urls = await filesToDataUrls(Array.from(files).slice(0, 3), { itemId: item.id });
+      setCustomPhotos(urls);
+      setUseItemPhotos(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load photo');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const run = async () => {
     setStarted(true);
     setLoading(true);
     setError(null);
     setPreview(null);
     try {
-      const result = await generateProductCard(item, categoryFields, styleId, provider);
+      const result = await generateProductCard(item, categoryFields, {
+        styleId,
+        provider,
+        photos: activePhotos,
+        editFromPhoto: activePhotos.length > 0,
+      });
       setPreview(result.dataUrl);
       setMeta(
-        [result.styleName || styleId, result.provider, result.model, result.note]
+        [
+          result.styleName || styleId,
+          result.provider,
+          result.model,
+          activePhotos.length ? 'edited from your photo' : 'generated without photo',
+          result.note,
+        ]
           .filter(Boolean)
           .join(' · ')
       );
@@ -138,6 +179,80 @@ const GeminiProductCardModal: React.FC<Props> = ({
         <div className="p-4 space-y-3 overflow-y-auto flex-1 min-h-0">
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">
+              Your product photo
+            </p>
+            <p className="text-[10px] text-slate-500 font-medium mb-2">
+              Upload a real photo — AI will edit it into a card (not invent a random product).
+            </p>
+            <div className="flex flex-wrap gap-2 items-center">
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => void onPickFiles(e.target.files)}
+              />
+              <button
+                type="button"
+                disabled={loading || uploading}
+                onClick={() => fileRef.current?.click()}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-emerald-300 bg-emerald-50 text-emerald-800 text-[10px] font-black uppercase hover:bg-emerald-100 disabled:opacity-50"
+              >
+                {uploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                Upload photo
+              </button>
+              {itemPhotos.length > 0 && (
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => {
+                    setCustomPhotos([]);
+                    setUseItemPhotos(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-[10px] font-black uppercase text-slate-600 hover:bg-slate-50"
+                >
+                  <ImageIcon size={12} /> Use item photos ({itemPhotos.length})
+                </button>
+              )}
+              {activePhotos.length > 0 && (
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => {
+                    setCustomPhotos([]);
+                    setUseItemPhotos(false);
+                  }}
+                  className="text-[10px] font-bold text-slate-400 hover:text-slate-700 uppercase"
+                >
+                  Clear photos
+                </button>
+              )}
+            </div>
+            {activePhotos.length > 0 ? (
+              <div className="flex flex-wrap gap-2 mt-2">
+                {activePhotos.map((url) => (
+                  <img
+                    key={url.slice(0, 48)}
+                    src={url}
+                    alt="Source"
+                    className="w-16 h-16 rounded-lg object-cover border border-slate-200 bg-slate-50"
+                  />
+                ))}
+                <span className="text-[10px] font-bold text-emerald-700 self-center">
+                  Edit mode · {activePhotos.length} photo
+                  {activePhotos.length === 1 ? '' : 's'}
+                </span>
+              </div>
+            ) : (
+              <p className="text-[10px] text-amber-700 font-medium mt-2">
+                No photo selected — AI will invent a product look from the name/specs only.
+              </p>
+            )}
+          </div>
+
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">
               AI provider
             </p>
             <div className="flex flex-wrap gap-1.5">
@@ -168,7 +283,7 @@ const GeminiProductCardModal: React.FC<Props> = ({
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">
               Design style
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-0.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-40 overflow-y-auto pr-0.5">
               {PRODUCT_CARD_STYLES.map((s) => {
                 const active = s.id === styleId;
                 return (
@@ -197,10 +312,9 @@ const GeminiProductCardModal: React.FC<Props> = ({
             <div className="flex flex-col items-center justify-center py-12 gap-3 text-slate-500">
               <Loader2 size={28} className="animate-spin text-emerald-600" />
               <p className="text-xs font-bold">
-                Generating with {provider === 'openai' ? 'OpenAI' : 'Gemini'}…
-              </p>
-              <p className="text-[10px] text-slate-400 text-center max-w-xs">
-                Full card from the selected style + your product data.
+                {activePhotos.length
+                  ? `Editing your photo with ${provider === 'openai' ? 'OpenAI' : 'Gemini'}…`
+                  : `Generating with ${provider === 'openai' ? 'OpenAI' : 'Gemini'}…`}
               </p>
             </div>
           )}
@@ -210,19 +324,7 @@ const GeminiProductCardModal: React.FC<Props> = ({
               <p className="text-xs font-bold text-amber-900 whitespace-pre-wrap">{error}</p>
               {/429|quota/i.test(error) ? (
                 <p className="text-[10px] text-amber-800/80">
-                  Quota/rate limit for this provider. Try the other AI (OpenAI ↔ Gemini), enable
-                  billing, or wait and retry.
-                </p>
-              ) : /OPENAI|openai/i.test(error) ? (
-                <p className="text-[10px] text-amber-800/80">
-                  Set <code className="bg-amber-100 px-1 rounded">OPENAI_API_KEY</code> in{' '}
-                  <code className="bg-amber-100 px-1 rounded">.env</code> / Vercel, or switch to
-                  Gemini.
-                </p>
-              ) : /GEMINI|gemini|AI Studio/i.test(error) ? (
-                <p className="text-[10px] text-amber-800/80">
-                  Set <code className="bg-amber-100 px-1 rounded">GEMINI_API_KEY</code> or switch
-                  provider to OpenAI.
+                  Quota/rate limit — switch provider or retry later.
                 </p>
               ) : null}
             </div>
@@ -233,15 +335,15 @@ const GeminiProductCardModal: React.FC<Props> = ({
               <img
                 src={preview}
                 alt="AI product card"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 object-contain max-h-[48vh]"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 object-contain max-h-[42vh]"
               />
               {meta && <p className="text-[10px] text-slate-400 font-medium">{meta}</p>}
             </div>
           )}
 
           {!started && !loading && !error && (
-            <p className="text-[11px] text-slate-500 font-medium text-center py-6">
-              Pick provider + style, then generate.
+            <p className="text-[11px] text-slate-500 font-medium text-center py-4">
+              Upload photo → pick style → generate (AI edits your photo into a listing card).
             </p>
           )}
         </div>
@@ -257,11 +359,11 @@ const GeminiProductCardModal: React.FC<Props> = ({
           <button
             type="button"
             onClick={() => void run()}
-            disabled={loading}
+            disabled={loading || uploading}
             className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase hover:bg-emerald-700 disabled:opacity-50"
           >
             {loading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-            {preview ? 'Regenerate' : 'Generate'}
+            {preview ? 'Regenerate' : activePhotos.length ? 'Edit into card' : 'Generate'}
           </button>
           {preview && (
             <>

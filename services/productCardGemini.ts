@@ -24,6 +24,15 @@ export interface ProductCardProviderInfo {
   blurb: string;
 }
 
+export interface GenerateProductCardOptions {
+  styleId?: ProductCardStyleId | string;
+  provider?: ProductCardProviderId;
+  /** Override photos (data URLs or http). Empty = no photos. Undefined = use item photos. */
+  photos?: string[] | null;
+  /** Force edit-from-photo wording even if only one photo */
+  editFromPhoto?: boolean;
+}
+
 export async function fetchProductCardProviders(): Promise<ProductCardProviderInfo[]> {
   try {
     const res = await fetch('/api/images?route=product-card-providers');
@@ -46,16 +55,28 @@ export async function fetchProductCardProviders(): Promise<ProductCardProviderIn
 export async function generateProductCard(
   item: InventoryItem,
   categoryFields?: string[],
-  styleId: ProductCardStyleId | string = DEFAULT_PRODUCT_CARD_STYLE_ID,
-  provider: ProductCardProviderId = 'openai'
+  styleIdOrOptions: ProductCardStyleId | string | GenerateProductCardOptions = DEFAULT_PRODUCT_CARD_STYLE_ID,
+  providerArg: ProductCardProviderId = 'openai'
 ): Promise<ProductCardGenerateResult> {
+  const opts: GenerateProductCardOptions =
+    typeof styleIdOrOptions === 'object' && styleIdOrOptions !== null
+      ? styleIdOrOptions
+      : { styleId: styleIdOrOptions as string, provider: providerArg };
+
+  const styleId = opts.styleId || DEFAULT_PRODUCT_CARD_STYLE_ID;
+  const provider = opts.provider || 'openai';
+
   const specs = getProductCardSpecs(item, categoryFields, 8).map((s) => ({
     label: s.label,
     value: s.value,
   }));
 
-  const photos = getItemUserPhotoUrls(item).slice(0, 3);
-  const images = photos.map((url) =>
+  const photoUrls =
+    opts.photos !== undefined && opts.photos !== null
+      ? opts.photos.slice(0, 3)
+      : getItemUserPhotoUrls(item).slice(0, 3);
+
+  const images = photoUrls.map((url) =>
     url.startsWith('data:') ? { imageBase64: url } : { imageUrl: url }
   );
 
@@ -71,6 +92,7 @@ export async function generateProductCard(
       images,
       styleId,
       provider,
+      editFromPhoto: opts.editFromPhoto ?? images.length > 0,
     }),
   });
 
@@ -100,5 +122,5 @@ export async function generateGeminiProductCard(
   categoryFields?: string[],
   styleId: ProductCardStyleId | string = DEFAULT_PRODUCT_CARD_STYLE_ID
 ): Promise<ProductCardGenerateResult> {
-  return generateProductCard(item, categoryFields, styleId, 'gemini');
+  return generateProductCard(item, categoryFields, { styleId, provider: 'gemini' });
 }
