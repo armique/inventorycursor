@@ -163,6 +163,36 @@ export function filterSpecsToEssentialKeys(
   return out;
 }
 
+/**
+ * Like filterSpecsToEssentialKeys, but also keeps any other non-empty keys the user
+ * already entered (so manual / AI extras are not silently deleted on save).
+ */
+export function preserveFilledSpecs(
+  specs: Record<string, string | number> | undefined,
+  essentialKeys: string[]
+): Record<string, string | number> {
+  if (!specs) return {};
+  const essential = filterSpecsToEssentialKeys(specs, essentialKeys);
+  const usedSourceKeys = new Set<string>();
+  for (const essentialKey of Object.keys(essential)) {
+    for (const [k, v] of Object.entries(specs)) {
+      if (v === undefined || v === null || v === '') continue;
+      if (specKeyMatchesEssential(k, essentialKey)) {
+        usedSourceKeys.add(k);
+        break;
+      }
+    }
+  }
+  const extras: Record<string, string | number> = {};
+  for (const [k, v] of Object.entries(specs)) {
+    if (v === undefined || v === null || v === '') continue;
+    if (usedSourceKeys.has(k)) continue;
+    if (essential[k] !== undefined) continue;
+    extras[k] = v;
+  }
+  return { ...essential, ...extras };
+}
+
 /** Merge AI parse into item specs — essential fields only, AI values win on conflict. */
 export function mergeAiSpecsIntoEssential(
   existing: Record<string, string | number> | undefined,

@@ -16,7 +16,17 @@ import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 import { CATEGORY_IMAGES, getSpecOptions } from '../services/hardwareDB';
 import { generateItemSpecs, getSpecsAIProvider, suggestPriceFromSoldListings, type SoldPriceSuggestion } from '../services/specsAI';
 import { getCompatibleItemsForItem } from '../services/compatibility';
-import { mergeAiSpecsIntoEssential, resolveEssentialSpecKeys, filterSpecsToEssentialKeys } from '../services/essentialSpecFields';
+import {
+  mergeAiSpecsIntoEssential,
+  resolveEssentialSpecKeys,
+  filterSpecsToEssentialKeys,
+  preserveFilledSpecs,
+} from '../services/essentialSpecFields';
+import {
+  defaultBuyPaymentForPlatform,
+  paymentAfterPlatformChange,
+  normalizeBuyPaymentForPlatform,
+} from '../utils/purchaseSource';
 import { getCompatibilityWarnings } from '../utils/compatibilityWarnings';
 import { recordCategoryCorrection, suggestCategoryFromCorrections } from '../services/categoryCorrections';
 import { detectItemCategory, searchInventoryItemsForAdd } from '../utils/itemCategoryDetect';
@@ -132,7 +142,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     buyPrice: 0,
     buyDate: new Date().toISOString().split('T')[0],
     status: ItemStatus.IN_STOCK,
-    buyPaymentType: 'Cash',
+    buyPaymentType: defaultBuyPaymentForPlatform('kleinanzeigen.de'),
     platformBought: 'kleinanzeigen.de',
     specs: {},
     vendor: ''
@@ -204,14 +214,18 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
 
   useEffect(() => {
     // Priority: initialData (Modal/Prop) -> ID (URL) -> Default
+    const hydrate = (item: InventoryItem) => {
+      const platformBought = item.platformBought || 'kleinanzeigen.de';
+      const buyPaymentType = normalizeBuyPaymentForPlatform(platformBought, item.buyPaymentType);
+      setFormData({ ...item, platformBought, buyPaymentType });
+      setConfigStep('DONE');
+    };
     if (initialData) {
-       setFormData(initialData);
-       setConfigStep('DONE');
+       hydrate(initialData);
     } else if (id) {
       const existing = items.find(i => i.id === id);
       if (existing) {
-        setFormData(existing);
-        setConfigStep('DONE');
+        hydrate(existing);
       }
     } else {
        // New item default
@@ -356,7 +370,12 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   }, []);
 
   const openExistingForUpdate = useCallback((item: InventoryItem) => {
-    setFormData(item);
+    const platformBought = item.platformBought || 'kleinanzeigen.de';
+    setFormData({
+      ...item,
+      platformBought,
+      buyPaymentType: normalizeBuyPaymentForPlatform(platformBought, item.buyPaymentType),
+    });
     setUpdateTargetId(item.id);
     setConfigStep('DONE');
     setDuplicateDismissed(true);
@@ -776,7 +795,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
         ? normalizeRamSpecsForSave({ ...formData.specs })
         : formData.specs;
     const essentialKeys = resolveEssentialSpecKeys(formData.category || '', formData.subCategory, categoryFields);
-    const specsOut = filterSpecsToEssentialKeys(specsBase as Record<string, string | number>, essentialKeys);
+    const specsOut = preserveFilledSpecs(specsBase as Record<string, string | number>, essentialKeys);
 
     const aiSuggestedRaw =
       formData.specsAiSuggested && Object.keys(formData.specsAiSuggested).length > 0
@@ -814,6 +833,12 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
             ? undefined
             : undefined;
 
+    const platformBought = (formData.platformBought || 'kleinanzeigen.de') as Platform;
+    const buyPaymentType = normalizeBuyPaymentForPlatform(
+      platformBought,
+      formData.buyPaymentType as PaymentType | undefined
+    );
+
     const base: InventoryItem = {
       ...formData as InventoryItem,
       buyPrice: buyPriceResolved,
@@ -827,6 +852,8 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       imageUrls: storedImages.length ? storedImages : [fallbackImage],
       specs: specsOut ?? {},
       specsAiSuggested: aiSuggested && Object.keys(aiSuggested).length ? aiSuggested : undefined,
+      platformBought,
+      buyPaymentType,
     };
 
     if (status === ItemStatus.SOLD || status === ItemStatus.TRADED || status === ItemStatus.GIFTED) {
@@ -2217,12 +2244,23 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                          <label className="text-[10px] font-bold text-slate-400">Source Platform</label>
                          <select
                             className="w-full px-3 py-2.5 bg-slate-50 rounded-xl font-bold text-xs outline-none"
-                            value={formData.platformBought}
-                            onChange={e => setFormData({ ...formData, platformBought: e.target.value as Platform })}
+                            value={formData.platformBought || 'kleinanzeigen.de'}
+                            onChange={(e) => {
+                              const nextPlatform = e.target.value as Platform;
+                              setFormData((prev) => ({
+                                ...prev,
+                                platformBought: nextPlatform,
+                                buyPaymentType: paymentAfterPlatformChange(
+                                  nextPlatform,
+                                  prev.buyPaymentType
+                                ),
+                              }));
+                            }}
                          >
                             <option value="kleinanzeigen.de">Kleinanzeigen</option>
                             <option value="ebay.de">eBay</option>
                             <option value="Amazon">Amazon</option>
+                            <option value="In Person">In Person</option>
                             <option value="Other">Other</option>
                          </select>
                       </div>
@@ -2231,8 +2269,17 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                          <label className="text-[10px] font-bold text-slate-400">Payment Sent</label>
                          <select
                             className="w-full px-3 py-2.5 bg-slate-50 rounded-xl font-bold text-xs outline-none"
-                            value={formData.buyPaymentType}
-                            onChange={e => setFormData({ ...formData, buyPaymentType: e.target.value as PaymentType })}
+                            value={formData.buyPaymentType || defaultBuyPaymentForPlatform('kleinanzeigen.de')}
+                            onChange={(e) => {
+                              const nextPayment = e.target.value as PaymentType;
+                              setFormData((prev) => ({
+                                ...prev,
+                                buyPaymentType: normalizeBuyPaymentForPlatform(
+                                  prev.platformBought,
+                                  nextPayment
+                                ),
+                              }));
+                            }}
                          >
                             {PAYMENT_METHODS.map(p => <option key={p} value={p}>{p}</option>)}
                          </select>

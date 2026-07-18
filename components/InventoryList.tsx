@@ -67,6 +67,7 @@ import {
   resolveParentContainer,
 } from '../utils/containerMembership';
 import { resolveTradeReceivedItems, resolveTradeSourceItem } from '../utils/tradeLinks';
+import { formatPlatformBoughtLabel } from '../utils/purchaseSource';
 import TradeLinkBadge from './TradeLinkBadge';
 
 interface Props {
@@ -2566,6 +2567,22 @@ const InventoryList: React.FC<Props> = ({
                           title="Platform not set — choose Sold on in the row or use bulk edit"
                         >
                           <AlertTriangle size={9} className="shrink-0" /> No platform
+                        </span>
+                      )}
+                      {(item.platformBought || item.buyPaymentType) && (
+                        <span
+                          className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200/80 max-w-[14rem] truncate"
+                          title={[
+                            item.platformBought
+                              ? `Bought on: ${formatPlatformBoughtLabel(item.platformBought)}`
+                              : null,
+                            item.buyPaymentType ? `Paid with: ${item.buyPaymentType}` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        >
+                          {formatPlatformBoughtLabel(item.platformBought) || 'Bought'}
+                          {item.buyPaymentType ? ` · ${item.buyPaymentType}` : ''}
                         </span>
                       )}
                       <span className="text-[10px] text-slate-400 font-bold uppercase truncate">{item.vendor}</span>
