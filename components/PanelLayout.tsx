@@ -126,6 +126,11 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     { to: '/panel/dashboard', icon: <LayoutDashboard size={18} />, label: 'Dashboard' },
     { to: '/panel/inventory', icon: <Package size={18} />, label: 'Inventory' },
     { to: '/panel/ebay-store-pull', icon: <PackageSearch size={18} />, label: 'eBay Tools', alert: !!ebayReminder },
+    {
+      to: '/panel/ebay-store-pull?tab=bundles',
+      icon: <Boxes size={18} />,
+      label: 'Parse Bundles',
+    },
     { to: '/panel/settings', icon: <Settings size={18} />, label: 'Settings', alert: !isCloudEnabled },
   ];
 
@@ -206,7 +211,13 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
         <nav className="flex-1 px-4 space-y-1 overflow-y-auto scrollbar-hide pb-4">
           <p className="px-3 pt-1 pb-1.5 text-[9px] font-black uppercase tracking-[0.2em] text-slate-500">Navigate</p>
           {primaryNav.map(({ to, icon, label, alert }) => {
-            const isActive = location.pathname === to || (to !== '/panel/dashboard' && location.pathname.startsWith(to));
+            const [navPath, navQuery] = to.split('?');
+            const isActive = navQuery
+              ? location.pathname === navPath && location.search.includes(navQuery)
+              : navPath === '/panel/ebay-store-pull' && location.search.includes('tab=bundles')
+                ? false
+                : location.pathname === navPath ||
+                  (navPath !== '/panel/dashboard' && location.pathname.startsWith(navPath));
             return (
               <Link
                 key={to}

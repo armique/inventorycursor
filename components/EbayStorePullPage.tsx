@@ -14,6 +14,7 @@ import {
   Tag,
   GitCompare,
   TrendingDown,
+  Layers,
 } from 'lucide-react';
 import { InventoryItem, TaxMode } from '../types';
 import { fetchMyEbayListings, getEbayUsername } from '../services/ebayService';
@@ -30,13 +31,14 @@ import EbayStorePullImportTab from './EbayStorePullImportTab';
 import EbayStorePullSoldTab from './EbayStorePullSoldTab';
 import EbayStorePullOrdersTab from './EbayStorePullOrdersTab';
 import EbayStorePullPurchasesTab from './EbayStorePullPurchasesTab';
+import EbayStorePullBundlesTab from './EbayStorePullBundlesTab';
 import EbayOrderSourceCompareTab from './EbayOrderSourceCompareTab';
 import EbayToolProgressBar, { type EbayToolProgress } from './EbayToolProgressBar';
 import EbayToolSearchInput from './EbayToolSearchInput';
 import type { Expense } from '../types';
 
 type PhotoMode = 'none' | 'all' | 'pick';
-type PullTab = 'sync' | 'import' | 'sold' | 'orders' | 'purchases' | 'compare';
+type PullTab = 'sync' | 'import' | 'sold' | 'orders' | 'purchases' | 'compare' | 'bundles';
 
 interface Props {
   items: InventoryItem[];
@@ -75,6 +77,12 @@ interface RowState {
 }
 
 const TABS: { id: PullTab; label: string; icon: React.ReactNode; hint: string }[] = [
+  {
+    id: 'bundles',
+    label: 'Parse bundles',
+    icon: <Layers size={14} />,
+    hint: 'Match eBay bundle listings to free inventory parts and create bundles + photos',
+  },
   {
     id: 'sync',
     label: 'Sync existing',
@@ -129,7 +137,16 @@ const EbayStorePullPage: React.FC<Props> = ({
     const t = searchParams.get('tab');
     if (t === 'sales') setTab('orders');
     else if (t === 'purchases') setTab('purchases');
-    else if (t === 'sync' || t === 'import' || t === 'sold' || t === 'orders' || t === 'compare' || t === 'purchases') setTab(t);
+    else if (
+      t === 'sync' ||
+      t === 'import' ||
+      t === 'sold' ||
+      t === 'orders' ||
+      t === 'compare' ||
+      t === 'purchases' ||
+      t === 'bundles'
+    )
+      setTab(t);
   }, [searchParams]);
   const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -418,7 +435,9 @@ const EbayStorePullPage: React.FC<Props> = ({
         <EbayToolProgressBar {...progress} tone="blue" />
       )}
 
-      {tab === 'import' ? (
+      {tab === 'bundles' ? (
+        <EbayStorePullBundlesTab items={items} onUpdate={onUpdate} />
+      ) : tab === 'import' ? (
         <EbayStorePullImportTab
           items={items}
           categories={categories}
