@@ -8,7 +8,7 @@ import {
   MessageCircle, Link as LinkIcon, Upload, Search, Database, 
   Cpu, Monitor, HardDrive, Zap, Wind, AlertCircle, CheckCircle2, Copy,
   Fan, Lightbulb, Keyboard, Mouse, Tv, MoreHorizontal, Cable, Laptop as LaptopIcon, Wrench,
-  Wand2, Sliders, X, History, Sparkles, Repeat2, Package, FileText
+  Wand2, Sliders, X, History, Repeat2, Package, FileText
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, Platform, PaymentType } from '../types';
 import { SALE_PLATFORM_OPTIONS } from '../utils/salePlatform';
@@ -37,7 +37,7 @@ import {
   type ItemAddTemplate,
 } from '../utils/itemAddTemplates';
 import EbayListingPriceModal from './EbayListingPriceModal';
-import ProductCardGeneratorModal from './ProductCardGeneratorModal';
+import GeminiProductCardModal from './GeminiProductCardModal';
 
 /** How quantity is applied when creating a new item. */
 type QtyMode = 'single' | 'stock' | 'clones';
@@ -1850,10 +1850,10 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                           type="button"
                           onClick={() => setShowProductCardGen(true)}
                           disabled={!formData.name}
-                          title="Generate premium listing card with specs and USP badges"
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 disabled:opacity-50"
+                          title="Generate AI product card with Gemini"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50"
                         >
-                          <Sparkles size={12} /> Product card
+                          <Wand2 size={12} /> AI card
                         </button>
                         <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-600 cursor-pointer hover:bg-slate-50">
                           <Upload size={12} /> Add images
@@ -2457,7 +2457,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       />
 
       {showProductCardGen && formData.name && (
-        <ProductCardGeneratorModal
+        <GeminiProductCardModal
           item={{
             ...(formData as InventoryItem),
             id: getPhotoItemId(),

@@ -3,7 +3,7 @@ import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
   Package, PlusCircle, Settings, RefreshCw, Trash2, CloudUpload, LayoutDashboard,
   Layers, Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe,
-  Printer, LayoutTemplate, PackageSearch, Sparkles, Monitor, Boxes, ChevronDown, Plus,
+  Printer, LayoutTemplate, PackageSearch, Monitor, Boxes, ChevronDown, Plus,
 } from 'lucide-react';
 import PanelBreadcrumbs from './PanelBreadcrumbs';
 import { usePanelLocale } from '../context/PanelLocaleContext';
@@ -139,7 +139,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     { to: '/panel/trash', icon: <Trash2 size={16} />, label: 'Trash' },
     { to: '/panel/store-management', icon: <Globe size={16} />, label: 'Store' },
     { to: '/panel/storefront-configurator', icon: <LayoutTemplate size={16} />, label: 'Storefront config' },
-    { to: '/panel/product-card-generator', icon: <Sparkles size={16} />, label: 'Product cards' },
   ];
 
   const addOptions = [

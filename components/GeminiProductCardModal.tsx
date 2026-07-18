@@ -4,6 +4,11 @@ import { Download, Loader2, Sparkles, X, Check } from 'lucide-react';
 import type { InventoryItem } from '../types';
 import { generateGeminiProductCard } from '../services/productCardGemini';
 import { prepareInventoryImagesForStorage } from '../utils/imageImport';
+import {
+  DEFAULT_PRODUCT_CARD_STYLE_ID,
+  PRODUCT_CARD_STYLES,
+  type ProductCardStyleId,
+} from '../services/productCardStyles';
 
 interface Props {
   item: InventoryItem;
@@ -18,31 +23,34 @@ const GeminiProductCardModal: React.FC<Props> = ({
   onClose,
   onApplyAsMainPhoto,
 }) => {
-  const [loading, setLoading] = useState(true);
+  const [styleId, setStyleId] = useState<ProductCardStyleId>(DEFAULT_PRODUCT_CARD_STYLE_ID);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [meta, setMeta] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
+  const [started, setStarted] = useState(false);
 
-  const run = async () => {
+  const run = async (nextStyle?: ProductCardStyleId) => {
+    const useStyle = nextStyle || styleId;
+    setStarted(true);
     setLoading(true);
     setError(null);
     setPreview(null);
     try {
-      const result = await generateGeminiProductCard(item, categoryFields);
+      const result = await generateGeminiProductCard(item, categoryFields, useStyle);
       setPreview(result.dataUrl);
-      setMeta([result.provider, result.model, result.note].filter(Boolean).join(' · '));
+      setMeta(
+        [result.styleName || useStyle, result.provider, result.model, result.note]
+          .filter(Boolean)
+          .join(' · ')
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Generation failed');
     } finally {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    void run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- generate once per open
-  }, [item.id]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -80,13 +88,13 @@ const GeminiProductCardModal: React.FC<Props> = ({
       onClick={onClose}
     >
       <div
-        className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]"
+        className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-4 py-3 border-b border-slate-100 flex items-start justify-between gap-2">
           <div className="min-w-0">
             <h3 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
-              <Sparkles size={14} className="text-emerald-600" /> Gemini product card
+              <Sparkles size={14} className="text-emerald-600" /> AI product card
             </h3>
             <p className="text-[11px] text-slate-500 font-medium truncate mt-0.5" title={item.name}>
               {item.name}
@@ -103,12 +111,41 @@ const GeminiProductCardModal: React.FC<Props> = ({
         </div>
 
         <div className="p-4 space-y-3 overflow-y-auto flex-1 min-h-0">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">
+              Design style
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-0.5">
+              {PRODUCT_CARD_STYLES.map((s) => {
+                const active = s.id === styleId;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    disabled={loading}
+                    onClick={() => setStyleId(s.id)}
+                    className={`text-left rounded-xl border px-2.5 py-2 transition-colors ${
+                      active
+                        ? 'border-emerald-400 bg-emerald-50 ring-1 ring-emerald-200'
+                        : 'border-slate-200 bg-white hover:bg-slate-50'
+                    } disabled:opacity-60`}
+                  >
+                    <span className="block text-[11px] font-black text-slate-800">{s.name}</span>
+                    <span className="block text-[10px] text-slate-500 font-medium leading-snug mt-0.5">
+                      {s.blurb}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {loading && (
-            <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-500">
+            <div className="flex flex-col items-center justify-center py-12 gap-3 text-slate-500">
               <Loader2 size={28} className="animate-spin text-emerald-600" />
-              <p className="text-xs font-bold">Generating premium card with Gemini…</p>
+              <p className="text-xs font-bold">Generating full card with Gemini…</p>
               <p className="text-[10px] text-slate-400 text-center max-w-xs">
-                Uses product name + specs as source of truth. Photos only for look & lighting.
+                AI builds the entire design from the selected style + your product data.
               </p>
             </div>
           )}
@@ -128,15 +165,8 @@ const GeminiProductCardModal: React.FC<Props> = ({
                 </a>
                 . Set <code className="bg-amber-100 px-1 rounded">GEMINI_API_KEY</code> on the server
                 or <code className="bg-amber-100 px-1 rounded">VITE_GEMINI_API_KEY</code> in{' '}
-                <code className="bg-amber-100 px-1 rounded">.env</code>. Gemini app Pro ≠ API key.
+                <code className="bg-amber-100 px-1 rounded">.env</code>.
               </p>
-              <button
-                type="button"
-                onClick={() => void run()}
-                className="text-[10px] font-black uppercase text-emerald-700 hover:underline"
-              >
-                Retry
-              </button>
             </div>
           )}
 
@@ -144,11 +174,17 @@ const GeminiProductCardModal: React.FC<Props> = ({
             <div className="space-y-2">
               <img
                 src={preview}
-                alt="Gemini product card"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 object-contain max-h-[55vh]"
+                alt="AI product card"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 object-contain max-h-[48vh]"
               />
               {meta && <p className="text-[10px] text-slate-400 font-medium">{meta}</p>}
             </div>
+          )}
+
+          {!started && !loading && !error && (
+            <p className="text-[11px] text-slate-500 font-medium text-center py-6">
+              Pick a style, then generate. Gemini creates the full card (layout + typography).
+            </p>
           )}
         </div>
 
@@ -159,6 +195,15 @@ const GeminiProductCardModal: React.FC<Props> = ({
             className="px-3 py-2 rounded-xl border border-slate-200 text-[10px] font-black uppercase text-slate-500"
           >
             Close
+          </button>
+          <button
+            type="button"
+            onClick={() => void run()}
+            disabled={loading}
+            className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {loading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+            {preview ? 'Regenerate' : 'Generate'}
           </button>
           {preview && (
             <>
@@ -173,7 +218,7 @@ const GeminiProductCardModal: React.FC<Props> = ({
                 type="button"
                 onClick={() => void apply()}
                 disabled={applying}
-                className="flex-1 inline-flex items-center justify-center gap-1 py-2 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase hover:bg-emerald-700 disabled:opacity-50"
+                className="flex-1 inline-flex items-center justify-center gap-1 py-2 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase hover:bg-slate-800 disabled:opacity-50"
               >
                 {applying ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
                 Use as main photo

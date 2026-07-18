@@ -1,12 +1,18 @@
 import type { InventoryItem } from '../types';
 import { getProductCardSpecs } from '../utils/productCardContent';
 import { getItemUserPhotoUrls } from '../utils/imageImport';
+import {
+  DEFAULT_PRODUCT_CARD_STYLE_ID,
+  type ProductCardStyleId,
+} from './productCardStyles';
 
 export interface GeminiProductCardResult {
   dataUrl: string;
   provider: string;
   model?: string;
   note?: string;
+  styleId?: string;
+  styleName?: string;
 }
 
 /**
@@ -15,7 +21,8 @@ export interface GeminiProductCardResult {
  */
 export async function generateGeminiProductCard(
   item: InventoryItem,
-  categoryFields?: string[]
+  categoryFields?: string[],
+  styleId: ProductCardStyleId | string = DEFAULT_PRODUCT_CARD_STYLE_ID
 ): Promise<GeminiProductCardResult> {
   const specs = getProductCardSpecs(item, categoryFields, 8).map((s) => ({
     label: s.label,
@@ -37,6 +44,7 @@ export async function generateGeminiProductCard(
       comment: item.comment1 || '',
       specs,
       images,
+      styleId,
     }),
   });
 
@@ -55,5 +63,7 @@ export async function generateGeminiProductCard(
     provider: data.provider || 'Gemini',
     model: data.model,
     note: data.note,
+    styleId: data.styleId,
+    styleName: data.styleName,
   };
 }

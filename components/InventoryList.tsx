@@ -48,7 +48,6 @@ import ItemThumbnail from './ItemThumbnail';
 import InvoiceView from './InvoiceView';
 import InventoryAISpecsPanel from './InventoryAISpecsPanel';
 import AddPhotosModal, { type AddPhotosApplyOptions } from './AddPhotosModal';
-import ProductCardGeneratorModal from './ProductCardGeneratorModal';
 import GeminiProductCardModal from './GeminiProductCardModal';
 import BulkSelectionBar, { type BulkAction } from './BulkSelectionBar';
 import { generateItemSpecs } from '../services/specsAI';
@@ -183,8 +182,8 @@ interface SortConfig {
 /** Inv column: icon buttons in one row (28px each + 4px gaps, matching the actual `gap-1` grid + cell padding). */
 const PRESENCE_ICON_SIZE_PX = 28;
 const PRESENCE_ICON_GAP_PX = 4;
-/** Presence · Photos · Template card · Gemini card · € · Store · Orders · Quick Bundle (+) */
-const PRESENCE_ICON_COUNT = 8;
+/** Presence · Photos · AI card · € · Store · Orders · Quick Bundle (+) */
+const PRESENCE_ICON_COUNT = 7;
 const PRESENCE_COL_WIDTH =
   PRESENCE_ICON_COUNT * PRESENCE_ICON_SIZE_PX +
   (PRESENCE_ICON_COUNT - 1) * PRESENCE_ICON_GAP_PX +
@@ -750,7 +749,6 @@ const InventoryList: React.FC<Props> = ({
   const [showAISpecsModal, setShowAISpecsModal] = useState(false);
   const [showBulkAddPhotosModal, setShowBulkAddPhotosModal] = useState(false);
   const [addPhotosTargetIds, setAddPhotosTargetIds] = useState<string[]>([]);
-  const [cardGenItem, setCardGenItem] = useState<InventoryItem | null>(null);
   const [geminiCardItem, setGeminiCardItem] = useState<InventoryItem | null>(null);
 
   // -- INLINE EDITING STATE --
@@ -2176,7 +2174,7 @@ const InventoryList: React.FC<Props> = ({
         return (
           <td key={id} className="inv-col-icons border-r border-slate-100/90 align-middle" style={style} onClick={(e) => e.stopPropagation()}>
             <div
-              className={`grid grid-cols-8 ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-items-start shrink-0`}
+              className={`grid grid-cols-7 ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-items-start shrink-0`}
               style={{ width: PRESENCE_ICON_COUNT * PRESENCE_ICON_SIZE_PX + (PRESENCE_ICON_COUNT - 1) * PRESENCE_ICON_GAP_PX }}
             >
               {/* Physical presence: present → lost → defective → unknown */}
@@ -2249,22 +2247,10 @@ const InventoryList: React.FC<Props> = ({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setCardGenItem(item);
-                }}
-                className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors border-indigo-200 bg-indigo-50/80 text-indigo-700 hover:bg-indigo-100`}
-                title="Template product card studio (layouts)"
-              >
-                <Sparkles size={13} strokeWidth={2.25} />
-              </button>
-
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
                   setGeminiCardItem(item);
                 }}
                 className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100`}
-                title="Generate premium product card with Gemini AI"
+                title="Generate AI product card (Gemini)"
               >
                 <Wand2 size={13} strokeWidth={2.25} />
               </button>
@@ -3417,20 +3403,6 @@ const InventoryList: React.FC<Props> = ({
     setAddPhotosTargetIds([]);
   }, []);
 
-  const handleApplyProductCardPhoto = useCallback(
-    async (url: string) => {
-      if (!cardGenItem) return;
-      const merged = normalizeImageList([url, cardGenItem.imageUrl, ...(cardGenItem.imageUrls || [])]);
-      await onUpdate({
-        ...cardGenItem,
-        imageUrl: merged[0],
-        imageUrls: merged,
-      });
-      setToast('Product card applied as main photo');
-    },
-    [cardGenItem, onUpdate]
-  );
-
   const selectedHasSoldOrTraded = useMemo(
     () =>
       deferredSelectedIds.some((id) => {
@@ -4224,17 +4196,6 @@ const InventoryList: React.FC<Props> = ({
         storageItemId={addPhotosTargetItems.length === 1 ? addPhotosTargetItems[0]?.id : 'shared'}
       />
 
-      {cardGenItem && (
-        <ProductCardGeneratorModal
-          item={cardGenItem}
-          categoryFields={
-            (categoryFields || {})[`${cardGenItem.category}:${cardGenItem.subCategory}`] ||
-            (categoryFields || {})[cardGenItem.category]
-          }
-          onClose={() => setCardGenItem(null)}
-          onApplyAsMainPhoto={handleApplyProductCardPhoto}
-        />
-      )}
       {geminiCardItem && (
         <GeminiProductCardModal
           item={geminiCardItem}
@@ -4254,7 +4215,7 @@ const InventoryList: React.FC<Props> = ({
               imageUrl: merged[0],
               imageUrls: merged,
             });
-            setToast('Gemini product card set as main photo');
+            setToast('AI product card set as main photo');
             setTimeout(() => setToast(null), 2200);
           }}
         />
