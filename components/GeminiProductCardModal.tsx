@@ -153,20 +153,37 @@ const GeminiProductCardModal: React.FC<Props> = ({
           {error && !loading && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 space-y-2">
               <p className="text-xs font-bold text-amber-900 whitespace-pre-wrap">{error}</p>
-              <p className="text-[10px] text-amber-800/80">
-                Need an API key from{' '}
-                <a
-                  href="https://aistudio.google.com/apikey"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="underline font-bold"
-                >
-                  Google AI Studio
-                </a>
-                . Set <code className="bg-amber-100 px-1 rounded">GEMINI_API_KEY</code> on the server
-                or <code className="bg-amber-100 px-1 rounded">VITE_GEMINI_API_KEY</code> in{' '}
-                <code className="bg-amber-100 px-1 rounded">.env</code>.
-              </p>
+              {/429|quota/i.test(error) ? (
+                <p className="text-[10px] text-amber-800/80">
+                  Key is fine — image models hit a separate quota. Enable billing for this Google Cloud
+                  project in{' '}
+                  <a
+                    href="https://aistudio.google.com/usage"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline font-bold"
+                  >
+                    AI Studio → Usage
+                  </a>{' '}
+                  (Set up billing / Paid tier), or wait for the daily reset. Gemini app Pro does not
+                  raise API image limits.
+                </p>
+              ) : /not set|missing|401|403|auth|invalid/i.test(error) ? (
+                <p className="text-[10px] text-amber-800/80">
+                  Need an API key from{' '}
+                  <a
+                    href="https://aistudio.google.com/apikey"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline font-bold"
+                  >
+                    Google AI Studio
+                  </a>
+                  . Set <code className="bg-amber-100 px-1 rounded">GEMINI_API_KEY</code> on the
+                  server or <code className="bg-amber-100 px-1 rounded">VITE_GEMINI_API_KEY</code> in{' '}
+                  <code className="bg-amber-100 px-1 rounded">.env</code>.
+                </p>
+              ) : null}
             </div>
           )}
 
