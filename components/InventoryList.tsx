@@ -58,11 +58,13 @@ import { loadEbayOrderIndex } from '../services/ebayOrderIndex';
 import { findMatchingOrdersForItem, type EbayOrderMatch } from '../utils/ebayOrderMatch';
 import { applyEbayOrderMatchToItem } from '../utils/applyEbayOrderMatch';
 import ContainerMembershipBadge from './ContainerMembershipBadge';
+import { buildContainerTitle } from '../utils/buildTitle';
 import {
   buildContainersById,
   buildContainerByChildId,
   getContainerKind,
   isContainerMember,
+  isInventoryContainer,
   resolveParentContainer,
 } from '../utils/containerMembership';
 import { resolveTradeReceivedItems, resolveTradeSourceItem } from '../utils/tradeLinks';
@@ -1837,26 +1839,73 @@ const InventoryList: React.FC<Props> = ({
   );
 
   const handleEditClick = (item: InventoryItem) => {
-    // Flags “+” panel open — never navigate away into PC Builder / edit modal
+    // Flags “+” panel open — never navigate away
     if (quickBundleSeedRef.current) return;
     addRecentItemId(item.id);
-    if (item.isPC || item.isBundle) {
-      navigate(`/panel/builder?editId=${item.id}`); 
-    } else {
-      setItemToEdit(item); 
-    }
+    // Always stay on inventory: edit in modal (PC / Bundle included — no Builder route)
+    setItemToEdit(item);
   };
 
-  const openParentContainer = useCallback(
-    (parent: InventoryItem) => {
-      addRecentItemId(parent.id);
-      if (parent.isPC || parent.isBundle) {
-        navigate(`/panel/builder?editId=${parent.id}`);
-      } else {
-        setItemToEdit(parent);
-      }
+  const createContainerInInventory = useCallback(
+    (type: 'pc' | 'bundle' | 'mixed', parts: InventoryItem[]) => {
+      if (parts.length === 0) return;
+      const kind = type === 'pc' ? 'pc' : type === 'bundle' ? 'bundle' : 'mixed';
+      const parentId =
+        type === 'pc' ? `pc-${Date.now()}` : `bundle-inline-${Date.now()}`;
+      const title = buildContainerTitle(kind, parts);
+      const buyTotal =
+        Math.round(parts.reduce((s, i) => s + Number(i.buyPrice || 0), 0) * 100) / 100;
+      const defectiveCount = parts.filter((i) => i.isDefective).length;
+      const parent: InventoryItem = {
+        id: parentId,
+        name: title,
+        category: type === 'pc' ? 'PC' : type === 'mixed' ? 'Mixed Bundle' : 'Bundle',
+        status: ItemStatus.IN_STOCK,
+        buyPrice: buyTotal,
+        buyDate: '',
+        comment1:
+          type === 'pc'
+            ? `PC Build (${parts.length} parts).`
+            : type === 'mixed'
+              ? `Mixed Bundle (${parts.length} items)${defectiveCount ? ` · ${defectiveCount} defekt` : ''}.`
+              : `Bundle (${parts.length} items).`,
+        comment2: parts
+          .map((i) => `- ${i.name}${i.isDefective ? ' [defekt]' : ''}`)
+          .join('\n')
+          .slice(0, 2000),
+        isPC: type === 'pc',
+        isBundle: type !== 'pc',
+        componentIds: parts.map((p) => p.id),
+        vendor:
+          type === 'pc' ? 'Custom Build' : type === 'mixed' ? 'Mixed Bundle' : 'PC Bundle',
+        marketTitle: title,
+        imageUrl: parts.find((p) => p.imageUrl)?.imageUrl,
+        presence: 'present',
+      };
+      const updatedParts = parts.map((comp) => ({
+        ...comp,
+        status: ItemStatus.IN_COMPOSITION,
+        parentContainerId: parentId,
+      }));
+      onUpdate([parent, ...updatedParts]);
+      setSelectedIds([]);
+      setShowComposeType(false);
+      setScrollTargetItemId(parentId);
+      setCollapsedBundles((prev) => {
+        const next = new Set(prev);
+        next.delete(parentId);
+        return next;
+      });
+      setToast(
+        type === 'pc'
+          ? `PC created in inventory · ${parts.length} parts`
+          : type === 'mixed'
+            ? `Mixed Bundle created · ${parts.length} parts`
+            : `Bundle created · ${parts.length} parts`
+      );
+      setTimeout(() => setToast(null), 2400);
     },
-    [navigate]
+    [onUpdate]
   );
 
   const focusContainerInList = useCallback(
@@ -1884,6 +1933,15 @@ const InventoryList: React.FC<Props> = ({
       setScrollTargetItemId(parent.id);
     },
     []
+  );
+
+  const openParentContainer = useCallback(
+    (parent: InventoryItem) => {
+      addRecentItemId(parent.id);
+      // Stay in inventory — expand & scroll (never open PC Builder)
+      focusContainerInList(parent);
+    },
+    [focusContainerInList]
   );
 
   const focusTradeLinkedItem = useCallback((target: InventoryItem) => {
@@ -1984,8 +2042,8 @@ const InventoryList: React.FC<Props> = ({
           return;
         }
       }
-      navigate(`/panel/builder?mode=${type}`, { state: { initialParts: validItems } });
-      setSelectedIds([]);
+      // Stay in inventory — create immediately (no Builder page)
+      createContainerInInventory(type, validItems);
       return;
     }
 
@@ -1997,8 +2055,7 @@ const InventoryList: React.FC<Props> = ({
       alert('Mixed Bundle needs In Stock / Ordered items.');
       return;
     }
-    navigate('/panel/builder?mode=mixed', { state: { initialParts: validItems } });
-    setSelectedIds([]);
+    createContainerInInventory('mixed', validItems);
   };
 
   const handleCreateRetroBundle = (bundle: InventoryItem, updatedComponents: InventoryItem[]) => {
@@ -4550,8 +4607,14 @@ const InventoryList: React.FC<Props> = ({
             categoryFields={categoryFields} // Pass prop
             onAddCategory={() => {}}
             parentContainer={resolveParentContainer(itemToEdit, containersById, containerByChildId)}
-            onOpenParentContainer={openParentContainer}
-            onLocateParentContainer={focusContainerInList}
+            onOpenParentContainer={(parent) => {
+              setItemToEdit(null);
+              openParentContainer(parent);
+            }}
+            onLocateParentContainer={(parent) => {
+              setItemToEdit(null);
+              focusContainerInList(parent);
+            }}
             onLocateTradeItem={(target) => {
               setItemToEdit(null);
               focusTradeLinkedItem(target);
