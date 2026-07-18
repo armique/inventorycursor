@@ -8,6 +8,7 @@
 import { correctGpuVramInSpecs } from './gpuVramCorrection';
 import { filterSpecsToEssentialKeys } from './essentialSpecFields';
 import { loadAISettings } from './aiSettings';
+import { ensureModelCodesInName } from '../utils/preserveModelCodes';
 
 const getEnv = (key: string): string => {
   try {
@@ -160,7 +161,9 @@ Return a valid JSON object with this exact structure (no markdown, no code fence
 
 Rules: specs values can be string or number. Only include keys allowed above.
 
-GRAPHICS CARDS (GPUs): For the "VRAM" field, use the exact frame-buffer memory of that GPU model only (e.g. RTX 5070 has 12GB VRAM). Do not use system RAM, total memory across unrelated devices, or another GPU tier. If the product name includes a GB figure next to the chip name (e.g. "RTX 5070 12GB"), that GB value is the VRAM.`;
+GRAPHICS CARDS (GPUs): For the "VRAM" field, use the exact frame-buffer memory of that GPU model only (e.g. RTX 5070 has 12GB VRAM). Do not use system RAM, total memory across unrelated devices, or another GPU tier. If the product name includes a GB figure next to the chip name (e.g. "RTX 5070 12GB"), that GB value is the VRAM.
+
+MODEL / PART NUMBERS: If the item name contains a manufacturer SKU or part number (e.g. CMK8GX4M1A2400C14, ACR24D4U1S1ME-8X, CT8G4SFS824A), keep that exact code inside standardizedName. You may expand brand/series around it, but never drop the code.`;
 }
 
 export interface GenerateSpecsResult {
@@ -366,9 +369,13 @@ export async function generateItemSpecs(
     try {
       const raw = await callProviderSpecs(provider, prompt);
       const corrected = correctGpuVramInSpecs(name, raw.standardizedName, raw.specs || {});
+      const standardizedName = raw.standardizedName
+        ? ensureModelCodesInName(name, raw.standardizedName)
+        : undefined;
       return {
         ...raw,
         specs: filterSpecsToEssentialKeys(corrected, knownKeys),
+        standardizedName,
       };
     } catch (e) {
       lastError = e instanceof Error ? e : new Error(String(e));
