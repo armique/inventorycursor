@@ -38,6 +38,7 @@ import {
   stripConditionAnnotations,
 } from '../utils/bulkTextParse';
 import { filesToDataUrls, prepareInventoryImagesForStorage } from '../utils/imageImport';
+import { ensureModelCodesInName } from '../utils/preserveModelCodes';
 
 interface Props {
   onSave: (newItems: InventoryItem[]) => void;
@@ -747,11 +748,11 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                 specs: ramSpecs,
                 specsAiSuggested: Object.keys(ramSpecs).length ? { ...ramSpecs } : undefined,
                 isDefective: stillDefective,
-                // RAM: never accept free AI rename — only strict parsed fact names
+                // RAM: strict fact names; always keep typed manufacturer P/N
                 ...(strictRamName
-                  ? { name: strictRamName }
-                  : !isRam && result.standardizedName
-                    ? { name: result.standardizedName }
+                  ? { name: ensureModelCodesInName(prev.name, strictRamName) }
+                  : result.standardizedName
+                    ? { name: ensureModelCodesInName(prev.name, result.standardizedName) }
                     : {}),
                 ...(result.vendor && { vendor: result.vendor }),
               };

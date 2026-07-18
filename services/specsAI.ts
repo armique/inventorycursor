@@ -12,6 +12,7 @@ import {
   buildStrictRamStandardizedName,
   enrichRamSpecsFromText,
 } from '../utils/ramKitParse';
+import { ensureModelCodesInName } from '../utils/preserveModelCodes';
 
 const getEnv = (key: string): string => {
   try {
@@ -168,7 +169,10 @@ GRAPHICS CARDS (GPUs): For the "VRAM" field, use the exact frame-buffer memory o
 
 RAM / MEMORY:
 - If Speed is an allowed key and the product name or known rating states a clock (3200MHz, DDR4-2666, 2400 MHz, PC4-25600), put it in Speed as e.g. "3200MHz". Never invent Speed.
-- standardizedName must be a strict fact string only (no marketing rewrite): "Brand Capacity (NxYGB) DDRx SpeedMHz" for kits, or "Brand Capacity DDRx SpeedMHz" for single sticks. Examples: "Crucial 16GB (2x8GB) DDR4 3200MHz", "Samsung 8GB DDR4 2400MHz". Omit Speed when unknown. Keep real model/P/N codes when present.`;
+- standardizedName must be a strict fact string only (no marketing rewrite): "Brand Capacity (NxYGB) DDRx SpeedMHz" for kits, or "Brand Capacity DDRx SpeedMHz" for single sticks. Examples: "Crucial 16GB (2x8GB) DDR4 3200MHz", "Samsung 8GB DDR4 2400MHz". Omit Speed when unknown.
+- Manufacturer part numbers / SKUs (e.g. CMK8GX4M1A2400C14, ACR24D4U1S1ME-8X) MUST remain in standardizedName.
+
+MODEL / PART NUMBERS: If the item name contains a manufacturer SKU or part number (e.g. CMK8GX4M1A2400C14, ACR24D4U1S1ME-8X, CT8G4SFS824A), keep that exact code inside standardizedName. You may expand brand/series around it, but never drop the code.`;
 }
 
 export interface GenerateSpecsResult {
@@ -375,20 +379,27 @@ export async function generateItemSpecs(
       const raw = await callProviderSpecs(provider, prompt);
       const corrected = correctGpuVramInSpecs(name, raw.standardizedName, raw.specs || {});
       let specs = filterSpecsToEssentialKeys(corrected, knownKeys);
-      const isRam = /ram/i.test(rawCategory) || /ram|memory|ddr[2345]/i.test(name);
+      const isRam = /ram/i.test(rawCategory) || /ram|memory|ddr[2345]|cmk\d/i.test(name);
       if (isRam) {
         specs = enrichRamSpecsFromText(specs, name, raw.standardizedName);
         const strictName = buildStrictRamStandardizedName(name, specs, rawCategory);
         return {
           ...raw,
           specs,
-          // Never keep a free AI rename for RAM — only a strict parsed fact name
-          standardizedName: strictName || undefined,
+          // Strict RAM facts + always keep original manufacturer P/N
+          standardizedName: strictName
+            ? ensureModelCodesInName(name, strictName)
+            : raw.standardizedName
+              ? ensureModelCodesInName(name, raw.standardizedName)
+              : undefined,
         };
       }
       return {
         ...raw,
         specs,
+        standardizedName: raw.standardizedName
+          ? ensureModelCodesInName(name, raw.standardizedName)
+          : undefined,
       };
     } catch (e) {
       lastError = e instanceof Error ? e : new Error(String(e));

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Sparkles, Loader2, AlertCircle, Info, AlertTriangle, X } from 'lucide-react';
 import { InventoryItem } from '../types';
 import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
+import { ensureModelCodesInName } from '../utils/preserveModelCodes';
 import { mergeAiSpecsIntoEssential, resolveEssentialSpecKeys } from '../services/essentialSpecFields';
 
 const BATCH_SIZE = 12;
@@ -86,7 +87,9 @@ const InventoryAISpecsPanelInner: React.FC<Props> = ({
         specs: newSpecs,
         specsAiSuggested: Object.keys(newSpecs).length ? { ...newSpecs } : undefined,
       };
-      if (result.standardizedName) updates.name = result.standardizedName;
+      if (result.standardizedName) {
+        updates.name = ensureModelCodesInName(item.name, result.standardizedName);
+      }
       if (result.vendor) updates.vendor = result.vendor;
       return { ...item, ...updates };
     },

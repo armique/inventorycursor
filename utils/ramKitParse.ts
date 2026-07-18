@@ -1,3 +1,5 @@
+import { ensureModelCodesInName } from './preserveModelCodes';
+
 /**
  * RAM kit patterns like "2x8GB", "8x4 GB", "2×16gb" in a product name.
  * Must NOT match model suffixes such as "ACR24D4U1S1ME-8X 8GB" (the -8X is part of the P/N).
@@ -11,7 +13,7 @@ const RAM_KIT_IN_NAME = /(?<![A-Za-z0-9-])(\d+)\s*[x×]\s*(\d+)\s*gb\b/i;
 const RAM_KIT_LINE_PREFIX = /^(\d+)[x×](\d+)\s*(gb|tb)\b/i;
 
 const RAM_NAME_HINT =
-  /(ddr[2345]|ram\b|memory\b|dimm|sodimm|rdimm|jedec|12800|10600|1333|2rx8|1rx8|crucial|kingston|corsair|g\.?skill|hynix|micron|samsung|vengeance|trident|ballistix)/i;
+  /(ddr[2345]|ram\b|memory\b|dimm|sodimm|rdimm|jedec|12800|10600|1333|2rx8|1rx8|crucial|kingston|corsair|g\.?skill|hynix|micron|samsung|vengeance|trident|ballistix|cmk\d|cm[uw]\d|cmv\d|bls\d|hx\d|kf\d)/i;
 
 export interface RamKitInfo {
   modules: number;
@@ -138,13 +140,17 @@ function titleCaseBrand(brand: string): string {
 }
 
 function extractRamBrand(name: string): string | null {
-  const lower = name.toLowerCase();
   const sorted = [...RAM_BRANDS].sort((a, b) => b.length - a.length);
   for (const brand of sorted) {
     const re = new RegExp(`\\b${brand.replace(/\./g, '\\.')}\\b`, 'i');
     const match = name.match(re);
     if (match) return titleCaseBrand(match[0]);
   }
+  // Infer brand from common manufacturer SKU prefixes when the typed name is only a P/N
+  if (/\bCM[KUVW]\d/i.test(name)) return 'Corsair';
+  if (/\b(CT|BLST?)\d/i.test(name)) return 'Crucial';
+  if (/\b(HX|KF)\d/i.test(name)) return 'Kingston';
+  if (/\bBLS\d/i.test(name)) return 'Ballistix';
   return null;
 }
 
@@ -447,6 +453,7 @@ export function resolveRamInventoryQuantity(
 
 /**
  * After AI specs parse: force a strict RAM name from parsed facts (never keep a free AI rename).
+ * Always appends manufacturer P/N codes from the original typed name when missing.
  * Returns undefined when the item does not look like RAM / lacks capacity facts.
  */
 export function buildStrictRamStandardizedName(
@@ -463,9 +470,12 @@ export function buildStrictRamStandardizedName(
 
   const kit = resolveRamKitInfo(originalName, { specs });
   if (kit) {
-    return formatRamKitDisplayName(originalName, kit, { specs });
+    return ensureModelCodesInName(
+      originalName,
+      formatRamKitDisplayName(originalName, kit, { specs })
+    );
   }
 
   const stick = formatRamStickDisplayName(originalName, { specs });
-  return stick || undefined;
+  return stick ? ensureModelCodesInName(originalName, stick) : undefined;
 }

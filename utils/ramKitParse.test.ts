@@ -175,4 +175,18 @@ describe('ramKitParse', () => {
       }, 'Components / RAM')
     ).toBe('Ballistix 16GB (2x8GB) DDR4 2400MHz');
   });
+
+  it('keeps Corsair part number when building a strict name from SKU-only input', () => {
+    expect(
+      buildStrictRamStandardizedName(
+        'CMK8GX4M1A2400C14',
+        {
+          'GB per Stick': '8GB',
+          'Memory Type': 'DDR4',
+          Speed: '2400MHz',
+        },
+        'Components / RAM'
+      )
+    ).toBe('Corsair 8GB DDR4 2400MHz CMK8GX4M1A2400C14');
+  });
 });
