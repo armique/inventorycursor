@@ -35,6 +35,7 @@ import {
   stripConditionAnnotations,
 } from '../utils/bulkTextParse';
 import { filesToDataUrls, prepareInventoryImagesForStorage } from '../utils/imageImport';
+import { ensureModelCodesInName } from '../utils/preserveModelCodes';
 
 interface Props {
   onSave: (newItems: InventoryItem[]) => void;
@@ -706,7 +707,9 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                 specs: mergedSpecs,
                 specsAiSuggested: Object.keys(mergedSpecs).length ? { ...mergedSpecs } : undefined,
                 isDefective: stillDefective,
-                ...(result.standardizedName && { name: result.standardizedName }),
+                ...(result.standardizedName && {
+                  name: ensureModelCodesInName(prev.name, result.standardizedName),
+                }),
                 ...(result.vendor && { vendor: result.vendor }),
               };
             }

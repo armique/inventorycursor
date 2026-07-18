@@ -1,5 +1,6 @@
 import { suggestCategoryFromCorrections } from '../services/categoryCorrections';
 import { getSpecsAIProvider, requestAIJson } from '../services/specsAI';
+import { ensureModelCodesInName } from './preserveModelCodes';
 
 const MOTHERBOARD_PATTERN =
   /\b(mainboard|motherboard|mobo|chipset|form\s*factor|io[\s-]*shield|(?:a|b|h|x|z)\d{2,4}[a-z0-9-]*)\b/i;
@@ -43,7 +44,11 @@ export function inferCategoryFromName(name: string): { category: string; subCate
   if (MOTHERBOARD_PATTERN.test(n) || /socket\s?(am|lga)/i.test(n)) {
     return { category: 'Components', subCategory: 'Motherboards' };
   }
-  if (/(ddr[2345]|ram\b|memory\b|\d+x\d+\s*gb|12800u|10600u|1333u|2rx8|1rx8|jedec|hynix|samsung m\d|kingston khx|sk hynix)/i.test(n)) {
+  if (
+    /(ddr[2345]|ram\b|memory\b|\d+x\d+\s*gb|12800u|10600u|1333u|2rx8|1rx8|jedec|hynix|samsung m\d|kingston khx|sk hynix|cmk\d|cm[uw]\d|cmv\d|bls\d|hx\d|kf\d|f4-\d|m378[a-z]|m471[a-z])/i.test(
+      n
+    )
+  ) {
     return { category: 'Components', subCategory: 'RAM' };
   }
   if (/(ssd|hdd|nvme|m\.2)/i.test(n)) {
@@ -174,6 +179,8 @@ Rules:
 - Do not classify CPUs, RAM, SSD/NVMe, or motherboards as Graphics Cards.
 - Motherboard model codes (A320M, B450, B550, X570, Z790, H81M, H610, etc.) → Components / Motherboards.
 - Bundles or full PCs → PC or Bundle if listed.
+- Manufacturer part numbers / SKUs in the input (e.g. CMK8GX4M1A2400C14, ACR24D4U1S1ME-8X) MUST remain in standardizedName. You may expand brand/series around them, but never drop the exact code.
+- Example: input "CMK8GX4M1A2400C14" → "Corsair Vengeance LPX 8GB DDR4 2400MHz CMK8GX4M1A2400C14"
 
 Item name: ${name}`;
 
@@ -184,12 +191,15 @@ Item name: ${name}`;
   }>(prompt, { maxTokens: 256 });
 
   const reconciled = reconcileCategory(name, result.category, result.subCategory, categories);
+  const rawStandardized =
+    typeof result.standardizedName === 'string' && result.standardizedName.trim()
+      ? result.standardizedName.trim()
+      : undefined;
   return {
     ...reconciled,
-    standardizedName:
-      typeof result.standardizedName === 'string' && result.standardizedName.trim()
-        ? result.standardizedName.trim()
-        : undefined,
+    standardizedName: rawStandardized
+      ? ensureModelCodesInName(name, rawStandardized)
+      : undefined,
     source: 'ai',
   };
 }

@@ -3,6 +3,7 @@ import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
 import { filterSpecsToEssentialKeys, resolveEssentialSpecKeys } from '../services/essentialSpecFields';
 import { detectItemCategory } from './itemCategoryDetect';
 import { cleanEbayListingTitle } from './ebayBulkSyncPlan';
+import { ensureModelCodesInName } from './preserveModelCodes';
 
 export interface EbayOrphanListingDraft {
   listing: EbayMyListing;
@@ -23,7 +24,8 @@ export async function enrichOrphanListingDraft(
   options: { parseSpecs: boolean }
 ): Promise<EbayOrphanListingDraft> {
   const cleaned = cleanEbayListingTitle(listing.title);
-  let parsedName = cleaned || listing.title.trim();
+  const originalTitle = cleaned || listing.title.trim();
+  let parsedName = originalTitle;
   let category = 'Misc';
   let subCategory = 'Spare Parts';
   let categorySource = 'heuristic';
@@ -38,7 +40,7 @@ export async function enrichOrphanListingDraft(
     subCategory = catResult.subCategory;
     categorySource = catResult.source;
     if (catResult.standardizedName) {
-      parsedName = catResult.standardizedName;
+      parsedName = ensureModelCodesInName(originalTitle, catResult.standardizedName);
     }
   } catch (e) {
     enrichError = (e as Error)?.message || 'Category detection failed.';
@@ -48,9 +50,9 @@ export async function enrichOrphanListingDraft(
     try {
       const categoryContext = `${category}${subCategory ? ` / ${subCategory}` : ''}`;
       const knownKeys = resolveEssentialSpecKeys(category, subCategory, categoryFields);
-      const result = await generateItemSpecs(parsedName, categoryContext, knownKeys);
+      const result = await generateItemSpecs(originalTitle, categoryContext, knownKeys);
       if (result.standardizedName?.trim()) {
-        parsedName = result.standardizedName.trim();
+        parsedName = ensureModelCodesInName(originalTitle, result.standardizedName.trim());
       }
       if (result.vendor) vendor = result.vendor;
       if (result.specs && Object.keys(result.specs).length > 0) {
