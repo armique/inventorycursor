@@ -64,7 +64,6 @@ import {
   buildContainerByChildId,
   getContainerKind,
   isContainerMember,
-  isInventoryContainer,
   resolveParentContainer,
 } from '../utils/containerMembership';
 import { resolveTradeReceivedItems, resolveTradeSourceItem } from '../utils/tradeLinks';
