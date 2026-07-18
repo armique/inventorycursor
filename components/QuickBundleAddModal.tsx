@@ -17,6 +17,48 @@ interface Props {
   onApply: (updates: InventoryItem[]) => void;
 }
 
+type PartFilterPin = {
+  id: string;
+  label: string;
+  category: string;
+  subCategory?: string;
+};
+
+const PINS_STORAGE_KEY = 'deinventory:bundle-add-filter-pins';
+
+const DEFAULT_PART_FILTER_PINS: PartFilterPin[] = [
+  { id: 'cpu', label: 'CPU', category: 'Components', subCategory: 'Processors' },
+  { id: 'gpu', label: 'GPU', category: 'Components', subCategory: 'Graphics Cards' },
+  { id: 'mobo', label: 'Mobo', category: 'Components', subCategory: 'Motherboards' },
+  { id: 'ram', label: 'RAM', category: 'Components', subCategory: 'RAM' },
+  { id: 'ssd', label: 'SSD/HDD', category: 'Components', subCategory: 'Storage (SSD/HDD)' },
+  { id: 'psu', label: 'PSU', category: 'Components', subCategory: 'Power Supplies' },
+];
+
+function loadPartFilterPins(): PartFilterPin[] {
+  try {
+    const raw = localStorage.getItem(PINS_STORAGE_KEY);
+    if (!raw) return DEFAULT_PART_FILTER_PINS;
+    const parsed = JSON.parse(raw) as PartFilterPin[];
+    if (!Array.isArray(parsed) || parsed.length === 0) return DEFAULT_PART_FILTER_PINS;
+    return parsed.filter((p) => p?.id && p?.label && p?.category);
+  } catch {
+    return DEFAULT_PART_FILTER_PINS;
+  }
+}
+
+function savePartFilterPins(pins: PartFilterPin[]) {
+  try {
+    localStorage.setItem(PINS_STORAGE_KEY, JSON.stringify(pins));
+  } catch {
+    /* ignore */
+  }
+}
+
+function pinId(category: string, subCategory?: string): string {
+  return subCategory ? `${category}::${subCategory}` : `${category}::`;
+}
+
 function roundMoney(n: number): number {
   return Math.round(n * 100) / 100;
 }
@@ -26,6 +68,13 @@ function defaultKind(seed: InventoryItem): QuickBundleKind {
   if (isMixedBundleContainer(seed) || seed.isDefective) return 'mixed';
   if (seed.isBundle || seed.category === 'Bundle') return 'bundle';
   return 'bundle';
+}
+
+function itemMatchesPin(item: InventoryItem, pin: PartFilterPin): boolean {
+  if (pin.subCategory) {
+    return item.subCategory === pin.subCategory || item.category === pin.subCategory;
+  }
+  return item.category === pin.category;
 }
 
 /**
@@ -38,18 +87,37 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
   const [kind, setKind] = useState<QuickBundleKind>(() => defaultKind(seed));
   const [query, setQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [filterPins, setFilterPins] = useState<PartFilterPin[]>(() => loadPartFilterPins());
+  const [activePinId, setActivePinId] = useState<string | null>(null);
+  const [showAddPin, setShowAddPin] = useState(false);
+  const [newPinCategory, setNewPinCategory] = useState('Components');
+  const [newPinSub, setNewPinSub] = useState('');
+  const [newPinLabel, setNewPinLabel] = useState('');
+
+  const discardAndClose = () => {
+    setSelectedIds([]);
+    setQuery('');
+    setActivePinId(null);
+    setShowAddPin(false);
+    onClose();
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      if (selectedIds.length > 0) {
-        if (!window.confirm('Discard selected parts and close?')) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        discardAndClose();
       }
-      onClose();
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, selectedIds.length]);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- close handler intentionally stable for Escape
+  }, [onClose]);
+
+  useEffect(() => {
+    savePartFilterPins(filterPins);
+  }, [filterPins]);
 
   const alreadyInSeed = useMemo(() => {
     if (!seedIsContainer) return new Set<string>();
@@ -60,10 +128,9 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
     return ids;
   }, [seed, seedIsContainer, items]);
 
-  const candidates = useMemo(() => {
-    const q = query.trim();
-    const out: InventoryItem[] = [];
+  const baseEligible = useMemo(() => {
     const allowDefective = kind === 'mixed';
+    const out: InventoryItem[] = [];
     for (const item of items) {
       if (item.id === seed.id) continue;
       if (item.isDraft) continue;
@@ -72,12 +139,42 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
       if (alreadyInSeed.has(item.id)) continue;
       if (item.status !== ItemStatus.IN_STOCK && item.status !== ItemStatus.ORDERED) continue;
       if (!allowDefective && item.isDefective) continue;
-      if (q && !itemMatchesBuilderSearch(item, q)) continue;
       out.push(item);
     }
-    out.sort((a, b) => a.name.localeCompare(b.name));
-    return out.slice(0, 60);
-  }, [items, seed.id, alreadyInSeed, kind, query]);
+    return out;
+  }, [items, seed.id, alreadyInSeed, kind]);
+
+  const categoryOptions = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const item of baseEligible) {
+      const cat = item.category || 'Misc';
+      if (!map.has(cat)) map.set(cat, new Set());
+      if (item.subCategory) map.get(cat)!.add(item.subCategory);
+    }
+    return Array.from(map.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([category, subs]) => ({
+        category,
+        subs: Array.from(subs).sort((a, b) => a.localeCompare(b)),
+      }));
+  }, [baseEligible]);
+
+  const activePin = useMemo(
+    () => filterPins.find((p) => p.id === activePinId) ?? null,
+    [filterPins, activePinId]
+  );
+
+  const candidates = useMemo(() => {
+    const q = query.trim();
+    let list = baseEligible;
+    if (activePin) {
+      list = list.filter((item) => itemMatchesPin(item, activePin));
+    }
+    if (q) {
+      list = list.filter((item) => itemMatchesBuilderSearch(item, q));
+    }
+    return [...list].sort((a, b) => a.name.localeCompare(b.name)).slice(0, 60);
+  }, [baseEligible, activePin, query]);
 
   const selectedItems = useMemo(
     () => selectedIds.map((id) => items.find((i) => i.id === id)).filter(Boolean) as InventoryItem[],
@@ -98,6 +195,35 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
     );
   }, [kind, items]);
 
+  const removePin = (id: string) => {
+    setFilterPins((prev) => prev.filter((p) => p.id !== id));
+    if (activePinId === id) setActivePinId(null);
+  };
+
+  const addPin = () => {
+    const category = newPinCategory.trim();
+    if (!category) return;
+    const sub = newPinSub.trim();
+    const id = pinId(category, sub || undefined);
+    if (filterPins.some((p) => p.id === id)) {
+      setActivePinId(id);
+      setShowAddPin(false);
+      return;
+    }
+    const label = (newPinLabel.trim() || sub || category).slice(0, 24);
+    const pin: PartFilterPin = {
+      id,
+      label,
+      category,
+      ...(sub ? { subCategory: sub } : {}),
+    };
+    setFilterPins((prev) => [...prev, pin]);
+    setActivePinId(id);
+    setShowAddPin(false);
+    setNewPinSub('');
+    setNewPinLabel('');
+  };
+
   const handleConfirm = () => {
     if (selectedItems.length === 0) {
       alert('Select at least one item to add.');
@@ -116,7 +242,6 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
       }
     }
 
-    // Add into existing PC / Bundle / Mixed
     if (seedIsContainer) {
       const existingParts = items.filter(
         (i) =>
@@ -173,11 +298,10 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
         parentContainerId: seed.id,
       }));
       onApply([parent, ...updatedNew]);
-      onClose();
+      discardAndClose();
       return;
     }
 
-    // Create new Bundle / Mixed from any category seed
     const createKind: 'bundle' | 'mixed' = kind === 'mixed' ? 'mixed' : 'bundle';
     const parts = [seed, ...selectedItems];
     const parentId = `bundle-quick-${Date.now()}`;
@@ -217,17 +341,9 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
     }));
 
     onApply([parent, ...updatedParts]);
-    onClose();
+    discardAndClose();
   };
 
-  const requestClose = () => {
-    if (selectedIds.length > 0) {
-      if (!window.confirm('Discard selected parts and close?')) return;
-    }
-    onClose();
-  };
-
-  /** Inline panel under the asset name — no backdrop; does not close on outside click. */
   return (
     <div
       className="mt-2 w-full max-w-xl rounded-xl border border-violet-200 bg-white shadow-lg shadow-violet-500/10 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150"
@@ -246,12 +362,12 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
                 : 'Make Bundle / Mixed Bundle'}
           </h3>
           <p className="text-[10px] text-violet-800/70 font-medium truncate mt-0.5">
-            Stays open until Cancel / Add — click outside won&apos;t close it
+            Cancel discards selection and closes — stays in inventory
           </p>
         </div>
         <button
           type="button"
-          onClick={requestClose}
+          onClick={discardAndClose}
           className="p-1 rounded-md text-violet-400 hover:bg-violet-100 hover:text-violet-800"
           aria-label="Close"
         >
@@ -293,18 +409,155 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
           </p>
         )}
 
+        {/* Quick category filter pills */}
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 shrink-0">
+              Filters
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setActivePinId(null);
+              }}
+              className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-colors ${
+                !activePinId
+                  ? 'bg-slate-800 text-white border-slate-800'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              All
+            </button>
+            {filterPins.map((pin) => {
+              const active = activePinId === pin.id;
+              return (
+                <span
+                  key={pin.id}
+                  className={`inline-flex items-center rounded-full border overflow-hidden ${
+                    active
+                      ? 'bg-violet-600 border-violet-600 text-white'
+                      : 'bg-white border-slate-200 text-slate-700'
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setActivePinId(active ? null : pin.id)}
+                    className="px-2.5 py-1 text-[10px] font-bold hover:opacity-90"
+                    title={pin.subCategory ? `${pin.category} › ${pin.subCategory}` : pin.category}
+                  >
+                    {pin.label}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removePin(pin.id);
+                    }}
+                    className={`px-1.5 py-1 border-l ${
+                      active
+                        ? 'border-violet-500/50 hover:bg-violet-700'
+                        : 'border-slate-200 hover:bg-red-50 hover:text-red-600'
+                    }`}
+                    title="Remove filter"
+                    aria-label={`Remove ${pin.label}`}
+                  >
+                    <X size={10} strokeWidth={2.5} />
+                  </button>
+                </span>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => {
+                setShowAddPin((v) => !v);
+                if (categoryOptions[0]) {
+                  setNewPinCategory(categoryOptions[0].category);
+                  setNewPinSub('');
+                  setNewPinLabel(categoryOptions[0].category);
+                }
+              }}
+              className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-dashed border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100"
+              title="Add filter pill"
+              aria-label="Add filter"
+            >
+              <Plus size={14} />
+            </button>
+          </div>
+
+          {showAddPin && (
+            <div className="rounded-lg border border-violet-100 bg-violet-50/50 p-2 space-y-2">
+              <div className="grid grid-cols-2 gap-1.5">
+                <select
+                  value={newPinCategory}
+                  onChange={(e) => {
+                    setNewPinCategory(e.target.value);
+                    setNewPinSub('');
+                    setNewPinLabel(e.target.value);
+                  }}
+                  className="w-full px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold outline-none"
+                >
+                  {categoryOptions.length === 0 && <option value="Components">Components</option>}
+                  {categoryOptions.map(({ category }) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={newPinSub}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setNewPinSub(v);
+                    setNewPinLabel(v || newPinCategory);
+                  }}
+                  className="w-full px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold outline-none"
+                >
+                  <option value="">All subcategories</option>
+                  {(categoryOptions.find((c) => c.category === newPinCategory)?.subs || []).map(
+                    (sub) => (
+                      <option key={sub} value={sub}>
+                        {sub}
+                      </option>
+                    )
+                  )}
+                </select>
+              </div>
+              <div className="flex gap-1.5">
+                <input
+                  value={newPinLabel}
+                  onChange={(e) => setNewPinLabel(e.target.value)}
+                  placeholder="Pill label"
+                  className="flex-1 px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={addPin}
+                  className="px-3 py-1.5 rounded-lg bg-violet-600 text-white text-[10px] font-black uppercase"
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="relative">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             autoFocus
             className="w-full pl-8 pr-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none focus:border-violet-400 focus:bg-white"
-            placeholder="Search any category…"
+            placeholder={
+              activePin
+                ? `Search in ${activePin.label}…`
+                : 'Search any category…'
+            }
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Escape') {
+                e.preventDefault();
                 e.stopPropagation();
-                requestClose();
+                discardAndClose();
               }
             }}
           />
@@ -332,6 +585,7 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
           {candidates.length === 0 && (
             <li className="px-2 py-4 text-center text-[10px] font-bold text-slate-400">
               No matching active items
+              {activePin ? ` in ${activePin.label}` : ''}
             </li>
           )}
           {candidates.map((item) => {
@@ -345,7 +599,11 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
                     on ? 'bg-violet-100/90 border border-violet-200' : 'hover:bg-white border border-transparent'
                   }`}
                 >
-                  <ItemThumbnail item={item} className="w-7 h-7 rounded object-cover border border-slate-100 shrink-0" size={28} />
+                  <ItemThumbnail
+                    item={item}
+                    className="w-7 h-7 rounded object-cover border border-slate-100 shrink-0"
+                    size={28}
+                  />
                   <div className="flex-1 min-w-0">
                     <p className="text-[11px] font-bold text-slate-900 truncate">{item.name}</p>
                     <p className="text-[9px] text-slate-500 truncate">
@@ -371,7 +629,11 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
       <div className="px-3 py-2 border-t border-slate-100 flex items-center gap-2 bg-white">
         <button
           type="button"
-          onClick={requestClose}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            discardAndClose();
+          }}
           className="px-3 py-2 rounded-lg border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50"
         >
           Cancel
