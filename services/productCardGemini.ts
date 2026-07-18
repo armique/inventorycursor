@@ -6,7 +6,9 @@ import {
   type ProductCardStyleId,
 } from './productCardStyles';
 
-export interface GeminiProductCardResult {
+export type ProductCardProviderId = 'openai' | 'gemini';
+
+export interface ProductCardGenerateResult {
   dataUrl: string;
   provider: string;
   model?: string;
@@ -15,15 +17,38 @@ export interface GeminiProductCardResult {
   styleName?: string;
 }
 
+export interface ProductCardProviderInfo {
+  id: ProductCardProviderId;
+  name: string;
+  available: boolean;
+  blurb: string;
+}
+
+export async function fetchProductCardProviders(): Promise<ProductCardProviderInfo[]> {
+  try {
+    const res = await fetch('/api/images?route=product-card-providers');
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && Array.isArray(data.providers)) {
+      return data.providers as ProductCardProviderInfo[];
+    }
+  } catch {
+    /* fall through */
+  }
+  return [
+    { id: 'openai', name: 'OpenAI', available: true, blurb: 'GPT Image' },
+    { id: 'gemini', name: 'Gemini', available: true, blurb: 'Flash Image' },
+  ];
+}
+
 /**
- * Generate a premium product card via server Gemini image models.
- * Needs GEMINI_API_KEY / VITE_GEMINI_API_KEY (AI Studio API key — not Gemini app Pro alone).
+ * Generate a premium product card via server image models (OpenAI or Gemini).
  */
-export async function generateGeminiProductCard(
+export async function generateProductCard(
   item: InventoryItem,
   categoryFields?: string[],
-  styleId: ProductCardStyleId | string = DEFAULT_PRODUCT_CARD_STYLE_ID
-): Promise<GeminiProductCardResult> {
+  styleId: ProductCardStyleId | string = DEFAULT_PRODUCT_CARD_STYLE_ID,
+  provider: ProductCardProviderId = 'openai'
+): Promise<ProductCardGenerateResult> {
   const specs = getProductCardSpecs(item, categoryFields, 8).map((s) => ({
     label: s.label,
     value: s.value,
@@ -45,6 +70,7 @@ export async function generateGeminiProductCard(
       specs,
       images,
       styleId,
+      provider,
     }),
   });
 
@@ -53,17 +79,26 @@ export async function generateGeminiProductCard(
     throw new Error(
       data.error ||
         data.hint ||
-        `Gemini card failed (${res.status}). Set GEMINI_API_KEY from Google AI Studio.`
+        `Product card failed (${res.status}). Check ${provider === 'openai' ? 'OPENAI_API_KEY' : 'GEMINI_API_KEY'}.`
     );
   }
 
   const mime = data.mimeType || 'image/png';
   return {
     dataUrl: `data:${mime};base64,${data.imageBase64}`,
-    provider: data.provider || 'Gemini',
+    provider: data.provider || provider,
     model: data.model,
     note: data.note,
     styleId: data.styleId,
     styleName: data.styleName,
   };
+}
+
+/** @deprecated use generateProductCard */
+export async function generateGeminiProductCard(
+  item: InventoryItem,
+  categoryFields?: string[],
+  styleId: ProductCardStyleId | string = DEFAULT_PRODUCT_CARD_STYLE_ID
+): Promise<ProductCardGenerateResult> {
+  return generateProductCard(item, categoryFields, styleId, 'gemini');
 }

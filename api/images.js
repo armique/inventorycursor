@@ -8,7 +8,10 @@ import {
   handleEnhanceProviders,
   handleProductPhotoEnhance,
 } from '../lib/apiHandlers/productPhotoEnhanceHandler.js';
-import { handleProductCardGemini } from '../lib/apiHandlers/productCardGeminiHandler.js';
+import {
+  handleProductCardGemini,
+  handleProductCardProviders,
+} from '../lib/apiHandlers/productCardGeminiHandler.js';
 
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -31,6 +34,9 @@ export default async function handler(req, res) {
   if (route === 'product-card' && req.method === 'POST') {
     return handleProductCardGemini(req, res);
   }
+  if (route === 'product-card-providers') {
+    return handleProductCardProviders(req, res);
+  }
 
   if (req.method !== 'GET') {
     res.setHeader('Allow', 'GET, POST, OPTIONS');
@@ -46,7 +52,8 @@ export default async function handler(req, res) {
       return handleImageFetch(req, res);
     default:
       return res.status(400).json({
-        error: 'Unknown route. Use ?route=search, providers, fetch, enhance, enhance-providers, product-card',
+        error:
+          'Unknown route. Use ?route=search, providers, fetch, enhance, enhance-providers, product-card, product-card-providers',
       });
   }
 }

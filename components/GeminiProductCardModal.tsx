@@ -2,7 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Download, Loader2, Sparkles, X, Check } from 'lucide-react';
 import type { InventoryItem } from '../types';
-import { generateGeminiProductCard } from '../services/productCardGemini';
+import {
+  fetchProductCardProviders,
+  generateProductCard,
+  type ProductCardProviderId,
+  type ProductCardProviderInfo,
+} from '../services/productCardGemini';
 import { prepareInventoryImagesForStorage } from '../utils/imageImport';
 import {
   DEFAULT_PRODUCT_CARD_STYLE_ID,
@@ -23,6 +28,8 @@ const GeminiProductCardModal: React.FC<Props> = ({
   onClose,
   onApplyAsMainPhoto,
 }) => {
+  const [provider, setProvider] = useState<ProductCardProviderId>('openai');
+  const [providers, setProviders] = useState<ProductCardProviderInfo[]>([]);
   const [styleId, setStyleId] = useState<ProductCardStyleId>(DEFAULT_PRODUCT_CARD_STYLE_ID);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,17 +38,27 @@ const GeminiProductCardModal: React.FC<Props> = ({
   const [applying, setApplying] = useState(false);
   const [started, setStarted] = useState(false);
 
-  const run = async (nextStyle?: ProductCardStyleId) => {
-    const useStyle = nextStyle || styleId;
+  useEffect(() => {
+    void fetchProductCardProviders().then((list) => {
+      setProviders(list);
+      const preferred =
+        list.find((p) => p.id === 'openai' && p.available) ||
+        list.find((p) => p.available) ||
+        list[0];
+      if (preferred?.id) setProvider(preferred.id);
+    });
+  }, []);
+
+  const run = async () => {
     setStarted(true);
     setLoading(true);
     setError(null);
     setPreview(null);
     try {
-      const result = await generateGeminiProductCard(item, categoryFields, useStyle);
+      const result = await generateProductCard(item, categoryFields, styleId, provider);
       setPreview(result.dataUrl);
       setMeta(
-        [result.styleName || useStyle, result.provider, result.model, result.note]
+        [result.styleName || styleId, result.provider, result.model, result.note]
           .filter(Boolean)
           .join(' · ')
       );
@@ -82,6 +99,14 @@ const GeminiProductCardModal: React.FC<Props> = ({
     a.click();
   };
 
+  const providerList: ProductCardProviderInfo[] =
+    providers.length > 0
+      ? providers
+      : [
+          { id: 'openai', name: 'OpenAI', available: true, blurb: 'GPT Image · ~$0.05' },
+          { id: 'gemini', name: 'Gemini', available: true, blurb: 'Flash Image · ~$0.04' },
+        ];
+
   return createPortal(
     <div
       className="fixed inset-0 z-[230] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4"
@@ -111,6 +136,34 @@ const GeminiProductCardModal: React.FC<Props> = ({
         </div>
 
         <div className="p-4 space-y-3 overflow-y-auto flex-1 min-h-0">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">
+              AI provider
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {providerList.map((p) => {
+                const active = p.id === provider;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    disabled={loading || !p.available}
+                    onClick={() => setProvider(p.id)}
+                    title={p.available ? p.blurb : `${p.name} — API key not configured`}
+                    className={`rounded-xl border px-3 py-2 text-left transition-colors ${
+                      active
+                        ? 'border-emerald-400 bg-emerald-50 ring-1 ring-emerald-200'
+                        : 'border-slate-200 bg-white hover:bg-slate-50'
+                    } disabled:opacity-40`}
+                  >
+                    <span className="block text-[11px] font-black text-slate-800">{p.name}</span>
+                    <span className="block text-[10px] text-slate-500 font-medium">{p.blurb}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">
               Design style
@@ -143,9 +196,11 @@ const GeminiProductCardModal: React.FC<Props> = ({
           {loading && (
             <div className="flex flex-col items-center justify-center py-12 gap-3 text-slate-500">
               <Loader2 size={28} className="animate-spin text-emerald-600" />
-              <p className="text-xs font-bold">Generating full card with Gemini…</p>
+              <p className="text-xs font-bold">
+                Generating with {provider === 'openai' ? 'OpenAI' : 'Gemini'}…
+              </p>
               <p className="text-[10px] text-slate-400 text-center max-w-xs">
-                AI builds the entire design from the selected style + your product data.
+                Full card from the selected style + your product data.
               </p>
             </div>
           )}
@@ -155,33 +210,19 @@ const GeminiProductCardModal: React.FC<Props> = ({
               <p className="text-xs font-bold text-amber-900 whitespace-pre-wrap">{error}</p>
               {/429|quota/i.test(error) ? (
                 <p className="text-[10px] text-amber-800/80">
-                  Key is fine — image models hit a separate quota. Enable billing for this Google Cloud
-                  project in{' '}
-                  <a
-                    href="https://aistudio.google.com/usage"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="underline font-bold"
-                  >
-                    AI Studio → Usage
-                  </a>{' '}
-                  (Set up billing / Paid tier), or wait for the daily reset. Gemini app Pro does not
-                  raise API image limits.
+                  Quota/rate limit for this provider. Try the other AI (OpenAI ↔ Gemini), enable
+                  billing, or wait and retry.
                 </p>
-              ) : /not set|missing|401|403|auth|invalid/i.test(error) ? (
+              ) : /OPENAI|openai/i.test(error) ? (
                 <p className="text-[10px] text-amber-800/80">
-                  Need an API key from{' '}
-                  <a
-                    href="https://aistudio.google.com/apikey"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="underline font-bold"
-                  >
-                    Google AI Studio
-                  </a>
-                  . Set <code className="bg-amber-100 px-1 rounded">GEMINI_API_KEY</code> on the
-                  server or <code className="bg-amber-100 px-1 rounded">VITE_GEMINI_API_KEY</code> in{' '}
-                  <code className="bg-amber-100 px-1 rounded">.env</code>.
+                  Set <code className="bg-amber-100 px-1 rounded">OPENAI_API_KEY</code> in{' '}
+                  <code className="bg-amber-100 px-1 rounded">.env</code> / Vercel, or switch to
+                  Gemini.
+                </p>
+              ) : /GEMINI|gemini|AI Studio/i.test(error) ? (
+                <p className="text-[10px] text-amber-800/80">
+                  Set <code className="bg-amber-100 px-1 rounded">GEMINI_API_KEY</code> or switch
+                  provider to OpenAI.
                 </p>
               ) : null}
             </div>
@@ -200,7 +241,7 @@ const GeminiProductCardModal: React.FC<Props> = ({
 
           {!started && !loading && !error && (
             <p className="text-[11px] text-slate-500 font-medium text-center py-6">
-              Pick a style, then generate. Gemini creates the full card (layout + typography).
+              Pick provider + style, then generate.
             </p>
           )}
         </div>
