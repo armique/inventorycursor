@@ -254,10 +254,17 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
       const buyTotal = roundMoney(allParts.reduce((s, i) => s + Number(i.buyPrice || 0), 0));
       const defectiveCount = allParts.filter((i) => i.isDefective).length;
 
+      const preferAufrustkit = /aufrustkit/i.test(`${seed.name} ${seed.vendor || ''}`);
+      const titleKind: 'pc' | 'bundle' | 'mixed' =
+        seedIsPc || kind === 'pc' ? 'pc' : kind === 'mixed' ? 'mixed' : 'bundle';
+      const autoTitle = buildContainerTitle(titleKind, allParts, { preferAufrustkit });
+
       let parent: InventoryItem = {
         ...seed,
         componentIds: allParts.map((p) => p.id),
         buyPrice: buyTotal,
+        name: autoTitle,
+        marketTitle: autoTitle,
       };
 
       if (seedIsPc || kind === 'pc') {
@@ -280,7 +287,11 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
           category: isMixed ? 'Mixed Bundle' : 'Bundle',
           isBundle: true,
           isPC: false,
-          vendor: isMixed ? 'Mixed Bundle' : seed.vendor === 'Mixed Bundle' ? 'Bundle' : seed.vendor || 'Bundle',
+          vendor: isMixed
+            ? 'Mixed Bundle'
+            : preferAufrustkit
+              ? 'Aufrustkit'
+              : 'PC Bundle',
           comment1: isMixed
             ? `Mixed Bundle (${allParts.length} items)${defectiveCount ? ` · ${defectiveCount} defekt` : ''}.`
             : `Bundle (${allParts.length} items).`,
@@ -327,7 +338,7 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
       isPC: false,
       isBundle: true,
       componentIds: parts.map((p) => p.id),
-      vendor: isMixed ? 'Mixed Bundle' : 'Bundle',
+      vendor: isMixed ? 'Mixed Bundle' : 'PC Bundle',
       marketTitle: title,
       imageUrl: seed.imageUrl || parts.find((p) => p.imageUrl)?.imageUrl,
       imageUrls: seed.imageUrls,
