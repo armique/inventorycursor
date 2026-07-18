@@ -239,6 +239,22 @@ export interface InventoryItem {
   hasIOShield?: boolean;
 }
 
+/** Saved AI-generated product card (gallery history — paid generations kept for reuse). */
+export interface GeneratedProductCardEntry {
+  id: string;
+  itemId: string;
+  itemName: string;
+  /** Durable Firebase Storage URL or local data URL fallback */
+  imageUrl: string;
+  createdAt: string;
+  provider?: string;
+  model?: string;
+  styleId?: string;
+  styleName?: string;
+  /** true when stored in Firebase Storage (not only local) */
+  cloudStored?: boolean;
+}
+
 /** Inquiry from a visitor about a store item (stored in Firebase). */
 export interface StoreInquiry {
   id: string;

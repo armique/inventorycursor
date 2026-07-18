@@ -46,6 +46,7 @@ import {
   type FirebaseStorage,
 } from "firebase/storage";
 import { yieldToMain } from "./backgroundPersistence";
+import type { GeneratedProductCardEntry } from "../types";
 
 // --- CONFIG ---
 
@@ -273,6 +274,28 @@ export async function uploadItemImageBlob(
   const name = (fileName || `photo-${Date.now()}.jpg`).replace(/[^a-zA-Z0-9.\-_]/g, "_");
   const file = new File([blob], name, { type: blob.type || "image/jpeg" });
   return uploadItemImage(file, itemId);
+}
+
+/**
+ * Upload a high-quality AI product card blob.
+ * Path: product-cards/{uid}/{itemId}/{timestamp}-{filename}
+ */
+export async function uploadProductCardBlob(
+  blob: Blob,
+  itemId: string,
+  fileName?: string
+): Promise<string> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.storage || !user) {
+    throw new Error("Not signed in or Firebase Storage not configured.");
+  }
+  const ext = (blob.type || "").includes("png") ? "png" : "jpg";
+  const name = (fileName || `card-${Date.now()}.${ext}`).replace(/[^a-zA-Z0-9.\-_]/g, "_");
+  const path = `product-cards/${user.uid}/${itemId || "shared"}/${Date.now()}-${name}`;
+  const ref = storageRef(ctx.storage, path);
+  const snapshot = await uploadBytes(ref, blob);
+  return getDownloadURL(snapshot.ref);
 }
 
 /**
@@ -1237,4 +1260,55 @@ export async function clearEbayOrdersCloud(): Promise<void> {
     }
   }
   if (count > 0) await batch.commit();
+}
+
+// --- AI product card gallery (users/{uid}/productCardGallery/{id}) ---
+
+const PRODUCT_CARD_GALLERY_COLLECTION = "productCardGallery";
+
+export async function writeProductCardGalleryEntry(
+  entry: GeneratedProductCardEntry
+): Promise<void> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) throw new Error("Not signed in");
+  // Never persist huge data URLs in Firestore — only durable URLs
+  if (!entry.imageUrl || entry.imageUrl.startsWith("data:")) {
+    throw new Error("Gallery cloud entry requires a Storage URL");
+  }
+  await setDoc(
+    doc(ctx.db, "users", user.uid, PRODUCT_CARD_GALLERY_COLLECTION, entry.id),
+    stripUndefined({ ...entry, updatedAt: new Date().toISOString() })
+  );
+}
+
+export async function fetchProductCardGalleryEntries(
+  itemId?: string
+): Promise<GeneratedProductCardEntry[]> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) return [];
+  try {
+    const colRef = collection(ctx.db, "users", user.uid, PRODUCT_CARD_GALLERY_COLLECTION);
+    const q = query(colRef, orderBy("createdAt", "desc"));
+    const snap = await getDocs(q);
+    const out: GeneratedProductCardEntry[] = [];
+    snap.forEach((d) => {
+      const data = d.data() as GeneratedProductCardEntry;
+      const entry = { ...data, id: data.id || d.id };
+      if (itemId && entry.itemId !== itemId) return;
+      out.push(entry);
+    });
+    return out;
+  } catch (err) {
+    console.error("fetchProductCardGalleryEntries failed:", err);
+    return [];
+  }
+}
+
+export async function deleteProductCardGalleryEntry(id: string): Promise<void> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user || !id) return;
+  await deleteDoc(doc(ctx.db, "users", user.uid, PRODUCT_CARD_GALLERY_COLLECTION, id));
 }

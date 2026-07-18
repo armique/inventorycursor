@@ -11,5 +11,9 @@ service firebase.storage {
     match /storefrontAssets/{userId}/{assetId}/{allPaths=**} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
+    // AI-generated product cards (high-quality gallery history)
+    match /product-cards/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
   }
 }
