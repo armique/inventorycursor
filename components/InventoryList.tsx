@@ -1307,6 +1307,9 @@ const InventoryList: React.FC<Props> = ({
     setListingGenId(item.id);
     try {
       const result = await generateMarketplaceListing(item, {
+        hasOVP: item.hasOVP,
+        hasIOShield: item.hasIOShield,
+        hasReceipt: item.hasReceipt,
         aiDescriptionNote: item.aiDescriptionNote,
       });
       const updated: InventoryItem = {
@@ -2426,6 +2429,9 @@ const InventoryList: React.FC<Props> = ({
         setBulkGenerateProgress(`${i + 1} / ${selected.length}`);
         try {
            const result = await generateMarketplaceListing(selected[i], {
+             hasOVP: selected[i].hasOVP,
+             hasIOShield: selected[i].hasIOShield,
+             hasReceipt: selected[i].hasReceipt,
              aiDescriptionNote: selected[i].aiDescriptionNote,
            });
            updates.push({

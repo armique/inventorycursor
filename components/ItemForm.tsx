@@ -2453,7 +2453,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                     </div>
                  </div>
 
-                 {/* Inventory flags + AI listing note (OVP/IO are NOT fed into AI generators) */}
+                 {/* AI listing hints: note + OVP/IO (Rechnung via accessory icons / receipt attach) */}
                  <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 space-y-2.5">
                     <h3 className="font-black text-xs uppercase tracking-widest text-slate-400">Flags & AI note</h3>
                     <div className="flex flex-col gap-2">
@@ -2474,7 +2474,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                           </span>
                        </label>
                        <p className="text-[9px] text-slate-400 font-medium">
-                         OVP / IO below are inventory flags only — they do not feed card or listing AI.
+                         OVP / IO / Rechnung feed the AI listing as buyer condition hints (not product-card images).
                        </p>
                        <label className="flex items-center gap-2 cursor-pointer">
                           <input
