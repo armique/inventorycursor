@@ -32,6 +32,8 @@ import { generateStoreDescription } from '../services/specsAI';
 import { suggestPriceFromSoldListings, SoldPriceSuggestion, getSpecsAIProvider } from '../services/specsAI';
 import { bulkImportSourceLabel, countBulkImportItems } from '../utils/bulkImportHistory';
 import ListingStudioModal from './ListingStudioModal';
+import MobileStockCard from './MobileStockCard';
+import { MobileSheetShell } from './MobileBottomSheets';
 import { generateMarketplaceListing } from '../services/marketplaceListingAI';
 
 const ebaySoldSearchUrl = (query: string) =>
@@ -667,8 +669,20 @@ const InventoryList: React.FC<Props> = ({
   const [specFilters, setSpecFilters] = useState<Record<string, (string | number)[]>>(() => loadState('spec_filters', {}));
   const [specRangeFilters, setSpecRangeFilters] = useState<Record<string, { min?: number; max?: number }>>(() => loadState('spec_range_filters', {}));
   const [showSpecFiltersPanel, setShowSpecFiltersPanel] = useState(false);
+  const [showMobileFiltersSheet, setShowMobileFiltersSheet] = useState(false);
   const filtersPanelRef = useRef<HTMLDivElement>(null);
   const filtersButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Desktop split/table chrome is unusable on phones — force single-pane card list.
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1023px)');
+    const sync = () => {
+      if (mq.matches) setSplitView(false);
+    };
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
 
   // Visibility toggle for orphan "In Composition" items (container children always nest under parent)
   const [showInComposition, setShowInComposition] = useState<boolean>(() => loadState<boolean>('show_in_composition', false));
@@ -4477,260 +4491,47 @@ const InventoryList: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Mobile-friendly sold list (phones) */}
-      {statusFilter === 'SOLD' && !splitView && (
-        <div className="lg:hidden flex-1 min-h-0 overflow-y-auto custom-scrollbar px-3 pb-4 space-y-3">
+      {/* Phase 1: phone card list — never the sticky Actions table */}
+      {!splitView && (
+        <div className="lg:hidden flex-1 min-h-0 overflow-y-auto custom-scrollbar px-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))] space-y-3">
           {sortedItems.length === 0 ? (
             <div className="py-16 text-center opacity-40">
               <Package size={40} className="mx-auto mb-3 text-slate-300" />
               <p className="font-bold text-slate-400 text-sm">No matches found</p>
-              <p className="text-xs text-slate-400 mt-1">Try clearing search or category filters</p>
+              <p className="text-xs text-slate-400 mt-1">Try clearing search or filters</p>
             </div>
           ) : (
-            sortedItems.map((item) => {
-              const userPhotoCount = getItemUserPhotoCount(item);
-              const hasUserPhotos = userPhotoCount > 0;
-              const parentContainer = resolveParentContainer(item, containersById, containerByChildId);
-              const parentKind = getContainerKind(parentContainer);
-              const showMembershipBadge = Boolean(parentKind && parentContainer && !item.isPC && !item.isBundle);
-              const tradeReceived = resolveTradeReceivedItems(item, itemsById);
-              const tradeSource = resolveTradeSourceItem(item, itemsById);
-              const mobileChildItems = isInventoryContainer(item) ? getChildren(item, items) : [];
-              const mobileSearchQuery = searchTerm.trim();
-              const mobileSearchActive = mobileSearchQuery.length >= 2;
-              const isSoldContainerRow =
-                isInventoryContainer(item) && isRealizedDisposal(item) && mobileChildItems.length > 0;
-              const isMobileBundleExpanded = isSoldContainerRow && !collapsedBundles.has(item.id);
-              const mobileSoldTotals = isSoldContainerRow
-                ? getSoldContainerDisplayTotals(item, items, businessSettings.taxMode)
-                : null;
-              const mobileDisplaySell = mobileSoldTotals?.sellPrice ?? item.sellPrice;
-              const mobileDisplayProfit = mobileSoldTotals?.profit ?? profitForDisplay(item);
-              const formatMobileChildDate = (child: InventoryItem) => {
-                const raw = child.sellDate || child.containerSoldDate || child.buyDate;
-                return raw ? new Date(raw).toLocaleDateString() : '—';
-              };
-              return (
-              <div
+            sortedItems.map((item) => (
+              <MobileStockCard
                 key={item.id}
-                className={`rounded-2xl border p-4 shadow-sm space-y-3 ${
-                  item.isPC
-                    ? 'bg-indigo-50/70 border-indigo-200 shadow-[inset_3px_0_0_0_#6366f1]'
-                    : isSoldContainerRow
-                      ? 'bg-violet-50/70 border-violet-200 shadow-[inset_3px_0_0_0_#8b5cf6]'
-                      : 'bg-white border-slate-100'
-                }`}
-              >
-                <div className="flex gap-3 items-start">
-                  <div
-                    className={`relative shrink-0 rounded-xl ${
-                      hasUserPhotos ? 'ring-2 ring-emerald-500/45' : 'ring-1 ring-dashed ring-amber-400/80'
-                    }`}
-                  >
-                    <ItemThumbnail item={item} className="w-12 h-12 rounded-xl object-cover border border-slate-100 shrink-0" size={48} />
-                    <span
-                      className={`absolute -bottom-0.5 -right-0.5 min-w-[14px] h-3.5 px-0.5 rounded-full flex items-center justify-center ${
-                        hasUserPhotos ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-700 border border-amber-300'
-                      }`}
-                    >
-                      {hasUserPhotos ? (userPhotoCount > 1 ? <span className="text-[8px] font-black">{userPhotoCount}</span> : <Camera size={8} />) : <ImageOff size={8} />}
-                    </span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start gap-1.5">
-                      {isSoldContainerRow && (
-                        <button
-                          type="button"
-                          onClick={() => toggleBundleExpanded(item.id)}
-                          className={`shrink-0 mt-0.5 p-0.5 rounded-md ${
-                            item.isPC
-                              ? 'text-indigo-600 hover:text-indigo-800 hover:bg-indigo-100'
-                              : 'text-violet-600 hover:text-violet-800 hover:bg-violet-100'
-                          }`}
-                          title={isMobileBundleExpanded ? 'Collapse contents' : 'Expand contents'}
-                          aria-expanded={isMobileBundleExpanded}
-                        >
-                          {isMobileBundleExpanded ? (
-                            <ChevronDown size={14} strokeWidth={2.75} />
-                          ) : (
-                            <ChevronRight size={14} strokeWidth={2.75} />
-                          )}
-                        </button>
-                      )}
-                      <div className="min-w-0">
-                      <button
-                        type="button"
-                        onClick={() => handleEditClick(item)}
-                        className={`font-black text-sm leading-snug text-left w-full ${
-                        item.isPC ? 'text-indigo-950' : isSoldContainerRow ? 'text-violet-950' : 'text-slate-900'
-                      }`}
-                      >
-                        {item.name}
-                      </button>
-                      {isSoldContainerRow && (
-                        <span className={`mt-1 inline-flex items-center gap-0.5 text-[9px] font-black uppercase px-1.5 py-0.5 rounded text-white ${
-                          item.isPC ? 'bg-indigo-600' : 'bg-violet-600'
-                        }`}>
-                          {item.isPC ? <Monitor size={9} /> : <Layers size={9} />}
-                          {item.isPC ? 'PC Build' : 'Bundle'} · {mobileChildItems.length}
-                        </span>
-                      )}
-                      </div>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-1.5">
-                      <span
-                        className={`inline-flex items-center gap-0.5 text-[9px] font-bold uppercase px-1 py-0.5 rounded ${
-                          hasUserPhotos ? 'text-emerald-700 bg-emerald-50' : 'text-amber-700 bg-amber-50'
-                        }`}
-                      >
-                        {hasUserPhotos ? <><Camera size={8} /> {userPhotoCount > 1 ? `${userPhotoCount} photos` : 'Photo'}</> : <><ImageOff size={8} /> No photo</>}
-                      </span>
-                      <span>Sold {item.sellDate || '—'} · €{mobileDisplaySell != null ? formatEUR(mobileDisplaySell) : '—'}</span>
-                      {mobileDisplayProfit != null && (
-                        <span className={(mobileDisplayProfit ?? 0) >= 0 ? ' text-emerald-600' : ' text-red-600'}>
-                          {' '}· {(mobileDisplayProfit ?? 0) >= 0 ? '+' : ''}€{formatEUR(mobileDisplayProfit!)}
-                        </span>
-                      )}
-                    </p>
-                    {(item.customer?.name || item.ebayUsername) && (
-                      <p className="text-[10px] text-slate-500 mt-1 truncate">
-                        {item.customer?.name}{item.ebayUsername ? ` · ${item.ebayUsername}` : ''}
-                      </p>
-                    )}
-                    {showMembershipBadge && parentKind && parentContainer && (
-                      <div className="mt-2">
-                        <ContainerMembershipBadge
-                          kind={parentKind}
-                          parentName={parentContainer.name}
-                          onOpen={() => openParentContainer(parentContainer)}
-                          onLocate={() => focusContainerInList(parentContainer)}
-                          onRemoveFromContainer={
-                            isRealizedDisposal(parentContainer)
-                              ? undefined
-                              : () => handleRemoveFromContainer(item, parentContainer)
-                          }
-                        />
-                      </div>
-                    )}
-                    {(tradeReceived.length > 0 || tradeSource) && (
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {tradeReceived.length > 0 && (
-                          <TradeLinkBadge
-                            variant="outgoing"
-                            receivedItems={tradeReceived}
-                            onLocateItem={focusTradeLinkedItem}
-                            onOpenItem={openTradeLinkedItem}
-                          />
-                        )}
-                        {tradeSource && (
-                          <TradeLinkBadge
-                            variant="incoming"
-                            sourceItem={tradeSource}
-                            onLocate={() => focusTradeLinkedItem(tradeSource)}
-                            onOpen={() => openTradeLinkedItem(tradeSource)}
-                          />
-                        )}
-                      </div>
-                    )}
-                    {isContainerMember(item) && !showMembershipBadge && (
-                      <div className="mt-2">
-                        <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-black uppercase">
-                          In composition
-                        </span>
-                      </div>
-                    )}
-                    {isMobileBundleExpanded && (
-                      <div className={`mt-2 pl-3 border-l-2 rounded-r-lg py-1 space-y-0.5 ${
-                        item.isPC
-                          ? 'border-indigo-300 bg-indigo-50/70'
-                          : 'border-violet-300 bg-violet-50/70'
-                      }`}>
-                        {mobileChildItems.map((child) => {
-                          const childHit =
-                            mobileSearchActive && matchesInventorySearch(child, mobileSearchQuery);
-                          return (
-                          <div
-                            key={child.id}
-                            className={`flex items-center gap-1 py-1 px-1.5 rounded-md ${
-                              childHit ? 'bg-amber-100/80 ring-1 ring-amber-200/80' : 'active:bg-purple-100/60'
-                            }`}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => handleEditClick(child)}
-                              className="flex-1 min-w-0 text-left"
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="text-[11px] font-medium text-slate-700 truncate">{child.name}</span>
-                                <span className="text-[10px] font-semibold text-slate-500 shrink-0 tabular-nums">
-                                  {formatMobileChildDate(child)}
-                                </span>
-                              </div>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRemoveFromContainer(child, item);
-                              }}
-                              className="shrink-0 p-1.5 rounded-md text-red-500 hover:bg-red-50"
-                              title="Remove from container"
-                              aria-label={`Remove ${child.name}`}
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <label className="text-[9px] font-black uppercase text-slate-400 w-full">Sold on</label>
-                  {isMissingExplicitSalePlatform(item) ? (
-                    <SalePlatformQuickPickButtons
-                      onPick={(platform) => handleQuickPlatformChange(item, platform)}
-                    />
-                  ) : (
-                    <select
-                      value={item.platformSold || ''}
-                      onChange={(e) => handleQuickPlatformChange(item, e.target.value as Platform | '')}
-                      className="text-xs font-bold rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 flex-1 min-w-[8rem]"
-                    >
-                      <option value="">—</option>
-                      {SALE_PLATFORM_OPTIONS.map((p) => (
-                        <option key={p.value} value={p.value}>{p.label}</option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => { addRecentItemId(item.id); setItemToEditBuyer(item); }}
-                    className="flex-1 py-2 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-800 text-[10px] font-black uppercase"
-                  >
-                    Buyer
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleEditClick(item)}
-                    className="flex-1 py-2 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { addRecentItemId(item.id); setInvoiceViewItem(item); }}
-                    className="flex-1 py-2 rounded-xl border border-slate-200 text-slate-700 text-[10px] font-black uppercase"
-                  >
-                    Invoice
-                  </button>
-                </div>
-              </div>
-              );
-            })
+                item={item}
+                profit={profitForDisplay(item)}
+                selected={selectedIdSet.has(item.id)}
+                onToggleSelect={() => toggleSelect(item.id)}
+                actions={{
+                  onEdit: (it) => handleEditClick(it),
+                  onSell: (it) => {
+                    addRecentItemId(it.id);
+                    setItemToSell(it);
+                  },
+                  onPhotos: (it) => openAddPhotosModal([it.id]),
+                  onListingStudio: (it) => {
+                    addRecentItemId(it.id);
+                    setListingAiItem(it);
+                  },
+                  onTrade: (it) => {
+                    addRecentItemId(it.id);
+                    setItemToTrade(it);
+                  },
+                  onGift: (it) => {
+                    addRecentItemId(it.id);
+                    setItemToGift(it);
+                  },
+                  onDuplicate: (it) => handleDuplicate(it),
+                  onDelete: (it) => setItemToDelete(it),
+                }}
+              />
+            ))
           )}
         </div>
       )}
@@ -4749,7 +4550,7 @@ const InventoryList: React.FC<Props> = ({
         [data-density="comfortable"] .text-sm { line-height: 1.25; }
       `}</style>
       {splitView ? (
-        <div className="flex flex-1 min-h-0 gap-2 flex-col lg:flex-row">
+        <div className="hidden lg:flex flex-1 min-h-0 gap-2 flex-col lg:flex-row">
           <InventoryListTablePane
             key="split-active"
             paneItems={sortedActiveItems}
@@ -4825,7 +4626,7 @@ const InventoryList: React.FC<Props> = ({
           rowHeightEstimate={rowHeightEstimate}
           bulkBarSpacer={selectedIds.length > 0}
           collapsedBundles={collapsedBundles}
-          className={statusFilter === 'SOLD' ? 'hidden lg:flex flex-1' : 'flex flex-1'}
+          className="hidden lg:flex flex-1"
         />
         </div>
       )}
