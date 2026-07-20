@@ -303,7 +303,10 @@ const ListingStudioModal: React.FC<Props> = ({
         setName(result.standardizedName);
         patch.name = result.standardizedName;
       }
-      if (result.vendor) patch.vendor = result.vendor;
+      if (result.vendor) {
+        setVendor(result.vendor);
+        patch.vendor = result.vendor;
+      }
       await persistPatch(patch);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Spec parse failed');
