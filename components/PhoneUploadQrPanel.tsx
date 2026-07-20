@@ -46,7 +46,15 @@ const PhoneUploadQrPanel: React.FC<Props> = ({ itemId, itemName, onUrls, onClose
           setSession(live);
         });
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Could not start iPhone upload');
+        const msg = e instanceof Error ? e.message : 'Could not start iPhone upload';
+        const permission =
+          /permission|insufficient|Missing or insufficient/i.test(msg) ||
+          (e as { code?: string })?.code === 'permission-denied';
+        setError(
+          permission
+            ? 'Missing or insufficient permissions. Redeploy Firestore rules, then hard-refresh the app (Ctrl+Shift+R). You must be signed in with Google on the PC.'
+            : msg
+        );
       }
     })();
     return () => {
