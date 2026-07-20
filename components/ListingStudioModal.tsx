@@ -247,12 +247,16 @@ const ListingStudioModal: React.FC<Props> = ({
     }
   }, [item.id]);
 
+  // Hydrate local studio fields only when switching items.
+  // Re-running this on every vendor/spec/photo patch was wiping unsaved Generate listing text
+  // before Apply — so Apply looked broken (saved empty / old description).
   useEffect(() => {
     setName(item.name || '');
     setSpecs({ ...(item.specs || {}) });
     setTitle(item.marketTitle?.trim() || item.name || '');
     setDescription(item.marketDescription || '');
     setAiDescriptionNote(item.aiDescriptionNote || '');
+    setOwnerHints(null);
     setVendor(item.vendor || '');
     setPlatformBought((item.platformBought as Platform) || 'kleinanzeigen.de');
     setBuyPaymentType(
@@ -266,24 +270,11 @@ const ListingStudioModal: React.FC<Props> = ({
     setBuyChatUrl(item.kleinanzeigenBuyChatUrl || '');
     setBuyChatImage(item.kleinanzeigenBuyChatImage || '');
     setSellerProfileUrl(item.kleinanzeigenSellerProfileUrl || '');
-  }, [
-    item.id,
-    item.name,
-    item.specs,
-    item.marketTitle,
-    item.marketDescription,
-    item.aiDescriptionNote,
-    item.vendor,
-    item.platformBought,
-    item.buyPaymentType,
-    item.platformSold,
-    item.paymentType,
-    item.customer?.name,
-    item.customer?.address,
-    item.kleinanzeigenBuyChatUrl,
-    item.kleinanzeigenBuyChatImage,
-    item.kleinanzeigenSellerProfileUrl,
-  ]);
+    setPreviewPhotoIndex(null);
+    setError(null);
+    // intentionally only item.id — local draft fields are source of truth while studio is open
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.id]);
 
   useEffect(() => {
     void fetchProductCardProviders().then((list) => {
@@ -392,18 +383,25 @@ const ListingStudioModal: React.FC<Props> = ({
   const handleApplyListing = async () => {
     setSaving(true);
     setError(null);
+    const marketTitle = title.trim().slice(0, 80);
+    const marketDescription = description.trim();
+    if (!marketDescription && !marketTitle) {
+      setError('Generate a listing (or paste title/description) before applying.');
+      setSaving(false);
+      return;
+    }
     try {
       await persistPatch({
         name: name.trim() || item.name,
         specs,
-        marketTitle: title.trim().slice(0, 80),
-        marketDescription: description.trim(),
+        ...(marketTitle ? { marketTitle } : {}),
+        ...(marketDescription ? { marketDescription, storeDescription: marketDescription } : {}),
         aiDescriptionNote: aiDescriptionNote.trim(),
-        storeDescription: description.trim() || item.storeDescription,
       });
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed');
+    } finally {
       setSaving(false);
     }
   };

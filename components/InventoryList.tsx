@@ -792,6 +792,8 @@ const InventoryList: React.FC<Props> = ({
   const [editValue, setEditValue] = useState<string | number>('');
   const [parsingSingleId, setParsingSingleId] = useState<string | null>(null);
   const [listingAiItem, setListingAiItem] = useState<InventoryItem | null>(null);
+  const listingAiItemRef = useRef<InventoryItem | null>(null);
+  listingAiItemRef.current = listingAiItem;
   const rowClickTimeoutRef = useRef<number | null>(null);
 
   // Sync search from URL ?q= (e.g. from global search)
@@ -4720,15 +4722,14 @@ const InventoryList: React.FC<Props> = ({
           categoryFields={categoryFields}
           onClose={() => setListingAiItem(null)}
           onUpdateItem={async (patch) => {
-            let merged: InventoryItem | null = null;
-            setListingAiItem((prev) => {
-              const base = prev || listingAiItem;
-              const fromItems = items.find((i) => i.id === base.id);
-              // Merge items → studio session → patch so rapid photo adds aren't wiped by stale items[].
-              merged = { ...(fromItems || base), ...base, ...patch };
-              return merged;
-            });
-            if (merged) await onUpdate([merged]);
+            // Compute merge outside setState — never rely on updater side-effects for the payload.
+            const base = listingAiItemRef.current;
+            if (!base) return;
+            const fromItems = items.find((i) => i.id === base.id);
+            const merged: InventoryItem = { ...(fromItems || base), ...base, ...patch };
+            listingAiItemRef.current = merged;
+            setListingAiItem(merged);
+            await Promise.resolve(onUpdate([merged]));
             if (patch.marketTitle !== undefined || patch.marketDescription !== undefined) {
               setToast('Listing saved to item');
               setTimeout(() => setToast(null), 1600);

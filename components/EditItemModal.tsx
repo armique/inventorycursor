@@ -43,6 +43,8 @@ const EditItemModal: React.FC<Props> = ({
 }) => {
   const [mode, setMode] = useState<'studio' | 'asset'>('studio');
   const [draft, setDraft] = useState<InventoryItem>(item);
+  const draftRef = React.useRef(draft);
+  draftRef.current = draft;
 
   const itemsById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
   const parentKind = getContainerKind(parentContainer);
@@ -67,7 +69,10 @@ const EditItemModal: React.FC<Props> = ({
         categoryFields={categoryFields}
         onClose={onClose}
         onUpdateItem={async (patch) => {
-          const next = { ...liveItem, ...draft, ...patch };
+          const current = draftRef.current;
+          const fromItems = items.find((i) => i.id === current.id);
+          const next = { ...(fromItems || current), ...current, ...patch };
+          draftRef.current = next;
           setDraft(next);
           onSave([next]);
         }}
