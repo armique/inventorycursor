@@ -3,7 +3,6 @@
  * Produces an optimized title + full listing body (+ owner-only price/keyword hints).
  */
 import type { InventoryItem } from '../types';
-import { ItemStatus } from '../types';
 import { requestAIJson } from './specsAI';
 import { isMotherboardItem } from '../utils/builderSlotMatch';
 
