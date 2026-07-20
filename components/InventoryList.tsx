@@ -373,8 +373,11 @@ function computeAutoColumnWidths(items: InventoryItem[]): Partial<Record<ColumnI
     if (item.profit != null && !item.isPC && !item.isBundle) {
       profitW = Math.max(profitW, measureTextWidth(ctx, `€${formatEUR(item.profit)}`, '900 13px Inter, sans-serif'));
     }
-    if (item.buyDate && !item.isPC && !item.isBundle) {
-      buyDateW = Math.max(buyDateW, measureTextWidth(ctx, item.buyDate, '700 12px Inter, sans-serif'));
+    if (item.buyDate) {
+      buyDateW = Math.max(
+        buyDateW,
+        measureTextWidth(ctx, toLocalCalendarDateKey(item.buyDate) || item.buyDate, '700 12px Inter, sans-serif')
+      );
     }
     if (item.sellDate) {
       sellDateW = Math.max(sellDateW, measureTextWidth(ctx, item.sellDate, '700 12px Inter, sans-serif'));
@@ -1800,6 +1803,10 @@ const InventoryList: React.FC<Props> = ({
        } else {
          newValue = parseLocaleMoney(editValue, 0);
        }
+    }
+
+    if (targetField === 'buyDate' || targetField === 'sellDate') {
+      newValue = toLocalCalendarDateKey(String(editValue)) || String(editValue).trim();
     }
 
     const updates: Partial<InventoryItem> = { [targetField]: newValue };
@@ -3292,19 +3299,16 @@ const InventoryList: React.FC<Props> = ({
         );
       }
       case 'buyDate':
-        if ((item.isPC || item.isBundle)) {
-          return (
-            <td key={id} className="text-left text-xs font-bold text-slate-300" style={style} title="Bundles/PCs don't have buy dates. Expand to see component buy dates.">
-              -
-            </td>
-          );
-        }
         return (
            <td 
              key={id} 
              className="text-left text-xs font-bold text-slate-500 cursor-pointer hover:bg-blue-50/30 transition-colors" 
              style={style}
-             title="Double click to edit"
+             title={
+               item.isPC || item.isBundle
+                 ? 'Bundle/PC acquired (composition) date — double click to edit'
+                 : 'Double click to edit'
+             }
              onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, id, toLocalCalendarDateKey((item as any)[id]) || ''); }}
            >
               {editingCell?.itemId === item.id && editingCell?.field === id ? (
