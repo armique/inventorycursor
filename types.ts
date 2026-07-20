@@ -159,7 +159,7 @@ export interface InventoryItem {
   sellerPaidShipping?: boolean;
   sellerShippingAmount?: number;
   
-  // Receipt / Proof of Purchase
+  // Receipt / Proof of Purchase (Rechnung flag also feeds AI listing as a buyer-facing hint)
   hasReceipt?: boolean;
   receiptUrl?: string; // Base64 data of image or PDF
   
@@ -235,9 +235,9 @@ export interface InventoryItem {
   /** Stock quantity for store (undefined = 1). When 0, show "Out of stock" on store. */
   quantity?: number;
 
-  /** Original packaging (OVP) – inventory flag only (not fed into AI card/listing generators). */
+  /** Original packaging (OVP) – feeds AI listing description as a buyer-facing condition hint. */
   hasOVP?: boolean;
-  /** IO Shield included (for motherboards/bundles) – inventory flag only (not fed into AI generators). */
+  /** IO Shield included (for motherboards/bundles) – feeds AI listing description as a buyer-facing hint. */
   hasIOShield?: boolean;
   /**
    * Short seller note for AI listing generation only (not shown publicly as-is).

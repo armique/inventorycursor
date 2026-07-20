@@ -58,6 +58,9 @@ const ListingAiPanelModal: React.FC<Props> = ({ item, onClose, onApply }) => {
     setError(null);
     try {
       const result = await generateMarketplaceListing(item, {
+        hasOVP: item.hasOVP,
+        hasIOShield: item.hasIOShield,
+        hasReceipt: item.hasReceipt,
         aiDescriptionNote: item.aiDescriptionNote,
       });
       applyResult(result);

@@ -62,6 +62,7 @@ import {
   saveGeneratedProductCard,
 } from '../services/productCardGallery';
 import { resolveUrlForInventoryMainPhoto } from '../utils/applyProductCardAsMainPhoto';
+import { getChildren } from '../services/financialAggregation';
 import PhoneUploadQrPanel from './PhoneUploadQrPanel';
 import LocalPhotoFolderPanel from './LocalPhotoFolderPanel';
 import KleinanzeigenBuyChatProofFields from './KleinanzeigenBuyChatProofFields';
@@ -111,7 +112,7 @@ function resolveCardBatchCount(photoCount: number): number {
 
 const ListingStudioModal: React.FC<Props> = ({
   item,
-  allItems: _allItems,
+  allItems,
   categoryFields = {},
   onClose,
   onUpdateItem,
@@ -202,6 +203,28 @@ const ListingStudioModal: React.FC<Props> = ({
     () => getProductCardSpecs(workingItem, cardFields, 8),
     [workingItem, cardFields]
   );
+
+  /** Buyer-facing listing hints only (not used by product-card image GEN). */
+  const listingAccessories = useMemo(() => {
+    let hasOVP = item.hasOVP === true;
+    let hasIOShield = item.hasIOShield === true;
+    let hasReceipt = item.hasReceipt === true;
+    const isContainer =
+      item.isPC ||
+      item.isBundle ||
+      item.category === 'PC' ||
+      item.category === 'Bundle' ||
+      item.category === 'Mixed Bundle' ||
+      (item.componentIds?.length ?? 0) > 0;
+    if (isContainer && allItems?.length) {
+      for (const child of getChildren(item, allItems)) {
+        if (child.hasOVP === true) hasOVP = true;
+        if (child.hasIOShield === true) hasIOShield = true;
+        if (child.hasReceipt === true) hasReceipt = true;
+      }
+    }
+    return { hasOVP, hasIOShield, hasReceipt };
+  }, [item, allItems]);
 
   const reloadGallery = useCallback(async () => {
     setGalleryLoading(true);
@@ -372,9 +395,18 @@ const ListingStudioModal: React.FC<Props> = ({
     setGenListing(true);
     setError(null);
     try {
-      const result = await generateMarketplaceListing(workingItem, {
-        aiDescriptionNote: aiDescriptionNote.trim() || undefined,
-      });
+      const result = await generateMarketplaceListing(
+        {
+          ...workingItem,
+          hasOVP: listingAccessories.hasOVP,
+          hasIOShield: listingAccessories.hasIOShield,
+          hasReceipt: listingAccessories.hasReceipt,
+        },
+        {
+          ...listingAccessories,
+          aiDescriptionNote: aiDescriptionNote.trim() || undefined,
+        }
+      );
       setTitle(result.ebayTitle);
       setDescription(result.listingText);
       setOwnerHints(formatOwnerListingHints(result));
@@ -714,7 +746,7 @@ const ListingStudioModal: React.FC<Props> = ({
                   onPatch={(patch) => void persistPatch(patch)}
                 />
                 <span className="text-[9px] text-slate-400 font-medium truncate">
-                  Inventory flags (not used by AI cards/listings)
+                  OVP / Rechnung / IO → AI listing hints
                 </span>
               </div>
             </section>

@@ -670,6 +670,12 @@ async function getRawTextFromAI(prompt: string, maxTokens: number = DEFAULT_TEXT
 }
 
 export interface StoreDescriptionHints {
+  /** Original packaging — buyer-facing listing hint. */
+  hasOVP?: boolean;
+  /** IO shield — buyer-facing listing hint. */
+  hasIOShield?: boolean;
+  /** Receipt / Rechnung — buyer-facing listing hint. */
+  hasReceipt?: boolean;
   /** Short seller note the AI must factor into the listing. */
   aiDescriptionNote?: string;
 }
@@ -695,6 +701,9 @@ export async function generateStoreDescription(
       status: ItemStatus.IN_STOCK,
       comment1: existingContext || '',
       comment2: '',
+      hasOVP: hints?.hasOVP,
+      hasIOShield: hints?.hasIOShield,
+      hasReceipt: hints?.hasReceipt,
       aiDescriptionNote: hints?.aiDescriptionNote,
     },
     hints

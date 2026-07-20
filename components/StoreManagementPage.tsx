@@ -834,6 +834,9 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
     setGeneratingDescription(true);
     try {
       const text = await generateStoreDescription(name.trim() || item.name, storeDescription || undefined, {
+        hasOVP,
+        hasIOShield,
+        hasReceipt: item.hasReceipt,
         aiDescriptionNote: aiDescriptionNote.trim() || undefined,
       });
       setStoreDescription(text);
@@ -918,7 +921,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
             <label className="block text-xs font-medium text-slate-500 mb-1">{texts.storeDescription}</label>
             <div className="flex flex-wrap gap-4 mb-2 p-3 bg-slate-50 rounded-lg border border-slate-100">
               <p className="w-full text-[10px] text-slate-400 font-medium -mb-1">
-                Inventory flags only — not used by AI description generate
+                OVP / IO feed AI listing description (buyer condition hints)
               </p>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={hasOVP} onChange={(e) => setHasOVP(e.target.checked)} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />

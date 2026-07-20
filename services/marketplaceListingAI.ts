@@ -7,6 +7,12 @@ import { ItemStatus } from '../types';
 import { requestAIJson } from './specsAI';
 
 export interface MarketplaceListingHints {
+  /** Original packaging present — buyer-facing Lieferumfang/Zustand hint. */
+  hasOVP?: boolean;
+  /** IO shield included (motherboards/bundles) — buyer-facing hint. */
+  hasIOShield?: boolean;
+  /** Purchase receipt / Rechnung available — buyer-facing hint. */
+  hasReceipt?: boolean;
   /** Short seller note the AI must factor into the listing (rephrase professionally). */
   aiDescriptionNote?: string;
 }
@@ -105,13 +111,20 @@ PC BUNDLE / FERTIG-PC
 Для готовых ПК: CPU, Kerne, Threads, Takte, RAM, SSD, Windows (если есть), царапины на корпусе если есть.
 
 =========================
-LIEFERUMFANG
+LIEFERUMFANG / OVP / IO / RECHNUNG
 =========================
 
-Перечисляй комплект поставки отдельно (кабели, крепёж и т.п. — только если это следует из типа товара / specs / seller note).
-НЕ используй и НЕ выдумывай статус Originalverpackung (OVP) или IO-Blende.
-Флаги OVP / Rechnung / IO в инвентаре — только учёт склада, они НЕ входят в данные для генерации.
-Упоминай Originalverpackung или IO-Blende ТОЛЬКО если это явно сказано в SELLER NOTE FOR AI или в Notes товара.
+Перечисляй комплект поставки отдельно.
+Флаги OVP / IO-Blende / Rechnung в ITEM DATA — это обязательные подсказки для покупателя (как notices о состоянии/комплекте). Включи их в 📦 Lieferumfang и/или ℹ️ Hinweis / ✅ Zustand — где уместно:
+
+Если OVP = YES: Originalverpackung vorhanden
+Если OVP = NO: Ohne Originalverpackung
+Если IO-Blende = YES: IO-Blende inklusive
+Если IO-Blende = NO (для Mainboard/Bundle где актуально): Ohne IO-Blende
+Если Rechnung = YES: Rechnung / Kaufbeleg vorhanden
+Если Rechnung = NO: Ohne Rechnung
+
+Не игнорируй эти флаги. Не противоречь им.
 
 =========================
 SELLER NOTE (AI HINT)
@@ -128,13 +141,18 @@ ZUSTAND
 =========================
 
 Используй ✅ Zustand (НЕ "Zustandsbeschreibung").
-Пример: Gebraucht / Voll funktionsfähig / Normale Gebrauchsspuren
+Пример: Gebraucht / Voll funktionsfähig
+
+Для КАЖДОГО исправного (не defective) товара ОБЯЗАТЕЛЬНО явно укажи, что нормальные следы использования возможны, например:
+„Normale Gebrauchsspuren sind möglich.“
+Это стандартный notice для покупателя — не пропускай.
 
 Исправные товары: НИКОГДА не писать Privatverkauf / Keine Garantie / Keine Rücknahme.
 
 Дефектные: всегда
 Verkauf ausdrücklich als defekt.
 Keine Garantie und keine Rücknahme.
+(для defective можно не писать про normale Gebrauchsspuren — важнее дефект)
 
 =========================
 СТИЛЬ
@@ -143,6 +161,18 @@ Keine Garantie und keine Rücknahme.
 Как профессиональное объявление крупного немецкого магазина. Без воды. Максимально продающее.
 Одинаковый стиль оформления.`;
 
+/** Resolve buyer-facing accessory hints for listing AI (not for product-card image gen). */
+export function resolveListingAccessoryHints(
+  item: Pick<InventoryItem, 'hasOVP' | 'hasIOShield' | 'hasReceipt'>,
+  hints?: MarketplaceListingHints
+): { hasOVP: boolean; hasIOShield: boolean; hasReceipt: boolean } {
+  return {
+    hasOVP: hints?.hasOVP === true || item.hasOVP === true,
+    hasIOShield: hints?.hasIOShield === true || item.hasIOShield === true,
+    hasReceipt: hints?.hasReceipt === true || item.hasReceipt === true,
+  };
+}
+
 function buildItemContext(item: InventoryItem, hints?: MarketplaceListingHints): string {
   const specs = item.specs
     ? Object.entries(item.specs)
@@ -150,6 +180,7 @@ function buildItemContext(item: InventoryItem, hints?: MarketplaceListingHints):
         .map(([k, v]) => `${k}: ${v}`)
         .join('\n')
     : '';
+  const accessories = resolveListingAccessoryHints(item, hints);
   const aiNote = (hints?.aiDescriptionNote ?? item.aiDescriptionNote ?? '').trim();
   const lines = [
     `Product name: ${item.name}`,
@@ -160,6 +191,22 @@ function buildItemContext(item: InventoryItem, hints?: MarketplaceListingHints):
       ? 'Type: PC Bundle / Komponenten-Bundle'
       : '',
     item.isDefective ? 'Condition flag: DEFECTIVE' : 'Condition flag: WORKING',
+    `OVP: ${
+      accessories.hasOVP ? 'YES — Originalverpackung vorhanden' : 'NO — Ohne Originalverpackung'
+    }`,
+    `IO-Blende: ${
+      accessories.hasIOShield
+        ? 'YES — IO-Blende inklusive'
+        : 'NO — Ohne IO-Blende (if motherboard/bundle relevant)'
+    }`,
+    `Rechnung: ${
+      accessories.hasReceipt
+        ? 'YES — Rechnung / Kaufbeleg vorhanden'
+        : 'NO — Ohne Rechnung'
+    }`,
+    item.isDefective
+      ? ''
+      : 'CONDITION NOTICE (required in ✅ Zustand): Normale Gebrauchsspuren sind möglich.',
     aiNote
       ? `SELLER NOTE FOR AI (must incorporate — rephrase professionally in German; do not ignore):\n${aiNote}`
       : '',
