@@ -64,12 +64,12 @@ export async function createPhotoUploadSession(params: {
   const token = createPhotoUploadToken();
   const now = Date.now();
   const expiresAtMs = now + (params.ttlMs ?? PHOTO_UPLOAD_TTL_MS);
-  const maxPhotos = Math.min(PHOTO_UPLOAD_MAX, Math.max(1, params.maxPhotos ?? PHOTO_UPLOAD_MAX));
+  const maxPhotos = Math.min(PHOTO_UPLOAD_MAX, Math.max(1, Math.floor(params.maxPhotos ?? PHOTO_UPLOAD_MAX)));
 
   const session: PhotoUploadSession = {
     token,
     ownerUid: user.uid,
-    itemId: params.itemId,
+    itemId: String(params.itemId),
     itemName: (params.itemName || 'Item').slice(0, 120),
     status: 'active',
     maxPhotos,
@@ -80,7 +80,15 @@ export async function createPhotoUploadSession(params: {
 
   const ctx = requireCtx();
   await setDoc(doc(ctx.db, PHOTO_UPLOAD_SESSIONS, token), {
-    ...session,
+    token: session.token,
+    ownerUid: session.ownerUid,
+    itemId: session.itemId,
+    itemName: session.itemName,
+    status: session.status,
+    maxPhotos: session.maxPhotos,
+    uploadedUrls: session.uploadedUrls,
+    createdAtMs: session.createdAtMs,
+    expiresAtMs: session.expiresAtMs,
     createdAt: serverTimestamp(),
     expiresAt: new Date(expiresAtMs),
   });

@@ -35,7 +35,8 @@ service cloud.firestore {
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.status == 'active'
         && request.resource.data.itemId is string
-        && request.resource.data.maxPhotos is int
+        && request.resource.data.maxPhotos is number
+        && request.resource.data.maxPhotos >= 1
         && request.resource.data.maxPhotos <= 12;
 
       allow read: if request.auth != null;
