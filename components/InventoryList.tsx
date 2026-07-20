@@ -1210,6 +1210,7 @@ const InventoryList: React.FC<Props> = ({
       const result = await generateMarketplaceListing(item, {
         hasOVP: item.hasOVP,
         hasIOShield: item.hasIOShield,
+        aiDescriptionNote: item.aiDescriptionNote,
       });
       const updated: InventoryItem = {
         ...item,
@@ -2326,6 +2327,7 @@ const InventoryList: React.FC<Props> = ({
            const result = await generateMarketplaceListing(selected[i], {
              hasOVP: selected[i].hasOVP,
              hasIOShield: selected[i].hasIOShield,
+             aiDescriptionNote: selected[i].aiDescriptionNote,
            });
            updates.push({
              ...selected[i],

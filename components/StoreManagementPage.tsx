@@ -824,6 +824,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
   const [quantity, setQuantity] = useState<number>(item.quantity ?? 1);
   const [hasOVP, setHasOVP] = useState(!!item.hasOVP);
   const [hasIOShield, setHasIOShield] = useState(!!item.hasIOShield);
+  const [aiDescriptionNote, setAiDescriptionNote] = useState(item.aiDescriptionNote || '');
   const inventoryImageUrls = Array.from(
     new Set([item.imageUrl?.trim(), ...(item.imageUrls || []), ...(item.storeGalleryUrls || [])].filter(Boolean) as string[])
   );
@@ -832,7 +833,11 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
   const handleGenerateDescription = async () => {
     setGeneratingDescription(true);
     try {
-      const text = await generateStoreDescription(name.trim() || item.name, storeDescription || undefined, { hasOVP, hasIOShield });
+      const text = await generateStoreDescription(name.trim() || item.name, storeDescription || undefined, {
+        hasOVP,
+        hasIOShield,
+        aiDescriptionNote: aiDescriptionNote.trim() || undefined,
+      });
       setStoreDescription(text);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'AI description failed.';
@@ -870,6 +875,7 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
       quantity: quantity < 0 ? undefined : quantity,
       hasOVP: hasOVP,
       hasIOShield: hasIOShield,
+      aiDescriptionNote: aiDescriptionNote.trim() || undefined,
     });
   };
 
@@ -923,6 +929,17 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
                   <span className="text-sm font-medium text-slate-700">IO Shield</span>
                 </label>
               )}
+              <label className="block w-full space-y-1">
+                <span className="text-xs font-medium text-slate-500">AI note (short)</span>
+                <input
+                  type="text"
+                  value={aiDescriptionNote}
+                  onChange={(e) => setAiDescriptionNote(e.target.value)}
+                  maxLength={200}
+                  placeholder="e.g. wifi antennas aren't original"
+                  className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-violet-300"
+                />
+              </label>
             </div>
             <button
               type="button"

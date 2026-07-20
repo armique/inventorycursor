@@ -118,6 +118,7 @@ const ListingStudioModal: React.FC<Props> = ({
   const [title, setTitle] = useState(item.marketTitle?.trim() || item.name || '');
   const [description, setDescription] = useState(item.marketDescription || '');
   const [ownerHints, setOwnerHints] = useState<string | null>(null);
+  const [aiDescriptionNote, setAiDescriptionNote] = useState(item.aiDescriptionNote || '');
 
   const [vendor, setVendor] = useState(item.vendor || '');
   const [platformBought, setPlatformBought] = useState<Platform>(
@@ -156,8 +157,15 @@ const ListingStudioModal: React.FC<Props> = ({
   const [photoSource, setPhotoSource] = useState<'none' | 'iphone' | 'folder'>('none');
 
   const workingItem = useMemo(
-    () => ({ ...item, name, specs, marketTitle: title, marketDescription: description }),
-    [item, name, specs, title, description]
+    () => ({
+      ...item,
+      name,
+      specs,
+      marketTitle: title,
+      marketDescription: description,
+      aiDescriptionNote: aiDescriptionNote.trim() || undefined,
+    }),
+    [item, name, specs, title, description, aiDescriptionNote]
   );
 
   const photos = useMemo(() => getItemUserPhotoUrls(workingItem), [workingItem]);
@@ -222,6 +230,7 @@ const ListingStudioModal: React.FC<Props> = ({
     setSpecs({ ...(item.specs || {}) });
     setTitle(item.marketTitle?.trim() || item.name || '');
     setDescription(item.marketDescription || '');
+    setAiDescriptionNote(item.aiDescriptionNote || '');
     setVendor(item.vendor || '');
     setPlatformBought((item.platformBought as Platform) || 'kleinanzeigen.de');
     setBuyPaymentType(
@@ -241,6 +250,7 @@ const ListingStudioModal: React.FC<Props> = ({
     item.specs,
     item.marketTitle,
     item.marketDescription,
+    item.aiDescriptionNote,
     item.vendor,
     item.platformBought,
     item.buyPaymentType,
@@ -337,7 +347,10 @@ const ListingStudioModal: React.FC<Props> = ({
     try {
       const result = await generateMarketplaceListing(
         { ...workingItem, hasOVP: accessories.hasOVP, hasIOShield: accessories.hasIOShield },
-        accessories
+        {
+          ...accessories,
+          aiDescriptionNote: aiDescriptionNote.trim() || undefined,
+        }
       );
       setTitle(result.ebayTitle);
       setDescription(result.listingText);
@@ -358,6 +371,7 @@ const ListingStudioModal: React.FC<Props> = ({
         specs,
         marketTitle: title.trim().slice(0, 80),
         marketDescription: description.trim(),
+        aiDescriptionNote: aiDescriptionNote.trim(),
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed');
@@ -1157,6 +1171,24 @@ const ListingStudioModal: React.FC<Props> = ({
                   {copied === 'desc' ? <Check size={11} /> : <Copy size={11} />}
                 </button>
               </div>
+              <label className="block px-2.5 pt-2 pb-1 border-b border-slate-100 shrink-0">
+                <span className="text-[9px] font-black uppercase tracking-widest text-violet-600/80">
+                  AI note
+                </span>
+                <input
+                  type="text"
+                  className="mt-0.5 w-full px-2 py-1 rounded-md bg-violet-50/60 border border-violet-100 text-[11px] font-semibold text-slate-800 outline-none focus:border-violet-400 focus:bg-white"
+                  placeholder="e.g. wifi antennas aren't original"
+                  value={aiDescriptionNote}
+                  maxLength={200}
+                  onChange={(e) => setAiDescriptionNote(e.target.value)}
+                  onBlur={() =>
+                    void persistPatch({
+                      aiDescriptionNote: aiDescriptionNote.trim(),
+                    })
+                  }
+                />
+              </label>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}

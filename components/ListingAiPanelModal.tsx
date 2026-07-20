@@ -80,6 +80,7 @@ const ListingAiPanelModal: React.FC<Props> = ({ item, allItems, onClose, onApply
       const result = await generateMarketplaceListing(item, {
         hasOVP: accessories.hasOVP,
         hasIOShield: accessories.hasIOShield,
+        aiDescriptionNote: item.aiDescriptionNote,
       });
       applyResult(result);
     } catch (e) {

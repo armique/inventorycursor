@@ -239,6 +239,11 @@ export interface InventoryItem {
   hasOVP?: boolean;
   /** IO Shield included (for motherboards/bundles). Used by AI description generator. */
   hasIOShield?: boolean;
+  /**
+   * Short seller note for AI listing generation only (not shown publicly as-is).
+   * Example: "wifi antennas aren't original" → AI mentions third-party antennas.
+   */
+  aiDescriptionNote?: string;
 
   /**
    * Shared id for items created in one Bulk Entry confirm (including AI text parse).
