@@ -7,8 +7,6 @@ import { ItemStatus } from '../types';
 import { requestAIJson } from './specsAI';
 
 export interface MarketplaceListingHints {
-  hasOVP?: boolean;
-  hasIOShield?: boolean;
   /** Short seller note the AI must factor into the listing (rephrase professionally). */
   aiDescriptionNote?: string;
 }
@@ -107,14 +105,13 @@ PC BUNDLE / FERTIG-PC
 Для готовых ПК: CPU, Kerne, Threads, Takte, RAM, SSD, Windows (если есть), царапины на корпусе если есть.
 
 =========================
-LIEFERUMFANG / OVP / IO
+LIEFERUMFANG
 =========================
 
-Перечисляй комплект отдельно.
-Если нет OVP: Ohne Originalverpackung
-Если есть OVP: Originalverpackung vorhanden
-Если есть IO-Blende: IO-Blende
-Если нет IO-Blende (для Mainboard/Bundle где актуально): Ohne IO-Blende
+Перечисляй комплект поставки отдельно (кабели, крепёж и т.п. — только если это следует из типа товара / specs / seller note).
+НЕ используй и НЕ выдумывай статус Originalverpackung (OVP) или IO-Blende.
+Флаги OVP / Rechnung / IO в инвентаре — только учёт склада, они НЕ входят в данные для генерации.
+Упоминай Originalverpackung или IO-Blende ТОЛЬКО если это явно сказано в SELLER NOTE FOR AI или в Notes товара.
 
 =========================
 SELLER NOTE (AI HINT)
@@ -153,8 +150,6 @@ function buildItemContext(item: InventoryItem, hints?: MarketplaceListingHints):
         .map(([k, v]) => `${k}: ${v}`)
         .join('\n')
     : '';
-  const hasOVP = hints?.hasOVP === true || item.hasOVP === true;
-  const hasIO = hints?.hasIOShield === true || item.hasIOShield === true;
   const aiNote = (hints?.aiDescriptionNote ?? item.aiDescriptionNote ?? '').trim();
   const lines = [
     `Product name: ${item.name}`,
@@ -165,8 +160,6 @@ function buildItemContext(item: InventoryItem, hints?: MarketplaceListingHints):
       ? 'Type: PC Bundle / Komponenten-Bundle'
       : '',
     item.isDefective ? 'Condition flag: DEFECTIVE' : 'Condition flag: WORKING',
-    `OVP: ${hasOVP ? 'YES — Originalverpackung vorhanden' : 'NO — Ohne Originalverpackung'}`,
-    `IO-Blende: ${hasIO ? 'YES — include IO-Blende' : 'NO — Ohne IO-Blende (if motherboard/bundle relevant)'}`,
     aiNote
       ? `SELLER NOTE FOR AI (must incorporate — rephrase professionally in German; do not ignore):\n${aiNote}`
       : '',

@@ -670,10 +670,6 @@ async function getRawTextFromAI(prompt: string, maxTokens: number = DEFAULT_TEXT
 }
 
 export interface StoreDescriptionHints {
-  /** Item comes with original packaging (OVP). */
-  hasOVP?: boolean;
-  /** Motherboard/bundle includes IO Shield. */
-  hasIOShield?: boolean;
   /** Short seller note the AI must factor into the listing. */
   aiDescriptionNote?: string;
 }
@@ -699,8 +695,6 @@ export async function generateStoreDescription(
       status: ItemStatus.IN_STOCK,
       comment1: existingContext || '',
       comment2: '',
-      hasOVP: hints?.hasOVP,
-      hasIOShield: hints?.hasIOShield,
       aiDescriptionNote: hints?.aiDescriptionNote,
     },
     hints
