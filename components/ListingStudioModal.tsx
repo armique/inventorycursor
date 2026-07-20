@@ -25,7 +25,12 @@ import { generateItemSpecs } from '../services/specsAI';
 import { mergeAiSpecsIntoEssential, resolveEssentialSpecKeys } from '../services/essentialSpecFields';
 import { pickSpecsAiNameVendorUpdates } from '../utils/applySpecsAiResult';
 import { getProductCardSpecs } from '../utils/productCardContent';
-import { resolveProductCardBatchCount } from '../services/productCardBackgroundQueue';
+import {
+  enqueueProductCardBackgroundJob,
+  isItemProductCardJobActive,
+  resolveProductCardBatchCount,
+  subscribeProductCardBackgroundJobs,
+} from '../services/productCardBackgroundQueue';
 import {
   defaultBuyPaymentForPlatform,
   normalizeBuyPaymentForPlatform,
@@ -42,7 +47,6 @@ import ReorderablePhotoThumbs from './ReorderablePhotoThumbs';
 import ItemAccessoryToggles from './ItemAccessoryToggles';
 import {
   fetchProductCardProviders,
-  generateProductCard,
   type ProductCardProviderId,
   type ProductCardProviderInfo,
 } from '../services/productCardGemini';
@@ -57,7 +61,6 @@ import {
   listProductCardGallery,
   removeProductCardFromGallery,
   resolveProductCardImageUrl,
-  saveGeneratedProductCard,
 } from '../services/productCardGallery';
 import { resolveUrlForInventoryMainPhoto } from '../utils/applyProductCardAsMainPhoto';
 import { getChildren } from '../services/financialAggregation';
@@ -501,43 +504,63 @@ const ListingStudioModal: React.FC<Props> = ({
     }
   };
 
-  const handleGenerateCards = async (count: 1 | 2 | 3) => {
-    const n = Math.max(1, Math.min(3, Math.floor(count)));
-    setGenCards(true);
+  const handleGenerateCards = (count: 1 | 2 | 3) => {
+    const n = Math.max(1, Math.min(3, Math.floor(count))) as 1 | 2 | 3;
+    if (isItemProductCardJobActive(item.id)) {
+      setError('Cards already generating for this item. Keep this browser tab open until done.');
+      return;
+    }
     setError(null);
-    const sourcePhotos = photos.slice(0, 3);
-    const errors: string[] = [];
-    try {
-      for (let i = 0; i < n; i++) {
-        setCardProgress(`GEN${n} · ${i + 1}/${n}…`);
-        const jobPhotos = sourcePhotos.length ? [sourcePhotos[i % sourcePhotos.length]] : [];
-        try {
-          const result = await generateProductCard(workingItem, cardFields, {
-            styleId,
-            provider,
-            photos: jobPhotos,
-            editFromPhoto: jobPhotos.length > 0,
-          });
-          await saveGeneratedProductCard({
-            itemId: item.id,
-            itemName: name || item.name,
-            dataUrl: result.dataUrl,
-            provider: result.provider,
-            model: result.model,
-            styleId: (result.styleId as ProductCardStyleId) || styleId,
-            styleName: result.styleName,
-          });
-        } catch (e) {
-          errors.push(`Card ${i + 1}: ${e instanceof Error ? e.message : 'failed'}`);
-        }
+    setGenCards(true);
+    setCardProgress(`GEN${n} · queued…`);
+    enqueueProductCardBackgroundJob(
+      { ...workingItem, name: name.trim() || item.name },
+      {
+        categoryFields: cardFields,
+        styleId,
+        provider,
+        photos: photos.slice(0, 3),
+        count: n,
       }
-      await reloadGallery();
-      if (errors.length) setError(errors.join('\n'));
-    } finally {
+    );
+  };
+
+  // Studio GEN runs in a module-level queue so closing/switching Asset details
+  // doesn't kill the loop. iOS may still pause the tab if you leave Safari.
+  useEffect(() => {
+    let sawActive = false;
+    return subscribeProductCardBackgroundJobs((list) => {
+      const active = list.find(
+        (j) => j.itemId === item.id && (j.status === 'queued' || j.status === 'running')
+      );
+      if (active) {
+        sawActive = true;
+        setGenCards(true);
+        setCardProgress(active.progress || 'Generating…');
+        return;
+      }
+      if (!sawActive) {
+        // Don't clear UI on first subscribe when nothing is running.
+        if (isItemProductCardJobActive(item.id)) return;
+        return;
+      }
+      const finished = list.find(
+        (j) => j.itemId === item.id && (j.status === 'done' || j.status === 'error')
+      );
       setGenCards(false);
       setCardProgress(null);
-    }
-  };
+      if (finished) {
+        void reloadGallery();
+        if (finished.error) {
+          setError(
+            finished.cardsSaved > 0
+              ? `Saved ${finished.cardsSaved}/${finished.plannedCards}. ${finished.error}`
+              : finished.error
+          );
+        }
+      }
+    });
+  }, [item.id, reloadGallery]);
 
   const handleRemoveCard = async (id: string) => {
     if (!window.confirm('Remove this generated card from the gallery?')) return;
@@ -1188,7 +1211,7 @@ const ListingStudioModal: React.FC<Props> = ({
                       key={n}
                       type="button"
                       disabled={genCards}
-                      onClick={() => void handleGenerateCards(n)}
+                      onClick={() => handleGenerateCards(n)}
                       className={`inline-flex items-center justify-center min-w-[2.6rem] px-2 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wide disabled:opacity-50 ${
                         n === plannedCards
                           ? 'bg-slate-900 text-white'
@@ -1202,6 +1225,12 @@ const ListingStudioModal: React.FC<Props> = ({
                 )}
               </div>
             </div>
+            {genCards && (
+              <p className="text-[10px] font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+                Keep this Safari/Chrome tab open until cards finish. Switching apps on iPhone can pause
+                generation — return to the tab and it will retry.
+              </p>
+            )}
 
             <div className="rounded-xl border border-slate-200 bg-slate-50/80 overflow-hidden">
               <button
