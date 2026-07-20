@@ -80,10 +80,11 @@ const EditItemModal: React.FC<Props> = ({
           <button
             type="button"
             onClick={() => setMode('asset')}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-[10px] font-black uppercase text-slate-600 hover:bg-slate-50"
+            className="inline-flex items-center gap-1 px-2 py-1.5 rounded-xl border border-slate-200 bg-white text-[10px] font-black uppercase text-slate-600 hover:bg-slate-50"
+            title="Asset details"
           >
             <SlidersHorizontal size={12} />
-            Asset details
+            <span className="hidden xs:inline sm:inline">Asset</span>
           </button>
         }
       />
