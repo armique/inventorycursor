@@ -93,6 +93,40 @@ function loadImageFromBlob(blob: Blob): Promise<HTMLImageElement> {
   });
 }
 
+async function loadImageFromBlobRobust(blob: Blob, fileNameHint = ''): Promise<HTMLImageElement> {
+  // 1) createImageBitmap — often better with large phone JPEGs / EXIF orientation
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(blob);
+      const canvas = document.createElement('canvas');
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas not supported');
+      ctx.drawImage(bitmap, 0, 0);
+      bitmap.close?.();
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+      return loadImageFromDataUrl(dataUrl);
+    } catch {
+      /* fall through */
+    }
+  }
+
+  // 2) Classic Image() decode (works for HEIC on iOS Safari)
+  try {
+    return await loadImageFromBlob(blob);
+  } catch (first) {
+    const hint = `${fileNameHint} ${blob.type}`.toLowerCase();
+    const looksHeic = /heic|heif/.test(hint);
+    if (looksHeic) {
+      throw new Error(
+        'This HEIC/HEIF photo could not be decoded here. On iPhone use Safari for the QR upload, or export as JPEG. On PC convert HEIC to JPEG first.'
+      );
+    }
+    throw first instanceof Error ? first : new Error('Failed to decode image');
+  }
+}
+
 function loadImageFromDataUrl(dataUrl: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -261,10 +295,10 @@ export async function compressImageFileToBlob(
   file: File,
   options?: CompressImageOptions
 ): Promise<Blob> {
-  if (!file.type.startsWith('image/')) {
+  if (!file.type.startsWith('image/') && !/\.(jpe?g|png|webp|gif|heic|heif|bmp|tif{1,2})$/i.test(file.name)) {
     throw new Error('Not an image file');
   }
-  const img = await loadImageFromFile(file);
+  const img = await loadImageFromBlobRobust(file, file.name);
   return compressLoadedImageToBlob(img, options);
 }
 
@@ -272,8 +306,23 @@ export async function compressBlobToJpeg(
   blob: Blob,
   options?: CompressImageOptions
 ): Promise<Blob> {
-  const img = await loadImageFromBlob(blob);
+  const img = await loadImageFromBlobRobust(blob);
   return compressLoadedImageToBlob(img, options);
+}
+
+/**
+ * Single entry for iPhone QR uploads, PC file picks, and folder imports.
+ * Always applies inventory Storage compression (WebP/JPEG + size cap).
+ */
+export async function compressInventoryUploadFile(
+  file: File,
+  options: CompressImageOptions = INVENTORY_PHOTO_STORAGE_OPTIONS
+): Promise<{ blob: Blob; fileName: string }> {
+  const blob = await compressImageFileToBlob(file, options);
+  const ext = fileExtensionForImageBlob(blob);
+  const base = (file.name || 'photo').replace(/\.[^.]+$/, '') || 'photo';
+  const safeBase = base.replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 80) || 'photo';
+  return { blob, fileName: `${safeBase}.${ext}` };
 }
 
 export async function compressDataUrl(

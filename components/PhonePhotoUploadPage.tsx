@@ -8,7 +8,7 @@ import {
   type PhotoUploadSession,
 } from '../services/photoUploadSession';
 import { getCurrentUser } from '../services/firebaseService';
-import { compressImageFileToBlob, fileExtensionForImageBlob, INVENTORY_PHOTO_STORAGE_OPTIONS } from '../utils/imageCompress';
+import { compressInventoryUploadFile, describeInventoryPhotoCompression } from '../utils/imageCompress';
 
 const PhonePhotoUploadPage: React.FC = () => {
   const { token = '' } = useParams<{ token: string }>();
@@ -108,16 +108,12 @@ const PhonePhotoUploadPage: React.FC = () => {
     let ok = 0;
     try {
       for (let i = 0; i < files.length; i++) {
-        setProgress(`Uploading ${i + 1} / ${files.length}…`);
+        setProgress(`Compressing ${i + 1} / ${files.length}…`);
         const file = files[i];
-        let blob: Blob = file;
-        try {
-          blob = await compressImageFileToBlob(file, INVENTORY_PHOTO_STORAGE_OPTIONS);
-        } catch {
-          blob = file;
-        }
-        const ext = fileExtensionForImageBlob(blob);
-        await uploadPhonePhotoToSession(token, blob, file.name.replace(/\.\w+$/, `.${ext}`));
+        // Always compress — never upload full-size iPhone originals.
+        const { blob, fileName } = await compressInventoryUploadFile(file);
+        setProgress(`Uploading ${i + 1} / ${files.length}…`);
+        await uploadPhonePhotoToSession(token, blob, fileName);
         ok += 1;
         setDoneCount((c) => c + 1);
       }
@@ -177,6 +173,9 @@ const PhonePhotoUploadPage: React.FC = () => {
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3">
               <p className="text-xs text-slate-300 font-semibold">
                 {session.uploadedUrls.length + doneCount}/{session.maxPhotos} photos on this link
+              </p>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                {describeInventoryPhotoCompression()}
               </p>
               <label className="flex flex-col items-center justify-center gap-2 min-h-[160px] rounded-2xl border-2 border-dashed border-sky-400/50 bg-sky-500/10 px-4 py-8 cursor-pointer active:scale-[0.99] transition">
                 {uploading ? (

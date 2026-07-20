@@ -9,7 +9,7 @@ import {
   compressBlobToJpeg,
   compressBlobToLocalDataUrl,
   compressDataUrlToBlob,
-  compressImageFileToBlob,
+  compressInventoryUploadFile,
   dataUrlFromBlob,
   fileExtensionForImageBlob,
   INVENTORY_PHOTO_LOCAL_OPTIONS,
@@ -42,6 +42,18 @@ export function isFirebaseStorageInventoryUrl(url: string): boolean {
   if (!s.startsWith('https://')) return false;
   if (!s.includes('firebasestorage.googleapis.com') && !s.includes('firebasestorage.app')) return false;
   return s.includes('/items%2F') || s.includes('/items/');
+}
+
+/** iPhone QR bridge uploads — re-compress when attaching to the item (may still be large). */
+export function isPhoneBridgeStorageUrl(url: string): boolean {
+  const s = url.trim();
+  if (!s.startsWith('https://')) return false;
+  if (!s.includes('firebasestorage.googleapis.com') && !s.includes('firebasestorage.app')) return false;
+  return (
+    s.includes('/phone-bridge/') ||
+    s.includes('/phone-bridge%2F') ||
+    s.includes('%2Fphone-bridge%2F')
+  );
 }
 
 /** Durable Firebase Storage URLs for inventory items OR AI product-card gallery. */
@@ -79,6 +91,8 @@ export function urlNeedsPhotoArchive(url: string | undefined | null): boolean {
   if (!s) return false;
   if (s === CLOUD_OMITTED_PLACEHOLDER) return false;
   if (isCategoryPlaceholderImage(s)) return false;
+  // Phone QR bridge uploads should be recompressed into the normal item folder.
+  if (isPhoneBridgeStorageUrl(s)) return true;
   if (isFirebaseStorageInventoryUrl(s) || isDurableFirebaseStorageUrl(s)) return false;
   return isRemoteHttpUrl(s) || isDataImageUrl(s);
 }
@@ -446,8 +460,13 @@ async function persistOneInventoryImageUrl(
   const trimmed = url.trim();
   if (!trimmed) return trimmed;
 
-  // Already durable in Storage (inventory photos or AI card gallery) — do not re-fetch/re-encode
-  if (isDurableFirebaseStorageUrl(trimmed) || isFirebaseStorageInventoryUrl(trimmed)) {
+  // Already durable in Storage — keep as-is, except iPhone QR bridge uploads
+  // which we re-compress into the normal item folder for quota.
+  if (
+    !options?.force &&
+    !isPhoneBridgeStorageUrl(trimmed) &&
+    (isDurableFirebaseStorageUrl(trimmed) || isFirebaseStorageInventoryUrl(trimmed))
+  ) {
     return trimmed;
   }
 
@@ -475,7 +494,7 @@ async function persistOneInventoryImageUrl(
         const blob = await compressDataUrlToBlob(trimmed, INVENTORY_PHOTO_LOCAL_OPTIONS);
         result = await dataUrlFromBlob(blob);
       }
-    } else if (isRemoteHttpUrl(trimmed)) {
+    } else if (isRemoteHttpUrl(trimmed) || isPhoneBridgeStorageUrl(trimmed)) {
       const remote = await fetchRemoteImageBlob(trimmed);
       result = await blobToPersistedUrl(remote, itemId);
     }
@@ -527,12 +546,11 @@ export async function persistInventoryImageFiles(
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
     try {
-      const blob = await compressImageFileToBlob(file, INVENTORY_PHOTO_STORAGE_OPTIONS);
+      const { blob } = await compressInventoryUploadFile(file, INVENTORY_PHOTO_STORAGE_OPTIONS);
       if (canUploadToCloud()) {
         const hash = await hashBlob(blob);
-        out.push(
-          await uploadItemImageBlob(blob, itemId, `${hash}.${fileExtensionForImageBlob(blob)}`)
-        );
+        const ext = fileExtensionForImageBlob(blob);
+        out.push(await uploadItemImageBlob(blob, itemId, `${hash}.${ext}`));
       } else {
         out.push(await dataUrlFromBlob(blob));
       }
