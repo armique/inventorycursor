@@ -3,9 +3,11 @@ import { createPortal } from 'react-dom';
 import {
   Check,
   Copy,
+  FolderOpen,
   Image as ImageIcon,
   Loader2,
   Plus,
+  Smartphone,
   Sparkles,
   Trash2,
   Upload,
@@ -30,6 +32,7 @@ import {
   filesToDataUrls,
   getItemUserPhotoUrls,
   normalizeImageList,
+  prepareInventoryImagesForStorage,
 } from '../utils/imageImport';
 import {
   fetchProductCardProviders,
@@ -51,6 +54,8 @@ import {
 } from '../services/productCardGallery';
 import { resolveUrlForInventoryMainPhoto } from '../utils/applyProductCardAsMainPhoto';
 import { getChildren } from '../services/financialAggregation';
+import PhoneUploadQrPanel from './PhoneUploadQrPanel';
+import LocalPhotoFolderPanel from './LocalPhotoFolderPanel';
 
 const BUY_PLATFORMS: Platform[] = [
   'kleinanzeigen.de',
@@ -144,6 +149,7 @@ const ListingStudioModal: React.FC<Props> = ({
   const [provider, setProvider] = useState<ProductCardProviderId>('openai');
   const [providers, setProviders] = useState<ProductCardProviderInfo[]>([]);
   const [styleId, setStyleId] = useState<ProductCardStyleId>(DEFAULT_PRODUCT_CARD_STYLE_ID);
+  const [photoSource, setPhotoSource] = useState<'none' | 'iphone' | 'folder'>('none');
 
   const workingItem = useMemo(
     () => ({ ...item, name, specs, marketTitle: title, marketDescription: description }),
@@ -426,6 +432,37 @@ const ListingStudioModal: React.FC<Props> = ({
     }
   };
 
+  const mergeRemotePhotoUrls = useCallback(
+    async (urls: string[]) => {
+      if (!urls.length) return;
+      try {
+        const prepared = await prepareInventoryImagesForStorage(urls, { itemId: item.id });
+        const merged = normalizeImageList([
+          ...(item.imageUrls || []),
+          item.imageUrl,
+          ...prepared,
+        ]);
+        await persistPatch({ imageUrl: merged[0], imageUrls: merged });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not attach iPhone photos');
+      }
+    },
+    // persistPatch closes over onUpdateItem; item urls needed for merge base
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [item.id, item.imageUrl, item.imageUrls, onUpdateItem]
+  );
+
+  const handleFolderFiles = async (files: File[]) => {
+    if (!files.length) return;
+    try {
+      const urls = await filesToDataUrls(files.slice(0, 6), { itemId: item.id });
+      const merged = normalizeImageList([...(item.imageUrls || []), item.imageUrl, ...urls]);
+      await persistPatch({ imageUrl: merged[0], imageUrls: merged });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Folder photo import failed');
+    }
+  };
+
   const updateSpecValue = (key: string, value: string) => {
     setSpecs((prev) => ({ ...prev, [key]: value }));
   };
@@ -550,17 +587,41 @@ const ListingStudioModal: React.FC<Props> = ({
             </section>
 
             <section>
-              <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center justify-between mb-1 gap-2">
                 <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                   Photos for card
                 </h4>
-                <button
-                  type="button"
-                  onClick={() => fileRef.current?.click()}
-                  className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-slate-600 hover:text-rose-700"
-                >
-                  <Upload size={11} /> Add
-                </button>
+                <div className="flex items-center gap-1 flex-wrap justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setPhotoSource((s) => (s === 'iphone' ? 'none' : 'iphone'))}
+                    className={`inline-flex items-center gap-1 text-[9px] font-black uppercase ${
+                      photoSource === 'iphone' ? 'text-sky-700' : 'text-slate-600 hover:text-sky-700'
+                    }`}
+                    title="Scan QR on iPhone — pick from full Photos library"
+                  >
+                    <Smartphone size={11} /> iPhone
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPhotoSource((s) => (s === 'folder' ? 'none' : 'folder'))}
+                    className={`inline-flex items-center gap-1 text-[9px] font-black uppercase ${
+                      photoSource === 'folder'
+                        ? 'text-violet-700'
+                        : 'text-slate-600 hover:text-violet-700'
+                    }`}
+                    title="Browse synced iCloud / Photos folder on this PC"
+                  >
+                    <FolderOpen size={11} /> Folder
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-slate-600 hover:text-rose-700"
+                  >
+                    <Upload size={11} /> Add
+                  </button>
+                </div>
                 <input
                   ref={fileRef}
                   type="file"
@@ -570,6 +631,27 @@ const ListingStudioModal: React.FC<Props> = ({
                   onChange={(e) => void handleAddPhotos(e.target.files)}
                 />
               </div>
+
+              {photoSource === 'iphone' && (
+                <div className="mb-2">
+                  <PhoneUploadQrPanel
+                    itemId={item.id}
+                    itemName={name || item.name}
+                    onUrls={mergeRemotePhotoUrls}
+                    onClose={() => setPhotoSource('none')}
+                  />
+                </div>
+              )}
+              {photoSource === 'folder' && (
+                <div className="mb-2">
+                  <LocalPhotoFolderPanel
+                    maxSelect={6}
+                    onPickFiles={handleFolderFiles}
+                    onClose={() => setPhotoSource('none')}
+                  />
+                </div>
+              )}
+
               {photos[0] ? (
                 <img
                   src={photos[0]}

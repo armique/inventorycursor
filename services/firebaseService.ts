@@ -125,6 +125,11 @@ function init(): { db: Firestore; auth: Auth; storage: FirebaseStorage } | null 
   }
 }
 
+/** Shared Firebase handles for feature modules (photo upload sessions, etc.). */
+export function getFirebaseContext(): { db: Firestore; auth: Auth; storage: FirebaseStorage } | null {
+  return init();
+}
+
 // --- AUTH ---
 
 export function getAuthErrorMessage(err: unknown): string {

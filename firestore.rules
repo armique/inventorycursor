@@ -24,5 +24,39 @@ service cloud.firestore {
     match /productPhotoCache/{docId} {
       allow read, write: if request.auth != null;
     }
+
+    /**
+     * Short-lived phone→PC photo upload sessions.
+     * Owner creates/revokes; anyone signed in (incl. anonymous on phone) can read an active
+     * session and append to uploadedUrls only.
+     */
+    match /photoUploadSessions/{token} {
+      allow create: if request.auth != null
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.status == 'active'
+        && request.resource.data.itemId is string
+        && request.resource.data.maxPhotos is int
+        && request.resource.data.maxPhotos <= 12;
+
+      allow read: if request.auth != null;
+
+      allow update: if request.auth != null && (
+        // Owner can revoke / edit metadata
+        (resource.data.ownerUid == request.auth.uid)
+        ||
+        // Phone (anonymous or signed-in) may only append uploadedUrls while active
+        (
+          resource.data.status == 'active'
+          && request.resource.data.ownerUid == resource.data.ownerUid
+          && request.resource.data.itemId == resource.data.itemId
+          && request.resource.data.token == resource.data.token
+          && request.resource.data.uploadedUrls is list
+          && request.resource.data.uploadedUrls.size() <= resource.data.maxPhotos
+          && request.resource.data.uploadedUrls.size() >= resource.data.uploadedUrls.size()
+        )
+      );
+
+      allow delete: if request.auth != null && resource.data.ownerUid == request.auth.uid;
+    }
   }
 }

@@ -25,6 +25,7 @@ const ThreeDPrintPage = lazy(() => import('./components/ThreeDPrintPage'));
 const ProductCardGalleryPage = lazy(() => import('./components/ProductCardGalleryPage'));
 const BulkImportHistoryPage = lazy(() => import('./components/BulkImportHistoryPage'));
 const EditItemRoute = lazy(() => import('./components/EditItemRoute'));
+const PhonePhotoUploadPage = lazy(() => import('./components/PhonePhotoUploadPage'));
 import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense, DashboardPreferences, ActionHistoryEntry, TaxMode, ItemUpdateOptions, BulkImportRecord } from './types';
 import {
   loadDashboardPreferencesFromLocalStorage,
@@ -1347,6 +1348,7 @@ const App: React.FC = () => {
       <Routes>
         <Route path="/" element={<StorefrontPage />} />
         <Route path="/item/:id" element={<StorefrontPage />} />
+        <Route path="/upload/:token" element={<PhonePhotoUploadPage />} />
         <Route path="/impressum" element={<LegalPage />} />
         <Route path="/datenschutz" element={<LegalPage />} />
         <Route path="/agb" element={<LegalPage />} />
