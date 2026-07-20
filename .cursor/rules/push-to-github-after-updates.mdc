@@ -1,29 +1,35 @@
 ---
-description: After every project update, commit, push, and merge to main so production gets the change
+description: After every project update, commit and push directly to main (no PR)
 alwaysApply: true
 ---
 
-# Push and Merge to Main After Every Update
+# Push Directly to Main After Every Update
 
-Whenever you **change project files** (code, config, hooks, rules), you must **commit, push, and merge into `main`** before considering the task done—unless the user explicitly says not to push or not to merge.
+Whenever you **change project files** (code, config, hooks, rules), you must **commit and push to `main`** before considering the task done—unless the user explicitly says not to push.
 
-Leaving work only on a draft PR / feature branch is **not** done. Production (and the user’s live site) tracks **`main`**.
+Production (and the user’s live site) tracks **`main`**. Do **not** open pull requests or work on long-lived feature branches for routine updates.
 
 ## Agent workflow (Cursor / Cloud)
 
-1. **Branch**: work on `cursor/<descriptive-name>-516b` (or the run’s assigned branch).
+1. **Stay on `main`**: `git checkout main` and `git pull origin main` if needed.
 2. **Stage**: `git add` for changed files (often `git add .` from the repo root).
 3. **Commit**: `git commit -m "Short, accurate summary of the change."`
-4. **Push**: `git push -u origin HEAD` (or the current feature branch).
-5. **PR**: create or update the PR with `ManagePullRequest` (`base_branch`: `main`).
-6. **Merge**: mark the PR ready if draft, then merge into `main`:
-   - `gh pr ready <number>` (if draft)
-   - `gh pr merge <number> --merge --delete-branch=false`
-7. **Verify**: `git fetch origin main` and confirm your commit is on `origin/main`.
+4. **Push**: `git push origin main` (or `git push origin HEAD` while on `main`).
+5. **Verify**: `git status` shows clean and in sync with `origin/main`.
 
-Use **`;`** between commands in PowerShell, not `&&`.
+Use **`;`** between commands in PowerShell, not `&&`:
 
-If **push or merge fails** (auth, conflicts, checks), fix or report clearly with the exact commands for the user—do not stop at “PR opened”.
+`git add .; git commit -m "message"; git push origin main`
+
+If **push fails** (auth, network, no remote), commit locally, report the error clearly, and give the exact commands for the user to run after fixing auth.
+
+## Do not use PRs for normal work
+
+- Do **not** create feature branches like `cursor/...` for ordinary tasks.
+- Do **not** open GitHub PRs with `ManagePullRequest` / `gh pr create` unless the user explicitly asks for a PR.
+- Do **not** leave finished work only on a side branch.
+
+Exception: only use a branch + PR when the user clearly requests a pull request review flow.
 
 ## Automatic push on every commit (local Git hook)
 
@@ -39,10 +45,9 @@ After that, any **`git commit`** (from terminal, GUI, or Cursor) triggers an aut
 
 - Requires Git for Windows (or another Git that runs `sh` hooks).
 - If the hook push fails, fix credentials/network and run `git push` manually.
-- The hook does **not** merge to `main`; the agent must still open/merge the PR (or merge locally and push `main` when that is the agreed flow).
+- Prefer committing while checked out on **`main`** so the hook updates production.
 
 ## Notes
 
-- Do **not** skip push/merge because the session was “small”—if files changed, ship to `main`.
-- Prefer merging the feature PR over committing directly on `main`, then always merge that PR.
+- Do **not** skip push because the session was “small”—if files changed, push to `main`.
 - If the repo has no `origin` or branch isn’t set up, commit locally and tell the user how to add the remote and push.
