@@ -36,15 +36,31 @@ const LISTING_PROMPT_RULES = `Ты являешься профессиональ
 
 listingText и ebayTitle — только немецкий язык.
 
-Никогда не используй длинные пустые промежутки между строками в listingText.
-Текст должен быть компактным, чтобы после копирования в eBay не появлялись большие пробелы.
+Между РАЗДЕЛАМИ — ровно ОДНА пустая строка (после названия товара и перед каждым emoji-блоком).
+Внутри одного раздела — без пустых строк.
+Никогда 0 пустых строк между разделами (текст не должен слипаться).
+Никогда 2 и более пустых строк подряд (чтобы в eBay не было огромных дыр).
 Используй максимум один эмодзи на раздел.
 Не используй горизонтальные линии -----.
 Описание должно одинаково хорошо выглядеть на ПК и в приложении eBay.
 
 =========================
-СТРУКТУРА listingText
+СТРУКТУРА listingText (пример интервалов)
 =========================
+
+Название товара
+
+💻 Краткое описание (1–2 предложения)
+
+🔧 Technische Daten: …
+
+📦 Lieferumfang: …
+
+✅ Zustand: …
+
+🔥 Weitere Komponenten verfügbar …
+
+(Если нужен ℹ️ Hinweis — тоже с одной пустой строкой до и после, как у других разделов.)
 
 Первая строка объявления — название товара (короткая строка с составом, без emoji).
 
@@ -166,6 +182,39 @@ function clampTitle(title: string): string {
   return t.slice(0, 80).trim();
 }
 
+/** Section headers in our German listing template (emoji-led blocks). */
+const LISTING_SECTION_START =
+  /^(💻|🎮|💾|🖥️|🔧|📦|ℹ️|✅|🔥|⚡|📌|💡|🛠️|🔋|🌡️)\s/u;
+
+/**
+ * Normalize listing body spacing for eBay / Kleinanzeigen:
+ * exactly one blank line before each emoji section, never glued blocks, never huge gaps.
+ */
+export function formatListingTextSpacing(raw: string): string {
+  const lines = String(raw || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map((l) => l.replace(/[ \t]+$/g, ''));
+
+  const out: string[] = [];
+
+  for (const line of lines) {
+    if (!line.trim()) continue; // drop AI blanks; we insert our own between sections
+
+    const trimmed = line.trimEnd();
+    const isSection = LISTING_SECTION_START.test(trimmed.trimStart());
+
+    if (isSection && out.length > 0) {
+      if (out[out.length - 1] !== '') out.push('');
+    }
+
+    out.push(trimmed);
+  }
+
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 /**
  * Generate marketplace title + German listing (+ owner price/keyword hints).
  */
@@ -188,7 +237,7 @@ Return ONE valid JSON object (no markdown fences) with keys:
   "ebayTitle": "German eBay title, use almost 80 characters, SEO-optimized",
   "newPriceGermany": "approx new price in Germany as short German text e.g. ca. 329 €",
   "recommendedUsedPrice": "recommended used price range for Germany e.g. 199–229 €",
-  "listingText": "full German listing body following STRUCTURE above (plain text + newlines, compact)",
+  "listingText": "full German listing body following STRUCTURE above — plain text, exactly one blank line between sections",
   "searchKeywords": ["15-25 popular German/eBay search terms as short strings"]
 }`;
 
@@ -200,7 +249,7 @@ Return ONE valid JSON object (no markdown fences) with keys:
     searchKeywords?: string[];
   }>(prompt, { maxTokens: 2200 });
 
-  const listingText = String(data.listingText || '').replace(/\n{3,}/g, '\n\n').trim();
+  const listingText = formatListingTextSpacing(String(data.listingText || ''));
   if (!listingText) {
     throw new Error('AI returned an empty listing. Try again.');
   }
