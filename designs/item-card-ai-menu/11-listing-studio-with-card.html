@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>11 — Listing Studio + Card Generator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0b1220;
+      --ink: #f8fafc;
+      --muted: #94a3b8;
+      --card: #111827;
+      --panel: #1e293b;
+      --line: #334155;
+      --accent: #65a30d;
+      --accent-2: #4d7c0f;
+      --cyan: #22d3ee;
+      --soft: rgba(255,255,255,.05);
+      --shadow: 0 24px 60px rgba(0,0,0,.5);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100dvh;
+      font-family: "Sora", "IBM Plex Sans", sans-serif;
+      background:
+        radial-gradient(900px 500px at 10% -10%, rgba(101,163,13,.18), transparent 55%),
+        radial-gradient(700px 400px at 100% 0%, rgba(34,211,238,.1), transparent 50%),
+        var(--bg);
+      color: var(--ink);
+    }
+    .page { max-width: 1180px; margin: 0 auto; padding: 1.25rem 1.1rem 3rem; }
+    .badge {
+      display: inline-flex; gap: .4rem; align-items: center;
+      font-size: .65rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+      padding: .35rem .65rem; border-radius: .55rem;
+      background: color-mix(in srgb, var(--accent) 18%, transparent);
+      color: #bef264; border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+    }
+    h1 { margin: .7rem 0 .35rem; font-size: clamp(1.3rem, 3vw, 1.8rem); letter-spacing: -.03em; }
+    .lead { margin: 0 0 1.1rem; color: var(--muted); font-size: .9rem; line-height: 1.5; max-width: 48rem; }
+    .nav { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: 1.1rem; }
+    .nav a {
+      text-decoration: none; font-size: .68rem; font-weight: 700; letter-spacing: .03em;
+      padding: .4rem .65rem; border-radius: .5rem; border: 1px solid var(--line);
+      color: var(--muted); background: var(--card);
+    }
+    .nav a.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+    /* Modal shell */
+    .backdrop {
+      border: 1px solid var(--line);
+      border-radius: 1.35rem;
+      background: rgba(15, 23, 42, .55);
+      padding: 1rem;
+      box-shadow: var(--shadow);
+    }
+    .modal {
+      background: var(--card);
+      border: 1px solid #1f2937;
+      border-radius: 1.2rem;
+      overflow: hidden;
+      max-width: 1080px;
+      margin: 0 auto;
+    }
+    .modal-h {
+      display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+      padding: .9rem 1.05rem; border-bottom: 1px solid #1f2937;
+      background: linear-gradient(180deg, #152033, #111827);
+    }
+    .modal-h .title { font-weight: 800; font-size: .95rem; }
+    .modal-h .sub { font-size: .72rem; color: var(--muted); margin-top: .2rem; }
+    .tabs {
+      display: flex; gap: .35rem; padding: .65rem 1rem 0;
+      border-bottom: 1px solid #1f2937; background: #0f172a;
+    }
+    .tab {
+      appearance: none; border: 0; background: transparent; color: var(--muted);
+      font: inherit; font-size: .72rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
+      padding: .7rem .9rem; border-bottom: 2px solid transparent; cursor: pointer;
+    }
+    .tab.on { color: #bef264; border-bottom-color: var(--accent); }
+    .btn {
+      appearance: none; border: 1px solid var(--line); background: #0f172a; color: var(--ink);
+      font: inherit; font-size: .68rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+      padding: .5rem .75rem; border-radius: .55rem; cursor: pointer;
+    }
+    .btn:hover { border-color: var(--accent); color: #bef264; }
+    .btn.solid { background: var(--accent); border-color: var(--accent); color: #052e16; }
+    .btn.solid:hover { background: var(--accent-2); color: #fff; }
+    .btn.ghost { background: transparent; }
+    .btn.cyan { background: color-mix(in srgb, var(--cyan) 16%, transparent); border-color: color-mix(in srgb, var(--cyan) 45%, transparent); color: #a5f3fc; }
+
+    .body {
+      display: grid;
+      grid-template-columns: minmax(260px, 300px) 1fr;
+      min-height: 620px;
+    }
+    @media (max-width: 860px) {
+      .body { grid-template-columns: 1fr; }
+    }
+
+    /* Left media column */
+    .media {
+      padding: 1rem;
+      border-right: 1px solid #1f2937;
+      background: #0b1322;
+      display: flex;
+      flex-direction: column;
+      gap: .75rem;
+    }
+    .hero-photo {
+      width: 100%;
+      aspect-ratio: 1;
+      border-radius: 1rem;
+      object-fit: cover;
+      border: 1px solid #1f2937;
+      background: #1e293b;
+    }
+    .item-name { font-size: .82rem; font-weight: 700; letter-spacing: -.01em; margin: 0; }
+    .item-meta { font-size: .7rem; color: var(--muted); margin: 0; }
+
+    .photo-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: .4rem;
+    }
+    .photo-actions .btn { width: 100%; text-align: center; padding: .55rem .4rem; }
+    .photo-actions .wide { grid-column: 1 / -1; }
+
+    .thumbs {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: .4rem;
+    }
+    .thumbs .shot {
+      position: relative;
+      aspect-ratio: 1;
+      border-radius: .65rem;
+      overflow: hidden;
+      border: 1px solid #1f2937;
+      background: #1e293b;
+    }
+    .thumbs img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .thumbs .shot.on { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .thumbs .add {
+      display: grid; place-items: center;
+      color: var(--muted); font-size: 1.2rem; font-weight: 800;
+      border: 1px dashed #475569; cursor: pointer;
+    }
+    .thumbs .add:hover { color: #bef264; border-color: var(--accent); }
+    .hint {
+      font-size: .68rem; color: var(--muted); line-height: 1.4; margin: 0;
+    }
+    .hint b { color: #cbd5e1; }
+
+    /* Right workspace */
+    .workspace { display: flex; flex-direction: column; min-width: 0; }
+    .pane { display: none; padding: 1rem; gap: .85rem; flex: 1; overflow: auto; }
+    .pane.on { display: grid; }
+
+    .owner {
+      padding: .75rem .85rem; border-radius: .85rem;
+      border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--line));
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
+      font-size: .74rem; color: var(--muted);
+    }
+    .owner strong {
+      display: block; margin-bottom: .35rem; color: #bef264;
+      font-size: .66rem; letter-spacing: .06em; text-transform: uppercase;
+    }
+
+    .block {
+      border: 1px solid var(--line);
+      border-radius: 1rem;
+      background: #0f172a;
+      overflow: hidden;
+    }
+    .block-h {
+      display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+      padding: .65rem .8rem; border-bottom: 1px solid var(--line);
+      background: rgba(255,255,255,.03);
+    }
+    .block-h h3 { margin: 0; font-size: .7rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+    .block-h .sub { font-size: .64rem; color: var(--muted); margin-top: .15rem; }
+    .block-tools { display: flex; gap: .35rem; }
+    textarea, input[type=text] {
+      width: 100%; border: 0; outline: none; resize: vertical;
+      background: transparent; color: var(--ink); font: inherit; font-size: .84rem; line-height: 1.45;
+      padding: .75rem .85rem; display: block;
+    }
+    textarea { min-height: 200px; }
+    .meter {
+      display: flex; justify-content: space-between; padding: .35rem .85rem .65rem;
+      font-size: .64rem; color: var(--muted); border-top: 1px solid var(--line);
+    }
+    .meter b { color: #bef264; font-variant-numeric: tabular-nums; }
+
+    .footer {
+      display: flex; flex-wrap: wrap; gap: .45rem; justify-content: flex-end;
+      padding: .85rem 1rem; border-top: 1px solid #1f2937; background: #0f172a;
+    }
+
+    /* Card generator pane */
+    .card-grid {
+      display: grid;
+      grid-template-columns: 1.05fr .95fr;
+      gap: .85rem;
+    }
+    @media (max-width: 980px) {
+      .card-grid { grid-template-columns: 1fr; }
+    }
+    .styles {
+      display: grid; grid-template-columns: 1fr 1fr; gap: .4rem;
+    }
+    .style {
+      text-align: left; border: 1px solid var(--line); border-radius: .8rem;
+      background: #0b1322; padding: .65rem .7rem; cursor: pointer; color: inherit;
+    }
+    .style.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, #0b1322); }
+    .style .n { font-size: .72rem; font-weight: 800; }
+    .style .b { font-size: .64rem; color: var(--muted); margin-top: .2rem; line-height: 1.35; }
+    .providers { display: flex; flex-wrap: wrap; gap: .4rem; }
+    .prov {
+      border: 1px solid var(--line); border-radius: .75rem; background: #0b1322;
+      padding: .55rem .7rem; cursor: pointer; color: inherit; text-align: left;
+    }
+    .prov.on { border-color: var(--cyan); background: color-mix(in srgb, var(--cyan) 10%, #0b1322); }
+    .prov .n { font-size: .72rem; font-weight: 800; display: block; }
+    .prov .b { font-size: .62rem; color: var(--muted); }
+    .preview {
+      border: 1px solid var(--line); border-radius: 1rem; overflow: hidden;
+      background: #0b1322; min-height: 280px; display: grid; place-items: center;
+    }
+    .preview img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+    .preview .empty { color: var(--muted); font-size: .78rem; text-align: center; padding: 1.5rem; }
+    .batch {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: .4rem; margin-top: .6rem;
+    }
+    .batch .c {
+      aspect-ratio: 1; border-radius: .7rem; border: 2px solid transparent;
+      overflow: hidden; background: #1e293b; cursor: pointer;
+    }
+    .batch .c.on { border-color: var(--accent); }
+    .batch img { width: 100%; height: 100%; object-fit: cover; }
+    .section-label {
+      font-size: .65rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+      color: var(--muted); margin: 0 0 .45rem;
+    }
+    .note {
+      margin-top: 1rem; padding: .9rem 1rem; border-radius: .9rem;
+      border: 1px solid var(--line); background: var(--card); color: var(--muted); font-size: .78rem;
+    }
+    .note h4 { margin: 0 0 .35rem; color: var(--ink); font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <span class="badge">Design 11 · Combine #5 + Card Generator</span>
+    <h1>Listing Studio + Product Card</h1>
+    <p class="lead">
+      One modal for marketplace text and AI product cards. Left column keeps the item photo,
+      with <b>Add photos</b> controls underneath so those images feed the card generator.
+      Right side switches between <b>Listing</b> (title + description) and <b>Card</b> generation.
+    </p>
+    <nav class="nav">
+      <a href="./index.html">Index</a>
+      <a href="./05-listing-studio-modal.html">05 Listing Studio</a>
+      <a class="on" href="./11-listing-studio-with-card.html">11 Combined</a>
+    </nav>
+
+    <div class="backdrop">
+      <div class="modal">
+        <div class="modal-h">
+          <div>
+            <div class="title">Listing Studio</div>
+            <div class="sub">Titel · Beschreibung · Product Card · DE marketplace</div>
+          </div>
+          <button class="btn ghost" type="button">Close</button>
+        </div>
+
+        <div class="tabs" role="tablist">
+          <button class="tab on" type="button" data-tab="listing">Listing AI</button>
+          <button class="tab" type="button" data-tab="card">Product Card</button>
+        </div>
+
+        <div class="body">
+          <!-- LEFT: photo + add photo actions -->
+          <aside class="media">
+            <img
+              class="hero-photo"
+              id="heroPhoto"
+              alt="Item"
+              src="https://picsum.photos/seed/ryzen5600g/640/640"
+            />
+            <p class="item-name">AMD Ryzen 5 5600G + ASRock B550M + 32GB DDR4</p>
+            <p class="item-meta">Bundle · IN STOCK · 3 gallery photos</p>
+
+            <div class="photo-actions">
+              <button class="btn cyan" type="button" id="btnUpload">Upload</button>
+              <button class="btn" type="button" id="btnCamera">Camera</button>
+              <button class="btn wide" type="button" id="btnEbay">Import from eBay / URL</button>
+              <button class="btn wide solid" type="button" id="btnUseForCard">Use selected for card</button>
+            </div>
+            <input id="fileInput" type="file" accept="image/*" multiple hidden />
+
+            <div class="thumbs" id="thumbs">
+              <button class="shot on" type="button" data-src="https://picsum.photos/seed/ryzen5600g/640/640">
+                <img alt="" src="https://picsum.photos/seed/ryzen5600g/200/200" />
+              </button>
+              <button class="shot" type="button" data-src="https://picsum.photos/seed/asrockb550/640/640">
+                <img alt="" src="https://picsum.photos/seed/asrockb550/200/200" />
+              </button>
+              <button class="shot" type="button" data-src="https://picsum.photos/seed/ddr4kit/640/640">
+                <img alt="" src="https://picsum.photos/seed/ddr4kit/200/200" />
+              </button>
+              <button class="shot add" type="button" id="thumbAdd" title="Add photo">+</button>
+            </div>
+            <p class="hint">
+              Photos added here become the source gallery for <b>Product Card</b>.
+              1–2 photos → that many cards · 3+ → 3 cards.
+            </p>
+          </aside>
+
+          <!-- RIGHT: panes -->
+          <div class="workspace">
+            <!-- LISTING PANE -->
+            <div class="pane on" id="pane-listing">
+              <div class="owner">
+                <strong>💶 Für dich (nicht Teil der Anzeige)</strong>
+                Neue Preis DE: ca. 329 € · Empfohlener VK gebraucht: 199–229 €
+              </div>
+
+              <section class="block">
+                <div class="block-h">
+                  <div>
+                    <h3>AI Titel</h3>
+                    <div class="sub">eBay · max 80 Zeichen</div>
+                  </div>
+                  <div class="block-tools">
+                    <button class="btn ghost" type="button">Copy</button>
+                    <button class="btn solid" type="button">Generate</button>
+                  </div>
+                </div>
+                <input type="text" maxlength="80" value="AMD Ryzen 5 5600G + ASRock B550M + 32GB DDR4 Bundle AM4" />
+                <div class="meter"><span>Optimierter Marktplatz-Titel</span><b>64/80</b></div>
+              </section>
+
+              <section class="block">
+                <div class="block-h">
+                  <div>
+                    <h3>AI Beschreibung</h3>
+                    <div class="sub">eBay.de / Kleinanzeigen · DE</div>
+                  </div>
+                  <div class="block-tools">
+                    <button class="btn ghost" type="button">Copy</button>
+                    <button class="btn solid" type="button">Generate</button>
+                  </div>
+                </div>
+                <textarea>Ryzen 5 5600G + ASRock B550M + 32GB DDR4 RAM
+
+💻 Kompaktes Aufrüst-Bundle für Office &amp; Light Gaming – getestet und sofort einsatzbereit.
+
+🔧 Technische Daten
+• CPU: AMD Ryzen 5 5600G – 6 Kerne / 12 Threads
+• 3,9 GHz Basistakt / bis 4,4 GHz Turbo
+• Mainboard: ASRock B550M Pro4 (AM4)
+• RAM: 32GB (2×16GB) DDR4 3200 MHz
+
+📦 Lieferumfang
+• Mainboard
+• CPU
+• RAM
+• IO-Blende
+• Originalverpackung vorhanden
+
+✅ Zustand
+• Gebraucht
+• Voll funktionsfähig
+• Normale Gebrauchsspuren</textarea>
+              </section>
+
+              <div class="footer" style="margin: 0 -1rem -1rem; border-radius: 0;">
+                <button class="btn" type="button">Copy all</button>
+                <button class="btn solid" type="button">Generate both</button>
+                <button class="btn" type="button">Apply to item</button>
+              </div>
+            </div>
+
+            <!-- CARD PANE -->
+            <div class="pane" id="pane-card">
+              <div class="card-grid">
+                <div>
+                  <p class="section-label">Source photos for this run</p>
+                  <div class="thumbs" id="cardSources" style="margin-bottom:.85rem">
+                    <div class="shot on"><img alt="" src="https://picsum.photos/seed/ryzen5600g/200/200" /></div>
+                    <div class="shot on"><img alt="" src="https://picsum.photos/seed/asrockb550/200/200" /></div>
+                    <div class="shot on"><img alt="" src="https://picsum.photos/seed/ddr4kit/200/200" /></div>
+                  </div>
+                  <p class="hint" style="margin-bottom:.85rem">Using 3 gallery photos → generate 3 distinct cards (different specs/perks per card).</p>
+
+                  <p class="section-label">AI provider</p>
+                  <div class="providers" style="margin-bottom:.85rem">
+                    <button class="prov on" type="button"><span class="n">OpenAI</span><span class="b">GPT Image</span></button>
+                    <button class="prov" type="button"><span class="n">Gemini</span><span class="b">Flash Image</span></button>
+                  </div>
+
+                  <p class="section-label">Design style</p>
+                  <div class="styles">
+                    <button class="style on" type="button"><div class="n">Apple Studio</div><div class="b">Clean white product stage</div></button>
+                    <button class="style" type="button"><div class="n">Noir Editorial</div><div class="b">Dark contrast marketplace</div></button>
+                    <button class="style" type="button"><div class="n">Industrial Mono</div><div class="b">Technical blueprint feel</div></button>
+                    <button class="style" type="button"><div class="n">Steel Gradient</div><div class="b">Metal sheen card</div></button>
+                  </div>
+                </div>
+
+                <div>
+                  <p class="section-label">Card preview</p>
+                  <div class="preview">
+                    <img alt="Generated card preview" src="https://picsum.photos/seed/productcardai/640/640" />
+                  </div>
+                  <div class="batch">
+                    <button class="c on" type="button"><img alt="" src="https://picsum.photos/seed/card1/240/240" /></button>
+                    <button class="c" type="button"><img alt="" src="https://picsum.photos/seed/card2/240/240" /></button>
+                    <button class="c" type="button"><img alt="" src="https://picsum.photos/seed/card3/240/240" /></button>
+                  </div>
+                  <div class="footer" style="margin-top:.75rem; border:0; padding:0; background:transparent; justify-content:stretch">
+                    <button class="btn solid" type="button" style="flex:1">Generate 3 cards</button>
+                    <button class="btn" type="button">Set as main photo</button>
+                    <button class="btn" type="button">Download</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="note">
+      <h4>What this combines</h4>
+      From <b>#5 Listing Studio</b>: modal shell, owner price strip, AI Titel + AI Beschreibung.<br />
+      Added: Product Card tab, left photo column with Upload / Camera / Import / Use for card,
+      gallery thumbnails under the main photo that feed card generation.
+    </aside>
+  </div>
+
+  <script>
+    const tabs = document.querySelectorAll('.tab');
+    const panes = {
+      listing: document.getElementById('pane-listing'),
+      card: document.getElementById('pane-card'),
+    };
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        tabs.forEach((t) => t.classList.remove('on'));
+        tab.classList.add('on');
+        Object.values(panes).forEach((p) => p.classList.remove('on'));
+        panes[tab.dataset.tab].classList.add('on');
+      });
+    });
+
+    const hero = document.getElementById('heroPhoto');
+    const fileInput = document.getElementById('fileInput');
+    document.getElementById('btnUpload').addEventListener('click', () => fileInput.click());
+    document.getElementById('thumbAdd').addEventListener('click', () => fileInput.click());
+    document.getElementById('btnCamera').addEventListener('click', () => {
+      alert('Camera capture would open here (mock).');
+    });
+    document.getElementById('btnEbay').addEventListener('click', () => {
+      alert('Import from eBay / image URL would open here (mock).');
+    });
+    document.getElementById('btnUseForCard').addEventListener('click', () => {
+      document.querySelector('.tab[data-tab="card"]').click();
+    });
+
+    document.querySelectorAll('#thumbs .shot[data-src]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#thumbs .shot[data-src]').forEach((b) => b.classList.remove('on'));
+        btn.classList.add('on');
+        hero.src = btn.dataset.src;
+      });
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      const files = Array.from(e.target.files || []).slice(0, 3);
+      if (!files.length) return;
+      const url = URL.createObjectURL(files[0]);
+      hero.src = url;
+      alert(`Added ${files.length} photo(s) to gallery (mock UI). These would feed Product Card generation.`);
+    });
+
+    document.querySelectorAll('.prov').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.prov').forEach((b) => b.classList.remove('on'));
+        btn.classList.add('on');
+      });
+    });
+    document.querySelectorAll('.style').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.style').forEach((b) => b.classList.remove('on'));
+        btn.classList.add('on');
+      });
+    });
+    document.querySelectorAll('.batch .c').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.batch .c').forEach((b) => b.classList.remove('on'));
+        btn.classList.add('on');
+        const img = btn.querySelector('img');
+        if (img) document.querySelector('.preview img').src = img.src.replace('/240/240', '/640/640');
+      });
+    });
+  </script>
+</body>
+</html>
