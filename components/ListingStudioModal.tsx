@@ -28,6 +28,7 @@ import { generateItemSpecs } from '../services/specsAI';
 import { mergeAiSpecsIntoEssential, resolveEssentialSpecKeys } from '../services/essentialSpecFields';
 import { pickSpecsAiNameVendorUpdates } from '../utils/applySpecsAiResult';
 import { getProductCardSpecs } from '../utils/productCardContent';
+import { resolveProductCardBatchCount } from '../services/productCardBackgroundQueue';
 import {
   defaultBuyPaymentForPlatform,
   normalizeBuyPaymentForPlatform,
@@ -104,9 +105,7 @@ interface Props {
 }
 
 function resolveCardBatchCount(photoCount: number): number {
-  const n = Math.max(0, Math.floor(photoCount || 0));
-  if (n <= 0) return 1;
-  return Math.min(3, n);
+  return resolveProductCardBatchCount(photoCount);
 }
 
 const ListingStudioModal: React.FC<Props> = ({
