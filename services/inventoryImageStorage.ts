@@ -11,6 +11,7 @@ import {
   compressDataUrlToBlob,
   compressImageFileToBlob,
   dataUrlFromBlob,
+  fileExtensionForImageBlob,
   INVENTORY_PHOTO_LOCAL_OPTIONS,
   INVENTORY_PHOTO_STORAGE_OPTIONS,
 } from '../utils/imageCompress';
@@ -425,16 +426,16 @@ async function fetchRemoteImageBlob(url: string): Promise<Blob> {
 }
 
 async function blobToPersistedUrl(blob: Blob, itemId: string): Promise<string> {
-  const jpeg = await compressBlobToJpeg(blob, INVENTORY_PHOTO_STORAGE_OPTIONS);
+  const compressed = await compressBlobToJpeg(blob, INVENTORY_PHOTO_STORAGE_OPTIONS);
 
   if (canUploadToCloud()) {
-    const hash = await hashBlob(jpeg);
+    const hash = await hashBlob(compressed);
     const folder = itemId.trim() || 'shared';
-    const fileName = `${hash}.jpg`;
-    return uploadItemImageBlob(jpeg, folder, fileName);
+    const fileName = `${hash}.${fileExtensionForImageBlob(compressed)}`;
+    return uploadItemImageBlob(compressed, folder, fileName);
   }
 
-  return compressBlobToLocalDataUrl(jpeg, INVENTORY_PHOTO_LOCAL_OPTIONS);
+  return compressBlobToLocalDataUrl(compressed, INVENTORY_PHOTO_LOCAL_OPTIONS);
 }
 
 async function persistOneInventoryImageUrl(
@@ -465,7 +466,11 @@ async function persistOneInventoryImageUrl(
       if (canUploadToCloud()) {
         const blob = await compressDataUrlToBlob(trimmed, INVENTORY_PHOTO_STORAGE_OPTIONS);
         const hash = await hashBlob(blob);
-        result = await uploadItemImageBlob(blob, itemId.trim() || 'shared', `${hash}.jpg`);
+        result = await uploadItemImageBlob(
+          blob,
+          itemId.trim() || 'shared',
+          `${hash}.${fileExtensionForImageBlob(blob)}`
+        );
       } else {
         const blob = await compressDataUrlToBlob(trimmed, INVENTORY_PHOTO_LOCAL_OPTIONS);
         result = await dataUrlFromBlob(blob);
@@ -525,7 +530,9 @@ export async function persistInventoryImageFiles(
       const blob = await compressImageFileToBlob(file, INVENTORY_PHOTO_STORAGE_OPTIONS);
       if (canUploadToCloud()) {
         const hash = await hashBlob(blob);
-        out.push(await uploadItemImageBlob(blob, itemId, `${hash}.jpg`));
+        out.push(
+          await uploadItemImageBlob(blob, itemId, `${hash}.${fileExtensionForImageBlob(blob)}`)
+        );
       } else {
         out.push(await dataUrlFromBlob(blob));
       }

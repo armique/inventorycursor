@@ -1,4 +1,7 @@
-/** Resize + JPEG compress inventory photos before storing locally or in Firebase Storage. */
+/**
+ * Resize + compress inventory photos before Firebase Storage / local fallback.
+ * Prefers WebP when the browser can encode it and the result is smaller than JPEG.
+ */
 
 export interface CompressImageOptions {
   maxWidth?: number;
@@ -6,30 +9,57 @@ export interface CompressImageOptions {
   quality?: number;
   /** Target max encoded data URL length (~bytes × 4/3). */
   maxEncodedChars?: number;
-  /** Target max JPEG blob size in bytes (Storage uploads). */
+  /** Target max encoded blob size in bytes (Storage uploads). */
   maxBlobBytes?: number;
+  /** Prefer WebP when smaller than JPEG (default true for Storage). */
+  preferWebp?: boolean;
 }
 
-/** Sharp on phone/PC screens; stored in Firebase Storage (not embedded in JSON). */
+/**
+ * Cloud Storage uploads — sharp enough for eBay/Kleinanzeigen, sized for free-tier quota.
+ * ~1600px long edge, WebP when available, soft cap ~360KB.
+ */
 export const INVENTORY_PHOTO_STORAGE_OPTIONS: CompressImageOptions = {
-  maxWidth: 1920,
-  maxHeight: 1920,
-  quality: 0.86,
-  maxBlobBytes: 520_000,
+  maxWidth: 1600,
+  maxHeight: 1600,
+  quality: 0.82,
+  maxBlobBytes: 360_000,
+  preferWebp: true,
 };
 
 /** Fallback when signed out — compressed data URL in localStorage. */
 export const INVENTORY_PHOTO_LOCAL_OPTIONS: CompressImageOptions = {
-  maxWidth: 1600,
-  maxHeight: 1600,
-  quality: 0.82,
-  maxEncodedChars: 380_000,
+  maxWidth: 1280,
+  maxHeight: 1280,
+  quality: 0.78,
+  maxEncodedChars: 280_000,
+  preferWebp: true,
 };
 
 const DEFAULT_MAX_DIMENSION = INVENTORY_PHOTO_LOCAL_OPTIONS.maxWidth!;
 const DEFAULT_QUALITY = INVENTORY_PHOTO_LOCAL_OPTIONS.quality!;
 const DEFAULT_MAX_ENCODED_CHARS = INVENTORY_PHOTO_LOCAL_OPTIONS.maxEncodedChars!;
 const DEFAULT_MAX_BLOB_BYTES = INVENTORY_PHOTO_STORAGE_OPTIONS.maxBlobBytes!;
+
+let webpEncodeSupported: boolean | null = null;
+
+/** Detect canvas WebP encoding once per session. */
+export function supportsWebpEncode(): boolean {
+  if (webpEncodeSupported != null) return webpEncodeSupported;
+  try {
+    const c = document.createElement('canvas');
+    c.width = 2;
+    c.height = 2;
+    webpEncodeSupported = c.toDataURL('image/webp').startsWith('data:image/webp');
+  } catch {
+    webpEncodeSupported = false;
+  }
+  return webpEncodeSupported;
+}
+
+export function fileExtensionForImageBlob(blob: Blob): 'jpg' | 'webp' {
+  return blob.type === 'image/webp' ? 'webp' : 'jpg';
+}
 
 function loadImageFromFile(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -86,15 +116,15 @@ function scaleDimensions(
   };
 }
 
-function encodeCanvasToJpeg(canvas: HTMLCanvasElement, quality: number): string {
-  return canvas.toDataURL('image/jpeg', quality);
+function encodeCanvasToDataUrl(canvas: HTMLCanvasElement, mime: string, quality: number): string {
+  return canvas.toDataURL(mime, quality);
 }
 
-function canvasToJpegBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
+function canvasToBlob(canvas: HTMLCanvasElement, mime: string, quality: number): Promise<Blob> {
   return new Promise((resolve, reject) => {
     canvas.toBlob(
-      (blob) => (blob ? resolve(blob) : reject(new Error('JPEG encode failed'))),
-      'image/jpeg',
+      (blob) => (blob ? resolve(blob) : reject(new Error(`${mime} encode failed`))),
+      mime,
       quality
     );
   });
@@ -106,35 +136,77 @@ function drawImageToCanvas(img: HTMLImageElement, width: number, height: number)
   canvas.height = height;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas not supported');
+  // White underlay so transparent PNGs don't become black in JPEG/WebP.
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, width, height);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(img, 0, 0, width, height);
   return canvas;
 }
 
-function compressLoadedImage(
-  img: HTMLImageElement,
-  options?: CompressImageOptions
+async function encodeCanvasBest(
+  canvas: HTMLCanvasElement,
+  quality: number,
+  preferWebp: boolean
+): Promise<Blob> {
+  const jpeg = await canvasToBlob(canvas, 'image/jpeg', quality);
+  if (!preferWebp || !supportsWebpEncode()) return jpeg;
+  try {
+    const webp = await canvasToBlob(canvas, 'image/webp', quality);
+    if (webp.type === 'image/webp' && webp.size > 32 && webp.size <= jpeg.size) {
+      return webp;
+    }
+  } catch {
+    /* JPEG fallback */
+  }
+  return jpeg;
+}
+
+function encodeCanvasBestDataUrl(
+  canvas: HTMLCanvasElement,
+  quality: number,
+  preferWebp: boolean
 ): string {
+  const jpegUrl = encodeCanvasToDataUrl(canvas, 'image/jpeg', quality);
+  if (!preferWebp || !supportsWebpEncode()) return jpegUrl;
+  try {
+    const webpUrl = encodeCanvasToDataUrl(canvas, 'image/webp', quality);
+    if (webpUrl.startsWith('data:image/webp') && webpUrl.length > 32 && webpUrl.length <= jpegUrl.length) {
+      return webpUrl;
+    }
+  } catch {
+    /* JPEG fallback */
+  }
+  return jpegUrl;
+}
+
+function compressLoadedImage(img: HTMLImageElement, options?: CompressImageOptions): string {
   const maxWidth = options?.maxWidth ?? DEFAULT_MAX_DIMENSION;
   const maxHeight = options?.maxHeight ?? DEFAULT_MAX_DIMENSION;
   const maxEncodedChars = options?.maxEncodedChars ?? DEFAULT_MAX_ENCODED_CHARS;
+  const preferWebp = options?.preferWebp !== false;
   let quality = options?.quality ?? DEFAULT_QUALITY;
 
-  let { width, height } = scaleDimensions(img.naturalWidth || img.width, img.naturalHeight || img.height, maxWidth, maxHeight);
+  let { width, height } = scaleDimensions(
+    img.naturalWidth || img.width,
+    img.naturalHeight || img.height,
+    maxWidth,
+    maxHeight
+  );
   let canvas = drawImageToCanvas(img, width, height);
-  let dataUrl = encodeCanvasToJpeg(canvas, quality);
+  let dataUrl = encodeCanvasBestDataUrl(canvas, quality, preferWebp);
 
-  while (dataUrl.length > maxEncodedChars && quality > 0.52) {
-    quality -= 0.08;
-    dataUrl = encodeCanvasToJpeg(canvas, quality);
+  while (dataUrl.length > maxEncodedChars && quality > 0.5) {
+    quality -= 0.07;
+    dataUrl = encodeCanvasBestDataUrl(canvas, quality, preferWebp);
   }
 
   while (dataUrl.length > maxEncodedChars && width > 480 && height > 480) {
     width = Math.round(width * 0.85);
     height = Math.round(height * 0.85);
     canvas = drawImageToCanvas(img, width, height);
-    dataUrl = encodeCanvasToJpeg(canvas, quality);
+    dataUrl = encodeCanvasBestDataUrl(canvas, quality, preferWebp);
   }
 
   return dataUrl;
@@ -147,22 +219,28 @@ async function compressLoadedImageToBlob(
   const maxWidth = options?.maxWidth ?? INVENTORY_PHOTO_STORAGE_OPTIONS.maxWidth!;
   const maxHeight = options?.maxHeight ?? INVENTORY_PHOTO_STORAGE_OPTIONS.maxHeight!;
   const maxBlobBytes = options?.maxBlobBytes ?? DEFAULT_MAX_BLOB_BYTES;
+  const preferWebp = options?.preferWebp !== false;
   let quality = options?.quality ?? INVENTORY_PHOTO_STORAGE_OPTIONS.quality!;
 
-  let { width, height } = scaleDimensions(img.naturalWidth || img.width, img.naturalHeight || img.height, maxWidth, maxHeight);
+  let { width, height } = scaleDimensions(
+    img.naturalWidth || img.width,
+    img.naturalHeight || img.height,
+    maxWidth,
+    maxHeight
+  );
   let canvas = drawImageToCanvas(img, width, height);
-  let blob = await canvasToJpegBlob(canvas, quality);
+  let blob = await encodeCanvasBest(canvas, quality, preferWebp);
 
-  while (blob.size > maxBlobBytes && quality > 0.55) {
+  while (blob.size > maxBlobBytes && quality > 0.52) {
     quality -= 0.06;
-    blob = await canvasToJpegBlob(canvas, quality);
+    blob = await encodeCanvasBest(canvas, quality, preferWebp);
   }
 
   while (blob.size > maxBlobBytes && width > 640 && height > 640) {
     width = Math.round(width * 0.85);
     height = Math.round(height * 0.85);
     canvas = drawImageToCanvas(img, width, height);
-    blob = await canvasToJpegBlob(canvas, quality);
+    blob = await encodeCanvasBest(canvas, quality, preferWebp);
   }
 
   return blob;
@@ -198,7 +276,10 @@ export async function compressBlobToJpeg(
   return compressLoadedImageToBlob(img, options);
 }
 
-export async function compressDataUrl(dataUrl: string, options?: CompressImageOptions): Promise<string> {
+export async function compressDataUrl(
+  dataUrl: string,
+  options?: CompressImageOptions
+): Promise<string> {
   const trimmed = dataUrl.trim();
   if (!trimmed.startsWith('data:image/')) return trimmed;
   if (trimmed.startsWith('data:image/svg')) return trimmed;
@@ -224,7 +305,7 @@ export async function prepareInventoryPhotoUrl(url: string): Promise<string> {
   if (!trimmed) return trimmed;
   if (!trimmed.startsWith('data:image/')) return trimmed;
   if (trimmed.startsWith('data:image/svg')) return trimmed;
-  if (trimmed.length < 100_000) return trimmed;
+  if (trimmed.length < 80_000) return trimmed;
   try {
     return await compressDataUrl(trimmed, INVENTORY_PHOTO_LOCAL_OPTIONS);
   } catch {
@@ -249,7 +330,14 @@ export async function compressBlobToLocalDataUrl(
   blob: Blob,
   options?: CompressImageOptions
 ): Promise<string> {
-  const jpeg = await compressBlobToJpeg(blob, options ?? INVENTORY_PHOTO_LOCAL_OPTIONS);
-  const dataUrl = await dataUrlFromBlob(jpeg);
-  return compressLoadedImage(await loadImageFromDataUrl(dataUrl), options ?? INVENTORY_PHOTO_LOCAL_OPTIONS);
+  const compressed = await compressBlobToJpeg(blob, options ?? INVENTORY_PHOTO_LOCAL_OPTIONS);
+  return dataUrlFromBlob(compressed);
+}
+
+/** Human-readable summary of active Storage compression (for Settings UI). */
+export function describeInventoryPhotoCompression(): string {
+  const o = INVENTORY_PHOTO_STORAGE_OPTIONS;
+  const fmt = o.preferWebp ? 'WebP (JPEG fallback)' : 'JPEG';
+  const kb = Math.round((o.maxBlobBytes || 0) / 1024);
+  return `Photos are resized to max ${o.maxWidth}×${o.maxHeight}px and compressed as ${fmt} (target ≤${kb} KB) before Firebase Storage upload.`;
 }

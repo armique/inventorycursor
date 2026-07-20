@@ -8,7 +8,7 @@ import {
   type PhotoUploadSession,
 } from '../services/photoUploadSession';
 import { getCurrentUser } from '../services/firebaseService';
-import { compressImageFileToBlob, INVENTORY_PHOTO_STORAGE_OPTIONS } from '../utils/imageCompress';
+import { compressImageFileToBlob, fileExtensionForImageBlob, INVENTORY_PHOTO_STORAGE_OPTIONS } from '../utils/imageCompress';
 
 const PhonePhotoUploadPage: React.FC = () => {
   const { token = '' } = useParams<{ token: string }>();
@@ -116,7 +116,8 @@ const PhonePhotoUploadPage: React.FC = () => {
         } catch {
           blob = file;
         }
-        await uploadPhonePhotoToSession(token, blob, file.name.replace(/\.\w+$/, '.jpg'));
+        const ext = fileExtensionForImageBlob(blob);
+        await uploadPhonePhotoToSession(token, blob, file.name.replace(/\.\w+$/, `.${ext}`));
         ok += 1;
         setDoneCount((c) => c + 1);
       }
