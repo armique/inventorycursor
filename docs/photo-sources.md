@@ -14,12 +14,14 @@ In **Listing Studio → Photos → iPhone**:
 Requires:
 
 - Cloud / Google sign-in on the PC
-- **Anonymous** sign-in enabled in Firebase Console → Authentication → Sign-in method  
-  (phone uses anonymous auth only for that upload session)
-- Deployed Firestore + Storage rules that include `photoUploadSessions` and `photo-inbox`
+- Deployed Firestore + Storage rules (`photoUploadSessions` + `photo-inbox`)
+- Auth on the phone: **Anonymous** (optional) **or** Google sign-in with the same account
 
 ```bash
-firebase deploy --only firestore:rules,storage
+firebase login
+bash scripts/deploy-photo-bridge-rules.sh
+# optional: enable Anonymous at
+# https://console.firebase.google.com/project/inventorycursor-e9000/authentication/providers
 ```
 
 Links expire (~25 min) and are revoked when you close the iPhone panel.
