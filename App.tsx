@@ -55,6 +55,7 @@ import {
   BULK_IMPORTS_LIMIT,
   BULK_IMPORT_BACKFILL_KEY,
   backfillBulkImportsFromItems,
+  enrichBulkImportsWithChatProof,
   loadBulkImportsFromStorage,
   mergeBulkImportsFromLocal,
 } from './utils/bulkImportHistory';
@@ -575,6 +576,18 @@ const App: React.FC = () => {
       hasUnsavedChanges.current = true;
     }
   }, [appState, items.length]);
+
+  // Enrich history rows with chat URL / screenshot from member items (legacy sessions).
+  useEffect(() => {
+    if (appState !== 'READY') return;
+    if (bulkImportsRef.current.length === 0 || items.length === 0) return;
+    const { records, changed } = enrichBulkImportsWithChatProof(bulkImportsRef.current, items);
+    if (!changed) return;
+    setBulkImports(records);
+    bulkImportsRef.current = records;
+    localStorage.setItem('bulk_imports', JSON.stringify(records));
+    hasUnsavedChanges.current = true;
+  }, [appState, items, bulkImports]);
 
   // One-time migration: merge Peripherals > Optical Drives into Components > Optical Drives, then remove Optical Drives from Peripherals
   const OPTICAL_DRIVES_MIGRATION_KEY = 'migration_optical_drives_to_components';
