@@ -185,8 +185,8 @@ interface SortConfig {
 /** Inv column: icon buttons in one row (28px each + 4px gaps, matching the actual `gap-1` grid + cell padding). */
 const PRESENCE_ICON_SIZE_PX = 28;
 const PRESENCE_ICON_GAP_PX = 4;
-/** Presence · Photos · AI card · € · Store · Orders · Quick Bundle (+) · Bulk import */
-const PRESENCE_ICON_COUNT = 8;
+/** Presence · Photos · AI card · € · Store · Orders · Quick Bundle (+) · Bulk import · Rebuild title */
+const PRESENCE_ICON_COUNT = 9;
 const PRESENCE_COL_WIDTH =
   PRESENCE_ICON_COUNT * PRESENCE_ICON_SIZE_PX +
   (PRESENCE_ICON_COUNT - 1) * PRESENCE_ICON_GAP_PX +
@@ -1984,6 +1984,42 @@ const InventoryList: React.FC<Props> = ({
     setItemToEdit(item);
   };
 
+  /** Rebuild PC / Bundle / Mixed title from current parts (fixed RAM kit totals, etc.). */
+  const handleRebuildContainerTitle = useCallback(
+    (container: InventoryItem) => {
+      const kind = getContainerKind(container);
+      if (!kind) {
+        setToast('Only PC / Bundle titles can be rebuilt from parts');
+        setTimeout(() => setToast(null), 2200);
+        return;
+      }
+      const parts = getChildren(container, items);
+      if (parts.length === 0) {
+        setToast('No parts found to rebuild title from');
+        setTimeout(() => setToast(null), 2200);
+        return;
+      }
+      const preferAufrustkit = /aufrustkit|aufrüstkit|aufrüst[\s-]?kit/i.test(
+        `${container.name} ${container.vendor || ''}`
+      );
+      const title = buildContainerTitle(kind, parts, { preferAufrustkit });
+      if (!title || title === container.name) {
+        setToast(title === container.name ? 'Title already up to date' : 'Could not build a new title');
+        setTimeout(() => setToast(null), 2200);
+        return;
+      }
+      const updated: InventoryItem = {
+        ...container,
+        name: title,
+        marketTitle: title,
+      };
+      onUpdate([updated], undefined, { skipUndo: false });
+      setToast(`Title rebuilt · ${title}`);
+      setTimeout(() => setToast(null), 2800);
+    },
+    [items, onUpdate]
+  );
+
   const createContainerInInventory = useCallback(
     (type: 'pc' | 'bundle' | 'mixed', parts: InventoryItem[]) => {
       if (parts.length === 0) return;
@@ -2313,7 +2349,7 @@ const InventoryList: React.FC<Props> = ({
         return (
           <td key={id} className="inv-col-icons border-r border-slate-100/90 align-middle" style={style} onClick={(e) => e.stopPropagation()}>
             <div
-              className={`grid grid-cols-8 ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-items-start shrink-0`}
+              className={`grid grid-cols-9 ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-items-start shrink-0`}
               style={{ width: PRESENCE_ICON_COUNT * PRESENCE_ICON_SIZE_PX + (PRESENCE_ICON_COUNT - 1) * PRESENCE_ICON_GAP_PX }}
             >
               {/* Physical presence: present → lost → defective → unknown */}
@@ -2547,6 +2583,34 @@ const InventoryList: React.FC<Props> = ({
                     title="Bulk import — show all from this batch (including sold)"
                   >
                     <Layers size={13} strokeWidth={2.25} />
+                  </button>
+                );
+              })()}
+
+              {/* Rebuild PC / Bundle title from parts (e.g. after RAM kit title fix) */}
+              {(() => {
+                const kind = getContainerKind(item);
+                if (!kind) {
+                  return (
+                    <span
+                      className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-transparent opacity-0`}
+                      aria-hidden
+                    >
+                      <RotateCw size={13} />
+                    </span>
+                  );
+                }
+                return (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRebuildContainerTitle(item);
+                    }}
+                    className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 hover:border-sky-300`}
+                    title="Rebuild title from parts (RAM kits, CPU, mobo…)"
+                  >
+                    <RotateCw size={13} strokeWidth={2.25} />
                   </button>
                 );
               })()}
