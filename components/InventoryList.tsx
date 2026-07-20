@@ -1689,7 +1689,7 @@ const InventoryList: React.FC<Props> = ({
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const activeTableRef = useRef<HTMLDivElement>(null);
   const soldTableRef = useRef<HTMLDivElement>(null);
-  const rowHeightEstimate = listDensity === 'compact' ? 64 : 78;
+  const rowHeightEstimate = listDensity === 'compact' ? 84 : 98;
 
   useEffect(() => {
     if (tableContainerRef.current) tableContainerRef.current.scrollTop = 0;
@@ -5716,6 +5716,8 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
       const item = sortedItems[index];
       if (!item) return rowHeightEstimate;
       let h = rowHeightEstimate;
+      // OVP / Rechnung (/ IO) toggles under the item name
+      h += 22;
       if (item.specs && Object.keys(item.specs).length > 0) h += 14;
       if (
         isRealizedDisposal(item) &&

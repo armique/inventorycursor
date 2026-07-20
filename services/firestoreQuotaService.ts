@@ -1,5 +1,8 @@
 /**
  * Measure / track Firestore + Storage usage against Spark free quotas.
+ *
+ * Important: item photos live in Firebase Storage (5 GB free), not Firestore (1 GiB docs).
+ * The collapsed widget should lead with Storage for that reason.
  */
 
 import {
@@ -12,6 +15,7 @@ import {
   ref as storageRef,
   type FirebaseStorage,
 } from 'firebase/storage';
+import type { InventoryItem } from '../types';
 import {
   getCurrentUser,
   getFirebaseConfig,
@@ -28,8 +32,10 @@ import {
   type MonitoringQuotaJson,
 } from '../utils/firestoreFreeQuota';
 
-const CACHE_KEY = 'deinv_firestore_quota_cache_v1';
+const CACHE_KEY = 'deinv_firestore_quota_cache_v2';
 const CACHE_TTL_MS = 5 * 60 * 1000;
+/** Fallback average when metadata can't be read for a durable Storage URL. */
+const AVG_COMPRESSED_IMAGE_BYTES = 180_000;
 
 function jsonByteSize(obj: unknown): number {
   try {
@@ -39,12 +45,42 @@ function jsonByteSize(obj: unknown): number {
   }
 }
 
+function isFirebaseStorageUrl(url: string): boolean {
+  const t = (url || '').trim();
+  if (!t.startsWith('https://')) return false;
+  return (
+    t.includes('firebasestorage.googleapis.com') ||
+    t.includes('firebasestorage.app') ||
+    t.includes('.appspot.com')
+  );
+}
+
+/** Collect durable Firebase Storage URLs from inventory items (main + galleries). */
+export function collectStorageUrlsFromItems(
+  items: Array<Pick<InventoryItem, 'imageUrl' | 'imageUrls' | 'storeGalleryUrls' | 'receiptUrl'>>
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const push = (raw: string | undefined | null) => {
+    const u = (raw || '').trim();
+    if (!u || !isFirebaseStorageUrl(u) || seen.has(u)) return;
+    seen.add(u);
+    out.push(u);
+  };
+  for (const item of items) {
+    push(item.imageUrl);
+    for (const u of item.imageUrls || []) push(u);
+    for (const u of item.storeGalleryUrls || []) push(u);
+    push(item.receiptUrl);
+  }
+  return out;
+}
+
 async function sumCollectionDocBytes(
   pathSegments: string[]
 ): Promise<{ bytes: number; docs: number }> {
   const ctx = getFirebaseContext();
   if (!ctx?.db || pathSegments.length < 1) return { bytes: 0, docs: 0 };
-  // Firestore collection() needs alternating collection/doc segments ending on a collection.
   const col = collection(ctx.db, pathSegments[0]!, ...pathSegments.slice(1));
   const snap = await getDocs(col);
   recordFirestoreReads(Math.max(1, snap.size));
@@ -58,7 +94,7 @@ async function sumCollectionDocBytes(
 async function sumStoragePrefixBytes(
   storage: FirebaseStorage,
   prefix: string,
-  maxFiles = 800
+  maxFiles = 1200
 ): Promise<{ bytes: number; files: number; truncated: boolean }> {
   let bytes = 0;
   let files = 0;
@@ -102,6 +138,33 @@ async function sumStoragePrefixBytes(
   return { bytes, files, truncated };
 }
 
+async function sumStorageUrlBytes(
+  storage: FirebaseStorage,
+  urls: string[],
+  concurrency = 8
+): Promise<{ bytes: number; files: number; sized: number }> {
+  let bytes = 0;
+  let sized = 0;
+  let cursor = 0;
+
+  const worker = async () => {
+    while (cursor < urls.length) {
+      const i = cursor++;
+      const url = urls[i]!;
+      try {
+        const meta = await getMetadata(storageRef(storage, url));
+        bytes += Number(meta.size) || 0;
+        sized += 1;
+      } catch {
+        /* keep going — caller may apply average fallback */
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, urls.length) }, () => worker()));
+  return { bytes, files: urls.length, sized };
+}
+
 async function fetchMonitoringQuota(): Promise<MonitoringQuotaJson | null> {
   try {
     const cfg = getFirebaseConfig();
@@ -125,10 +188,13 @@ export async function collectFirestoreFreeQuotaSnapshot(options?: {
   force?: boolean;
   includeStorage?: boolean;
   includeMonitoring?: boolean;
+  /** Local inventory — used to count Storage image URLs when folder list is incomplete. */
+  items?: Array<Pick<InventoryItem, 'imageUrl' | 'imageUrls' | 'storeGalleryUrls' | 'receiptUrl'>>;
 }): Promise<FirestoreFreeQuotaSnapshot> {
   const force = options?.force === true;
   const includeStorage = options?.includeStorage !== false;
   const includeMonitoring = options?.includeMonitoring !== false;
+  const items = options?.items || [];
 
   if (!force) {
     try {
@@ -151,7 +217,8 @@ export async function collectFirestoreFreeQuotaSnapshot(options?: {
 
   let firestoreBytes = 0;
   let syncDocs = 0;
-  let firestoreNote = 'Estimated from your synced documents (indexes add a bit more).';
+  let firestoreNote =
+    'Firestore stores inventory JSON only (photos are not counted here — see Storage below).';
 
   if (user) {
     const packs = await sumCollectionDocBytes(['users', user.uid, 'syncPack']);
@@ -179,7 +246,7 @@ export async function collectFirestoreFreeQuotaSnapshot(options?: {
 
   let storageBytes = 0;
   let storageFiles = 0;
-  let storageNote = 'Firebase Storage Spark free tier (5 GB).';
+  let storageNote = 'Firebase Storage Spark free tier (5 GB) — this is where item photos live.';
 
   if (includeStorage && user) {
     const ctx = getFirebaseContext();
@@ -189,17 +256,50 @@ export async function collectFirestoreFreeQuotaSnapshot(options?: {
         `product-cards/${user.uid}`,
         `expenses/${user.uid}`,
       ];
+      let listedBytes = 0;
+      let listedFiles = 0;
       let truncated = false;
       for (const p of prefixes) {
         const part = await sumStoragePrefixBytes(ctx.storage, p);
-        storageBytes += part.bytes;
-        storageFiles += part.files;
+        listedBytes += part.bytes;
+        listedFiles += part.files;
         if (part.truncated) truncated = true;
       }
-      if (truncated) {
-        storageNote = 'Partial file scan (capped). Actual Storage usage may be higher.';
+
+      const urls = collectStorageUrlsFromItems(items);
+      let urlBytes = 0;
+      let urlSized = 0;
+      if (urls.length) {
+        const fromUrls = await sumStorageUrlBytes(ctx.storage, urls);
+        urlBytes = fromUrls.bytes;
+        urlSized = fromUrls.sized;
+        // If metadata failed for some URLs, pad with average compressed size
+        if (fromUrls.sized < fromUrls.files) {
+          urlBytes += (fromUrls.files - fromUrls.sized) * AVG_COMPRESSED_IMAGE_BYTES;
+        }
+      }
+
+      // Prefer the larger of folder-list vs inventory-URL scan (list can miss files; URLs miss orphans)
+      if (listedBytes >= urlBytes && listedFiles > 0) {
+        storageBytes = listedBytes;
+        storageFiles = listedFiles;
+        storageNote = truncated
+          ? `Storage scan capped · ${listedFiles} files (photos live here, not in Firestore).`
+          : `Storage · ${listedFiles} file${listedFiles === 1 ? '' : 's'} (photos live here, not in the 1 GiB Firestore quota).`;
+      } else if (urls.length > 0) {
+        storageBytes = urlBytes;
+        storageFiles = urls.length;
+        storageNote =
+          urlSized > 0
+            ? `Storage · ${urls.length} image URL${urls.length === 1 ? '' : 's'} from inventory (${urlSized} sized via metadata).`
+            : `Storage · ~${urls.length} inventory images (estimated ~${Math.round(AVG_COMPRESSED_IMAGE_BYTES / 1024)} KB each).`;
+      } else if (listedFiles > 0) {
+        storageBytes = listedBytes;
+        storageFiles = listedFiles;
+        storageNote = `Storage · ${listedFiles} files scanned.`;
       } else {
-        storageNote = `Scanned ${storageFiles} file${storageFiles === 1 ? '' : 's'} under your account.`;
+        storageNote =
+          'No Storage files found yet. Photos upload to Firebase Storage (5 GB free), separate from Firestore docs.';
       }
     }
   }

@@ -297,16 +297,25 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
           </div>
         )}
         {isCloudEnabled && authUser && (
-          <div className="fixed bottom-4 left-4 z-[100] flex flex-col gap-2 items-start max-w-[min(20rem,calc(100vw-2rem))]">
-            <div className="hidden md:block w-full">
-              <FirestoreQuotaWidget />
+          <div className="fixed bottom-3 left-3 z-[100] flex flex-col gap-1.5 items-start pointer-events-none">
+            <div
+              className={`pointer-events-auto ${
+                location.pathname.startsWith('/panel/inventory') ? 'opacity-90' : ''
+              }`}
+            >
+              <div className="hidden md:block">
+                <FirestoreQuotaWidget
+                  items={items}
+                  compact={location.pathname.startsWith('/panel/inventory')}
+                />
+              </div>
             </div>
             {syncState.status !== 'idle' && (
               <button
                 type="button"
                 onClick={() => syncState.status === 'error' && onForcePush?.()}
                 disabled={syncState.status === 'syncing' || syncState.status === 'pending'}
-                className={`hidden md:inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold tracking-wide border shadow-lg transition-all ${
+                className={`pointer-events-auto hidden md:inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold tracking-wide border shadow-lg transition-all ${
                   syncState.status === 'pending' ? 'bg-sky-50 text-sky-800 border-sky-200' :
                   syncState.status === 'syncing' ? 'bg-blue-50 text-blue-700 border-blue-200' :
                   syncState.status === 'error' ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100 cursor-pointer' :

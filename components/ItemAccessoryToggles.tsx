@@ -39,10 +39,12 @@ const ItemAccessoryToggles: React.FC<Props> = ({ item, onPatch, dense }) => {
               e.stopPropagation();
               toggle(id);
             }}
-            className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[9px] font-black uppercase tracking-wide transition-colors ${
+            className={`inline-flex items-center px-1.5 py-0.5 rounded border font-black uppercase tracking-wide transition-colors ${
+              dense ? 'text-[9px]' : 'text-[10px]'
+            } ${
               present
                 ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
-                : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100 hover:text-slate-600'
+                : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-50 hover:text-slate-700'
             }`}
             title={
               present
