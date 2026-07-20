@@ -861,7 +861,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
            <button
              type="button"
              onClick={() => navigate('/panel/bulk-imports')}
-             className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-50"
+             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-50"
              title="Open bulk import history"
            >
              <Layers size={14} />

@@ -3920,6 +3920,17 @@ const InventoryList: React.FC<Props> = ({
                  </div>
                )}
             </div>
+            <button
+               type="button"
+               onClick={() => navigate('/panel/bulk-imports')}
+               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:border-slate-300"
+               title="Bulk import history — reopen any batch"
+             >
+               <Layers size={14} /> Imports
+               {bulkImports.length > 0 && (
+                 <span className="text-[10px] opacity-75">({Math.min(bulkImports.length, 99)}{bulkImports.length > 99 ? '+' : ''})</span>
+               )}
+             </button>
             <select
                value={categoryFilter}
                onChange={e => { setCategoryFilter(e.target.value); setSubCategoryFilter(''); }}

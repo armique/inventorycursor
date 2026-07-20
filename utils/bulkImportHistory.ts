@@ -127,6 +127,47 @@ export function enrichBulkImportsWithChatProof(
   return { records: next, changed };
 }
 
+function unionBulkImportItemIds(a?: string[], b?: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const id of [...(a || []), ...(b || [])]) {
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+/** Merge two history rows so chat proof / itemIds survive either device winning. */
+function mergeBulkImportPair(a: BulkImportRecord, b: BulkImportRecord): BulkImportRecord {
+  const aCount = a.itemIds?.length ?? a.itemCount ?? 0;
+  const bCount = b.itemIds?.length ?? b.itemCount ?? 0;
+  const aTs = Date.parse(a.createdAt || '') || 0;
+  const bTs = Date.parse(b.createdAt || '') || 0;
+  const preferB = bCount > aCount || (bCount === aCount && bTs > aTs);
+  const base = preferB ? b : a;
+  const other = preferB ? a : b;
+  const itemIds = unionBulkImportItemIds(a.itemIds, b.itemIds);
+  return {
+    ...other,
+    ...base,
+    itemIds,
+    itemCount: Math.max(itemIds.length, base.itemCount || 0, other.itemCount || 0),
+    label: base.label || other.label,
+    bundleId: base.bundleId || other.bundleId,
+    platformBought: base.platformBought || other.platformBought,
+    buyDate: base.buyDate || other.buyDate,
+    source: base.source || other.source,
+    // Always union chat proof — never drop URL/screenshot because the other side has more ids.
+    kleinanzeigenBuyChatUrl: base.kleinanzeigenBuyChatUrl || other.kleinanzeigenBuyChatUrl,
+    kleinanzeigenBuyChatImage: base.kleinanzeigenBuyChatImage || other.kleinanzeigenBuyChatImage,
+  };
+}
+
+/**
+ * Union local + remote bulk-import history for cross-device sync.
+ * Local-only sessions are kept; matching ids merge itemIds + chat proof from both sides.
+ */
 export function mergeBulkImportsFromLocal(
   remoteList: BulkImportRecord[],
   localList: BulkImportRecord[]
@@ -142,40 +183,55 @@ export function mergeBulkImportsFromLocal(
       byId.set(r.id, r);
       continue;
     }
-    // Prefer the record with more item ids / newer createdAt / chat proof.
-    const remoteCount = existing.itemIds?.length ?? existing.itemCount ?? 0;
-    const localCount = r.itemIds?.length ?? r.itemCount ?? 0;
-    if (localCount > remoteCount) {
-      byId.set(r.id, r);
-    } else if (localCount === remoteCount) {
-      const remoteTs = Date.parse(existing.createdAt || '') || 0;
-      const localTs = Date.parse(r.createdAt || '') || 0;
-      if (localTs > remoteTs) {
-        byId.set(r.id, r);
-      } else if (localTs === remoteTs) {
-        byId.set(r.id, {
-          ...existing,
-          ...r,
-          kleinanzeigenBuyChatUrl:
-            r.kleinanzeigenBuyChatUrl || existing.kleinanzeigenBuyChatUrl,
-          kleinanzeigenBuyChatImage:
-            r.kleinanzeigenBuyChatImage || existing.kleinanzeigenBuyChatImage,
-        });
-      } else {
-        // Keep newer remote, but fill missing chat proof from local.
-        byId.set(r.id, {
-          ...existing,
-          kleinanzeigenBuyChatUrl:
-            existing.kleinanzeigenBuyChatUrl || r.kleinanzeigenBuyChatUrl,
-          kleinanzeigenBuyChatImage:
-            existing.kleinanzeigenBuyChatImage || r.kleinanzeigenBuyChatImage,
-        });
-      }
-    }
+    byId.set(r.id, mergeBulkImportPair(existing, r));
   }
   return [...byId.values()]
     .sort((a, b) => (Date.parse(b.createdAt || '') || 0) - (Date.parse(a.createdAt || '') || 0))
     .slice(0, BULK_IMPORTS_LIMIT);
+}
+
+/** True when merged history has data the remote snapshot is missing — needs a cloud push. */
+export function localBulkImportsNeedCloudPush(
+  merged: BulkImportRecord[],
+  remote: BulkImportRecord[]
+): boolean {
+  if (merged.length > (remote?.length ?? 0)) return true;
+  const remoteById = new Map((remote || []).filter((r) => r?.id).map((r) => [r.id, r]));
+  for (const m of merged) {
+    if (!m?.id) continue;
+    const r = remoteById.get(m.id);
+    if (!r) return true;
+    const mIds = m.itemIds?.length ?? 0;
+    const rIds = r.itemIds?.length ?? 0;
+    if (mIds > rIds) return true;
+    if ((m.kleinanzeigenBuyChatUrl || '').trim() && !(r.kleinanzeigenBuyChatUrl || '').trim()) return true;
+    if ((m.kleinanzeigenBuyChatImage || '').trim() && !(r.kleinanzeigenBuyChatImage || '').trim()) return true;
+  }
+  return false;
+}
+
+/** Stamp inventory rows from history itemIds so Flags icons work on every device. */
+export function stampItemsFromBulkImportRecords(
+  items: InventoryItem[],
+  records: BulkImportRecord[]
+): { items: InventoryItem[]; changed: boolean } {
+  if (!records.length || !items.length) return { items, changed: false };
+  const idToImport = new Map<string, string>();
+  for (const rec of records) {
+    for (const id of rec.itemIds || []) {
+      if (id && !idToImport.has(id)) idToImport.set(id, rec.id);
+    }
+  }
+  if (idToImport.size === 0) return { items, changed: false };
+  let changed = false;
+  const next = items.map((item) => {
+    if (item.bulkImportId) return item;
+    const bid = idToImport.get(item.id);
+    if (!bid) return item;
+    changed = true;
+    return { ...item, bulkImportId: bid };
+  });
+  return { items: next, changed };
 }
 
 export function loadBulkImportsFromStorage(): BulkImportRecord[] {
