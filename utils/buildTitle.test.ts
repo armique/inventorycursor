@@ -18,6 +18,17 @@ function ramItem(partial: Partial<InventoryItem> & { name: string }): InventoryI
 }
 
 describe('ramBits kit expansion', () => {
+  it.each([
+    ['DDR3 8GB (2x4GB) DDR3 RAM', '8GB (2×4GB) DDR3'],
+    ['DDR3 3x4GB RAM', '12GB (3×4GB) DDR3'],
+    ['Crucial 4x8GB DDR4', '32GB (4×8GB) DDR4'],
+    ['Hynix 8×4GB DDR3 1600MHz', '32GB (8×4GB) DDR3 1600MHz'],
+    ['Kingston 2x16GB DDR5', '32GB (2×16GB) DDR5'],
+  ] as const)('expands kit %s → starts with %s', (name, expectedPrefix) => {
+    const bits = ramBits([ramItem({ name })]);
+    expect(bits.startsWith(expectedPrefix)).toBe(true);
+  });
+
   it('treats 2x4GB kit row as 8GB total (not 1x4GB)', () => {
     const bits = ramBits([
       ramItem({ name: 'DDR3 8GB (2x4GB) DDR3 RAM' }),
@@ -31,6 +42,14 @@ describe('ramBits kit expansion', () => {
       ramItem({ id: 'b', name: 'DDR3 4GB' }),
     ]);
     expect(bits).toMatch(/^8GB \(2×4GB\) DDR3/);
+  });
+
+  it('sums mixed kit + stick rows (3x4GB kit + one 4GB stick → 16GB)', () => {
+    const bits = ramBits([
+      ramItem({ id: 'kit', name: 'DDR3 3x4GB' }),
+      ramItem({ id: 'stick', name: 'DDR3 4GB' }),
+    ]);
+    expect(bits).toMatch(/^16GB \(4×4GB\) DDR3/);
   });
 
   it('uses Modules + GB per Stick when name has no NxM kit', () => {
