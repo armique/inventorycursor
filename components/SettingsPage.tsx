@@ -612,8 +612,10 @@ const SettingsPage: React.FC<Props> = ({
     categories,
     categoryFields,
     ...(dashboardPreferences ? { dashboard: dashboardPreferences } : {}),
+    ...(actionHistory.length ? { actionHistory } : {}),
+    ...(bulkImports.length ? { bulkImports } : {}),
     exportedAt: new Date().toISOString(),
-  }), [items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields, dashboardPreferences]);
+  }), [items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields, dashboardPreferences, actionHistory, bulkImports]);
 
   const handleSaveGitHubConfig = () => {
     const config = getStoredConfig();
