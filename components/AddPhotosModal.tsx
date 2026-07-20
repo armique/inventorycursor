@@ -540,8 +540,8 @@ const AddPhotosModal: React.FC<Props> = ({
               <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} disabled={loading} />
             </label>
             <p className="text-[10px] text-slate-400 font-medium leading-snug">
-              iCloud files with a cloud icon must finish downloading first (right-click → Always keep on this
-              device). The app will wait a few seconds for downloads that start when you select the file.
+              iPhone HEIC photos are converted to JPEG automatically. iCloud files with a cloud icon must
+              finish downloading first (right-click → Always keep on this device).
             </p>
           </div>
 

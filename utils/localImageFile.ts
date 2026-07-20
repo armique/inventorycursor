@@ -2,6 +2,8 @@
  * Read local image Files reliably — especially iCloud / OneDrive online-only
  * placeholders on Windows, which often arrive with empty MIME type and fail
  * the first read until the OS finishes downloading.
+ *
+ * HEIC/HEIF (iPhone / iCloud) is converted to JPEG in-browser via heic2any.
  */
 
 const IMAGE_EXT_MIME: Record<string, string> = {
@@ -65,16 +67,47 @@ function cloudHint(fileName: string): string {
   );
 }
 
-function heicHint(fileName: string): string {
+function heicFailHint(fileName: string): string {
   return (
-    `Could not read "${fileName}" (HEIC). Convert to JPEG in Photos / export Most Compatible, ` +
-    `or right-click in Explorer → Always keep on this device and re-save as JPG.`
+    `Could not convert "${fileName}" from HEIC. Wait until iCloud finishes downloading ` +
+    `(green check, not cloud icon), then try again — or export as JPEG from Photos.`
   );
+}
+
+function jpegNameFromHeic(name: string): string {
+  return name.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg');
+}
+
+/** Convert iPhone/iCloud HEIC/HEIF to a JPEG File Chrome can decode. */
+export async function convertHeicFileToJpeg(file: File): Promise<File> {
+  try {
+    const { default: heic2any } = await import('heic2any');
+    const result = await heic2any({
+      blob: file,
+      toType: 'image/jpeg',
+      quality: 0.92,
+    });
+    const blob = Array.isArray(result) ? result[0] : result;
+    if (!blob || !(blob instanceof Blob) || blob.size < 32) {
+      throw new LocalImageReadError(heicFailHint(file.name), 'heic');
+    }
+    return new File([blob], jpegNameFromHeic(file.name), {
+      type: 'image/jpeg',
+      lastModified: file.lastModified || Date.now(),
+    });
+  } catch (err) {
+    if (err instanceof LocalImageReadError) throw err;
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new LocalImageReadError(
+      `${heicFailHint(file.name)}${msg ? ` (${msg})` : ''}`,
+      'heic'
+    );
+  }
 }
 
 /**
  * Force the OS to hydrate an online-only cloud file by reading its bytes,
- * then return a new File with a correct MIME type.
+ * then return a new File with a correct MIME type (HEIC → JPEG when needed).
  */
 export async function materializeLocalImageFile(
   file: File,
@@ -91,6 +124,7 @@ export async function materializeLocalImageFile(
   const attempts = options?.attempts ?? 12;
   const delayMs = options?.delayMs ?? 600;
   let lastError: unknown;
+  const heic = looksLikeHeic(file);
 
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {
@@ -109,23 +143,43 @@ export async function materializeLocalImageFile(
         throw new LocalImageReadError(cloudHint(file.name), 'cloud');
       }
 
-      const materialized = new File([buffer], file.name, {
+      let materialized = new File([buffer], file.name, {
         type: mime,
         lastModified: file.lastModified || Date.now(),
       });
+
+      if (heic) {
+        // Chromium cannot decode HEIC — convert before compress/upload.
+        materialized = await convertHeicFileToJpeg(materialized);
+      }
 
       try {
         await assertImageDecodable(materialized);
         return materialized;
       } catch (decodeErr) {
-        if (looksLikeHeic(materialized)) {
-          throw new LocalImageReadError(heicHint(file.name), 'heic');
+        // Some files are HEIC despite a .jpg name from iCloud — try convert once.
+        if (!heic && attempt === 0) {
+          try {
+            const converted = await convertHeicFileToJpeg(materialized);
+            await assertImageDecodable(converted);
+            return converted;
+          } catch {
+            /* fall through */
+          }
         }
         throw decodeErr;
       }
     } catch (err) {
       lastError = err;
-      if (err instanceof LocalImageReadError && (err.code === 'heic' || err.code === 'type')) {
+      if (err instanceof LocalImageReadError && err.code === 'type') {
+        throw err;
+      }
+      // HEIC conversion failures: retry a few times in case iCloud was still hydrating.
+      if (
+        err instanceof LocalImageReadError &&
+        err.code === 'heic' &&
+        attempt >= Math.min(3, attempts - 1)
+      ) {
         throw err;
       }
       if (attempt < attempts - 1) {
@@ -135,7 +189,10 @@ export async function materializeLocalImageFile(
   }
 
   if (lastError instanceof LocalImageReadError) throw lastError;
-  throw new LocalImageReadError(cloudHint(file.name), 'cloud');
+  throw new LocalImageReadError(
+    heic ? heicFailHint(file.name) : cloudHint(file.name),
+    heic ? 'heic' : 'cloud'
+  );
 }
 
 function assertImageDecodable(file: File): Promise<void> {
@@ -154,7 +211,7 @@ function assertImageDecodable(file: File): Promise<void> {
       URL.revokeObjectURL(url);
       reject(
         new LocalImageReadError(
-          looksLikeHeic(file) ? heicHint(file.name) : cloudHint(file.name),
+          looksLikeHeic(file) ? heicFailHint(file.name) : cloudHint(file.name),
           looksLikeHeic(file) ? 'heic' : 'decode'
         )
       );
@@ -168,7 +225,7 @@ export function localImageReadErrorMessage(err: unknown, fallback = 'Could not r
   if (err instanceof LocalImageReadError) return err.message;
   if (err instanceof Error && err.message.trim()) {
     const m = err.message;
-    if (/not an image|failed to decode|could not read|empty/i.test(m)) {
+    if (/not an image|failed to decode|could not read|empty|heic/i.test(m)) {
       return (
         `${m} If the photo has a cloud icon in iCloud Drive, right-click → ` +
         `Always keep on this device, then try again.`
