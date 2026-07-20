@@ -52,7 +52,7 @@ const PhoneUploadQrPanel: React.FC<Props> = ({ itemId, itemName, onUrls, onClose
           (e as { code?: string })?.code === 'permission-denied';
         setError(
           permission
-            ? 'Missing or insufficient permissions. Redeploy Firestore rules, then hard-refresh the app (Ctrl+Shift+R). You must be signed in with Google on the PC.'
+            ? 'Could not create upload session. Hard-refresh (Ctrl+Shift+R). You must be signed in with Google (AUTHENTICATED). If it still fails, click Save Now in Settings once, then try again.'
             : msg
         );
       }
@@ -117,7 +117,7 @@ const PhoneUploadQrPanel: React.FC<Props> = ({ itemId, itemName, onUrls, onClose
             <Smartphone size={12} /> From iPhone
           </p>
           <p className="text-[10px] text-sky-900/70 font-medium mt-0.5">
-            Scan with Camera → pick from your full Photos library. Photos land here live.
+            Scan with Camera → on iPhone sign in with the same Google account → pick from Photos.
           </p>
         </div>
         <button
