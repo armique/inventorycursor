@@ -408,6 +408,29 @@ export async function downloadProductCardEntries(
   return { ok, failed };
 }
 
+/** Sync counts from local gallery metadata (instant; may undercount until cloud refresh). */
+export function countLocalProductCardsByItemId(): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const e of readLocal()) {
+    const id = (e.itemId || '').trim();
+    if (!id) continue;
+    out[id] = (out[id] || 0) + 1;
+  }
+  return out;
+}
+
+/** Merge local + cloud gallery into per-item card counts. */
+export async function countProductCardsByItemId(): Promise<Record<string, number>> {
+  const entries = await listProductCardGallery();
+  const out: Record<string, number> = {};
+  for (const e of entries) {
+    const id = (e.itemId || '').trim();
+    if (!id) continue;
+    out[id] = (out[id] || 0) + 1;
+  }
+  return out;
+}
+
 /** Merge cloud + local gallery; newest first. Optionally filter by item. */
 export async function listProductCardGallery(
   itemId?: string
