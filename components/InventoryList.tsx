@@ -434,6 +434,8 @@ type InventoryListFilterParams = {
   smartPreset: SmartPreset;
   /** When set, show only this bulk-import batch (status tabs ignored). */
   bulkImportFilterId: string | null;
+  /** Item ids from the history record — used when rows were never stamped with bulkImportId. */
+  bulkImportItemIds: Set<string> | null;
 };
 
 function filterAndSortInventoryItems(params: InventoryListFilterParams): InventoryItem[] {
@@ -455,6 +457,7 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
     amountFilter,
     smartPreset,
     bulkImportFilterId,
+    bulkImportItemIds,
   } = params;
 
   const query = searchTerm.trim();
@@ -463,7 +466,9 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
 
   const filtered = items.filter((item) => {
     if (bulkBatchActive) {
-      if (item.bulkImportId !== bulkImportFilterId) return false;
+      const stamped = item.bulkImportId === bulkImportFilterId;
+      const inRecord = bulkImportItemIds?.has(item.id) === true;
+      if (!stamped && !inRecord) return false;
     } else {
       let matchesStatus = false;
       if (statusFilter === 'ACTIVE') {
@@ -833,13 +838,37 @@ const InventoryList: React.FC<Props> = ({
     [bulkImports, bulkImportFilterId]
   );
 
+  const bulkImportIdByItemId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const record of bulkImports) {
+      for (const id of record.itemIds || []) {
+        if (!map.has(id)) map.set(id, record.id);
+      }
+    }
+    return map;
+  }, [bulkImports]);
+
+  const resolveItemBulkImportId = useCallback(
+    (item: InventoryItem) => item.bulkImportId || bulkImportIdByItemId.get(item.id) || null,
+    [bulkImportIdByItemId]
+  );
+
+  const bulkImportItemIds = useMemo(() => {
+    if (!bulkImportFilterId) return null;
+    if (bulkImportRecord?.itemIds?.length) return new Set(bulkImportRecord.itemIds);
+    // Fallback: any currently stamped members (e.g. record not loaded yet).
+    return new Set(items.filter((i) => i.bulkImportId === bulkImportFilterId).map((i) => i.id));
+  }, [bulkImportFilterId, bulkImportRecord, items]);
+
   const bulkImportCounts = useMemo(() => {
     if (!bulkImportFilterId) return null;
     if (bulkImportRecord) {
       const byId = new Map(items.map((i) => [i.id, i]));
       return countBulkImportItems(bulkImportRecord, byId);
     }
-    const members = items.filter((i) => i.bulkImportId === bulkImportFilterId);
+    const members = items.filter(
+      (i) => i.bulkImportId === bulkImportFilterId || bulkImportItemIds?.has(i.id)
+    );
     let sold = 0;
     let inStock = 0;
     for (const m of members) {
@@ -847,7 +876,28 @@ const InventoryList: React.FC<Props> = ({
       else inStock += 1;
     }
     return { present: members.length, inStock, sold, missing: 0 };
-  }, [bulkImportFilterId, bulkImportRecord, items]);
+  }, [bulkImportFilterId, bulkImportRecord, bulkImportItemIds, items]);
+
+  // Heal missing bulkImportId stamps so Flags icon + future filters stay consistent.
+  const healedBulkImportRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!bulkImportFilterId) {
+      healedBulkImportRef.current = null;
+      return;
+    }
+    if (!bulkImportRecord?.itemIds?.length) return;
+    if (healedBulkImportRef.current === bulkImportFilterId) return;
+    const missing = bulkImportRecord.itemIds
+      .map((id) => items.find((i) => i.id === id))
+      .filter((i): i is InventoryItem => Boolean(i && i.bulkImportId !== bulkImportFilterId));
+    healedBulkImportRef.current = bulkImportFilterId;
+    if (missing.length === 0) return;
+    onUpdate(
+      missing.map((i) => ({ ...i, bulkImportId: bulkImportFilterId })),
+      undefined,
+      { skipUndo: true, skipActionLog: true }
+    );
+  }, [bulkImportFilterId, bulkImportRecord, items, onUpdate]);
 
   // -- STATE PERSISTENCE (batched; avoids many sync localStorage writes per keystroke) --
   const listPrefsPersistRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1526,6 +1576,7 @@ const InventoryList: React.FC<Props> = ({
       timeGaugeSortKeyMap,
       smartPreset,
       bulkImportFilterId,
+      bulkImportItemIds,
     }),
     [
       items,
@@ -1544,6 +1595,7 @@ const InventoryList: React.FC<Props> = ({
       timeGaugeSortKeyMap,
       smartPreset,
       bulkImportFilterId,
+      bulkImportItemIds,
     ]
   );
 
@@ -2468,30 +2520,36 @@ const InventoryList: React.FC<Props> = ({
               })()}
 
               {/* Bulk import batch — open dedicated status-agnostic view */}
-              {item.bulkImportId ? (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openBulkImportBatch(item.bulkImportId!);
-                  }}
-                  className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors ${
-                    bulkImportFilterId === item.bulkImportId
-                      ? 'border-violet-400 bg-violet-100 text-violet-800'
-                      : 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 hover:border-violet-300'
-                  }`}
-                  title="Bulk import — show all from this batch (including sold)"
-                >
-                  <Layers size={13} strokeWidth={2.25} />
-                </button>
-              ) : (
-                <span
-                  className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-transparent opacity-0`}
-                  aria-hidden
-                >
-                  <Layers size={13} />
-                </span>
-              )}
+              {(() => {
+                const itemBulkId = resolveItemBulkImportId(item);
+                if (!itemBulkId) {
+                  return (
+                    <span
+                      className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-transparent opacity-0`}
+                      aria-hidden
+                    >
+                      <Layers size={13} />
+                    </span>
+                  );
+                }
+                return (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openBulkImportBatch(itemBulkId);
+                    }}
+                    className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors ${
+                      bulkImportFilterId === itemBulkId
+                        ? 'border-violet-400 bg-violet-100 text-violet-800'
+                        : 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 hover:border-violet-300'
+                    }`}
+                    title="Bulk import — show all from this batch (including sold)"
+                  >
+                    <Layers size={13} strokeWidth={2.25} />
+                  </button>
+                );
+              })()}
             </div>
           </td>
         );
