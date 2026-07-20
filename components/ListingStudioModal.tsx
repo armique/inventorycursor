@@ -2,6 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom';
 import {
   Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
   Copy,
   FolderOpen,
   Image as ImageIcon,
@@ -9,6 +13,7 @@ import {
   Plus,
   Smartphone,
   Sparkles,
+  Star,
   Trash2,
   Upload,
   X,
@@ -155,6 +160,11 @@ const ListingStudioModal: React.FC<Props> = ({
   const [providers, setProviders] = useState<ProductCardProviderInfo[]>([]);
   const [styleId, setStyleId] = useState<ProductCardStyleId>(DEFAULT_PRODUCT_CARD_STYLE_ID);
   const [photoSource, setPhotoSource] = useState<'none' | 'iphone' | 'folder'>('none');
+  /** Card provider/style panel — collapsed by default on narrow screens. */
+  const [cardOptionsOpen, setCardOptionsOpen] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)').matches : false
+  );
+  const [previewPhotoIndex, setPreviewPhotoIndex] = useState<number | null>(null);
 
   const workingItem = useMemo(
     () => ({
@@ -169,6 +179,18 @@ const ListingStudioModal: React.FC<Props> = ({
   );
 
   const photos = useMemo(() => getItemUserPhotoUrls(workingItem), [workingItem]);
+
+  useEffect(() => {
+    if (previewPhotoIndex === null) return;
+    if (!photos.length) {
+      setPreviewPhotoIndex(null);
+      return;
+    }
+    if (previewPhotoIndex >= photos.length) {
+      setPreviewPhotoIndex(photos.length - 1);
+    }
+  }, [photos, previewPhotoIndex]);
+
   const cardFields =
     categoryFields[`${item.category}:${item.subCategory}`] ||
     categoryFields[item.category] ||
@@ -277,11 +299,16 @@ const ListingStudioModal: React.FC<Props> = ({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape') return;
+      if (previewPhotoIndex !== null) {
+        setPreviewPhotoIndex(null);
+        return;
+      }
+      onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, previewPhotoIndex]);
 
   const flashCopied = (key: string) => {
     setCopied(key);
@@ -389,6 +416,14 @@ const ListingStudioModal: React.FC<Props> = ({
         imageUrl: next[0] || '',
         imageUrls: next,
       });
+      setPreviewPhotoIndex((idx) => {
+        if (idx === null) return null;
+        if (!next.length) return null;
+        const wasUrl = photos[idx];
+        const moved = next.indexOf(wasUrl);
+        if (moved >= 0) return moved;
+        return Math.min(idx, next.length - 1);
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not remove photo');
     }
@@ -402,6 +437,7 @@ const ListingStudioModal: React.FC<Props> = ({
         imageUrl: next[0] || '',
         imageUrls: next,
       });
+      setPreviewPhotoIndex(0);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not set main photo');
     }
@@ -710,45 +746,29 @@ const ListingStudioModal: React.FC<Props> = ({
               ) : (
                 <div className="flex gap-2 overflow-x-auto pb-1 -mx-0.5 px-0.5 snap-x snap-mandatory overscroll-x-contain">
                   {photos.map((url, index) => (
-                    <div
+                    <button
                       key={`${index}:${url.slice(0, 48)}`}
-                      className="relative shrink-0 w-[4.5rem] h-[4.5rem] sm:w-20 sm:h-20 snap-start group"
+                      type="button"
+                      onClick={() => setPreviewPhotoIndex(index)}
+                      className={`relative shrink-0 w-[4.5rem] h-[4.5rem] sm:w-20 sm:h-20 snap-start rounded-xl overflow-hidden border-2 bg-slate-100 ${
+                        index === 0
+                          ? 'border-rose-500 ring-2 ring-rose-200'
+                          : 'border-slate-200'
+                      }`}
+                      title="Open photo"
                     >
-                      <button
-                        type="button"
-                        onClick={() => void handleSetPhotoMain(url)}
-                        className={`block w-full h-full rounded-xl overflow-hidden border-2 bg-slate-100 ${
-                          index === 0
-                            ? 'border-rose-500 ring-2 ring-rose-200'
-                            : 'border-slate-200'
-                        }`}
-                        title={index === 0 ? 'Main photo' : 'Set as main photo'}
-                      >
-                        <img
-                          src={url}
-                          alt=""
-                          className="w-full h-full object-cover"
-                          draggable={false}
-                        />
-                      </button>
+                      <img
+                        src={url}
+                        alt=""
+                        className="w-full h-full object-cover"
+                        draggable={false}
+                      />
                       {index === 0 && (
                         <span className="absolute bottom-0.5 left-0.5 px-1 py-px rounded bg-rose-600 text-white text-[8px] font-black uppercase leading-none">
                           Main
                         </span>
                       )}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void handleRemovePhoto(url);
-                        }}
-                        className="absolute -top-1.5 -right-1.5 z-10 w-6 h-6 rounded-full bg-rose-600 text-white flex items-center justify-center shadow-md border-2 border-white"
-                        title="Remove photo"
-                        aria-label="Remove photo"
-                      >
-                        <X size={12} strokeWidth={3} />
-                      </button>
-                    </div>
+                    </button>
                   ))}
                   <button
                     type="button"
@@ -763,7 +783,7 @@ const ListingStudioModal: React.FC<Props> = ({
               <p className="text-[10px] text-slate-400 mt-1 font-medium">
                 {photos.length === 0
                   ? 'Generate will create 1 card from name/specs'
-                  : `${photos.length} photo${photos.length === 1 ? '' : 's'} → ${plannedCards} card${plannedCards === 1 ? '' : 's'} · swipe · ✕ remove · tap = main`}
+                  : `${photos.length} photo${photos.length === 1 ? '' : 's'} → ${plannedCards} card${plannedCards === 1 ? '' : 's'} · tap to enlarge`}
               </p>
             </section>
 
@@ -1044,40 +1064,74 @@ const ListingStudioModal: React.FC<Props> = ({
               </button>
             </div>
 
-            <div className="flex flex-wrap gap-1.5 mb-1">
-              {providerList.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  disabled={!p.available || genCards}
-                  onClick={() => setProvider(p.id)}
-                  className={`px-2 py-1 rounded-lg border text-[9px] font-black uppercase ${
-                    provider === p.id
-                      ? 'border-rose-400 bg-rose-50 text-rose-800'
-                      : 'border-slate-200 text-slate-500'
-                  }`}
-                >
-                  {p.name}
-                </button>
-              ))}
-            </div>
-            <div className="grid grid-cols-2 gap-1 mb-2">
-              {PRODUCT_CARD_STYLES.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  disabled={genCards}
-                  onClick={() => setStyleId(s.id)}
-                  className={`text-left px-2 py-1.5 rounded-lg border ${
-                    styleId === s.id
-                      ? 'border-rose-400 bg-rose-50'
-                      : 'border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  <span className="block text-[10px] font-black text-slate-800">{s.name}</span>
-                  <span className="block text-[9px] text-slate-400 leading-snug">{s.blurb}</span>
-                </button>
-              ))}
+            <div className="rounded-xl border border-slate-200 bg-slate-50/80 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setCardOptionsOpen((o) => !o)}
+                className="w-full flex items-center justify-between gap-2 px-2.5 py-2 text-left"
+                aria-expanded={cardOptionsOpen}
+              >
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    Card style
+                  </p>
+                  <p className="text-[10px] text-slate-500 font-medium truncate">
+                    {providerList.find((p) => p.id === provider)?.name || provider}
+                    {' · '}
+                    {PRODUCT_CARD_STYLES.find((s) => s.id === styleId)?.name || styleId}
+                  </p>
+                </div>
+                <span className="inline-flex items-center gap-1 shrink-0 px-2 py-1 rounded-lg border border-slate-200 bg-white text-[9px] font-black uppercase text-slate-600">
+                  {cardOptionsOpen ? (
+                    <>
+                      Close <ChevronUp size={12} />
+                    </>
+                  ) : (
+                    <>
+                      Expand <ChevronDown size={12} />
+                    </>
+                  )}
+                </span>
+              </button>
+              {cardOptionsOpen && (
+                <div className="px-2.5 pb-2.5 space-y-2 border-t border-slate-200/80 pt-2">
+                  <div className="flex flex-wrap gap-1.5">
+                    {providerList.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        disabled={!p.available || genCards}
+                        onClick={() => setProvider(p.id)}
+                        className={`px-2 py-1 rounded-lg border text-[9px] font-black uppercase ${
+                          provider === p.id
+                            ? 'border-rose-400 bg-rose-50 text-rose-800'
+                            : 'border-slate-200 text-slate-500 bg-white'
+                        }`}
+                      >
+                        {p.name}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-2 gap-1">
+                    {PRODUCT_CARD_STYLES.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        disabled={genCards}
+                        onClick={() => setStyleId(s.id)}
+                        className={`text-left px-2 py-1.5 rounded-lg border ${
+                          styleId === s.id
+                            ? 'border-rose-400 bg-rose-50'
+                            : 'border-slate-200 bg-white hover:bg-slate-50'
+                        }`}
+                      >
+                        <span className="block text-[10px] font-black text-slate-800">{s.name}</span>
+                        <span className="block text-[9px] text-slate-400 leading-snug">{s.blurb}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {selectedThumb && (
@@ -1301,6 +1355,100 @@ const ListingStudioModal: React.FC<Props> = ({
           </button>
         </footer>
       </div>
+
+      {previewPhotoIndex !== null && photos[previewPhotoIndex] && (
+        <div
+          className="absolute inset-0 z-[20] flex flex-col bg-slate-950/95"
+          onClick={() => setPreviewPhotoIndex(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Photo preview"
+        >
+          <div
+            className="flex items-center justify-between gap-2 px-3 py-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] shrink-0"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-xs font-black uppercase tracking-widest text-white/80">
+              Photo {previewPhotoIndex + 1} / {photos.length}
+              {previewPhotoIndex === 0 ? ' · Main' : ''}
+            </p>
+            <button
+              type="button"
+              onClick={() => setPreviewPhotoIndex(null)}
+              className="p-2 rounded-xl bg-white/10 text-white hover:bg-white/20"
+              aria-label="Close preview"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <div
+            className="flex-1 min-h-0 flex items-center justify-center px-3 py-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={photos[previewPhotoIndex]}
+              alt=""
+              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+              draggable={false}
+            />
+          </div>
+
+          <div
+            className="shrink-0 px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex gap-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              disabled={previewPhotoIndex === 0 || saving}
+              onClick={() => void handleSetPhotoMain(photos[previewPhotoIndex])}
+              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-3 rounded-xl bg-white text-slate-900 text-[10px] font-black uppercase disabled:opacity-40"
+            >
+              <Star size={14} className={previewPhotoIndex === 0 ? 'fill-rose-500 text-rose-500' : ''} />
+              {previewPhotoIndex === 0 ? 'Main photo' : 'Make main'}
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => void handleRemovePhoto(photos[previewPhotoIndex])}
+              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-3 rounded-xl bg-rose-600 text-white text-[10px] font-black uppercase disabled:opacity-50"
+            >
+              <Trash2 size={14} />
+              Remove
+            </button>
+          </div>
+
+          {photos.length > 1 && (
+            <div
+              className="absolute left-0 right-0 top-1/2 -translate-y-1/2 flex justify-between px-1 pointer-events-none"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                disabled={previewPhotoIndex <= 0}
+                onClick={() => setPreviewPhotoIndex((i) => (i === null ? i : Math.max(0, i - 1)))}
+                className="pointer-events-auto p-2.5 rounded-full bg-black/40 text-white disabled:opacity-20"
+                aria-label="Previous photo"
+              >
+                <ChevronLeft size={20} />
+              </button>
+              <button
+                type="button"
+                disabled={previewPhotoIndex >= photos.length - 1}
+                onClick={() =>
+                  setPreviewPhotoIndex((i) =>
+                    i === null ? i : Math.min(photos.length - 1, i + 1)
+                  )
+                }
+                className="pointer-events-auto p-2.5 rounded-full bg-black/40 text-white disabled:opacity-20"
+                aria-label="Next photo"
+              >
+                <ChevronRight size={20} />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>,
     document.body
   );
