@@ -372,11 +372,38 @@ const ListingStudioModal: React.FC<Props> = ({
         marketTitle: title.trim().slice(0, 80),
         marketDescription: description.trim(),
         aiDescriptionNote: aiDescriptionNote.trim(),
+        storeDescription: description.trim() || item.storeDescription,
       });
+      onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed');
-    } finally {
       setSaving(false);
+    }
+  };
+
+  const handleRemovePhoto = async (url: string) => {
+    const next = normalizeImageList(photos.filter((u) => u !== url));
+    setError(null);
+    try {
+      await persistPatch({
+        imageUrl: next[0] || '',
+        imageUrls: next,
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not remove photo');
+    }
+  };
+
+  const handleSetPhotoMain = async (url: string) => {
+    const next = normalizeImageList([url, ...photos.filter((u) => u !== url)]);
+    setError(null);
+    try {
+      await persistPatch({
+        imageUrl: next[0] || '',
+        imageUrls: next,
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not set main photo');
     }
   };
 
@@ -449,11 +476,13 @@ const ListingStudioModal: React.FC<Props> = ({
     if (!files?.length) return;
     try {
       const urls = await filesToDataUrls(Array.from(files).slice(0, 6), { itemId: item.id });
-      const merged = normalizeImageList([...(item.imageUrls || []), item.imageUrl, ...urls]);
-      await persistPatch({ imageUrl: merged[0], imageUrls: merged });
+      const merged = normalizeImageList([...photos, ...urls]);
+      await persistPatch({ imageUrl: merged[0] || '', imageUrls: merged });
     } catch (e) {
       const { localImageReadErrorMessage } = await import('../utils/localImageFile');
       setError(localImageReadErrorMessage(e, 'Photo import failed'));
+    } finally {
+      if (fileRef.current) fileRef.current.value = '';
     }
   };
 
@@ -462,17 +491,13 @@ const ListingStudioModal: React.FC<Props> = ({
       if (!urls.length) return;
       try {
         const prepared = await prepareInventoryImagesForStorage(urls, { itemId: item.id });
-        const merged = normalizeImageList([
-          ...(item.imageUrls || []),
-          item.imageUrl,
-          ...prepared,
-        ]);
-        await persistPatch({ imageUrl: merged[0], imageUrls: merged });
+        const existing = getItemUserPhotoUrls(item);
+        const merged = normalizeImageList([...existing, ...prepared]);
+        await persistPatch({ imageUrl: merged[0] || '', imageUrls: merged });
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not attach iPhone photos');
       }
     },
-    // persistPatch closes over onUpdateItem; item urls needed for merge base
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [item.id, item.imageUrl, item.imageUrls, onUpdateItem]
   );
@@ -481,8 +506,8 @@ const ListingStudioModal: React.FC<Props> = ({
     if (!files.length) return;
     try {
       const urls = await filesToDataUrls(files.slice(0, 6), { itemId: item.id });
-      const merged = normalizeImageList([...(item.imageUrls || []), item.imageUrl, ...urls]);
-      await persistPatch({ imageUrl: merged[0], imageUrls: merged });
+      const merged = normalizeImageList([...photos, ...urls]);
+      await persistPatch({ imageUrl: merged[0] || '', imageUrls: merged });
     } catch (e) {
       const { localImageReadErrorMessage } = await import('../utils/localImageFile');
       setError(localImageReadErrorMessage(e, 'Folder photo import failed'));
@@ -556,20 +581,20 @@ const ListingStudioModal: React.FC<Props> = ({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[230] flex items-center justify-center bg-slate-900/55 backdrop-blur-sm p-2 sm:p-3"
+      className="fixed inset-0 z-[230] flex items-stretch sm:items-center justify-center bg-slate-900/55 backdrop-blur-sm sm:p-3"
       onClick={onClose}
     >
       <div
-        className="bg-white w-full max-w-[1280px] h-[min(94vh,920px)] rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col"
+        className="bg-white w-full sm:max-w-[1280px] h-[100dvh] sm:h-[min(94vh,920px)] sm:rounded-2xl shadow-2xl border-0 sm:border border-slate-200 overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="px-3 py-2.5 border-b border-slate-100 flex items-start justify-between gap-2 bg-slate-50/90 shrink-0">
+        <header className="px-3 py-2.5 border-b border-slate-100 flex items-start justify-between gap-2 bg-slate-50/90 shrink-0 pt-[max(0.625rem,env(safe-area-inset-top))]">
           <div className="min-w-0">
             <h3 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
               <Sparkles size={14} className="text-rose-600" /> Listing Studio
             </h3>
             <p className="text-[11px] text-slate-500 font-medium truncate">
-              Specs · Card gallery · Title & description
+              Specs · Photos · Title & description
             </p>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -585,7 +610,7 @@ const ListingStudioModal: React.FC<Props> = ({
           </div>
         </header>
 
-        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(240px,0.92fr)_minmax(280px,1.05fr)_minmax(280px,1.05fr)]">
+        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(240px,0.92fr)_minmax(280px,1.05fr)_minmax(280px,1.05fr)] overflow-y-auto lg:overflow-hidden">
           {/* LEFT — item / specs / trade */}
           <aside className="border-r border-slate-100 overflow-y-auto p-3 space-y-3 bg-slate-50/40">
             <section>
@@ -678,38 +703,67 @@ const ListingStudioModal: React.FC<Props> = ({
                 </div>
               )}
 
-              {photos[0] ? (
-                <img
-                  src={photos[0]}
-                  alt=""
-                  className="w-full max-h-36 object-cover rounded-xl border border-slate-200 bg-slate-100"
-                />
-              ) : (
-                <div className="h-24 rounded-xl border border-dashed border-slate-300 flex items-center justify-center text-[10px] font-bold text-slate-400">
+              {photos.length === 0 ? (
+                <div className="h-20 rounded-xl border border-dashed border-slate-300 flex items-center justify-center text-[10px] font-bold text-slate-400">
                   No photos yet
                 </div>
+              ) : (
+                <div className="flex gap-2 overflow-x-auto pb-1 -mx-0.5 px-0.5 snap-x snap-mandatory overscroll-x-contain">
+                  {photos.map((url, index) => (
+                    <div
+                      key={`${index}:${url.slice(0, 48)}`}
+                      className="relative shrink-0 w-[4.5rem] h-[4.5rem] sm:w-20 sm:h-20 snap-start group"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => void handleSetPhotoMain(url)}
+                        className={`block w-full h-full rounded-xl overflow-hidden border-2 bg-slate-100 ${
+                          index === 0
+                            ? 'border-rose-500 ring-2 ring-rose-200'
+                            : 'border-slate-200'
+                        }`}
+                        title={index === 0 ? 'Main photo' : 'Set as main photo'}
+                      >
+                        <img
+                          src={url}
+                          alt=""
+                          className="w-full h-full object-cover"
+                          draggable={false}
+                        />
+                      </button>
+                      {index === 0 && (
+                        <span className="absolute bottom-0.5 left-0.5 px-1 py-px rounded bg-rose-600 text-white text-[8px] font-black uppercase leading-none">
+                          Main
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void handleRemovePhoto(url);
+                        }}
+                        className="absolute -top-1.5 -right-1.5 z-10 w-6 h-6 rounded-full bg-rose-600 text-white flex items-center justify-center shadow-md border-2 border-white"
+                        title="Remove photo"
+                        aria-label="Remove photo"
+                      >
+                        <X size={12} strokeWidth={3} />
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    className="shrink-0 w-[4.5rem] h-[4.5rem] sm:w-20 sm:h-20 rounded-xl border border-dashed border-slate-300 text-slate-400 font-black hover:border-rose-400 hover:text-rose-600 flex items-center justify-center snap-start"
+                    title="Add photos"
+                  >
+                    <Plus size={18} />
+                  </button>
+                </div>
               )}
-              <div className="grid grid-cols-4 gap-1 mt-1.5">
-                {photos.slice(0, 3).map((url) => (
-                  <img
-                    key={url.slice(0, 40)}
-                    src={url}
-                    alt=""
-                    className="aspect-square rounded-lg object-cover border border-slate-200"
-                  />
-                ))}
-                <button
-                  type="button"
-                  onClick={() => fileRef.current?.click()}
-                  className="aspect-square rounded-lg border border-dashed border-slate-300 text-slate-400 font-black hover:border-rose-400 hover:text-rose-600"
-                >
-                  +
-                </button>
-              </div>
               <p className="text-[10px] text-slate-400 mt-1 font-medium">
                 {photos.length === 0
                   ? 'Generate will create 1 card from name/specs'
-                  : `${photos.length} photo${photos.length === 1 ? '' : 's'} → ${plannedCards} card${plannedCards === 1 ? '' : 's'}`}
+                  : `${photos.length} photo${photos.length === 1 ? '' : 's'} → ${plannedCards} card${plannedCards === 1 ? '' : 's'} · swipe · ✕ remove · tap = main`}
               </p>
             </section>
 
@@ -1030,7 +1084,7 @@ const ListingStudioModal: React.FC<Props> = ({
               <img
                 src={selectedThumb}
                 alt="Selected card"
-                className="w-full aspect-square max-h-56 object-contain rounded-xl border border-slate-200 bg-slate-50"
+                className="hidden sm:block w-full aspect-square max-h-56 object-contain rounded-xl border border-slate-200 bg-slate-50"
               />
             )}
 
@@ -1203,7 +1257,7 @@ const ListingStudioModal: React.FC<Props> = ({
               </div>
             )}
 
-            <div className="flex flex-wrap gap-1.5 pt-1 shrink-0">
+            <div className="hidden lg:flex flex-wrap gap-1.5 pt-1 shrink-0">
               <button
                 type="button"
                 disabled={genListing || saving}
@@ -1225,6 +1279,27 @@ const ListingStudioModal: React.FC<Props> = ({
             </div>
           </section>
         </div>
+
+        <footer className="lg:hidden shrink-0 border-t border-slate-200 bg-white px-3 py-2.5 flex gap-2 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
+          <button
+            type="button"
+            disabled={genListing || saving}
+            onClick={() => void handleGenerateListing()}
+            className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-3 rounded-xl bg-rose-600 text-white text-[10px] font-black uppercase disabled:opacity-50"
+          >
+            {genListing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+            Generate
+          </button>
+          <button
+            type="button"
+            disabled={saving || genListing}
+            onClick={() => void handleApplyListing()}
+            className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-3 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase disabled:opacity-50"
+          >
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+            Apply & close
+          </button>
+        </footer>
       </div>
     </div>,
     document.body

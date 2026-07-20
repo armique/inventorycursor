@@ -4711,16 +4711,28 @@ const InventoryList: React.FC<Props> = ({
 
       {listingAiItem && (
         <ListingStudioModal
-          item={items.find((i) => i.id === listingAiItem.id) || listingAiItem}
+          item={(() => {
+            const fromItems = items.find((i) => i.id === listingAiItem.id);
+            // Studio session patches (photos, listing text) win over a possibly stale items[] row.
+            return fromItems ? { ...fromItems, ...listingAiItem } : listingAiItem;
+          })()}
           allItems={items}
           categoryFields={categoryFields}
           onClose={() => setListingAiItem(null)}
           onUpdateItem={async (patch) => {
-            const current = items.find((i) => i.id === listingAiItem.id) || listingAiItem;
-            await onUpdate([{ ...current, ...patch }]);
-            setListingAiItem((prev) => (prev ? { ...prev, ...patch } : prev));
-            setToast('Item updated');
-            setTimeout(() => setToast(null), 1600);
+            let merged: InventoryItem | null = null;
+            setListingAiItem((prev) => {
+              const base = prev || listingAiItem;
+              const fromItems = items.find((i) => i.id === base.id);
+              // Merge items → studio session → patch so rapid photo adds aren't wiped by stale items[].
+              merged = { ...(fromItems || base), ...base, ...patch };
+              return merged;
+            });
+            if (merged) await onUpdate([merged]);
+            if (patch.marketTitle !== undefined || patch.marketDescription !== undefined) {
+              setToast('Listing saved to item');
+              setTimeout(() => setToast(null), 1600);
+            }
           }}
         />
       )}
