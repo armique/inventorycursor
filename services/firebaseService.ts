@@ -387,7 +387,6 @@ const LARGE_ITEM_FIELDS = [
   "kleinanzeigenChatImage",
   "kleinanzeigenBuyChatImage",
   "ebayOrderScreenshotUrl",
-  "marketDescription",
 ] as const;
 
 /** Gallery / multi-image fields (were not trimmed before → common cause of sync failure). */
@@ -450,6 +449,7 @@ function trimItemForSize(item: unknown): unknown {
     "storeDescriptionEn",
     "storeMetaDescription",
     "marketTitle",
+    "marketDescription",
   ] as const) {
     const v = o[textKey];
     if (typeof v === "string" && v.length > 8000) {
