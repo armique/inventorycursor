@@ -838,6 +838,21 @@ const InventoryList: React.FC<Props> = ({
     [bulkImports, bulkImportFilterId]
   );
 
+  const bulkImportIdByItemId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const record of bulkImports) {
+      for (const id of record.itemIds || []) {
+        if (!map.has(id)) map.set(id, record.id);
+      }
+    }
+    return map;
+  }, [bulkImports]);
+
+  const resolveItemBulkImportId = useCallback(
+    (item: InventoryItem) => item.bulkImportId || bulkImportIdByItemId.get(item.id) || null,
+    [bulkImportIdByItemId]
+  );
+
   const bulkImportItemIds = useMemo(() => {
     if (!bulkImportFilterId) return null;
     if (bulkImportRecord?.itemIds?.length) return new Set(bulkImportRecord.itemIds);
@@ -2505,31 +2520,36 @@ const InventoryList: React.FC<Props> = ({
               })()}
 
               {/* Bulk import batch — open dedicated status-agnostic view */}
-              {item.bulkImportId || (bulkImportFilterId && bulkImportItemIds?.has(item.id)) ? (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openBulkImportBatch(item.bulkImportId || bulkImportFilterId!);
-                  }}
-                  className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors ${
-                    bulkImportFilterId &&
-                    (bulkImportFilterId === item.bulkImportId || bulkImportItemIds?.has(item.id))
-                      ? 'border-violet-400 bg-violet-100 text-violet-800'
-                      : 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 hover:border-violet-300'
-                  }`}
-                  title="Bulk import — show all from this batch (including sold)"
-                >
-                  <Layers size={13} strokeWidth={2.25} />
-                </button>
-              ) : (
-                <span
-                  className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-transparent opacity-0`}
-                  aria-hidden
-                >
-                  <Layers size={13} />
-                </span>
-              )}
+              {(() => {
+                const itemBulkId = resolveItemBulkImportId(item);
+                if (!itemBulkId) {
+                  return (
+                    <span
+                      className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-transparent opacity-0`}
+                      aria-hidden
+                    >
+                      <Layers size={13} />
+                    </span>
+                  );
+                }
+                return (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openBulkImportBatch(itemBulkId);
+                    }}
+                    className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors ${
+                      bulkImportFilterId === itemBulkId
+                        ? 'border-violet-400 bg-violet-100 text-violet-800'
+                        : 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 hover:border-violet-300'
+                    }`}
+                    title="Bulk import — show all from this batch (including sold)"
+                  >
+                    <Layers size={13} strokeWidth={2.25} />
+                  </button>
+                );
+              })()}
             </div>
           </td>
         );
