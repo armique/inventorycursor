@@ -18,6 +18,7 @@ import { formatEUR } from '../utils/formatMoney';
 import { getItemUserPhotoCount } from '../utils/imageImport';
 import ItemThumbnail from './ItemThumbnail';
 import { MobileSheetShell } from './MobileBottomSheets';
+import ItemAccessoryToggles from './ItemAccessoryToggles';
 
 export interface MobileStockCardActions {
   onEdit: (item: InventoryItem) => void;
@@ -28,6 +29,7 @@ export interface MobileStockCardActions {
   onGift?: (item: InventoryItem) => void;
   onDuplicate?: (item: InventoryItem) => void;
   onDelete?: (item: InventoryItem) => void;
+  onPatchAccessory?: (item: InventoryItem, patch: Partial<InventoryItem>) => void;
 }
 
 /** Dense phone stock row — fits several items on screen without a tall action strip. */
@@ -90,31 +92,40 @@ export const MobileStockCard: React.FC<{
             )}
           </button>
 
-          <button
-            type="button"
-            onClick={() => actions.onEdit(item)}
-            className="min-w-0 flex-1 text-left py-0.5"
-          >
-            <p className="font-bold text-[13px] leading-tight text-slate-900 line-clamp-1">{item.name}</p>
-            <p className="mt-0.5 text-[11px] font-semibold text-slate-500 truncate">
-              {(item.isPC || item.isBundle) && (
-                <span className={item.isPC ? 'text-indigo-600' : 'text-violet-600'}>
-                  {item.isPC ? 'PC · ' : 'Bundle · '}
-                </span>
-              )}
-              €{formatEUR(item.buyPrice)}
-              {item.sellPrice != null ? ` · aim €${formatEUR(item.sellPrice)}` : ''}
-              {profit != null ? (
-                <span className={profit >= 0 ? ' text-emerald-600' : ' text-rose-600'}>
-                  {' '}
-                  ({profit >= 0 ? '+' : ''}€{formatEUR(profit)})
-                </span>
-              ) : null}
-              {item.subCategory || item.category
-                ? ` · ${item.subCategory || item.category}`
-                : ''}
-            </p>
-          </button>
+          <div className="min-w-0 flex-1 py-0.5">
+            <button
+              type="button"
+              onClick={() => actions.onEdit(item)}
+              className="w-full text-left"
+            >
+              <p className="font-bold text-[13px] leading-tight text-slate-900 line-clamp-1">{item.name}</p>
+              <p className="mt-0.5 text-[11px] font-semibold text-slate-500 truncate">
+                {(item.isPC || item.isBundle) && (
+                  <span className={item.isPC ? 'text-indigo-600' : 'text-violet-600'}>
+                    {item.isPC ? 'PC · ' : 'Bundle · '}
+                  </span>
+                )}
+                €{formatEUR(item.buyPrice)}
+                {item.sellPrice != null ? ` · aim €${formatEUR(item.sellPrice)}` : ''}
+                {profit != null ? (
+                  <span className={profit >= 0 ? ' text-emerald-600' : ' text-rose-600'}>
+                    {' '}
+                    ({profit >= 0 ? '+' : ''}€{formatEUR(profit)})
+                  </span>
+                ) : null}
+                {item.subCategory || item.category
+                  ? ` · ${item.subCategory || item.category}`
+                  : ''}
+              </p>
+            </button>
+            {actions.onPatchAccessory && (
+              <ItemAccessoryToggles
+                item={item}
+                dense
+                onPatch={(patch) => actions.onPatchAccessory?.(item, patch)}
+              />
+            )}
+          </div>
 
           <div className="flex items-center gap-0.5 shrink-0">
             <button

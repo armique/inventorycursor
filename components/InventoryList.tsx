@@ -41,6 +41,7 @@ import {
   subscribeProductCardBackgroundJobs,
   type ProductCardBgJob,
 } from '../services/productCardBackgroundQueue';
+import ItemAccessoryToggles from './ItemAccessoryToggles';
 
 const ebaySoldSearchUrl = (query: string) =>
   `https://www.ebay.de/sch/i.html?_nkw=${encodeURIComponent(query)}&LH_Sold=1&LH_Complete=1`;
@@ -2863,6 +2864,15 @@ const InventoryList: React.FC<Props> = ({
                         </p>
                       )}
                    </div>
+                   <ItemAccessoryToggles
+                     item={item}
+                     dense={dense}
+                     onPatch={(patch) =>
+                       onUpdate([{ ...item, ...patch }], undefined, {
+                         skipActionLog: true,
+                       })
+                     }
+                   />
                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                       {hasUserPhotos ? (
                         <span
@@ -4891,6 +4901,8 @@ const InventoryList: React.FC<Props> = ({
                   },
                   onDuplicate: (it) => handleDuplicate(it),
                   onDelete: (it) => setItemToDelete(it),
+                  onPatchAccessory: (it, patch) =>
+                    onUpdate([{ ...it, ...patch }], undefined, { skipActionLog: true }),
                 }}
               />
             ))
