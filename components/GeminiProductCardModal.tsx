@@ -11,6 +11,7 @@ import {
   Images,
   Trash2,
   Cloud,
+  ZoomIn,
 } from 'lucide-react';
 import type { GeneratedProductCardEntry, InventoryItem } from '../types';
 import {
@@ -35,6 +36,7 @@ import {
   saveGeneratedProductCard,
 } from '../services/productCardGallery';
 import { resolveUrlForInventoryMainPhoto } from '../utils/applyProductCardAsMainPhoto';
+import ImageLightbox from './ImageLightbox';
 
 interface Props {
   item: InventoryItem;
@@ -71,6 +73,11 @@ const GeminiProductCardModal: React.FC<Props> = ({
   const [galleryLoading, setGalleryLoading] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
   const [galleryScope, setGalleryScope] = useState<'item' | 'all'>('item');
+  const [lightbox, setLightbox] = useState<
+    | { kind: 'preview'; src: string }
+    | { kind: 'gallery'; index: number }
+    | null
+  >(null);
 
   const activePhotos = useMemo(() => {
     if (customPhotos.length) return customPhotos.slice(0, 3);
@@ -79,6 +86,54 @@ const GeminiProductCardModal: React.FC<Props> = ({
   }, [customPhotos, useItemPhotos, itemPhotos]);
 
   const styleName = PRODUCT_CARD_STYLES.find((s) => s.id === styleId)?.name;
+
+  const galleryLightboxSlides = useMemo(
+    () =>
+      gallery
+        .map((entry) => {
+          const src = galleryThumbs[entry.id];
+          if (!src) return null;
+          return {
+            id: entry.id,
+            src,
+            title: entry.itemName,
+            subtitle: `${entry.styleName || entry.styleId || 'AI card'} · ${new Date(
+              entry.createdAt
+            ).toLocaleString()}`,
+            entry,
+          };
+        })
+        .filter((s): s is NonNullable<typeof s> => !!s),
+    [gallery, galleryThumbs]
+  );
+
+  const openGalleryLightbox = (entryId: string) => {
+    const idx = galleryLightboxSlides.findIndex((s) => s.id === entryId);
+    if (idx >= 0) setLightbox({ kind: 'gallery', index: idx });
+  };
+
+  const lightboxSrc =
+    lightbox?.kind === 'preview'
+      ? lightbox.src
+      : lightbox?.kind === 'gallery'
+        ? galleryLightboxSlides[lightbox.index]?.src ?? null
+        : null;
+  const lightboxTitle =
+    lightbox?.kind === 'preview'
+      ? item.name
+      : lightbox?.kind === 'gallery'
+        ? galleryLightboxSlides[lightbox.index]?.title
+        : undefined;
+  const lightboxSubtitle =
+    lightbox?.kind === 'preview'
+      ? styleName || 'Generated card'
+      : lightbox?.kind === 'gallery'
+        ? `${galleryLightboxSlides[lightbox.index]?.subtitle || ''}${
+            galleryLightboxSlides.length > 1
+              ? ` · ${lightbox.index + 1} / ${galleryLightboxSlides.length}`
+              : ''
+          }`
+        : undefined;
 
   const reloadGallery = async (scope: 'item' | 'all' = galleryScope) => {
     setGalleryLoading(true);
@@ -303,7 +358,9 @@ const GeminiProductCardModal: React.FC<Props> = ({
   const cloudReady = isProductCardGalleryCloudReady();
   const applyBlocked = applying || savingGallery;
 
-  return createPortal(
+  return (
+    <>
+      {createPortal(
     <div
       className="fixed inset-0 z-[230] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4"
       onClick={onClose}
@@ -406,24 +463,40 @@ const GeminiProductCardModal: React.FC<Props> = ({
                       key={entry.id}
                       className="rounded-xl border border-slate-200 overflow-hidden bg-slate-50"
                     >
-                      <button
-                        type="button"
-                        onClick={() => void pickFromGallery(entry)}
-                        className="block w-full text-left"
-                        title="Use this card"
-                      >
-                        {galleryThumbs[entry.id] ? (
-                          <img
-                            src={galleryThumbs[entry.id]}
-                            alt={entry.itemName}
-                            className="w-full aspect-square object-cover bg-white"
-                          />
-                        ) : (
-                          <div className="w-full aspect-square flex items-center justify-center bg-slate-100 text-slate-400">
-                            <Images size={18} />
-                          </div>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => void pickFromGallery(entry)}
+                          onDoubleClick={() => openGalleryLightbox(entry.id)}
+                          className="block w-full text-left"
+                          title="Click to use · double-click to enlarge"
+                        >
+                          {galleryThumbs[entry.id] ? (
+                            <img
+                              src={galleryThumbs[entry.id]}
+                              alt={entry.itemName}
+                              className="w-full aspect-square object-cover bg-white"
+                            />
+                          ) : (
+                            <div className="w-full aspect-square flex items-center justify-center bg-slate-100 text-slate-400">
+                              <Images size={18} />
+                            </div>
+                          )}
+                        </button>
+                        {galleryThumbs[entry.id] && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openGalleryLightbox(entry.id);
+                            }}
+                            className="absolute top-1 right-1 p-1 rounded-md bg-slate-900/70 text-white hover:bg-slate-900"
+                            title="Enlarge"
+                          >
+                            <ZoomIn size={11} />
+                          </button>
                         )}
-                      </button>
+                      </div>
                       <div className="px-2 py-1.5 space-y-1">
                         <p className="text-[9px] font-bold text-slate-700 truncate" title={entry.itemName}>
                           {entry.itemName}
@@ -626,11 +699,21 @@ const GeminiProductCardModal: React.FC<Props> = ({
 
               {preview && !loading && (
                 <div className="space-y-2">
-                  <img
-                    src={preview}
-                    alt="AI product card"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 object-contain max-h-[42vh]"
-                  />
+                  <button
+                    type="button"
+                    onClick={() => setLightbox({ kind: 'preview', src: preview })}
+                    className="relative group/zoom block w-full cursor-zoom-in focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 rounded-xl"
+                    title="View full size"
+                  >
+                    <img
+                      src={preview}
+                      alt="AI product card"
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 object-contain max-h-[42vh]"
+                    />
+                    <span className="absolute top-2 right-2 inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900/70 text-white text-[9px] font-black uppercase opacity-90 group-hover/zoom:opacity-100">
+                      <ZoomIn size={11} /> Enlarge
+                    </span>
+                  </button>
                   {meta && <p className="text-[10px] text-slate-400 font-medium">{meta}</p>}
                   {(savingGallery || galleryNote) && (
                     <p className="text-[10px] font-medium text-emerald-700 flex items-center gap-1">
@@ -705,6 +788,61 @@ const GeminiProductCardModal: React.FC<Props> = ({
       </div>
     </div>,
     document.body
+      )}
+      <ImageLightbox
+        open={!!lightbox && !!lightboxSrc}
+        src={lightboxSrc}
+        title={lightboxTitle}
+        subtitle={lightboxSubtitle}
+        onClose={() => setLightbox(null)}
+        hasPrev={lightbox?.kind === 'gallery' && lightbox.index > 0}
+        hasNext={
+          lightbox?.kind === 'gallery' && lightbox.index < galleryLightboxSlides.length - 1
+        }
+        onPrev={
+          lightbox?.kind === 'gallery' && lightbox.index > 0
+            ? () => setLightbox({ kind: 'gallery', index: lightbox.index - 1 })
+            : undefined
+        }
+        onNext={
+          lightbox?.kind === 'gallery' && lightbox.index < galleryLightboxSlides.length - 1
+            ? () => setLightbox({ kind: 'gallery', index: lightbox.index + 1 })
+            : undefined
+        }
+        ariaLabel="Generated card preview"
+        footer={
+          <>
+            {lightbox?.kind === 'gallery' && galleryLightboxSlides[lightbox.index] && (
+              <button
+                type="button"
+                onClick={() =>
+                  void downloadProductCardEntry(galleryLightboxSlides[lightbox.index]!.entry)
+                }
+                className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-white text-slate-900 text-[10px] font-black uppercase"
+              >
+                <Download size={12} /> Download
+              </button>
+            )}
+            {lightbox?.kind === 'preview' && preview && (
+              <button
+                type="button"
+                onClick={() => void downloadPreview()}
+                className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-white text-slate-900 text-[10px] font-black uppercase"
+              >
+                <Download size={12} /> Download
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setLightbox(null)}
+              className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-white/15 text-white text-[10px] font-black uppercase hover:bg-white/25"
+            >
+              Close
+            </button>
+          </>
+        }
+      />
+    </>
   );
 };
 
