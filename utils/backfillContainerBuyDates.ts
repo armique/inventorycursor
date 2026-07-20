@@ -10,7 +10,7 @@ import { isInventoryContainer } from './containerMembership';
 import { todayLocalDateKey, toLocalCalendarDateKey } from './calendarDate';
 import { getChildren } from '../services/financialAggregation';
 
-export const CONTAINER_BUY_DATE_BACKFILL_KEY = 'container_buy_date_backfill_v1';
+export const CONTAINER_BUY_DATE_BACKFILL_KEY = 'container_buy_date_backfill_v2';
 
 function isBlankBuyDate(value: string | undefined | null): boolean {
   return !toLocalCalendarDateKey(value || '');

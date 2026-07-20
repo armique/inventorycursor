@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import { ItemStatus, type InventoryItem } from '../types';
 import {
+  CONTAINER_BUY_DATE_BACKFILL_KEY,
   backfillContainerBuyDates,
   resolveContainerAcquiredDate,
 } from '../utils/backfillContainerBuyDates';
@@ -21,7 +22,15 @@ function item(partial: Partial<InventoryItem> & Pick<InventoryItem, 'id' | 'name
   };
 }
 
+/** Mirrors inventory Acquired cell: containers must show buyDate when present (not a forced dash). */
+function displayAcquiredCell(item: InventoryItem): string {
+  const key = (item.buyDate || '').trim();
+  return key || '-';
+}
+
 function run() {
+  assert.equal(CONTAINER_BUY_DATE_BACKFILL_KEY, 'container_buy_date_backfill_v2');
+
   const cpu = item({ id: 'c1', name: 'CPU', buyDate: '2026-03-01', category: 'CPU' });
   const ram = item({ id: 'c2', name: 'RAM', buyDate: '2026-05-10', category: 'RAM' });
   const ssd = item({ id: 'c3', name: 'SSD', buyDate: '', category: 'Storage' });
@@ -76,6 +85,10 @@ function run() {
 
   const again = backfillContainerBuyDates(next);
   assert.equal(again.updatedCount, 0, 'idempotent after fill');
+
+  const filledBundle = next.find((i) => i.id === 'b1')!;
+  assert.equal(displayAcquiredCell(filledBundle), '2026-05-10', 'Acquired cell must show container buyDate');
+  assert.notEqual(displayAcquiredCell(filledBundle), '-', 'must not hardcode dash for bundles');
 
   console.log('verify-container-buy-date-backfill: all checks passed');
 }
