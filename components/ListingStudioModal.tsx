@@ -353,12 +353,38 @@ const ListingStudioModal: React.FC<Props> = ({
     setSaving(true);
     setError(null);
     try {
-      await persistPatch({
+      const nextTitle = title.trim().slice(0, 80);
+      const nextDesc = description.trim();
+      const entry = gallery.find((e) => e.id === selectedCardId) || null;
+
+      if (!nextTitle && !nextDesc && !entry) {
+        setError('Generate a listing or select a product card before applying.');
+        return;
+      }
+
+      const patch: Partial<InventoryItem> = {
         name: name.trim() || item.name,
         specs,
-        marketTitle: title.trim().slice(0, 80),
-        marketDescription: description.trim(),
-      });
+      };
+      if (nextTitle) patch.marketTitle = nextTitle;
+      if (nextDesc) patch.marketDescription = nextDesc;
+
+      // Selected gallery card becomes the item main photo (visible change in inventory).
+      if (entry) {
+        try {
+          const url = thumbs[entry.id] || (await resolveProductCardImageUrl(entry));
+          const prepared = await resolveUrlForInventoryMainPhoto(url, item.id, entry);
+          const merged = normalizeImageList([prepared, item.imageUrl, ...(item.imageUrls || [])]);
+          patch.imageUrl = merged[0];
+          patch.imageUrls = merged;
+        } catch (e) {
+          console.warn('Could not apply selected card as main photo', e);
+        }
+      }
+
+      await persistPatch(patch);
+      // Return to inventory after a successful apply.
+      onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed');
     } finally {
