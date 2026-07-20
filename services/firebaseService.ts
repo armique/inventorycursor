@@ -361,6 +361,8 @@ export interface FirestoreInventoryPayload {
   dashboard?: unknown;
   /** Timestamped audit log (item/expense actions); merged per device like expenses. */
   actionHistory?: unknown[];
+  /** Bulk Entry confirm sessions (including AI text parse). */
+  bulkImports?: unknown[];
   updatedAt?: string;
   savedBy?: string;
 }
@@ -541,6 +543,7 @@ function buildCorePayloadForShard(data: FirestoreInventoryPayload): Record<strin
     categoryFields: data.categoryFields ?? {},
     dashboard: data.dashboard != null ? sanitizeForFirestore(data.dashboard) : null,
     actionHistory: (data.actionHistory || []).map(sanitizeForFirestore),
+    bulkImports: (data.bulkImports || []).map(sanitizeForFirestore),
   };
 }
 
@@ -609,6 +612,7 @@ function assemblePayloadFromSyncSnapshot(snap: QuerySnapshot): FirestoreInventor
     goals: core.goals as { monthly?: number } | undefined,
     dashboard: core.dashboard,
     actionHistory: (core.actionHistory as unknown[]) || [],
+    bulkImports: (core.bulkImports as unknown[]) || [],
     updatedAt: metaData?.updatedAt as string | undefined,
     savedBy: metaData?.savedBy as string | undefined,
   };

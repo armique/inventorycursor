@@ -237,6 +237,12 @@ export interface InventoryItem {
   hasOVP?: boolean;
   /** IO Shield included (for motherboards/bundles). Used by AI description generator. */
   hasIOShield?: boolean;
+
+  /**
+   * Shared id for items created in one Bulk Entry confirm (including AI text parse).
+   * Used for the bulk-import icon and dedicated batch filter view.
+   */
+  bulkImportId?: string;
 }
 
 /** Saved AI-generated product card (gallery history — paid generations kept for reuse). */
@@ -370,6 +376,25 @@ export interface ActionHistoryEntry {
   details?: string;
   /** For "Trade completed" rows: ids of items received in that trade (used to revert). */
   tradeReceivedIds?: string[];
+}
+
+/** How a Bulk Entry session was primarily built before Confirm. */
+export type BulkImportSource = 'manual' | 'paste_as_is' | 'paste_ai' | 'hardware_db' | 'mixed';
+
+/** Durable history row for one Bulk Entry confirm (including AI text parse). */
+export interface BulkImportRecord {
+  id: string;
+  createdAt: string;
+  buyDate: string;
+  itemIds: string[];
+  itemCount: number;
+  source: BulkImportSource;
+  totalCost: number;
+  platformBought?: Platform;
+  /** Short summary (first item names). */
+  label: string;
+  /** Parent bundle id when “add as bundle” was used. */
+  bundleId?: string;
 }
 
 /** Lightweight metadata edits (e.g. platform tag) can skip heavy undo/action/sync work. */

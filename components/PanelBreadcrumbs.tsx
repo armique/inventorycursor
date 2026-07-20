@@ -7,6 +7,7 @@ const LABELS: Record<string, string> = {
   inventory: 'Inventory',
   add: 'Add item',
   'add-bulk': 'Bulk add',
+  'bulk-imports': 'Bulk imports',
   builder: 'Builder',
   'ebay-store-pull': 'eBay Store Pull',
   'card-gallery': 'Card gallery',

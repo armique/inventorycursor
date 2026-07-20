@@ -9,7 +9,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
   Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks,   Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone, Camera, Gift, User, Wand2
 } from 'lucide-react';
-import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, TaxMode } from '../types';
+import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, TaxMode, BulkImportRecord } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
 import { computeItemProfitBeforeOverhead, getChildren, getSoldContainerDisplayTotals, shouldHideContainerChildInList, containerOrChildMatchesSearch } from '../services/financialAggregation';
 import { itemMatchesSalePlatformFilter, isMissingExplicitSalePlatform, MISSING_PLATFORM_FILTER, SALE_PLATFORM_OPTIONS, formatItemSalePlatform, formatSalePlatformLabel } from '../utils/salePlatform';
@@ -31,6 +31,7 @@ import { exportInventoryToExcel } from '../services/excelExportService';
 import { getRecentItemIds, addRecentItemId } from '../services/recentItemsService';
 import { generateStoreDescription } from '../services/specsAI';
 import { suggestPriceFromSoldListings, SoldPriceSuggestion, getSpecsAIProvider } from '../services/specsAI';
+import { bulkImportSourceLabel, countBulkImportItems } from '../utils/bulkImportHistory';
 
 const ebaySoldSearchUrl = (query: string) =>
   `https://www.ebay.de/sch/i.html?_nkw=${encodeURIComponent(query)}&LH_Sold=1&LH_Complete=1`;
@@ -87,6 +88,7 @@ interface Props {
   categoryFields?: Record<string, string[]>; 
   persistenceKey?: string;
   onPublishStoreCatalog?: () => void | Promise<void>;
+  bulkImports?: BulkImportRecord[];
 }
 
 const EMPTY_TIME_GAUGE_SORT_MAP = new Map<string, number>();
@@ -183,8 +185,8 @@ interface SortConfig {
 /** Inv column: icon buttons in one row (28px each + 4px gaps, matching the actual `gap-1` grid + cell padding). */
 const PRESENCE_ICON_SIZE_PX = 28;
 const PRESENCE_ICON_GAP_PX = 4;
-/** Presence · Photos · AI card · € · Store · Orders · Quick Bundle (+) */
-const PRESENCE_ICON_COUNT = 7;
+/** Presence · Photos · AI card · € · Store · Orders · Quick Bundle (+) · Bulk import */
+const PRESENCE_ICON_COUNT = 8;
 const PRESENCE_COL_WIDTH =
   PRESENCE_ICON_COUNT * PRESENCE_ICON_SIZE_PX +
   (PRESENCE_ICON_COUNT - 1) * PRESENCE_ICON_GAP_PX +
@@ -430,6 +432,8 @@ type InventoryListFilterParams = {
   timeGaugeSortKeyMap: Map<string, number>;
   amountFilter: AmountFilterState;
   smartPreset: SmartPreset;
+  /** When set, show only this bulk-import batch (status tabs ignored). */
+  bulkImportFilterId: string | null;
 };
 
 function filterAndSortInventoryItems(params: InventoryListFilterParams): InventoryItem[] {
@@ -450,26 +454,32 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
     timeGaugeSortKeyMap,
     amountFilter,
     smartPreset,
+    bulkImportFilterId,
   } = params;
 
   const query = searchTerm.trim();
   const searchActive = query.length >= 2;
+  const bulkBatchActive = Boolean(bulkImportFilterId);
 
   const filtered = items.filter((item) => {
-    let matchesStatus = false;
-    if (statusFilter === 'ACTIVE') {
-      matchesStatus =
-        item.status === ItemStatus.IN_STOCK ||
-        item.status === ItemStatus.ORDERED ||
-        item.status === ItemStatus.IN_COMPOSITION;
-    } else if (statusFilter === 'SOLD') {
-      matchesStatus = isRealizedDisposal(item);
-    } else if (statusFilter === 'DRAFTS') {
-      matchesStatus = item.isDraft === true;
+    if (bulkBatchActive) {
+      if (item.bulkImportId !== bulkImportFilterId) return false;
     } else {
-      matchesStatus = true;
+      let matchesStatus = false;
+      if (statusFilter === 'ACTIVE') {
+        matchesStatus =
+          item.status === ItemStatus.IN_STOCK ||
+          item.status === ItemStatus.ORDERED ||
+          item.status === ItemStatus.IN_COMPOSITION;
+      } else if (statusFilter === 'SOLD') {
+        matchesStatus = isRealizedDisposal(item);
+      } else if (statusFilter === 'DRAFTS') {
+        matchesStatus = item.isDraft === true;
+      } else {
+        matchesStatus = true;
+      }
+      if (!matchesStatus) return false;
     }
-    if (!matchesStatus) return false;
 
     if (smartPreset === 'no_photo' && getItemUserPhotoCount(item) > 0) return false;
     if (smartPreset === 'presence_unknown' && getItemPresenceCycleState(item) !== 'unknown') return false;
@@ -485,13 +495,15 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
 
     // Bundle/PC/mixed components always nest under the parent — never as top-level rows.
     // Search still surfaces the parent when a child matches.
-    if (shouldHideContainerChildInList(item, items)) return false;
+    // Dedicated bulk-batch view lists every stamped member (including sold / in-composition kids).
+    if (!bulkBatchActive && shouldHideContainerChildInList(item, items)) return false;
     // Orphan "in composition" rows (no parent container) respect the visibility toggle.
-    if (!searchActive && !showInComposition && item.status === ItemStatus.IN_COMPOSITION) return false;
+    if (!bulkBatchActive && !searchActive && !showInComposition && item.status === ItemStatus.IN_COMPOSITION) return false;
 
     // Category pins stay strict during search: Bundle + "MT" only matches Bundle items that
     // contain "MT". Clear the pin (or pick All) to search across categories.
-    if (categoryFilter !== 'ALL' || subCategoryFilter) {
+    // Dedicated bulk-batch view also ignores leftover category pins.
+    if (!bulkBatchActive && (categoryFilter !== 'ALL' || subCategoryFilter)) {
       const matchParentAndSub =
         categoryFilter !== 'ALL' &&
         item.category === categoryFilter &&
@@ -602,6 +614,7 @@ const InventoryList: React.FC<Props> = ({
   categoryFields = {}, 
   persistenceKey = 'default_inv',
   onPublishStoreCatalog,
+  bulkImports = [],
 }) => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -617,6 +630,9 @@ const InventoryList: React.FC<Props> = ({
     const q = searchParams.get('q');
     return q != null ? q : loadState<string>('search', '');
   });
+  const [bulkImportFilterId, setBulkImportFilterId] = useState<string | null>(() =>
+    searchParams.get('bulkImport')
+  );
   const [timeFilter, setTimeFilter] = useState<TimeFilter>(() => loadState<TimeFilter>('time', 'ALL'));
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => loadState<StatusFilter>('status_filter', 'ACTIVE'));
   const [splitView, setSplitView] = useState<boolean>(() => loadState<boolean>('split_view', false));
@@ -763,6 +779,75 @@ const InventoryList: React.FC<Props> = ({
     const q = searchParams.get('q');
     if (q != null) setSearchTerm(q);
   }, [searchParams]);
+
+  // Sync dedicated bulk-import batch view from ?bulkImport=
+  useEffect(() => {
+    const bulkId = searchParams.get('bulkImport');
+    if (bulkId) {
+      setBulkImportFilterId(bulkId);
+      setSearchTerm('');
+      setCategoryFilter('ALL');
+      setSubCategoryFilter('');
+      setSmartPreset(null);
+      setSplitView(false);
+    } else {
+      setBulkImportFilterId(null);
+    }
+  }, [searchParams]);
+
+  const openBulkImportBatch = useCallback(
+    (importId: string) => {
+      setBulkImportFilterId(importId);
+      setSearchTerm('');
+      setCategoryFilter('ALL');
+      setSubCategoryFilter('');
+      setSmartPreset(null);
+      setSplitView(false);
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete('q');
+          next.set('bulkImport', importId);
+          return next;
+        },
+        { replace: true }
+      );
+    },
+    [setSearchParams]
+  );
+
+  const clearBulkImportBatch = useCallback(() => {
+    setBulkImportFilterId(null);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('bulkImport');
+        return next;
+      },
+      { replace: true }
+    );
+  }, [setSearchParams]);
+
+  const bulkImportRecord = useMemo(
+    () => (bulkImportFilterId ? bulkImports.find((r) => r.id === bulkImportFilterId) ?? null : null),
+    [bulkImports, bulkImportFilterId]
+  );
+
+  const bulkImportCounts = useMemo(() => {
+    if (!bulkImportFilterId) return null;
+    if (bulkImportRecord) {
+      const byId = new Map(items.map((i) => [i.id, i]));
+      return countBulkImportItems(bulkImportRecord, byId);
+    }
+    const members = items.filter((i) => i.bulkImportId === bulkImportFilterId);
+    let sold = 0;
+    let inStock = 0;
+    for (const m of members) {
+      if (isRealizedDisposal(m)) sold += 1;
+      else inStock += 1;
+    }
+    return { present: members.length, inStock, sold, missing: 0 };
+  }, [bulkImportFilterId, bulkImportRecord, items]);
 
   // -- STATE PERSISTENCE (batched; avoids many sync localStorage writes per keystroke) --
   const listPrefsPersistRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1440,6 +1525,7 @@ const InventoryList: React.FC<Props> = ({
       showInComposition,
       timeGaugeSortKeyMap,
       smartPreset,
+      bulkImportFilterId,
     }),
     [
       items,
@@ -1457,6 +1543,7 @@ const InventoryList: React.FC<Props> = ({
       showInComposition,
       timeGaugeSortKeyMap,
       smartPreset,
+      bulkImportFilterId,
     ]
   );
 
@@ -2174,7 +2261,7 @@ const InventoryList: React.FC<Props> = ({
         return (
           <td key={id} className="inv-col-icons border-r border-slate-100/90 align-middle" style={style} onClick={(e) => e.stopPropagation()}>
             <div
-              className={`grid grid-cols-7 ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-items-start shrink-0`}
+              className={`grid grid-cols-8 ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-items-start shrink-0`}
               style={{ width: PRESENCE_ICON_COUNT * PRESENCE_ICON_SIZE_PX + (PRESENCE_ICON_COUNT - 1) * PRESENCE_ICON_GAP_PX }}
             >
               {/* Physical presence: present → lost → defective → unknown */}
@@ -2379,6 +2466,32 @@ const InventoryList: React.FC<Props> = ({
                   </button>
                 );
               })()}
+
+              {/* Bulk import batch — open dedicated status-agnostic view */}
+              {item.bulkImportId ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openBulkImportBatch(item.bulkImportId!);
+                  }}
+                  className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors ${
+                    bulkImportFilterId === item.bulkImportId
+                      ? 'border-violet-400 bg-violet-100 text-violet-800'
+                      : 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 hover:border-violet-300'
+                  }`}
+                  title="Bulk import — show all from this batch (including sold)"
+                >
+                  <Layers size={13} strokeWidth={2.25} />
+                </button>
+              ) : (
+                <span
+                  className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-transparent opacity-0`}
+                  aria-hidden
+                >
+                  <Layers size={13} />
+                </span>
+              )}
             </div>
           </td>
         );
@@ -3549,6 +3662,43 @@ const InventoryList: React.FC<Props> = ({
       )}
 
       <header className="shrink-0 space-y-1">
+         {bulkImportFilterId && (
+           <div className="flex flex-wrap items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-sm">
+             <Layers size={16} className="text-violet-700 shrink-0" />
+             <div className="min-w-0 flex-1">
+               <p className="font-bold text-violet-950 truncate">
+                 Bulk import
+                 {bulkImportRecord?.label ? ` · ${bulkImportRecord.label}` : ''}
+               </p>
+               <p className="text-[11px] font-semibold text-violet-800/80">
+                 {bulkImportRecord
+                   ? `${bulkImportSourceLabel(bulkImportRecord.source)} · ${bulkImportRecord.itemCount} items`
+                   : 'Batch view'}
+                 {bulkImportCounts
+                   ? ` · ${bulkImportCounts.inStock} in stock · ${bulkImportCounts.sold} sold`
+                   : ''}
+                 {bulkImportCounts && bulkImportCounts.missing > 0
+                   ? ` · ${bulkImportCounts.missing} missing`
+                   : ''}
+                 {' · includes sold'}
+               </p>
+             </div>
+             <button
+               type="button"
+               onClick={() => navigate('/panel/bulk-imports')}
+               className="px-2.5 py-1 rounded-lg border border-violet-200 bg-white text-[11px] font-bold text-violet-800 hover:bg-violet-100"
+             >
+               History
+             </button>
+             <button
+               type="button"
+               onClick={clearBulkImportBatch}
+               className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-900 text-white text-[11px] font-bold hover:bg-violet-800"
+             >
+               <X size={12} /> Clear
+             </button>
+           </div>
+         )}
          <div className="flex flex-wrap items-center gap-1">
             {(statusFilter === 'DRAFTS' || statusFilter === 'ALL') && !splitView ? (
               <>

@@ -9,7 +9,7 @@ import {
   Fan, Lightbulb, Keyboard, Mouse, Tv, MoreHorizontal, Cable, Laptop as LaptopIcon, Wrench,
   Sparkles, Loader2, Package, Ban
 } from 'lucide-react';
-import { InventoryItem, ItemStatus, Platform, PaymentType } from '../types';
+import { InventoryItem, ItemStatus, Platform, PaymentType, BulkImportRecord, BulkImportSource } from '../types';
 import {
   defaultBuyPaymentForPlatform,
   normalizeBuyPaymentForPlatform,
@@ -35,9 +35,15 @@ import {
   stripConditionAnnotations,
 } from '../utils/bulkTextParse';
 import { filesToDataUrls, prepareInventoryImagesForStorage } from '../utils/imageImport';
+import {
+  buildBulkImportLabel,
+  createBulkImportRecord,
+  resolveBulkImportSource,
+} from '../utils/bulkImportHistory';
 
 interface Props {
   onSave: (newItems: InventoryItem[]) => void;
+  onBulkImportComplete?: (record: BulkImportRecord) => void;
   categories?: Record<string, string[]>;
   onAddCategory?: (category: string, subcategory?: string) => void;
   categoryFields?: Record<string, string[]>;
@@ -95,6 +101,8 @@ interface DraftItem {
   skipAiSpecs?: boolean;
   /** Original paste line — used to re-apply defect flags after specs parse. */
   sourceLine?: string;
+  /** How this draft row was added to the review list. */
+  draftSource?: BulkImportSource;
 }
 
 type CostSplitMode = 'EQUAL' | 'SMART';
@@ -233,7 +241,7 @@ function reconcileCategory(name: string, category?: string, subCategory?: string
   return { category: aiCategory, subCategory: aiSub };
 }
 
-const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORIES, onAddCategory, categoryFields = {} }) => {
+const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categories = HIERARCHY_CATEGORIES, onAddCategory, categoryFields = {} }) => {
   const navigate = useNavigate();
   const aiAvailable = !!getSpecsAIProvider();
 
@@ -343,7 +351,8 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
             category: newCategory,
             subCategory: newSubCategory,
             note: newNote,
-            isDefective: newDefective
+            isDefective: newDefective,
+            draftSource: 'manual',
         });
     }
 
@@ -381,7 +390,8 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
         note: '',
         specs: hw.specs,
         vendor: hw.vendor,
-        isDefective: false
+        isDefective: false,
+        draftSource: 'hardware_db',
     }]);
     setSearchQuery('');
     setSearchResults([]);
@@ -393,6 +403,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
   };
 
   const applyParsedItems = (parsed: ParsedTextItem[], importMode: TextImportMode) => {
+    const draftSource: BulkImportSource = importMode === 'AI' ? 'paste_ai' : 'paste_as_is';
     const appended: DraftItem[] = [];
     for (const row of parsed) {
       const rawName = (row.name || '').trim();
@@ -450,6 +461,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, categories = HIERARCHY_CATEGORI
           vendor: row.vendor,
           isDefective: opts.isDefective,
           sourceLine: sourceLine || undefined,
+          draftSource,
         });
       };
 
@@ -733,6 +745,10 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
     }
 
     const timestamp = Date.now();
+    const bulkImportId = `bulkimp-${timestamp}`;
+    const importSource = resolveBulkImportSource(
+      itemsToImport.map((d) => d.draftSource || 'manual')
+    );
     const childItems: InventoryItem[] = itemsToImport.map((draft, index) => {
       const finalCost = draft.manualCost !== undefined ? draft.manualCost : (autoCostsById[draft.id] ?? 0);
       return {
@@ -757,7 +773,8 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
         imageUrl: galleryUrls[0] || CATEGORY_IMAGES[draft.subCategory || draft.category] || CATEGORY_IMAGES[draft.category],
         imageUrls: galleryUrls.length
           ? galleryUrls
-          : [CATEGORY_IMAGES[draft.subCategory || draft.category] || CATEGORY_IMAGES[draft.category]]
+          : [CATEGORY_IMAGES[draft.subCategory || draft.category] || CATEGORY_IMAGES[draft.category]],
+        bulkImportId,
       };
     });
 
@@ -785,13 +802,28 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
             kleinanzeigenBuyChatUrl: chatUrl,
             kleinanzeigenBuyChatImage: chatImage,
             imageUrl: childItems[0]?.imageUrl || CATEGORY_IMAGES['Components'],
-            imageUrls: childItems[0]?.imageUrls || [CATEGORY_IMAGES['Components']]
+            imageUrls: childItems[0]?.imageUrls || [CATEGORY_IMAGES['Components']],
+            bulkImportId,
           };
           return [parentBundle, ...childItems];
         })()
       : childItems;
 
+    const record = createBulkImportRecord({
+      id: bulkImportId,
+      items: inventoryItems,
+      source: importSource,
+      totalCost,
+      buyDate,
+      platformBought: platform,
+      bundleId: addAsBundle ? `bundle-${timestamp}` : undefined,
+      createdAt: new Date(timestamp).toISOString(),
+    });
+    // Prefer a label from draft names when a bundle parent would dominate.
+    record.label = buildBulkImportLabel(itemsToImport.map((d) => d.name));
+
     onSave(inventoryItems);
+    onBulkImportComplete?.(record);
     navigate('/panel/inventory');
   };
 
@@ -805,6 +837,15 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
               <h1 className="text-3xl font-black text-slate-900 tracking-tight">Bulk Entry</h1>
               <p className="text-sm text-slate-500 font-bold">Add Multiple Items • One Transaction</p>
            </div>
+           <button
+             type="button"
+             onClick={() => navigate('/panel/bulk-imports')}
+             className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-50"
+             title="Open bulk import history"
+           >
+             <Layers size={14} />
+             History
+           </button>
         </div>
         <div className="flex flex-wrap items-end gap-3 md:gap-4 bg-white p-2 md:p-3 rounded-2xl border border-slate-200 shadow-sm">
            <div className="px-3 border-r border-slate-100 min-w-[6rem]">

@@ -137,6 +137,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
 
   const moreNav = [
     { to: '/panel/add-bulk', icon: <Layers size={16} />, label: 'Bulk Entry' },
+    { to: '/panel/bulk-imports', icon: <PackageSearch size={16} />, label: 'Bulk imports' },
     { to: '/panel/3d-print', icon: <Printer size={16} />, label: '3D Print' },
     { to: '/panel/invoices', icon: <Receipt size={16} />, label: 'Invoices' },
     { to: '/panel/action-history', icon: <History size={16} />, label: 'Action history' },
