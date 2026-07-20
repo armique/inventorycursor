@@ -350,12 +350,43 @@ const ListingStudioModal: React.FC<Props> = ({
     setSaving(true);
     setError(null);
     try {
-      await persistPatch({
+      const nextTitle = title.trim().slice(0, 80);
+      const nextDesc = description.trim();
+      const entry = gallery.find((e) => e.id === selectedCardId) || null;
+
+      if (!nextTitle && !nextDesc && !entry) {
+        setError('Generate a listing or select a product card before applying.');
+        return;
+      }
+
+      const patch: Partial<InventoryItem> = {
         name: name.trim() || item.name,
         specs,
-        marketTitle: title.trim().slice(0, 80),
-        marketDescription: description.trim(),
-      });
+      };
+      if (nextTitle) patch.marketTitle = nextTitle;
+      if (nextDesc) patch.marketDescription = nextDesc;
+
+      // Selected gallery card becomes the item main photo (visible change in inventory).
+      if (entry) {
+        try {
+          const url = thumbs[entry.id] || (await resolveProductCardImageUrl(entry));
+          const prepared = await resolveUrlForInventoryMainPhoto(url, item.id, entry);
+          const merged = normalizeImageList([prepared, item.imageUrl, ...(item.imageUrls || [])]);
+          patch.imageUrl = merged[0];
+          patch.imageUrls = merged;
+        } catch (e) {
+          setError(
+            e instanceof Error
+              ? `Listing saved fields only — card photo failed: ${e.message}`
+              : 'Listing saved fields only — card photo failed.'
+          );
+          // Still persist title/desc so Apply is not a no-op.
+        }
+      }
+
+      await persistPatch(patch);
+      // Return to inventory after a successful apply.
+      onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed');
     } finally {
@@ -566,9 +597,9 @@ const ListingStudioModal: React.FC<Props> = ({
           </div>
         </header>
 
-        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(240px,0.92fr)_minmax(280px,1.05fr)_minmax(280px,1.05fr)]">
+        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(240px,0.92fr)_minmax(280px,1.05fr)_minmax(280px,1.05fr)] overflow-y-auto lg:overflow-hidden">
           {/* LEFT — item / specs / trade */}
-          <aside className="border-r border-slate-100 overflow-y-auto p-3 space-y-3 bg-slate-50/40">
+          <aside className="border-r border-slate-100 min-h-0 lg:overflow-y-auto p-3 space-y-3 bg-slate-50/40">
             <section>
               <div className="flex items-center justify-between mb-1">
                 <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">
@@ -948,7 +979,7 @@ const ListingStudioModal: React.FC<Props> = ({
           </aside>
 
           {/* MIDDLE — card gallery */}
-          <section className="border-r border-slate-100 overflow-y-auto p-3 space-y-2.5 bg-white">
+          <section className="border-r border-slate-100 min-h-0 lg:overflow-y-auto p-3 space-y-2.5 bg-white">
             <div className="flex items-center justify-between gap-2">
               <div>
                 <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">
@@ -1082,7 +1113,7 @@ const ListingStudioModal: React.FC<Props> = ({
           </section>
 
           {/* RIGHT — title + description */}
-          <section className="overflow-y-auto p-3 space-y-2.5 bg-slate-50/30 flex flex-col">
+          <section className="min-h-0 lg:overflow-y-auto p-3 space-y-2.5 bg-slate-50/30 flex flex-col">
             {ownerHints && (
               <div className="rounded-xl border border-dashed border-emerald-300 bg-emerald-50/80 px-2.5 py-2 shrink-0">
                 <div className="flex justify-between gap-2 mb-1">
@@ -1104,26 +1135,40 @@ const ListingStudioModal: React.FC<Props> = ({
             )}
 
             <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shrink-0">
-              <div className="px-2.5 py-1.5 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                <div>
+              <div className="px-2.5 py-1.5 border-b border-slate-100 bg-slate-50 flex justify-between items-center gap-2">
+                <div className="min-w-0">
                   <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">
                     AI Titel
                   </h4>
                   <p className="text-[9px] text-slate-400">eBay · max 80</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void copyText('title', title)}
-                  className="inline-flex items-center gap-1 px-1.5 py-1 rounded-md border border-slate-200 text-[9px] font-black uppercase text-slate-600"
-                >
-                  {copied === 'title' ? <Check size={11} /> : <Copy size={11} />}
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    disabled={genListing || saving}
+                    onClick={() => void handleGenerateListing()}
+                    title="Generate AI title & description"
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-rose-600 text-white text-[9px] font-black uppercase disabled:opacity-50"
+                  >
+                    {genListing ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                    Generate
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void copyText('title', title)}
+                    disabled={!title.trim()}
+                    className="inline-flex items-center gap-1 px-1.5 py-1 rounded-md border border-slate-200 text-[9px] font-black uppercase text-slate-600 disabled:opacity-40"
+                  >
+                    {copied === 'title' ? <Check size={11} /> : <Copy size={11} />}
+                  </button>
+                </div>
               </div>
               <input
                 type="text"
                 maxLength={80}
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
+                placeholder="Click Generate for marketplace title…"
                 className="w-full px-2.5 py-2 text-sm font-semibold outline-none"
               />
               <div className="px-2.5 py-1 border-t border-slate-100 text-[9px] font-bold text-slate-400 flex justify-between">
@@ -1135,26 +1180,39 @@ const ListingStudioModal: React.FC<Props> = ({
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-white overflow-hidden flex-1 min-h-[200px] flex flex-col">
-              <div className="px-2.5 py-1.5 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
-                <div>
+              <div className="px-2.5 py-1.5 border-b border-slate-100 bg-slate-50 flex justify-between items-center gap-2 shrink-0">
+                <div className="min-w-0">
                   <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">
                     AI Beschreibung
                   </h4>
                   <p className="text-[9px] text-slate-400">eBay.de / Kleinanzeigen</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void copyText('desc', description)}
-                  className="inline-flex items-center gap-1 px-1.5 py-1 rounded-md border border-slate-200 text-[9px] font-black uppercase text-slate-600"
-                >
-                  {copied === 'desc' ? <Check size={11} /> : <Copy size={11} />}
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    disabled={genListing || saving}
+                    onClick={() => void handleGenerateListing()}
+                    title="Generate AI title & description"
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-rose-600 text-white text-[9px] font-black uppercase disabled:opacity-50"
+                  >
+                    {genListing ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                    Generate
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void copyText('desc', description)}
+                    disabled={!description.trim()}
+                    className="inline-flex items-center gap-1 px-1.5 py-1 rounded-md border border-slate-200 text-[9px] font-black uppercase text-slate-600 disabled:opacity-40"
+                  >
+                    {copied === 'desc' ? <Check size={11} /> : <Copy size={11} />}
+                  </button>
+                </div>
               </div>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 className="w-full flex-1 min-h-[180px] px-2.5 py-2 text-xs text-slate-800 outline-none resize-none leading-relaxed"
-                placeholder="Generate German listing…"
+                placeholder="Click Generate for German marketplace description…"
               />
             </div>
 
@@ -1163,28 +1221,37 @@ const ListingStudioModal: React.FC<Props> = ({
                 {error}
               </div>
             )}
+          </section>
+        </div>
 
-            <div className="flex flex-wrap gap-1.5 pt-1 shrink-0">
+        {/* Sticky footer — always visible Generate + Apply */}
+        <div className="shrink-0 border-t border-slate-200 bg-white px-3 py-2.5 sm:px-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[11px] text-slate-500 max-w-xl">
+              Apply saves title, description
+              {selectedEntry ? ', and the selected card as main photo' : ''}, then returns to inventory.
+            </p>
+            <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 disabled={genListing || saving}
                 onClick={() => void handleGenerateListing()}
-                className="inline-flex items-center gap-1 px-2.5 py-2 rounded-xl bg-rose-600 text-white text-[9px] font-black uppercase disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-rose-600 text-white text-[10px] font-black uppercase tracking-wide disabled:opacity-50 shadow-sm"
               >
-                {genListing ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                {genListing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                 Generate listing
               </button>
               <button
                 type="button"
-                disabled={saving || genListing}
+                disabled={saving || genListing || (!title.trim() && !description.trim() && !selectedEntry)}
                 onClick={() => void handleApplyListing()}
-                className="inline-flex items-center gap-1 px-2.5 py-2 rounded-xl bg-slate-900 text-white text-[9px] font-black uppercase disabled:opacity-50 ml-auto"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wide disabled:opacity-50 shadow-sm"
               >
-                {saving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                 Apply to item
               </button>
             </div>
-          </section>
+          </div>
         </div>
       </div>
     </div>,

@@ -4461,8 +4461,9 @@ const InventoryList: React.FC<Props> = ({
             const current = items.find((i) => i.id === listingAiItem.id) || listingAiItem;
             await onUpdate([{ ...current, ...patch }]);
             setListingAiItem((prev) => (prev ? { ...prev, ...patch } : prev));
-            setToast('Item updated');
-            setTimeout(() => setToast(null), 1600);
+            const appliedListing = !!(patch.marketTitle || patch.marketDescription || patch.imageUrl);
+            setToast(appliedListing ? 'Listing applied to item' : 'Item updated');
+            setTimeout(() => setToast(null), 1800);
           }}
         />
       )}
