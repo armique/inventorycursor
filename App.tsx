@@ -65,6 +65,7 @@ import {
 import {
   CONTAINER_BUY_DATE_BACKFILL_KEY,
   backfillContainerBuyDates,
+  preferFilledContainerBuyDate,
 } from './utils/backfillContainerBuyDates';
 
 const WRITE_DEBOUNCE_MS = 5000;
@@ -431,7 +432,12 @@ const App: React.FC = () => {
         out.bulkImportId = localBid;
         changed = true;
       }
-      byId.set(r.id, changed ? out : r);
+      // Keep local container Acquired when cloud still has a blank buyDate.
+      const withBuyDate = preferFilledContainerBuyDate(out, local);
+      if (withBuyDate.buyDate !== out.buyDate) {
+        changed = true;
+      }
+      byId.set(r.id, changed ? withBuyDate : r);
     });
     return Array.from(byId.values());
   }, []);
@@ -515,7 +521,12 @@ const App: React.FC = () => {
       pendingCloudPushAfterRemoteRef.current = true;
       hasUnsavedChanges.current = true;
     }
-    setItems(inv.map(migrateContainerItem));
+    const migratedInv = inv.map(migrateContainerItem);
+    const { items: filledInv, updatedCount: filledCount } = backfillContainerBuyDates(migratedInv);
+    if (filledCount > 0) {
+      hasUnsavedChanges.current = true;
+    }
+    setItems(filledInv);
     setTrash(tr.map(migrateContainerItem));
     setExpenses(exp);
     setRecurringExpenses(recurring);
@@ -605,17 +616,15 @@ const App: React.FC = () => {
     }
   }, [appState, items.length]);
 
-  // One-time: fill empty Acquired (buyDate) on composed PC / Bundle / Mixed / Aufrustkit.
+  // Fill empty Acquired on PC / Bundle / Mixed whenever blanks remain.
+  // Not one-shot: cloud snapshots can wipe local fills, so re-apply until every container has a date.
   useEffect(() => {
     if (appState !== 'READY' || items.length === 0) return;
-    if (localStorage.getItem(CONTAINER_BUY_DATE_BACKFILL_KEY) === '1') return;
     const { items: next, updatedCount } = backfillContainerBuyDates(items);
-    localStorage.setItem(CONTAINER_BUY_DATE_BACKFILL_KEY, '1');
-    if (updatedCount > 0) {
-      setItems(next);
-      hasUnsavedChanges.current = true;
-    }
-  }, [appState, items.length]);
+    if (updatedCount === 0) return;
+    setItems(next);
+    hasUnsavedChanges.current = true;
+  }, [appState, items]);
 
   // Enrich history rows with chat URL / screenshot from member items (legacy sessions).
   useEffect(() => {

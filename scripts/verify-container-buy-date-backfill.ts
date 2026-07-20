@@ -5,8 +5,9 @@
 import assert from 'node:assert/strict';
 import { ItemStatus, type InventoryItem } from '../types';
 import {
-  CONTAINER_BUY_DATE_BACKFILL_KEY,
   backfillContainerBuyDates,
+  countBlankContainerBuyDates,
+  preferFilledContainerBuyDate,
   resolveContainerAcquiredDate,
 } from '../utils/backfillContainerBuyDates';
 
@@ -23,14 +24,12 @@ function item(partial: Partial<InventoryItem> & Pick<InventoryItem, 'id' | 'name
 }
 
 /** Mirrors inventory Acquired cell: containers must show buyDate when present (not a forced dash). */
-function displayAcquiredCell(item: InventoryItem): string {
-  const key = (item.buyDate || '').trim();
+function displayAcquiredCell(row: InventoryItem): string {
+  const key = (row.buyDate || '').trim();
   return key || '-';
 }
 
 function run() {
-  assert.equal(CONTAINER_BUY_DATE_BACKFILL_KEY, 'container_buy_date_backfill_v2');
-
   const cpu = item({ id: 'c1', name: 'CPU', buyDate: '2026-03-01', category: 'CPU' });
   const ram = item({ id: 'c2', name: 'RAM', buyDate: '2026-05-10', category: 'RAM' });
   const ssd = item({ id: 'c3', name: 'SSD', buyDate: '', category: 'Storage' });
@@ -71,6 +70,7 @@ function run() {
   });
 
   const all = [cpu, ram, ssd, bundle, pc, lot, alreadySet];
+  assert.equal(countBlankContainerBuyDates(all), 3);
 
   assert.equal(resolveContainerAcquiredDate(bundle, all), '2026-05-10', 'latest part date');
   assert.equal(resolveContainerAcquiredDate(pc, all), '2026-03-01');
@@ -78,6 +78,7 @@ function run() {
 
   const { items: next, updatedCount } = backfillContainerBuyDates(all);
   assert.equal(updatedCount, 3);
+  assert.equal(countBlankContainerBuyDates(next), 0, 'every container gets an Acquired date');
   assert.equal(next.find((i) => i.id === 'b1')?.buyDate, '2026-05-10');
   assert.equal(next.find((i) => i.id === 'p1')?.buyDate, '2026-03-01');
   assert.equal(next.find((i) => i.id === 'm1')?.buyDate, '2026-05-10');
@@ -89,6 +90,34 @@ function run() {
   const filledBundle = next.find((i) => i.id === 'b1')!;
   assert.equal(displayAcquiredCell(filledBundle), '2026-05-10', 'Acquired cell must show container buyDate');
   assert.notEqual(displayAcquiredCell(filledBundle), '-', 'must not hardcode dash for bundles');
+
+  // Cloud remote blank must not erase local filled container date
+  const remoteBlank = { ...filledBundle, buyDate: '' };
+  const kept = preferFilledContainerBuyDate(remoteBlank, filledBundle);
+  assert.equal(kept.buyDate, '2026-05-10');
+
+  const remoteHasOwn = preferFilledContainerBuyDate(
+    { ...filledBundle, buyDate: '2026-01-01' },
+    filledBundle
+  );
+  assert.equal(remoteHasOwn.buyDate, '2026-01-01', 'remote filled date wins');
+
+  // Simulate partial inventory then full inventory (continuous backfill)
+  const partial = backfillContainerBuyDates([cpu, bundle]);
+  assert.equal(partial.updatedCount, 1);
+  const afterCloudWipe = [
+    cpu,
+    ram,
+    ssd,
+    { ...partial.items.find((i) => i.id === 'b1')!, buyDate: '' },
+    pc,
+    lot,
+    alreadySet,
+  ];
+  assert.equal(countBlankContainerBuyDates(afterCloudWipe), 3);
+  const repaired = backfillContainerBuyDates(afterCloudWipe);
+  assert.equal(repaired.updatedCount, 3);
+  assert.equal(countBlankContainerBuyDates(repaired.items), 0);
 
   console.log('verify-container-buy-date-backfill: all checks passed');
 }
