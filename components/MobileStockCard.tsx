@@ -4,8 +4,6 @@ import {
   Copy,
   Gift,
   ImageOff,
-  Layers,
-  Monitor,
   MoreHorizontal,
   ShoppingBag,
   Sparkles,
@@ -32,7 +30,7 @@ export interface MobileStockCardActions {
   onDelete?: (item: InventoryItem) => void;
 }
 
-/** Compact Active/Draft stock card — primary PC actions without the wide table. */
+/** Dense phone stock row — fits several items on screen without a tall action strip. */
 export const MobileStockCard: React.FC<{
   item: InventoryItem;
   profit?: number | null;
@@ -48,7 +46,7 @@ export const MobileStockCard: React.FC<{
   return (
     <>
       <article
-        className={`rounded-2xl border bg-white p-3.5 shadow-sm space-y-3 ${
+        className={`rounded-xl border bg-white px-2.5 py-2 ${
           item.isPC
             ? 'border-indigo-200 shadow-[inset_3px_0_0_0_#6366f1]'
             : item.isBundle
@@ -58,12 +56,12 @@ export const MobileStockCard: React.FC<{
                 : 'border-slate-100'
         }`}
       >
-        <div className="flex gap-3 items-start">
+        <div className="flex gap-2 items-center">
           {onToggleSelect && (
             <button
               type="button"
               onClick={onToggleSelect}
-              className={`mt-1 h-5 w-5 rounded-md border shrink-0 flex items-center justify-center text-[10px] font-black ${
+              className={`h-5 w-5 rounded border shrink-0 flex items-center justify-center text-[10px] font-black ${
                 selected ? 'bg-slate-900 border-slate-900 text-white' : 'border-slate-300 bg-white text-transparent'
               }`}
               aria-label={selected ? 'Deselect' : 'Select'}
@@ -71,94 +69,83 @@ export const MobileStockCard: React.FC<{
               ✓
             </button>
           )}
+
           <button
             type="button"
             onClick={() => actions.onPhotos(item)}
-            className={`relative shrink-0 rounded-xl ${
-              hasPhotos ? 'ring-2 ring-emerald-500/45' : 'ring-1 ring-dashed ring-amber-400/80'
+            className={`relative shrink-0 rounded-lg ${
+              hasPhotos ? 'ring-1 ring-emerald-500/50' : 'ring-1 ring-dashed ring-amber-400/70'
             }`}
             title={hasPhotos ? 'Photos' : 'Add photos'}
           >
             <ItemThumbnail
               item={item}
-              className="w-14 h-14 rounded-xl object-cover border border-slate-100 shrink-0"
-              size={56}
+              className="w-11 h-11 rounded-lg object-cover border border-slate-100 shrink-0"
+              size={44}
             />
-            <span
-              className={`absolute -bottom-0.5 -right-0.5 min-w-[16px] h-4 px-0.5 rounded-full flex items-center justify-center text-[8px] font-black ${
-                hasPhotos ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-700 border border-amber-300'
-              }`}
-            >
-              {hasPhotos ? (photoCount > 1 ? photoCount : <Camera size={9} />) : <ImageOff size={9} />}
-            </span>
-          </button>
-          <div className="min-w-0 flex-1">
-            <button
-              type="button"
-              onClick={() => actions.onEdit(item)}
-              className="text-left w-full"
-            >
-              <p className="font-black text-[15px] leading-snug text-slate-900 line-clamp-2">{item.name}</p>
-            </button>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-              {(item.isPC || item.isBundle) && (
-                <span
-                  className={`inline-flex items-center gap-0.5 text-[9px] font-black uppercase px-1.5 py-0.5 rounded text-white ${
-                    item.isPC ? 'bg-indigo-600' : 'bg-violet-600'
-                  }`}
-                >
-                  {item.isPC ? <Monitor size={9} /> : <Layers size={9} />}
-                  {item.isPC ? 'PC' : 'Bundle'}
-                </span>
-              )}
-              <span className="text-[11px] font-bold text-slate-500">
-                Buy €{formatEUR(item.buyPrice)}
-                {item.sellPrice != null ? ` · Aim €${formatEUR(item.sellPrice)}` : ''}
+            {!hasPhotos && (
+              <span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-amber-100 text-amber-700 border border-amber-300 flex items-center justify-center">
+                <ImageOff size={8} />
               </span>
-              {profit != null && (
-                <span className={`text-[11px] font-bold ${profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                  {profit >= 0 ? '+' : ''}€{formatEUR(profit)}
-                </span>
-              )}
-            </div>
-            {(item.category || item.subCategory) && (
-              <p className="text-[10px] text-slate-400 font-medium mt-1 truncate">
-                {[item.category, item.subCategory].filter(Boolean).join(' · ')}
-              </p>
             )}
-          </div>
-        </div>
+          </button>
 
-        <div className="grid grid-cols-4 gap-1.5">
           <button
             type="button"
             onClick={() => actions.onEdit(item)}
-            className="py-2.5 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase tracking-wide"
+            className="min-w-0 flex-1 text-left py-0.5"
           >
-            Edit
+            <p className="font-bold text-[13px] leading-tight text-slate-900 line-clamp-1">{item.name}</p>
+            <p className="mt-0.5 text-[11px] font-semibold text-slate-500 truncate">
+              {(item.isPC || item.isBundle) && (
+                <span className={item.isPC ? 'text-indigo-600' : 'text-violet-600'}>
+                  {item.isPC ? 'PC · ' : 'Bundle · '}
+                </span>
+              )}
+              €{formatEUR(item.buyPrice)}
+              {item.sellPrice != null ? ` · aim €${formatEUR(item.sellPrice)}` : ''}
+              {profit != null ? (
+                <span className={profit >= 0 ? ' text-emerald-600' : ' text-rose-600'}>
+                  {' '}
+                  ({profit >= 0 ? '+' : ''}€{formatEUR(profit)})
+                </span>
+              ) : null}
+              {item.subCategory || item.category
+                ? ` · ${item.subCategory || item.category}`
+                : ''}
+            </p>
           </button>
-          <button
-            type="button"
-            disabled={!inStock}
-            onClick={() => actions.onSell(item)}
-            className="py-2.5 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wide disabled:opacity-40 inline-flex items-center justify-center gap-1"
-          >
-            <ShoppingBag size={12} /> Sell
-          </button>
-          <button
-            type="button"
-            onClick={() => actions.onListingStudio(item)}
-            className="py-2.5 rounded-xl border border-rose-200 bg-rose-50 text-rose-800 text-[10px] font-black uppercase tracking-wide inline-flex items-center justify-center gap-1"
-          >
-            <Sparkles size={12} /> AI
-          </button>
-          <button
-            type="button"
-            onClick={() => setMoreOpen(true)}
-            className="py-2.5 rounded-xl border border-slate-200 text-slate-700 text-[10px] font-black uppercase tracking-wide inline-flex items-center justify-center gap-1"
-          >
-            <MoreHorizontal size={12} /> More
-          </button>
+
+          <div className="flex items-center gap-0.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => actions.onEdit(item)}
+              className="h-9 w-9 rounded-lg bg-slate-900 text-white inline-flex items-center justify-center"
+              title="Edit"
+              aria-label="Edit"
+            >
+              <Edit2 size={14} />
+            </button>
+            <button
+              type="button"
+              disabled={!inStock}
+              onClick={() => actions.onSell(item)}
+              className="h-9 w-9 rounded-lg bg-emerald-600 text-white inline-flex items-center justify-center disabled:opacity-35"
+              title="Sell"
+              aria-label="Sell"
+            >
+              <ShoppingBag size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setMoreOpen(true)}
+              className="h-9 w-9 rounded-lg border border-slate-200 text-slate-600 inline-flex items-center justify-center"
+              title="More"
+              aria-label="More actions"
+            >
+              <MoreHorizontal size={16} />
+            </button>
+          </div>
         </div>
       </article>
 
