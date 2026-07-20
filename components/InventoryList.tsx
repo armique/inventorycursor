@@ -47,6 +47,7 @@ import QuickBundleAddModal from './QuickBundleAddModal';
 import EditItemModal from './EditItemModal';
 import ItemForm from './ItemForm';
 import ItemThumbnail from './ItemThumbnail';
+import MobileStockCard from './MobileStockCard';
 import InvoiceView from './InvoiceView';
 import InventoryAISpecsPanel from './InventoryAISpecsPanel';
 import AddPhotosModal, { type AddPhotosApplyOptions } from './AddPhotosModal';
@@ -4477,6 +4478,51 @@ const InventoryList: React.FC<Props> = ({
         </div>
       )}
 
+      {/* Mobile-friendly Active / Drafts / All stock cards */}
+      {(statusFilter === 'ACTIVE' || statusFilter === 'DRAFTS' || statusFilter === 'ALL') && !splitView && (
+        <div className="lg:hidden flex-1 min-h-0 overflow-y-auto custom-scrollbar px-3 pb-4 space-y-3">
+          {sortedItems.length === 0 ? (
+            <div className="py-16 text-center opacity-40">
+              <Package size={40} className="mx-auto mb-3 text-slate-300" />
+              <p className="font-bold text-slate-400 text-sm">No matches found</p>
+              <p className="text-xs text-slate-400 mt-1">Try clearing search or category filters</p>
+            </div>
+          ) : (
+            sortedItems.map((item) => (
+              <MobileStockCard
+                key={item.id}
+                item={item}
+                profit={profitForDisplay(item)}
+                selected={selectedIdSet.has(item.id)}
+                onToggleSelect={() => toggleSelect(item.id)}
+                actions={{
+                  onEdit: (it) => handleEditClick(it),
+                  onSell: (it) => {
+                    addRecentItemId(it.id);
+                    setItemToSell(it);
+                  },
+                  onPhotos: (it) => openAddPhotosModal([it.id]),
+                  onListingStudio: (it) => {
+                    addRecentItemId(it.id);
+                    setListingAiItem(it);
+                  },
+                  onTrade: (it) => {
+                    addRecentItemId(it.id);
+                    setItemToTrade(it);
+                  },
+                  onGift: (it) => {
+                    addRecentItemId(it.id);
+                    setItemToGift(it);
+                  },
+                  onDuplicate: (it) => handleDuplicate(it),
+                  onDelete: (it) => setItemToDelete(it),
+                }}
+              />
+            ))
+          )}
+        </div>
+      )}
+
       {/* Mobile-friendly sold list (phones) */}
       {statusFilter === 'SOLD' && !splitView && (
         <div className="lg:hidden flex-1 min-h-0 overflow-y-auto custom-scrollbar px-3 pb-4 space-y-3">
@@ -4825,7 +4871,14 @@ const InventoryList: React.FC<Props> = ({
           rowHeightEstimate={rowHeightEstimate}
           bulkBarSpacer={selectedIds.length > 0}
           collapsedBundles={collapsedBundles}
-          className={statusFilter === 'SOLD' ? 'hidden lg:flex flex-1' : 'flex flex-1'}
+          className={
+            statusFilter === 'SOLD' ||
+            statusFilter === 'ACTIVE' ||
+            statusFilter === 'DRAFTS' ||
+            statusFilter === 'ALL'
+              ? 'hidden lg:flex flex-1'
+              : 'flex flex-1'
+          }
         />
         </div>
       )}

@@ -3,9 +3,10 @@ import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
   Package, PlusCircle, Settings, RefreshCw, Trash2, CloudUpload, LayoutDashboard,
   Layers, Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe,
-  Printer, LayoutTemplate, PackageSearch, Monitor, Boxes, ChevronDown, Plus, Images,
+  Printer, LayoutTemplate, PackageSearch, Monitor, Boxes, ChevronDown, Plus, Images, MoreHorizontal,
 } from 'lucide-react';
 import PanelBreadcrumbs from './PanelBreadcrumbs';
+import { MobileAddSheet, MobileMoreSheet } from './MobileBottomSheets';
 import { usePanelLocale } from '../context/PanelLocaleContext';
 import { usePanelKeyboardShortcuts } from '../hooks/usePanelKeyboardShortcuts';
 import { signInWithGoogle, logOut, completeGoogleRedirectSignIn, getAuthErrorMessage } from '../services/firebaseService';
@@ -47,6 +48,8 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   const [showOnboarding, setShowOnboarding] = React.useState(() => !isOnboardingComplete());
   const [addMenuOpen, setAddMenuOpen] = React.useState(true);
   const [moreNavOpen, setMoreNavOpen] = React.useState(false);
+  const [mobileAddOpen, setMobileAddOpen] = React.useState(false);
+  const [mobileMoreOpen, setMobileMoreOpen] = React.useState(false);
   const { reminder: ebayReminder, dismiss: dismissEbayReminder, checksRemaining } = useEbayListingReminder();
 
   React.useEffect(() => {
@@ -373,34 +376,85 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
       {/* MOBILE BOTTOM NAVIGATION */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-[120] border-t border-slate-200 bg-white/95 backdrop-blur-sm pb-safe">
         <div className="flex justify-around items-stretch py-1 min-h-[56px]">
-          {[
-            { to: '/panel/dashboard', icon: <LayoutDashboard size={18} />, label: 'Home' },
-            { to: '/panel/inventory', icon: <Package size={18} />, label: 'Stock' },
-            { to: '/panel/add', icon: <Plus size={18} />, label: 'Add' },
-            { to: '/panel/settings', icon: <Settings size={18} />, label: 'Settings' },
-          ].map(({ to, icon, label }) => {
-              const isActive = location.pathname === to || (to === '/panel/add' && location.pathname.startsWith('/panel/builder'));
+          {(
+            [
+              { key: 'home', to: '/panel/dashboard', icon: <LayoutDashboard size={18} />, label: 'Home' },
+              { key: 'stock', to: '/panel/inventory', icon: <Package size={18} />, label: 'Stock' },
+              { key: 'add', to: null, icon: <Plus size={18} />, label: 'Add' },
+              { key: 'more', to: null, icon: <MoreHorizontal size={18} />, label: 'More' },
+            ] as const
+          ).map((tab) => {
+            const isActive =
+              tab.to != null &&
+              (location.pathname === tab.to ||
+                (tab.to === '/panel/inventory' && location.pathname.startsWith('/panel/edit')));
+            const isAddActive =
+              tab.key === 'add' &&
+              (mobileAddOpen ||
+                location.pathname === '/panel/add' ||
+                location.pathname.startsWith('/panel/builder') ||
+                location.pathname === '/panel/add-bulk');
+            const isMoreActive = tab.key === 'more' && mobileMoreOpen;
+            const lit = isActive || isAddActive || isMoreActive;
+
+            if (tab.key === 'add' || tab.key === 'more') {
               return (
-                <Link
-                  key={to}
-                  to={to}
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => {
+                    if (tab.key === 'add') {
+                      setMobileMoreOpen(false);
+                      setMobileAddOpen(true);
+                    } else {
+                      setMobileAddOpen(false);
+                      setMobileMoreOpen(true);
+                    }
+                  }}
                   className={`flex flex-col items-center justify-center flex-1 px-1 py-1.5 text-[11px] font-semibold transition-colors ${
-                    isActive ? 'text-slate-900' : 'text-slate-400'
+                    lit ? 'text-slate-900' : 'text-slate-400'
                   }`}
                 >
                   <span
                     className={`mb-0.5 inline-flex items-center justify-center rounded-full p-1.5 ${
-                      isActive ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'
+                      lit ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'
                     }`}
                   >
-                    {icon}
+                    {tab.icon}
                   </span>
-                  <span className="truncate">{label}</span>
-                </Link>
+                  <span className="truncate">{tab.label}</span>
+                </button>
               );
-            })}
+            }
+
+            return (
+              <Link
+                key={tab.key}
+                to={tab.to!}
+                onClick={() => {
+                  setMobileAddOpen(false);
+                  setMobileMoreOpen(false);
+                }}
+                className={`flex flex-col items-center justify-center flex-1 px-1 py-1.5 text-[11px] font-semibold transition-colors ${
+                  lit ? 'text-slate-900' : 'text-slate-400'
+                }`}
+              >
+                <span
+                  className={`mb-0.5 inline-flex items-center justify-center rounded-full p-1.5 ${
+                    lit ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'
+                  }`}
+                >
+                  {tab.icon}
+                </span>
+                <span className="truncate">{tab.label}</span>
+              </Link>
+            );
+          })}
         </div>
       </nav>
+
+      <MobileAddSheet open={mobileAddOpen} onClose={() => setMobileAddOpen(false)} />
+      <MobileMoreSheet open={mobileMoreOpen} onClose={() => setMobileMoreOpen(false)} />
     </div>
   );
 };
