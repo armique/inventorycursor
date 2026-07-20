@@ -15,7 +15,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
-import { signInAnonymously } from 'firebase/auth';
+import { signInAnonymously, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import {
   getCurrentUser,
   getFirebaseContext,
@@ -125,11 +125,31 @@ export async function revokePhotoUploadSession(token: string): Promise<void> {
   await updateDoc(ref, { status: 'revoked' });
 }
 
-/** Phone page: ensure anonymous auth so Storage/Firestore rules accept the write. */
+/** Phone page: anonymous auth first; caller can fall back to Google if disabled. */
 export async function ensureAnonymousUploadAuth(): Promise<void> {
   const ctx = requireCtx();
   if (ctx.auth.currentUser) return;
   await signInAnonymously(ctx.auth);
+}
+
+/** Phone page fallback when Anonymous is not enabled yet — same Google account as the panel. */
+export async function ensureGoogleUploadAuth(): Promise<void> {
+  const ctx = requireCtx();
+  if (ctx.auth.currentUser && !ctx.auth.currentUser.isAnonymous) return;
+  const provider = new GoogleAuthProvider();
+  await signInWithPopup(ctx.auth, provider);
+}
+
+export function isAnonymousAuthDisabledError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err || '');
+  const code = (err as { code?: string })?.code || '';
+  return (
+    code.includes('operation-not-allowed') ||
+    code.includes('admin-restricted-operation') ||
+    msg.includes('auth/operation-not-allowed') ||
+    msg.includes('admin-restricted-operation') ||
+    msg.includes('ADMIN_ONLY_OPERATION')
+  );
 }
 
 export async function uploadPhonePhotoToSession(

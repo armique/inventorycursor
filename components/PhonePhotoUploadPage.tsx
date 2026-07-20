@@ -3,7 +3,9 @@ import { useParams } from 'react-router-dom';
 import { CheckCircle2, ImagePlus, Loader2, Smartphone, Upload } from 'lucide-react';
 import {
   ensureAnonymousUploadAuth,
+  ensureGoogleUploadAuth,
   fetchPhotoUploadSession,
+  isAnonymousAuthDisabledError,
   uploadPhonePhotoToSession,
   type PhotoUploadSession,
 } from '../services/photoUploadSession';
@@ -16,34 +18,44 @@ const PhonePhotoUploadPage: React.FC = () => {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [needGoogle, setNeedGoogle] = useState(false);
   const [doneCount, setDoneCount] = useState(0);
+
+  const loadSession = async () => {
+    const s = await fetchPhotoUploadSession(token);
+    if (!s) {
+      setError('This upload link is invalid or was removed.');
+      setSession(null);
+      return;
+    }
+    if (s.status !== 'active' || Date.now() > s.expiresAtMs) {
+      setError('This upload link expired or was closed on the PC.');
+      setSession(s);
+      return;
+    }
+    setError(null);
+    setSession(s);
+  };
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
       setError(null);
+      setNeedGoogle(false);
       try {
         await ensureAnonymousUploadAuth();
-        const s = await fetchPhotoUploadSession(token);
         if (cancelled) return;
-        if (!s) {
-          setError('This upload link is invalid or was removed.');
-          setSession(null);
-        } else if (s.status !== 'active' || Date.now() > s.expiresAtMs) {
-          setError('This upload link expired or was closed on the PC.');
-          setSession(s);
-        } else {
-          setSession(s);
-        }
+        await loadSession();
       } catch (e) {
-        if (!cancelled) {
-          const msg = e instanceof Error ? e.message : 'Could not open upload link';
+        if (cancelled) return;
+        if (isAnonymousAuthDisabledError(e)) {
+          setNeedGoogle(true);
           setError(
-            msg.includes('auth/operation-not-allowed') || msg.includes('admin-restricted-operation')
-              ? 'Anonymous sign-in is not enabled yet. In Firebase Console → Authentication → Sign-in method, enable Anonymous. Or open the panel on this iPhone and sign in with the same Google account, then edit the item there.'
-              : msg
+            'Quick sign-in with the same Google account you use on the PC (Anonymous auth is not enabled yet).'
           );
+        } else {
+          setError(e instanceof Error ? e.message : 'Could not open upload link');
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -52,7 +64,23 @@ const PhonePhotoUploadPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  const signInWithGoogle = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      await ensureGoogleUploadAuth();
+      setNeedGoogle(false);
+      await loadSession();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Google sign-in failed');
+      setNeedGoogle(true);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const remaining = useMemo(() => {
     if (!session) return 0;
@@ -94,6 +122,9 @@ const PhonePhotoUploadPage: React.FC = () => {
     }
   };
 
+  const canUpload =
+    !!session && session.status === 'active' && Date.now() <= session.expiresAtMs && !needGoogle;
+
   return (
     <div className="min-h-[100dvh] bg-slate-950 text-white px-4 py-6 flex flex-col">
       <div className="max-w-md w-full mx-auto flex-1 flex flex-col gap-4">
@@ -121,7 +152,17 @@ const PhonePhotoUploadPage: React.FC = () => {
           </div>
         )}
 
-        {!loading && session && session.status === 'active' && Date.now() <= session.expiresAtMs && (
+        {needGoogle && !loading && (
+          <button
+            type="button"
+            onClick={() => void signInWithGoogle()}
+            className="w-full py-3.5 rounded-2xl bg-white text-slate-900 text-sm font-black"
+          >
+            Continue with Google
+          </button>
+        )}
+
+        {!loading && canUpload && (
           <>
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3">
               <p className="text-xs text-slate-300 font-semibold">
