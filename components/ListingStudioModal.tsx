@@ -719,20 +719,32 @@ const ListingStudioModal: React.FC<Props> = ({
           {/* LEFT — item / specs / trade */}
           <aside className="border-r border-slate-100 overflow-y-auto p-3 space-y-3 bg-slate-50/40">
             <section>
-              <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center justify-between mb-1 gap-2">
                 <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                   Item name
                 </h4>
-                <button
-                  type="button"
-                  disabled={generatingTitle || parsingSpecs}
-                  onClick={() => void handleGenerateItemTitle()}
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-600 text-white text-[9px] font-black uppercase disabled:opacity-50"
-                  title="Generate a cleaned item title only (does not change specs)"
-                >
-                  {generatingTitle ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
-                  AI title
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    disabled={!name.trim()}
+                    onClick={() => void copyText('name', name)}
+                    className="inline-flex items-center justify-center p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                    title="Copy item name"
+                    aria-label="Copy item name"
+                  >
+                    {copied === 'name' ? <Check size={12} /> : <Copy size={12} />}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={generatingTitle || parsingSpecs}
+                    onClick={() => void handleGenerateItemTitle()}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-600 text-white text-[9px] font-black uppercase disabled:opacity-50"
+                    title="Generate a cleaned item title only (does not change specs)"
+                  >
+                    {generatingTitle ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                    AI title
+                  </button>
+                </div>
               </div>
               <input
                 className="w-full px-2.5 py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-900 outline-none focus:border-rose-400"
@@ -1319,8 +1331,8 @@ const ListingStudioModal: React.FC<Props> = ({
             )}
 
             <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shrink-0">
-              <div className="px-2.5 py-1.5 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                <div>
+              <div className="px-2.5 py-1.5 border-b border-slate-100 bg-slate-50 flex justify-between items-center gap-2">
+                <div className="min-w-0">
                   <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">
                     AI Titel
                   </h4>
@@ -1328,10 +1340,13 @@ const ListingStudioModal: React.FC<Props> = ({
                 </div>
                 <button
                   type="button"
+                  disabled={!title.trim()}
                   onClick={() => void copyText('title', title)}
-                  className="inline-flex items-center gap-1 px-1.5 py-1 rounded-md border border-slate-200 text-[9px] font-black uppercase text-slate-600"
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-200 text-[9px] font-black uppercase text-slate-600 hover:bg-white disabled:opacity-40 shrink-0"
+                  title="Copy title"
+                  aria-label="Copy title"
                 >
-                  {copied === 'title' ? <Check size={11} /> : <Copy size={11} />}
+                  {copied === 'title' ? <Check size={12} /> : <Copy size={12} />}
                 </button>
               </div>
               <input
