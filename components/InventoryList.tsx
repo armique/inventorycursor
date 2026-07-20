@@ -4848,7 +4848,7 @@ const InventoryList: React.FC<Props> = ({
           />
         </div>
       ) : (
-        <div className="flex flex-1 min-h-0 min-w-0 flex-col">
+        <div className="hidden lg:flex flex-1 min-h-0 min-w-0 flex-col">
         <InventoryListTablePane
           key={`single-${statusFilter}`}
           paneItems={sortedItems}
@@ -4868,7 +4868,7 @@ const InventoryList: React.FC<Props> = ({
           rowHeightEstimate={rowHeightEstimate}
           bulkBarSpacer={selectedIds.length > 0}
           collapsedBundles={collapsedBundles}
-          className="hidden lg:flex flex-1"
+          className="flex flex-1"
         />
         </div>
       )}

@@ -69,17 +69,8 @@ const BulkSelectionBar: React.FC<Props> = ({ count, onClear, actions, onExpanded
   );
 
   if (!hasSelection) {
-    return (
-      <div
-        className="shrink-0 w-full border-t border-slate-200 bg-slate-100/90 px-4 py-3 min-h-[52px] flex items-center justify-center"
-        role="status"
-        aria-live="polite"
-      >
-        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">
-          Select one or more items for bulk actions
-        </p>
-      </div>
-    );
+    // No placeholder strip — it stole vertical space on phones and left a dead band under the list.
+    return null;
   }
 
   return (
