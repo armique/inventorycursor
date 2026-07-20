@@ -32,9 +32,11 @@ import {
   downloadProductCardEntry,
   isProductCardGalleryCloudReady,
   listProductCardGallery,
+  productCardSaveActionLabel,
   removeProductCardFromGallery,
   resolveProductCardImageUrl,
   saveGeneratedProductCard,
+  shareOrDownloadImageBlob,
 } from '../services/productCardGallery';
 import { resolveUrlForInventoryMainPhoto } from '../utils/applyProductCardAsMainPhoto';
 
@@ -298,10 +300,26 @@ const GeminiProductCardModal: React.FC<Props> = ({
       }
     }
     if (!preview) return;
-    const a = document.createElement('a');
-    a.href = preview;
-    a.download = buildProductCardFileName(item.name, styleName || savedEntry?.styleName, savedEntry?.createdAt);
-    a.click();
+    const fileName = buildProductCardFileName(
+      item.name,
+      styleName || savedEntry?.styleName,
+      savedEntry?.createdAt
+    );
+    try {
+      if (preview.startsWith('data:')) {
+        const res = await fetch(preview);
+        await shareOrDownloadImageBlob(await res.blob(), fileName);
+        return;
+      }
+      const res = await fetch(preview);
+      if (!res.ok) throw new Error('fetch failed');
+      await shareOrDownloadImageBlob(await res.blob(), fileName);
+    } catch {
+      const a = document.createElement('a');
+      a.href = preview;
+      a.download = fileName;
+      a.click();
+    }
   };
 
   const pickFromGallery = async (entry: GeneratedProductCardEntry) => {
@@ -532,7 +550,7 @@ const GeminiProductCardModal: React.FC<Props> = ({
                             type="button"
                             onClick={() => void downloadProductCardEntry(entry)}
                             className="p-1 rounded-md border border-slate-200 text-slate-500 hover:bg-white"
-                            title="Download"
+                            title={productCardSaveActionLabel()}
                           >
                             <Download size={11} />
                           </button>
@@ -793,7 +811,7 @@ const GeminiProductCardModal: React.FC<Props> = ({
                   onClick={() => void downloadPreview()}
                   className="inline-flex items-center gap-1 px-3 py-2 rounded-xl border border-slate-200 text-[10px] font-black uppercase text-slate-600 hover:bg-slate-50"
                 >
-                  <Download size={12} /> Download
+                  <Download size={12} /> {productCardSaveActionLabel()}
                 </button>
                 <button
                   type="button"

@@ -22,6 +22,8 @@ import {
   groupProductCardGalleryByItem,
   isProductCardGalleryCloudReady,
   listProductCardGallery,
+  prefersShareImageToPhotos,
+  productCardSaveActionLabel,
   removeProductCardFromGallery,
   resolveProductCardImageUrl,
 } from '../services/productCardGallery';
@@ -359,7 +361,11 @@ const ProductCardGalleryPage: React.FC<Props> = ({ items, onUpdate }) => {
                         void downloadAllForItem(group.itemId, group.itemName, group.entries)
                       }
                       className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                      title="Download every card for this product"
+                      title={
+                        prefersShareImageToPhotos()
+                          ? 'Share / save every card to Photos'
+                          : 'Download every card for this product'
+                      }
                     >
                       {downloadingItemId === group.itemId ? (
                         <Loader2 size={12} className="animate-spin" />
@@ -368,7 +374,9 @@ const ProductCardGalleryPage: React.FC<Props> = ({ items, onUpdate }) => {
                       )}
                       {downloadingItemId === group.itemId && downloadProgress
                         ? downloadProgress
-                        : `Download all (${group.entries.length})`}
+                        : prefersShareImageToPhotos()
+                          ? `Share all (${group.entries.length})`
+                          : `Download all (${group.entries.length})`}
                     </button>
                     {live && (
                       <Link
@@ -426,7 +434,7 @@ const ProductCardGalleryPage: React.FC<Props> = ({ items, onUpdate }) => {
                             disabled={busyId === entry.id}
                             onClick={() => void downloadProductCardEntry(entry)}
                             className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-white"
-                            title={entry.fileName || 'Download'}
+                            title={entry.fileName || productCardSaveActionLabel()}
                           >
                             <Download size={12} />
                           </button>
@@ -568,7 +576,7 @@ const ProductCardGalleryPage: React.FC<Props> = ({ items, onUpdate }) => {
                     onClick={() => void downloadProductCardEntry(preview.entry)}
                     className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-white text-slate-900 text-[10px] font-black uppercase"
                   >
-                    <Download size={12} /> Download
+                    <Download size={12} /> {productCardSaveActionLabel()}
                   </button>
                   <button
                     type="button"

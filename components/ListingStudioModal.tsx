@@ -56,6 +56,7 @@ import {
 } from '../services/productCardStyles';
 import {
   downloadProductCardEntry,
+  productCardSaveActionLabel,
   listProductCardGallery,
   removeProductCardFromGallery,
   resolveProductCardImageUrl,
@@ -1275,7 +1276,7 @@ const ListingStudioModal: React.FC<Props> = ({
                           type="button"
                           onClick={() => void downloadProductCardEntry(entry)}
                           className="p-1 rounded-md border border-slate-200 text-slate-500"
-                          title="Download"
+                          title={productCardSaveActionLabel()}
                         >
                           <Download size={11} />
                         </button>

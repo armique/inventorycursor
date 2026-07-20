@@ -344,9 +344,62 @@ function triggerBlobDownload(blob: Blob, fileName: string): void {
   }
 }
 
+/** iPhone/iPad (and Android): prefer native share so user can Save Image → Photos. */
+export function prefersShareImageToPhotos(): boolean {
+  if (typeof navigator === 'undefined' || typeof navigator.share !== 'function') return false;
+  const ua = navigator.userAgent || '';
+  const iOS =
+    /iPad|iPhone|iPod/.test(ua) ||
+    (navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1);
+  const android = /Android/i.test(ua);
+  return iOS || android;
+}
+
+function imageMimeForFile(blob: Blob, fileName: string): string {
+  if (blob.type && blob.type.startsWith('image/')) return blob.type;
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.gif')) return 'image/gif';
+  return 'image/jpeg';
+}
+
+/**
+ * On iPhone, `<a download>` lands in Files and needs an extra open/save step.
+ * Web Share with a File opens the share sheet → Save Image → Photos in one flow.
+ * Desktop keeps the classic download.
+ */
+export async function shareOrDownloadImageBlob(blob: Blob, fileName: string): Promise<void> {
+  const mime = imageMimeForFile(blob, fileName);
+  const file = new File([blob], fileName, { type: mime });
+
+  if (prefersShareImageToPhotos()) {
+    const payload = { files: [file], title: fileName };
+    const canShare =
+      typeof navigator.canShare === 'function' ? navigator.canShare(payload) : true;
+    if (canShare) {
+      try {
+        await navigator.share(payload);
+        return;
+      } catch (err) {
+        // User dismissed the sheet — don't fall through to a surprise Files download.
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        /* share unsupported for this file — fall back */
+      }
+    }
+  }
+
+  triggerBlobDownload(blob.type ? blob : new Blob([blob], { type: mime }), fileName);
+}
+
 export async function downloadProductCardEntry(entry: GeneratedProductCardEntry): Promise<void> {
   const { blob, fileName } = await getProductCardBlob(entry);
-  triggerBlobDownload(blob, fileName);
+  await shareOrDownloadImageBlob(blob, fileName);
+}
+
+/** Label for download buttons (iPhone: Share / Save). */
+export function productCardSaveActionLabel(): string {
+  return prefersShareImageToPhotos() ? 'Share / Save' : 'Download';
 }
 
 function uniquifyFileNames(names: string[]): string[] {
@@ -387,6 +440,38 @@ export async function downloadProductCardEntries(
 
   let ok = 0;
   let failed = 0;
+
+  // iOS: one share sheet with all images when possible (Save Images → Photos).
+  if (prefersShareImageToPhotos() && typeof navigator.share === 'function') {
+    const files: File[] = [];
+    for (let i = 0; i < prepared.length; i++) {
+      const row = prepared[i];
+      if (!row) {
+        failed++;
+        continue;
+      }
+      const mime = imageMimeForFile(row.blob, okNames[i]!);
+      files.push(new File([row.blob], okNames[i]!, { type: mime }));
+    }
+    if (files.length) {
+      const payload = { files, title: `${files.length} product cards` };
+      const canShare =
+        typeof navigator.canShare === 'function' ? navigator.canShare(payload) : false;
+      if (canShare) {
+        try {
+          await navigator.share(payload);
+          options?.onProgress?.(prepared.length, prepared.length);
+          return { ok: files.length, failed };
+        } catch (err) {
+          if (err instanceof DOMException && err.name === 'AbortError') {
+            return { ok: 0, failed };
+          }
+          /* fall through to per-file share/download */
+        }
+      }
+    }
+  }
+
   for (let i = 0; i < prepared.length; i++) {
     const row = prepared[i];
     if (!row) {
@@ -395,7 +480,7 @@ export async function downloadProductCardEntries(
       continue;
     }
     try {
-      triggerBlobDownload(row.blob, okNames[i]!);
+      await shareOrDownloadImageBlob(row.blob, okNames[i]!);
       ok++;
       // Brief gap so browsers don't coalesce / block multiple downloads
       await new Promise((r) => setTimeout(r, 280));
