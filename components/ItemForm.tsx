@@ -2662,6 +2662,16 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
             }));
             setShowProductCardGen(false);
           }}
+          onAddToItemGallery={async (url) => {
+            setFormData((prev) => {
+              const urls = normalizeImageList([prev.imageUrl, ...(prev.imageUrls || []), url]);
+              return {
+                ...prev,
+                imageUrl: urls[0] || url,
+                imageUrls: urls,
+              };
+            });
+          }}
         />
       )}
     </div>
