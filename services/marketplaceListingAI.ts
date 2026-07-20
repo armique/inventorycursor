@@ -5,6 +5,7 @@
 import type { InventoryItem } from '../types';
 import { ItemStatus } from '../types';
 import { requestAIJson } from './specsAI';
+import { isMotherboardItem } from '../utils/builderSlotMatch';
 
 export interface MarketplaceListingHints {
   hasOVP?: boolean;
@@ -97,8 +98,11 @@ LIEFERUMFANG / OVP / IO
 Перечисляй комплект отдельно.
 Если нет OVP: Ohne Originalverpackung
 Если есть OVP: Originalverpackung vorhanden
-Если есть IO-Blende: IO-Blende
-Если нет IO-Blende (для Mainboard/Bundle где актуально): Ohne IO-Blende
+
+IO-Blende / IO Shield:
+- Упоминай IO-Blende ТОЛЬКО для Mainboards / Motherboards.
+- Для всех остальных товаров (RAM, CPU, GPU, SSD, PSU, Gehäuse, Fertig-PC, Bundle и т.д.) НИКОГДА не пиши IO-Blende, Ohne IO-Blende, IO Shield и подобные строки.
+- Для Mainboard: если IO-Blende есть — «IO-Blende»; если нет — «Ohne IO-Blende».
 
 =========================
 ZUSTAND
@@ -128,7 +132,8 @@ function buildItemContext(item: InventoryItem, hints?: MarketplaceListingHints):
         .join('\n')
     : '';
   const hasOVP = hints?.hasOVP === true || item.hasOVP === true;
-  const hasIO = hints?.hasIOShield === true || item.hasIOShield === true;
+  const isMobo = isMotherboardItem(item);
+  const hasIO = isMobo && (hints?.hasIOShield === true || item.hasIOShield === true);
   const lines = [
     `Product name: ${item.name}`,
     `Category: ${item.category}${item.subCategory ? ` / ${item.subCategory}` : ''}`,
@@ -139,7 +144,9 @@ function buildItemContext(item: InventoryItem, hints?: MarketplaceListingHints):
       : '',
     item.isDefective ? 'Condition flag: DEFECTIVE' : 'Condition flag: WORKING',
     `OVP: ${hasOVP ? 'YES — Originalverpackung vorhanden' : 'NO — Ohne Originalverpackung'}`,
-    `IO-Blende: ${hasIO ? 'YES — include IO-Blende' : 'NO — Ohne IO-Blende (if motherboard/bundle relevant)'}`,
+    isMobo
+      ? `IO-Blende: ${hasIO ? 'YES — include IO-Blende in Lieferumfang' : 'NO — Ohne IO-Blende in Lieferumfang'}`
+      : 'IO-Blende: NOT APPLICABLE — do not mention IO-Blende / IO Shield at all',
     item.comment1 ? `Notes: ${item.comment1}` : '',
     specs ? `Specs:\n${specs}` : '',
   ].filter(Boolean);
@@ -185,6 +192,25 @@ export function normalizeListingSectionSpacing(text: string): string {
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+/** IO-Blende / IO Shield lines — only allowed for motherboards. */
+const IO_BLENDE_LINE =
+  /(?:🔧\s*)?(?:ohne\s+)?io[\s-]*(?:blende|shield)\b|i\/?o[\s-]*(?:blende|shield)\b/i;
+
+/**
+ * Strip IO-Blende mentions from listings that are not motherboards.
+ */
+export function stripIoBlendeUnlessMotherboard(
+  text: string,
+  item: Pick<InventoryItem, 'category' | 'subCategory' | 'name'>
+): string {
+  if (isMotherboardItem(item as InventoryItem)) return String(text || '');
+  return String(text || '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .filter((line) => !IO_BLENDE_LINE.test(line.trim()))
+    .join('\n');
+}
+
 /**
  * Generate marketplace title + German listing (+ owner price/keyword hints).
  */
@@ -219,7 +245,9 @@ Return ONE valid JSON object (no markdown fences) with keys:
     searchKeywords?: string[];
   }>(prompt, { maxTokens: 2200 });
 
-  const listingText = normalizeListingSectionSpacing(String(data.listingText || ''));
+  const listingText = normalizeListingSectionSpacing(
+    stripIoBlendeUnlessMotherboard(String(data.listingText || ''), item)
+  );
   if (!listingText) {
     throw new Error('AI returned an empty listing. Try again.');
   }
