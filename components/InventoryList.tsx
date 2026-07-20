@@ -32,6 +32,7 @@ import { generateStoreDescription } from '../services/specsAI';
 import { suggestPriceFromSoldListings, SoldPriceSuggestion, getSpecsAIProvider } from '../services/specsAI';
 import { bulkImportSourceLabel, countBulkImportItems } from '../utils/bulkImportHistory';
 import ListingStudioModal from './ListingStudioModal';
+import { MobileSheetShell } from './MobileBottomSheets';
 import { generateMarketplaceListing } from '../services/marketplaceListingAI';
 
 const ebaySoldSearchUrl = (query: string) =>
@@ -47,6 +48,7 @@ import QuickBundleAddModal from './QuickBundleAddModal';
 import EditItemModal from './EditItemModal';
 import ItemForm from './ItemForm';
 import ItemThumbnail from './ItemThumbnail';
+import MobileStockCard from './MobileStockCard';
 import InvoiceView from './InvoiceView';
 import InventoryAISpecsPanel from './InventoryAISpecsPanel';
 import AddPhotosModal, { type AddPhotosApplyOptions } from './AddPhotosModal';
@@ -667,8 +669,20 @@ const InventoryList: React.FC<Props> = ({
   const [specFilters, setSpecFilters] = useState<Record<string, (string | number)[]>>(() => loadState('spec_filters', {}));
   const [specRangeFilters, setSpecRangeFilters] = useState<Record<string, { min?: number; max?: number }>>(() => loadState('spec_range_filters', {}));
   const [showSpecFiltersPanel, setShowSpecFiltersPanel] = useState(false);
+  const [showMobileFiltersSheet, setShowMobileFiltersSheet] = useState(false);
   const filtersPanelRef = useRef<HTMLDivElement>(null);
   const filtersButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Split / wide table chrome is desktop-only — force card list on phones.
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1023px)');
+    const sync = () => {
+      if (mq.matches) setSplitView(false);
+    };
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
 
   // Visibility toggle for orphan "In Composition" items (container children always nest under parent)
   const [showInComposition, setShowInComposition] = useState<boolean>(() => loadState<boolean>('show_in_composition', false));
@@ -3714,12 +3728,14 @@ const InventoryList: React.FC<Props> = ({
   return (
     <div className="h-full min-h-0 flex flex-col gap-1 overflow-hidden animate-in fade-in relative">
       {showFinancials && financialStats && !splitView && (
-        <SoldFinancialBar
-          stats={financialStats}
-          taxMode={businessSettings.taxMode}
-          businessSettings={businessSettings}
-          onBusinessSettingsChange={onBusinessSettingsChange}
-        />
+        <div className="hidden lg:block">
+          <SoldFinancialBar
+            stats={financialStats}
+            taxMode={businessSettings.taxMode}
+            businessSettings={businessSettings}
+            onBusinessSettingsChange={onBusinessSettingsChange}
+          />
+        </div>
       )}
 
       <header className="shrink-0 space-y-1">
@@ -3760,6 +3776,138 @@ const InventoryList: React.FC<Props> = ({
              </button>
            </div>
          )}
+
+         {/* Compact phone chrome — desktop toolbar is too dense for a phone viewport */}
+         <div className="lg:hidden space-y-2">
+           <div className="flex items-center gap-2">
+             <div className="flex flex-1 rounded-xl border border-slate-200 bg-white p-0.5">
+               <button
+                 type="button"
+                 onClick={() => { setStatusFilter('ACTIVE'); setSplitView(false); }}
+                 className={`flex-1 inline-flex items-center justify-center gap-1 px-2 py-2.5 rounded-[10px] text-[11px] font-black uppercase tracking-wide ${
+                   statusFilter === 'ACTIVE' ? 'bg-slate-900 text-white' : 'text-slate-600'
+                 }`}
+               >
+                 <Package size={14} /> Active
+               </button>
+               <button
+                 type="button"
+                 onClick={() => { setStatusFilter('SOLD'); setSplitView(false); }}
+                 className={`flex-1 inline-flex items-center justify-center gap-1 px-2 py-2.5 rounded-[10px] text-[11px] font-black uppercase tracking-wide ${
+                   statusFilter === 'SOLD' ? 'bg-slate-900 text-white' : 'text-slate-600'
+                 }`}
+               >
+                 <ShoppingBag size={14} /> Sold
+               </button>
+               <select
+                 value={statusFilter === 'DRAFTS' || statusFilter === 'ALL' ? statusFilter : ''}
+                 onChange={(e) => {
+                   const v = e.target.value as StatusFilter;
+                   if (v) { setStatusFilter(v); setSplitView(false); }
+                 }}
+                 className="max-w-[5.5rem] py-2 pl-2 pr-6 rounded-[10px] border-0 bg-transparent text-[11px] font-bold text-slate-600 outline-none appearance-none bg-no-repeat bg-right"
+                 style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.35rem center' }}
+                 aria-label="More stock views"
+               >
+                 <option value="">More</option>
+                 <option value="DRAFTS">Drafts</option>
+                 <option value="ALL">All</option>
+               </select>
+             </div>
+             <button
+               type="button"
+               onClick={() => setShowMobileFiltersSheet(true)}
+               className={`relative shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border text-[11px] font-black uppercase tracking-wide ${
+                 hasActiveFilters || activeSpecFilterCount > 0 || smartPreset
+                   ? 'bg-slate-900 text-white border-slate-900'
+                   : 'bg-white text-slate-700 border-slate-200'
+               }`}
+             >
+               <Sliders size={14} />
+               Filters
+               {(hasActiveFilters || activeSpecFilterCount > 0 || smartPreset) && (
+                 <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[9px] font-black flex items-center justify-center">
+                   {(activeSpecFilterCount || 0) + (hasActiveFilters ? 1 : 0) + (smartPreset ? 1 : 0)}
+                 </span>
+               )}
+             </button>
+           </div>
+           <div className="relative">
+             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+             <input
+               type="search"
+               enterKeyHint="search"
+               className="w-full pl-10 pr-3 py-3 rounded-xl border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-slate-900/15"
+               placeholder="Search stock…"
+               value={searchTerm}
+               onChange={(e) => setSearchTerm(e.target.value)}
+               onFocus={() => setSearchSuggestionsOpen(true)}
+               onBlur={() => setTimeout(() => setSearchSuggestionsOpen(false), 180)}
+             />
+             {searchSuggestionsOpen && searchSuggestions.length > 0 && (
+               <div className="absolute z-50 left-0 right-0 top-full mt-1 py-1.5 bg-white border border-slate-200 rounded-xl shadow-xl max-h-52 overflow-y-auto">
+                 {searchSuggestions.map((s, idx) => (
+                   <button
+                     key={`${s.type}-${s.text}-${idx}`}
+                     type="button"
+                     className="w-full px-3 py-2.5 text-left text-sm hover:bg-slate-50 flex items-center gap-2"
+                     onMouseDown={(e) => {
+                       e.preventDefault();
+                       setSearchTerm(s.text);
+                       setSearchSuggestionsOpen(false);
+                       if (s.type === 'name') {
+                         const match = items.find((i) => i.name === s.text);
+                         if (match) revealItemInList(match);
+                       }
+                     }}
+                   >
+                     <span className="text-slate-900 font-medium truncate">{s.text}</span>
+                     <span className="text-[10px] text-slate-400 shrink-0">{s.type}</span>
+                   </button>
+                 ))}
+               </div>
+             )}
+           </div>
+           <div className="flex items-center justify-between gap-2 px-0.5">
+             <span className="text-xs font-semibold text-slate-500">
+               {sortedItems.length} items
+               {categoryFilter !== 'ALL' ? ` · ${categoryFilter}` : ''}
+               {timeFilter !== 'ALL' ? ` · ${timeFilter.replace(/_/g, ' ').toLowerCase()}` : ''}
+             </span>
+             {hasActiveFilters && (
+               <button
+                 type="button"
+                 onClick={clearAllFilters}
+                 className="text-[10px] font-black uppercase tracking-wide text-slate-500 hover:text-red-600"
+               >
+                 Reset
+               </button>
+             )}
+           </div>
+           {quickCategoryPins.length > 0 && (
+             <div className="flex gap-1.5 overflow-x-auto pb-0.5 -mx-0.5 px-0.5 scrollbar-none">
+               {quickCategoryPins.map((pin) => {
+                 const active = isQuickCategoryPinActive(pin);
+                 return (
+                   <button
+                     key={pin.id}
+                     type="button"
+                     onClick={() => applyQuickCategoryPin(pin)}
+                     className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold border ${
+                       active
+                         ? 'bg-slate-900 text-white border-slate-900'
+                         : 'bg-white text-slate-700 border-slate-200'
+                     }`}
+                   >
+                     {pin.label}
+                   </button>
+                 );
+               })}
+             </div>
+           )}
+         </div>
+
+         <div className="hidden lg:block space-y-1">
          <div className="flex flex-wrap items-center gap-1">
             {(statusFilter === 'DRAFTS' || statusFilter === 'ALL') && !splitView ? (
               <>
@@ -4402,7 +4550,212 @@ const InventoryList: React.FC<Props> = ({
              </div>
            )}
          </div>
+         </div>
       </header>
+
+      <MobileSheetShell
+        open={showMobileFiltersSheet}
+        title="Stock filters"
+        subtitle={`${sortedItems.length} items in view`}
+        onClose={() => setShowMobileFiltersSheet(false)}
+      >
+        <div className="space-y-4 pb-6">
+          <div className="space-y-2">
+            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Category</p>
+            <select
+              value={categoryFilter}
+              onChange={(e) => { setCategoryFilter(e.target.value); setSubCategoryFilter(''); }}
+              className="w-full py-3 px-3 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-800"
+            >
+              <option value="ALL">All categories</option>
+              {Object.keys(categories).map((cat) => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+            {categoryFilter !== 'ALL' && (categories[categoryFilter]?.length ?? 0) > 0 && (
+              <select
+                value={subCategoryFilter}
+                onChange={(e) => setSubCategoryFilter(e.target.value)}
+                className="w-full py-3 px-3 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-800"
+              >
+                <option value="">All subcategories</option>
+                {(categories[categoryFilter] || []).map((sub) => (
+                  <option key={sub} value={sub}>{sub}</option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Time</p>
+            <select
+              value={timeFilter}
+              onChange={(e) => setTimeFilter(e.target.value as TimeFilter)}
+              className="w-full py-3 px-3 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-800"
+            >
+              <option value="ALL">All time</option>
+              <option value="THIS_WEEK">This week</option>
+              <option value="LAST_WEEK">Last week</option>
+              <option value="THIS_MONTH">This month</option>
+              <option value="LAST_MONTH">Last month</option>
+              <option value="LAST_30">Last 30 days</option>
+              <option value="LAST_90">Last 90 days</option>
+              <option value="THIS_YEAR">This year</option>
+              <option value="LAST_YEAR">Last year</option>
+            </select>
+          </div>
+
+          {(statusFilter === 'SOLD' || statusFilter === 'ALL') && (
+            <div className="grid grid-cols-2 gap-2">
+              <select
+                value={salePlatformFilter}
+                onChange={(e) => setSalePlatformFilter(e.target.value)}
+                className="w-full py-3 px-3 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-800"
+              >
+                <option value="ALL">Platform</option>
+                <option value={MISSING_PLATFORM_FILTER}>No platform</option>
+                <option value="kleinanzeigen.de">Kleinanzeigen</option>
+                <option value="ebay.de">eBay</option>
+                <option value="In Person">In person</option>
+                <option value="Amazon">Amazon</option>
+                <option value="Other">Other</option>
+              </select>
+              <select
+                value={salePaymentFilter}
+                onChange={(e) => setSalePaymentFilter(e.target.value)}
+                className="w-full py-3 px-3 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-800"
+              >
+                <option value="ALL">Payment</option>
+                {PAYMENT_METHODS.map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Quick filters</p>
+            <div className="flex flex-wrap gap-1.5">
+              {(
+                [
+                  ['no_photo', 'No photo'],
+                  ['presence_unknown', '? Presence'],
+                  ['no_specs', 'No specs'],
+                  ['defective', 'Defekt'],
+                  ['aging', '>90d'],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setSmartPreset((p) => (p === id ? null : id))}
+                  className={`px-3 py-2 rounded-xl border text-[11px] font-black uppercase tracking-wide ${
+                    smartPreset === id
+                      ? 'bg-amber-500 text-white border-amber-500'
+                      : 'bg-white text-slate-600 border-slate-200'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowInComposition((prev) => !prev)}
+            className={`w-full inline-flex items-center justify-center gap-2 px-3 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wide ${
+              showInComposition
+                ? 'border-slate-200 text-slate-700 bg-white'
+                : 'border-blue-500 text-blue-700 bg-blue-50'
+            }`}
+          >
+            <Hourglass size={14} />
+            {showInComposition ? 'Orphans: shown' : 'Orphans: hidden'}
+          </button>
+
+          {specOptions.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Specs</p>
+                {activeSpecFilterCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { setSpecFilters({}); setSpecRangeFilters({}); }}
+                    className="text-[10px] font-bold text-slate-500"
+                  >
+                    Clear specs
+                  </button>
+                )}
+              </div>
+              <div className="space-y-2">
+                {specOptions.slice(0, 8).map(({ key, values }) => {
+                  const selected = specFilters[key] ?? [];
+                  return (
+                    <div key={key} className="rounded-xl border border-slate-100 bg-slate-50 p-2.5">
+                      <div className="text-[10px] font-bold text-slate-500 mb-1.5">{key}</div>
+                      <div className="flex flex-wrap gap-1">
+                        {values.slice(0, 12).map((val) => {
+                          const isSelected = selected.some(
+                            (s) =>
+                              (typeof val === 'number' && typeof s === 'number' && val === s) ||
+                              String(val).toLowerCase() === String(s).toLowerCase()
+                          );
+                          return (
+                            <button
+                              key={String(val)}
+                              type="button"
+                              onClick={() => toggleSpecFilterValue(key, val)}
+                              className={`px-2 py-1 rounded-lg text-[11px] font-bold ${
+                                isSelected
+                                  ? 'bg-slate-900 text-white'
+                                  : 'bg-white border border-slate-200 text-slate-600'
+                              }`}
+                            >
+                              {String(val)}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                exportInventoryToExcel(sortedItems);
+                setShowMobileFiltersSheet(false);
+              }}
+              className="inline-flex items-center justify-center gap-1.5 py-3 rounded-xl border border-slate-200 bg-white text-[11px] font-black uppercase tracking-wide text-slate-700"
+            >
+              <FileSpreadsheet size={14} /> Excel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                clearAllFilters();
+                setSmartPreset(null);
+              }}
+              className="inline-flex items-center justify-center gap-1.5 py-3 rounded-xl border border-slate-200 bg-white text-[11px] font-black uppercase tracking-wide text-slate-700"
+            >
+              <FilterX size={14} /> Reset all
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowMobileFiltersSheet(false)}
+            className="w-full py-3.5 rounded-xl bg-slate-900 text-white text-sm font-black uppercase tracking-wide"
+          >
+            Done
+          </button>
+        </div>
+      </MobileSheetShell>
 
       <InventoryAISpecsPanel
         open={showAISpecsModal}
@@ -4477,9 +4830,54 @@ const InventoryList: React.FC<Props> = ({
         </div>
       )}
 
+      {/* Mobile-friendly Active / Drafts / All stock cards */}
+      {(statusFilter === 'ACTIVE' || statusFilter === 'DRAFTS' || statusFilter === 'ALL') && !splitView && (
+        <div className="lg:hidden flex-1 min-h-0 overflow-y-auto custom-scrollbar px-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))] space-y-3">
+          {sortedItems.length === 0 ? (
+            <div className="py-16 text-center opacity-40">
+              <Package size={40} className="mx-auto mb-3 text-slate-300" />
+              <p className="font-bold text-slate-400 text-sm">No matches found</p>
+              <p className="text-xs text-slate-400 mt-1">Try clearing search or category filters</p>
+            </div>
+          ) : (
+            sortedItems.map((item) => (
+              <MobileStockCard
+                key={item.id}
+                item={item}
+                profit={profitForDisplay(item)}
+                selected={selectedIdSet.has(item.id)}
+                onToggleSelect={() => toggleSelect(item.id)}
+                actions={{
+                  onEdit: (it) => handleEditClick(it),
+                  onSell: (it) => {
+                    addRecentItemId(it.id);
+                    setItemToSell(it);
+                  },
+                  onPhotos: (it) => openAddPhotosModal([it.id]),
+                  onListingStudio: (it) => {
+                    addRecentItemId(it.id);
+                    setListingAiItem(it);
+                  },
+                  onTrade: (it) => {
+                    addRecentItemId(it.id);
+                    setItemToTrade(it);
+                  },
+                  onGift: (it) => {
+                    addRecentItemId(it.id);
+                    setItemToGift(it);
+                  },
+                  onDuplicate: (it) => handleDuplicate(it),
+                  onDelete: (it) => setItemToDelete(it),
+                }}
+              />
+            ))
+          )}
+        </div>
+      )}
+
       {/* Mobile-friendly sold list (phones) */}
       {statusFilter === 'SOLD' && !splitView && (
-        <div className="lg:hidden flex-1 min-h-0 overflow-y-auto custom-scrollbar px-3 pb-4 space-y-3">
+        <div className="lg:hidden flex-1 min-h-0 overflow-y-auto custom-scrollbar px-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))] space-y-3">
           {sortedItems.length === 0 ? (
             <div className="py-16 text-center opacity-40">
               <Package size={40} className="mx-auto mb-3 text-slate-300" />
@@ -4825,7 +5223,14 @@ const InventoryList: React.FC<Props> = ({
           rowHeightEstimate={rowHeightEstimate}
           bulkBarSpacer={selectedIds.length > 0}
           collapsedBundles={collapsedBundles}
-          className={statusFilter === 'SOLD' ? 'hidden lg:flex flex-1' : 'flex flex-1'}
+          className={
+            statusFilter === 'SOLD' ||
+            statusFilter === 'ACTIVE' ||
+            statusFilter === 'DRAFTS' ||
+            statusFilter === 'ALL'
+              ? 'hidden lg:flex flex-1'
+              : 'flex flex-1'
+          }
         />
         </div>
       )}

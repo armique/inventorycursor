@@ -153,6 +153,7 @@ const ListingStudioModal: React.FC<Props> = ({
   const [providers, setProviders] = useState<ProductCardProviderInfo[]>([]);
   const [styleId, setStyleId] = useState<ProductCardStyleId>(DEFAULT_PRODUCT_CARD_STYLE_ID);
   const [photoSource, setPhotoSource] = useState<'none' | 'iphone' | 'folder'>('none');
+  const [mobilePane, setMobilePane] = useState<'specs' | 'cards' | 'listing'>('specs');
 
   const workingItem = useMemo(
     () => ({ ...item, name, specs, marketTitle: title, marketDescription: description }),
@@ -537,11 +538,11 @@ const ListingStudioModal: React.FC<Props> = ({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[230] flex items-center justify-center bg-slate-900/55 backdrop-blur-sm p-2 sm:p-3"
+      className="fixed inset-0 z-[230] flex items-end sm:items-center justify-center bg-slate-900/55 backdrop-blur-sm p-0 sm:p-2 sm:p-3"
       onClick={onClose}
     >
       <div
-        className="bg-white w-full max-w-[1280px] h-[min(94vh,920px)] rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col"
+        className="bg-white w-full max-w-[1280px] h-[min(96dvh,920px)] sm:h-[min(94vh,920px)] rounded-t-2xl sm:rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col pb-safe sm:pb-0"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="px-3 py-2.5 border-b border-slate-100 flex items-start justify-between gap-2 bg-slate-50/90 shrink-0">
@@ -566,9 +567,37 @@ const ListingStudioModal: React.FC<Props> = ({
           </div>
         </header>
 
+        {/* Mobile section tabs — one job per pane on phone */}
+        <div className="lg:hidden shrink-0 px-3 py-2 border-b border-slate-100 bg-white flex gap-1.5">
+          {(
+            [
+              { id: 'specs' as const, label: 'Item' },
+              { id: 'cards' as const, label: 'Cards' },
+              { id: 'listing' as const, label: 'Listing' },
+            ] as const
+          ).map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setMobilePane(tab.id)}
+              className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-wide ${
+                mobilePane === tab.id
+                  ? 'bg-slate-900 text-white'
+                  : 'bg-slate-100 text-slate-600'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
         <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(240px,0.92fr)_minmax(280px,1.05fr)_minmax(280px,1.05fr)]">
           {/* LEFT — item / specs / trade */}
-          <aside className="border-r border-slate-100 overflow-y-auto p-3 space-y-3 bg-slate-50/40">
+          <aside
+            className={`border-r border-slate-100 overflow-y-auto p-3 space-y-3 bg-slate-50/40 ${
+              mobilePane === 'specs' ? 'block' : 'hidden lg:block'
+            }`}
+          >
             <section>
               <div className="flex items-center justify-between mb-1">
                 <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">
@@ -948,7 +977,11 @@ const ListingStudioModal: React.FC<Props> = ({
           </aside>
 
           {/* MIDDLE — card gallery */}
-          <section className="border-r border-slate-100 overflow-y-auto p-3 space-y-2.5 bg-white">
+          <section
+            className={`border-r border-slate-100 overflow-y-auto p-3 space-y-2.5 bg-white ${
+              mobilePane === 'cards' ? 'block' : 'hidden lg:block'
+            }`}
+          >
             <div className="flex items-center justify-between gap-2">
               <div>
                 <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">
@@ -1082,7 +1115,11 @@ const ListingStudioModal: React.FC<Props> = ({
           </section>
 
           {/* RIGHT — title + description */}
-          <section className="overflow-y-auto p-3 space-y-2.5 bg-slate-50/30 flex flex-col">
+          <section
+            className={`overflow-y-auto p-3 space-y-2.5 bg-slate-50/30 flex flex-col ${
+              mobilePane === 'listing' ? 'flex' : 'hidden lg:flex'
+            }`}
+          >
             {ownerHints && (
               <div className="rounded-xl border border-dashed border-emerald-300 bg-emerald-50/80 px-2.5 py-2 shrink-0">
                 <div className="flex justify-between gap-2 mb-1">
