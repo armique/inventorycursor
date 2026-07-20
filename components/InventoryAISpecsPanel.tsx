@@ -216,7 +216,7 @@ const InventoryAISpecsPanelInner: React.FC<Props> = ({
             <>
               <div className="flex items-start gap-2 text-[11px] text-slate-600">
                 <Info size={13} className="shrink-0 mt-0.5" />
-                <p>Select rows in the table, then run. Batches pause 1 min between groups for rate limits.</p>
+                <p>Select rows in the table, then run. Fills tech specs only — does not rename items. Batches pause 1 min between groups for rate limits.</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <button
