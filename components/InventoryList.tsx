@@ -4800,20 +4800,38 @@ const InventoryList: React.FC<Props> = ({
           }
           onClose={() => setGeminiCardItem(null)}
           onApplyAsMainPhoto={async (url) => {
+            const base = items.find((i) => i.id === geminiCardItem.id) || geminiCardItem;
             const merged = normalizeImageList([
               url,
-              geminiCardItem.imageUrl,
-              ...(geminiCardItem.imageUrls || []),
+              base.imageUrl,
+              ...(base.imageUrls || []),
             ]);
+            const next = {
+              ...base,
+              imageUrl: merged[0],
+              imageUrls: merged,
+            };
             // handleUpdate expects InventoryItem[] — a bare object crashed with .forEach
-            await onUpdate([
-              {
-                ...geminiCardItem,
-                imageUrl: merged[0],
-                imageUrls: merged,
-              },
-            ]);
+            await onUpdate([next]);
+            setGeminiCardItem(next);
             setToast('AI product card set as main photo');
+            setTimeout(() => setToast(null), 2200);
+          }}
+          onAddToItemGallery={async (url) => {
+            const base = items.find((i) => i.id === geminiCardItem.id) || geminiCardItem;
+            const merged = normalizeImageList([
+              base.imageUrl,
+              ...(base.imageUrls || []),
+              url,
+            ]);
+            const next = {
+              ...base,
+              imageUrl: merged[0] || '',
+              imageUrls: merged,
+            };
+            await onUpdate([next]);
+            setGeminiCardItem(next);
+            setToast('AI card added to item photos');
             setTimeout(() => setToast(null), 2200);
           }}
         />

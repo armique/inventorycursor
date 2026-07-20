@@ -533,6 +533,21 @@ const ListingStudioModal: React.FC<Props> = ({
     }
   };
 
+  const handleAddCardToItemGallery = async (entry: GeneratedProductCardEntry) => {
+    setSaving(true);
+    setError(null);
+    try {
+      const url = thumbs[entry.id] || (await resolveProductCardImageUrl(entry));
+      const prepared = await resolveUrlForInventoryMainPhoto(url, item.id, entry);
+      const merged = normalizeImageList([item.imageUrl, ...(item.imageUrls || []), prepared]);
+      await persistPatch({ imageUrl: merged[0] || '', imageUrls: merged });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not add card to item photos');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleAddPhotos = async (files: FileList | null) => {
     if (!files?.length) return;
     try {
@@ -1211,6 +1226,15 @@ const ListingStudioModal: React.FC<Props> = ({
                           className="flex-1 py-1 rounded-md bg-slate-900 text-white text-[8px] font-black uppercase"
                         >
                           Main
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleAddCardToItemGallery(entry)}
+                          disabled={saving}
+                          className="p-1 rounded-md border border-slate-200 text-emerald-700 hover:bg-emerald-50 disabled:opacity-40"
+                          title="Add to item photos"
+                        >
+                          <Plus size={11} />
                         </button>
                         <button
                           type="button"

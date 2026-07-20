@@ -61,3 +61,13 @@ export function mergeMainPhotoOntoItem(item: InventoryItem, photoUrl: string): I
     imageUrls: merged,
   };
 }
+
+/** Append a photo to the item gallery without changing the current main (unless empty). */
+export function mergePhotoOntoItemGallery(item: InventoryItem, photoUrl: string): InventoryItem {
+  const merged = normalizeImageList([item.imageUrl, ...(item.imageUrls || []), photoUrl]);
+  return {
+    ...item,
+    imageUrl: merged[0] || photoUrl,
+    imageUrls: merged,
+  };
+}

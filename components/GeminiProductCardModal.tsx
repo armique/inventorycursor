@@ -11,6 +11,7 @@ import {
   Images,
   Trash2,
   Cloud,
+  Plus,
 } from 'lucide-react';
 import type { GeneratedProductCardEntry, InventoryItem } from '../types';
 import {
@@ -41,6 +42,7 @@ interface Props {
   categoryFields?: string[];
   onClose: () => void;
   onApplyAsMainPhoto: (url: string) => void | Promise<void>;
+  onAddToItemGallery: (url: string) => void | Promise<void>;
 }
 
 const GeminiProductCardModal: React.FC<Props> = ({
@@ -48,6 +50,7 @@ const GeminiProductCardModal: React.FC<Props> = ({
   categoryFields,
   onClose,
   onApplyAsMainPhoto,
+  onAddToItemGallery,
 }) => {
   const fileRef = useRef<HTMLInputElement>(null);
   const itemPhotos = useMemo(() => getItemUserPhotoUrls(item).slice(0, 3), [item]);
@@ -62,6 +65,7 @@ const GeminiProductCardModal: React.FC<Props> = ({
   const [preview, setPreview] = useState<string | null>(null);
   const [meta, setMeta] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
+  const [addingToGallery, setAddingToGallery] = useState(false);
   const [started, setStarted] = useState(false);
   const [savingGallery, setSavingGallery] = useState(false);
   const [galleryNote, setGalleryNote] = useState<string | null>(null);
@@ -248,6 +252,28 @@ const GeminiProductCardModal: React.FC<Props> = ({
     }
   };
 
+  const addToItemGallery = async (url?: string, entry?: GeneratedProductCardEntry | null) => {
+    const src = url || preview;
+    if (!src && !entry && !savedEntry) return;
+    setAddingToGallery(true);
+    setError(null);
+    setGalleryNote(null);
+    try {
+      const prepared = await resolveUrlForInventoryMainPhoto(
+        src || '',
+        item.id,
+        entry || savedEntry
+      );
+      await onAddToItemGallery(prepared);
+      setGalleryNote('Added to item photos');
+    } catch (e) {
+      console.error('Add AI card to item gallery failed:', e);
+      setError(e instanceof Error ? e.message : 'Could not add card to item photos');
+    } finally {
+      setAddingToGallery(false);
+    }
+  };
+
   const downloadPreview = async () => {
     if (savedEntry) {
       try {
@@ -302,7 +328,7 @@ const GeminiProductCardModal: React.FC<Props> = ({
         ];
 
   const cloudReady = isProductCardGalleryCloudReady();
-  const applyBlocked = applying || savingGallery;
+  const applyBlocked = applying || addingToGallery || savingGallery;
 
   return createPortal(
     <div
@@ -438,9 +464,23 @@ const GeminiProductCardModal: React.FC<Props> = ({
                           <button
                             type="button"
                             onClick={() => void apply(galleryThumbs[entry.id], entry)}
-                            className="flex-1 py-1 rounded-md bg-slate-900 text-white text-[9px] font-black uppercase"
+                            disabled={applyBlocked}
+                            className="flex-1 py-1 rounded-md bg-slate-900 text-white text-[9px] font-black uppercase disabled:opacity-40"
                           >
                             Use
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void addToItemGallery(galleryThumbs[entry.id], entry)}
+                            disabled={applyBlocked}
+                            className="p-1 rounded-md border border-slate-200 text-emerald-700 hover:bg-emerald-50 disabled:opacity-40"
+                            title="Add to item photos"
+                          >
+                            {addingToGallery ? (
+                              <Loader2 size={11} className="animate-spin" />
+                            ) : (
+                              <Plus size={11} />
+                            )}
                           </button>
                           <button
                             type="button"
@@ -684,6 +724,20 @@ const GeminiProductCardModal: React.FC<Props> = ({
                   className="inline-flex items-center gap-1 px-3 py-2 rounded-xl border border-slate-200 text-[10px] font-black uppercase text-slate-600 hover:bg-slate-50"
                 >
                   <Download size={12} /> Download
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void addToItemGallery()}
+                  disabled={applyBlocked}
+                  title="Add to item photos"
+                  className="inline-flex items-center gap-1 px-3 py-2 rounded-xl border border-emerald-200 text-emerald-800 text-[10px] font-black uppercase hover:bg-emerald-50 disabled:opacity-50"
+                >
+                  {addingToGallery ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <Plus size={12} />
+                  )}
+                  Add to photos
                 </button>
                 <button
                   type="button"

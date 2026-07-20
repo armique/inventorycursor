@@ -10,6 +10,7 @@ import {
   Images,
   Loader2,
   Package,
+  Plus,
   Trash2,
   RefreshCw,
   X,
@@ -26,6 +27,7 @@ import {
 } from '../services/productCardGallery';
 import {
   mergeMainPhotoOntoItem,
+  mergePhotoOntoItemGallery,
   resolveUrlForInventoryMainPhoto,
 } from '../utils/applyProductCardAsMainPhoto';
 
@@ -190,6 +192,25 @@ const ProductCardGalleryPage: React.FC<Props> = ({ items, onUpdate }) => {
       showToast(`Applied to ${item.name}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not apply card');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const addEntryToItemGallery = async (entry: GeneratedProductCardEntry) => {
+    const item = itemById.get(entry.itemId);
+    if (!item) {
+      setError('Item not found in inventory (deleted?). You can still download the card.');
+      return;
+    }
+    setBusyId(entry.id);
+    setError(null);
+    try {
+      const url = await resolveUrlForInventoryMainPhoto('', item.id, entry);
+      await onUpdate([mergePhotoOntoItemGallery(item, url)]);
+      showToast(`Added to photos for ${item.name}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not add card to item photos');
     } finally {
       setBusyId(null);
     }
@@ -393,6 +414,15 @@ const ProductCardGalleryPage: React.FC<Props> = ({ items, onUpdate }) => {
                           </button>
                           <button
                             type="button"
+                            disabled={!live || busyId === entry.id}
+                            onClick={() => void addEntryToItemGallery(entry)}
+                            className="p-1.5 rounded-lg border border-slate-200 text-emerald-700 hover:bg-emerald-50 disabled:opacity-40"
+                            title="Add to item photos"
+                          >
+                            <Plus size={12} />
+                          </button>
+                          <button
+                            type="button"
                             disabled={busyId === entry.id}
                             onClick={() => void downloadProductCardEntry(entry)}
                             className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-white"
@@ -513,6 +543,26 @@ const ProductCardGalleryPage: React.FC<Props> = ({ items, onUpdate }) => {
                   </p>
                 </div>
                 <div className="flex gap-2">
+                  {itemById.has(preview.entry.itemId) && (
+                    <>
+                      <button
+                        type="button"
+                        disabled={busyId === preview.entry.id}
+                        onClick={() => void applyEntry(preview.entry)}
+                        className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-white text-slate-900 text-[10px] font-black uppercase disabled:opacity-40"
+                      >
+                        <Check size={12} /> Apply as main
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busyId === preview.entry.id}
+                        onClick={() => void addEntryToItemGallery(preview.entry)}
+                        className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-emerald-500 text-white text-[10px] font-black uppercase disabled:opacity-40"
+                      >
+                        <Plus size={12} /> Add to photos
+                      </button>
+                    </>
+                  )}
                   <button
                     type="button"
                     onClick={() => void downloadProductCardEntry(preview.entry)}
