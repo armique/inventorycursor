@@ -31,7 +31,7 @@ import { getRecentItemIds, addRecentItemId } from '../services/recentItemsServic
 import { generateStoreDescription } from '../services/specsAI';
 import { suggestPriceFromSoldListings, SoldPriceSuggestion, getSpecsAIProvider } from '../services/specsAI';
 import { bulkImportSourceLabel, countBulkImportItems } from '../utils/bulkImportHistory';
-import ListingAiPanelModal from './ListingAiPanelModal';
+import ListingStudioModal from './ListingStudioModal';
 import { generateMarketplaceListing } from '../services/marketplaceListingAI';
 
 const ebaySoldSearchUrl = (query: string) =>
@@ -3418,7 +3418,7 @@ const InventoryList: React.FC<Props> = ({
                          ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
                          : 'text-emerald-600 hover:bg-emerald-50'
                      }`}
-                     title="Listing AI — title + description"
+                     title="Listing Studio — specs, card gallery, title & description"
                    >
                      {listingGenId === item.id ? (
                        <Loader2 size={14} className="animate-spin text-emerald-600" />
@@ -4452,14 +4452,17 @@ const InventoryList: React.FC<Props> = ({
       )}
 
       {listingAiItem && (
-        <ListingAiPanelModal
-          item={listingAiItem}
+        <ListingStudioModal
+          item={items.find((i) => i.id === listingAiItem.id) || listingAiItem}
           allItems={items}
+          categoryFields={categoryFields}
           onClose={() => setListingAiItem(null)}
-          onApply={async (patch) => {
-            await onUpdate([{ ...listingAiItem, ...patch }]);
-            setToast('Listing title + description saved');
-            setTimeout(() => setToast(null), 2000);
+          onUpdateItem={async (patch) => {
+            const current = items.find((i) => i.id === listingAiItem.id) || listingAiItem;
+            await onUpdate([{ ...current, ...patch }]);
+            setListingAiItem((prev) => (prev ? { ...prev, ...patch } : prev));
+            setToast('Item updated');
+            setTimeout(() => setToast(null), 1600);
           }}
         />
       )}
