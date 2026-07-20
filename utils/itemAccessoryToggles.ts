@@ -1,6 +1,7 @@
 /**
  * Which accessory toggles to show under an inventory item name.
  * All items: OVP + Rechnung. Motherboards also get IO Blende.
+ * These are inventory tracking flags only — not inputs for AI card/listing generators.
  */
 
 import type { InventoryItem } from '../types';

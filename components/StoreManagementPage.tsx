@@ -834,8 +834,6 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
     setGeneratingDescription(true);
     try {
       const text = await generateStoreDescription(name.trim() || item.name, storeDescription || undefined, {
-        hasOVP,
-        hasIOShield,
         aiDescriptionNote: aiDescriptionNote.trim() || undefined,
       });
       setStoreDescription(text);

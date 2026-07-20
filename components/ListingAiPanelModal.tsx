@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Copy, Check, Loader2, Sparkles, X } from 'lucide-react';
 import type { InventoryItem } from '../types';
@@ -7,7 +7,6 @@ import {
   generateMarketplaceListing,
   type MarketplaceListingResult,
 } from '../services/marketplaceListingAI';
-import { getChildren } from '../services/financialAggregation';
 
 interface Props {
   item: InventoryItem;
@@ -16,7 +15,7 @@ interface Props {
   onApply: (patch: Pick<InventoryItem, 'marketTitle' | 'marketDescription'>) => void | Promise<void>;
 }
 
-const ListingAiPanelModal: React.FC<Props> = ({ item, allItems, onClose, onApply }) => {
+const ListingAiPanelModal: React.FC<Props> = ({ item, onClose, onApply }) => {
   const [title, setTitle] = useState(item.marketTitle?.trim() || item.name || '');
   const [description, setDescription] = useState(item.marketDescription || '');
   const [ownerHints, setOwnerHints] = useState<string | null>(null);
@@ -24,25 +23,6 @@ const ListingAiPanelModal: React.FC<Props> = ({ item, allItems, onClose, onApply
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<'title' | 'desc' | 'owner' | null>(null);
-
-  const accessories = useMemo(() => {
-    let hasOVP = item.hasOVP === true;
-    let hasIOShield = item.hasIOShield === true;
-    const isContainer =
-      item.isPC ||
-      item.isBundle ||
-      item.category === 'PC' ||
-      item.category === 'Bundle' ||
-      item.category === 'Mixed Bundle' ||
-      (item.componentIds?.length ?? 0) > 0;
-    if (isContainer && allItems?.length) {
-      for (const child of getChildren(item, allItems)) {
-        if (child.hasOVP === true) hasOVP = true;
-        if (child.hasIOShield === true) hasIOShield = true;
-      }
-    }
-    return { hasOVP, hasIOShield };
-  }, [item, allItems]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -78,8 +58,6 @@ const ListingAiPanelModal: React.FC<Props> = ({ item, allItems, onClose, onApply
     setError(null);
     try {
       const result = await generateMarketplaceListing(item, {
-        hasOVP: accessories.hasOVP,
-        hasIOShield: accessories.hasIOShield,
         aiDescriptionNote: item.aiDescriptionNote,
       });
       applyResult(result);

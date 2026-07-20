@@ -2453,9 +2453,9 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                     </div>
                  </div>
 
-                 {/* OVP & IO Blende – used by AI description generator */}
+                 {/* Inventory flags + AI listing note (OVP/IO are NOT fed into AI generators) */}
                  <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 space-y-2.5">
-                    <h3 className="font-black text-xs uppercase tracking-widest text-slate-400">AI Description Hints</h3>
+                    <h3 className="font-black text-xs uppercase tracking-widest text-slate-400">Flags & AI note</h3>
                     <div className="flex flex-col gap-2">
                        <label className="block space-y-1">
                           <span className="text-[10px] font-bold text-slate-500">AI note (short)</span>
@@ -2473,6 +2473,9 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                             Taken into account when generating the AI description — not pasted verbatim.
                           </span>
                        </label>
+                       <p className="text-[9px] text-slate-400 font-medium">
+                         OVP / IO below are inventory flags only — they do not feed card or listing AI.
+                       </p>
                        <label className="flex items-center gap-2 cursor-pointer">
                           <input
                              type="checkbox"
