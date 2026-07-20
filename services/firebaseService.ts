@@ -559,8 +559,24 @@ function shrinkCoreUntilUnder(core: Record<string, unknown>, maxBytes: number): 
   while (size > maxBytes && rounds < 40) {
     rounds++;
     const ah = c.actionHistory as unknown[] | undefined;
+    const bi = c.bulkImports as unknown[] | undefined;
     if (Array.isArray(ah) && ah.length > 25) {
       c = { ...c, actionHistory: ah.slice(-Math.max(25, Math.floor(ah.length * 0.6))) };
+    } else if (Array.isArray(bi) && bi.length > 0 && rounds > 8) {
+      // Drop bulky chat screenshots from history rows before failing the whole sync pack.
+      c = {
+        ...c,
+        bulkImports: bi.map((row) => {
+          if (!row || typeof row !== 'object') return row;
+          const rec = row as Record<string, unknown>;
+          const img = rec.kleinanzeigenBuyChatImage;
+          if (typeof img === 'string' && (img.startsWith('data:') || img.length > 800)) {
+            const { kleinanzeigenBuyChatImage: _drop, ...rest } = rec;
+            return rest;
+          }
+          return row;
+        }),
+      };
     } else {
       c = {
         ...c,
@@ -573,6 +589,10 @@ function shrinkCoreUntilUnder(core: Record<string, unknown>, maxBytes: number): 
     size = jsonByteSize(c);
     if (rounds > 25 && Array.isArray(c.actionHistory)) {
       c = { ...c, actionHistory: (c.actionHistory as unknown[]).slice(-80) };
+      size = jsonByteSize(c);
+    }
+    if (rounds > 30 && Array.isArray(c.bulkImports) && (c.bulkImports as unknown[]).length > 80) {
+      c = { ...c, bulkImports: (c.bulkImports as unknown[]).slice(0, 80) };
       size = jsonByteSize(c);
     }
   }

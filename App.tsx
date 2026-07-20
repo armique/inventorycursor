@@ -58,10 +58,14 @@ import {
   backfillBulkImportsFromItems,
   enrichBulkImportsWithChatProof,
   loadBulkImportsFromStorage,
+  localBulkImportsNeedCloudPush,
   mergeBulkImportsFromLocal,
+  stampItemsFromBulkImportRecords,
 } from './utils/bulkImportHistory';
 
 const WRITE_DEBOUNCE_MS = 5000;
+/** Faster flush after bulk import so phone/PC see history without waiting full debounce. */
+const BULK_IMPORT_SYNC_FLUSH_MS = 700;
 const LOCAL_PERSIST_DEBOUNCE_MS = 900;
 const STORE_CATALOG_DEBOUNCE_MS = 1500;
 const REMOTE_APPLY_SUPPRESS_MS = 1500;
@@ -269,6 +273,8 @@ const App: React.FC = () => {
   const [authReady, setAuthReady] = useState<boolean>(!isCloudEnabled());
   const isRemoteUpdate = useRef(false);
   const hasUnsavedChanges = useRef(false);
+  /** After remote merge, push if this device had bulk-import history cloud lacked. */
+  const pendingCloudPushAfterRemoteRef = useRef(false);
   const writeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localPersistDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialWriteDoneRef = useRef(false);
@@ -393,11 +399,16 @@ const App: React.FC = () => {
       const remoteDisposed = isDisposed(r.status);
 
       if (localDisposed && !remoteDisposed) {
-        byId.set(r.id, applyLargeFieldPlaceholders(local, r));
+        const kept = applyLargeFieldPlaceholders(local, r);
+        const localBid = (local.bulkImportId || '').trim();
+        if (localBid && !(kept.bulkImportId || '').trim()) {
+          byId.set(r.id, { ...kept, bulkImportId: localBid });
+        } else {
+          byId.set(r.id, kept);
+        }
         return;
       }
 
-      let merged: InventoryItem = r;
       let changed = false;
       const out = { ...r };
       for (const key of largeFields) {
@@ -408,8 +419,14 @@ const App: React.FC = () => {
           changed = true;
         }
       }
-      merged = changed ? out : r;
-      byId.set(r.id, merged);
+      // bulkImportId stamps must survive remote-wins — otherwise a lagging phone wipe clears Flags.
+      const localBid = (local.bulkImportId || '').trim();
+      const remoteBid = (r.bulkImportId || '').trim();
+      if (localBid && !remoteBid) {
+        out.bulkImportId = localBid;
+        changed = true;
+      }
+      byId.set(r.id, changed ? out : r);
     });
     return Array.from(byId.values());
   }, []);
@@ -488,6 +505,11 @@ const App: React.FC = () => {
     const mergedBI = mergeBulkImportsFromLocal(remoteBI, localBI).slice(0, BULK_IMPORTS_LIMIT);
     setBulkImports(mergedBI);
     bulkImportsRef.current = mergedBI;
+    // If this device had history (or richer rows) the cloud snapshot lacked, push after apply.
+    if (localBulkImportsNeedCloudPush(mergedBI, remoteBI)) {
+      pendingCloudPushAfterRemoteRef.current = true;
+      hasUnsavedChanges.current = true;
+    }
     setItems(inv.map(migrateContainerItem));
     setTrash(tr.map(migrateContainerItem));
     setExpenses(exp);
@@ -589,6 +611,16 @@ const App: React.FC = () => {
     localStorage.setItem('bulk_imports', JSON.stringify(records));
     hasUnsavedChanges.current = true;
   }, [appState, items, bulkImports]);
+
+  // Cross-device: stamp bulkImportId onto members listed in history (Flags icon on every device).
+  useEffect(() => {
+    if (appState !== 'READY') return;
+    if (bulkImports.length === 0 || items.length === 0) return;
+    const { items: stamped, changed } = stampItemsFromBulkImportRecords(items, bulkImports);
+    if (!changed) return;
+    setItems(stamped);
+    hasUnsavedChanges.current = true;
+  }, [appState, bulkImports, items]);
 
   // One-time migration: merge Peripherals > Optical Drives into Components > Optical Drives, then remove Optical Drives from Peripherals
   const OPTICAL_DRIVES_MIGRATION_KEY = 'migration_optical_drives_to_components';
@@ -784,6 +816,17 @@ const App: React.FC = () => {
       cloudSyncInFlightRef.current = false;
     }
   }, [authUser, getSyncSnapshot]);
+
+  // When remote merge kept local-only bulk history, push so other devices get it.
+  useEffect(() => {
+    if (!pendingCloudPushAfterRemoteRef.current) return;
+    if (!authUser || !isCloudEnabled()) return;
+    pendingCloudPushAfterRemoteRef.current = false;
+    const t = setTimeout(() => {
+      void runSilentCloudSync();
+    }, BULK_IMPORT_SYNC_FLUSH_MS);
+    return () => clearTimeout(t);
+  }, [bulkImports, authUser, runSilentCloudSync]);
 
   const publishStoreCatalogNow = useCallback(async () => {
     if (!isCloudEnabled() || !authUser) return;
@@ -1208,7 +1251,16 @@ const App: React.FC = () => {
       return next;
     });
     hasUnsavedChanges.current = true;
-  }, []);
+    // Push sooner than the default 5s debounce so phone/PC both see the new batch.
+    if (writeDebounceRef.current) {
+      clearTimeout(writeDebounceRef.current);
+      writeDebounceRef.current = null;
+    }
+    writeDebounceRef.current = setTimeout(() => {
+      writeDebounceRef.current = null;
+      void runSilentCloudSync();
+    }, BULK_IMPORT_SYNC_FLUSH_MS);
+  }, [runSilentCloudSync]);
 
   const handleRevertSale = useCallback(
     (entry: ActionHistoryEntry) => {
