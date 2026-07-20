@@ -107,8 +107,25 @@ export function ramBits(items: InventoryItem[]): string {
   let speed = '';
 
   for (const it of items) {
-    const gb = stickCapacityGb(it);
-    if (gb > 0) perStick.push(gb);
+    // Multi-module kit sold as one inventory row: "8GB (2x4GB)" / specs Kit Capacity.
+    const kitMatch =
+      getSpec(it, 'Kit Capacity', 'Capacity').match(/(\d+)\s*[x×]\s*(\d+)\s*GB/i) ||
+      it.name.match(/(\d+)\s*[x×]\s*(\d+)\s*GB/i);
+    if (kitMatch) {
+      const modules = Math.max(1, parseInt(kitMatch[1]!, 10) || 1);
+      const each = parseInt(kitMatch[2]!, 10);
+      if (each > 0) {
+        for (let i = 0; i < modules; i++) perStick.push(each);
+      }
+    } else {
+      const gb = stickCapacityGb(it);
+      if (gb > 0) {
+        const modulesRaw = getSpec(it, 'Modules', 'Module Count', 'Sticks', 'Quantity');
+        const modN = parseInt(String(modulesRaw).replace(/[^\d]/g, ''), 10);
+        const modules = Number.isFinite(modN) && modN > 1 ? modN : 1;
+        for (let i = 0; i < modules; i++) perStick.push(gb);
+      }
+    }
 
     if (!type) {
       type =
@@ -122,20 +139,6 @@ export function ramBits(items: InventoryItem[]): string {
         (it.name.match(/(\d{3,5})\s*MHz/i) || [])[1] ||
         '';
       if (speed && !/mhz/i.test(speed)) speed = `${String(speed).replace(/[^\d]/g, '')}MHz`;
-    }
-  }
-
-  // Expand kit rows that encode 2x8 in one inventory item
-  if (perStick.length < items.length) {
-    for (const it of items) {
-      const kit =
-        getSpec(it, 'Kit Capacity', 'Capacity').match(/(\d+)\s*[x×]\s*(\d+)\s*GB/i) ||
-        it.name.match(/(\d+)\s*[x×]\s*(\d+)\s*GB/i);
-      if (kit && perStick.length === 0) {
-        const n = parseInt(kit[1]!, 10);
-        const each = parseInt(kit[2]!, 10);
-        for (let i = 0; i < n; i++) perStick.push(each);
-      }
     }
   }
 
