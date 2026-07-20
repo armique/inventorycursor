@@ -53,6 +53,8 @@ interface Props {
   categoryFields?: Record<string, string[]>;
   onClose: () => void;
   onUpdateItem: (patch: Partial<InventoryItem>) => void | Promise<void>;
+  /** Optional controls in the studio header (e.g. Asset details). */
+  headerExtra?: React.ReactNode;
 }
 
 function resolveCardBatchCount(photoCount: number): number {
@@ -67,6 +69,7 @@ const ListingStudioModal: React.FC<Props> = ({
   categoryFields = {},
   onClose,
   onUpdateItem,
+  headerExtra,
 }) => {
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -395,14 +398,17 @@ const ListingStudioModal: React.FC<Props> = ({
               Specs · Card gallery · Title & description
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"
-            aria-label="Close"
-          >
-            <X size={16} />
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {headerExtra}
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"
+              aria-label="Close"
+            >
+              <X size={16} />
+            </button>
+          </div>
         </header>
 
         <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(240px,0.92fr)_minmax(280px,1.05fr)_minmax(280px,1.05fr)]">
