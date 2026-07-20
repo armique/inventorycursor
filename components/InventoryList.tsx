@@ -1630,8 +1630,10 @@ const InventoryList: React.FC<Props> = ({
       // Include editValue (not just which field is being edited) while this row is the one being
       // edited — otherwise the key stays identical across every keystroke, the row's React.memo
       // sees "no change," and the input silently stops updating after the very first keystroke.
-      `${editingCell?.itemId === item.id ? `${editingCell.field}:${editValue}` : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${(item.isPC || item.isBundle) && collapsedBundles.has(item.id) ? 'col' : 'exp'}`,
-    [editingCell, editValue, listingGenId, parsingSingleId, priceSuggestId, collapsedBundles]
+      // Include quickBundleSeed so Flags “+” panel open/close re-renders the memoized row
+      // (otherwise X / Cancel set state but the inline panel stays mounted).
+      `${editingCell?.itemId === item.id ? `${editingCell.field}:${editValue}` : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${(item.isPC || item.isBundle) && collapsedBundles.has(item.id) ? 'col' : 'exp'}|${quickBundleSeed?.id === item.id ? 'qb' : ''}`,
+    [editingCell, editValue, listingGenId, parsingSingleId, priceSuggestId, collapsedBundles, quickBundleSeed]
   );
 
   const showFinancials = splitView || (statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS');
@@ -2639,10 +2641,13 @@ const InventoryList: React.FC<Props> = ({
         const tradeSource = resolveTradeSourceItem(item, itemsById);
         const userPhotoCount = getItemUserPhotoCount(item);
         const hasUserPhotos = userPhotoCount > 0;
+        const quickBundleOpenHere = quickBundleSeed?.id === item.id;
         return (
           <td
             key={id}
             style={style}
+            // Above sticky Actions (z-[18]) / sticky header (z-[40]) so the panel X is clickable
+            className={quickBundleOpenHere ? 'relative z-[45]' : undefined}
             onClick={() => {
               if (quickBundleSeed) return;
               handleRowClick(item, isEditingName);
@@ -5682,7 +5687,7 @@ type InventoryTableRowProps = {
   isSelected: boolean;
   visibleColumns: ColumnId[];
   renderRowCells: (item: InventoryItem, isSelected: boolean) => React.ReactNode;
-  /** Bumps when inline edit / AI spinners affect this row so memo does not skip updates. */
+  /** Bumps when inline edit / AI spinners / Flags + panel / collapse affect this row so memo does not skip updates. */
   rowActivityKey: string;
   highlighted?: boolean;
   virtualIndex?: number;
