@@ -438,7 +438,8 @@ const ListingStudioModal: React.FC<Props> = ({
       const merged = normalizeImageList([...(item.imageUrls || []), item.imageUrl, ...urls]);
       await persistPatch({ imageUrl: merged[0], imageUrls: merged });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Photo import failed');
+      const { localImageReadErrorMessage } = await import('../utils/localImageFile');
+      setError(localImageReadErrorMessage(e, 'Photo import failed'));
     }
   };
 
@@ -469,7 +470,8 @@ const ListingStudioModal: React.FC<Props> = ({
       const merged = normalizeImageList([...(item.imageUrls || []), item.imageUrl, ...urls]);
       await persistPatch({ imageUrl: merged[0], imageUrls: merged });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Folder photo import failed');
+      const { localImageReadErrorMessage } = await import('../utils/localImageFile');
+      setError(localImageReadErrorMessage(e, 'Folder photo import failed'));
     }
   };
 

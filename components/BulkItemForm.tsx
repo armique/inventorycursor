@@ -648,8 +648,9 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
     try {
       const urls = await filesToDataUrls(files);
       setItemImageUrls((prev) => normalizeImageList([...prev, ...urls]));
-    } catch {
-      alert('Could not process one or more item images.');
+    } catch (err) {
+      const { localImageReadErrorMessage } = await import('../utils/localImageFile');
+      alert(localImageReadErrorMessage(err, 'Could not process one or more item images.'));
     } finally {
       e.target.value = '';
     }

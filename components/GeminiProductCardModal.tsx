@@ -130,7 +130,8 @@ const GeminiProductCardModal: React.FC<Props> = ({
       setCustomPhotos(urls);
       setUseItemPhotos(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load photo');
+      const { localImageReadErrorMessage } = await import('../utils/localImageFile');
+      setError(localImageReadErrorMessage(e, 'Could not load photo'));
     } finally {
       setUploading(false);
     }

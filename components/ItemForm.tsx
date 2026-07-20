@@ -566,8 +566,9 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     try {
       const urls = await filesToDataUrls(files, { itemId: getPhotoItemId() });
       await addImageUrls(urls);
-    } catch {
-      alert('Could not process one or more images.');
+    } catch (err) {
+      const { localImageReadErrorMessage } = await import('../utils/localImageFile');
+      alert(localImageReadErrorMessage(err, 'Could not process one or more images.'));
     } finally {
       e.target.value = '';
     }

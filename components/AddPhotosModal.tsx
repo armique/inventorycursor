@@ -8,6 +8,7 @@ import {
   prepareInventoryImagesForStorage,
   resolveImageUrlsFromInput,
 } from '../utils/imageImport';
+import { localImageReadErrorMessage } from '../utils/localImageFile';
 import {
   getImageSearchProviders,
   searchProductPhotos,
@@ -117,8 +118,8 @@ const AddPhotosModal: React.FC<Props> = ({
     setError(null);
     try {
       addUrls(await filesToDataUrls(files, storageOptions));
-    } catch {
-      setError('Could not read one or more image files.');
+    } catch (err) {
+      setError(localImageReadErrorMessage(err));
     } finally {
       setLoading(false);
       e.target.value = '';
@@ -538,6 +539,10 @@ const AddPhotosModal: React.FC<Props> = ({
               Choose images
               <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} disabled={loading} />
             </label>
+            <p className="text-[10px] text-slate-400 font-medium leading-snug">
+              iCloud files with a cloud icon must finish downloading first (right-click → Always keep on this
+              device). The app will wait a few seconds for downloads that start when you select the file.
+            </p>
           </div>
 
           <div className="space-y-2">

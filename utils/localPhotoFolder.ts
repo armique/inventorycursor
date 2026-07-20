@@ -163,7 +163,18 @@ export async function getOrReconnectPhotoFolder(): Promise<FileSystemDirectoryHa
 }
 
 export async function fileFromLocalPhoto(entry: LocalPhotoEntry): Promise<File> {
-  return entry.handle.getFile();
+  const { materializeLocalImageFile, localImageReadErrorMessage } = await import('./localImageFile');
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try {
+      const file = await entry.handle.getFile();
+      return await materializeLocalImageFile(file, { attempts: 4, delayMs: 500 });
+    } catch (err) {
+      lastError = err;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+  throw new Error(localImageReadErrorMessage(lastError, `Could not read "${entry.name}".`));
 }
 
 export function revokePreviewUrls(entries: LocalPhotoEntry[]): void {
