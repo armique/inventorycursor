@@ -121,7 +121,7 @@ export const MobileStockCard: React.FC<{
             {actions.onPatchAccessory && (
               <ItemAccessoryToggles
                 item={item}
-                dense
+                mini
                 onPatch={(patch) => actions.onPatchAccessory?.(item, patch)}
               />
             )}

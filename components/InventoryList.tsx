@@ -2957,7 +2957,8 @@ const InventoryList: React.FC<Props> = ({
                    </div>
                    <ItemAccessoryToggles
                      item={item}
-                     dense={dense}
+                     mini={dense}
+                     dense={!dense}
                      onPatch={(patch) =>
                        onUpdate([{ ...item, ...patch }], undefined, {
                          skipActionLog: true,
@@ -5808,8 +5809,8 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
       const item = sortedItems[index];
       if (!item) return rowHeightEstimate;
       let h = rowHeightEstimate;
-      // OVP / Rechnung (/ IO) toggles under the item name
-      h += 22;
+      // OVP / Rechnung (/ IO) mini icons under the item name
+      h += 18;
       if (item.specs && Object.keys(item.specs).length > 0) h += 14;
       if (
         isRealizedDisposal(item) &&

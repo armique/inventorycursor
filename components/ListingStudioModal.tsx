@@ -42,6 +42,8 @@ import {
   prepareInventoryImagesForStorage,
 } from '../utils/imageImport';
 import ReorderablePhotoThumbs from './ReorderablePhotoThumbs';
+import ItemAccessoryToggles from './ItemAccessoryToggles';
+import { accessoryTogglesForItem } from '../utils/itemAccessoryToggles';
 import {
   fetchProductCardProviders,
   generateProductCard,
@@ -730,6 +732,17 @@ const ListingStudioModal: React.FC<Props> = ({
                 onChange={(e) => setName(e.target.value)}
                 onBlur={() => void persistPatch({ name: name.trim() || item.name })}
               />
+              <div className="mt-1.5 flex items-center gap-1.5">
+                <ItemAccessoryToggles
+                  item={item}
+                  mini
+                  onPatch={(patch) => void persistPatch(patch)}
+                />
+                <span className="text-[9px] text-slate-400 font-medium truncate">
+                  OVP / Rechnung
+                  {accessoryTogglesForItem(item).includes('io') ? ' / IO' : ''}
+                </span>
+              </div>
             </section>
 
             <section>
