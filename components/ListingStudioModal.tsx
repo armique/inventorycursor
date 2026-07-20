@@ -56,6 +56,7 @@ import { resolveUrlForInventoryMainPhoto } from '../utils/applyProductCardAsMain
 import { getChildren } from '../services/financialAggregation';
 import PhoneUploadQrPanel from './PhoneUploadQrPanel';
 import LocalPhotoFolderPanel from './LocalPhotoFolderPanel';
+import KleinanzeigenBuyChatProofFields from './KleinanzeigenBuyChatProofFields';
 
 const BUY_PLATFORMS: Platform[] = [
   'kleinanzeigen.de',
@@ -132,6 +133,8 @@ const ListingStudioModal: React.FC<Props> = ({
   const [paymentType, setPaymentType] = useState<PaymentType | ''>(item.paymentType || '');
   const [buyerName, setBuyerName] = useState(item.customer?.name || '');
   const [buyerAddress, setBuyerAddress] = useState(item.customer?.address || '');
+  const [buyChatUrl, setBuyChatUrl] = useState(item.kleinanzeigenBuyChatUrl || '');
+  const [buyChatImage, setBuyChatImage] = useState(item.kleinanzeigenBuyChatImage || '');
 
   const [parsingSpecs, setParsingSpecs] = useState(false);
   const [genListing, setGenListing] = useState(false);
@@ -228,6 +231,8 @@ const ListingStudioModal: React.FC<Props> = ({
     setPaymentType(item.paymentType || '');
     setBuyerName(item.customer?.name || '');
     setBuyerAddress(item.customer?.address || '');
+    setBuyChatUrl(item.kleinanzeigenBuyChatUrl || '');
+    setBuyChatImage(item.kleinanzeigenBuyChatImage || '');
   }, [
     item.id,
     item.name,
@@ -241,6 +246,8 @@ const ListingStudioModal: React.FC<Props> = ({
     item.paymentType,
     item.customer?.name,
     item.customer?.address,
+    item.kleinanzeigenBuyChatUrl,
+    item.kleinanzeigenBuyChatImage,
   ]);
 
   useEffect(() => {
@@ -839,6 +846,20 @@ const ListingStudioModal: React.FC<Props> = ({
                       ))}
                     </select>
                   </label>
+                </div>
+
+                <div className="pt-1 border-t border-slate-200/80">
+                  <KleinanzeigenBuyChatProofFields
+                    compact
+                    itemId={item.id}
+                    chatUrl={buyChatUrl}
+                    chatImage={buyChatImage}
+                    onChatUrlChange={setBuyChatUrl}
+                    onChatImageChange={setBuyChatImage}
+                    onPersist={async (patch) => {
+                      await persistPatch(patch);
+                    }}
+                  />
                 </div>
 
                 <div className="pt-1 border-t border-slate-200/80 space-y-1.5">

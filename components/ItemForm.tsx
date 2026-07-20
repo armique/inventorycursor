@@ -37,6 +37,7 @@ import { fetchMyEbayListings, getEbayUsername, ebayListingToPriceMatch, type Eba
 import { matchEbayListingsForItem } from '../utils/ebayListingMatch';
 import { getInventorySoldPriceBand } from '../utils/inventorySoldComps';
 import { findDuplicateCandidates } from '../utils/duplicateMatch';
+import KleinanzeigenBuyChatProofFields from './KleinanzeigenBuyChatProofFields';
 import {
   applyTemplateFields,
   buildHistoryPresets,
@@ -839,6 +840,21 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       formData.buyPaymentType as PaymentType | undefined
     );
 
+    let buyChatImage = (formData.kleinanzeigenBuyChatImage || '').trim();
+    if (buyChatImage) {
+      try {
+        const { persistSaleProofImage, urlNeedsPhotoArchive } = await import(
+          '../services/inventoryImageStorage'
+        );
+        if (urlNeedsPhotoArchive(buyChatImage)) {
+          buyChatImage = await persistSaleProofImage(buyChatImage, saveItemId);
+        }
+      } catch (err) {
+        console.warn('Could not archive buy chat proof', err);
+      }
+    }
+    const buyChatUrl = (formData.kleinanzeigenBuyChatUrl || '').trim();
+
     const base: InventoryItem = {
       ...formData as InventoryItem,
       buyPrice: buyPriceResolved,
@@ -854,6 +870,8 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       specsAiSuggested: aiSuggested && Object.keys(aiSuggested).length ? aiSuggested : undefined,
       platformBought,
       buyPaymentType,
+      kleinanzeigenBuyChatUrl: buyChatUrl || undefined,
+      kleinanzeigenBuyChatImage: buyChatImage || undefined,
     };
 
     if (status === ItemStatus.SOLD || status === ItemStatus.TRADED || status === ItemStatus.GIFTED) {
@@ -2312,6 +2330,27 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                          >
                             {PAYMENT_METHODS.map(p => <option key={p} value={p}>{p}</option>)}
                          </select>
+                      </div>
+
+                      <div className="col-span-2 pt-2 border-t border-slate-100">
+                        <KleinanzeigenBuyChatProofFields
+                          itemId={formData.id || 'draft'}
+                          chatUrl={formData.kleinanzeigenBuyChatUrl || ''}
+                          chatImage={formData.kleinanzeigenBuyChatImage || ''}
+                          onChatUrlChange={(url) =>
+                            setFormData((prev) => ({ ...prev, kleinanzeigenBuyChatUrl: url }))
+                          }
+                          onChatImageChange={(image) =>
+                            setFormData((prev) => ({ ...prev, kleinanzeigenBuyChatImage: image }))
+                          }
+                          onPersist={async (patch) => {
+                            setFormData((prev) => ({
+                              ...prev,
+                              kleinanzeigenBuyChatUrl: patch.kleinanzeigenBuyChatUrl,
+                              kleinanzeigenBuyChatImage: patch.kleinanzeigenBuyChatImage,
+                            }));
+                          }}
+                        />
                       </div>
                     </div>
                  </div>
