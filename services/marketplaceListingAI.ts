@@ -5,6 +5,7 @@
 import type { InventoryItem } from '../types';
 import { ItemStatus } from '../types';
 import { requestAIJson } from './specsAI';
+import { isMotherboardItem } from '../utils/itemAccessoryToggles';
 
 export interface MarketplaceListingHints {
   /** Original packaging present — buyer-facing Lieferumfang/Zustand hint. */
@@ -115,14 +116,18 @@ LIEFERUMFANG / OVP / IO / RECHNUNG
 =========================
 
 Перечисляй комплект поставки отдельно.
-Флаги OVP / IO-Blende / Rechnung в ITEM DATA — это обязательные подсказки для покупателя (как notices о состоянии/комплекте). Включи их в 📦 Lieferumfang и/или ℹ️ Hinweis / ✅ Zustand — где уместно:
+Флаги OVP / Rechnung в ITEM DATA — обязательные подсказки для покупателя. Включи их в 📦 Lieferumfang и/или ℹ️ Hinweis / ✅ Zustand — где уместно:
 
 Если OVP = YES: Originalverpackung vorhanden
 Если OVP = NO: Ohne Originalverpackung
-Если IO-Blende = YES: IO-Blende inklusive
-Если IO-Blende = NO (для Mainboard/Bundle где актуально): Ohne IO-Blende
 Если Rechnung = YES: Rechnung / Kaufbeleg vorhanden
 Если Rechnung = NO: Ohne Rechnung
+
+IO-Blende / IO Shield:
+- Упоминай IO-Blende ТОЛЬКО если в ITEM DATA есть строка IO-Blende (это бывает только для категории Motherboards / Mainboard).
+- Если строки IO-Blende нет — НИКОГДА не пиши про IO-Blende / IO Shield / Blende (ни „inklusive“, ни „ohne“).
+- Если IO-Blende = YES: IO-Blende inklusive
+- Если IO-Blende = NO: Ohne IO-Blende
 
 Не игнорируй эти флаги. Не противоречь им.
 
@@ -163,13 +168,18 @@ Keine Garantie und keine Rücknahme.
 
 /** Resolve buyer-facing accessory hints for listing AI (not for product-card image gen). */
 export function resolveListingAccessoryHints(
-  item: Pick<InventoryItem, 'hasOVP' | 'hasIOShield' | 'hasReceipt'>,
+  item: Pick<InventoryItem, 'category' | 'subCategory' | 'hasOVP' | 'hasIOShield' | 'hasReceipt'>,
   hints?: MarketplaceListingHints
-): { hasOVP: boolean; hasIOShield: boolean; hasReceipt: boolean } {
+): { hasOVP: boolean; hasIOShield: boolean; hasReceipt: boolean; includeIOShield: boolean } {
+  const includeIOShield = isMotherboardItem(item);
   return {
     hasOVP: hints?.hasOVP === true || item.hasOVP === true,
-    hasIOShield: hints?.hasIOShield === true || item.hasIOShield === true,
+    // IO only matters for motherboard listings — never feed it for GPUs/RAM/etc.
+    hasIOShield: includeIOShield
+      ? hints?.hasIOShield === true || item.hasIOShield === true
+      : false,
     hasReceipt: hints?.hasReceipt === true || item.hasReceipt === true,
+    includeIOShield,
   };
 }
 
@@ -194,11 +204,11 @@ function buildItemContext(item: InventoryItem, hints?: MarketplaceListingHints):
     `OVP: ${
       accessories.hasOVP ? 'YES — Originalverpackung vorhanden' : 'NO — Ohne Originalverpackung'
     }`,
-    `IO-Blende: ${
-      accessories.hasIOShield
-        ? 'YES — IO-Blende inklusive'
-        : 'NO — Ohne IO-Blende (if motherboard/bundle relevant)'
-    }`,
+    accessories.includeIOShield
+      ? `IO-Blende: ${
+          accessories.hasIOShield ? 'YES — IO-Blende inklusive' : 'NO — Ohne IO-Blende'
+        }`
+      : 'IO-Blende: NOT APPLICABLE — do not mention IO-Blende / IO Shield at all',
     `Rechnung: ${
       accessories.hasReceipt
         ? 'YES — Rechnung / Kaufbeleg vorhanden'
