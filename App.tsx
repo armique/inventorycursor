@@ -23,7 +23,8 @@ const ActionHistoryPage = lazy(() => import('./components/ActionHistoryPage'));
 const EbayStorePullPage = lazy(() => import('./components/EbayStorePullPage'));
 const ThreeDPrintPage = lazy(() => import('./components/ThreeDPrintPage'));
 const ProductCardGalleryPage = lazy(() => import('./components/ProductCardGalleryPage'));
-import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense, DashboardPreferences, ActionHistoryEntry, TaxMode, ItemUpdateOptions } from './types';
+const BulkImportHistoryPage = lazy(() => import('./components/BulkImportHistoryPage'));
+import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense, DashboardPreferences, ActionHistoryEntry, TaxMode, ItemUpdateOptions, BulkImportRecord } from './types';
 import {
   loadDashboardPreferencesFromLocalStorage,
   persistDashboardPreferencesToLocalStorage,
@@ -49,6 +50,13 @@ import { UndoToastProvider, useUndoToastContext } from './context/UndoToastConte
 import { appendUndoHistory } from './utils/appendUndoHistory';
 import { persistSnapshotToLocalStorage, scheduleBackgroundWork } from './services/backgroundPersistence';
 import { buildStoreCatalog } from './utils/storefrontCatalog';
+import {
+  BULK_IMPORTS_LIMIT,
+  BULK_IMPORT_BACKFILL_KEY,
+  backfillBulkImportsFromItems,
+  loadBulkImportsFromStorage,
+  mergeBulkImportsFromLocal,
+} from './utils/bulkImportHistory';
 
 const WRITE_DEBOUNCE_MS = 5000;
 const LOCAL_PERSIST_DEBOUNCE_MS = 900;
@@ -67,6 +75,7 @@ type AppSyncSnapshot = {
   monthlyGoal: number;
   dashboardPrefs: DashboardPreferences;
   actionHistory: ActionHistoryEntry[];
+  bulkImports: BulkImportRecord[];
 };
 
 /** When merging an update into an existing item, preserve these from the old item if the update
@@ -78,6 +87,7 @@ const PRESERVE_FROM_OLD_IF_UPDATE_MISSING: (keyof InventoryItem)[] = [
   'imageUrl', 'imageUrls', 'storeGalleryUrls', 'storeDescription', 'storeVisible', 'storeOnSale', 'storeSalePrice',
   'specs', 'componentIds', 'comment1', 'comment2', 'vendor', 'hasOVP', 'hasIOShield',
   'platformBought', 'buyPaymentType', 'kleinanzeigenBuyChatUrl', 'kleinanzeigenBuyChatImage',
+  'bulkImportId',
 ];
 
 function GitHubOAuthCallback() {
@@ -174,6 +184,7 @@ const App: React.FC = () => {
   // State for Data
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [actionHistory, setActionHistory] = useState<ActionHistoryEntry[]>(() => loadActionHistoryFromStorage());
+  const [bulkImports, setBulkImports] = useState<BulkImportRecord[]>(() => loadBulkImportsFromStorage());
   const [trash, setTrash] = useState<InventoryItem[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>([]);
@@ -221,12 +232,16 @@ const App: React.FC = () => {
   const [dashboardPrefs, setDashboardPrefs] = useState<DashboardPreferences>(() => loadDashboardPreferencesFromLocalStorage());
   const dashboardPrefsRef = useRef(dashboardPrefs);
   const actionHistoryRef = useRef<ActionHistoryEntry[]>(loadActionHistoryFromStorage());
+  const bulkImportsRef = useRef<BulkImportRecord[]>(loadBulkImportsFromStorage());
   useEffect(() => {
     dashboardPrefsRef.current = dashboardPrefs;
   }, [dashboardPrefs]);
   useEffect(() => {
     actionHistoryRef.current = actionHistory;
   }, [actionHistory]);
+  useEffect(() => {
+    bulkImportsRef.current = bulkImports;
+  }, [bulkImports]);
 
   // One-time storefront reset requested by user: hide all currently visible items.
   useEffect(() => {
@@ -289,6 +304,7 @@ const App: React.FC = () => {
     monthlyGoal: monthlyGoalRef.current,
     dashboardPrefs: dashboardPrefsRef.current,
     actionHistory: actionHistoryRef.current,
+    bulkImports: bulkImportsRef.current,
   }), []);
 
   const shouldApplyRemoteSnapshot = useCallback((data: { updatedAt?: string } | null) => {
@@ -312,12 +328,16 @@ const App: React.FC = () => {
     newFields: Record<string, string[]>,
     newRecurringExpenses?: RecurringExpense[],
     dashOverride?: DashboardPreferences,
-    actionHistorySnapshot?: ActionHistoryEntry[]
+    actionHistorySnapshot?: ActionHistoryEntry[],
+    bulkImportsSnapshot?: BulkImportRecord[]
   ) => {
     const dash = dashOverride ?? dashboardPrefsRef.current;
     const ah = (actionHistorySnapshot ?? actionHistoryRef.current).slice(-ACTION_HISTORY_LIMIT);
     actionHistoryRef.current = ah;
+    const bi = (bulkImportsSnapshot ?? bulkImportsRef.current).slice(0, BULK_IMPORTS_LIMIT);
+    bulkImportsRef.current = bi;
     localStorage.setItem('action_history', JSON.stringify(ah));
+    localStorage.setItem('bulk_imports', JSON.stringify(bi));
     localStorage.setItem('inventory_items', JSON.stringify(newItems));
     localStorage.setItem('inventory_trash', JSON.stringify(newTrash));
     localStorage.setItem('inventory_expenses', JSON.stringify(newExpenses));
@@ -460,6 +480,11 @@ const App: React.FC = () => {
     const mergedAH = mergeActionHistoryFromLocal(remoteAH, localAH).slice(-ACTION_HISTORY_LIMIT);
     setActionHistory(mergedAH);
     actionHistoryRef.current = mergedAH;
+    const localBI = bulkImportsRef.current;
+    const remoteBI = Array.isArray(data.bulkImports) ? (data.bulkImports as BulkImportRecord[]) : [];
+    const mergedBI = mergeBulkImportsFromLocal(remoteBI, localBI).slice(0, BULK_IMPORTS_LIMIT);
+    setBulkImports(mergedBI);
+    bulkImportsRef.current = mergedBI;
     setItems(inv.map(migrateContainerItem));
     setTrash(tr.map(migrateContainerItem));
     setExpenses(exp);
@@ -480,6 +505,7 @@ const App: React.FC = () => {
         recurringExpensesJson: JSON.stringify(recurring),
         dashboardPrefs: dashToSave,
         actionHistoryJson: JSON.stringify(mergedAH),
+        bulkImportsJson: JSON.stringify(mergedBI),
       })
     );
   }, [mergeActionHistoryFromLocal, mergeExpensesFromLocal, mergeInventoryWithLocal]);
@@ -526,7 +552,28 @@ const App: React.FC = () => {
     setExpenses(JSON.parse(localStorage.getItem('inventory_expenses') || '[]'));
     setRecurringExpenses(JSON.parse(localStorage.getItem('recurring_expenses') || '[]'));
     setCategories((prev) => migrateCategoriesRecord(prev));
+    setBulkImports(loadBulkImportsFromStorage());
   };
+
+  // One-time backfill: stamp bulkImportId on legacy bulk-{ts}-{n} items and seed history.
+  useEffect(() => {
+    if (appState !== 'READY' || items.length === 0) return;
+    if (localStorage.getItem(BULK_IMPORT_BACKFILL_KEY) === '1') return;
+    const beforeIds = new Set(bulkImportsRef.current.map((r) => r.id));
+    const result = backfillBulkImportsFromItems(items, bulkImportsRef.current);
+    localStorage.setItem(BULK_IMPORT_BACKFILL_KEY, '1');
+    const added = result.records.some((r) => !beforeIds.has(r.id));
+    if (added || result.records.length !== beforeIds.size) {
+      setBulkImports(result.records);
+      bulkImportsRef.current = result.records;
+      localStorage.setItem('bulk_imports', JSON.stringify(result.records));
+      hasUnsavedChanges.current = true;
+    }
+    if (result.changedItems) {
+      setItems(result.items);
+      hasUnsavedChanges.current = true;
+    }
+  }, [appState, items.length]);
 
   // One-time migration: merge Peripherals > Optical Drives into Components > Optical Drives, then remove Optical Drives from Peripherals
   const OPTICAL_DRIVES_MIGRATION_KEY = 'migration_optical_drives_to_components';
@@ -595,6 +642,7 @@ const App: React.FC = () => {
           goals: { monthly: monthlyGoal },
           dashboard: dashboardPrefs,
           actionHistory: actionHistory.slice(-ACTION_HISTORY_LIMIT),
+          bulkImports: bulkImports.slice(0, BULK_IMPORTS_LIMIT),
         };
         await writeToCloud(payload);
         hasUnsavedChanges.current = false;
@@ -610,7 +658,7 @@ const App: React.FC = () => {
         setSyncState((prev) => ({ ...prev, status: 'error', message: getSyncErrorMessage(err) }));
       }
     })();
-  }, [authUser, items, trash, expenses, recurringExpenses, categories, categoryFields, businessSettings, monthlyGoal, dashboardPrefs, actionHistory, applyRemoteData]);
+  }, [authUser, items, trash, expenses, recurringExpenses, categories, categoryFields, businessSettings, monthlyGoal, dashboardPrefs, actionHistory, bulkImports, applyRemoteData]);
 
   // Re-hydrate the cached eBay order history (Order lookup button in Flags column) from the
   // cloud mirror as soon as we're signed in — so a cleared browser or brand-new PC has the
@@ -704,6 +752,7 @@ const App: React.FC = () => {
       goals: { monthly: snap.monthlyGoal },
       dashboard: snap.dashboardPrefs,
       actionHistory: snap.actionHistory.slice(-ACTION_HISTORY_LIMIT),
+      bulkImports: snap.bulkImports.slice(0, BULK_IMPORTS_LIMIT),
     };
     try {
       await writeToCloud(payload);
@@ -751,6 +800,8 @@ const App: React.FC = () => {
           categoryFieldsJson: JSON.stringify(snap.categoryFields),
           recurringExpensesJson: JSON.stringify(snap.recurringExpenses),
           dashboardPrefs: snap.dashboardPrefs,
+          actionHistoryJson: JSON.stringify(snap.actionHistory.slice(-ACTION_HISTORY_LIMIT)),
+          bulkImportsJson: JSON.stringify(snap.bulkImports.slice(0, BULK_IMPORTS_LIMIT)),
         })
       );
     }, LOCAL_PERSIST_DEBOUNCE_MS);
@@ -765,7 +816,7 @@ const App: React.FC = () => {
       if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
       if (localPersistDebounceRef.current) clearTimeout(localPersistDebounceRef.current);
     };
-  }, [appState, authUser, items, trash, expenses, recurringExpenses, businessSettings, monthlyGoal, categories, categoryFields, dashboardPrefs, getSyncSnapshot, runSilentCloudSync]);
+  }, [appState, authUser, items, trash, expenses, recurringExpenses, businessSettings, monthlyGoal, categories, categoryFields, dashboardPrefs, actionHistory, bulkImports, getSyncSnapshot, runSilentCloudSync]);
 
   // Action history can be large — persist separately so item edits don't always stringify it with inventory.
   useEffect(() => {
@@ -778,6 +829,17 @@ const App: React.FC = () => {
     }, 1200);
     return () => clearTimeout(t);
   }, [appState, actionHistory]);
+
+  useEffect(() => {
+    if (appState !== 'READY') return;
+    const t = setTimeout(() => {
+      const bi = bulkImportsRef.current.slice(0, BULK_IMPORTS_LIMIT);
+      scheduleBackgroundWork(() => {
+        localStorage.setItem('bulk_imports', JSON.stringify(bi));
+      });
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [appState, bulkImports]);
 
   const handleForcePush = async () => {
     if (!isCloudEnabled() || !authUser) return false;
@@ -793,6 +855,7 @@ const App: React.FC = () => {
       goals: { monthly: monthlyGoal },
       dashboard: dashboardPrefs,
       actionHistory: actionHistory.slice(-ACTION_HISTORY_LIMIT),
+      bulkImports: bulkImports.slice(0, BULK_IMPORTS_LIMIT),
     };
     try {
       cloudSyncInFlightRef.current = true;
@@ -810,6 +873,8 @@ const App: React.FC = () => {
           categoryFieldsJson: JSON.stringify(categoryFields),
           recurringExpensesJson: JSON.stringify(recurringExpenses),
           dashboardPrefs: dashboardPrefsRef.current,
+          actionHistoryJson: JSON.stringify(actionHistory.slice(-ACTION_HISTORY_LIMIT)),
+          bulkImportsJson: JSON.stringify(bulkImports.slice(0, BULK_IMPORTS_LIMIT)),
         })
       );
       scheduleBackgroundWork(async () => {
@@ -996,7 +1061,11 @@ const App: React.FC = () => {
     localStorage.removeItem('price_check_history');
     localStorage.removeItem('ai_sourcing_history');
     localStorage.removeItem('action_history');
+    localStorage.removeItem('bulk_imports');
+    localStorage.removeItem(BULK_IMPORT_BACKFILL_KEY);
     setActionHistory([]);
+    setBulkImports([]);
+    bulkImportsRef.current = [];
 
     saveToLocalStorage(emptyInventory, emptyTrash, emptyExpenses, businessSettings, defaultGoal, categories, categoryFields, emptyRecurring, wipedDash);
 
@@ -1013,6 +1082,7 @@ const App: React.FC = () => {
           categoryFields,
           dashboard: wipedDash,
           actionHistory: [],
+          bulkImports: [],
         });
         await writeStoreCatalog(buildStoreCatalog(emptyInventory, categoryFields)).catch(() => {});
       } catch (_) {}
@@ -1038,6 +1108,7 @@ const App: React.FC = () => {
     categoryFields?: Record<string, string[]>;
     dashboard?: unknown;
     actionHistory?: ActionHistoryEntry[];
+    bulkImports?: BulkImportRecord[];
   }) => {
     const inv = Array.isArray(data.inventory) ? data.inventory : (Array.isArray((data as any).Inventory) ? (data as any).Inventory : []);
     const tr = Array.isArray(data.trash) ? data.trash : [];
@@ -1054,6 +1125,11 @@ const App: React.FC = () => {
     const mergedAH = mergeActionHistoryFromLocal(backupAH, localAH).slice(-ACTION_HISTORY_LIMIT);
     setActionHistory(mergedAH);
     actionHistoryRef.current = mergedAH;
+    const localBI = loadBulkImportsFromStorage();
+    const backupBI = Array.isArray(data.bulkImports) ? data.bulkImports : [];
+    const mergedBI = mergeBulkImportsFromLocal(backupBI, localBI).slice(0, BULK_IMPORTS_LIMIT);
+    setBulkImports(mergedBI);
+    bulkImportsRef.current = mergedBI;
     isRemoteUpdate.current = true;
     setItems(inv);
     setTrash(tr);
@@ -1062,7 +1138,7 @@ const App: React.FC = () => {
     setCategories(cats);
     setCategoryFields(fields);
     setBusinessSettings(sets);
-    saveToLocalStorage(inv, tr, exp, sets, goal, cats, fields, undefined, restoredDash, mergedAH);
+    saveToLocalStorage(inv, tr, exp, sets, goal, cats, fields, undefined, restoredDash, mergedAH, mergedBI);
     if (isCloudEnabled() && authUser) {
       try {
         await writeToCloud({
@@ -1075,6 +1151,7 @@ const App: React.FC = () => {
           categoryFields: fields,
           dashboard: restoredDash,
           actionHistory: mergedAH,
+          bulkImports: mergedBI,
         });
         await writeStoreCatalog(buildStoreCatalog(inv, fields)).catch(() => {});
       } catch (_) {}
@@ -1097,6 +1174,7 @@ const App: React.FC = () => {
         categoryFields,
         dashboard: dashboardPrefs,
         actionHistory: actionHistoryRef.current.slice(-ACTION_HISTORY_LIMIT),
+        bulkImports: bulkImportsRef.current.slice(0, BULK_IMPORTS_LIMIT),
       }).catch(() => {});
     }
     setRefreshKey((k) => k + 1);
@@ -1105,6 +1183,16 @@ const App: React.FC = () => {
   const handleClearActionHistory = useCallback(() => {
     setActionHistory([]);
     localStorage.removeItem('action_history');
+  }, []);
+
+  const handleBulkImportComplete = useCallback((record: BulkImportRecord) => {
+    setBulkImports((prev) => {
+      const next = mergeBulkImportsFromLocal(prev, [record]).slice(0, BULK_IMPORTS_LIMIT);
+      bulkImportsRef.current = next;
+      localStorage.setItem('bulk_imports', JSON.stringify(next));
+      return next;
+    });
+    hasUnsavedChanges.current = true;
   }, []);
 
   const handleRevertSale = useCallback(
@@ -1287,9 +1375,9 @@ const App: React.FC = () => {
               />
             }
           />
-          <Route path="inventory" element={<InventoryList key="inventory-main" items={items} totalCount={items.length} onUpdate={handleUpdate} onDelete={handleDelete} onUndo={handleUndo} onRedo={handleRedo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} pageTitle="Inventory" allowedStatuses={ALL_STATUSES} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} persistenceKey="inventory_main" onPublishStoreCatalog={publishStoreCatalogNow} />} />
+          <Route path="inventory" element={<InventoryList key="inventory-main" items={items} totalCount={items.length} onUpdate={handleUpdate} onDelete={handleDelete} onUndo={handleUndo} onRedo={handleRedo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} pageTitle="Inventory" allowedStatuses={ALL_STATUSES} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} persistenceKey="inventory_main" onPublishStoreCatalog={publishStoreCatalogNow} bulkImports={bulkImports} />} />
           <Route path="add" element={<ItemForm onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
-          <Route path="add-bulk" element={<BulkItemForm onSave={handleUpdate} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
+          <Route path="add-bulk" element={<BulkItemForm onSave={handleUpdate} onBulkImportComplete={handleBulkImportComplete} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="edit/:id" element={<ItemForm onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="builder" element={<BuilderEntry items={items} onSave={handleUpdate} />} />
           <Route path="3d-print" element={<ThreeDPrintPage items={items} onSave={handleUpdate} categories={categories} onAddExpense={handleAddExpense} />} />
@@ -1297,6 +1385,10 @@ const App: React.FC = () => {
           <Route
             path="card-gallery"
             element={<ProductCardGalleryPage items={items} onUpdate={handleUpdate} />}
+          />
+          <Route
+            path="bulk-imports"
+            element={<BulkImportHistoryPage records={bulkImports} items={items} />}
           />
           <Route path="invoices" element={<InvoiceManager items={items} businessSettings={businessSettings} />} />
           <Route
@@ -1330,7 +1422,7 @@ const App: React.FC = () => {
           <Route path="trash" element={<TrashPage items={trash} onRestore={handleRestoreFromTrash} onPermanentDelete={handlePermanentDelete} />} />
           <Route path="store-management" element={<StoreManagementPage items={items} categories={categories} categoryFields={categoryFields} onUpdate={handleUpdate} onPublishCatalog={publishStoreCatalogNow} />} />
           <Route path="storefront-configurator" element={<StorefrontConfiguratorPage />} />
-          <Route path="settings" element={<SettingsPage items={items} trash={trash} expenses={expenses} monthlyGoal={monthlyGoal} dashboardPreferences={dashboardPrefs} actionHistory={actionHistory} onForcePush={handleForcePush} onRestoreItems={setItems} onRestoreBackup={handleRestoreBackup} onFixEncoding={handleFixEncoding} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} onUpdateCategoryStructure={handleUpdateCategoryStructure} onUpdateCategoryFields={handleUpdateCategoryFields} onRenameCategory={() => {}} onRenameSubCategory={() => {}} onApplyArchivedPhotos={(archivedItems, archivedTrash) => { setItems(archivedItems); setTrash(archivedTrash); }} />} />
+          <Route path="settings" element={<SettingsPage items={items} trash={trash} expenses={expenses} monthlyGoal={monthlyGoal} dashboardPreferences={dashboardPrefs} actionHistory={actionHistory} bulkImports={bulkImports} onForcePush={handleForcePush} onRestoreItems={setItems} onRestoreBackup={handleRestoreBackup} onFixEncoding={handleFixEncoding} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} onUpdateCategoryStructure={handleUpdateCategoryStructure} onUpdateCategoryFields={handleUpdateCategoryFields} onRenameCategory={() => {}} onRenameSubCategory={() => {}} onApplyArchivedPhotos={(archivedItems, archivedTrash) => { setItems(archivedItems); setTrash(archivedTrash); }} />} />
         </Route>
         <Route path="/auth/github/callback" element={<GitHubOAuthCallback />} />
         <Route path="*" element={<Navigate to="/" replace />} />

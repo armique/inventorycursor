@@ -8,7 +8,7 @@ import {
   TrendingUp, Target, Package, TrendingDown, Trophy, Star, Crown, Zap,
   Edit3, Check, CalendarDays, ArrowRight, CheckCircle2, Plus, X, Activity, AlertCircle,
   Settings2, ChevronUp, ChevronDown, ChevronRight, Download, Sparkles, BarChart3, LayoutDashboard,
-  Gift, ArrowRightLeft,
+  Gift, ArrowRightLeft, Layers, History,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import {
@@ -922,6 +922,26 @@ const Dashboard: React.FC<Props> = ({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 lg:gap-3">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => navigate('/panel/add-bulk')}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-black uppercase tracking-wide text-slate-700 hover:bg-slate-50 shadow-sm"
+              title="Bulk Entry — add many items in one purchase"
+            >
+              <Layers size={14} className="text-violet-600" />
+              Bulk Entry
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/panel/bulk-imports')}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-violet-200 bg-violet-50 text-xs font-black uppercase tracking-wide text-violet-900 hover:bg-violet-100 shadow-sm"
+              title="Bulk import history — reopen past bulk / AI parses"
+            >
+              <History size={14} />
+              Bulk imports
+            </button>
+          </div>
           <div className="flex rounded-lg lg:rounded-xl border border-slate-200 bg-white p-0.5 lg:p-1">
             {QUICK_FILTERS.map((f) => (
               <button

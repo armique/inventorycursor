@@ -25,6 +25,7 @@ export type LocalPersistSnapshot = {
   recurringExpensesJson?: string;
   dashboardPrefs: DashboardPreferences;
   actionHistoryJson?: string;
+  bulkImportsJson?: string;
 };
 
 /** Stringify once, then write localStorage keys one at a time with yields between. */
@@ -47,6 +48,10 @@ export async function persistSnapshotToLocalStorage(snapshot: LocalPersistSnapsh
   if (snapshot.actionHistoryJson !== undefined) {
     await yieldToMain();
     localStorage.setItem('action_history', snapshot.actionHistoryJson);
+  }
+  if (snapshot.bulkImportsJson !== undefined) {
+    await yieldToMain();
+    localStorage.setItem('bulk_imports', snapshot.bulkImportsJson);
   }
 }
 

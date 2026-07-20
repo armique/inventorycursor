@@ -125,6 +125,8 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   const primaryNav = [
     { to: '/panel/dashboard', icon: <LayoutDashboard size={18} />, label: 'Dashboard' },
     { to: '/panel/inventory', icon: <Package size={18} />, label: 'Inventory' },
+    { to: '/panel/add-bulk', icon: <Layers size={18} />, label: 'Bulk Entry' },
+    { to: '/panel/bulk-imports', icon: <History size={18} />, label: 'Bulk imports' },
     { to: '/panel/ebay-store-pull', icon: <PackageSearch size={18} />, label: 'eBay Tools', alert: !!ebayReminder },
     {
       to: '/panel/ebay-store-pull?tab=bundles',
@@ -136,7 +138,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   ];
 
   const moreNav = [
-    { to: '/panel/add-bulk', icon: <Layers size={16} />, label: 'Bulk Entry' },
     { to: '/panel/3d-print', icon: <Printer size={16} />, label: '3D Print' },
     { to: '/panel/invoices', icon: <Receipt size={16} />, label: 'Invoices' },
     { to: '/panel/action-history', icon: <History size={16} />, label: 'Action history' },

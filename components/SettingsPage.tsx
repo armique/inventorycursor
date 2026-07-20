@@ -5,7 +5,7 @@ import {
   CheckCircle2, AlertTriangle, ArrowUp, RefreshCw, Save, LogIn, LogOut, User as UserIcon, Download, Upload, FileText, Github, History, ArchiveRestore, Rocket, Copy, ExternalLink, Plus, FolderPlus, FileSpreadsheet, Images, Loader2
 } from 'lucide-react';
 import { fixItemsEncoding } from '../services/encodingFix';
-import { InventoryItem, BusinessSettings, Expense, ItemStatus, DashboardPreferences, ActionHistoryEntry } from '../types';
+import { InventoryItem, BusinessSettings, Expense, ItemStatus, DashboardPreferences, ActionHistoryEntry, BulkImportRecord } from '../types';
 import { loadAISettings, saveAISettings, type AISettings, type AIModelTier } from '../services/aiSettings';
 import { buildElsterChecklist } from '../services/elsterChecklist';
 import { buildSteuerberaterBundle, downloadSteuerberaterBundle } from '../services/steuerberaterExport';
@@ -56,6 +56,8 @@ export interface BackupData {
   categoryFields: Record<string, string[]>;
   /** Dashboard widgets, tasks, time filter (optional in older backups). */
   dashboard?: DashboardPreferences;
+  actionHistory?: ActionHistoryEntry[];
+  bulkImports?: BulkImportRecord[];
   exportedAt: string;
 }
 
@@ -78,6 +80,7 @@ interface Props {
   onRenameSubCategory?: (category: string, oldSubName: string, newSubName: string) => void;
   dashboardPreferences?: DashboardPreferences;
   actionHistory?: ActionHistoryEntry[];
+  bulkImports?: BulkImportRecord[];
   onApplyArchivedPhotos?: (items: InventoryItem[], trash: InventoryItem[]) => void;
 }
 
@@ -143,6 +146,7 @@ const SettingsPage: React.FC<Props> = ({
   onUpdateCategoryFields
   ,
   actionHistory = [],
+  bulkImports = [],
   onApplyArchivedPhotos,
 }) => {
   const [searchParams] = useSearchParams();
@@ -375,6 +379,8 @@ const SettingsPage: React.FC<Props> = ({
       categories,
       categoryFields,
       ...(dashboardPreferences ? { dashboard: dashboardPreferences } : {}),
+      ...(actionHistory.length ? { actionHistory } : {}),
+      ...(bulkImports.length ? { bulkImports } : {}),
       exportedAt: new Date().toISOString(),
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
@@ -606,8 +612,10 @@ const SettingsPage: React.FC<Props> = ({
     categories,
     categoryFields,
     ...(dashboardPreferences ? { dashboard: dashboardPreferences } : {}),
+    ...(actionHistory.length ? { actionHistory } : {}),
+    ...(bulkImports.length ? { bulkImports } : {}),
     exportedAt: new Date().toISOString(),
-  }), [items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields, dashboardPreferences]);
+  }), [items, trash, expenses, businessSettings, monthlyGoal, categories, categoryFields, dashboardPreferences, actionHistory, bulkImports]);
 
   const handleSaveGitHubConfig = () => {
     const config = getStoredConfig();
