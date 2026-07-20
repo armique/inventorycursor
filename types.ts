@@ -418,4 +418,6 @@ export type ItemUpdateOptions = {
   skipUndo?: boolean;
   skipActionLog?: boolean;
   skipContainerSync?: boolean;
+  /** Push to cloud on the fast path (~0.4s) instead of the default debounce. */
+  flushCloud?: boolean;
 };

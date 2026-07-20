@@ -67,13 +67,17 @@ import {
   backfillContainerBuyDates,
   preferFilledContainerBuyDate,
 } from './utils/backfillContainerBuyDates';
+import {
+  WRITE_DEBOUNCE_MS,
+  FAST_CLOUD_FLUSH_MS,
+  LOCAL_PERSIST_DEBOUNCE_MS,
+  STORE_CATALOG_DEBOUNCE_MS,
+  REMOTE_APPLY_SUPPRESS_MS,
+  BULK_IMPORT_SYNC_FLUSH_MS,
+  resolveCloudFlushDelay,
+  shouldFlushCloudSoon,
+} from './utils/cloudSyncTiming';
 
-const WRITE_DEBOUNCE_MS = 5000;
-/** Faster flush after bulk import so phone/PC see history without waiting full debounce. */
-const BULK_IMPORT_SYNC_FLUSH_MS = 700;
-const LOCAL_PERSIST_DEBOUNCE_MS = 900;
-const STORE_CATALOG_DEBOUNCE_MS = 1500;
-const REMOTE_APPLY_SUPPRESS_MS = 1500;
 const ACTION_HISTORY_LIMIT = 400;
 
 type AppSyncSnapshot = {
@@ -283,6 +287,9 @@ const App: React.FC = () => {
   const pendingCloudPushAfterRemoteRef = useRef(false);
   const writeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localPersistDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Next cloud write delay; discrete actions set FAST_CLOUD_FLUSH_MS before setState. */
+  const preferredCloudFlushMsRef = useRef(WRITE_DEBOUNCE_MS);
+  const pendingCloudFlushRef = useRef(false);
   const initialWriteDoneRef = useRef(false);
   const ebayOrderIndexPulledRef = useRef(false);
   const storeCatalogPublishDoneRef = useRef(false);
@@ -321,6 +328,13 @@ const App: React.FC = () => {
     actionHistory: actionHistoryRef.current,
     bulkImports: bulkImportsRef.current,
   }), []);
+
+  const requestFastCloudFlush = useCallback(() => {
+    preferredCloudFlushMsRef.current = Math.min(
+      preferredCloudFlushMsRef.current,
+      FAST_CLOUD_FLUSH_MS
+    );
+  }, []);
 
   const shouldApplyRemoteSnapshot = useCallback((data: { updatedAt?: string } | null) => {
     if (!data) return false;
@@ -524,6 +538,7 @@ const App: React.FC = () => {
     const migratedInv = inv.map(migrateContainerItem);
     const { items: filledInv, updatedCount: filledCount } = backfillContainerBuyDates(migratedInv);
     if (filledCount > 0) {
+      requestFastCloudFlush();
       hasUnsavedChanges.current = true;
     }
     setItems(filledInv);
@@ -549,7 +564,7 @@ const App: React.FC = () => {
         bulkImportsJson: JSON.stringify(mergedBI),
       })
     );
-  }, [mergeActionHistoryFromLocal, mergeExpensesFromLocal, mergeInventoryWithLocal]);
+  }, [mergeActionHistoryFromLocal, mergeExpensesFromLocal, mergeInventoryWithLocal, requestFastCloudFlush]);
 
   // 1. BOOT: load local data and show app immediately; sync with Firestore in background
   useEffect(() => {
@@ -622,9 +637,10 @@ const App: React.FC = () => {
     if (appState !== 'READY' || items.length === 0) return;
     const { items: next, updatedCount } = backfillContainerBuyDates(items);
     if (updatedCount === 0) return;
+    requestFastCloudFlush();
     setItems(next);
     hasUnsavedChanges.current = true;
-  }, [appState, items]);
+  }, [appState, items, requestFastCloudFlush]);
 
   // Enrich history rows with chat URL / screenshot from member items (legacy sessions).
   useEffect(() => {
@@ -811,9 +827,18 @@ const App: React.FC = () => {
   }, [appState, recurringExpenses]); // Only depend on recurringExpenses, use functional setState for expenses
 
   const runSilentCloudSync = useCallback(async () => {
-    if (!isCloudEnabled() || !authUser || cloudSyncInFlightRef.current) return;
+    if (!isCloudEnabled() || !authUser) return;
+    if (cloudSyncInFlightRef.current) {
+      pendingCloudFlushRef.current = true;
+      return;
+    }
     const snap = getSyncSnapshot();
     cloudSyncInFlightRef.current = true;
+    setSyncState((prev) => ({
+      ...prev,
+      status: 'syncing',
+      message: prev.status === 'error' ? prev.message : 'Saving…',
+    }));
     const payload = {
       inventory: snap.items,
       trash: snap.trash,
@@ -840,6 +865,14 @@ const App: React.FC = () => {
       setSyncState((prev) => ({ ...prev, status: 'error', message: getSyncErrorMessage(err) }));
     } finally {
       cloudSyncInFlightRef.current = false;
+      if (pendingCloudFlushRef.current || hasUnsavedChanges.current) {
+        pendingCloudFlushRef.current = false;
+        if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
+        writeDebounceRef.current = setTimeout(() => {
+          writeDebounceRef.current = null;
+          void runSilentCloudSync();
+        }, FAST_CLOUD_FLUSH_MS);
+      }
     }
   }, [authUser, getSyncSnapshot]);
 
@@ -848,11 +881,14 @@ const App: React.FC = () => {
     if (!pendingCloudPushAfterRemoteRef.current) return;
     if (!authUser || !isCloudEnabled()) return;
     pendingCloudPushAfterRemoteRef.current = false;
-    const t = setTimeout(() => {
+    hasUnsavedChanges.current = true;
+    requestFastCloudFlush();
+    if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
+    writeDebounceRef.current = setTimeout(() => {
+      writeDebounceRef.current = null;
       void runSilentCloudSync();
     }, BULK_IMPORT_SYNC_FLUSH_MS);
-    return () => clearTimeout(t);
-  }, [bulkImports, authUser, runSilentCloudSync]);
+  }, [bulkImports, authUser, requestFastCloudFlush, runSilentCloudSync]);
 
   const publishStoreCatalogNow = useCallback(async () => {
     if (!isCloudEnabled() || !authUser) return;
@@ -892,15 +928,39 @@ const App: React.FC = () => {
 
     if (!isCloudEnabled() || !authUser) return;
     if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
+    const delay = resolveCloudFlushDelay(preferredCloudFlushMsRef.current);
+    preferredCloudFlushMsRef.current = WRITE_DEBOUNCE_MS;
     writeDebounceRef.current = setTimeout(() => {
       writeDebounceRef.current = null;
       void runSilentCloudSync();
-    }, WRITE_DEBOUNCE_MS);
+    }, delay);
     return () => {
       if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
       if (localPersistDebounceRef.current) clearTimeout(localPersistDebounceRef.current);
     };
   }, [appState, authUser, items, trash, expenses, recurringExpenses, businessSettings, monthlyGoal, categories, categoryFields, dashboardPrefs, actionHistory, bulkImports, getSyncSnapshot, runSilentCloudSync]);
+
+  // Flush pending cloud writes when leaving the tab / unloading so other devices see changes sooner.
+  useEffect(() => {
+    if (!isCloudEnabled()) return;
+    const flushNow = () => {
+      if (!hasUnsavedChanges.current && !pendingCloudFlushRef.current) return;
+      if (writeDebounceRef.current) {
+        clearTimeout(writeDebounceRef.current);
+        writeDebounceRef.current = null;
+      }
+      void runSilentCloudSync();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flushNow();
+    };
+    window.addEventListener('beforeunload', flushNow);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('beforeunload', flushNow);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [runSilentCloudSync]);
 
   // Action history can be large — persist separately so item edits don't always stringify it with inventory.
   useEffect(() => {
@@ -990,6 +1050,28 @@ const App: React.FC = () => {
   const handleUpdate = useCallback((updatedItems: InventoryItem[], deleteIds?: string[], options?: ItemUpdateOptions) => {
     const recordAction = !options?.skipActionLog;
     const recordUndo = !options?.skipUndo;
+    const disposed = (s: ItemStatus | undefined) =>
+      s === ItemStatus.SOLD || s === ItemStatus.TRADED || s === ItemStatus.GIFTED;
+    const current = itemsRef.current;
+    let createdContainers = false;
+    let statusTransition = false;
+    for (const u of updatedItems) {
+      const oldItem = current.find((i) => i.id === u.id);
+      if (!oldItem && (u.isPC || u.isBundle)) createdContainers = true;
+      if (oldItem && oldItem.status !== u.status && (disposed(u.status) || disposed(oldItem.status))) {
+        statusTransition = true;
+      }
+    }
+    if (
+      shouldFlushCloudSoon({
+        flushCloud: options?.flushCloud,
+        deleteIds,
+        createdContainers,
+        statusTransition,
+      })
+    ) {
+      requestFastCloudFlush();
+    }
     setItems(currentItems => {
         let nextItems = [...currentItems];
         const actionEntries: ActionHistoryEntry[] = [];
@@ -1058,16 +1140,17 @@ const App: React.FC = () => {
         if (actionEntriesMerged.length > 0) addActionEntries(actionEntriesMerged);
         return nextItems;
     });
-  }, [addActionEntries, businessSettings.taxMode]);
+  }, [addActionEntries, businessSettings.taxMode, requestFastCloudFlush]);
 
   const handleImportBatch = useCallback((newItems: InventoryItem[], replace: boolean) => {
     if (replace) {
+       requestFastCloudFlush();
        setItems(newItems);
        hasUnsavedChanges.current = true;
     } else {
-       handleUpdate(newItems);
+       handleUpdate(newItems, undefined, { flushCloud: true });
     }
-  }, [handleUpdate]);
+  }, [handleUpdate, requestFastCloudFlush]);
 
   const showUndoRef = useRef<(msg: string, onUndo: () => void) => void>(() => {});
   const handleDelete = useCallback((id: string) => {
@@ -1278,16 +1361,8 @@ const App: React.FC = () => {
       return next;
     });
     hasUnsavedChanges.current = true;
-    // Push sooner than the default 5s debounce so phone/PC both see the new batch.
-    if (writeDebounceRef.current) {
-      clearTimeout(writeDebounceRef.current);
-      writeDebounceRef.current = null;
-    }
-    writeDebounceRef.current = setTimeout(() => {
-      writeDebounceRef.current = null;
-      void runSilentCloudSync();
-    }, BULK_IMPORT_SYNC_FLUSH_MS);
-  }, [runSilentCloudSync]);
+    requestFastCloudFlush();
+  }, [requestFastCloudFlush]);
 
   const handleRevertSale = useCallback(
     (entry: ActionHistoryEntry) => {
