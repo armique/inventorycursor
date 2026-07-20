@@ -4844,8 +4844,9 @@ const InventoryList: React.FC<Props> = ({
             item={itemToEdit}
             items={items}
             onSave={(updatedList) => {
+               // Persist patches while Listing Studio stays open.
+               // Classic ItemForm still closes via its own onClose after Save.
                onUpdate(updatedList);
-               setItemToEdit(null); 
             }}
             onClose={() => setItemToEdit(null)}
             categories={categories}
