@@ -395,6 +395,13 @@ export interface BulkImportRecord {
   label: string;
   /** Parent bundle id when “add as bundle” was used. */
   bundleId?: string;
+  /** Purchase chat link (e.g. Kleinanzeigen) when provided at confirm. */
+  kleinanzeigenBuyChatUrl?: string;
+  /**
+   * Durable chat screenshot — prefer a Firebase Storage URL so the proof
+   * survives Imgur / host deletion and Firestore size trimming.
+   */
+  kleinanzeigenBuyChatImage?: string;
 }
 
 /** Lightweight metadata edits (e.g. platform tag) can skip heavy undo/action/sync work. */

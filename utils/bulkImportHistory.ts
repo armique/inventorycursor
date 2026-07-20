@@ -40,8 +40,12 @@ export function createBulkImportRecord(params: {
   platformBought?: Platform;
   bundleId?: string;
   createdAt?: string;
+  kleinanzeigenBuyChatUrl?: string;
+  kleinanzeigenBuyChatImage?: string;
 }): BulkImportRecord {
   const itemIds = params.items.map((i) => i.id);
+  const chatUrl = (params.kleinanzeigenBuyChatUrl || '').trim();
+  const chatImage = (params.kleinanzeigenBuyChatImage || '').trim();
   return {
     id: params.id,
     createdAt: params.createdAt || new Date().toISOString(),
@@ -53,7 +57,74 @@ export function createBulkImportRecord(params: {
     platformBought: params.platformBought,
     label: buildBulkImportLabel(params.items.map((i) => i.name)),
     bundleId: params.bundleId,
+    ...(chatUrl ? { kleinanzeigenBuyChatUrl: chatUrl } : {}),
+    ...(chatImage ? { kleinanzeigenBuyChatImage: chatImage } : {}),
   };
+}
+
+/** Pull chat URL / screenshot from the first member item that has them. */
+export function chatProofFromBulkMembers(
+  itemIds: string[] | undefined,
+  itemsById: Map<string, InventoryItem>
+): { kleinanzeigenBuyChatUrl?: string; kleinanzeigenBuyChatImage?: string } {
+  let url = '';
+  let image = '';
+  for (const id of itemIds || []) {
+    const item = itemsById.get(id);
+    if (!item) continue;
+    if (!url && item.kleinanzeigenBuyChatUrl?.trim()) {
+      url = item.kleinanzeigenBuyChatUrl.trim();
+    }
+    if (!image && item.kleinanzeigenBuyChatImage?.trim()) {
+      image = item.kleinanzeigenBuyChatImage.trim();
+    }
+    if (url && image) break;
+  }
+  return {
+    ...(url ? { kleinanzeigenBuyChatUrl: url } : {}),
+    ...(image ? { kleinanzeigenBuyChatImage: image } : {}),
+  };
+}
+
+/** Prefer durable URLs on history rows — skip huge data: URLs that bloat sync. */
+function isHistorySafeChatImage(url: string | undefined): boolean {
+  const s = (url || '').trim();
+  if (!s) return false;
+  if (s.startsWith('data:')) return false;
+  return true;
+}
+
+/**
+ * Fill missing chat URL / durable screenshot on history rows from member items
+ * (legacy batches created before chat proof lived on BulkImportRecord).
+ */
+export function enrichBulkImportsWithChatProof(
+  records: BulkImportRecord[],
+  items: InventoryItem[]
+): { records: BulkImportRecord[]; changed: boolean } {
+  const itemsById = new Map(items.map((i) => [i.id, i]));
+  let changed = false;
+  const next = records.map((record) => {
+    const hasUrl = !!(record.kleinanzeigenBuyChatUrl || '').trim();
+    const hasImage = !!(record.kleinanzeigenBuyChatImage || '').trim();
+    if (hasUrl && hasImage) return record;
+    const fromMembers = chatProofFromBulkMembers(record.itemIds, itemsById);
+    const memberUrl = (fromMembers.kleinanzeigenBuyChatUrl || '').trim();
+    const memberImage = (fromMembers.kleinanzeigenBuyChatImage || '').trim();
+    if (!memberUrl && !memberImage) return record;
+
+    const patched: BulkImportRecord = { ...record };
+    if (!hasUrl && memberUrl) {
+      patched.kleinanzeigenBuyChatUrl = memberUrl;
+      changed = true;
+    }
+    if (!hasImage && isHistorySafeChatImage(memberImage)) {
+      patched.kleinanzeigenBuyChatImage = memberImage;
+      changed = true;
+    }
+    return patched;
+  });
+  return { records: next, changed };
 }
 
 export function mergeBulkImportsFromLocal(
@@ -71,7 +142,7 @@ export function mergeBulkImportsFromLocal(
       byId.set(r.id, r);
       continue;
     }
-    // Prefer the record with more item ids / newer createdAt.
+    // Prefer the record with more item ids / newer createdAt / chat proof.
     const remoteCount = existing.itemIds?.length ?? existing.itemCount ?? 0;
     const localCount = r.itemIds?.length ?? r.itemCount ?? 0;
     if (localCount > remoteCount) {
@@ -79,7 +150,27 @@ export function mergeBulkImportsFromLocal(
     } else if (localCount === remoteCount) {
       const remoteTs = Date.parse(existing.createdAt || '') || 0;
       const localTs = Date.parse(r.createdAt || '') || 0;
-      if (localTs >= remoteTs) byId.set(r.id, r);
+      if (localTs > remoteTs) {
+        byId.set(r.id, r);
+      } else if (localTs === remoteTs) {
+        byId.set(r.id, {
+          ...existing,
+          ...r,
+          kleinanzeigenBuyChatUrl:
+            r.kleinanzeigenBuyChatUrl || existing.kleinanzeigenBuyChatUrl,
+          kleinanzeigenBuyChatImage:
+            r.kleinanzeigenBuyChatImage || existing.kleinanzeigenBuyChatImage,
+        });
+      } else {
+        // Keep newer remote, but fill missing chat proof from local.
+        byId.set(r.id, {
+          ...existing,
+          kleinanzeigenBuyChatUrl:
+            existing.kleinanzeigenBuyChatUrl || r.kleinanzeigenBuyChatUrl,
+          kleinanzeigenBuyChatImage:
+            existing.kleinanzeigenBuyChatImage || r.kleinanzeigenBuyChatImage,
+        });
+      }
     }
   }
   return [...byId.values()]
@@ -147,6 +238,8 @@ export function backfillBulkImportsFromItems(
       platformBought?: Platform;
       comment2?: string;
       bundleId?: string;
+      kleinanzeigenBuyChatUrl?: string;
+      kleinanzeigenBuyChatImage?: string;
     }
   >();
 
@@ -167,6 +260,12 @@ export function backfillBulkImportsFromItems(
         totalCost: 0,
         platformBought: item.platformBought,
         comment2: item.comment2,
+        kleinanzeigenBuyChatUrl: item.kleinanzeigenBuyChatUrl?.trim() || undefined,
+        kleinanzeigenBuyChatImage:
+          item.kleinanzeigenBuyChatImage?.trim() &&
+          !item.kleinanzeigenBuyChatImage.trim().startsWith('data:')
+            ? item.kleinanzeigenBuyChatImage.trim()
+            : undefined,
       };
       groups.set(importId, g);
     }
@@ -175,6 +274,16 @@ export function backfillBulkImportsFromItems(
     g.totalCost += Number(item.buyPrice) || 0;
     if (!g.buyDate && item.buyDate) g.buyDate = item.buyDate;
     if (!g.platformBought && item.platformBought) g.platformBought = item.platformBought;
+    if (!g.kleinanzeigenBuyChatUrl && item.kleinanzeigenBuyChatUrl?.trim()) {
+      g.kleinanzeigenBuyChatUrl = item.kleinanzeigenBuyChatUrl.trim();
+    }
+    if (
+      !g.kleinanzeigenBuyChatImage &&
+      item.kleinanzeigenBuyChatImage?.trim() &&
+      !item.kleinanzeigenBuyChatImage.trim().startsWith('data:')
+    ) {
+      g.kleinanzeigenBuyChatImage = item.kleinanzeigenBuyChatImage.trim();
+    }
   }
 
   // Attach optional parent bundles created in the same confirm.
@@ -217,6 +326,10 @@ export function backfillBulkImportsFromItems(
       platformBought: g.platformBought,
       label: buildBulkImportLabel(g.names),
       bundleId: g.bundleId,
+      ...(g.kleinanzeigenBuyChatUrl ? { kleinanzeigenBuyChatUrl: g.kleinanzeigenBuyChatUrl } : {}),
+      ...(g.kleinanzeigenBuyChatImage
+        ? { kleinanzeigenBuyChatImage: g.kleinanzeigenBuyChatImage }
+        : {}),
     });
   }
 

@@ -35,6 +35,7 @@ import {
   stripConditionAnnotations,
 } from '../utils/bulkTextParse';
 import { filesToDataUrls, prepareInventoryImagesForStorage } from '../utils/imageImport';
+import { persistSaleProofImage, urlNeedsPhotoArchive } from '../services/inventoryImageStorage';
 import {
   buildBulkImportLabel,
   createBulkImportRecord,
@@ -749,6 +750,24 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
     const importSource = resolveBulkImportSource(
       itemsToImport.map((d) => d.draftSource || 'manual')
     );
+
+    // Archive chat screenshot to our storage (survives Imgur / host removal).
+    let archivedChatImage = (chatImage || '').trim();
+    if (archivedChatImage && urlNeedsPhotoArchive(archivedChatImage)) {
+      try {
+        archivedChatImage = await persistSaleProofImage(archivedChatImage, bulkImportId);
+      } catch (err) {
+        console.warn('Could not archive bulk buy chat screenshot', err);
+        // Keep original (data URL / remote) on items so proof is not lost locally.
+      }
+    }
+    const chatUrlTrimmed = (chatUrl || '').trim();
+    // History sync pack must not carry huge data: URLs — prefer Storage / http only.
+    const historyChatImage =
+      archivedChatImage && !archivedChatImage.startsWith('data:')
+        ? archivedChatImage
+        : undefined;
+
     const childItems: InventoryItem[] = itemsToImport.map((draft, index) => {
       const finalCost = draft.manualCost !== undefined ? draft.manualCost : (autoCostsById[draft.id] ?? 0);
       return {
@@ -768,8 +787,8 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
         hasOVP: !addAsBundle && allItemsHaveOVP || undefined,
         platformBought: platform,
         buyPaymentType: normalizeBuyPaymentForPlatform(platform, payment),
-        kleinanzeigenBuyChatUrl: chatUrl,
-        kleinanzeigenBuyChatImage: chatImage,
+        kleinanzeigenBuyChatUrl: chatUrlTrimmed || undefined,
+        kleinanzeigenBuyChatImage: archivedChatImage || undefined,
         imageUrl: galleryUrls[0] || CATEGORY_IMAGES[draft.subCategory || draft.category] || CATEGORY_IMAGES[draft.category],
         imageUrls: galleryUrls.length
           ? galleryUrls
@@ -799,8 +818,8 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
             hasIOShield: bundleHasIOShield || undefined,
             platformBought: platform,
             buyPaymentType: normalizeBuyPaymentForPlatform(platform, payment),
-            kleinanzeigenBuyChatUrl: chatUrl,
-            kleinanzeigenBuyChatImage: chatImage,
+            kleinanzeigenBuyChatUrl: chatUrlTrimmed || undefined,
+            kleinanzeigenBuyChatImage: archivedChatImage || undefined,
             imageUrl: childItems[0]?.imageUrl || CATEGORY_IMAGES['Components'],
             imageUrls: childItems[0]?.imageUrls || [CATEGORY_IMAGES['Components']],
             bulkImportId,
@@ -818,6 +837,8 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
       platformBought: platform,
       bundleId: addAsBundle ? `bundle-${timestamp}` : undefined,
       createdAt: new Date(timestamp).toISOString(),
+      kleinanzeigenBuyChatUrl: chatUrlTrimmed || undefined,
+      kleinanzeigenBuyChatImage: historyChatImage,
     });
     // Prefer a label from draft names when a bundle parent would dominate.
     record.label = buildBulkImportLabel(itemsToImport.map((d) => d.name));
@@ -1154,19 +1175,49 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                   <div className="pt-2 border-t border-slate-200/50 space-y-3">
                      <div className="flex gap-2">
                         <input 
-                           placeholder="Chat URL..."
+                           placeholder="Chat URL (kleinanzeigen.de/…)"
                            className="flex-1 p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
                            value={chatUrl}
                            onChange={e => setChatUrl(e.target.value)}
                         />
-                        <label className="p-2 bg-white border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100">
+                        <label className="p-2 bg-white border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100" title="Upload chat screenshot">
                            <Upload size={14} className="text-slate-400"/>
                            <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload}/>
                         </label>
                      </div>
+                     <input
+                        type="text"
+                        placeholder="Or paste chat screenshot URL (imgur, etc.)"
+                        className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
+                        value={chatImage.startsWith('data:') ? '' : chatImage}
+                        onChange={(e) => setChatImage(e.target.value.trim())}
+                     />
                      {chatImage && (
                         <div className="flex items-center gap-2 text-[10px] text-emerald-600 bg-emerald-50 p-2 rounded-xl border border-emerald-100">
-                           <CheckCircle2 size={12}/> Screenshot Attached
+                           <CheckCircle2 size={12}/>
+                           <span className="font-bold">
+                             {chatImage.startsWith('data:')
+                               ? 'Screenshot attached'
+                               : 'Screenshot URL set'}
+                           </span>
+                           {(chatImage.startsWith('data:') || /^https?:\/\//i.test(chatImage)) && (
+                             <a
+                               href={chatImage}
+                               target="_blank"
+                               rel="noreferrer"
+                               className="ml-auto w-8 h-8 rounded-lg overflow-hidden border border-emerald-200 shrink-0"
+                               onClick={(e) => e.stopPropagation()}
+                             >
+                               <img src={chatImage} alt="" className="w-full h-full object-cover" />
+                             </a>
+                           )}
+                           <button
+                             type="button"
+                             onClick={() => setChatImage('')}
+                             className="text-[9px] font-black uppercase text-emerald-800 hover:underline"
+                           >
+                             Clear
+                           </button>
                         </div>
                      )}
                   </div>
