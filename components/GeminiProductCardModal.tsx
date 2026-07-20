@@ -631,13 +631,11 @@ const GeminiProductCardModal: React.FC<Props> = ({
                       className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-[10px] font-black uppercase text-slate-600 hover:bg-slate-50"
                     >
                       <ImageIcon size={12} /> Use item photos ({allItemPhotos.length}
-                      {allItemPhotos.length > MAX_PRODUCT_CARD_BATCH
-                        ? ` → ${MAX_PRODUCT_CARD_BATCH} cards`
-                        : allItemPhotos.length > 0
-                          ? ` → ${resolveProductCardBatchCount(allItemPhotos.length)} card${
-                              resolveProductCardBatchCount(allItemPhotos.length) === 1 ? '' : 's'
-                            }`
-                          : ''}
+                      {allItemPhotos.length > 0
+                        ? ` → ${Math.min(MAX_PRODUCT_CARD_BATCH, allItemPhotos.length)} card${
+                            Math.min(MAX_PRODUCT_CARD_BATCH, allItemPhotos.length) === 1 ? '' : 's'
+                          }`
+                        : ''}
                       )
                     </button>
                   )}
