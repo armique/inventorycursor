@@ -2254,21 +2254,24 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                             <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
                               AI Titel (eBay · 80)
                             </label>
-                            {formData.marketTitle && (
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  try {
-                                    await navigator.clipboard.writeText(formData.marketTitle || '');
-                                  } catch {
-                                    alert('Could not copy title.');
-                                  }
-                                }}
-                                className="text-[10px] font-bold uppercase tracking-widest text-blue-600 hover:text-blue-800"
-                              >
-                                Copy
-                              </button>
-                            )}
+                            <button
+                              type="button"
+                              disabled={!formData.marketTitle?.trim()}
+                              onClick={async () => {
+                                const text = (formData.marketTitle || '').trim();
+                                if (!text) return;
+                                try {
+                                  await navigator.clipboard.writeText(text);
+                                } catch {
+                                  alert('Could not copy title.');
+                                }
+                              }}
+                              className="inline-flex items-center justify-center p-1 rounded-md text-blue-600 hover:bg-blue-50 disabled:opacity-40"
+                              title="Copy title"
+                              aria-label="Copy title"
+                            >
+                              <Copy size={14} />
+                            </button>
                           </div>
                           <input
                             type="text"
