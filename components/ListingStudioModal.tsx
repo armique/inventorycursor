@@ -487,15 +487,15 @@ const ListingStudioModal: React.FC<Props> = ({
     }
   };
 
-  const handleGenerateCards = async () => {
+  const handleGenerateCards = async (count: 1 | 2 | 3) => {
+    const n = Math.max(1, Math.min(3, Math.floor(count)));
     setGenCards(true);
     setError(null);
     const sourcePhotos = photos.slice(0, 3);
-    const count = resolveCardBatchCount(sourcePhotos.length);
     const errors: string[] = [];
     try {
-      for (let i = 0; i < count; i++) {
-        setCardProgress(`Generating card ${i + 1} / ${count}…`);
+      for (let i = 0; i < n; i++) {
+        setCardProgress(`GEN${n} · ${i + 1}/${n}…`);
         const jobPhotos = sourcePhotos.length ? [sourcePhotos[i % sourcePhotos.length]] : [];
         try {
           const result = await generateProductCard(workingItem, cardFields, {
@@ -822,8 +822,8 @@ const ListingStudioModal: React.FC<Props> = ({
               )}
               <p className="text-[10px] text-slate-400 mt-1 font-medium">
                 {photos.length === 0
-                  ? 'Generate will create 1 card from name/specs'
-                  : `${photos.length} photo${photos.length === 1 ? '' : 's'} → ${plannedCards} card${plannedCards === 1 ? '' : 's'} · hold+drag to reorder · tap to enlarge`}
+                  ? 'GEN1–3 work from name/specs when no photos yet'
+                  : `${photos.length} photo${photos.length === 1 ? '' : 's'} · hold+drag to reorder · tap to enlarge · use GEN1/2/3`}
               </p>
             </section>
 
@@ -1094,15 +1094,31 @@ const ListingStudioModal: React.FC<Props> = ({
                   Saved for this item · edit / remove anytime
                 </p>
               </div>
-              <button
-                type="button"
-                disabled={genCards}
-                onClick={() => void handleGenerateCards()}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-900 text-white text-[9px] font-black uppercase disabled:opacity-50"
-              >
-                {genCards ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
-                {genCards ? cardProgress || '…' : `Generate ${plannedCards}`}
-              </button>
+              <div className="flex items-center gap-1 shrink-0">
+                {genCards ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-1.5 rounded-xl bg-slate-900 text-white text-[9px] font-black uppercase">
+                    <Loader2 size={11} className="animate-spin" />
+                    {cardProgress || '…'}
+                  </span>
+                ) : (
+                  ([1, 2, 3] as const).map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      disabled={genCards}
+                      onClick={() => void handleGenerateCards(n)}
+                      className={`inline-flex items-center justify-center min-w-[2.6rem] px-2 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wide disabled:opacity-50 ${
+                        n === plannedCards
+                          ? 'bg-slate-900 text-white'
+                          : 'bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200'
+                      }`}
+                      title={`Generate ${n} card${n === 1 ? '' : 's'}`}
+                    >
+                      GEN{n}
+                    </button>
+                  ))
+                )}
+              </div>
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-slate-50/80 overflow-hidden">
