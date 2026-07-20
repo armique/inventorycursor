@@ -41,6 +41,7 @@ import {
   normalizeImageList,
   prepareInventoryImagesForStorage,
 } from '../utils/imageImport';
+import ReorderablePhotoThumbs from './ReorderablePhotoThumbs';
 import {
   fetchProductCardProviders,
   generateProductCard,
@@ -468,6 +469,24 @@ const ListingStudioModal: React.FC<Props> = ({
     }
   };
 
+  const handleReorderPhotos = async (nextUrls: string[]) => {
+    const next = normalizeImageList(nextUrls);
+    setError(null);
+    try {
+      await persistPatch({
+        imageUrl: next[0] || '',
+        imageUrls: next,
+      });
+      setPreviewPhotoIndex((idx) => {
+        if (idx == null || !photos[idx]) return idx;
+        const moved = next.indexOf(photos[idx]!);
+        return moved >= 0 ? moved : Math.min(idx, Math.max(0, next.length - 1));
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not reorder photos');
+    }
+  };
+
   const handleGenerateCards = async () => {
     setGenCards(true);
     setError(null);
@@ -784,46 +803,27 @@ const ListingStudioModal: React.FC<Props> = ({
                   No photos yet
                 </div>
               ) : (
-                <div className="flex gap-2 overflow-x-auto pb-1 -mx-0.5 px-0.5 snap-x snap-mandatory overscroll-x-contain">
-                  {photos.map((url, index) => (
+                <ReorderablePhotoThumbs
+                  urls={photos}
+                  layout="row"
+                  onReorder={(next) => void handleReorderPhotos(next)}
+                  onOpen={(index) => setPreviewPhotoIndex(index)}
+                  trailing={
                     <button
-                      key={`${index}:${url.slice(0, 48)}`}
                       type="button"
-                      onClick={() => setPreviewPhotoIndex(index)}
-                      className={`relative shrink-0 w-[4.5rem] h-[4.5rem] sm:w-20 sm:h-20 snap-start rounded-xl overflow-hidden border-2 bg-slate-100 ${
-                        index === 0
-                          ? 'border-rose-500 ring-2 ring-rose-200'
-                          : 'border-slate-200'
-                      }`}
-                      title="Open photo"
+                      onClick={() => fileRef.current?.click()}
+                      className="shrink-0 w-[4.5rem] h-[4.5rem] sm:w-20 sm:h-20 rounded-xl border border-dashed border-slate-300 text-slate-400 font-black hover:border-rose-400 hover:text-rose-600 flex items-center justify-center snap-start"
+                      title="Add photos"
                     >
-                      <img
-                        src={url}
-                        alt=""
-                        className="w-full h-full object-cover"
-                        draggable={false}
-                      />
-                      {index === 0 && (
-                        <span className="absolute bottom-0.5 left-0.5 px-1 py-px rounded bg-rose-600 text-white text-[8px] font-black uppercase leading-none">
-                          Main
-                        </span>
-                      )}
+                      <Plus size={18} />
                     </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => fileRef.current?.click()}
-                    className="shrink-0 w-[4.5rem] h-[4.5rem] sm:w-20 sm:h-20 rounded-xl border border-dashed border-slate-300 text-slate-400 font-black hover:border-rose-400 hover:text-rose-600 flex items-center justify-center snap-start"
-                    title="Add photos"
-                  >
-                    <Plus size={18} />
-                  </button>
-                </div>
+                  }
+                />
               )}
               <p className="text-[10px] text-slate-400 mt-1 font-medium">
                 {photos.length === 0
                   ? 'Generate will create 1 card from name/specs'
-                  : `${photos.length} photo${photos.length === 1 ? '' : 's'} → ${plannedCards} card${plannedCards === 1 ? '' : 's'} · tap to enlarge`}
+                  : `${photos.length} photo${photos.length === 1 ? '' : 's'} → ${plannedCards} card${plannedCards === 1 ? '' : 's'} · hold+drag to reorder · tap to enlarge`}
               </p>
             </section>
 

@@ -32,6 +32,7 @@ import { getCompatibilityWarnings } from '../utils/compatibilityWarnings';
 import { recordCategoryCorrection, suggestCategoryFromCorrections } from '../services/categoryCorrections';
 import { detectItemCategory, searchInventoryItemsForAdd } from '../utils/itemCategoryDetect';
 import { filesToDataUrls, prepareInventoryImagesForStorage, getItemUserPhotoCount, isCategoryPlaceholderImage } from '../utils/imageImport';
+import ReorderablePhotoThumbs from './ReorderablePhotoThumbs';
 import { searchProductPhotos, getImageSearchProviders, ImageSearchResult, ImageSearchProvider } from '../services/imageSearchService';
 import { getCachedProductPhoto, setCachedProductPhoto } from '../services/firebaseService';
 import { fetchMyEbayListings, getEbayUsername, ebayListingToPriceMatch, type EbayMyListing, type EbayListingPriceMatch } from '../services/ebayService';
@@ -585,6 +586,15 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       ...prev,
       imageUrl: rest[0],
       imageUrls: rest.length ? rest : undefined,
+    }));
+  };
+
+  const reorderImages = (urls: string[]) => {
+    const merged = normalizeImageList(urls);
+    setFormData((prev) => ({
+      ...prev,
+      imageUrl: merged[0] || '',
+      imageUrls: merged.length ? merged : undefined,
     }));
   };
 
@@ -2185,39 +2195,42 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                         }}
                       />
                       {itemImageList.length > 0 && (
-                        <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
-                          {itemImageList.map((url) => {
-                            const isMain = formData.imageUrl === url;
-                            // A picked photo's external URL can go dead later (hotlink protection, source
-                            // deleted it, etc.) — auto-drop it here rather than leaving a permanent broken tile.
-                            // Only URLs that actually fail to load are removed; everything else stays untouched.
-                            return (
-                              <div key={url} className={`p-1.5 rounded-lg border ${isMain ? 'border-blue-300 bg-blue-50/60' : 'border-slate-200 bg-white'}`}>
-                                <img
-                                  src={url}
-                                  alt=""
-                                  className="w-full h-16 object-cover rounded-md border border-slate-200 bg-slate-100"
-                                  onError={() => removeImage(url)}
-                                />
-                                <div className="flex items-center justify-between mt-1.5 gap-1">
+                        <div className="space-y-1.5">
+                          <p className="text-[10px] font-bold text-slate-400">
+                            Hold a photo, then drag to reorder · first = main
+                          </p>
+                          <ReorderablePhotoThumbs
+                            urls={itemImageList}
+                            layout="grid"
+                            onReorder={reorderImages}
+                            renderActions={(url, index) => {
+                              const isMain = index === 0;
+                              return (
+                                <div className="flex items-center justify-between gap-1">
                                   <button
                                     type="button"
+                                    data-photo-action
                                     onClick={() => setMainImage(url)}
-                                    className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${isMain ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                                    className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${
+                                      isMain
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                    }`}
                                   >
                                     {isMain ? 'Main' : 'Set'}
                                   </button>
                                   <button
                                     type="button"
+                                    data-photo-action
                                     onClick={() => removeImage(url)}
                                     className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded bg-red-50 text-red-600 hover:bg-red-100"
                                   >
                                     Remove
                                   </button>
                                 </div>
-                              </div>
-                            );
-                          })}
+                              );
+                            }}
+                          />
                         </div>
                       )}
                     </div>
