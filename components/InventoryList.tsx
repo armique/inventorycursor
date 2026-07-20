@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect, useLayoutEffect, useR
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { pickEssentialSpecOptions, mergeAiSpecsIntoEssential, resolveEssentialSpecKeys } from '../services/essentialSpecFields';
 import { formatEUR, parseLocaleMoney, parseLocaleNumber } from '../utils/formatMoney';
-import { toLocalCalendarDateKey } from '../utils/calendarDate';
+import { toLocalCalendarDateKey, todayLocalDateKey } from '../utils/calendarDate';
 import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSortKey, buildTimeGaugeSortKeyMap } from '../utils/inventoryTimeGauge';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -2045,7 +2045,7 @@ const InventoryList: React.FC<Props> = ({
         category: type === 'pc' ? 'PC' : type === 'mixed' ? 'Mixed Bundle' : 'Bundle',
         status: ItemStatus.IN_STOCK,
         buyPrice: buyTotal,
-        buyDate: '',
+        buyDate: todayLocalDateKey(),
         comment1:
           type === 'pc'
             ? `PC Build (${parts.length} parts).`

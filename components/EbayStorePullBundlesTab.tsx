@@ -29,6 +29,7 @@ import { getStorePullRoundedPrice } from '../utils/ebayBulkSyncPlan';
 import { buildContainerTitle } from '../utils/buildTitle';
 import { formatEUR } from '../utils/formatMoney';
 import { normalizeImageList, prepareInventoryImagesForStorage } from '../utils/imageImport';
+import { todayLocalDateKey } from '../utils/calendarDate';
 import EbayToolProgressBar, { type EbayToolProgress } from './EbayToolProgressBar';
 import ItemThumbnail from './ItemThumbnail';
 
@@ -338,7 +339,7 @@ const EbayStorePullBundlesTab: React.FC<Props> = ({ items, onUpdate }) => {
           category: kind === 'mixed' ? 'Mixed Bundle' : 'Bundle',
           status: ItemStatus.IN_STOCK,
           buyPrice: buyTotal,
-          buyDate: '',
+          buyDate: todayLocalDateKey(),
           comment1: [
             `Bundle from eBay listing ${suggestion.listing.listingId} (${parts.length} parts).`,
             suggestion.listing.listingUrl || `https://www.ebay.de/itm/${suggestion.listing.listingId}`,

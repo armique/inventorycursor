@@ -7,6 +7,7 @@ import { isMixedBundleContainer } from '../utils/containerTaxonomy';
 import { isInventoryContainer } from '../utils/containerMembership';
 import ItemThumbnail from './ItemThumbnail';
 import { itemMatchesBuilderSearch } from '../utils/builderSlotMatch';
+import { todayLocalDateKey } from '../utils/calendarDate';
 
 export type QuickBundleKind = 'bundle' | 'mixed' | 'pc';
 
@@ -327,7 +328,7 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
       category: isMixed ? 'Mixed Bundle' : 'Bundle',
       status: ItemStatus.IN_STOCK,
       buyPrice: buyTotal,
-      buyDate: '',
+      buyDate: todayLocalDateKey(),
       comment1: isMixed
         ? `Mixed Bundle (${parts.length} items)${defectiveCount ? ` · ${defectiveCount} defekt` : ''}.`
         : `Bundle (${parts.length} items).`,
