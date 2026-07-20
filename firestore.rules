@@ -31,28 +31,31 @@ service cloud.firestore {
      * session and append to uploadedUrls only.
      */
     match /photoUploadSessions/{token} {
+      // Desktop owner creates a short-lived upload session for one item.
       allow create: if request.auth != null
+        && request.resource.data.keys().hasAll([
+          'token', 'ownerUid', 'itemId', 'status', 'maxPhotos', 'uploadedUrls'
+        ])
         && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.token == token
         && request.resource.data.status == 'active'
         && request.resource.data.itemId is string
-        && request.resource.data.maxPhotos is number
-        && request.resource.data.maxPhotos >= 1
-        && request.resource.data.maxPhotos <= 12;
+        && request.resource.data.itemId.size() > 0
+        && request.resource.data.uploadedUrls is list
+        && request.resource.data.uploadedUrls.size() == 0;
 
       allow read: if request.auth != null;
 
       allow update: if request.auth != null && (
-        // Owner can revoke / edit metadata
         (resource.data.ownerUid == request.auth.uid)
         ||
-        // Phone (anonymous or signed-in) may only append uploadedUrls while active
         (
           resource.data.status == 'active'
           && request.resource.data.ownerUid == resource.data.ownerUid
           && request.resource.data.itemId == resource.data.itemId
           && request.resource.data.token == resource.data.token
           && request.resource.data.uploadedUrls is list
-          && request.resource.data.uploadedUrls.size() <= resource.data.maxPhotos
+          && request.resource.data.uploadedUrls.size() <= 12
           && request.resource.data.uploadedUrls.size() >= resource.data.uploadedUrls.size()
         )
       );
