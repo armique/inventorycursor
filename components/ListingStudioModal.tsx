@@ -135,6 +135,7 @@ const ListingStudioModal: React.FC<Props> = ({
   const [buyerAddress, setBuyerAddress] = useState(item.customer?.address || '');
   const [buyChatUrl, setBuyChatUrl] = useState(item.kleinanzeigenBuyChatUrl || '');
   const [buyChatImage, setBuyChatImage] = useState(item.kleinanzeigenBuyChatImage || '');
+  const [sellerProfileUrl, setSellerProfileUrl] = useState(item.kleinanzeigenSellerProfileUrl || '');
 
   const [parsingSpecs, setParsingSpecs] = useState(false);
   const [genListing, setGenListing] = useState(false);
@@ -233,6 +234,7 @@ const ListingStudioModal: React.FC<Props> = ({
     setBuyerAddress(item.customer?.address || '');
     setBuyChatUrl(item.kleinanzeigenBuyChatUrl || '');
     setBuyChatImage(item.kleinanzeigenBuyChatImage || '');
+    setSellerProfileUrl(item.kleinanzeigenSellerProfileUrl || '');
   }, [
     item.id,
     item.name,
@@ -248,6 +250,7 @@ const ListingStudioModal: React.FC<Props> = ({
     item.customer?.address,
     item.kleinanzeigenBuyChatUrl,
     item.kleinanzeigenBuyChatImage,
+    item.kleinanzeigenSellerProfileUrl,
   ]);
 
   useEffect(() => {
@@ -854,8 +857,10 @@ const ListingStudioModal: React.FC<Props> = ({
                     itemId={item.id}
                     chatUrl={buyChatUrl}
                     chatImage={buyChatImage}
+                    sellerProfileUrl={sellerProfileUrl}
                     onChatUrlChange={setBuyChatUrl}
                     onChatImageChange={setBuyChatImage}
+                    onSellerProfileUrlChange={setSellerProfileUrl}
                     onPersist={async (patch) => {
                       await persistPatch(patch);
                     }}

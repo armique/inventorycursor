@@ -42,10 +42,12 @@ export function createBulkImportRecord(params: {
   createdAt?: string;
   kleinanzeigenBuyChatUrl?: string;
   kleinanzeigenBuyChatImage?: string;
+  kleinanzeigenSellerProfileUrl?: string;
 }): BulkImportRecord {
   const itemIds = params.items.map((i) => i.id);
   const chatUrl = (params.kleinanzeigenBuyChatUrl || '').trim();
   const chatImage = (params.kleinanzeigenBuyChatImage || '').trim();
+  const sellerProfile = (params.kleinanzeigenSellerProfileUrl || '').trim();
   return {
     id: params.id,
     createdAt: params.createdAt || new Date().toISOString(),
@@ -59,6 +61,7 @@ export function createBulkImportRecord(params: {
     bundleId: params.bundleId,
     ...(chatUrl ? { kleinanzeigenBuyChatUrl: chatUrl } : {}),
     ...(chatImage ? { kleinanzeigenBuyChatImage: chatImage } : {}),
+    ...(sellerProfile ? { kleinanzeigenSellerProfileUrl: sellerProfile } : {}),
   };
 }
 
@@ -66,9 +69,14 @@ export function createBulkImportRecord(params: {
 export function chatProofFromBulkMembers(
   itemIds: string[] | undefined,
   itemsById: Map<string, InventoryItem>
-): { kleinanzeigenBuyChatUrl?: string; kleinanzeigenBuyChatImage?: string } {
+): {
+  kleinanzeigenBuyChatUrl?: string;
+  kleinanzeigenBuyChatImage?: string;
+  kleinanzeigenSellerProfileUrl?: string;
+} {
   let url = '';
   let image = '';
+  let profile = '';
   for (const id of itemIds || []) {
     const item = itemsById.get(id);
     if (!item) continue;
@@ -78,11 +86,15 @@ export function chatProofFromBulkMembers(
     if (!image && item.kleinanzeigenBuyChatImage?.trim()) {
       image = item.kleinanzeigenBuyChatImage.trim();
     }
-    if (url && image) break;
+    if (!profile && item.kleinanzeigenSellerProfileUrl?.trim()) {
+      profile = item.kleinanzeigenSellerProfileUrl.trim();
+    }
+    if (url && image && profile) break;
   }
   return {
     ...(url ? { kleinanzeigenBuyChatUrl: url } : {}),
     ...(image ? { kleinanzeigenBuyChatImage: image } : {}),
+    ...(profile ? { kleinanzeigenSellerProfileUrl: profile } : {}),
   };
 }
 
@@ -107,11 +119,13 @@ export function enrichBulkImportsWithChatProof(
   const next = records.map((record) => {
     const hasUrl = !!(record.kleinanzeigenBuyChatUrl || '').trim();
     const hasImage = !!(record.kleinanzeigenBuyChatImage || '').trim();
-    if (hasUrl && hasImage) return record;
+    const hasProfile = !!(record.kleinanzeigenSellerProfileUrl || '').trim();
+    if (hasUrl && hasImage && hasProfile) return record;
     const fromMembers = chatProofFromBulkMembers(record.itemIds, itemsById);
     const memberUrl = (fromMembers.kleinanzeigenBuyChatUrl || '').trim();
     const memberImage = (fromMembers.kleinanzeigenBuyChatImage || '').trim();
-    if (!memberUrl && !memberImage) return record;
+    const memberProfile = (fromMembers.kleinanzeigenSellerProfileUrl || '').trim();
+    if (!memberUrl && !memberImage && !memberProfile) return record;
 
     const patched: BulkImportRecord = { ...record };
     if (!hasUrl && memberUrl) {
@@ -120,6 +134,10 @@ export function enrichBulkImportsWithChatProof(
     }
     if (!hasImage && isHistorySafeChatImage(memberImage)) {
       patched.kleinanzeigenBuyChatImage = memberImage;
+      changed = true;
+    }
+    if (!hasProfile && memberProfile) {
+      patched.kleinanzeigenSellerProfileUrl = memberProfile;
       changed = true;
     }
     return patched;
@@ -161,6 +179,8 @@ function mergeBulkImportPair(a: BulkImportRecord, b: BulkImportRecord): BulkImpo
     // Always union chat proof — never drop URL/screenshot because the other side has more ids.
     kleinanzeigenBuyChatUrl: base.kleinanzeigenBuyChatUrl || other.kleinanzeigenBuyChatUrl,
     kleinanzeigenBuyChatImage: base.kleinanzeigenBuyChatImage || other.kleinanzeigenBuyChatImage,
+    kleinanzeigenSellerProfileUrl:
+      base.kleinanzeigenSellerProfileUrl || other.kleinanzeigenSellerProfileUrl,
   };
 }
 
@@ -206,6 +226,12 @@ export function localBulkImportsNeedCloudPush(
     if (mIds > rIds) return true;
     if ((m.kleinanzeigenBuyChatUrl || '').trim() && !(r.kleinanzeigenBuyChatUrl || '').trim()) return true;
     if ((m.kleinanzeigenBuyChatImage || '').trim() && !(r.kleinanzeigenBuyChatImage || '').trim()) return true;
+    if (
+      (m.kleinanzeigenSellerProfileUrl || '').trim() &&
+      !(r.kleinanzeigenSellerProfileUrl || '').trim()
+    ) {
+      return true;
+    }
   }
   return false;
 }

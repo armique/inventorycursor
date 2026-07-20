@@ -150,6 +150,8 @@ export interface InventoryItem {
   // Platform Specific Buy Data
   kleinanzeigenBuyChatUrl?: string;
   kleinanzeigenBuyChatImage?: string; // Base64 or URL
+  /** Seller’s public profile / shop page (e.g. Kleinanzeigen Bestandsliste). */
+  kleinanzeigenSellerProfileUrl?: string;
   
   hasFee?: boolean;
   feeAmount?: number;
@@ -402,6 +404,8 @@ export interface BulkImportRecord {
    * survives Imgur / host deletion and Firestore size trimming.
    */
   kleinanzeigenBuyChatImage?: string;
+  /** Seller profile / shop URL captured with the purchase proof. */
+  kleinanzeigenSellerProfileUrl?: string;
 }
 
 /** Lightweight metadata edits (e.g. platform tag) can skip heavy undo/action/sync work. */

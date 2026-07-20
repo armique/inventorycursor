@@ -124,6 +124,11 @@ const BulkImportHistoryPage: React.FC<Props> = ({ records, items }) => {
               fromMembers.kleinanzeigenBuyChatImage ||
               ''
             ).trim();
+            const sellerProfileUrl = (
+              record.kleinanzeigenSellerProfileUrl ||
+              fromMembers.kleinanzeigenSellerProfileUrl ||
+              ''
+            ).trim();
             const showImage = isViewableImageUrl(chatImage);
 
             return (
@@ -161,7 +166,7 @@ const BulkImportHistoryPage: React.FC<Props> = ({ records, items }) => {
                         <span className="text-xs font-semibold text-slate-400">
                           {formatWhen(record.createdAt)}
                         </span>
-                        {(chatUrl || chatImage) && (
+                        {(chatUrl || chatImage || sellerProfileUrl) && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wide border bg-emerald-50 text-emerald-800 border-emerald-200">
                             <MessageCircle size={10} />
                             Chat proof
@@ -185,6 +190,19 @@ const BulkImportHistoryPage: React.FC<Props> = ({ records, items }) => {
                         >
                           <ExternalLink size={12} className="shrink-0" />
                           <span className="truncate">{chatUrl}</span>
+                        </a>
+                      )}
+                      {sellerProfileUrl && (
+                        <a
+                          href={sellerProfileUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="mt-1 inline-flex items-center gap-1.5 max-w-full text-[11px] font-bold text-slate-600 hover:underline"
+                          title={sellerProfileUrl}
+                        >
+                          <ExternalLink size={12} className="shrink-0" />
+                          <span className="truncate">Seller profile</span>
                         </a>
                       )}
                     </div>

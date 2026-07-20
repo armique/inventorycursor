@@ -854,6 +854,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       }
     }
     const buyChatUrl = (formData.kleinanzeigenBuyChatUrl || '').trim();
+    const sellerProfileUrl = (formData.kleinanzeigenSellerProfileUrl || '').trim();
 
     const base: InventoryItem = {
       ...formData as InventoryItem,
@@ -872,6 +873,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       buyPaymentType,
       kleinanzeigenBuyChatUrl: buyChatUrl || undefined,
       kleinanzeigenBuyChatImage: buyChatImage || undefined,
+      kleinanzeigenSellerProfileUrl: sellerProfileUrl || undefined,
     };
 
     if (status === ItemStatus.SOLD || status === ItemStatus.TRADED || status === ItemStatus.GIFTED) {
@@ -2337,17 +2339,22 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                           itemId={formData.id || 'draft'}
                           chatUrl={formData.kleinanzeigenBuyChatUrl || ''}
                           chatImage={formData.kleinanzeigenBuyChatImage || ''}
+                          sellerProfileUrl={formData.kleinanzeigenSellerProfileUrl || ''}
                           onChatUrlChange={(url) =>
                             setFormData((prev) => ({ ...prev, kleinanzeigenBuyChatUrl: url }))
                           }
                           onChatImageChange={(image) =>
                             setFormData((prev) => ({ ...prev, kleinanzeigenBuyChatImage: image }))
                           }
+                          onSellerProfileUrlChange={(url) =>
+                            setFormData((prev) => ({ ...prev, kleinanzeigenSellerProfileUrl: url }))
+                          }
                           onPersist={async (patch) => {
                             setFormData((prev) => ({
                               ...prev,
                               kleinanzeigenBuyChatUrl: patch.kleinanzeigenBuyChatUrl,
                               kleinanzeigenBuyChatImage: patch.kleinanzeigenBuyChatImage,
+                              kleinanzeigenSellerProfileUrl: patch.kleinanzeigenSellerProfileUrl,
                             }));
                           }}
                         />

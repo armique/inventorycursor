@@ -259,6 +259,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
   
   // Shared Evidence
   const [chatUrl, setChatUrl] = useState('');
+  const [sellerProfileUrl, setSellerProfileUrl] = useState('');
   const [chatImage, setChatImage] = useState('');
 
   // Items List
@@ -762,6 +763,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
       }
     }
     const chatUrlTrimmed = (chatUrl || '').trim();
+    const sellerProfileTrimmed = (sellerProfileUrl || '').trim();
     // History sync pack must not carry huge data: URLs — prefer Storage / http only.
     const historyChatImage =
       archivedChatImage && !archivedChatImage.startsWith('data:')
@@ -789,6 +791,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
         buyPaymentType: normalizeBuyPaymentForPlatform(platform, payment),
         kleinanzeigenBuyChatUrl: chatUrlTrimmed || undefined,
         kleinanzeigenBuyChatImage: archivedChatImage || undefined,
+        kleinanzeigenSellerProfileUrl: sellerProfileTrimmed || undefined,
         imageUrl: galleryUrls[0] || CATEGORY_IMAGES[draft.subCategory || draft.category] || CATEGORY_IMAGES[draft.category],
         imageUrls: galleryUrls.length
           ? galleryUrls
@@ -820,6 +823,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
             buyPaymentType: normalizeBuyPaymentForPlatform(platform, payment),
             kleinanzeigenBuyChatUrl: chatUrlTrimmed || undefined,
             kleinanzeigenBuyChatImage: archivedChatImage || undefined,
+            kleinanzeigenSellerProfileUrl: sellerProfileTrimmed || undefined,
             imageUrl: childItems[0]?.imageUrl || CATEGORY_IMAGES['Components'],
             imageUrls: childItems[0]?.imageUrls || [CATEGORY_IMAGES['Components']],
             bulkImportId,
@@ -839,6 +843,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
       createdAt: new Date(timestamp).toISOString(),
       kleinanzeigenBuyChatUrl: chatUrlTrimmed || undefined,
       kleinanzeigenBuyChatImage: historyChatImage,
+      kleinanzeigenSellerProfileUrl: sellerProfileTrimmed || undefined,
     });
     // Prefer a label from draft names when a bundle parent would dominate.
     record.label = buildBulkImportLabel(itemsToImport.map((d) => d.name));
@@ -1185,6 +1190,13 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                            <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload}/>
                         </label>
                      </div>
+                     <input
+                        type="url"
+                        placeholder="Seller profile URL (kleinanzeigen.de/s-bestandsliste…)"
+                        className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
+                        value={sellerProfileUrl}
+                        onChange={(e) => setSellerProfileUrl(e.target.value)}
+                     />
                      <input
                         type="text"
                         placeholder="Or paste chat screenshot URL (imgur, etc.)"

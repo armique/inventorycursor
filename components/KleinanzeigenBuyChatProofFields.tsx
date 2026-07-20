@@ -5,29 +5,34 @@ import { persistSaleProofImage, urlNeedsPhotoArchive } from '../services/invento
 export type ChatProofPatch = {
   kleinanzeigenBuyChatUrl?: string;
   kleinanzeigenBuyChatImage?: string;
+  kleinanzeigenSellerProfileUrl?: string;
 };
 
 interface Props {
   itemId: string;
   chatUrl: string;
   chatImage: string;
+  sellerProfileUrl: string;
   onChatUrlChange: (url: string) => void;
   onChatImageChange: (image: string) => void;
+  onSellerProfileUrlChange: (url: string) => void;
   /** Persist to the inventory item (and archive image to Storage when needed). */
   onPersist: (patch: ChatProofPatch) => void | Promise<void>;
   compact?: boolean;
 }
 
 /**
- * Add / edit / clear Kleinanzeigen purchase chat URL + screenshot proof.
+ * Add / edit / clear Kleinanzeigen purchase chat URL, seller profile, + screenshot proof.
  * Screenshots are archived to Firebase Storage so Imgur / host deletion cannot wipe them.
  */
 const KleinanzeigenBuyChatProofFields: React.FC<Props> = ({
   itemId,
   chatUrl,
   chatImage,
+  sellerProfileUrl,
   onChatUrlChange,
   onChatImageChange,
+  onSellerProfileUrlChange,
   onPersist,
   compact,
 }) => {
@@ -35,7 +40,11 @@ const KleinanzeigenBuyChatProofFields: React.FC<Props> = ({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const archiveAndPersist = async (nextUrl: string, nextImage: string) => {
+  const archiveAndPersist = async (
+    nextUrl: string,
+    nextImage: string,
+    nextProfileUrl: string = sellerProfileUrl
+  ) => {
     setSaving(true);
     setError(null);
     try {
@@ -45,9 +54,11 @@ const KleinanzeigenBuyChatProofFields: React.FC<Props> = ({
         onChatImageChange(image);
       }
       const url = (nextUrl || '').trim();
+      const profile = (nextProfileUrl || '').trim();
       await onPersist({
         kleinanzeigenBuyChatUrl: url || undefined,
         kleinanzeigenBuyChatImage: image || undefined,
+        kleinanzeigenSellerProfileUrl: profile || undefined,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save chat proof');
@@ -63,14 +74,19 @@ const KleinanzeigenBuyChatProofFields: React.FC<Props> = ({
       const dataUrl = String(reader.result || '');
       if (!dataUrl) return;
       onChatImageChange(dataUrl);
-      void archiveAndPersist(chatUrl, dataUrl);
+      void archiveAndPersist(chatUrl, dataUrl, sellerProfileUrl);
     };
     reader.readAsDataURL(file);
   };
 
   const clearUrl = () => {
     onChatUrlChange('');
-    void archiveAndPersist('', chatImage);
+    void archiveAndPersist('', chatImage, sellerProfileUrl);
+  };
+
+  const clearProfileUrl = () => {
+    onSellerProfileUrlChange('');
+    void archiveAndPersist(chatUrl, chatImage, '');
   };
 
   const clearImage = () => {
@@ -78,15 +94,18 @@ const KleinanzeigenBuyChatProofFields: React.FC<Props> = ({
     void onPersist({
       kleinanzeigenBuyChatUrl: chatUrl.trim() || undefined,
       kleinanzeigenBuyChatImage: undefined,
+      kleinanzeigenSellerProfileUrl: sellerProfileUrl.trim() || undefined,
     });
   };
 
   const clearAll = () => {
     onChatUrlChange('');
     onChatImageChange('');
+    onSellerProfileUrlChange('');
     void onPersist({
       kleinanzeigenBuyChatUrl: undefined,
       kleinanzeigenBuyChatImage: undefined,
+      kleinanzeigenSellerProfileUrl: undefined,
     });
   };
 
@@ -94,13 +113,15 @@ const KleinanzeigenBuyChatProofFields: React.FC<Props> = ({
     !!chatImage &&
     (chatImage.startsWith('data:image/') || /^https?:\/\//i.test(chatImage));
 
+  const hasAny = !!(chatUrl || chatImage || sellerProfileUrl);
+
   return (
     <div className={compact ? 'space-y-1.5' : 'space-y-2'}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
           Kleinanzeigen chat proof
         </p>
-        {(chatUrl || chatImage) && (
+        {hasAny && (
           <button
             type="button"
             onClick={clearAll}
@@ -118,11 +139,11 @@ const KleinanzeigenBuyChatProofFields: React.FC<Props> = ({
       <div className="flex gap-1.5">
         <input
           className="flex-1 min-w-0 px-2 py-1.5 rounded-lg bg-white border border-slate-200 text-[11px] font-semibold text-slate-900 outline-none focus:border-rose-400"
-          placeholder="https://www.kleinanzeigen.de/s-nachrichten/…"
+          placeholder="Chat URL (kleinanzeigen.de/s-nachrichten/…)"
           value={chatUrl}
           disabled={saving}
           onChange={(e) => onChatUrlChange(e.target.value)}
-          onBlur={() => void archiveAndPersist(chatUrl, chatImage)}
+          onBlur={() => void archiveAndPersist(chatUrl, chatImage, sellerProfileUrl)}
         />
         {chatUrl.trim() && (
           <>
@@ -140,7 +161,40 @@ const KleinanzeigenBuyChatProofFields: React.FC<Props> = ({
               onClick={clearUrl}
               disabled={saving}
               className="p-2 rounded-lg border border-slate-200 bg-white text-slate-400 hover:text-rose-600"
-              title="Clear URL"
+              title="Clear chat URL"
+            >
+              <Trash2 size={14} />
+            </button>
+          </>
+        )}
+      </div>
+
+      <div className="flex gap-1.5">
+        <input
+          className="flex-1 min-w-0 px-2 py-1.5 rounded-lg bg-white border border-slate-200 text-[11px] font-semibold text-slate-900 outline-none focus:border-rose-400"
+          placeholder="Seller profile URL (kleinanzeigen.de/s-bestandsliste…)"
+          value={sellerProfileUrl}
+          disabled={saving}
+          onChange={(e) => onSellerProfileUrlChange(e.target.value)}
+          onBlur={() => void archiveAndPersist(chatUrl, chatImage, sellerProfileUrl)}
+        />
+        {sellerProfileUrl.trim() && (
+          <>
+            <a
+              href={sellerProfileUrl.trim()}
+              target="_blank"
+              rel="noreferrer"
+              className="p-2 rounded-lg border border-slate-200 bg-white text-sky-700 hover:bg-sky-50"
+              title="Open seller profile"
+            >
+              <ExternalLink size={14} />
+            </a>
+            <button
+              type="button"
+              onClick={clearProfileUrl}
+              disabled={saving}
+              className="p-2 rounded-lg border border-slate-200 bg-white text-slate-400 hover:text-rose-600"
+              title="Clear seller profile URL"
             >
               <Trash2 size={14} />
             </button>
@@ -157,7 +211,7 @@ const KleinanzeigenBuyChatProofFields: React.FC<Props> = ({
           onChange={(e) => onChatImageChange(e.target.value.trim())}
           onBlur={() => {
             if (chatImage.startsWith('data:')) return;
-            void archiveAndPersist(chatUrl, chatImage);
+            void archiveAndPersist(chatUrl, chatImage, sellerProfileUrl);
           }}
         />
         <button
