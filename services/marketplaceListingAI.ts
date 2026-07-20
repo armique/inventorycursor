@@ -3,8 +3,8 @@
  * Produces an optimized title + full listing body (+ owner-only price/keyword hints).
  */
 import type { InventoryItem } from '../types';
-import { ItemStatus } from '../types';
 import { requestAIJson } from './specsAI';
+import { isMotherboardItem } from '../utils/builderSlotMatch';
 
 export interface MarketplaceListingHints {
   hasOVP?: boolean;
@@ -34,8 +34,9 @@ const LISTING_PROMPT_RULES = `Ты являешься профессиональ
 
 listingText и ebayTitle — только немецкий язык.
 
-Никогда не используй длинные пустые промежутки между строками в listingText.
-Текст должен быть компактным, чтобы после копирования в eBay не появлялись большие пробелы.
+Между РАЗДЕЛАМИ (перед каждым заголовком с emoji) всегда оставляй ровно одну пустую строку.
+Внутри раздела (список Technische Daten, строки Lieferumfang и т.д.) — без пустых строк, только обычный перевод строки.
+Не используй две и более пустых строк подряд — после копирования в eBay не должно быть больших пробелов.
 Используй максимум один эмодзи на раздел.
 Не используй горизонтальные линии -----.
 Описание должно одинаково хорошо выглядеть на ПК и в приложении eBay.
@@ -46,7 +47,8 @@ listingText и ebayTitle — только немецкий язык.
 
 Первая строка объявления — название товара (короткая строка с составом, без emoji).
 
-Затем разделы (ровно один emoji в заголовке раздела):
+Затем разделы (ровно один emoji в заголовке раздела).
+Между разделами — ровно одна пустая строка:
 
 💻 или 🎮 или 💾 или 🖥️ — краткое описание (1–2 коротких предложения)
 
@@ -95,8 +97,11 @@ LIEFERUMFANG / OVP / IO
 Перечисляй комплект отдельно.
 Если нет OVP: Ohne Originalverpackung
 Если есть OVP: Originalverpackung vorhanden
-Если есть IO-Blende: IO-Blende
-Если нет IO-Blende (для Mainboard/Bundle где актуально): Ohne IO-Blende
+
+IO-Blende / IO Shield:
+- Упоминай IO-Blende ТОЛЬКО для Mainboards / Motherboards.
+- Для всех остальных товаров (RAM, CPU, GPU, SSD, PSU, Gehäuse, Fertig-PC, Bundle и т.д.) НИКОГДА не пиши IO-Blende, Ohne IO-Blende, IO Shield и подобные строки.
+- Для Mainboard: если IO-Blende есть — «IO-Blende»; если нет — «Ohne IO-Blende».
 
 =========================
 ZUSTAND
@@ -126,7 +131,8 @@ function buildItemContext(item: InventoryItem, hints?: MarketplaceListingHints):
         .join('\n')
     : '';
   const hasOVP = hints?.hasOVP === true || item.hasOVP === true;
-  const hasIO = hints?.hasIOShield === true || item.hasIOShield === true;
+  const isMobo = isMotherboardItem(item);
+  const hasIO = isMobo && (hints?.hasIOShield === true || item.hasIOShield === true);
   const lines = [
     `Product name: ${item.name}`,
     `Category: ${item.category}${item.subCategory ? ` / ${item.subCategory}` : ''}`,
@@ -137,7 +143,9 @@ function buildItemContext(item: InventoryItem, hints?: MarketplaceListingHints):
       : '',
     item.isDefective ? 'Condition flag: DEFECTIVE' : 'Condition flag: WORKING',
     `OVP: ${hasOVP ? 'YES — Originalverpackung vorhanden' : 'NO — Ohne Originalverpackung'}`,
-    `IO-Blende: ${hasIO ? 'YES — include IO-Blende' : 'NO — Ohne IO-Blende (if motherboard/bundle relevant)'}`,
+    isMobo
+      ? `IO-Blende: ${hasIO ? 'YES — include IO-Blende in Lieferumfang' : 'NO — Ohne IO-Blende in Lieferumfang'}`
+      : 'IO-Blende: NOT APPLICABLE — do not mention IO-Blende / IO Shield at all',
     item.comment1 ? `Notes: ${item.comment1}` : '',
     specs ? `Specs:\n${specs}` : '',
   ].filter(Boolean);
@@ -148,6 +156,58 @@ function clampTitle(title: string): string {
   const t = String(title || '').replace(/\s+/g, ' ').trim();
   if (t.length <= 80) return t;
   return t.slice(0, 80).trim();
+}
+
+/** Emoji section headers used in German marketplace listings. */
+const LISTING_SECTION_HEADER =
+  /^(?:💻|🎮|💾|🖥️|🔧\s*Technische|📦\s*Lieferumfang|ℹ️\s*Hinweis|✅\s*Zustand|🔥)/u;
+
+/**
+ * Ensure exactly one blank line before each section header.
+ * Keeps bullet/spec lines inside a section tight (no blank lines).
+ */
+export function normalizeListingSectionSpacing(text: string): string {
+  const lines = String(text || '')
+    .replace(/\r\n/g, '\n')
+    .split('\n');
+  const out: string[] = [];
+
+  for (const raw of lines) {
+    const trimmed = raw.trimEnd();
+    const isHeader = LISTING_SECTION_HEADER.test(trimmed.trim());
+
+    if (isHeader && out.length > 0) {
+      while (out.length && out[out.length - 1].trim() === '') out.pop();
+      out.push('');
+    } else if (trimmed.trim() === '') {
+      // Drop blank lines that are not the intentional section separator.
+      // (Headers insert their own blank line above.)
+      continue;
+    }
+
+    out.push(trimmed);
+  }
+
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/** IO-Blende / IO Shield lines — only allowed for motherboards. */
+const IO_BLENDE_LINE =
+  /(?:🔧\s*)?(?:ohne\s+)?io[\s-]*(?:blende|shield)\b|i\/?o[\s-]*(?:blende|shield)\b/i;
+
+/**
+ * Strip IO-Blende mentions from listings that are not motherboards.
+ */
+export function stripIoBlendeUnlessMotherboard(
+  text: string,
+  item: Pick<InventoryItem, 'category' | 'subCategory' | 'name'>
+): string {
+  if (isMotherboardItem(item as InventoryItem)) return String(text || '');
+  return String(text || '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .filter((line) => !IO_BLENDE_LINE.test(line.trim()))
+    .join('\n');
 }
 
 /**
@@ -172,7 +232,7 @@ Return ONE valid JSON object (no markdown fences) with keys:
   "ebayTitle": "German eBay title, use almost 80 characters, SEO-optimized",
   "newPriceGermany": "approx new price in Germany as short German text e.g. ca. 329 €",
   "recommendedUsedPrice": "recommended used price range for Germany e.g. 199–229 €",
-  "listingText": "full German listing body following STRUCTURE above (plain text + newlines, compact)",
+  "listingText": "full German listing body following STRUCTURE above (plain text + newlines; one blank line between sections only)",
   "searchKeywords": ["15-25 popular German/eBay search terms as short strings"]
 }`;
 
@@ -184,7 +244,9 @@ Return ONE valid JSON object (no markdown fences) with keys:
     searchKeywords?: string[];
   }>(prompt, { maxTokens: 2200 });
 
-  const listingText = String(data.listingText || '').replace(/\n{3,}/g, '\n\n').trim();
+  const listingText = normalizeListingSectionSpacing(
+    stripIoBlendeUnlessMotherboard(String(data.listingText || ''), item)
+  );
   if (!listingText) {
     throw new Error('AI returned an empty listing. Try again.');
   }

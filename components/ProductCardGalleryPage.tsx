@@ -1,10 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import {
   Check,
-  ChevronLeft,
-  ChevronRight,
   Cloud,
   Download,
   Images,
@@ -12,7 +9,6 @@ import {
   Package,
   Trash2,
   RefreshCw,
-  X,
 } from 'lucide-react';
 import type { GeneratedProductCardEntry, InventoryItem } from '../types';
 import {
@@ -28,6 +24,7 @@ import {
   mergeMainPhotoOntoItem,
   resolveUrlForInventoryMainPhoto,
 } from '../utils/applyProductCardAsMainPhoto';
+import ImageLightbox from './ImageLightbox';
 
 interface Props {
   items: InventoryItem[];
@@ -149,26 +146,6 @@ const ProductCardGalleryPage: React.FC<Props> = ({ items, onUpdate }) => {
     return () => {
       cancelled = true;
     };
-  }, [preview]);
-
-  useEffect(() => {
-    if (!preview) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setPreview(null);
-        return;
-      }
-      const siblings = preview.siblings;
-      const idx = siblings.findIndex((s) => s.id === preview.entry.id);
-      if (e.key === 'ArrowLeft' && idx > 0) {
-        setPreview({ entry: siblings[idx - 1]!, siblings });
-      }
-      if (e.key === 'ArrowRight' && idx >= 0 && idx < siblings.length - 1) {
-        setPreview({ entry: siblings[idx + 1]!, siblings });
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
   }, [preview]);
 
   const showToast = (msg: string) => {
@@ -429,110 +406,63 @@ const ProductCardGalleryPage: React.FC<Props> = ({ items, onUpdate }) => {
         </div>
       )}
 
-      {preview &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-950/85 p-3 sm:p-6"
-            onClick={() => setPreview(null)}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Card preview"
-          >
-            <button
-              type="button"
-              onClick={() => setPreview(null)}
-              className="absolute top-3 right-3 sm:top-5 sm:right-5 p-2 rounded-xl bg-white/10 text-white hover:bg-white/20"
-              aria-label="Close"
-            >
-              <X size={20} />
-            </button>
-
-            {previewIndex > 0 && (
+      <ImageLightbox
+        open={!!preview}
+        src={previewSrc}
+        loading={previewLoading}
+        title={preview?.entry.itemName}
+        subtitle={
+          preview
+            ? `${preview.entry.styleName || preview.entry.styleId || 'AI card'} · ${new Date(
+                preview.entry.createdAt
+              ).toLocaleString()}${
+                preview.siblings.length > 1 ? ` · ${previewIndex + 1} / ${preview.siblings.length}` : ''
+              }`
+            : undefined
+        }
+        onClose={() => setPreview(null)}
+        hasPrev={previewIndex > 0}
+        hasNext={previewIndex >= 0 && !!preview && previewIndex < preview.siblings.length - 1}
+        onPrev={
+          preview && previewIndex > 0
+            ? () =>
+                setPreview({
+                  entry: preview.siblings[previewIndex - 1]!,
+                  siblings: preview.siblings,
+                })
+            : undefined
+        }
+        onNext={
+          preview && previewIndex >= 0 && previewIndex < preview.siblings.length - 1
+            ? () =>
+                setPreview({
+                  entry: preview.siblings[previewIndex + 1]!,
+                  siblings: preview.siblings,
+                })
+            : undefined
+        }
+        ariaLabel="Card preview"
+        footer={
+          preview ? (
+            <>
               <button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setPreview({
-                    entry: preview.siblings[previewIndex - 1]!,
-                    siblings: preview.siblings,
-                  });
-                }}
-                className="absolute left-2 sm:left-4 p-2 rounded-xl bg-white/10 text-white hover:bg-white/20"
-                aria-label="Previous"
+                onClick={() => void downloadProductCardEntry(preview.entry)}
+                className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-white text-slate-900 text-[10px] font-black uppercase"
               >
-                <ChevronLeft size={22} />
+                <Download size={12} /> Download
               </button>
-            )}
-            {previewIndex >= 0 && previewIndex < preview.siblings.length - 1 && (
               <button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setPreview({
-                    entry: preview.siblings[previewIndex + 1]!,
-                    siblings: preview.siblings,
-                  });
-                }}
-                className="absolute right-2 sm:right-4 p-2 rounded-xl bg-white/10 text-white hover:bg-white/20"
-                aria-label="Next"
+                onClick={() => setPreview(null)}
+                className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-white/15 text-white text-[10px] font-black uppercase hover:bg-white/25"
               >
-                <ChevronRight size={22} />
+                Close
               </button>
-            )}
-
-            <div
-              className="relative w-full max-w-4xl max-h-[90vh] flex flex-col items-center gap-3"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="relative w-full flex-1 min-h-0 flex items-center justify-center rounded-2xl overflow-hidden bg-black/40">
-                {previewLoading && (
-                  <Loader2 size={28} className="absolute animate-spin text-white/70" />
-                )}
-                {previewSrc ? (
-                  <img
-                    src={previewSrc}
-                    alt={preview.entry.itemName}
-                    className="max-w-full max-h-[75vh] object-contain"
-                  />
-                ) : (
-                  !previewLoading && (
-                    <p className="text-sm text-white/70 font-medium py-20">Could not load image</p>
-                  )
-                )}
-              </div>
-              <div className="w-full flex flex-wrap items-center justify-between gap-2 text-white/90 px-1">
-                <div className="min-w-0">
-                  <p className="text-sm font-bold truncate">{preview.entry.itemName}</p>
-                  <p className="text-[11px] text-white/60 font-medium">
-                    {preview.entry.styleName || preview.entry.styleId || 'AI card'}
-                    {' · '}
-                    {new Date(preview.entry.createdAt).toLocaleString()}
-                    {preview.siblings.length > 1
-                      ? ` · ${previewIndex + 1} / ${preview.siblings.length}`
-                      : ''}
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void downloadProductCardEntry(preview.entry)}
-                    className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-white text-slate-900 text-[10px] font-black uppercase"
-                  >
-                    <Download size={12} /> Download
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPreview(null)}
-                    className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-white/15 text-white text-[10px] font-black uppercase hover:bg-white/25"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
+            </>
+          ) : null
+        }
+      />
     </div>
   );
 };

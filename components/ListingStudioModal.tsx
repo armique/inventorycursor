@@ -13,6 +13,7 @@ import {
   Upload,
   X,
   Download,
+  ZoomIn,
 } from 'lucide-react';
 import type { GeneratedProductCardEntry, InventoryItem, PaymentType, Platform } from '../types';
 import {
@@ -57,6 +58,7 @@ import { getChildren } from '../services/financialAggregation';
 import PhoneUploadQrPanel from './PhoneUploadQrPanel';
 import LocalPhotoFolderPanel from './LocalPhotoFolderPanel';
 import KleinanzeigenBuyChatProofFields from './KleinanzeigenBuyChatProofFields';
+import ImageLightbox from './ImageLightbox';
 
 const BUY_PLATFORMS: Platform[] = [
   'kleinanzeigen.de',
@@ -153,6 +155,7 @@ const ListingStudioModal: React.FC<Props> = ({
   const [providers, setProviders] = useState<ProductCardProviderInfo[]>([]);
   const [styleId, setStyleId] = useState<ProductCardStyleId>(DEFAULT_PRODUCT_CARD_STYLE_ID);
   const [photoSource, setPhotoSource] = useState<'none' | 'iphone' | 'folder'>('none');
+  const [cardLightboxIndex, setCardLightboxIndex] = useState<number | null>(null);
 
   const workingItem = useMemo(
     () => ({ ...item, name, specs, marketTitle: title, marketDescription: description }),
@@ -350,12 +353,38 @@ const ListingStudioModal: React.FC<Props> = ({
     setSaving(true);
     setError(null);
     try {
-      await persistPatch({
+      const nextTitle = title.trim().slice(0, 80);
+      const nextDesc = description.trim();
+      const entry = gallery.find((e) => e.id === selectedCardId) || null;
+
+      if (!nextTitle && !nextDesc && !entry) {
+        setError('Generate a listing or select a product card before applying.');
+        return;
+      }
+
+      const patch: Partial<InventoryItem> = {
         name: name.trim() || item.name,
         specs,
-        marketTitle: title.trim().slice(0, 80),
-        marketDescription: description.trim(),
-      });
+      };
+      if (nextTitle) patch.marketTitle = nextTitle;
+      if (nextDesc) patch.marketDescription = nextDesc;
+
+      // Selected gallery card becomes the item main photo (visible change in inventory).
+      if (entry) {
+        try {
+          const url = thumbs[entry.id] || (await resolveProductCardImageUrl(entry));
+          const prepared = await resolveUrlForInventoryMainPhoto(url, item.id, entry);
+          const merged = normalizeImageList([prepared, item.imageUrl, ...(item.imageUrls || [])]);
+          patch.imageUrl = merged[0];
+          patch.imageUrls = merged;
+        } catch (e) {
+          console.warn('Could not apply selected card as main photo', e);
+        }
+      }
+
+      await persistPatch(patch);
+      // Return to inventory after a successful apply.
+      onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed');
     } finally {
@@ -527,6 +556,32 @@ const ListingStudioModal: React.FC<Props> = ({
   const titleLen = [...title].length;
   const plannedCards = resolveCardBatchCount(photos.length);
 
+  const lightboxSlides = useMemo(
+    () =>
+      gallery
+        .map((entry) => {
+          const src = thumbs[entry.id];
+          if (!src) return null;
+          return {
+            id: entry.id,
+            src,
+            title: entry.itemName || name || item.name,
+            subtitle: entry.styleName || entry.styleId || 'AI card',
+            entry,
+          };
+        })
+        .filter((s): s is NonNullable<typeof s> => !!s),
+    [gallery, thumbs, name, item.name]
+  );
+
+  const openCardLightbox = (entryId: string) => {
+    const idx = lightboxSlides.findIndex((s) => s.id === entryId);
+    if (idx >= 0) setCardLightboxIndex(idx);
+  };
+
+  const lightboxSlide =
+    cardLightboxIndex != null ? lightboxSlides[cardLightboxIndex] ?? null : null;
+
   const providerList =
     providers.length > 0
       ? providers
@@ -535,7 +590,9 @@ const ListingStudioModal: React.FC<Props> = ({
           { id: 'gemini' as const, name: 'Gemini', available: true, blurb: 'Flash Image' },
         ];
 
-  return createPortal(
+  return (
+    <>
+      {createPortal(
     <div
       className="fixed inset-0 z-[230] flex items-center justify-center bg-slate-900/55 backdrop-blur-sm p-2 sm:p-3"
       onClick={onClose}
@@ -1005,12 +1062,22 @@ const ListingStudioModal: React.FC<Props> = ({
               ))}
             </div>
 
-            {selectedThumb && (
-              <img
-                src={selectedThumb}
-                alt="Selected card"
-                className="w-full aspect-square max-h-56 object-contain rounded-xl border border-slate-200 bg-slate-50"
-              />
+            {selectedThumb && selectedEntry && (
+              <button
+                type="button"
+                onClick={() => openCardLightbox(selectedEntry.id)}
+                className="relative group/zoom block w-full cursor-zoom-in focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 rounded-xl"
+                title="View full size"
+              >
+                <img
+                  src={selectedThumb}
+                  alt="Selected card"
+                  className="w-full aspect-square max-h-56 object-contain rounded-xl border border-slate-200 bg-slate-50"
+                />
+                <span className="absolute top-2 right-2 inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900/70 text-white text-[9px] font-black uppercase opacity-90 group-hover/zoom:opacity-100">
+                  <ZoomIn size={11} /> Enlarge
+                </span>
+              </button>
             )}
 
             {galleryLoading ? (
@@ -1032,23 +1099,41 @@ const ListingStudioModal: React.FC<Props> = ({
                         active ? 'border-rose-500 ring-2 ring-rose-200' : 'border-slate-200'
                       }`}
                     >
-                      <button
-                        type="button"
-                        className="block w-full"
-                        onClick={() => setSelectedCardId(entry.id)}
-                      >
-                        {thumbs[entry.id] ? (
-                          <img
-                            src={thumbs[entry.id]}
-                            alt=""
-                            className="w-full aspect-square object-cover"
-                          />
-                        ) : (
-                          <div className="aspect-square flex items-center justify-center text-slate-300">
-                            <ImageIcon size={16} />
-                          </div>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          className="block w-full"
+                          onClick={() => setSelectedCardId(entry.id)}
+                          onDoubleClick={() => openCardLightbox(entry.id)}
+                          title="Click to select · double-click to enlarge"
+                        >
+                          {thumbs[entry.id] ? (
+                            <img
+                              src={thumbs[entry.id]}
+                              alt=""
+                              className="w-full aspect-square object-cover"
+                            />
+                          ) : (
+                            <div className="aspect-square flex items-center justify-center text-slate-300">
+                              <ImageIcon size={16} />
+                            </div>
+                          )}
+                        </button>
+                        {thumbs[entry.id] && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedCardId(entry.id);
+                              openCardLightbox(entry.id);
+                            }}
+                            className="absolute top-1 right-1 p-1 rounded-md bg-slate-900/70 text-white hover:bg-slate-900"
+                            title="Enlarge"
+                          >
+                            <ZoomIn size={11} />
+                          </button>
                         )}
-                      </button>
+                      </div>
                       <div className="px-1.5 py-1 flex gap-0.5">
                         <button
                           type="button"
@@ -1189,6 +1274,58 @@ const ListingStudioModal: React.FC<Props> = ({
       </div>
     </div>,
     document.body
+      )}
+      <ImageLightbox
+        open={cardLightboxIndex != null && !!lightboxSlide}
+        src={lightboxSlide?.src ?? null}
+        title={lightboxSlide?.title}
+        subtitle={
+          lightboxSlide
+            ? `${lightboxSlide.subtitle}${
+                lightboxSlides.length > 1
+                  ? ` · ${(cardLightboxIndex ?? 0) + 1} / ${lightboxSlides.length}`
+                  : ''
+              }`
+            : undefined
+        }
+        onClose={() => setCardLightboxIndex(null)}
+        hasPrev={cardLightboxIndex != null && cardLightboxIndex > 0}
+        hasNext={
+          cardLightboxIndex != null && cardLightboxIndex < lightboxSlides.length - 1
+        }
+        onPrev={
+          cardLightboxIndex != null && cardLightboxIndex > 0
+            ? () => setCardLightboxIndex(cardLightboxIndex - 1)
+            : undefined
+        }
+        onNext={
+          cardLightboxIndex != null && cardLightboxIndex < lightboxSlides.length - 1
+            ? () => setCardLightboxIndex(cardLightboxIndex + 1)
+            : undefined
+        }
+        ariaLabel="Generated card preview"
+        footer={
+          lightboxSlide ? (
+            <>
+              <button
+                type="button"
+                onClick={() => void downloadProductCardEntry(lightboxSlide.entry)}
+                className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-white text-slate-900 text-[10px] font-black uppercase"
+              >
+                <Download size={12} /> Download
+              </button>
+              <button
+                type="button"
+                onClick={() => setCardLightboxIndex(null)}
+                className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-white/15 text-white text-[10px] font-black uppercase hover:bg-white/25"
+              >
+                Close
+              </button>
+            </>
+          ) : null
+        }
+      />
+    </>
   );
 };
 
