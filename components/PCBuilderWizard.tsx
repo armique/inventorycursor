@@ -22,6 +22,7 @@ import {
   itemRelevantToBuilderSlot,
 } from '../utils/builderSlotMatch';
 import { buildContainerTitle, ensureBundleTitleTag } from '../utils/buildTitle';
+import { todayLocalDateKey } from '../utils/calendarDate';
 
 interface Props {
   items: InventoryItem[];
@@ -230,7 +231,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave, buildKind = 'pc' }) =
         category: isBundleKind ? 'Bundle' : 'PC',
         status: ItemStatus.IN_STOCK,
         buyPrice: totalCost,
-        buyDate: existingParent?.buyDate || '',
+        buyDate: existingParent?.buyDate || todayLocalDateKey(),
         comment1: `${isBundleKind ? 'Bundle' : 'PC'} Specs:\n${allParts.map((i) => `- ${i.name}`).join('\n')}`,
         comment2: performance ? `AI Performance Estimate:\n${performance.summary}` : '',
         isPC: !isBundleKind,

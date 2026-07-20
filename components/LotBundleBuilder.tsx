@@ -13,6 +13,7 @@ import {
   itemMatchesBuilderSearch,
 } from '../utils/builderSlotMatch';
 import { buildContainerTitle } from '../utils/buildTitle';
+import { todayLocalDateKey } from '../utils/calendarDate';
 
 interface Props {
   items: InventoryItem[];
@@ -142,7 +143,7 @@ const LotBundleBuilder: React.FC<Props> = ({ items, onSave }) => {
         category: 'Mixed Bundle',
         status: ItemStatus.IN_STOCK,
         buyPrice: Math.round(total * 100) / 100,
-        buyDate: editingContainer?.buyDate || '',
+        buyDate: editingContainer?.buyDate || todayLocalDateKey(),
         isPC: false,
         isBundle: true,
         componentIds: selected.map((i) => i.id),
@@ -210,7 +211,7 @@ const LotBundleBuilder: React.FC<Props> = ({ items, onSave }) => {
       category: 'Mixed Bundle',
       status: ItemStatus.IN_STOCK,
       buyPrice: Math.round(total * 100) / 100,
-      buyDate: editingContainer?.buyDate || '',
+      buyDate: editingContainer?.buyDate || todayLocalDateKey(),
       comment1: '',
       comment2: '',
       isPC: false,

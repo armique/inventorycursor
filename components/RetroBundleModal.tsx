@@ -4,6 +4,7 @@ import { formatEUR } from '../utils/formatMoney';
 
 import { X, Package, ArrowRight, CheckCircle2, Layers, Calendar, Edit2, Check, HelpCircle } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
+import { todayLocalDateKey } from '../utils/calendarDate';
 
 interface Props {
   items: InventoryItem[];
@@ -75,7 +76,7 @@ const RetroBundleModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
       category: 'Mixed Bundle',
       status: ItemStatus.SOLD, 
       buyPrice: totalBuy,
-      buyDate: '',
+      buyDate: todayLocalDateKey(),
       sellPrice: totalSell,
       profit: margin, // Note: This is pre-tax profit. Dashboard calculates tax dynamically.
       feeAmount: totalFees,

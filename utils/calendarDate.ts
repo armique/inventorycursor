@@ -26,3 +26,8 @@ export function yearMonthKeyFromDate(raw: string | Date | undefined | null): str
 export function currentLocalYearMonth(ref: Date = new Date()): string {
   return `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, '0')}`;
 }
+
+/** Today's calendar day as YYYY-MM-DD (local timezone) — used as Acquired for newly composed PC/bundles. */
+export function todayLocalDateKey(ref: Date = new Date()): string {
+  return toLocalCalendarDateKey(ref);
+}

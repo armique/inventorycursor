@@ -4,6 +4,7 @@ import { formatEUR } from '../utils/formatMoney';
 
 import { Package, Sparkles, Check, ArrowRight, Loader2, Info } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
+import { todayLocalDateKey } from '../utils/calendarDate';
 import { getBundleSuggestions, BundleSuggestion } from '../services/geminiService';
 import ItemThumbnail from './ItemThumbnail';
 
@@ -49,7 +50,7 @@ const SmartBundleSuggester: React.FC<Props> = ({ items, onCreateBundle }) => {
       id: bundleId,
       name: suggestion.title,
       buyPrice: totalCost,
-      buyDate: '',
+      buyDate: todayLocalDateKey(),
       category: 'Mixed Bundle',
       status: ItemStatus.IN_STOCK,
       comment1: `AI Suggested Mixed Bundle:\n${suggestion.reasoning}\n\nContents:\n${components.map(c => `+ ${c.name}`).join('\n')}`,
