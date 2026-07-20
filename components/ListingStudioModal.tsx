@@ -5,13 +5,14 @@ import {
   Copy,
   Image as ImageIcon,
   Loader2,
+  Plus,
   Sparkles,
   Trash2,
   Upload,
   X,
   Download,
 } from 'lucide-react';
-import type { GeneratedProductCardEntry, InventoryItem } from '../types';
+import type { GeneratedProductCardEntry, InventoryItem, PaymentType, Platform } from '../types';
 import {
   formatOwnerListingHints,
   generateMarketplaceListing,
@@ -19,8 +20,12 @@ import {
 import { generateItemSpecs } from '../services/specsAI';
 import { mergeAiSpecsIntoEssential, resolveEssentialSpecKeys } from '../services/essentialSpecFields';
 import { getProductCardSpecs } from '../utils/productCardContent';
-import { formatPlatformBoughtLabel } from '../utils/purchaseSource';
-import { formatItemSalePlatform } from '../utils/salePlatform';
+import {
+  defaultBuyPaymentForPlatform,
+  normalizeBuyPaymentForPlatform,
+  paymentAfterPlatformChange,
+} from '../utils/purchaseSource';
+import { SALE_PLATFORM_OPTIONS } from '../utils/salePlatform';
 import {
   filesToDataUrls,
   getItemUserPhotoUrls,
@@ -47,6 +52,35 @@ import {
 import { resolveUrlForInventoryMainPhoto } from '../utils/applyProductCardAsMainPhoto';
 import { getChildren } from '../services/financialAggregation';
 
+const BUY_PLATFORMS: Platform[] = [
+  'kleinanzeigen.de',
+  'ebay.de',
+  'Amazon',
+  'In Person',
+  'Other',
+];
+
+const PAYMENT_METHODS: PaymentType[] = [
+  'ebay.de',
+  'Kleinanzeigen (Cash)',
+  'Kleinanzeigen (Direkt Kaufen)',
+  'Kleinanzeigen (Paypal)',
+  'Kleinanzeigen (Wire Transfer)',
+  'Paypal',
+  'Cash',
+  'Bank Transfer',
+  'Trade',
+  'Gift',
+  'Other',
+];
+
+const PLATFORM_OPTION_LABEL: Record<Platform, string> = {
+  'kleinanzeigen.de': 'Kleinanzeigen',
+  'ebay.de': 'eBay',
+  Amazon: 'Amazon',
+  'In Person': 'In Person',
+  Other: 'Other',
+};
 interface Props {
   item: InventoryItem;
   allItems?: InventoryItem[] | null;
@@ -78,6 +112,21 @@ const ListingStudioModal: React.FC<Props> = ({
   const [title, setTitle] = useState(item.marketTitle?.trim() || item.name || '');
   const [description, setDescription] = useState(item.marketDescription || '');
   const [ownerHints, setOwnerHints] = useState<string | null>(null);
+
+  const [vendor, setVendor] = useState(item.vendor || '');
+  const [platformBought, setPlatformBought] = useState<Platform>(
+    (item.platformBought as Platform) || 'kleinanzeigen.de'
+  );
+  const [buyPaymentType, setBuyPaymentType] = useState<PaymentType>(
+    normalizeBuyPaymentForPlatform(
+      item.platformBought,
+      item.buyPaymentType
+    ) || defaultBuyPaymentForPlatform((item.platformBought as Platform) || 'kleinanzeigen.de')
+  );
+  const [platformSold, setPlatformSold] = useState<Platform | ''>(item.platformSold || '');
+  const [paymentType, setPaymentType] = useState<PaymentType | ''>(item.paymentType || '');
+  const [buyerName, setBuyerName] = useState(item.customer?.name || '');
+  const [buyerAddress, setBuyerAddress] = useState(item.customer?.address || '');
 
   const [parsingSpecs, setParsingSpecs] = useState(false);
   const [genListing, setGenListing] = useState(false);
@@ -163,7 +212,30 @@ const ListingStudioModal: React.FC<Props> = ({
     setSpecs({ ...(item.specs || {}) });
     setTitle(item.marketTitle?.trim() || item.name || '');
     setDescription(item.marketDescription || '');
-  }, [item.id, item.name, item.specs, item.marketTitle, item.marketDescription]);
+    setVendor(item.vendor || '');
+    setPlatformBought((item.platformBought as Platform) || 'kleinanzeigen.de');
+    setBuyPaymentType(
+      normalizeBuyPaymentForPlatform(item.platformBought, item.buyPaymentType) ||
+        defaultBuyPaymentForPlatform((item.platformBought as Platform) || 'kleinanzeigen.de')
+    );
+    setPlatformSold(item.platformSold || '');
+    setPaymentType(item.paymentType || '');
+    setBuyerName(item.customer?.name || '');
+    setBuyerAddress(item.customer?.address || '');
+  }, [
+    item.id,
+    item.name,
+    item.specs,
+    item.marketTitle,
+    item.marketDescription,
+    item.vendor,
+    item.platformBought,
+    item.buyPaymentType,
+    item.platformSold,
+    item.paymentType,
+    item.customer?.name,
+    item.customer?.address,
+  ]);
 
   useEffect(() => {
     void fetchProductCardProviders().then((list) => {
@@ -355,16 +427,52 @@ const ListingStudioModal: React.FC<Props> = ({
     setSpecs((prev) => ({ ...prev, [key]: value }));
   };
 
-  const removeSpecKey = (key: string) => {
+  const commitSpecValue = (key: string, value: string) => {
     setSpecs((prev) => {
-      const next = { ...prev };
-      delete next[key];
+      const next = { ...prev, [key]: value };
+      void persistPatch({ specs: next });
       return next;
     });
   };
 
-  const commitSpecs = async () => {
-    await persistPatch({ specs });
+  const renameSpecKey = (oldKey: string, rawNewKey: string) => {
+    const newKey = rawNewKey.trim();
+    if (!newKey || newKey === oldKey) return;
+    setSpecs((prev) => {
+      if (Object.prototype.hasOwnProperty.call(prev, newKey)) {
+        // Keep both values — don't overwrite an existing key silently.
+        return prev;
+      }
+      const next: Record<string, string | number> = {};
+      for (const [k, v] of Object.entries(prev)) {
+        next[k === oldKey ? newKey : k] = v;
+      }
+      void persistPatch({ specs: next });
+      return next;
+    });
+  };
+
+  const removeSpecKey = (key: string) => {
+    setSpecs((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      void persistPatch({ specs: next });
+      return next;
+    });
+  };
+
+  const addSpecRow = () => {
+    setSpecs((prev) => {
+      let n = 1;
+      let key = 'Custom spec';
+      while (Object.prototype.hasOwnProperty.call(prev, key)) {
+        n += 1;
+        key = `Custom spec ${n}`;
+      }
+      const next = { ...prev, [key]: '' };
+      void persistPatch({ specs: next });
+      return next;
+    });
   };
 
   const selectedEntry = gallery.find((e) => e.id === selectedCardId) || null;
@@ -515,49 +623,67 @@ const ListingStudioModal: React.FC<Props> = ({
             </section>
 
             <section>
-              <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center justify-between mb-1 gap-2">
                 <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                   Tech specs
                 </h4>
-                <button
-                  type="button"
-                  disabled={parsingSpecs}
-                  onClick={() => void handleParseSpecs()}
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-rose-200 bg-rose-50 text-rose-800 text-[9px] font-black uppercase disabled:opacity-50"
-                >
-                  {parsingSpecs ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
-                  Parse AI
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={addSpecRow}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-700 text-[9px] font-black uppercase hover:bg-slate-50"
+                    title="Add a custom spec row"
+                  >
+                    <Plus size={11} />
+                    Add
+                  </button>
+                  <button
+                    type="button"
+                    disabled={parsingSpecs}
+                    onClick={() => void handleParseSpecs()}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-rose-200 bg-rose-50 text-rose-800 text-[9px] font-black uppercase disabled:opacity-50"
+                  >
+                    {parsingSpecs ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                    Parse AI
+                  </button>
+                </div>
               </div>
-              <div className="space-y-1 max-h-48 overflow-y-auto pr-0.5">
+              <p className="text-[10px] text-slate-400 font-medium mb-1.5">
+                Edit any AI value or rename the field if you disagree.
+              </p>
+              <div className="space-y-1 max-h-56 overflow-y-auto pr-0.5">
                 {Object.keys(specs).length === 0 && (
-                  <p className="text-[10px] text-slate-400 font-medium py-2">No specs yet — run Parse AI.</p>
+                  <p className="text-[10px] text-slate-400 font-medium py-2">
+                    No specs yet — run Parse AI or add your own.
+                  </p>
                 )}
                 {Object.entries(specs).map(([key, value]) => (
                   <div
                     key={key}
                     className="flex items-center gap-1 rounded-lg bg-white border border-slate-200 px-1.5 py-1"
                   >
-                    <span className="w-[38%] text-[10px] font-bold text-slate-500 truncate" title={key}>
-                      {key}
-                    </span>
+                    <input
+                      className="w-[38%] min-w-0 text-[10px] font-bold text-slate-500 outline-none bg-transparent truncate"
+                      defaultValue={key}
+                      title="Spec name (editable)"
+                      onBlur={(e) => renameSpecKey(key, e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.currentTarget.blur();
+                        }
+                      }}
+                    />
                     <input
                       className="flex-1 min-w-0 text-[11px] font-semibold text-slate-900 outline-none bg-transparent"
                       value={String(value ?? '')}
+                      title="Spec value (editable)"
                       onChange={(e) => updateSpecValue(key, e.target.value)}
-                      onBlur={() => void commitSpecs()}
+                      onBlur={(e) => commitSpecValue(key, e.target.value)}
                     />
                     <button
                       type="button"
                       className="p-0.5 text-slate-300 hover:text-rose-500"
-                      onClick={() => {
-                        removeSpecKey(key);
-                        void persistPatch({
-                          specs: Object.fromEntries(
-                            Object.entries(specs).filter(([k]) => k !== key)
-                          ),
-                        });
-                      }}
+                      onClick={() => removeSpecKey(key)}
                       title="Remove spec"
                     >
                       <X size={12} />
@@ -569,31 +695,147 @@ const ListingStudioModal: React.FC<Props> = ({
 
             <section>
               <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
-                Bought / sold
+                Buyer / seller
               </h4>
-              <div className="space-y-1 text-[11px]">
-                <div className="grid grid-cols-[88px_1fr] gap-1 rounded-lg bg-white border border-slate-200 px-2 py-1.5">
-                  <span className="text-[9px] font-black uppercase text-slate-400 self-center">Bought</span>
-                  <span className="font-semibold text-slate-800">
-                    {formatPlatformBoughtLabel(item.platformBought) || '—'}
-                    {item.buyPaymentType ? ` · ${item.buyPaymentType}` : ''}
-                  </span>
+              <div className="space-y-1.5 text-[11px]">
+                <label className="block space-y-0.5">
+                  <span className="text-[9px] font-black uppercase text-slate-400">Vendor / seller</span>
+                  <input
+                    className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-semibold text-slate-900 outline-none focus:border-rose-400"
+                    value={vendor}
+                    placeholder="Shop or username you bought from"
+                    onChange={(e) => setVendor(e.target.value)}
+                    onBlur={() => void persistPatch({ vendor: vendor.trim() || undefined })}
+                  />
+                </label>
+
+                <div className="grid grid-cols-2 gap-1.5">
+                  <label className="block space-y-0.5">
+                    <span className="text-[9px] font-black uppercase text-slate-400">Bought on</span>
+                    <select
+                      className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-semibold text-slate-900 outline-none"
+                      value={platformBought}
+                      onChange={(e) => {
+                        const next = e.target.value as Platform;
+                        const nextPay = paymentAfterPlatformChange(next, buyPaymentType);
+                        setPlatformBought(next);
+                        setBuyPaymentType(nextPay || defaultBuyPaymentForPlatform(next));
+                        void persistPatch({
+                          platformBought: next,
+                          buyPaymentType: nextPay || defaultBuyPaymentForPlatform(next),
+                        });
+                      }}
+                    >
+                      {BUY_PLATFORMS.map((p) => (
+                        <option key={p} value={p}>
+                          {PLATFORM_OPTION_LABEL[p]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block space-y-0.5">
+                    <span className="text-[9px] font-black uppercase text-slate-400">Buy payment</span>
+                    <select
+                      className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-semibold text-slate-900 outline-none"
+                      value={buyPaymentType}
+                      onChange={(e) => {
+                        const next = normalizeBuyPaymentForPlatform(
+                          platformBought,
+                          e.target.value as PaymentType
+                        ) as PaymentType;
+                        setBuyPaymentType(next);
+                        void persistPatch({ buyPaymentType: next });
+                      }}
+                    >
+                      {PAYMENT_METHODS.map((p) => (
+                        <option key={p} value={p}>
+                          {p}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
-                <div className="grid grid-cols-[88px_1fr] gap-1 rounded-lg bg-white border border-slate-200 px-2 py-1.5">
-                  <span className="text-[9px] font-black uppercase text-slate-400 self-center">Buy type</span>
-                  <span className="font-semibold text-slate-800">{item.buyPaymentType || '—'}</span>
-                </div>
-                <div className="grid grid-cols-[88px_1fr] gap-1 rounded-lg bg-white border border-slate-200 px-2 py-1.5">
-                  <span className="text-[9px] font-black uppercase text-slate-400 self-center">Sold</span>
-                  <span className="font-semibold text-slate-800">
-                    {formatItemSalePlatform(item) || (item.sellDate ? 'Sold' : '— not sold')}
-                  </span>
-                </div>
-                <div className="grid grid-cols-[88px_1fr] gap-1 rounded-lg bg-white border border-slate-200 px-2 py-1.5">
-                  <span className="text-[9px] font-black uppercase text-slate-400 self-center">Sale type</span>
-                  <span className="font-semibold text-slate-800">
-                    {item.paymentType || item.platformSold || '—'}
-                  </span>
+
+                <div className="pt-1 border-t border-slate-200/80 space-y-1.5">
+                  <p className="text-[9px] font-black uppercase text-slate-400">Sale / buyer</p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <label className="block space-y-0.5">
+                      <span className="text-[9px] font-black uppercase text-slate-400">Sold on</span>
+                      <select
+                        className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-semibold text-slate-900 outline-none"
+                        value={platformSold}
+                        onChange={(e) => {
+                          const next = e.target.value as Platform | '';
+                          setPlatformSold(next);
+                          void persistPatch({
+                            platformSold: next || undefined,
+                          });
+                        }}
+                      >
+                        <option value="">— not sold</option>
+                        {SALE_PLATFORM_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block space-y-0.5">
+                      <span className="text-[9px] font-black uppercase text-slate-400">Sale payment</span>
+                      <select
+                        className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-semibold text-slate-900 outline-none"
+                        value={paymentType}
+                        onChange={(e) => {
+                          const next = e.target.value as PaymentType | '';
+                          setPaymentType(next);
+                          void persistPatch({
+                            paymentType: next || undefined,
+                          });
+                        }}
+                      >
+                        <option value="">—</option>
+                        {PAYMENT_METHODS.map((p) => (
+                          <option key={p} value={p}>
+                            {p}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <label className="block space-y-0.5">
+                    <span className="text-[9px] font-black uppercase text-slate-400">Buyer name</span>
+                    <input
+                      className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-semibold text-slate-900 outline-none focus:border-rose-400"
+                      value={buyerName}
+                      placeholder="Customer / buyer"
+                      onChange={(e) => setBuyerName(e.target.value)}
+                      onBlur={() =>
+                        void persistPatch({
+                          customer: {
+                            name: buyerName.trim(),
+                            address: buyerAddress.trim(),
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="block space-y-0.5">
+                    <span className="text-[9px] font-black uppercase text-slate-400">Buyer address</span>
+                    <textarea
+                      className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-semibold text-slate-900 outline-none focus:border-rose-400 min-h-[52px] resize-y"
+                      value={buyerAddress}
+                      placeholder="Optional shipping / pickup address"
+                      onChange={(e) => setBuyerAddress(e.target.value)}
+                      onBlur={() =>
+                        void persistPatch({
+                          customer: {
+                            name: buyerName.trim(),
+                            address: buyerAddress.trim(),
+                          },
+                        })
+                      }
+                    />
+                  </label>
                 </div>
               </div>
             </section>
