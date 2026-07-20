@@ -47,6 +47,7 @@ import {
 } from "firebase/storage";
 import { yieldToMain } from "./backgroundPersistence";
 import type { GeneratedProductCardEntry } from "../types";
+import { recordFirestoreDeletes, recordFirestoreWrites } from "./firestoreOpsCounter";
 
 // --- CONFIG ---
 
@@ -716,6 +717,10 @@ async function writeShardedSyncPack(
     }
   }
   if (count > 0) await batch.commit();
+
+  // meta + core + inventory/trash shards count as writes; extras + legacy as deletes
+  recordFirestoreWrites(2 + invChunks.length + trashChunks.length);
+  recordFirestoreDeletes(extraDeletes.length + 1);
 }
 
 // --- REAL-TIME SUBSCRIBE ---

@@ -10,6 +10,7 @@ import { usePanelLocale } from '../context/PanelLocaleContext';
 import { usePanelKeyboardShortcuts } from '../hooks/usePanelKeyboardShortcuts';
 import { signInWithGoogle, logOut, completeGoogleRedirectSignIn, getAuthErrorMessage } from '../services/firebaseService';
 import QuotaMonitor from './QuotaMonitor';
+import FirestoreQuotaWidget from './FirestoreQuotaWidget';
 import GlobalSearch from './GlobalSearch';
 import EbaySoldReminderWidget from './EbaySoldReminderWidget';
 import { useEbayListingReminder } from '../hooks/useEbayListingReminder';
@@ -295,27 +296,32 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             <GlobalSearch items={items} expenses={expenses} businessSettings={businessSettings} />
           </div>
         )}
-        {isCloudEnabled && authUser && syncState.status !== 'idle' && (
-          <div className="hidden md:block fixed bottom-4 left-4 z-[100]">
-            <button
-              type="button"
-              onClick={() => syncState.status === 'error' && onForcePush?.()}
-              disabled={syncState.status === 'syncing' || syncState.status === 'pending'}
-              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold tracking-wide border shadow-lg transition-all ${
-                syncState.status === 'pending' ? 'bg-sky-50 text-sky-800 border-sky-200' :
-                syncState.status === 'syncing' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                syncState.status === 'error' ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100 cursor-pointer' :
-                'bg-emerald-50 text-emerald-700 border-emerald-200'
-              }`}
-              title={cloudSyncBadgeTitle(syncState)}
-            >
-              {(syncState.status === 'syncing' || syncState.status === 'pending') && (
-                <Loader2 size={12} className="animate-spin shrink-0" />
-              )}
-              {syncState.status === 'success' && <CheckCircle2 size={12} className="shrink-0 text-emerald-500" />}
-              {syncState.status === 'error' && <RefreshCw size={12} className="shrink-0" />}
-              <span>{cloudSyncBadgeLabel(syncState)}</span>
-            </button>
+        {isCloudEnabled && authUser && (
+          <div className="fixed bottom-4 left-4 z-[100] flex flex-col gap-2 items-start max-w-[min(20rem,calc(100vw-2rem))]">
+            <div className="hidden md:block w-full">
+              <FirestoreQuotaWidget />
+            </div>
+            {syncState.status !== 'idle' && (
+              <button
+                type="button"
+                onClick={() => syncState.status === 'error' && onForcePush?.()}
+                disabled={syncState.status === 'syncing' || syncState.status === 'pending'}
+                className={`hidden md:inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold tracking-wide border shadow-lg transition-all ${
+                  syncState.status === 'pending' ? 'bg-sky-50 text-sky-800 border-sky-200' :
+                  syncState.status === 'syncing' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                  syncState.status === 'error' ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100 cursor-pointer' :
+                  'bg-emerald-50 text-emerald-700 border-emerald-200'
+                }`}
+                title={cloudSyncBadgeTitle(syncState)}
+              >
+                {(syncState.status === 'syncing' || syncState.status === 'pending') && (
+                  <Loader2 size={12} className="animate-spin shrink-0" />
+                )}
+                {syncState.status === 'success' && <CheckCircle2 size={12} className="shrink-0 text-emerald-500" />}
+                {syncState.status === 'error' && <RefreshCw size={12} className="shrink-0" />}
+                <span>{cloudSyncBadgeLabel(syncState)}</span>
+              </button>
+            )}
           </div>
         )}
         {!isCloudEnabled && !backupBannerDismissed && onDismissBackupBanner && (
