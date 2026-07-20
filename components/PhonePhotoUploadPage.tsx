@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { CheckCircle2, ImagePlus, Loader2, Smartphone, Upload } from 'lucide-react';
+import { CheckCircle2, ExternalLink, ImagePlus, Loader2, Smartphone, Upload } from 'lucide-react';
 import {
   ensureGoogleUploadAuth,
   fetchPhotoUploadSession,
@@ -8,7 +8,11 @@ import {
   type PhotoUploadSession,
 } from '../services/photoUploadSession';
 import { getCurrentUser } from '../services/firebaseService';
-import { compressImageFileToBlob, INVENTORY_PHOTO_STORAGE_OPTIONS } from '../utils/imageCompress';
+import { compressInventoryUploadFile, describeInventoryPhotoCompression } from '../utils/imageCompress';
+
+function buildItemOpenUrl(itemId: string, origin = window.location.origin): string {
+  return `${origin.replace(/\/$/, '')}/panel/edit/${encodeURIComponent(itemId)}`;
+}
 
 const PhonePhotoUploadPage: React.FC = () => {
   const { token = '' } = useParams<{ token: string }>();
@@ -18,7 +22,7 @@ const PhonePhotoUploadPage: React.FC = () => {
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [needGoogle, setNeedGoogle] = useState(false);
-  const [doneCount, setDoneCount] = useState(0);
+  const [uploadedThisVisit, setUploadedThisVisit] = useState(0);
 
   const loadSession = async () => {
     const user = getCurrentUser();
@@ -93,8 +97,10 @@ const PhonePhotoUploadPage: React.FC = () => {
 
   const remaining = useMemo(() => {
     if (!session) return 0;
-    return Math.max(0, session.maxPhotos - session.uploadedUrls.length - doneCount);
-  }, [session, doneCount]);
+    return Math.max(0, session.maxPhotos - session.uploadedUrls.length);
+  }, [session]);
+
+  const itemOpenUrl = session?.itemId ? buildItemOpenUrl(session.itemId) : null;
 
   const handleFiles = async (list: FileList | null) => {
     if (!list?.length || !session || !token) return;
@@ -108,21 +114,21 @@ const PhonePhotoUploadPage: React.FC = () => {
     let ok = 0;
     try {
       for (let i = 0; i < files.length; i++) {
-        setProgress(`Uploading ${i + 1} / ${files.length}…`);
+        setProgress(`Compressing ${i + 1} / ${files.length}…`);
         const file = files[i];
-        let blob: Blob = file;
-        try {
-          blob = await compressImageFileToBlob(file, INVENTORY_PHOTO_STORAGE_OPTIONS);
-        } catch {
-          blob = file;
-        }
-        await uploadPhonePhotoToSession(token, blob, file.name.replace(/\.\w+$/, '.jpg'));
+        const { blob, fileName } = await compressInventoryUploadFile(file);
+        setProgress(`Uploading ${i + 1} / ${files.length}…`);
+        await uploadPhonePhotoToSession(token, blob, fileName);
         ok += 1;
-        setDoneCount((c) => c + 1);
       }
       const refreshed = await fetchPhotoUploadSession(token);
       if (refreshed) setSession(refreshed);
-      setProgress(ok ? `${ok} photo${ok === 1 ? '' : 's'} sent to your PC` : null);
+      setUploadedThisVisit((n) => n + ok);
+      setProgress(
+        ok
+          ? `${ok} photo${ok === 1 ? '' : 's'} sent — keep the QR panel open on your PC to save them on the item`
+          : null
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Upload failed');
       setProgress(null);
@@ -133,6 +139,9 @@ const PhonePhotoUploadPage: React.FC = () => {
 
   const canUpload =
     !!session && session.status === 'active' && Date.now() <= session.expiresAtMs && !needGoogle;
+
+  const showOpenItem =
+    !!itemOpenUrl && (uploadedThisVisit > 0 || (session?.uploadedUrls.length ?? 0) > 0);
 
   return (
     <div className="min-h-[100dvh] bg-slate-950 text-white px-4 py-6 flex flex-col">
@@ -145,7 +154,8 @@ const PhonePhotoUploadPage: React.FC = () => {
             {session?.itemName || 'Add photos'}
           </h1>
           <p className="text-sm text-slate-400 font-medium">
-            Sign in with the same Google account as your PC, then pick from Photos.
+            Sign in with the same Google account as your PC, then pick from Photos. Leave the QR
+            panel open on the PC.
           </p>
         </header>
 
@@ -175,7 +185,10 @@ const PhonePhotoUploadPage: React.FC = () => {
           <>
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3">
               <p className="text-xs text-slate-300 font-semibold">
-                {session.uploadedUrls.length + doneCount}/{session.maxPhotos} photos on this link
+                {session.uploadedUrls.length}/{session.maxPhotos} photos on this link
+              </p>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                {describeInventoryPhotoCompression()}
               </p>
               <label className="flex flex-col items-center justify-center gap-2 min-h-[160px] rounded-2xl border-2 border-dashed border-sky-400/50 bg-sky-500/10 px-4 py-8 cursor-pointer active:scale-[0.99] transition">
                 {uploading ? (
@@ -224,7 +237,27 @@ const PhonePhotoUploadPage: React.FC = () => {
                 <CheckCircle2 size={16} /> {progress}
               </p>
             )}
+
+            {showOpenItem && itemOpenUrl && (
+              <a
+                href={itemOpenUrl}
+                className="flex items-center justify-center gap-2 w-full py-3.5 rounded-2xl bg-sky-500 text-white text-sm font-black shadow-lg shadow-sky-500/30"
+              >
+                <ExternalLink size={16} />
+                Open {session?.itemName || 'item'} in inventory
+              </a>
+            )}
           </>
+        )}
+
+        {!loading && !canUpload && session && showOpenItem && itemOpenUrl && (
+          <a
+            href={itemOpenUrl}
+            className="flex items-center justify-center gap-2 w-full py-3.5 rounded-2xl bg-sky-500 text-white text-sm font-black"
+          >
+            <ExternalLink size={16} />
+            Open {session.itemName || 'item'} in inventory
+          </a>
         )}
       </div>
     </div>

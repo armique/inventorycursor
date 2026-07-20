@@ -9,8 +9,9 @@ import {
   compressBlobToJpeg,
   compressBlobToLocalDataUrl,
   compressDataUrlToBlob,
-  compressImageFileToBlob,
+  compressInventoryUploadFile,
   dataUrlFromBlob,
+  fileExtensionForImageBlob,
   INVENTORY_PHOTO_LOCAL_OPTIONS,
   INVENTORY_PHOTO_STORAGE_OPTIONS,
 } from '../utils/imageCompress';
@@ -41,6 +42,18 @@ export function isFirebaseStorageInventoryUrl(url: string): boolean {
   if (!s.startsWith('https://')) return false;
   if (!s.includes('firebasestorage.googleapis.com') && !s.includes('firebasestorage.app')) return false;
   return s.includes('/items%2F') || s.includes('/items/');
+}
+
+/** iPhone QR bridge uploads — re-compress when attaching to the item (may still be large). */
+export function isPhoneBridgeStorageUrl(url: string): boolean {
+  const s = url.trim();
+  if (!s.startsWith('https://')) return false;
+  if (!s.includes('firebasestorage.googleapis.com') && !s.includes('firebasestorage.app')) return false;
+  return (
+    s.includes('/phone-bridge/') ||
+    s.includes('/phone-bridge%2F') ||
+    s.includes('%2Fphone-bridge%2F')
+  );
 }
 
 /** Durable Firebase Storage URLs for inventory items OR AI product-card gallery. */
@@ -425,16 +438,16 @@ async function fetchRemoteImageBlob(url: string): Promise<Blob> {
 }
 
 async function blobToPersistedUrl(blob: Blob, itemId: string): Promise<string> {
-  const jpeg = await compressBlobToJpeg(blob, INVENTORY_PHOTO_STORAGE_OPTIONS);
+  const compressed = await compressBlobToJpeg(blob, INVENTORY_PHOTO_STORAGE_OPTIONS);
 
   if (canUploadToCloud()) {
-    const hash = await hashBlob(jpeg);
+    const hash = await hashBlob(compressed);
     const folder = itemId.trim() || 'shared';
-    const fileName = `${hash}.jpg`;
-    return uploadItemImageBlob(jpeg, folder, fileName);
+    const fileName = `${hash}.${fileExtensionForImageBlob(compressed)}`;
+    return uploadItemImageBlob(compressed, folder, fileName);
   }
 
-  return compressBlobToLocalDataUrl(jpeg, INVENTORY_PHOTO_LOCAL_OPTIONS);
+  return compressBlobToLocalDataUrl(compressed, INVENTORY_PHOTO_LOCAL_OPTIONS);
 }
 
 async function persistOneInventoryImageUrl(
@@ -445,8 +458,12 @@ async function persistOneInventoryImageUrl(
   const trimmed = url.trim();
   if (!trimmed) return trimmed;
 
-  // Already durable in Storage (inventory photos or AI card gallery) — do not re-fetch/re-encode
-  if (isDurableFirebaseStorageUrl(trimmed) || isFirebaseStorageInventoryUrl(trimmed)) {
+  // Already durable in Storage (inventory / phone-bridge / AI cards) — attach as-is.
+  // Phone uploads are already compressed on the device before Storage write.
+  if (
+    !options?.force &&
+    (isDurableFirebaseStorageUrl(trimmed) || isFirebaseStorageInventoryUrl(trimmed))
+  ) {
     return trimmed;
   }
 
@@ -465,7 +482,11 @@ async function persistOneInventoryImageUrl(
       if (canUploadToCloud()) {
         const blob = await compressDataUrlToBlob(trimmed, INVENTORY_PHOTO_STORAGE_OPTIONS);
         const hash = await hashBlob(blob);
-        result = await uploadItemImageBlob(blob, itemId.trim() || 'shared', `${hash}.jpg`);
+        result = await uploadItemImageBlob(
+          blob,
+          itemId.trim() || 'shared',
+          `${hash}.${fileExtensionForImageBlob(blob)}`
+        );
       } else {
         const blob = await compressDataUrlToBlob(trimmed, INVENTORY_PHOTO_LOCAL_OPTIONS);
         result = await dataUrlFromBlob(blob);
@@ -522,10 +543,11 @@ export async function persistInventoryImageFiles(
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
     try {
-      const blob = await compressImageFileToBlob(file, INVENTORY_PHOTO_STORAGE_OPTIONS);
+      const { blob } = await compressInventoryUploadFile(file, INVENTORY_PHOTO_STORAGE_OPTIONS);
       if (canUploadToCloud()) {
         const hash = await hashBlob(blob);
-        out.push(await uploadItemImageBlob(blob, itemId, `${hash}.jpg`));
+        const ext = fileExtensionForImageBlob(blob);
+        out.push(await uploadItemImageBlob(blob, itemId, `${hash}.${ext}`));
       } else {
         out.push(await dataUrlFromBlob(blob));
       }

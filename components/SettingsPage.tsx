@@ -22,6 +22,7 @@ import {
   type PhotoArchiveProgress,
   type PhotoArchiveResult,
 } from '../services/inventoryImageStorage';
+import { describeInventoryPhotoCompression } from '../utils/imageCompress';
 import {
   getStoredConfig,
   getStoredToken,
@@ -915,6 +916,9 @@ const SettingsPage: React.FC<Props> = ({
                    <p className="text-sm text-slate-500 leading-relaxed">
                       Turn existing eBay, search, and pasted image links into permanent copies in Firebase Storage.
                       You do <strong>not</strong> need to refetch from eBay — the app downloads from the URL already on each item.
+                   </p>
+                   <p className="text-xs text-slate-500 leading-relaxed bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3">
+                      {describeInventoryPhotoCompression()} New uploads and archive runs use this automatically to save Storage quota.
                    </p>
 
                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

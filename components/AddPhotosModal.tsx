@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Camera, CheckCircle2, Loader2, Search, ShoppingBag, Upload, X, Link2, Images } from 'lucide-react';
+import { describeInventoryPhotoCompression } from '../utils/imageCompress';
 import {
   filesToDataUrls,
   fetchImgurAlbumImageUrls,
@@ -117,8 +118,8 @@ const AddPhotosModal: React.FC<Props> = ({
     setError(null);
     try {
       addUrls(await filesToDataUrls(files, storageOptions));
-    } catch {
-      setError('Could not read one or more image files.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not compress one or more image files.');
     } finally {
       setLoading(false);
       e.target.value = '';
@@ -538,6 +539,9 @@ const AddPhotosModal: React.FC<Props> = ({
               Choose images
               <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} disabled={loading} />
             </label>
+            <p className="text-[10px] text-slate-400 font-medium leading-relaxed">
+              {describeInventoryPhotoCompression()}
+            </p>
           </div>
 
           <div className="space-y-2">
