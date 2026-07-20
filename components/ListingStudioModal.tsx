@@ -439,24 +439,32 @@ const ListingStudioModal: React.FC<Props> = ({
     }
   };
 
+  const itemPhotosRef = useRef({ imageUrl: item.imageUrl, imageUrls: item.imageUrls });
+  useEffect(() => {
+    itemPhotosRef.current = { imageUrl: item.imageUrl, imageUrls: item.imageUrls };
+  }, [item.imageUrl, item.imageUrls]);
+
   const mergeRemotePhotoUrls = useCallback(
     async (urls: string[]) => {
       if (!urls.length) return;
-      try {
-        const prepared = await prepareInventoryImagesForStorage(urls, { itemId: item.id });
-        const merged = normalizeImageList([
-          ...(item.imageUrls || []),
-          item.imageUrl,
-          ...prepared,
-        ]);
-        await persistPatch({ imageUrl: merged[0], imageUrls: merged });
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Could not attach iPhone photos');
+      // Phone-bridge URLs are already on Firebase Storage (compressed on device).
+      // Attach them directly — do not wait on a second download/recompress pass.
+      const prepared = await prepareInventoryImagesForStorage(urls, { itemId: item.id });
+      const base = itemPhotosRef.current;
+      const merged = normalizeImageList([
+        ...(base.imageUrls || []),
+        base.imageUrl,
+        ...prepared,
+      ]);
+      if (!merged.length) {
+        throw new Error('No photo URLs to attach.');
       }
+      itemPhotosRef.current = { imageUrl: merged[0], imageUrls: merged };
+      await persistPatch({ imageUrl: merged[0], imageUrls: merged });
     },
-    // persistPatch closes over onUpdateItem; item urls needed for merge base
+    // persistPatch closes over onUpdateItem
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [item.id, item.imageUrl, item.imageUrls, onUpdateItem]
+    [item.id, onUpdateItem]
   );
 
   const handleFolderFiles = async (files: File[]) => {

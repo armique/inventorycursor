@@ -91,8 +91,6 @@ export function urlNeedsPhotoArchive(url: string | undefined | null): boolean {
   if (!s) return false;
   if (s === CLOUD_OMITTED_PLACEHOLDER) return false;
   if (isCategoryPlaceholderImage(s)) return false;
-  // Phone QR bridge uploads should be recompressed into the normal item folder.
-  if (isPhoneBridgeStorageUrl(s)) return true;
   if (isFirebaseStorageInventoryUrl(s) || isDurableFirebaseStorageUrl(s)) return false;
   return isRemoteHttpUrl(s) || isDataImageUrl(s);
 }
@@ -460,11 +458,10 @@ async function persistOneInventoryImageUrl(
   const trimmed = url.trim();
   if (!trimmed) return trimmed;
 
-  // Already durable in Storage — keep as-is, except iPhone QR bridge uploads
-  // which we re-compress into the normal item folder for quota.
+  // Already durable in Storage (inventory / phone-bridge / AI cards) — attach as-is.
+  // Phone uploads are already compressed on the device before Storage write.
   if (
     !options?.force &&
-    !isPhoneBridgeStorageUrl(trimmed) &&
     (isDurableFirebaseStorageUrl(trimmed) || isFirebaseStorageInventoryUrl(trimmed))
   ) {
     return trimmed;
@@ -494,7 +491,7 @@ async function persistOneInventoryImageUrl(
         const blob = await compressDataUrlToBlob(trimmed, INVENTORY_PHOTO_LOCAL_OPTIONS);
         result = await dataUrlFromBlob(blob);
       }
-    } else if (isRemoteHttpUrl(trimmed) || isPhoneBridgeStorageUrl(trimmed)) {
+    } else if (isRemoteHttpUrl(trimmed)) {
       const remote = await fetchRemoteImageBlob(trimmed);
       result = await blobToPersistedUrl(remote, itemId);
     }

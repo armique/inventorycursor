@@ -20,16 +20,35 @@ const PhoneUploadQrPanel: React.FC<Props> = ({ itemId, itemName, onUrls, onClose
   const [session, setSession] = useState<PhotoUploadSession | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [attachStatus, setAttachStatus] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const seenRef = useRef<Set<string>>(new Set());
+  const attachChainRef = useRef<Promise<void>>(Promise.resolve());
+  const onUrlsRef = useRef(onUrls);
   const [now, setNow] = useState(Date.now());
 
+  // Keep latest callback without recreating the Firestore session.
+  useEffect(() => {
+    onUrlsRef.current = onUrls;
+  }, [onUrls]);
+
+  // Create ONE session per itemId. Do not recreate when the item name edits —
+  // that invalidated the QR while the phone still uploaded to the old token.
   useEffect(() => {
     let unsub: (() => void) | undefined;
     let cancelled = false;
+    seenRef.current = new Set();
+    setSession(null);
+    setQrDataUrl(null);
+    setError(null);
+    setAttachStatus(null);
+
     (async () => {
       try {
-        const created = await createPhotoUploadSession({ itemId, itemName });
+        const created = await createPhotoUploadSession({
+          itemId,
+          itemName: itemName || 'Item',
+        });
         if (cancelled) {
           await revokePhotoUploadSession(created.token);
           return;
@@ -41,11 +60,12 @@ const PhoneUploadQrPanel: React.FC<Props> = ({ itemId, itemName, onUrls, onClose
           width: 220,
           color: { dark: '#0f172a', light: '#ffffff' },
         });
-        setQrDataUrl(dataUrl);
+        if (!cancelled) setQrDataUrl(dataUrl);
         unsub = subscribePhotoUploadSession(created.token, (live) => {
-          setSession(live);
+          if (!cancelled) setSession(live);
         });
       } catch (e) {
+        if (cancelled) return;
         const msg = e instanceof Error ? e.message : 'Could not start iPhone upload';
         const permission =
           /permission|insufficient|Missing or insufficient/i.test(msg) ||
@@ -57,24 +77,57 @@ const PhoneUploadQrPanel: React.FC<Props> = ({ itemId, itemName, onUrls, onClose
         );
       }
     })();
+
     return () => {
       cancelled = true;
       unsub?.();
     };
-  }, [itemId, itemName]);
+    // intentionally only itemId — name changes must not rotate the QR token
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemId]);
 
   useEffect(() => {
     const t = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(t);
   }, []);
 
+  // Attach new session URLs to the inventory item (serialized, retryable).
   useEffect(() => {
     if (!session?.uploadedUrls?.length) return;
     const fresh = session.uploadedUrls.filter((u) => !seenRef.current.has(u));
     if (!fresh.length) return;
-    fresh.forEach((u) => seenRef.current.add(u));
-    void onUrls(fresh);
-  }, [session?.uploadedUrls, onUrls]);
+    const batch = [...fresh];
+
+    attachChainRef.current = attachChainRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        const stillFresh = batch.filter((u) => !seenRef.current.has(u));
+        if (!stillFresh.length) return;
+        setAttachStatus(
+          stillFresh.length === 1
+            ? 'Attaching photo to item…'
+            : `Attaching ${stillFresh.length} photos to item…`
+        );
+        setError(null);
+        try {
+          await onUrlsRef.current(stillFresh);
+          stillFresh.forEach((u) => seenRef.current.add(u));
+          setAttachStatus(
+            stillFresh.length === 1
+              ? 'Photo saved on this item'
+              : `${stillFresh.length} photos saved on this item`
+          );
+        } catch (e) {
+          setAttachStatus(null);
+          setError(
+            e instanceof Error
+              ? `Photos reached the PC but failed to save on the item: ${e.message}`
+              : 'Photos reached the PC but failed to save on the item.'
+          );
+          // Leave URLs unseen so the next snapshot / remount can retry.
+        }
+      });
+  }, [session?.uploadedUrls, session?.token]);
 
   const uploadUrl = useMemo(
     () => (session ? buildPhoneUploadUrl(session.token) : ''),
@@ -109,6 +162,32 @@ const PhoneUploadQrPanel: React.FC<Props> = ({ itemId, itemName, onUrls, onClose
     }
   };
 
+  const retryAttach = () => {
+    if (!session?.uploadedUrls?.length) return;
+    seenRef.current = new Set();
+    setError(null);
+    setAttachStatus('Retrying attach…');
+    // Force effect by clearing then setting — trigger via re-filter
+    void (async () => {
+      try {
+        await onUrlsRef.current(session.uploadedUrls);
+        session.uploadedUrls.forEach((u) => seenRef.current.add(u));
+        setAttachStatus(
+          session.uploadedUrls.length === 1
+            ? 'Photo saved on this item'
+            : `${session.uploadedUrls.length} photos saved on this item`
+        );
+      } catch (e) {
+        setAttachStatus(null);
+        setError(
+          e instanceof Error
+            ? `Retry failed: ${e.message}`
+            : 'Retry failed — keep this panel open and try again.'
+        );
+      }
+    })();
+  };
+
   return (
     <div className="rounded-xl border border-sky-200 bg-sky-50/80 p-3 space-y-2">
       <div className="flex items-start justify-between gap-2">
@@ -117,7 +196,7 @@ const PhoneUploadQrPanel: React.FC<Props> = ({ itemId, itemName, onUrls, onClose
             <Smartphone size={12} /> From iPhone
           </p>
           <p className="text-[10px] text-sky-900/70 font-medium mt-0.5">
-            Scan with Camera → on iPhone sign in with the same Google account → pick from Photos.
+            Keep this panel open while you upload. Scan → same Google account → Photos.
           </p>
         </div>
         <button
@@ -131,8 +210,25 @@ const PhoneUploadQrPanel: React.FC<Props> = ({ itemId, itemName, onUrls, onClose
       </div>
 
       {error && (
-        <p className="text-[10px] font-semibold text-rose-700 bg-rose-50 border border-rose-100 rounded-lg px-2 py-1.5">
-          {error}
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-semibold text-rose-700 bg-rose-50 border border-rose-100 rounded-lg px-2 py-1.5">
+            {error}
+          </p>
+          {session && session.uploadedUrls.length > 0 && (
+            <button
+              type="button"
+              onClick={retryAttach}
+              className="text-[9px] font-black uppercase text-rose-800 underline"
+            >
+              Retry attach to item
+            </button>
+          )}
+        </div>
+      )}
+
+      {attachStatus && !error && (
+        <p className="text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-1.5">
+          {attachStatus}
         </p>
       )}
 
@@ -176,7 +272,7 @@ const PhoneUploadQrPanel: React.FC<Props> = ({ itemId, itemName, onUrls, onClose
               <div className="grid grid-cols-4 gap-1 pt-1">
                 {session.uploadedUrls.slice(-4).map((u) => (
                   <img
-                    key={u.slice(-24)}
+                    key={u.slice(-40)}
                     src={u}
                     alt=""
                     className="aspect-square rounded-lg object-cover border border-sky-100 bg-white"
