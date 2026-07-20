@@ -20,10 +20,7 @@ import {
   Download,
 } from 'lucide-react';
 import type { GeneratedProductCardEntry, InventoryItem, PaymentType, Platform } from '../types';
-import {
-  formatOwnerListingHints,
-  generateMarketplaceListing,
-} from '../services/marketplaceListingAI';
+import { generateMarketplaceListing } from '../services/marketplaceListingAI';
 import { generateItemSpecs } from '../services/specsAI';
 import { mergeAiSpecsIntoEssential, resolveEssentialSpecKeys } from '../services/essentialSpecFields';
 import { pickSpecsAiNameVendorUpdates } from '../utils/applySpecsAiResult';
@@ -125,8 +122,10 @@ const ListingStudioModal: React.FC<Props> = ({
   const [specs, setSpecs] = useState<Record<string, string | number>>({ ...(item.specs || {}) });
   const [title, setTitle] = useState(item.marketTitle?.trim() || item.name || '');
   const [description, setDescription] = useState(item.marketDescription || '');
-  const [ownerHints, setOwnerHints] = useState<string | null>(null);
   const [aiDescriptionNote, setAiDescriptionNote] = useState(item.aiDescriptionNote || '');
+  /** Mobile: specs / purchase collapsed so Cards + Listing sit higher. */
+  const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false);
+  const studioScrollRef = useRef<HTMLDivElement>(null);
 
   const [vendor, setVendor] = useState(item.vendor || '');
   const [platformBought, setPlatformBought] = useState<Platform>(
@@ -263,7 +262,7 @@ const ListingStudioModal: React.FC<Props> = ({
     setTitle(item.marketTitle?.trim() || item.name || '');
     setDescription(item.marketDescription || '');
     setAiDescriptionNote(item.aiDescriptionNote || '');
-    setOwnerHints(null);
+    setMobileDetailsOpen(false);
     setVendor(item.vendor || '');
     setPlatformBought((item.platformBought as Platform) || 'kleinanzeigen.de');
     setBuyPaymentType(
@@ -410,12 +409,17 @@ const ListingStudioModal: React.FC<Props> = ({
       );
       setTitle(result.ebayTitle);
       setDescription(result.listingText);
-      setOwnerHints(formatOwnerListingHints(result));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Listing generation failed');
     } finally {
       setGenListing(false);
     }
+  };
+
+  const scrollStudioTo = (id: string) => {
+    const root = studioScrollRef.current;
+    const el = root?.querySelector(`#${id}`) as HTMLElement | null;
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   const handleApplyListing = async () => {
@@ -693,12 +697,12 @@ const ListingStudioModal: React.FC<Props> = ({
         className="bg-white w-full sm:max-w-[1280px] h-[100dvh] sm:h-[min(94vh,920px)] sm:rounded-2xl shadow-2xl border-0 sm:border border-slate-200 overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="px-3 py-2.5 border-b border-slate-100 flex items-start justify-between gap-2 bg-slate-50/90 shrink-0 pt-[max(0.625rem,env(safe-area-inset-top))]">
+        <header className="px-3 py-2 border-b border-slate-100 flex items-center justify-between gap-2 bg-slate-50/90 shrink-0 pt-[max(0.5rem,env(safe-area-inset-top))]">
           <div className="min-w-0">
             <h3 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
               <Sparkles size={14} className="text-rose-600" /> Listing Studio
             </h3>
-            <p className="text-[11px] text-slate-500 font-medium truncate">
+            <p className="hidden sm:block text-[11px] text-slate-500 font-medium truncate">
               Specs · Photos · Title & description
             </p>
           </div>
@@ -715,10 +719,32 @@ const ListingStudioModal: React.FC<Props> = ({
           </div>
         </header>
 
-        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(240px,0.92fr)_minmax(280px,1.05fr)_minmax(280px,1.05fr)] overflow-y-auto lg:overflow-hidden">
+        <nav className="lg:hidden shrink-0 flex border-b border-slate-200 bg-white">
+          {(
+            [
+              { id: 'studio-item', label: 'Item' },
+              { id: 'studio-cards', label: 'Cards' },
+              { id: 'studio-listing', label: 'Listing' },
+            ] as const
+          ).map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => scrollStudioTo(tab.id)}
+              className="flex-1 py-2 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+
+        <div
+          ref={studioScrollRef}
+          className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(240px,0.92fr)_minmax(280px,1.05fr)_minmax(280px,1.05fr)] overflow-y-auto lg:overflow-hidden"
+        >
           {/* LEFT — item / specs / trade */}
-          <aside className="border-r border-slate-100 overflow-y-auto p-3 space-y-3 bg-slate-50/40">
-            <section>
+          <aside className="border-r border-slate-100 overflow-y-auto p-2.5 space-y-2.5 lg:p-3 lg:space-y-3 bg-slate-50/40">
+            <section id="studio-item" className="scroll-mt-2">
               <div className="flex items-center justify-between mb-1 gap-2">
                 <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                   Item name
@@ -752,13 +778,13 @@ const ListingStudioModal: React.FC<Props> = ({
                 onChange={(e) => setName(e.target.value)}
                 onBlur={() => void persistPatch({ name: name.trim() || item.name })}
               />
-              <div className="mt-1.5 flex items-center gap-1.5">
+              <div className="mt-1 flex items-center gap-1.5">
                 <ItemAccessoryToggles
                   item={item}
                   mini
                   onPatch={(patch) => void persistPatch(patch)}
                 />
-                <span className="text-[9px] text-slate-400 font-medium truncate">
+                <span className="hidden sm:inline text-[9px] text-slate-400 font-medium truncate">
                   OVP / Rechnung / IO → AI listing hints
                 </span>
               </div>
@@ -854,12 +880,32 @@ const ListingStudioModal: React.FC<Props> = ({
               )}
               <p className="text-[10px] text-slate-400 mt-1 font-medium">
                 {photos.length === 0
-                  ? 'GEN1–3 work from name/specs when no photos yet'
-                  : `${photos.length} photo${photos.length === 1 ? '' : 's'} · hold+drag to reorder · tap to enlarge · use GEN1/2/3`}
+                  ? 'GEN1–3 from name/specs'
+                  : `${photos.length} photo${photos.length === 1 ? '' : 's'} · hold+drag · GEN1/2/3`}
               </p>
             </section>
 
-            <section>
+            <button
+              type="button"
+              className="lg:hidden w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl border border-slate-200 bg-white text-left"
+              onClick={() => setMobileDetailsOpen((o) => !o)}
+              aria-expanded={mobileDetailsOpen}
+            >
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">
+                Specs & purchase
+                {Object.keys(specs).length > 0 ? ` · ${Object.keys(specs).length}` : ''}
+              </span>
+              <span className="text-[10px] font-bold text-slate-400">
+                {mobileDetailsOpen ? 'Hide' : 'Show'}
+              </span>
+            </button>
+
+            <div
+              className={`space-y-2.5 lg:space-y-3 ${
+                mobileDetailsOpen ? 'block' : 'hidden'
+              } lg:block`}
+            >
+            <section className="hidden lg:block">
               <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
                 Specs on the card
               </h4>
@@ -906,10 +952,10 @@ const ListingStudioModal: React.FC<Props> = ({
                   </button>
                 </div>
               </div>
-              <p className="text-[10px] text-slate-400 font-medium mb-1.5">
+              <p className="hidden sm:block text-[10px] text-slate-400 font-medium mb-1.5">
                 Edit any AI value or rename the field if you disagree.
               </p>
-              <div className="space-y-1 max-h-56 overflow-y-auto pr-0.5">
+              <div className="space-y-1 max-h-40 lg:max-h-56 overflow-y-auto pr-0.5">
                 {Object.keys(specs).length === 0 && (
                   <p className="text-[10px] text-slate-400 font-medium py-2">
                     No specs yet — run Parse AI or add your own.
@@ -1113,16 +1159,20 @@ const ListingStudioModal: React.FC<Props> = ({
                 </div>
               </div>
             </section>
+            </div>
           </aside>
 
           {/* MIDDLE — card gallery */}
-          <section className="border-r border-slate-100 overflow-y-auto p-3 space-y-2.5 bg-white">
+          <section
+            id="studio-cards"
+            className="border-r border-slate-100 overflow-y-auto p-2.5 space-y-2 lg:p-3 lg:space-y-2.5 bg-white scroll-mt-2"
+          >
             <div className="flex items-center justify-between gap-2">
-              <div>
+              <div className="min-w-0">
                 <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                   Card gallery
                 </h4>
-                <p className="text-[10px] text-slate-400 font-medium">
+                <p className="hidden sm:block text-[10px] text-slate-400 font-medium">
                   Saved for this item · edit / remove anytime
                 </p>
               </div>
@@ -1309,34 +1359,19 @@ const ListingStudioModal: React.FC<Props> = ({
           </section>
 
           {/* RIGHT — title + description */}
-          <section className="overflow-y-auto p-3 space-y-2.5 bg-slate-50/30 flex flex-col">
-            {ownerHints && (
-              <div className="rounded-xl border border-dashed border-emerald-300 bg-emerald-50/80 px-2.5 py-2 shrink-0">
-                <div className="flex justify-between gap-2 mb-1">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-emerald-800">
-                    Für dich (nicht Anzeige)
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => void copyText('owner', ownerHints)}
-                    className="text-[9px] font-bold uppercase text-emerald-700"
-                  >
-                    {copied === 'owner' ? <Check size={11} /> : <Copy size={11} />}
-                  </button>
-                </div>
-                <pre className="text-[10px] text-emerald-900/90 whitespace-pre-wrap font-sans m-0 leading-relaxed">
-                  {ownerHints}
-                </pre>
-              </div>
-            )}
-
+          <section
+            id="studio-listing"
+            className="overflow-y-auto p-2.5 space-y-2 lg:p-3 lg:space-y-2.5 bg-slate-50/30 flex flex-col scroll-mt-2"
+          >
             <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shrink-0">
               <div className="px-2.5 py-1.5 border-b border-slate-100 bg-slate-50 flex justify-between items-center gap-2">
-                <div className="min-w-0">
+                <div className="min-w-0 flex items-baseline gap-2">
                   <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">
                     AI Titel
                   </h4>
-                  <p className="text-[9px] text-slate-400">eBay · max 80</p>
+                  <span className={`text-[9px] font-bold ${titleLen > 78 ? 'text-amber-600' : 'text-emerald-700'}`}>
+                    {titleLen}/80
+                  </span>
                 </div>
                 <button
                   type="button"
@@ -1356,21 +1391,15 @@ const ListingStudioModal: React.FC<Props> = ({
                 onChange={(e) => setTitle(e.target.value)}
                 className="w-full px-2.5 py-2 text-sm font-semibold outline-none"
               />
-              <div className="px-2.5 py-1 border-t border-slate-100 text-[9px] font-bold text-slate-400 flex justify-between">
-                <span>Marktplatz-Titel</span>
-                <span className={titleLen > 78 ? 'text-amber-600' : 'text-emerald-700'}>
-                  {titleLen}/80
-                </span>
-              </div>
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-white overflow-hidden flex-1 min-h-[200px] flex flex-col">
+            <div className="rounded-xl border border-slate-200 bg-white overflow-hidden flex-1 min-h-[140px] lg:min-h-[200px] flex flex-col">
               <div className="px-2.5 py-1.5 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
                 <div>
                   <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">
                     AI Beschreibung
                   </h4>
-                  <p className="text-[9px] text-slate-400">eBay.de / Kleinanzeigen</p>
+                  <p className="hidden sm:block text-[9px] text-slate-400">eBay.de / Kleinanzeigen</p>
                 </div>
                 <button
                   type="button"
@@ -1380,7 +1409,7 @@ const ListingStudioModal: React.FC<Props> = ({
                   {copied === 'desc' ? <Check size={11} /> : <Copy size={11} />}
                 </button>
               </div>
-              <label className="block px-2.5 pt-2 pb-1 border-b border-slate-100 shrink-0">
+              <label className="block px-2.5 pt-1.5 pb-1 border-b border-slate-100 shrink-0">
                 <span className="text-[9px] font-black uppercase tracking-widest text-violet-600/80">
                   AI note
                 </span>
@@ -1401,7 +1430,7 @@ const ListingStudioModal: React.FC<Props> = ({
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                className="w-full flex-1 min-h-[180px] px-2.5 py-2 text-xs text-slate-800 outline-none resize-none leading-relaxed"
+                className="w-full flex-1 min-h-[120px] lg:min-h-[180px] px-2.5 py-2 text-xs text-slate-800 outline-none resize-none leading-relaxed"
                 placeholder="Generate German listing…"
               />
             </div>
@@ -1435,12 +1464,12 @@ const ListingStudioModal: React.FC<Props> = ({
           </section>
         </div>
 
-        <footer className="lg:hidden shrink-0 border-t border-slate-200 bg-white px-3 py-2.5 flex gap-2 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
+        <footer className="lg:hidden shrink-0 border-t border-slate-200 bg-white px-2.5 py-2 flex gap-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
           <button
             type="button"
             disabled={genListing || saving}
             onClick={() => void handleGenerateListing()}
-            className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-3 rounded-xl bg-rose-600 text-white text-[10px] font-black uppercase disabled:opacity-50"
+            className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-rose-600 text-white text-[10px] font-black uppercase disabled:opacity-50"
           >
             {genListing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
             Generate
@@ -1449,7 +1478,7 @@ const ListingStudioModal: React.FC<Props> = ({
             type="button"
             disabled={saving || genListing}
             onClick={() => void handleApplyListing()}
-            className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-3 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase disabled:opacity-50"
+            className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase disabled:opacity-50"
           >
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
             Apply & close
