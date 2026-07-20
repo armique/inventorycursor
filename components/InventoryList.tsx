@@ -7,7 +7,7 @@ import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSort
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks,   Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone, Camera, Gift, User, Wand2
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks,   Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone, Camera, Gift, User, Wand2, Images
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, TaxMode, BulkImportRecord } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
@@ -35,6 +35,12 @@ import ListingStudioModal from './ListingStudioModal';
 import MobileStockCard from './MobileStockCard';
 import { MobileSheetShell } from './MobileBottomSheets';
 import { generateMarketplaceListing } from '../services/marketplaceListingAI';
+import {
+  enqueueProductCardBackgroundJob,
+  isItemProductCardJobActive,
+  subscribeProductCardBackgroundJobs,
+  type ProductCardBgJob,
+} from '../services/productCardBackgroundQueue';
 
 const ebaySoldSearchUrl = (query: string) =>
   `https://www.ebay.de/sch/i.html?_nkw=${encodeURIComponent(query)}&LH_Sold=1&LH_Complete=1`;
@@ -189,8 +195,8 @@ interface SortConfig {
 /** Inv column: icon buttons in one row (28px each + 4px gaps, matching the actual `gap-1` grid + cell padding). */
 const PRESENCE_ICON_SIZE_PX = 28;
 const PRESENCE_ICON_GAP_PX = 4;
-/** Presence · Photos · AI card · € · Store · Orders · Quick Bundle (+) · Bulk import · Rebuild title */
-const PRESENCE_ICON_COUNT = 9;
+/** Presence · Photos · AI card · BG cards · € · Store · Orders · Quick Bundle (+) · Bulk import · Rebuild title */
+const PRESENCE_ICON_COUNT = 10;
 const PRESENCE_COL_WIDTH =
   PRESENCE_ICON_COUNT * PRESENCE_ICON_SIZE_PX +
   (PRESENCE_ICON_COUNT - 1) * PRESENCE_ICON_GAP_PX +
@@ -790,6 +796,22 @@ const InventoryList: React.FC<Props> = ({
   const [showBulkAddPhotosModal, setShowBulkAddPhotosModal] = useState(false);
   const [addPhotosTargetIds, setAddPhotosTargetIds] = useState<string[]>([]);
   const [geminiCardItem, setGeminiCardItem] = useState<InventoryItem | null>(null);
+  const [bgCardJobs, setBgCardJobs] = useState<ProductCardBgJob[]>([]);
+  const bgCardNotifiedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    return subscribeProductCardBackgroundJobs((jobs) => {
+      setBgCardJobs(jobs);
+    });
+  }, []);
+
+  const activeBgCardItemIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const j of bgCardJobs) {
+      if (j.status === 'queued' || j.status === 'running') ids.add(j.itemId);
+    }
+    return ids;
+  }, [bgCardJobs]);
 
   // -- INLINE EDITING STATE --
   const [editingCell, setEditingCell] = useState<{ itemId: string, field: ColumnId } | null>(null);
@@ -1205,6 +1227,44 @@ const InventoryList: React.FC<Props> = ({
   const [ebayPriceError, setEbayPriceError] = useState<string | null>(null);
   const [ebayPriceMatch, setEbayPriceMatch] = useState<EbayListingPriceMatch | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    for (const job of bgCardJobs) {
+      if (job.status !== 'done' && job.status !== 'error') continue;
+      if (bgCardNotifiedRef.current.has(job.id)) continue;
+      bgCardNotifiedRef.current.add(job.id);
+      if (job.status === 'done') {
+        const extra = job.error ? ` (${job.plannedCards - job.cardsSaved} failed)` : '';
+        setToast(
+          `AI cards ready · ${job.itemName.slice(0, 40)}${job.itemName.length > 40 ? '…' : ''} · ${job.cardsSaved} in gallery${extra}`
+        );
+      } else {
+        setToast(
+          `AI card failed · ${job.itemName.slice(0, 36)}${job.itemName.length > 36 ? '…' : ''} · ${job.error || 'error'}`
+        );
+      }
+      setTimeout(() => setToast((prev) => (prev?.startsWith('AI card') ? null : prev)), 4200);
+    }
+  }, [bgCardJobs]);
+
+  const queueBackgroundAiCards = useCallback(
+    (item: InventoryItem) => {
+      if (isItemProductCardJobActive(item.id)) {
+        setToast('AI cards already generating for this item…');
+        setTimeout(() => setToast((prev) => (prev?.startsWith('AI cards already') ? null : prev)), 2200);
+        return;
+      }
+      const fields =
+        (categoryFields || {})[`${item.category}:${item.subCategory}`] ||
+        (categoryFields || {})[item.category];
+      enqueueProductCardBackgroundJob(item, { categoryFields: fields });
+      setToast(
+        `Generating AI cards in background · ${item.name.slice(0, 36)}${item.name.length > 36 ? '…' : ''}`
+      );
+      setTimeout(() => setToast((prev) => (prev?.startsWith('Generating AI cards') ? null : prev)), 2600);
+    },
+    [categoryFields]
+  );
 
   const handleGenerateListingDescription = async (item: InventoryItem) => {
     if (!item.name) {
@@ -1643,8 +1703,8 @@ const InventoryList: React.FC<Props> = ({
       // sees "no change," and the input silently stops updating after the very first keystroke.
       // Include quickBundleSeed so Flags “+” panel open/close re-renders the memoized row
       // (otherwise X / Cancel set state but the inline panel stays mounted).
-      `${editingCell?.itemId === item.id ? `${editingCell.field}:${editValue}` : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${(item.isPC || item.isBundle) && collapsedBundles.has(item.id) ? 'col' : 'exp'}|${quickBundleSeed?.id === item.id ? 'qb' : ''}`,
-    [editingCell, editValue, listingGenId, parsingSingleId, priceSuggestId, collapsedBundles, quickBundleSeed]
+      `${editingCell?.itemId === item.id ? `${editingCell.field}:${editValue}` : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${(item.isPC || item.isBundle) && collapsedBundles.has(item.id) ? 'col' : 'exp'}|${quickBundleSeed?.id === item.id ? 'qb' : ''}|${activeBgCardItemIds.has(item.id) ? 'bgcard' : ''}`,
+    [editingCell, editValue, listingGenId, parsingSingleId, priceSuggestId, collapsedBundles, quickBundleSeed, activeBgCardItemIds]
   );
 
   const showFinancials = splitView || (statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS');
@@ -2451,10 +2511,43 @@ const InventoryList: React.FC<Props> = ({
                   setGeminiCardItem(item);
                 }}
                 className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100`}
-                title="Generate AI product card (Gemini)"
+                title="Open AI product card studio (wait here to generate)"
               >
                 <Wand2 size={13} strokeWidth={2.25} />
               </button>
+
+              {(() => {
+                const bgBusy = activeBgCardItemIds.has(item.id);
+                const bgJob = bgCardJobs.find(
+                  (j) => j.itemId === item.id && (j.status === 'queued' || j.status === 'running')
+                );
+                return (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  queueBackgroundAiCards(item);
+                }}
+                disabled={bgBusy}
+                className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors disabled:opacity-70 ${
+                  bgBusy
+                    ? 'border-violet-300 bg-violet-50 text-violet-700'
+                    : 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100'
+                }`}
+                title={
+                  bgBusy
+                    ? `Generating in background… ${bgJob?.progress || ''}`.trim()
+                    : 'Generate AI cards in background — saved to card gallery (come back later to pick)'
+                }
+              >
+                {bgBusy ? (
+                  <Loader2 size={13} strokeWidth={2.25} className="animate-spin" />
+                ) : (
+                  <Images size={13} strokeWidth={2.25} />
+                )}
+              </button>
+                );
+              })()}
 
               {/* Live eBay listing price (seller store / account) */}
               {(() => {
