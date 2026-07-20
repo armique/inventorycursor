@@ -293,12 +293,15 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             />
           </div>
         )}
-        {/* Mobile global search (sidebar search hidden on mobile) */}
-        <div className="md:hidden mb-4">
-          <GlobalSearch items={items} expenses={expenses} businessSettings={businessSettings} />
-        </div>
+        {/* Mobile global search — skip on Stock (has its own search) */}
+        {!location.pathname.startsWith('/panel/inventory') &&
+          !location.pathname.startsWith('/panel/edit') && (
+          <div className="md:hidden mb-4">
+            <GlobalSearch items={items} expenses={expenses} businessSettings={businessSettings} />
+          </div>
+        )}
         {isCloudEnabled && authUser && syncState.status !== 'idle' && (
-          <div className="fixed bottom-4 left-4 z-[100]">
+          <div className="hidden md:block fixed bottom-4 left-4 z-[100]">
             <button
               type="button"
               onClick={() => syncState.status === 'error' && onForcePush?.()}
@@ -336,17 +339,19 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
         <div
           className={`flex-1 min-h-0 flex flex-col ${isDockedPanelPage ? 'overflow-hidden' : 'overflow-y-auto'}`}
         >
-          <div
-            className={`shrink-0 flex items-center justify-between gap-2 ${
-              isDockedPanelPage ? 'py-0 mb-0.5' : 'px-4 md:px-8 pt-4'
-            }`}
-          >
+        <div
+          className={`shrink-0 flex items-center justify-between gap-2 ${
+            isDockedPanelPage ? 'py-0 mb-0.5' : 'px-4 md:px-8 pt-4'
+          }`}
+        >
+          <div className={isDockedPanelPage ? 'hidden md:block min-w-0' : 'min-w-0'}>
             <PanelBreadcrumbs />
-            <div className="flex rounded-lg border border-slate-200 bg-white p-0.5 text-[10px] font-black uppercase">
-              <button type="button" onClick={() => setLocale('en')} className={`px-2 py-1 rounded ${locale === 'en' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>EN</button>
-              <button type="button" onClick={() => setLocale('de')} className={`px-2 py-1 rounded ${locale === 'de' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>DE</button>
-            </div>
           </div>
+          <div className="flex rounded-lg border border-slate-200 bg-white p-0.5 text-[10px] font-black uppercase ml-auto">
+            <button type="button" onClick={() => setLocale('en')} className={`px-2 py-1 rounded ${locale === 'en' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>EN</button>
+            <button type="button" onClick={() => setLocale('de')} className={`px-2 py-1 rounded ${locale === 'de' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>DE</button>
+          </div>
+        </div>
           <Suspense fallback={
             <div className="flex items-center justify-center min-h-[300px] flex-1">
               <Loader2 size={32} className="animate-spin text-slate-400" />
@@ -355,20 +360,25 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             <Outlet />
           </Suspense>
         </div>
-        {syncState.status !== 'idle' && (
+        {/* Mobile sync: top-right, only while syncing or on error — never cover the stock list */}
+        {(syncState.status === 'syncing' || syncState.status === 'error') && (
           <button
+            type="button"
             onClick={() => onForcePush?.()}
             disabled={syncState.status === 'syncing'}
-            className={`md:hidden fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] left-4 z-[110] px-4 py-2.5 rounded-full shadow-2xl flex items-center gap-2.5 text-xs font-black uppercase tracking-widest border ${
-              syncState.status === 'error' ? 'bg-red-600 text-white border-red-500' :
-              syncState.status === 'success' ? 'bg-emerald-600 text-white border-emerald-500' :
-              'bg-slate-900 text-white border-slate-800'
+            className={`md:hidden fixed top-[calc(0.75rem+env(safe-area-inset-top,0px))] right-3 z-[110] px-3 py-2 rounded-full shadow-lg flex items-center gap-2 text-[10px] font-black uppercase tracking-widest border ${
+              syncState.status === 'error'
+                ? 'bg-red-600 text-white border-red-500'
+                : 'bg-slate-900 text-white border-slate-800'
             }`}
           >
-            {syncState.status === 'syncing' && <Loader2 size={14} className="animate-spin text-blue-400"/>}
-            {syncState.status === 'success' && <CloudUpload size={14} className="text-emerald-300"/>}
-            {syncState.status === 'error' && <RefreshCw size={14} className="text-white"/>}
-            <span>{syncState.status === 'syncing' ? (syncState.message || 'Syncing...') : syncState.status === 'success' ? 'Saved' : (syncState.message || 'Retry')}</span>
+            {syncState.status === 'syncing' && <Loader2 size={14} className="animate-spin text-blue-300" />}
+            {syncState.status === 'error' && <RefreshCw size={14} className="text-white" />}
+            <span>
+              {syncState.status === 'syncing'
+                ? (syncState.message || 'Saving…')
+                : (syncState.message || 'Retry')}
+            </span>
           </button>
         )}
       </main>
