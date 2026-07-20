@@ -14,9 +14,10 @@ import GlobalSearch from './GlobalSearch';
 import EbaySoldReminderWidget from './EbaySoldReminderWidget';
 import { useEbayListingReminder } from '../hooks/useEbayListingReminder';
 import { InventoryItem, Expense, BusinessSettings } from '../types';
+import { cloudSyncBadgeLabel, cloudSyncBadgeTitle } from '../utils/cloudSyncStatus';
 
 interface SyncState {
-  status: 'idle' | 'syncing' | 'success' | 'error';
+  status: 'idle' | 'pending' | 'syncing' | 'success' | 'error';
   lastSynced: Date | null;
   message?: string;
 }
@@ -299,22 +300,21 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             <button
               type="button"
               onClick={() => syncState.status === 'error' && onForcePush?.()}
-              disabled={syncState.status === 'syncing'}
-              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider border shadow-lg transition-all ${
+              disabled={syncState.status === 'syncing' || syncState.status === 'pending'}
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold tracking-wide border shadow-lg transition-all ${
+                syncState.status === 'pending' ? 'bg-sky-50 text-sky-800 border-sky-200' :
                 syncState.status === 'syncing' ? 'bg-blue-50 text-blue-700 border-blue-200' :
                 syncState.status === 'error' ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100 cursor-pointer' :
                 'bg-emerald-50 text-emerald-700 border-emerald-200'
               }`}
-              title={syncState.status === 'error' && syncState.message ? syncState.message : (syncState.lastSynced ? `Last saved ${syncState.lastSynced.toLocaleTimeString()}` : undefined)}
+              title={cloudSyncBadgeTitle(syncState)}
             >
-              {syncState.status === 'syncing' && <Loader2 size={12} className="animate-spin shrink-0" />}
+              {(syncState.status === 'syncing' || syncState.status === 'pending') && (
+                <Loader2 size={12} className="animate-spin shrink-0" />
+              )}
               {syncState.status === 'success' && <CheckCircle2 size={12} className="shrink-0 text-emerald-500" />}
               {syncState.status === 'error' && <RefreshCw size={12} className="shrink-0" />}
-              <span>
-                {syncState.status === 'syncing' ? (syncState.message || 'Saving…') :
-                 syncState.status === 'success' ? (syncState.lastSynced ? `Saved ${syncState.lastSynced.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Live') :
-                 (syncState.message || 'Sync failed — click to retry')}
-              </span>
+              <span>{cloudSyncBadgeLabel(syncState)}</span>
             </button>
           </div>
         )}
@@ -354,25 +354,26 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             <Outlet />
           </Suspense>
         </div>
-        {/* Mobile sync: top-right, only while syncing or on error — never cover the stock list */}
-        {(syncState.status === 'syncing' || syncState.status === 'error') && (
+        {/* Mobile sync: pending / uploading / error — never cover the stock list */}
+        {(syncState.status === 'pending' || syncState.status === 'syncing' || syncState.status === 'error') && (
           <button
             type="button"
-            onClick={() => onForcePush?.()}
-            disabled={syncState.status === 'syncing'}
-            className={`md:hidden fixed top-[calc(0.75rem+env(safe-area-inset-top,0px))] right-3 z-[110] px-3 py-2 rounded-full shadow-lg flex items-center gap-2 text-[10px] font-black uppercase tracking-widest border ${
+            onClick={() => syncState.status === 'error' && onForcePush?.()}
+            disabled={syncState.status === 'syncing' || syncState.status === 'pending'}
+            className={`md:hidden fixed top-[calc(0.75rem+env(safe-area-inset-top,0px))] right-3 z-[110] px-3 py-2 rounded-full shadow-lg flex items-center gap-2 text-[10px] font-bold tracking-wide border max-w-[min(70vw,16rem)] ${
               syncState.status === 'error'
                 ? 'bg-red-600 text-white border-red-500'
-                : 'bg-slate-900 text-white border-slate-800'
+                : syncState.status === 'pending'
+                  ? 'bg-sky-900 text-white border-sky-800'
+                  : 'bg-slate-900 text-white border-slate-800'
             }`}
+            title={cloudSyncBadgeTitle(syncState)}
           >
-            {syncState.status === 'syncing' && <Loader2 size={14} className="animate-spin text-blue-300" />}
-            {syncState.status === 'error' && <RefreshCw size={14} className="text-white" />}
-            <span>
-              {syncState.status === 'syncing'
-                ? (syncState.message || 'Saving…')
-                : (syncState.message || 'Retry')}
-            </span>
+            {(syncState.status === 'syncing' || syncState.status === 'pending') && (
+              <Loader2 size={14} className="animate-spin text-blue-300 shrink-0" />
+            )}
+            {syncState.status === 'error' && <RefreshCw size={14} className="text-white shrink-0" />}
+            <span className="truncate">{cloudSyncBadgeLabel(syncState)}</span>
           </button>
         )}
       </main>
