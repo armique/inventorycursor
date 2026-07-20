@@ -57,16 +57,17 @@ const EditItemModal: React.FC<Props> = ({
   );
 
   const liveItem = items.find((i) => i.id === draft.id) || draft;
+  const studioItem = { ...liveItem, ...draft };
 
   if (mode === 'studio') {
     return (
       <ListingStudioModal
-        item={liveItem}
+        item={studioItem}
         allItems={items}
         categoryFields={categoryFields}
         onClose={onClose}
         onUpdateItem={async (patch) => {
-          const next = { ...liveItem, ...patch };
+          const next = { ...liveItem, ...draft, ...patch };
           setDraft(next);
           onSave([next]);
         }}
