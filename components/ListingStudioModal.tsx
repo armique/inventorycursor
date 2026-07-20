@@ -853,6 +853,7 @@ const ListingStudioModal: React.FC<Props> = ({
                     disabled={parsingSpecs}
                     onClick={() => void handleParseSpecs()}
                     className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-rose-200 bg-rose-50 text-rose-800 text-[9px] font-black uppercase disabled:opacity-50"
+                    title="Fill tech specs only — does not change the item title"
                   >
                     {parsingSpecs ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
                     Parse AI
