@@ -2,13 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { CheckCircle2, ImagePlus, Loader2, Smartphone, Upload } from 'lucide-react';
 import {
-  ensureAnonymousUploadAuth,
   ensureGoogleUploadAuth,
   fetchPhotoUploadSession,
-  isAnonymousAuthDisabledError,
   uploadPhonePhotoToSession,
   type PhotoUploadSession,
 } from '../services/photoUploadSession';
+import { getCurrentUser } from '../services/firebaseService';
 import { compressImageFileToBlob, INVENTORY_PHOTO_STORAGE_OPTIONS } from '../utils/imageCompress';
 
 const PhonePhotoUploadPage: React.FC = () => {
@@ -22,9 +21,18 @@ const PhonePhotoUploadPage: React.FC = () => {
   const [doneCount, setDoneCount] = useState(0);
 
   const loadSession = async () => {
+    const user = getCurrentUser();
+    if (!user || user.isAnonymous) {
+      setNeedGoogle(true);
+      setSession(null);
+      setError('Sign in with the same Google account you use on the PC.');
+      return;
+    }
     const s = await fetchPhotoUploadSession(token);
     if (!s) {
-      setError('This upload link is invalid or was removed.');
+      setError(
+        'Upload link not found for this Google account. Use the same account as on your PC, and keep the QR panel open.'
+      );
       setSession(null);
       return;
     }
@@ -33,6 +41,7 @@ const PhonePhotoUploadPage: React.FC = () => {
       setSession(s);
       return;
     }
+    setNeedGoogle(false);
     setError(null);
     setSession(s);
   };
@@ -42,19 +51,19 @@ const PhonePhotoUploadPage: React.FC = () => {
     (async () => {
       setLoading(true);
       setError(null);
-      setNeedGoogle(false);
       try {
-        await ensureAnonymousUploadAuth();
-        if (cancelled) return;
-        await loadSession();
+        const user = getCurrentUser();
+        if (!user || user.isAnonymous) {
+          if (!cancelled) {
+            setNeedGoogle(true);
+            setError('Sign in with the same Google account you use on the PC.');
+          }
+          return;
+        }
+        if (!cancelled) await loadSession();
       } catch (e) {
-        if (cancelled) return;
-        if (isAnonymousAuthDisabledError(e)) {
+        if (!cancelled) {
           setNeedGoogle(true);
-          setError(
-            'Quick sign-in with the same Google account you use on the PC (Anonymous auth is not enabled yet).'
-          );
-        } else {
           setError(e instanceof Error ? e.message : 'Could not open upload link');
         }
       } finally {
@@ -136,7 +145,7 @@ const PhonePhotoUploadPage: React.FC = () => {
             {session?.itemName || 'Add photos'}
           </h1>
           <p className="text-sm text-slate-400 font-medium">
-            Pick from your full Photos library. They appear instantly in Listing Studio on your PC.
+            Sign in with the same Google account as your PC, then pick from Photos.
           </p>
         </header>
 
@@ -152,7 +161,7 @@ const PhonePhotoUploadPage: React.FC = () => {
           </div>
         )}
 
-        {needGoogle && !loading && (
+        {(needGoogle || (!loading && !session && !canUpload)) && (
           <button
             type="button"
             onClick={() => void signInWithGoogle()}
@@ -178,7 +187,7 @@ const PhonePhotoUploadPage: React.FC = () => {
                   {uploading ? 'Uploading…' : 'Choose from Photos'}
                 </span>
                 <span className="text-[11px] text-slate-400 text-center">
-                  Opens your iPhone photo library (Camera Roll, Albums…)
+                  Opens your iPhone photo library
                 </span>
                 <input
                   type="file"
@@ -215,11 +224,6 @@ const PhonePhotoUploadPage: React.FC = () => {
                 <CheckCircle2 size={16} /> {progress}
               </p>
             )}
-
-            <p className="text-[11px] text-slate-500 leading-relaxed">
-              Keep this page open until uploads finish. You can close it when your PC shows the new
-              photos.
-            </p>
           </>
         )}
       </div>

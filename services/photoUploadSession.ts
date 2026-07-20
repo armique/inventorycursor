@@ -1,7 +1,9 @@
 /**
  * Phone → PC photo bridge sessions.
- * Desktop (signed-in owner) creates a short-lived session; phone opens /upload/:token,
- * signs in anonymously, uploads into photo-inbox/{token}/, and appends URLs to the session.
+ *
+ * Stored under users/{uid}/photoUploadSessions/{token} so existing Firestore rules apply
+ * (same path family as inventory sync). Phone must sign in with the SAME Google account.
+ * Photos upload to items/{uid}/{itemId}/… (existing Storage rules).
  */
 
 import {
@@ -15,7 +17,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
-import { signInAnonymously, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import {
   getCurrentUser,
   getFirebaseContext,
@@ -47,6 +49,11 @@ function requireCtx() {
   return ctx;
 }
 
+function sessionDocRef(uid: string, token: string) {
+  const ctx = requireCtx();
+  return doc(ctx.db, 'users', uid, PHOTO_UPLOAD_SESSIONS, token);
+}
+
 export function buildPhoneUploadUrl(token: string, origin = window.location.origin): string {
   return `${origin.replace(/\/$/, '')}/upload/${encodeURIComponent(token)}`;
 }
@@ -60,11 +67,15 @@ export async function createPhotoUploadSession(params: {
   if (!isCloudEnabled()) throw new Error('Sign in to cloud backup to use iPhone upload.');
   const user = getCurrentUser();
   if (!user) throw new Error('Sign in with Google first.');
+  if (user.isAnonymous) throw new Error('Sign in with Google (not anonymous) on the PC.');
 
   const token = createPhotoUploadToken();
   const now = Date.now();
   const expiresAtMs = now + (params.ttlMs ?? PHOTO_UPLOAD_TTL_MS);
-  const maxPhotos = Math.min(PHOTO_UPLOAD_MAX, Math.max(1, Math.floor(params.maxPhotos ?? PHOTO_UPLOAD_MAX)));
+  const maxPhotos = Math.min(
+    PHOTO_UPLOAD_MAX,
+    Math.max(1, Math.floor(params.maxPhotos ?? PHOTO_UPLOAD_MAX))
+  );
 
   const session: PhotoUploadSession = {
     token,
@@ -78,8 +89,7 @@ export async function createPhotoUploadSession(params: {
     expiresAtMs,
   };
 
-  const ctx = requireCtx();
-  await setDoc(doc(ctx.db, PHOTO_UPLOAD_SESSIONS, token), {
+  await setDoc(sessionDocRef(user.uid, token), {
     token: session.token,
     ownerUid: session.ownerUid,
     itemId: session.itemId,
@@ -97,8 +107,11 @@ export async function createPhotoUploadSession(params: {
 }
 
 export async function fetchPhotoUploadSession(token: string): Promise<PhotoUploadSession | null> {
-  const ctx = requireCtx();
-  const snap = await getDoc(doc(ctx.db, PHOTO_UPLOAD_SESSIONS, token));
+  const user = getCurrentUser();
+  if (!user || user.isAnonymous) {
+    throw new Error('Sign in with the same Google account you use on the PC.');
+  }
+  const snap = await getDoc(sessionDocRef(user.uid, token));
   if (!snap.exists()) return null;
   return normalizeSession(token, snap.data() as Record<string, unknown>);
 }
@@ -107,9 +120,13 @@ export function subscribePhotoUploadSession(
   token: string,
   onChange: (session: PhotoUploadSession | null) => void
 ): Unsubscribe {
-  const ctx = requireCtx();
+  const user = getCurrentUser();
+  if (!user || user.isAnonymous) {
+    onChange(null);
+    return () => {};
+  }
   return onSnapshot(
-    doc(ctx.db, PHOTO_UPLOAD_SESSIONS, token),
+    sessionDocRef(user.uid, token),
     (snap) => {
       if (!snap.exists()) {
         onChange(null);
@@ -123,24 +140,14 @@ export function subscribePhotoUploadSession(
 
 export async function revokePhotoUploadSession(token: string): Promise<void> {
   const user = getCurrentUser();
-  if (!user) return;
-  const ctx = requireCtx();
-  const ref = doc(ctx.db, PHOTO_UPLOAD_SESSIONS, token);
+  if (!user || user.isAnonymous) return;
+  const ref = sessionDocRef(user.uid, token);
   const snap = await getDoc(ref);
   if (!snap.exists()) return;
-  const data = snap.data() as { ownerUid?: string };
-  if (data.ownerUid !== user.uid) return;
   await updateDoc(ref, { status: 'revoked' });
 }
 
-/** Phone page: anonymous auth first; caller can fall back to Google if disabled. */
-export async function ensureAnonymousUploadAuth(): Promise<void> {
-  const ctx = requireCtx();
-  if (ctx.auth.currentUser) return;
-  await signInAnonymously(ctx.auth);
-}
-
-/** Phone page fallback when Anonymous is not enabled yet — same Google account as the panel. */
+/** Phone page: must use the same Google account as the PC panel. */
 export async function ensureGoogleUploadAuth(): Promise<void> {
   const ctx = requireCtx();
   if (ctx.auth.currentUser && !ctx.auth.currentUser.isAnonymous) return;
@@ -148,26 +155,22 @@ export async function ensureGoogleUploadAuth(): Promise<void> {
   await signInWithPopup(ctx.auth, provider);
 }
 
-export function isAnonymousAuthDisabledError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err || '');
-  const code = (err as { code?: string })?.code || '';
-  return (
-    code.includes('operation-not-allowed') ||
-    code.includes('admin-restricted-operation') ||
-    msg.includes('auth/operation-not-allowed') ||
-    msg.includes('admin-restricted-operation') ||
-    msg.includes('ADMIN_ONLY_OPERATION')
-  );
-}
-
 export async function uploadPhonePhotoToSession(
   token: string,
   file: File | Blob,
   fileName?: string
 ): Promise<string> {
-  await ensureAnonymousUploadAuth();
+  const user = getCurrentUser();
+  if (!user || user.isAnonymous) {
+    throw new Error('Sign in with the same Google account you use on the PC.');
+  }
+
   const session = await fetchPhotoUploadSession(token);
-  if (!session) throw new Error('Upload link not found.');
+  if (!session) {
+    throw new Error(
+      'Upload link not found. Use the same Google account as on your PC, and make sure the QR session is still open.'
+    );
+  }
   if (session.status !== 'active') throw new Error('This upload link was closed.');
   if (Date.now() > session.expiresAtMs) throw new Error('This upload link expired.');
   if (session.uploadedUrls.length >= session.maxPhotos) {
@@ -176,7 +179,8 @@ export async function uploadPhonePhotoToSession(
 
   const ctx = requireCtx();
   const name = (fileName || `iphone-${Date.now()}.jpg`).replace(/[^a-zA-Z0-9.\-_]/g, '_');
-  const path = `photo-inbox/${token}/${Date.now()}-${name}`;
+  // Use existing Storage rules: items/{uid}/{itemId}/…
+  const path = `items/${user.uid}/${session.itemId}/phone-bridge/${Date.now()}-${name}`;
   const ref = storageRef(ctx.storage, path);
   const blob =
     file instanceof Blob
@@ -188,7 +192,7 @@ export async function uploadPhonePhotoToSession(
   const url = await getDownloadURL(snapshot.ref);
 
   const nextUrls = [...session.uploadedUrls, url].slice(0, session.maxPhotos);
-  await updateDoc(doc(ctx.db, PHOTO_UPLOAD_SESSIONS, token), {
+  await updateDoc(sessionDocRef(user.uid, token), {
     uploadedUrls: nextUrls,
     updatedAtMs: Date.now(),
   });
@@ -199,7 +203,8 @@ function normalizeSession(token: string, data: Record<string, unknown>): PhotoUp
   const expiresAtMs =
     typeof data.expiresAtMs === 'number'
       ? data.expiresAtMs
-      : data.expiresAt && typeof (data.expiresAt as { toMillis?: () => number }).toMillis === 'function'
+      : data.expiresAt &&
+          typeof (data.expiresAt as { toMillis?: () => number }).toMillis === 'function'
         ? (data.expiresAt as { toMillis: () => number }).toMillis()
         : Date.now();
   let status = (data.status as PhotoUploadSessionStatus) || 'active';
@@ -219,7 +224,9 @@ function normalizeSession(token: string, data: Record<string, unknown>): PhotoUp
   };
 }
 
-/** Keep TypeScript happy if collection listing is needed later. */
-export function photoUploadSessionsCollection() {
-  return collection(requireCtx().db, PHOTO_UPLOAD_SESSIONS);
+export function photoUploadSessionsCollection(uid?: string) {
+  const user = getCurrentUser();
+  const id = uid || user?.uid;
+  if (!id) throw new Error('Not signed in');
+  return collection(requireCtx().db, 'users', id, PHOTO_UPLOAD_SESSIONS);
 }
