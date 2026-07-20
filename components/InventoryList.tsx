@@ -2030,7 +2030,7 @@ const InventoryList: React.FC<Props> = ({
         name: title,
         marketTitle: title,
       };
-      onUpdate([updated], undefined, { skipUndo: false });
+      onUpdate([updated], undefined, { skipUndo: false, flushCloud: true });
       setToast(`Title rebuilt · ${title}`);
       setTimeout(() => setToast(null), 2800);
     },
@@ -4734,7 +4734,14 @@ const InventoryList: React.FC<Props> = ({
             const merged: InventoryItem = { ...(fromItems || base), ...base, ...patch };
             listingAiItemRef.current = merged;
             setListingAiItem(merged);
-            await Promise.resolve(onUpdate([merged]));
+            await Promise.resolve(
+              onUpdate([merged], undefined, {
+                flushCloud:
+                  patch.marketTitle !== undefined ||
+                  patch.marketDescription !== undefined ||
+                  patch.name !== undefined,
+              })
+            );
             if (patch.marketTitle !== undefined || patch.marketDescription !== undefined) {
               setToast('Listing saved to item');
               setTimeout(() => setToast(null), 1600);
