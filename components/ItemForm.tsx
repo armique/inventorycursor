@@ -8,7 +8,7 @@ import {
   MessageCircle, Link as LinkIcon, Upload, Search, Database, 
   Cpu, Monitor, HardDrive, Zap, Wind, AlertCircle, CheckCircle2, Copy,
   Fan, Lightbulb, Keyboard, Mouse, Tv, MoreHorizontal, Cable, Laptop as LaptopIcon, Wrench,
-  Wand2, Sliders, X, History, Repeat2, Package, FileText, Sparkles, Loader2
+  Wand2, Sliders, X, History, Repeat2, Package, FileText, Sparkles, Loader2, ScanBarcode
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, Platform, PaymentType } from '../types';
 import { SALE_PLATFORM_OPTIONS } from '../utils/salePlatform';
@@ -51,6 +51,8 @@ import {
 } from '../utils/itemAddTemplates';
 import EbayListingPriceModal from './EbayListingPriceModal';
 import GeminiProductCardModal from './GeminiProductCardModal';
+import BarcodeScanPanel from './BarcodeScanPanel';
+import type { BarcodeProduct } from '../services/barcodeLookup';
 
 /** How quantity is applied when creating a new item. */
 type QtyMode = 'single' | 'stock' | 'clones';
@@ -199,6 +201,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   const [ebayPriceModalMatch, setEbayPriceModalMatch] = useState<EbayListingPriceMatch | null>(null);
   const [ebayPriceModalOpen, setEbayPriceModalOpen] = useState(false);
   const [showProductCardGen, setShowProductCardGen] = useState(false);
+  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
   const [ebayPriceModalError, setEbayPriceModalError] = useState<string | null>(null);
   const [previewPhoto, setPreviewPhoto] = useState<ImageSearchResult | null>(null);
   const [imageProviders, setImageProviders] = useState<ImageSearchProvider[]>([]);
@@ -435,8 +438,8 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     }
   };
 
-  const handleAiDetectCategory = async () => {
-    const name = (formData.name || '').trim();
+  const handleAiDetectCategory = async (nameOverride?: string) => {
+    const name = (nameOverride ?? formData.name ?? '').trim();
     if (!name) {
       setAiDetectError('Type an item name in the search box first.');
       return;
@@ -461,6 +464,30 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     } finally {
       setAiDetecting(false);
     }
+  };
+
+  const applyBarcodeProduct = (product: BarcodeProduct) => {
+    setShowBarcodeScanner(false);
+    setAiDetectError(null);
+    setFormData((prev) => {
+      const next: Partial<InventoryItem> = {
+        ...prev,
+        name: product.name,
+        vendor: product.brand || prev.vendor || '',
+      };
+      const existing = [prev.imageUrl, ...(prev.imageUrls || [])].filter(
+        (u): u is string => Boolean(u && !isCategoryPlaceholderImage(u))
+      );
+      if (product.imageUrl && existing.length === 0) {
+        next.imageUrl = product.imageUrl;
+        next.imageUrls = [product.imageUrl];
+      }
+      return next;
+    });
+    setAiDetectMessage(
+      `Barcode ${product.barcode}${product.source ? ` (${product.source})` : ''}: ${product.name}`
+    );
+    void handleAiDetectCategory(product.name);
   };
 
   const updateSpecField = useCallback((key: string, value: string) => {
@@ -1109,14 +1136,14 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
            <div>
               <h2 className="text-xl font-black text-slate-900">Find or name your item</h2>
               <p className="text-sm text-slate-500 mt-1">
-                 Search items already in inventory, or type a new name and let AI pick category & subcategory.
+                 Scan a barcode, search inventory, or type a new name and let AI pick category & subcategory.
               </p>
            </div>
            <div className="flex flex-col sm:flex-row gap-2 sm:items-stretch">
               <div className="relative flex-1 min-w-0">
                  <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                  <input
-                    autoFocus={!id && !initialData}
+                    autoFocus={!id && !initialData && !showBarcodeScanner}
                     className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm outline-none focus:border-violet-400 focus:bg-white transition-all"
                     placeholder="Search inventory or type new item name…"
                     value={formData.name || ''}
@@ -1160,6 +1187,19 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
               </div>
               <button
                  type="button"
+                 onClick={() => setShowBarcodeScanner((v) => !v)}
+                 className={`shrink-0 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-full text-[11px] font-black uppercase tracking-widest border transition-all ${
+                   showBarcodeScanner
+                     ? 'bg-rose-600 text-white border-rose-600'
+                     : 'bg-white text-slate-700 border-slate-200 hover:border-rose-300 hover:text-rose-700'
+                 }`}
+                 title="Scan EAN/UPC barcode"
+              >
+                 <ScanBarcode size={14} />
+                 Scan
+              </button>
+              <button
+                 type="button"
                  onClick={() => void handleAiDetectCategory()}
                  disabled={aiDetecting || !(formData.name || '').trim()}
                  className="shrink-0 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-full bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-[11px] font-black uppercase tracking-widest shadow-lg shadow-violet-500/25 hover:from-violet-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
@@ -1168,6 +1208,12 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                  {aiDetecting ? 'Detecting…' : 'AI Detect'}
               </button>
            </div>
+           {showBarcodeScanner && (
+              <BarcodeScanPanel
+                 onProduct={applyBarcodeProduct}
+                 onClose={() => setShowBarcodeScanner(false)}
+              />
+           )}
            {aiDetectError && (
               <p className="text-xs font-bold text-red-700 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
                  {aiDetectError}
@@ -1436,17 +1482,41 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                       <div className="space-y-1.5">
                           <div className="flex items-center justify-between gap-2 ml-1">
                             <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Item Name</label>
-                            <button
-                              type="button"
-                              disabled={generatingTitle || !(formData.name || '').trim() || !getSpecsAIProvider()}
-                              onClick={() => void handleGenerateItemTitle()}
-                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-600 text-white text-[9px] font-black uppercase disabled:opacity-50 hover:bg-rose-700"
-                              title="Generate a cleaned item title only (does not change specs)"
-                            >
-                              {generatingTitle ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
-                              AI title
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                              {isCreatingNew && (
+                                <button
+                                  type="button"
+                                  onClick={() => setShowBarcodeScanner((v) => !v)}
+                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-black uppercase border transition-all ${
+                                    showBarcodeScanner
+                                      ? 'bg-rose-600 text-white border-rose-600'
+                                      : 'bg-white text-slate-600 border-slate-200 hover:border-rose-300 hover:text-rose-700'
+                                  }`}
+                                  title="Scan EAN/UPC barcode"
+                                >
+                                  <ScanBarcode size={11} />
+                                  Scan
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                disabled={generatingTitle || !(formData.name || '').trim() || !getSpecsAIProvider()}
+                                onClick={() => void handleGenerateItemTitle()}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-600 text-white text-[9px] font-black uppercase disabled:opacity-50 hover:bg-rose-700"
+                                title="Generate a cleaned item title only (does not change specs)"
+                              >
+                                {generatingTitle ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                                AI title
+                              </button>
+                            </div>
                           </div>
+                          {isCreatingNew && showBarcodeScanner && (
+                            <BarcodeScanPanel
+                              onProduct={applyBarcodeProduct}
+                              onClose={() => setShowBarcodeScanner(false)}
+                              compact
+                            />
+                          )}
                           <div className="flex gap-2 items-stretch">
                             <div className="relative flex-1">
                               <input

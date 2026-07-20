@@ -7,7 +7,7 @@ import {
   MessageCircle, Link as LinkIcon, Upload, Search, Database, 
   Cpu, Monitor, HardDrive, Zap, Wind, AlertCircle, CheckCircle2, Copy,
   Fan, Lightbulb, Keyboard, Mouse, Tv, MoreHorizontal, Cable, Laptop as LaptopIcon, Wrench,
-  Sparkles, Loader2, Package, Ban
+  Sparkles, Loader2, Package, Ban, ScanBarcode
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, Platform, PaymentType, BulkImportRecord, BulkImportSource } from '../types';
 import {
@@ -42,6 +42,8 @@ import {
   createBulkImportRecord,
   resolveBulkImportSource,
 } from '../utils/bulkImportHistory';
+import BarcodeScanPanel from './BarcodeScanPanel';
+import type { BarcodeProduct } from '../services/barcodeLookup';
 
 interface Props {
   onSave: (newItems: InventoryItem[]) => void;
@@ -99,6 +101,8 @@ interface DraftItem {
   specsAiSuggested?: Record<string, string | number>;
   vendor?: string;
   isDefective?: boolean;
+  /** Optional product image from barcode lookup (used when no shared gallery). */
+  imageUrl?: string;
   /** When true, Confirm Import skips AI tech-spec parsing for this row. */
   skipAiSpecs?: boolean;
   /** Original paste line — used to re-apply defect flags after specs parse. */
@@ -267,7 +271,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
   const [items, setItems] = useState<DraftItem[]>([]);
   
   // Entry Form State
-  const [mode, setMode] = useState<'SEARCH' | 'MANUAL'>('MANUAL');
+  const [mode, setMode] = useState<'SEARCH' | 'MANUAL' | 'SCAN'>('MANUAL');
   const [parseSpecsBeforeImport, setParseSpecsBeforeImport] = useState(true);
   const [parsingSpecs, setParsingSpecs] = useState(false);
   const [parseProgress, setParseProgress] = useState<string | null>(null);
@@ -398,6 +402,29 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
     }]);
     setSearchQuery('');
     setSearchResults([]);
+  };
+
+  const handleAddFromBarcode = (product: BarcodeProduct) => {
+    const hwHits = searchAllHardware(product.name);
+    if (hwHits[0]) {
+      handleAddFromSearch(hwHits[0]);
+      return;
+    }
+    setItems((prev) => [
+      ...prev,
+      {
+        id: `draft-${Date.now()}`,
+        name: product.name,
+        category: newCategory,
+        subCategory: newSubCategory,
+        note: product.barcode ? `EAN ${product.barcode}` : '',
+        specs: {},
+        vendor: product.brand || '',
+        isDefective: false,
+        draftSource: 'barcode',
+        imageUrl: product.imageUrl,
+      },
+    ]);
   };
 
   const handleRemoveItem = (id: string) => {
@@ -774,6 +801,14 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
 
     const childItems: InventoryItem[] = itemsToImport.map((draft, index) => {
       const finalCost = draft.manualCost !== undefined ? draft.manualCost : (autoCostsById[draft.id] ?? 0);
+      const fallbackImage =
+        CATEGORY_IMAGES[draft.subCategory || draft.category] || CATEGORY_IMAGES[draft.category];
+      const rowImage = galleryUrls[0] || draft.imageUrl || fallbackImage;
+      const rowImages = galleryUrls.length
+        ? galleryUrls
+        : draft.imageUrl
+          ? [draft.imageUrl]
+          : [fallbackImage];
       return {
         id: `bulk-${timestamp}-${index}`,
         name: draft.name,
@@ -794,10 +829,8 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
         kleinanzeigenBuyChatUrl: chatUrlTrimmed || undefined,
         kleinanzeigenBuyChatImage: archivedChatImage || undefined,
         kleinanzeigenSellerProfileUrl: sellerProfileTrimmed || undefined,
-        imageUrl: galleryUrls[0] || CATEGORY_IMAGES[draft.subCategory || draft.category] || CATEGORY_IMAGES[draft.category],
-        imageUrls: galleryUrls.length
-          ? galleryUrls
-          : [CATEGORY_IMAGES[draft.subCategory || draft.category] || CATEGORY_IMAGES[draft.category]],
+        imageUrl: rowImage,
+        imageUrls: rowImages,
         bulkImportId,
       };
     });
@@ -956,11 +989,19 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
             
             {/* INPUT MODE TABS */}
             <div className="bg-slate-200 p-1 rounded-2xl flex font-bold text-xs">
-               <button onClick={() => setMode('MANUAL')} className={`flex-1 py-3 rounded-xl transition-all ${mode === 'MANUAL' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}>Manual Entry</button>
-               <button onClick={() => setMode('SEARCH')} className={`flex-1 py-3 rounded-xl transition-all ${mode === 'SEARCH' ? 'bg-white shadow text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Database Search</button>
+               <button onClick={() => setMode('MANUAL')} className={`flex-1 py-3 rounded-xl transition-all ${mode === 'MANUAL' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}>Manual</button>
+               <button onClick={() => setMode('SCAN')} className={`flex-1 py-3 rounded-xl transition-all flex items-center justify-center gap-1 ${mode === 'SCAN' ? 'bg-white shadow text-rose-600' : 'text-slate-500 hover:text-slate-700'}`}><ScanBarcode size={12} /> Scan</button>
+               <button onClick={() => setMode('SEARCH')} className={`flex-1 py-3 rounded-xl transition-all ${mode === 'SEARCH' ? 'bg-white shadow text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Database</button>
             </div>
 
-            {mode === 'MANUAL' ? (
+            {mode === 'SCAN' ? (
+               <div className="bg-white p-4 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-3">
+                  <BarcodeScanPanel onProduct={handleAddFromBarcode} compact />
+                  <p className="text-[10px] text-slate-400 px-1">
+                    Each successful scan adds a row to the list. If the name matches the hardware DB, specs are filled automatically.
+                  </p>
+               </div>
+            ) : mode === 'MANUAL' ? (
                <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-6">
                   <div className="space-y-2">
                      <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Paste Text (Quick Bulk Parse)</label>

@@ -57,6 +57,10 @@ async function loadHandler(pathname: string): Promise<{ handler: (req: ApiReques
     const mod = await import('./api/images.js');
     return { handler: mod.default };
   }
+  if (pathname === '/api/barcode') {
+    const mod = await import('./api/barcode.js');
+    return { handler: mod.default };
+  }
   if (pathname === '/api/gemini' || pathname === '/api/parse-ebay-order-screenshot' || pathname === '/api/parse-kleinanzeigen-chat-screenshot') {
     const mod = await import('./api/gemini.js');
     const route =

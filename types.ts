@@ -386,7 +386,7 @@ export interface ActionHistoryEntry {
 }
 
 /** How a Bulk Entry session was primarily built before Confirm. */
-export type BulkImportSource = 'manual' | 'paste_as_is' | 'paste_ai' | 'hardware_db' | 'mixed';
+export type BulkImportSource = 'manual' | 'paste_as_is' | 'paste_ai' | 'hardware_db' | 'barcode' | 'mixed';
 
 /** Durable history row for one Bulk Entry confirm (including AI text parse). */
 export interface BulkImportRecord {

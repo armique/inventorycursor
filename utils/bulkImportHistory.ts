@@ -439,6 +439,8 @@ export function bulkImportSourceLabel(source: BulkImportSource): string {
       return 'Paste as-is';
     case 'hardware_db':
       return 'Hardware DB';
+    case 'barcode':
+      return 'Barcode scan';
     case 'manual':
       return 'Manual';
     case 'mixed':
