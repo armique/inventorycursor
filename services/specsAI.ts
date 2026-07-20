@@ -6,6 +6,7 @@
  */
 
 import { correctGpuVramInSpecs } from './gpuVramCorrection';
+import { correctRamSpecsFromPartNumber } from './ramPartNumberCorrection';
 import { filterSpecsToEssentialKeys } from './essentialSpecFields';
 import { loadAISettings } from './aiSettings';
 import { ItemStatus } from '../types';
@@ -161,7 +162,17 @@ Return a valid JSON object with this exact structure (no markdown, no code fence
 
 Rules: specs values can be string or number. Only include keys allowed above.
 
-GRAPHICS CARDS (GPUs): For the "VRAM" field, use the exact frame-buffer memory of that GPU model only (e.g. RTX 5070 has 12GB VRAM). Do not use system RAM, total memory across unrelated devices, or another GPU tier. If the product name includes a GB figure next to the chip name (e.g. "RTX 5070 12GB"), that GB value is the VRAM.`;
+GRAPHICS CARDS (GPUs): For the "VRAM" field, use the exact frame-buffer memory of that GPU model only (e.g. RTX 5070 has 12GB VRAM). Do not use system RAM, total memory across unrelated devices, or another GPU tier. If the product name includes a GB figure next to the chip name (e.g. "RTX 5070 12GB"), that GB value is the VRAM.
+
+RAM / MEMORY MODULES (think carefully — especially older DDR2/DDR3 OEM sticks):
+- Decode the full manufacturer part number (SK Hynix HMT…, Samsung M378…/M471…, Micron MT…). Do not invent modern DDR4/DDR5 from a single digit in the SKU.
+- Digits mid-P/N are often density organization or revision — NOT always module capacity.
+  Critical example: "SK Hynix HMT351U6EFR8C" = 4GB DDR3 UDIMM (PC3). It is NOT 8GB and NOT DDR4. The trailing "8" is not capacity.
+- HMT3… → DDR3 generation. HMT4… → DDR4 generation. Never upgrade an older generation.
+- Hynix density "351" on HMT3 modules → 4GB; "41G" → 8GB. Prefer datasheet-accurate Memory Type + GB per Stick / Kit Capacity.
+- If the title has no explicit "8GB"/"16GB" and the P/N decodes to 4GB DDR3, output 4GB DDR3.
+- When unsure between DDR3 and DDR4, omit Memory Type rather than guessing DDR4.
+- Prefer slower, older, conservative specs over "upgrading" vintage parts.`;
 }
 
 export interface GenerateSpecsResult {
@@ -366,7 +377,13 @@ export async function generateItemSpecs(
   for (const provider of providers) {
     try {
       const raw = await callProviderSpecs(provider, prompt);
-      const corrected = correctGpuVramInSpecs(name, raw.standardizedName, raw.specs || {});
+      const afterGpu = correctGpuVramInSpecs(name, raw.standardizedName, raw.specs || {});
+      const corrected = correctRamSpecsFromPartNumber(
+        name,
+        raw.standardizedName,
+        afterGpu,
+        rawCategory
+      );
       return {
         ...raw,
         specs: filterSpecsToEssentialKeys(corrected, knownKeys),
