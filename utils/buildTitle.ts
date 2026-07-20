@@ -107,7 +107,8 @@ export function ramBits(items: InventoryItem[]): string {
   let speed = '';
 
   for (const it of items) {
-    // Multi-module kit sold as one inventory row: "8GB (2x4GB)" / specs Kit Capacity.
+    // Multi-module kit sold as one inventory row (any N×M): "3x4GB" → 12GB (3×4GB).
+    // Matches name or Kit Capacity / Capacity specs like "16GB (2x8GB)".
     const kitMatch =
       getSpec(it, 'Kit Capacity', 'Capacity').match(/(\d+)\s*[x×]\s*(\d+)\s*GB/i) ||
       it.name.match(/(\d+)\s*[x×]\s*(\d+)\s*GB/i);
