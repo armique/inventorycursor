@@ -26,6 +26,7 @@ import {
 } from '../services/marketplaceListingAI';
 import { generateItemSpecs } from '../services/specsAI';
 import { mergeAiSpecsIntoEssential, resolveEssentialSpecKeys } from '../services/essentialSpecFields';
+import { pickSpecsAiNameVendorUpdates } from '../utils/applySpecsAiResult';
 import { getProductCardSpecs } from '../utils/productCardContent';
 import {
   defaultBuyPaymentForPlatform,
@@ -144,6 +145,7 @@ const ListingStudioModal: React.FC<Props> = ({
   const [sellerProfileUrl, setSellerProfileUrl] = useState(item.kleinanzeigenSellerProfileUrl || '');
 
   const [parsingSpecs, setParsingSpecs] = useState(false);
+  const [generatingTitle, setGeneratingTitle] = useState(false);
   const [genListing, setGenListing] = useState(false);
   const [genCards, setGenCards] = useState(false);
   const [cardProgress, setCardProgress] = useState<string | null>(null);
@@ -320,6 +322,36 @@ const ListingStudioModal: React.FC<Props> = ({
     await onUpdateItem(patch);
   };
 
+  const handleGenerateItemTitle = async () => {
+    if (!name.trim()) {
+      setError('Enter an item name first.');
+      return;
+    }
+    setGeneratingTitle(true);
+    setError(null);
+    try {
+      const categoryContext = `${item.category || 'Unknown'}${item.subCategory ? ` / ${item.subCategory}` : ''}`;
+      const knownKeys = resolveEssentialSpecKeys(item.category || '', item.subCategory, categoryFields);
+      const result = await generateItemSpecs(name.trim(), categoryContext, knownKeys);
+      const nv = pickSpecsAiNameVendorUpdates(result, { applyStandardizedName: true });
+      if (!nv.name) {
+        setError('AI did not return a cleaned title. Try a clearer part number or model name.');
+        return;
+      }
+      setName(nv.name);
+      const patch: Partial<InventoryItem> = { name: nv.name };
+      if (nv.vendor) {
+        setVendor(nv.vendor);
+        patch.vendor = nv.vendor;
+      }
+      await persistPatch(patch);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Title generation failed');
+    } finally {
+      setGeneratingTitle(false);
+    }
+  };
+
   const handleParseSpecs = async () => {
     if (!name.trim()) {
       setError('Enter an item name first.');
@@ -339,18 +371,14 @@ const ListingStudioModal: React.FC<Props> = ({
         categoryFields
       );
       setSpecs(newSpecs);
+      // Specs parse must not rename — only the Item name "AI title" button may.
+      const nv = pickSpecsAiNameVendorUpdates(result);
       const patch: Partial<InventoryItem> = {
         specs: newSpecs,
         specsAiSuggested: Object.keys(newSpecs).length ? { ...newSpecs } : undefined,
+        ...nv,
       };
-      if (result.standardizedName) {
-        setName(result.standardizedName);
-        patch.name = result.standardizedName;
-      }
-      if (result.vendor) {
-        setVendor(result.vendor);
-        patch.vendor = result.vendor;
-      }
+      if (nv.vendor) setVendor(nv.vendor);
       await persistPatch(patch);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Spec parse failed');
@@ -654,13 +682,13 @@ const ListingStudioModal: React.FC<Props> = ({
                 </h4>
                 <button
                   type="button"
-                  disabled={parsingSpecs}
-                  onClick={() => void handleParseSpecs()}
+                  disabled={generatingTitle || parsingSpecs}
+                  onClick={() => void handleGenerateItemTitle()}
                   className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-600 text-white text-[9px] font-black uppercase disabled:opacity-50"
-                  title="AI parse also standardizes the name when possible"
+                  title="Generate a cleaned item title only (does not change specs)"
                 >
-                  {parsingSpecs ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
-                  AI
+                  {generatingTitle ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                  AI title
                 </button>
               </div>
               <input

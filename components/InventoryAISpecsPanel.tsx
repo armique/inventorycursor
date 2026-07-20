@@ -4,6 +4,7 @@ import { Sparkles, Loader2, AlertCircle, Info, AlertTriangle, X } from 'lucide-r
 import { InventoryItem } from '../types';
 import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
 import { mergeAiSpecsIntoEssential, resolveEssentialSpecKeys } from '../services/essentialSpecFields';
+import { pickSpecsAiNameVendorUpdates } from '../utils/applySpecsAiResult';
 
 const BATCH_SIZE = 12;
 const DELAY_BETWEEN_BATCHES_MS = 60_000;
@@ -82,12 +83,12 @@ const InventoryAISpecsPanelInner: React.FC<Props> = ({
         item.subCategory,
         categoryFields
       );
+      // Specs parse must not rename items — only the explicit AI title button may.
       const updates: Partial<InventoryItem> = {
         specs: newSpecs,
         specsAiSuggested: Object.keys(newSpecs).length ? { ...newSpecs } : undefined,
+        ...pickSpecsAiNameVendorUpdates(result),
       };
-      if (result.standardizedName) updates.name = result.standardizedName;
-      if (result.vendor) updates.vendor = result.vendor;
       return { ...item, ...updates };
     },
     [categoryFields]

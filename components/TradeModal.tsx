@@ -29,6 +29,7 @@ import { allocateRemainderEuros, TradeSplitMode } from '../services/tradeAllocat
 import { resolveEssentialSpecKeys, mergeAiSpecsIntoEssential } from '../services/essentialSpecFields';
 import { toLocalCalendarDateKey } from '../utils/calendarDate';
 import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
+import { pickSpecsAiNameVendorUpdates } from '../utils/applySpecsAiResult';
 import ItemThumbnail, { CategoryIconBox } from './ItemThumbnail';
 
 function localDatetimeInputValue(d = new Date()): string {
@@ -156,16 +157,15 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
       if (result.specs && Object.keys(result.specs).length > 0) {
         const mergedSpecs = mergeAiSpecsIntoEssential(d.specs, result.specs, d.category, d.subCategory, categoryFields);
         setIncomingItems((prev) =>
-          prev.map((i) =>
-            i.id === id
-              ? {
-                  ...i,
-                  specs: mergedSpecs,
-                  ...(result.standardizedName ? { name: result.standardizedName } : {}),
-                  ...(result.vendor ? { parsedVendor: result.vendor } : {})
-                }
-              : i
-          )
+          prev.map((i) => {
+            if (i.id !== id) return i;
+            const nv = pickSpecsAiNameVendorUpdates(result);
+            return {
+              ...i,
+              specs: mergedSpecs,
+              ...(nv.vendor ? { parsedVendor: nv.vendor } : {}),
+            };
+          })
         );
       }
     } catch (err) {
@@ -333,11 +333,11 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
                 row.subCategory,
                 categoryFields
               );
+              const nv = pickSpecsAiNameVendorUpdates(result);
               drafts[idx] = {
                 ...drafts[idx],
                 specs: mergedSpecs,
-                ...(result.standardizedName ? { name: result.standardizedName } : {}),
-                ...(result.vendor ? { parsedVendor: result.vendor } : {})
+                ...(nv.vendor ? { parsedVendor: nv.vendor } : {}),
               };
             }
           } catch (e) {

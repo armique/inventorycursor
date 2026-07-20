@@ -8,13 +8,14 @@ import {
   MessageCircle, Link as LinkIcon, Upload, Search, Database, 
   Cpu, Monitor, HardDrive, Zap, Wind, AlertCircle, CheckCircle2, Copy,
   Fan, Lightbulb, Keyboard, Mouse, Tv, MoreHorizontal, Cable, Laptop as LaptopIcon, Wrench,
-  Wand2, Sliders, X, History, Repeat2, Package, FileText
+  Wand2, Sliders, X, History, Repeat2, Package, FileText, Sparkles, Loader2
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, Platform, PaymentType } from '../types';
 import { SALE_PLATFORM_OPTIONS } from '../utils/salePlatform';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 import { CATEGORY_IMAGES, getSpecOptions } from '../services/hardwareDB';
 import { generateItemSpecs, getSpecsAIProvider, suggestPriceFromSoldListings, type SoldPriceSuggestion } from '../services/specsAI';
+import { pickSpecsAiNameVendorUpdates } from '../utils/applySpecsAiResult';
 import { getCompatibleItemsForItem } from '../services/compatibility';
 import {
   mergeAiSpecsIntoEssential,
@@ -162,6 +163,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
 
   const [configStep, setConfigStep] = useState<'CATEGORY' | 'DETAILS' | 'DONE'>('CATEGORY');
   const [generatingSpecs, setGeneratingSpecs] = useState(false);
+  const [generatingTitle, setGeneratingTitle] = useState(false);
   const [showSpecs, setShowSpecs] = useState(true);
   const [nameSuggestionsOpen, setNameSuggestionsOpen] = useState(false);
   const [categorySearchOpen, setCategorySearchOpen] = useState(false);
@@ -445,7 +447,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       const result = await detectItemCategory(name, categories);
       setFormData((prev) => ({
         ...prev,
-        name: result.standardizedName || name,
+        // Category detect must not rename — use the dedicated AI title button for that.
         category: result.category,
         subCategory: result.subCategory,
       }));
@@ -478,6 +480,35 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     });
   }, []);
 
+  const handleGenerateItemTitle = async () => {
+    const currentName = (formData.name || '').trim();
+    if (!currentName) {
+      alert('Please enter an item name first.');
+      return;
+    }
+    setGeneratingTitle(true);
+    try {
+      const categoryContext = formData.category || 'Unknown';
+      const definedFields = resolveEssentialSpecKeys(formData.category || '', formData.subCategory, categoryFields);
+      const result = await generateItemSpecs(currentName, categoryContext, definedFields);
+      const nv = pickSpecsAiNameVendorUpdates(result, { applyStandardizedName: true });
+      if (!nv.name) {
+        alert('AI did not return a cleaned title. Try a clearer part number or model name.');
+        return;
+      }
+      setFormData((prev) => ({
+        ...prev,
+        name: nv.name!,
+        ...(nv.vendor ? { vendor: nv.vendor } : {}),
+      }));
+    } catch (e: unknown) {
+      const msg = (e as Error)?.message || 'Failed to generate title.';
+      alert(msg.includes('API key') ? `${msg}\n\nAdd the key in .env and restart the app.` : msg);
+    } finally {
+      setGeneratingTitle(false);
+    }
+  };
+
   const handleAutoFillSpecs = async () => {
     if (!formData.name) return alert("Please enter an item name.");
     
@@ -499,15 +530,12 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       );
       const nextAi = filterSpecsToEssentialKeys(result.specs || {}, definedFields);
 
+      // Parsing specs should never rename the item — use the dedicated AI title button for that.
       const updates: Partial<InventoryItem> = {
         specs: newSpecs,
         specsAiSuggested: Object.keys(nextAi).length ? nextAi : undefined,
+        ...pickSpecsAiNameVendorUpdates(result),
       };
-
-      // Parsing specs should never rename the item — the name you typed stays exactly as-is.
-      if (result.vendor) {
-         updates.vendor = result.vendor;
-      }
 
       setFormData((prev) => ({ ...prev, ...updates }));
     } catch (e: any) {
@@ -1396,7 +1424,19 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                     {/* Basic Info */}
                    <div className="space-y-3">
                       <div className="space-y-1.5">
-                          <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Item Name</label>
+                          <div className="flex items-center justify-between gap-2 ml-1">
+                            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Item Name</label>
+                            <button
+                              type="button"
+                              disabled={generatingTitle || !(formData.name || '').trim() || !getSpecsAIProvider()}
+                              onClick={() => void handleGenerateItemTitle()}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-600 text-white text-[9px] font-black uppercase disabled:opacity-50 hover:bg-rose-700"
+                              title="Generate a cleaned item title only (does not change specs)"
+                            >
+                              {generatingTitle ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                              AI title
+                            </button>
+                          </div>
                           <div className="flex gap-2 items-stretch">
                             <div className="relative flex-1">
                               <input
