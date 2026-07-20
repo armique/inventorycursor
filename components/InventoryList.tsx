@@ -24,7 +24,6 @@ import {
   itemMatchesAmountFilter,
   amountFilterSummary,
 } from '../utils/inventoryAmountFilter';
-import { copyKleinanzeigenListing } from '../utils/copyKleinanzeigenListing';
 import { cycleInventoryItemPresence, getItemPresenceCycleState, getItemUserPhotoCount, normalizeImageList, prepareInventoryImagesForStorage } from '../utils/imageImport';
 import { photoQcSummary } from '../utils/photoQc';
 import { exportInventoryToExcel } from '../services/excelExportService';
@@ -32,6 +31,8 @@ import { getRecentItemIds, addRecentItemId } from '../services/recentItemsServic
 import { generateStoreDescription } from '../services/specsAI';
 import { suggestPriceFromSoldListings, SoldPriceSuggestion, getSpecsAIProvider } from '../services/specsAI';
 import { bulkImportSourceLabel, countBulkImportItems } from '../utils/bulkImportHistory';
+import ListingStudioModal from './ListingStudioModal';
+import { generateMarketplaceListing } from '../services/marketplaceListingAI';
 
 const ebaySoldSearchUrl = (query: string) =>
   `https://www.ebay.de/sch/i.html?_nkw=${encodeURIComponent(query)}&LH_Sold=1&LH_Complete=1`;
@@ -297,7 +298,7 @@ const ACTIONS_GAP_PX = 2;
 /** Number of action buttons rendered for a given item — must mirror the conditions in the 'actions' cell below. */
 function countActionButtons(item: InventoryItem): number {
   let n = 2; // Edit, Duplicate (always shown)
-  if (item.status === ItemStatus.IN_STOCK) n += 6; // Check price, Cross-post, AI tools, Mark sold, Trade, Gift
+  if (item.status === ItemStatus.IN_STOCK) n += 5; // Cross-post, Listing AI, Mark sold, Trade, Gift
   if (item.isPC || item.isBundle) n += 1; // Unbundle
   if (isSoldOrTradedOnly(item)) n += 1; // Invoice
   if (item.status === ItemStatus.SOLD || item.status === ItemStatus.GIFTED) n += 1; // Mark unsold/return or undo gift
@@ -776,7 +777,7 @@ const InventoryList: React.FC<Props> = ({
   const [editingCell, setEditingCell] = useState<{ itemId: string, field: ColumnId } | null>(null);
   const [editValue, setEditValue] = useState<string | number>('');
   const [parsingSingleId, setParsingSingleId] = useState<string | null>(null);
-  const [activeAiDropdownId, setActiveAiDropdownId] = useState<string | null>(null);
+  const [listingAiItem, setListingAiItem] = useState<InventoryItem | null>(null);
   const rowClickTimeoutRef = useRef<number | null>(null);
 
   // Sync search from URL ?q= (e.g. from global search)
@@ -1040,20 +1041,7 @@ const InventoryList: React.FC<Props> = ({
     return () => document.removeEventListener('mousedown', handle);
   }, [showRecentDropdown]);
 
-  // Close AI actions dropdown when clicking outside
-  useEffect(() => {
-    if (!activeAiDropdownId) return;
-    const handle = () => {
-      setActiveAiDropdownId(null);
-    };
-    const timer = setTimeout(() => {
-      document.addEventListener('click', handle);
-    }, 50);
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener('click', handle);
-    };
-  }, [activeAiDropdownId]);
+  // Listing AI opens as a modal — no dropdown click-outside needed
 
   const toggleColumnVisibility = (id: ColumnId) => {
     const visible = visibleColumns.length;
@@ -1205,13 +1193,15 @@ const InventoryList: React.FC<Props> = ({
     }
     setListingGenId(item.id);
     try {
-      const context =
-        item.marketDescription ||
-        item.storeDescription ||
-        item.comment1 ||
-        '';
-      const text = await generateStoreDescription(item.name, context || undefined, { hasOVP: item.hasOVP, hasIOShield: item.hasIOShield });
-      const updated: InventoryItem = { ...item, marketDescription: text };
+      const result = await generateMarketplaceListing(item, {
+        hasOVP: item.hasOVP,
+        hasIOShield: item.hasIOShield,
+      });
+      const updated: InventoryItem = {
+        ...item,
+        marketTitle: result.ebayTitle,
+        marketDescription: result.listingText,
+      };
       onUpdate([updated]);
     } catch (e: any) {
       console.error('Listing description generation failed', e);
@@ -2319,8 +2309,16 @@ const InventoryList: React.FC<Props> = ({
      for (let i = 0; i < selected.length; i++) {
         setBulkGenerateProgress(`${i + 1} / ${selected.length}`);
         try {
-           const text = await generateStoreDescription(selected[i].name, selected[i].storeDescription || undefined, { hasOVP: selected[i].hasOVP, hasIOShield: selected[i].hasIOShield });
-           updates.push({ ...selected[i], storeDescription: text });
+           const result = await generateMarketplaceListing(selected[i], {
+             hasOVP: selected[i].hasOVP,
+             hasIOShield: selected[i].hasIOShield,
+           });
+           updates.push({
+             ...selected[i],
+             marketTitle: result.ebayTitle,
+             marketDescription: result.listingText,
+             storeDescription: result.listingText,
+           });
         } catch (err) {
            console.warn('AI description failed for', selected[i].name, err);
         }
@@ -3404,94 +3402,30 @@ const InventoryList: React.FC<Props> = ({
             className="text-left relative sticky right-0 z-[18] bg-white group-hover/row:bg-slate-50 border-l border-slate-200/90 shadow-[-6px_0_12px_-4px_rgba(15,23,42,0.07)]"
             style={style}
           >
-            <div className={`flex flex-nowrap justify-start items-center gap-0.5 transition-opacity ${activeAiDropdownId === item.id ? 'opacity-100' : 'opacity-100 sm:opacity-0 sm:group-hover/row:opacity-100'}`}>
+            <div className={`flex flex-nowrap justify-start items-center gap-0.5 transition-opacity ${listingAiItem?.id === item.id ? 'opacity-100' : 'opacity-100 sm:opacity-0 sm:group-hover/row:opacity-100'}`}>
               {item.status === ItemStatus.IN_STOCK && (
                  <>
                    <button onClick={(e) => { e.stopPropagation(); setItemToCrossPost(item); }} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-md shrink-0" title="Cross-Post"><Share2 size={14}/></button>
                    
-                   {/* Sparkles button (AI tools dropdown toggle) */}
-                   <div className="relative inline-block" onClick={e => e.stopPropagation()}>
-                     <button
-                       type="button"
-                       onClick={(e) => {
-                         e.stopPropagation();
-                         setActiveAiDropdownId(prev => prev === item.id ? null : item.id);
-                       }}
-                       className={`p-1.5 rounded-md shrink-0 transition-colors ${
-                         activeAiDropdownId === item.id 
-                           ? 'bg-amber-100 text-amber-700' 
-                           : 'text-amber-600 hover:bg-amber-50'
-                       }`}
-                       title="AI Assistant & Listing Tools"
-                     >
-                       {parsingSingleId === item.id ? (
-                         <Loader2 size={14} className="animate-spin text-amber-600" />
-                       ) : (
-                         <Sparkles size={14} />
-                       )}
-                     </button>
-                     
-                     {activeAiDropdownId === item.id && (
-                       <div 
-                         onClick={(e) => e.stopPropagation()} 
-                         className="absolute right-0 bottom-full mb-1 z-[150] w-56 rounded-xl border border-slate-200 bg-white shadow-xl p-1.5 text-left animate-in fade-in slide-in-from-bottom-2 duration-150"
-                       >
-                         <div className="px-2 py-1 border-b border-slate-100 flex items-center justify-between mb-1">
-                           <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">AI Listing Tools</span>
-                           {item.marketDescription && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Text generated" />}
-                         </div>
-                         <div className="space-y-0.5">
-                           <button
-                             type="button"
-                             onClick={() => { setActiveAiDropdownId(null); handleParseSingleItem(item); }}
-                             disabled={parsingSingleId !== null}
-                             className="w-full text-left px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50 rounded-lg flex items-center gap-2"
-                           >
-                             <Sparkles size={12} className="text-amber-500" /> Parse Specs (AI)
-                           </button>
-                           <button
-                             type="button"
-                             onClick={() => { setActiveAiDropdownId(null); handleSuggestPrice(item); }}
-                             disabled={priceSuggestId === item.id}
-                             className="w-full text-left px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50 rounded-lg flex items-center gap-2"
-                           >
-                             <Tag size={12} className="text-amber-500" /> Suggest Price (AI)
-                           </button>
-                           <button
-                             type="button"
-                             onClick={() => { setActiveAiDropdownId(null); handleGenerateListingDescription(item); }}
-                             disabled={listingGenId === item.id}
-                             className="w-full text-left px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50 rounded-lg flex items-center gap-2"
-                           >
-                             <FileText size={12} className="text-emerald-500" /> Generate Desc (AI)
-                           </button>
-                           {item.marketDescription && (
-                             <button
-                               type="button"
-                               onClick={() => { setActiveAiDropdownId(null); handleCopyListingDescription(item); }}
-                               className="w-full text-left px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50 rounded-lg flex items-center gap-2"
-                             >
-                               <Copy size={12} className="text-slate-500" /> Copy AI Text
-                             </button>
-                           )}
-                           <button
-                             type="button"
-                             onClick={async () => {
-                               setActiveAiDropdownId(null);
-                               try {
-                                 await copyKleinanzeigenListing(item);
-                               } catch {
-                                 alert('Copy failed');
-                               }
-                             }}
-                             className="w-full text-left px-2 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-50 rounded-lg flex items-center gap-2"
-                           >
-                             <span className="w-3 h-3 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[7px] font-bold">K</span> Copy Kleinanzeigen List
-                           </button>
-                         </div>
-                       </div>
+                   <button
+                     type="button"
+                     onClick={(e) => {
+                       e.stopPropagation();
+                       setListingAiItem(item);
+                     }}
+                     className={`p-1.5 rounded-md shrink-0 transition-colors ${
+                       listingAiItem?.id === item.id || item.marketDescription || item.marketTitle
+                         ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                         : 'text-emerald-600 hover:bg-emerald-50'
+                     }`}
+                     title="Listing Studio — specs, card gallery, title & description"
+                   >
+                     {listingGenId === item.id ? (
+                       <Loader2 size={14} className="animate-spin text-emerald-600" />
+                     ) : (
+                       <Sparkles size={14} />
                      )}
-                   </div>
+                   </button>
                  </>
               )}
               <button onClick={(e) => { e.stopPropagation(); handleEditClick(item); }} className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-md shrink-0" title="Edit">
@@ -4513,6 +4447,22 @@ const InventoryList: React.FC<Props> = ({
             ]);
             setToast('AI product card set as main photo');
             setTimeout(() => setToast(null), 2200);
+          }}
+        />
+      )}
+
+      {listingAiItem && (
+        <ListingStudioModal
+          item={items.find((i) => i.id === listingAiItem.id) || listingAiItem}
+          allItems={items}
+          categoryFields={categoryFields}
+          onClose={() => setListingAiItem(null)}
+          onUpdateItem={async (patch) => {
+            const current = items.find((i) => i.id === listingAiItem.id) || listingAiItem;
+            await onUpdate([{ ...current, ...patch }]);
+            setListingAiItem((prev) => (prev ? { ...prev, ...patch } : prev));
+            setToast('Item updated');
+            setTimeout(() => setToast(null), 1600);
           }}
         />
       )}

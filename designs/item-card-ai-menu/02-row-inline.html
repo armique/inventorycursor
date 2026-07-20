@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>02 — Row Inline Expand · Item card AI menu</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800|Source+Sans+3:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+:root {
+  --bg: #f1f5f0;
+  --ink: #0b1220;
+  --muted: #64748b;
+  --card: #ffffff;
+  --line: #e2e8f0;
+  --accent: #166534;
+  --accent-2: #14532d;
+  --soft: #f1f5f9;
+  --shadow: 0 18px 50px rgba(0,0,0,.08);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100dvh;
+  font-family: "Outfit", "Source Sans 3", sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  background-image:
+    radial-gradient(900px 420px at 0% 0%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 60%),
+    radial-gradient(700px 380px at 100% 10%, color-mix(in srgb, var(--accent-2) 12%, transparent), transparent 55%);
+}
+.page { max-width: 1100px; margin: 0 auto; padding: 1.25rem 1.1rem 3rem; }
+.badge {
+  display: inline-flex; align-items: center; gap: .4rem;
+  font-size: .65rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+  padding: .35rem .65rem; border-radius: .55rem;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+h1 { margin: .75rem 0 .35rem; font-size: clamp(1.35rem, 3vw, 1.85rem); letter-spacing: -.03em; line-height: 1.15; }
+.lead { margin: 0 0 1.25rem; color: var(--muted); font-size: .92rem; max-width: 46rem; line-height: 1.5; }
+.nav { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: 1.25rem; }
+.nav a {
+  text-decoration: none; font-size: .68rem; font-weight: 700; letter-spacing: .03em;
+  padding: .4rem .65rem; border-radius: .5rem; border: 1px solid var(--line);
+  color: var(--muted); background: var(--card);
+}
+.nav a.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+.frame {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 1.25rem;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.item-bar {
+  display: flex; gap: .85rem; align-items: center;
+  padding: .9rem 1rem; border-bottom: 1px solid var(--line);
+  background: var(--soft);
+}
+.thumb {
+  width: 52px; height: 52px; border-radius: .75rem; object-fit: cover;
+  background: #cbd5e1; flex-shrink: 0;
+}
+.item-meta { min-width: 0; flex: 1; }
+.item-meta .name { font-weight: 800; font-size: .95rem; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item-meta .sub { font-size: .72rem; color: var(--muted); margin-top: .15rem; }
+.flags { display: flex; gap: .35rem; flex-wrap: wrap; }
+.icon-btn {
+  width: 34px; height: 34px; border-radius: .65rem; border: 1px solid var(--line);
+  background: var(--card); color: var(--muted); display: grid; place-items: center;
+  cursor: pointer; font-size: .85rem;
+}
+.icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+.icon-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.ai-zone { padding: 1rem; display: grid; gap: .85rem; }
+.block {
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: #fff;
+  overflow: hidden;
+}
+.block-h {
+  display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+  padding: .65rem .8rem; border-bottom: 1px solid var(--line);
+  background: #f8fafc;
+}
+.block-h h3 { margin: 0; font-size: .72rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.block-h .hint { font-size: .65rem; color: var(--muted); }
+.block-tools { display: flex; gap: .35rem; }
+.btn {
+  appearance: none; border: 1px solid var(--line); background: var(--card); color: var(--ink);
+  font: inherit; font-size: .68rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  padding: .45rem .7rem; border-radius: .55rem; cursor: pointer;
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn.solid { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn.solid:hover { background: var(--accent-2); color: #fff; }
+.btn.ghost { background: transparent; }
+textarea, input[type=text] {
+  width: 100%; border: 0; outline: none; resize: vertical;
+  background: transparent; color: var(--ink); font: inherit; font-size: .84rem; line-height: 1.45;
+  padding: .75rem .85rem; display: block;
+}
+textarea { min-height: 180px; }
+.meter {
+  display: flex; justify-content: space-between; padding: .35rem .85rem .65rem;
+  font-size: .65rem; color: var(--muted); border-top: 1px solid var(--line);
+}
+.meter b { color: var(--accent); font-variant-numeric: tabular-nums; }
+.owner {
+  margin: 0 1rem 0; padding: .75rem .85rem; border-radius: .85rem;
+  border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  font-size: .75rem; color: var(--muted);
+}
+.owner strong { color: var(--ink); display: block; margin-bottom: .35rem; font-size: .68rem; letter-spacing: .06em; text-transform: uppercase; }
+.footer-actions {
+  display: flex; flex-wrap: wrap; gap: .45rem; justify-content: flex-end;
+  padding: .85rem 1rem 1rem; border-top: 1px solid var(--line);
+}
+.removed {
+  margin-top: 1rem; padding: .85rem 1rem; border-radius: .9rem;
+  border: 1px solid var(--line); background: var(--card); color: var(--muted); font-size: .78rem;
+}
+.removed h4 { margin: 0 0 .4rem; font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ink); }
+.removed ul { margin: 0; padding-left: 1.1rem; }
+.grid2 { display: grid; gap: .85rem; }
+@media (min-width: 820px) { .grid2.split { grid-template-columns: 1fr 1.35fr; } }
+</style>
+</head>
+<body>
+  <div class="page">
+    <span class="badge">Design 02 / 10</span>
+    <h1>Row Inline Expand</h1>
+    <p class="lead">Inventory row stays; expanding opens two stacked AI fields inline. Removes Parse/Price/Kleinanzeigen clutter from the AI menu.</p>
+    <nav class="nav"><a class="" href="./01-split-studio.html">01 Split Studio</a><a class="on" href="./02-row-inline.html">02 Row Inline Expand</a><a class="" href="./03-slide-drawer.html">03 Slide Drawer</a><a class="" href="./04-popover-duo.html">04 Popover Duo Cards</a><a class="" href="./05-listing-studio-modal.html">05 Listing Studio Modal</a><a class="" href="./06-twin-editors.html">06 Twin Editors Panel</a><a class="" href="./07-accordion-blocks.html">07 Accordion Blocks</a><a class="" href="./08-bottom-sheet.html">08 Bottom Sheet Dual</a><a class="" href="./09-operator-console.html">09 Operator Console</a><a class="" href="./10-rail-and-panels.html">10 Action Rail + Panels</a><a href="./index.html">Index</a></nav>
+    <div class="frame">
+      
+  <div class="item-bar">
+    <img class="thumb" alt="" src="https://picsum.photos/seed/ryzen5600g/104/104" />
+    <div class="item-meta">
+      <div class="name">AMD Ryzen 5 5600G + ASRock B550M + 32GB DDR4</div>
+      <div class="sub">Bundle · IN STOCK · €189 buy · Bulk #4821</div>
+    </div>
+    <div class="flags">
+      <button class="icon-btn" title="Photos">📷</button>
+      <button class="icon-btn" title="AI product card">🪄</button>
+      <button class="icon-btn primary" title="AI Listing">✨</button>
+      <button class="icon-btn" title="Edit">✎</button>
+      <button class="icon-btn" title="Sold">€</button>
+    </div>
+  </div><div class="ai-zone" style="padding-top:.35rem">
+  <section class="block" data-block="title">
+    <div class="block-h">
+      <div>
+        <h3>AI Titel</h3>
+        <div class="hint">eBay · max 80 Zeichen</div>
+      </div>
+      <div class="block-tools">
+        <button class="btn ghost" type="button">Copy</button>
+        <button class="btn solid" type="button">Generate</button>
+      </div>
+    </div>
+    <input type="text" value="AMD Ryzen 5 5600G + ASRock B550M + 32GB DDR4 Bundle AM4" maxlength="80" aria-label="AI Titel" />
+    <div class="meter"><span>Optimierter Marktplatz-Titel</span><b>55/80</b></div>
+  </section>
+  <section class="block" data-block="description">
+    <div class="block-h">
+      <div>
+        <h3>AI Beschreibung</h3>
+        <div class="hint">eBay.de / Kleinanzeigen · DE</div>
+      </div>
+      <div class="block-tools">
+        <button class="btn ghost" type="button">Copy</button>
+        <button class="btn solid" type="button">Generate</button>
+      </div>
+    </div>
+    <textarea aria-label="AI Beschreibung">Ryzen 5 5600G + ASRock B550M + 32GB DDR4 RAM
+
+💻 Kompaktes Aufrüst-Bundle für Office &amp; Light Gaming – getestet und sofort einsatzbereit.
+
+🔧 Technische Daten
+• CPU: AMD Ryzen 5 5600G – 6 Kerne / 12 Threads
+• 3,9 GHz Basistakt / bis 4,4 GHz Turbo
+• Mainboard: ASRock B550M Pro4 (AM4)
+• RAM: 32GB (2×16GB) DDR4 3200 MHz
+
+📦 Lieferumfang
+• Mainboard
+• CPU
+• RAM
+• IO-Blende
+• Originalverpackung vorhanden
+
+✅ Zustand
+• Gebraucht
+• Voll funktionsfähig
+• Normale Gebrauchsspuren
+
+🔥 Weitere Komponenten verfügbar
+In meinen weiteren Anzeigen sowie auf Lager finden Sie außerdem Grafikkarten, Netzteile, SSDs und mehr.</textarea>
+    <div class="meter"><span>Verkaufstext · kompakt · 1 Emoji / Abschnitt</span><b>Ready</b></div>
+  </section><div class="footer-actions"><button class="btn solid">Generate both</button><button class="btn">Apply</button></div></div>
+    </div>
+    
+  <aside class="removed">
+    <h4>Removed from this concept</h4>
+    <ul>
+      <li>Parse Specs (AI) — moved to item edit / bulk only</li>
+      <li>Suggest Price as separate AI menu item — folded into owner strip</li>
+      <li>Copy AI Text + Copy Kleinanzeigen as two buttons — one Copy per block</li>
+      <li>Duplicate AI entries across Flags + Actions columns</li>
+    </ul>
+  </aside>
+  </div>
+</body>
+</html>

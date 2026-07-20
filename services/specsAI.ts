@@ -8,6 +8,7 @@
 import { correctGpuVramInSpecs } from './gpuVramCorrection';
 import { filterSpecsToEssentialKeys } from './essentialSpecFields';
 import { loadAISettings } from './aiSettings';
+import { ItemStatus } from '../types';
 
 const getEnv = (key: string): string => {
   try {
@@ -659,47 +660,32 @@ export interface StoreDescriptionHints {
 }
 
 /**
- * Generate a structured, eye-catching store item description in German with emojis throughout.
- * Once set, it stays until the user clicks "Generate description" again or edits manually.
+ * Generate a structured German marketplace listing body.
+ * Uses the eBay.de / Kleinanzeigen professional listing prompt.
+ * Prefer generateMarketplaceListing when you also need the eBay title.
  */
 export async function generateStoreDescription(
   itemName: string,
   existingContext?: string,
   hints?: StoreDescriptionHints
 ): Promise<string> {
-  const context = existingContext?.trim() ? `\nExisting description or notes (you may use as inspiration):\n${existingContext}` : '';
-  const ovpLine = hints?.hasOVP === true ? '\n- IMPORTANT: The item comes with ORIGINAL PACKAGING (OVP). In the Lieferumfang section, say "📦 Mit OVP" or similar.' : '';
-  const ioShieldLine = hints?.hasIOShield === true ? '\n- IMPORTANT: The motherboard / bundle includes the IO Shield. In the Lieferumfang section, mention "✔️ IO-Shield vorhanden" or similar.' : '';
-  const prompt = `You MUST write a product description in German for an online store. It MUST be eye-catching by using EMOJIS throughout – every section header and key line should start with or include an emoji. No plain text without emojis for headers.
-
-RULES:
-- Use ONLY plain text and newlines. No markdown (no ** or # or bullets).
-- Every section title MUST begin with an emoji. Be generous with emojis so the listing stands out.${ovpLine}${ioShieldLine}
-
-STRUCTURE (follow this closely):
-
-1) First line: EMOJI + catchy title with product name.
-   Example: "💻 Starkes Budget-Gaming Aufrüstkit – AMD FX-8350 (8-Kern CPU)"
-
-2) Empty line, then 1–2 short intro paragraphs (can add a small emoji at the start if it fits).
-
-3) Section with emoji: "🔧 Technische Daten"
-   Then subsections each with an emoji, e.g.:
-   "🧠 CPU: AMD FX-8350"
-   "   8 Kerne / 8 Threads"
-   "   4,0 GHz Basistakt / bis 4,2 GHz Turbo"
-   "🖥 Mainboard: ASUS M5A78L-M LE (Sockel AM3+)"
-   "🧩 RAM: 8GB (2×4GB) G.Skill DDR3 1600MHz"
-
-4) More sections with emojis: "📦 Lieferumfang" (include OVP or IO-Shield here if applicable), "❌ Ohne Zubehör" (only if not OVP), "🧪 Zustand" (e.g. Gebraucht, Voll funktionsfähig). Use 📥 for Support/Downloads if relevant.
-
-Suggested emojis: 💻🖥🔧🧠🧩📦❌🧪📥⚡🎮🛒✔️
-
-Output ONLY the German text with emojis. No explanation.
-
-Product name: "${itemName}"${context}`;
-  const text = await getRawTextFromAI(prompt, STORE_DESCRIPTION_MAX_TOKENS);
-  return text.replace(/^["']|["']$/g, '').trim();
+  const { generateMarketplaceListing } = await import('./marketplaceListingAI');
+  const result = await generateMarketplaceListing(
+    {
+      id: 'tmp',
+      name: itemName,
+      buyPrice: 0,
+      buyDate: new Date().toISOString().slice(0, 10),
+      category: 'Misc',
+      status: ItemStatus.IN_STOCK,
+      comment1: existingContext || '',
+      comment2: '',
+      hasOVP: hints?.hasOVP,
+      hasIOShield: hints?.hasIOShield,
+    },
+    hints
+  );
+  return result.listingText;
 }
 
 // --- Price suggestion from eBay sold listings ---

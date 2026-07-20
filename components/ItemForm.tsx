@@ -2172,45 +2172,74 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                          />
                       </div>
 
-                      {/* AI Listing Text (Kleinanzeigen / eBay, DE) */}
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">
-                            AI Listing Text (DE)
-                          </label>
-                          {formData.marketDescription && (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                if (!formData.marketDescription) return;
-                                try {
-                                  await navigator.clipboard.writeText(formData.marketDescription);
-                                  // lightweight inline feedback
-                                  const el = document.createElement('div');
-                                  el.textContent = 'Copied';
-                                  el.className = 'ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200';
-                                  const parent = (event?.currentTarget as HTMLElement)?.parentElement;
-                                  if (parent) {
-                                    parent.appendChild(el);
-                                    setTimeout(() => parent.removeChild(el), 900);
+                      {/* AI Listing — Title + Description */}
+                      <div className="space-y-3">
+                        <div className="rounded-xl border border-slate-200 overflow-hidden bg-white">
+                          <div className="px-3 py-2 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+                            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
+                              AI Titel (eBay · 80)
+                            </label>
+                            {formData.marketTitle && (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    await navigator.clipboard.writeText(formData.marketTitle || '');
+                                  } catch {
+                                    alert('Could not copy title.');
                                   }
-                                } catch (e) {
-                                  console.error('Copy AI listing text failed', e);
-                                  alert('Could not copy AI listing text.');
-                                }
-                              }}
-                              className="mr-1 text-[10px] font-bold uppercase tracking-widest text-blue-600 hover:text-blue-800"
-                            >
-                              Copy
-                            </button>
-                          )}
+                                }}
+                                className="text-[10px] font-bold uppercase tracking-widest text-blue-600 hover:text-blue-800"
+                              >
+                                Copy
+                              </button>
+                            )}
+                          </div>
+                          <input
+                            type="text"
+                            maxLength={80}
+                            className="w-full px-3.5 py-2.5 font-semibold text-xs outline-none"
+                            placeholder="Optimierter eBay-Titel…"
+                            value={formData.marketTitle || ''}
+                            onChange={(e) => setFormData({ ...formData, marketTitle: e.target.value })}
+                          />
+                          <div className="px-3 py-1 border-t border-slate-100 text-[10px] font-bold text-slate-400 text-right">
+                            {[...(formData.marketTitle || '')].length}/80
+                          </div>
                         </div>
-                        <textarea
-                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-xs outline-none focus:border-blue-500 focus:bg-white transition-all h-20 resize-y"
-                          placeholder="AI generated Kleinanzeigen / eBay Beschreibung erscheint hier, nachdem du im Inventar auf die K/E-Icons geklickt hast..."
-                          value={formData.marketDescription || ''}
-                          onChange={e => setFormData({ ...formData, marketDescription: e.target.value })}
-                        />
+
+                        <div className="rounded-xl border border-slate-200 overflow-hidden bg-white">
+                          <div className="px-3 py-2 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+                            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
+                              AI Beschreibung (DE)
+                            </label>
+                            {formData.marketDescription && (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  if (!formData.marketDescription) return;
+                                  try {
+                                    await navigator.clipboard.writeText(formData.marketDescription);
+                                  } catch (e) {
+                                    console.error('Copy AI listing text failed', e);
+                                    alert('Could not copy AI listing text.');
+                                  }
+                                }}
+                                className="text-[10px] font-bold uppercase tracking-widest text-blue-600 hover:text-blue-800"
+                              >
+                                Copy
+                              </button>
+                            )}
+                          </div>
+                          <textarea
+                            className="w-full px-3.5 py-2.5 font-medium text-xs outline-none h-28 resize-y"
+                            placeholder="AI listing appears after Generate in Inventory → Listing AI…"
+                            value={formData.marketDescription || ''}
+                            onChange={(e) =>
+                              setFormData({ ...formData, marketDescription: e.target.value })
+                            }
+                          />
+                        </div>
                       </div>
                     </div>
                  </div>
