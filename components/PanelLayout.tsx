@@ -156,7 +156,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   ];
 
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-900 font-sans">
+    <div className="flex h-screen h-dvh max-h-dvh bg-slate-50 text-slate-900 font-sans overflow-hidden">
       {/* DESKTOP SIDEBAR */}
       <aside className="w-[17.5rem] bg-slate-950 text-white flex flex-col hidden md:flex border-r border-white/5">
         <div className="p-5 space-y-3">
@@ -361,13 +361,15 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
               <button type="button" onClick={() => setLocale('de')} className={`px-2 py-1 rounded ${locale === 'de' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>DE</button>
             </div>
           </div>
-          <Suspense fallback={
-            <div className="flex items-center justify-center min-h-[300px] flex-1">
-              <Loader2 size={32} className="animate-spin text-slate-400" />
-            </div>
-          }>
-            <Outlet />
-          </Suspense>
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            <Suspense fallback={
+              <div className="flex items-center justify-center min-h-[300px] flex-1">
+                <Loader2 size={32} className="animate-spin text-slate-400" />
+              </div>
+            }>
+              <Outlet />
+            </Suspense>
+          </div>
         </div>
         {/* Mobile sync: pending / uploading / error — never cover the stock list */}
         {(syncState.status === 'pending' || syncState.status === 'syncing' || syncState.status === 'error') && (

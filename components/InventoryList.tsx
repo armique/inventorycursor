@@ -3929,7 +3929,7 @@ const InventoryList: React.FC<Props> = ({
   const bulkSelectionCount = deferredSelectedIds.length;
 
   return (
-    <div className="h-full min-h-0 flex flex-col gap-1 overflow-hidden animate-in fade-in relative">
+    <div className="flex-1 min-h-0 h-full flex flex-col gap-1 overflow-hidden relative">
       {showFinancials && financialStats && !splitView && (
         <div className="hidden lg:block">
           <SoldFinancialBar
@@ -4973,8 +4973,10 @@ const InventoryList: React.FC<Props> = ({
       )}
 
       {/* Phase 1: phone card list — never the sticky Actions table */}
-      {!splitView && (
-        <div className="lg:hidden flex-1 min-h-0 overflow-y-auto custom-scrollbar px-1.5 pb-2 space-y-1.5">
+      <div
+        className="lg:hidden flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y custom-scrollbar px-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] space-y-1.5"
+        style={{ WebkitOverflowScrolling: 'touch' }}
+      >
           {sortedItems.length === 0 ? (
             <div className="py-16 text-center opacity-40">
               <Package size={40} className="mx-auto mb-3 text-slate-300" />
@@ -5016,8 +5018,7 @@ const InventoryList: React.FC<Props> = ({
               />
             ))
           )}
-        </div>
-      )}
+      </div>
 
       {/* Table scrolls in remaining height; bulk bar is a separate row below (never overlays rows) */}
       <style>{`

@@ -1,3 +1,10 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Give the app a definite viewport height so nested panel lists can scroll. */
+html,
+body,
+#root {
+  height: 100%;
+}
