@@ -252,7 +252,10 @@ export async function uploadItemImage(
   try {
     // Simple upload (single PUT) to avoid resumable-upload CORS issues; progress not available
     if (onProgress) onProgress(10); // show we started
-    const snapshot = await Promise.race([uploadBytes(ref, file), timeoutPromise]);
+    const snapshot = await Promise.race([
+      uploadBytes(ref, file, { contentType: file.type || 'image/jpeg' }),
+      timeoutPromise,
+    ]);
     if (onProgress) onProgress(90);
     const url = await Promise.race([getDownloadURL(snapshot.ref), timeoutPromise]);
     if (onProgress) onProgress(100);
