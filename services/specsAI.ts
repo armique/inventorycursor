@@ -657,6 +657,8 @@ export interface StoreDescriptionHints {
   hasOVP?: boolean;
   /** Motherboard/bundle includes IO Shield. */
   hasIOShield?: boolean;
+  /** Short seller note the AI must factor into the listing. */
+  aiDescriptionNote?: string;
 }
 
 /**
@@ -682,6 +684,7 @@ export async function generateStoreDescription(
       comment2: '',
       hasOVP: hints?.hasOVP,
       hasIOShield: hints?.hasIOShield,
+      aiDescriptionNote: hints?.aiDescriptionNote,
     },
     hints
   );

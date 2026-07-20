@@ -9,6 +9,8 @@ import { requestAIJson } from './specsAI';
 export interface MarketplaceListingHints {
   hasOVP?: boolean;
   hasIOShield?: boolean;
+  /** Short seller note the AI must factor into the listing (rephrase professionally). */
+  aiDescriptionNote?: string;
 }
 
 export interface MarketplaceListingResult {
@@ -99,6 +101,16 @@ LIEFERUMFANG / OVP / IO
 Если нет IO-Blende (для Mainboard/Bundle где актуально): Ohne IO-Blende
 
 =========================
+SELLER NOTE (AI HINT)
+=========================
+
+Если в ITEM DATA есть блок SELLER NOTE FOR AI — это обязательный контекст от продавца.
+Ты ДОЛЖЕН учесть его в listingText (обычно в ℹ️ Hinweis и/или в кратком описании / Zustand / Lieferumfang — где уместно).
+Переформулируй профессионально на немецком; не копируй сырую английскую/разговорную фразу дословно.
+Пример: note "wifi antennas aren't original" → ясно укажи, что WLAN-/WiFi-Antennen nicht original / durch Drittanbieter-Antennen ersetzt (или аналогично по смыслу).
+Не игнорируй note. Не выдумывай дефекты сверх note.
+
+=========================
 ZUSTAND
 =========================
 
@@ -127,6 +139,7 @@ function buildItemContext(item: InventoryItem, hints?: MarketplaceListingHints):
     : '';
   const hasOVP = hints?.hasOVP === true || item.hasOVP === true;
   const hasIO = hints?.hasIOShield === true || item.hasIOShield === true;
+  const aiNote = (hints?.aiDescriptionNote ?? item.aiDescriptionNote ?? '').trim();
   const lines = [
     `Product name: ${item.name}`,
     `Category: ${item.category}${item.subCategory ? ` / ${item.subCategory}` : ''}`,
@@ -138,6 +151,9 @@ function buildItemContext(item: InventoryItem, hints?: MarketplaceListingHints):
     item.isDefective ? 'Condition flag: DEFECTIVE' : 'Condition flag: WORKING',
     `OVP: ${hasOVP ? 'YES — Originalverpackung vorhanden' : 'NO — Ohne Originalverpackung'}`,
     `IO-Blende: ${hasIO ? 'YES — include IO-Blende' : 'NO — Ohne IO-Blende (if motherboard/bundle relevant)'}`,
+    aiNote
+      ? `SELLER NOTE FOR AI (must incorporate — rephrase professionally in German; do not ignore):\n${aiNote}`
+      : '',
     item.comment1 ? `Notes: ${item.comment1}` : '',
     specs ? `Specs:\n${specs}` : '',
   ].filter(Boolean);

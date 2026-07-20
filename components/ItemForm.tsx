@@ -875,6 +875,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       kleinanzeigenBuyChatUrl: buyChatUrl || undefined,
       kleinanzeigenBuyChatImage: buyChatImage || undefined,
       kleinanzeigenSellerProfileUrl: sellerProfileUrl || undefined,
+      aiDescriptionNote: (formData.aiDescriptionNote || '').trim(),
     };
 
     if (status === ItemStatus.SOLD || status === ItemStatus.TRADED || status === ItemStatus.GIFTED) {
@@ -2403,6 +2404,22 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                  <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 space-y-2.5">
                     <h3 className="font-black text-xs uppercase tracking-widest text-slate-400">AI Description Hints</h3>
                     <div className="flex flex-col gap-2">
+                       <label className="block space-y-1">
+                          <span className="text-[10px] font-bold text-slate-500">AI note (short)</span>
+                          <input
+                             type="text"
+                             className="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-[11px] font-semibold text-slate-800 outline-none focus:border-violet-400 focus:bg-white"
+                             placeholder="e.g. wifi antennas aren't original"
+                             value={formData.aiDescriptionNote || ''}
+                             onChange={(e) =>
+                               setFormData({ ...formData, aiDescriptionNote: e.target.value })
+                             }
+                             maxLength={200}
+                          />
+                          <span className="text-[9px] text-slate-400 font-medium leading-snug block">
+                            Taken into account when generating the AI description — not pasted verbatim.
+                          </span>
+                       </label>
                        <label className="flex items-center gap-2 cursor-pointer">
                           <input
                              type="checkbox"

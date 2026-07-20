@@ -92,7 +92,7 @@ type AppSyncSnapshot = {
  * old value whenever the new one is undefined made it impossible to ever actually clear them. */
 const PRESERVE_FROM_OLD_IF_UPDATE_MISSING: (keyof InventoryItem)[] = [
   'imageUrl', 'imageUrls', 'storeGalleryUrls', 'storeDescription', 'storeVisible', 'storeOnSale', 'storeSalePrice',
-  'specs', 'componentIds', 'comment1', 'comment2', 'vendor', 'hasOVP', 'hasIOShield',
+  'specs', 'componentIds', 'comment1', 'comment2', 'vendor', 'hasOVP', 'hasIOShield', 'aiDescriptionNote',
   'platformBought', 'buyPaymentType', 'kleinanzeigenBuyChatUrl', 'kleinanzeigenBuyChatImage',
   'kleinanzeigenSellerProfileUrl',
   'bulkImportId',
