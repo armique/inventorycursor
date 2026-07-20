@@ -52,6 +52,24 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   React.useEffect(() => {
     void completeGoogleRedirectSignIn().catch(() => {});
   }, []);
+
+  // Lock document scroll while the panel shell owns nested scroll regions (esp. inventory on mobile).
+  React.useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const prevHtml = html.style.overflow;
+    const prevBody = body.style.overflow;
+    const prevOverscroll = body.style.overscrollBehaviorY;
+    html.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+    body.style.overscrollBehaviorY = 'none';
+    return () => {
+      html.style.overflow = prevHtml;
+      body.style.overflow = prevBody;
+      body.style.overscrollBehaviorY = prevOverscroll;
+    };
+  }, []);
+
   /** Inventory/trash use internal scroll + docked bulk bar; eBay tools use full-width workspace layout. */
   const isDockedPanelPage =
     /^\/panel\/(inventory|trash|ebay-store-pull)(\/|$)/.test(location.pathname);
