@@ -233,9 +233,9 @@ export interface InventoryItem {
   /** Stock quantity for store (undefined = 1). When 0, show "Out of stock" on store. */
   quantity?: number;
 
-  /** Original packaging (OVP) – item comes with original box. Used by AI description generator. */
+  /** Original packaging / box (OVP). Used by AI description + product card generators. */
   hasOVP?: boolean;
-  /** IO Shield included (for motherboards/bundles). Used by AI description generator. */
+  /** IO Shield / IO-Blende included (motherboards / bundles). Used by AI description + product card generators. */
   hasIOShield?: boolean;
 
   /**

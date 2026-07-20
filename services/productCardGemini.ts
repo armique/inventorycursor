@@ -1,6 +1,7 @@
 import type { InventoryItem } from '../types';
 import { getProductCardSpecs } from '../utils/productCardContent';
 import { getItemUserPhotoUrls } from '../utils/imageImport';
+import { resolveProductCardAccessoryHints } from '../utils/itemAccessories';
 import {
   DEFAULT_PRODUCT_CARD_STYLE_ID,
   type ProductCardStyleId,
@@ -31,6 +32,11 @@ export interface GenerateProductCardOptions {
   photos?: string[] | null;
   /** Force edit-from-photo wording even if only one photo */
   editFromPhoto?: boolean;
+  /**
+   * Full inventory — used to OR OVP / IO-Blende from PC/Bundle children
+   * when generating a card for a container item.
+   */
+  allItems?: InventoryItem[] | null;
 }
 
 export async function fetchProductCardProviders(): Promise<ProductCardProviderInfo[]> {
@@ -80,6 +86,8 @@ export async function generateProductCard(
     url.startsWith('data:') ? { imageBase64: url } : { imageUrl: url }
   );
 
+  const accessories = resolveProductCardAccessoryHints(item, opts.allItems);
+
   const res = await fetch('/api/images?route=product-card', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -93,6 +101,8 @@ export async function generateProductCard(
       styleId,
       provider,
       editFromPhoto: opts.editFromPhoto ?? images.length > 0,
+      hasOVP: accessories.hasOVP,
+      hasIOShield: accessories.hasIOShield,
     }),
   });
 

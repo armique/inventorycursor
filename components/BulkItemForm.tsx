@@ -40,6 +40,7 @@ import {
   createBulkImportRecord,
   resolveBulkImportSource,
 } from '../utils/bulkImportHistory';
+import { isMotherboardLike } from '../utils/itemAccessories';
 
 interface Props {
   onSave: (newItems: InventoryItem[]) => void;
@@ -103,6 +104,10 @@ interface DraftItem {
   sourceLine?: string;
   /** How this draft row was added to the review list. */
   draftSource?: BulkImportSource;
+  /** Original packaging / box. */
+  hasOVP?: boolean;
+  /** IO Shield — motherboards only. */
+  hasIOShield?: boolean;
 }
 
 type CostSplitMode = 'EQUAL' | 'SMART';
@@ -353,6 +358,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
             note: newNote,
             isDefective: newDefective,
             draftSource: 'manual',
+            hasOVP: allItemsHaveOVP || undefined,
         });
     }
 
@@ -392,6 +398,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
         vendor: hw.vendor,
         isDefective: false,
         draftSource: 'hardware_db',
+        hasOVP: allItemsHaveOVP || undefined,
     }]);
     setSearchQuery('');
     setSearchResults([]);
@@ -462,6 +469,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
           isDefective: opts.isDefective,
           sourceLine: sourceLine || undefined,
           draftSource,
+          hasOVP: allItemsHaveOVP || undefined,
         });
       };
 
@@ -765,7 +773,9 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
         specs: draft.specs,
         isDefective: draft.isDefective,
         parentContainerId: addAsBundle ? `bundle-${timestamp}` : undefined,
-        hasOVP: !addAsBundle && allItemsHaveOVP || undefined,
+        hasOVP: draft.hasOVP === true || (!addAsBundle && allItemsHaveOVP) || undefined,
+        hasIOShield:
+          isMotherboardLike(draft) && draft.hasIOShield === true ? true : undefined,
         platformBought: platform,
         buyPaymentType: normalizeBuyPaymentForPlatform(platform, payment),
         kleinanzeigenBuyChatUrl: chatUrl,
@@ -795,8 +805,10 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
             comment1: `Bulk Import Bundle. Contents:\n${childItems.map(i => `- ${i.name}`).join('\n')}`,
             comment2: `Bulk Import (${itemsToImport.length} items). Source total: €${totalCost}.`,
             vendor: 'Combined',
-            hasOVP: bundleHasOVP || undefined,
-            hasIOShield: bundleHasIOShield || undefined,
+            hasOVP:
+              bundleHasOVP || childItems.some((c) => c.hasOVP === true) || undefined,
+            hasIOShield:
+              bundleHasIOShield || childItems.some((c) => c.hasIOShield === true) || undefined,
             platformBought: platform,
             buyPaymentType: normalizeBuyPaymentForPlatform(platform, payment),
             kleinanzeigenBuyChatUrl: chatUrl,
@@ -1316,6 +1328,48 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
 
                           <button
                             type="button"
+                            title={item.hasOVP ? 'Original box (OVP) — on' : 'Original box (OVP) — off'}
+                            onClick={() =>
+                              setItems((prev) =>
+                                prev.map((x) =>
+                                  x.id === item.id ? { ...x, hasOVP: !x.hasOVP } : x
+                                )
+                              )
+                            }
+                            className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all ${
+                              item.hasOVP
+                                ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                                : 'bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-600'
+                            }`}
+                          >
+                            OVP
+                          </button>
+                          {isMotherboardLike(item) && (
+                            <button
+                              type="button"
+                              title={
+                                item.hasIOShield
+                                  ? 'IO Shield / IO-Blende — on'
+                                  : 'IO Shield / IO-Blende — off'
+                              }
+                              onClick={() =>
+                                setItems((prev) =>
+                                  prev.map((x) =>
+                                    x.id === item.id ? { ...x, hasIOShield: !x.hasIOShield } : x
+                                  )
+                                )
+                              }
+                              className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all ${
+                                item.hasIOShield
+                                  ? 'bg-sky-100 text-sky-700 hover:bg-sky-200'
+                                  : 'bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-600'
+                              }`}
+                            >
+                              IO
+                            </button>
+                          )}
+                          <button
+                            type="button"
                             title={
                               item.skipAiSpecs
                                 ? 'AI tech specs skipped — click to allow parsing'
@@ -1417,21 +1471,30 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                      <div className="flex flex-wrap gap-4 mb-4 p-3 bg-white rounded-xl border border-slate-200">
                         <label className="flex items-center gap-2 cursor-pointer">
                            <input type="checkbox" checked={bundleHasOVP} onChange={(e) => setBundleHasOVP(e.target.checked)} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
-                           <span className="text-sm font-bold text-slate-700">OVP (Original Packaging)</span>
+                           <span className="text-sm font-bold text-slate-700">Original Box (OVP)</span>
                         </label>
                         <label className="flex items-center gap-2 cursor-pointer">
                            <input type="checkbox" checked={bundleHasIOShield} onChange={(e) => setBundleHasIOShield(e.target.checked)} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
-                           <span className="text-sm font-bold text-slate-700">IO Shield</span>
+                           <span className="text-sm font-bold text-slate-700">IO Shield (IO-Blende)</span>
                         </label>
                      </div>
                   </>
                )}
                {!addAsBundle && items.length > 0 && (
                   <label className="flex items-center gap-3 mb-4 p-3 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 transition-colors cursor-pointer">
-                     <input type="checkbox" checked={allItemsHaveOVP} onChange={e => setAllItemsHaveOVP(e.target.checked)} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                     <input
+                       type="checkbox"
+                       checked={allItemsHaveOVP}
+                       onChange={(e) => {
+                         const next = e.target.checked;
+                         setAllItemsHaveOVP(next);
+                         setItems((prev) => prev.map((d) => ({ ...d, hasOVP: next || undefined })));
+                       }}
+                       className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                     />
                      <div className="flex-1">
-                        <span className="text-xs font-bold text-slate-700 block">OVP (Original Packaging)</span>
-                        <span className="text-[10px] text-slate-400">All items come with original packaging</span>
+                        <span className="text-xs font-bold text-slate-700 block">Original Box (OVP)</span>
+                        <span className="text-[10px] text-slate-400">Mark all review rows as having original packaging (override per row with OVP)</span>
                      </div>
                   </label>
                )}

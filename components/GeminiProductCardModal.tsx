@@ -35,10 +35,13 @@ import {
   saveGeneratedProductCard,
 } from '../services/productCardGallery';
 import { resolveUrlForInventoryMainPhoto } from '../utils/applyProductCardAsMainPhoto';
+import { resolveProductCardAccessoryHints } from '../utils/itemAccessories';
 
 interface Props {
   item: InventoryItem;
   categoryFields?: string[];
+  /** Full inventory — used to resolve OVP / IO-Blende from bundle children. */
+  allItems?: InventoryItem[] | null;
   onClose: () => void;
   onApplyAsMainPhoto: (url: string) => void | Promise<void>;
 }
@@ -46,6 +49,7 @@ interface Props {
 const GeminiProductCardModal: React.FC<Props> = ({
   item,
   categoryFields,
+  allItems,
   onClose,
   onApplyAsMainPhoto,
 }) => {
@@ -77,6 +81,11 @@ const GeminiProductCardModal: React.FC<Props> = ({
     if (useItemPhotos) return itemPhotos;
     return [];
   }, [customPhotos, useItemPhotos, itemPhotos]);
+
+  const accessoryHints = useMemo(
+    () => resolveProductCardAccessoryHints(item, allItems),
+    [item, allItems]
+  );
 
   const styleName = PRODUCT_CARD_STYLES.find((s) => s.id === styleId)?.name;
 
@@ -181,6 +190,7 @@ const GeminiProductCardModal: React.FC<Props> = ({
         provider,
         photos: activePhotos,
         editFromPhoto: activePhotos.length > 0,
+        allItems,
       });
       // Show preview immediately so UX feels fast
       setPreview(result.dataUrl);
@@ -659,6 +669,23 @@ const GeminiProductCardModal: React.FC<Props> = ({
 
         {!showGallery && (
           <div className="px-4 py-3 border-t border-slate-100 flex flex-wrap gap-2 bg-white">
+            {(accessoryHints.hasOVP || accessoryHints.hasIOShield) && (
+              <div className="w-full flex flex-wrap gap-1.5 mb-1">
+                {accessoryHints.hasOVP && (
+                  <span className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 text-[9px] font-black uppercase tracking-wide">
+                    Mit OVP
+                  </span>
+                )}
+                {accessoryHints.hasIOShield && (
+                  <span className="px-2 py-0.5 rounded-lg bg-sky-50 text-sky-700 text-[9px] font-black uppercase tracking-wide">
+                    IO-Blende inklusive
+                  </span>
+                )}
+                <span className="text-[9px] text-slate-400 font-medium self-center">
+                  from item / bundle parts — added as text badges on the card
+                </span>
+              </div>
+            )}
             <button
               type="button"
               onClick={onClose}
