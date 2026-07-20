@@ -32,6 +32,7 @@ import { getRecentItemIds, addRecentItemId } from '../services/recentItemsServic
 import { generateStoreDescription } from '../services/specsAI';
 import { suggestPriceFromSoldListings, SoldPriceSuggestion, getSpecsAIProvider } from '../services/specsAI';
 import { bulkImportSourceLabel, countBulkImportItems } from '../utils/bulkImportHistory';
+import { resolveProductCardAccessoryHints } from '../utils/itemAccessories';
 
 const ebaySoldSearchUrl = (query: string) =>
   `https://www.ebay.de/sch/i.html?_nkw=${encodeURIComponent(query)}&LH_Sold=1&LH_Complete=1`;
@@ -1210,7 +1211,11 @@ const InventoryList: React.FC<Props> = ({
         item.storeDescription ||
         item.comment1 ||
         '';
-      const text = await generateStoreDescription(item.name, context || undefined, { hasOVP: item.hasOVP, hasIOShield: item.hasIOShield });
+      const accessories = resolveProductCardAccessoryHints(item, items);
+      const text = await generateStoreDescription(item.name, context || undefined, {
+        hasOVP: accessories.hasOVP,
+        hasIOShield: accessories.hasIOShield,
+      });
       const updated: InventoryItem = { ...item, marketDescription: text };
       onUpdate([updated]);
     } catch (e: any) {
@@ -2319,7 +2324,11 @@ const InventoryList: React.FC<Props> = ({
      for (let i = 0; i < selected.length; i++) {
         setBulkGenerateProgress(`${i + 1} / ${selected.length}`);
         try {
-           const text = await generateStoreDescription(selected[i].name, selected[i].storeDescription || undefined, { hasOVP: selected[i].hasOVP, hasIOShield: selected[i].hasIOShield });
+           const accessories = resolveProductCardAccessoryHints(selected[i], items);
+           const text = await generateStoreDescription(selected[i].name, selected[i].storeDescription || undefined, {
+             hasOVP: accessories.hasOVP,
+             hasIOShield: accessories.hasIOShield,
+           });
            updates.push({ ...selected[i], storeDescription: text });
         } catch (err) {
            console.warn('AI description failed for', selected[i].name, err);
@@ -4492,6 +4501,7 @@ const InventoryList: React.FC<Props> = ({
       {geminiCardItem && (
         <GeminiProductCardModal
           item={geminiCardItem}
+          allItems={items}
           categoryFields={
             (categoryFields || {})[`${geminiCardItem.category}:${geminiCardItem.subCategory}`] ||
             (categoryFields || {})[geminiCardItem.category]

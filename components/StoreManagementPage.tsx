@@ -6,6 +6,7 @@ import { subscribeToStoreInquiries, markStoreInquiryRead, updateStoreInquiryStat
 import { generateStoreDescription } from '../services/specsAI';
 import ItemThumbnail from './ItemThumbnail';
 import { isPublishedOnStorefront } from '../utils/storefrontCatalog';
+import { isMotherboardLike } from '../utils/itemAccessories';
 
 const TEXTS = {
   title: 'Store management',
@@ -915,12 +916,12 @@ const StoreItemEditPanel: React.FC<EditPanelProps> = ({ item, onSave, onClose, r
             <div className="flex flex-wrap gap-4 mb-2 p-3 bg-slate-50 rounded-lg border border-slate-100">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={hasOVP} onChange={(e) => setHasOVP(e.target.checked)} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
-                <span className="text-sm font-medium text-slate-700">OVP (Original Packaging)</span>
+                <span className="text-sm font-medium text-slate-700">Original Box (OVP)</span>
               </label>
-              {(item.isBundle || item.subCategory === 'Motherboards' || item.category === 'Motherboards') && (
+              {(item.isBundle || item.isPC || isMotherboardLike(item)) && (
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={hasIOShield} onChange={(e) => setHasIOShield(e.target.checked)} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
-                  <span className="text-sm font-medium text-slate-700">IO Shield</span>
+                  <span className="text-sm font-medium text-slate-700">IO Shield (IO-Blende)</span>
                 </label>
               )}
             </div>
