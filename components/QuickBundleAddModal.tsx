@@ -357,7 +357,7 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
 
   return (
     <div
-      className="mt-2 w-full max-w-xl rounded-xl border border-violet-200 bg-white shadow-lg shadow-violet-500/10 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150"
+      className="relative z-[45] mt-2 w-full max-w-xl rounded-xl border border-violet-200 bg-white shadow-lg shadow-violet-500/10 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150"
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
       role="dialog"
@@ -378,8 +378,12 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
         </div>
         <button
           type="button"
-          onClick={discardAndClose}
-          className="p-1 rounded-md text-violet-400 hover:bg-violet-100 hover:text-violet-800"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            discardAndClose();
+          }}
+          className="relative z-10 shrink-0 p-1 rounded-md text-violet-400 hover:bg-violet-100 hover:text-violet-800"
           aria-label="Close"
         >
           <X size={14} />
