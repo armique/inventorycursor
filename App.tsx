@@ -77,6 +77,12 @@ import {
   resolveCloudFlushDelay,
   shouldFlushCloudSoon,
 } from './utils/cloudSyncTiming';
+import {
+  SYNC_MSG_PENDING,
+  SYNC_MSG_UPLOADING,
+  SYNC_MSG_SYNCED,
+  SYNC_MSG_RETRYING,
+} from './utils/cloudSyncStatus';
 
 const ACTION_HISTORY_LIMIT = 400;
 
@@ -179,7 +185,7 @@ function makeActionEntry(action: string, item?: InventoryItem, details?: string,
 }
 
 interface SyncState {
-  status: 'idle' | 'syncing' | 'success' | 'error';
+  status: 'idle' | 'pending' | 'syncing' | 'success' | 'error';
   lastSynced: Date | null;
   message?: string;
 }
@@ -591,7 +597,7 @@ const App: React.FC = () => {
           applyRemoteData(data);
         }
         remoteSnapshotSeenRef.current = true;
-        setSyncState({ status: 'success', lastSynced: new Date(), message: 'Live' });
+        setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
       });
     });
     return () => {
@@ -711,7 +717,7 @@ const App: React.FC = () => {
         const remote = await fetchFromCloud();
         if (remote) {
           applyRemoteData(remote as any);
-          setSyncState({ status: 'success', lastSynced: new Date(), message: 'Live' });
+          setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
           // Ensure storefront catalog is up to date with remote data.
           await writeStoreCatalog(buildStoreCatalog((remote.inventory || []) as InventoryItem[], remote.categoryFields || {})).catch((e) =>
             console.warn('Store catalog update failed', e)
@@ -736,7 +742,7 @@ const App: React.FC = () => {
         await writeToCloud(payload);
         hasUnsavedChanges.current = false;
         suppressRemoteApplyUntilRef.current = Date.now() + REMOTE_APPLY_SUPPRESS_MS;
-        setSyncState({ status: 'success', lastSynced: new Date(), message: 'Live' });
+        setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
         scheduleBackgroundWork(async () => {
           await writeStoreCatalog(buildStoreCatalog(items, categoryFields)).catch((e) =>
             console.warn('Store catalog update failed', e)
@@ -837,7 +843,7 @@ const App: React.FC = () => {
     setSyncState((prev) => ({
       ...prev,
       status: 'syncing',
-      message: prev.status === 'error' ? prev.message : 'Saving…',
+      message: prev.status === 'error' ? prev.message : SYNC_MSG_UPLOADING,
     }));
     const payload = {
       inventory: snap.items,
@@ -856,7 +862,7 @@ const App: React.FC = () => {
       await writeToCloud(payload);
       hasUnsavedChanges.current = false;
       suppressRemoteApplyUntilRef.current = Date.now() + REMOTE_APPLY_SUPPRESS_MS;
-      setSyncState({ status: 'success', lastSynced: new Date(), message: 'Live' });
+      setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
       scheduleBackgroundWork(async () => {
         const catalog = buildStoreCatalog(snap.items, snap.categoryFields);
         await writeStoreCatalog(catalog).catch((e) => console.warn('Store catalog update failed', e));
@@ -930,6 +936,17 @@ const App: React.FC = () => {
     if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
     const delay = resolveCloudFlushDelay(preferredCloudFlushMsRef.current);
     preferredCloudFlushMsRef.current = WRITE_DEBOUNCE_MS;
+    setSyncState((prev) => {
+      if (prev.status === 'syncing') return prev;
+      if (prev.status === 'error') {
+        return { ...prev, status: 'pending', message: SYNC_MSG_RETRYING };
+      }
+      return {
+        ...prev,
+        status: 'pending',
+        message: SYNC_MSG_PENDING,
+      };
+    });
     writeDebounceRef.current = setTimeout(() => {
       writeDebounceRef.current = null;
       void runSilentCloudSync();
@@ -987,7 +1004,7 @@ const App: React.FC = () => {
 
   const handleForcePush = async () => {
     if (!isCloudEnabled() || !authUser) return false;
-    setSyncState(prev => ({ ...prev, status: 'syncing', message: 'Saving…' }));
+    setSyncState(prev => ({ ...prev, status: 'syncing', message: SYNC_MSG_UPLOADING }));
     const payload = {
       inventory: items,
       trash,
@@ -1024,7 +1041,7 @@ const App: React.FC = () => {
       scheduleBackgroundWork(async () => {
         await writeStoreCatalog(buildStoreCatalog(items, categoryFields)).catch((e) => console.warn('Store catalog update failed', e));
       });
-      setSyncState({ status: 'success', lastSynced: new Date(), message: 'Saved' });
+      setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
       return true;
     } catch (err) {
       setSyncState(prev => ({ ...prev, status: 'error', lastSynced: null, message: getSyncErrorMessage(err) }));
