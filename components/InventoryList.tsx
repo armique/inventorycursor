@@ -63,6 +63,7 @@ import { findMatchingOrdersForItem, type EbayOrderMatch } from '../utils/ebayOrd
 import { applyEbayOrderMatchToItem } from '../utils/applyEbayOrderMatch';
 import ContainerMembershipBadge from './ContainerMembershipBadge';
 import { buildContainerTitle } from '../utils/buildTitle';
+import { pickSpecsAiNameVendorUpdates } from '../utils/applySpecsAiResult';
 import {
   buildContainersById,
   buildContainerByChildId,
@@ -2156,12 +2157,12 @@ const InventoryList: React.FC<Props> = ({
       const knownKeys = resolveEssentialSpecKeys(item.category || '', item.subCategory, categoryFields);
       const result = await generateItemSpecs(item.name, categoryContext, knownKeys);
       const newSpecs = mergeAiSpecsIntoEssential(item.specs, result.specs, item.category || '', item.subCategory, categoryFields);
+      // Specs parse must not rename standalone items — only the explicit AI title button may.
       const updates: Partial<InventoryItem> = {
         specs: newSpecs,
         specsAiSuggested: Object.keys(newSpecs).length ? { ...newSpecs } : undefined,
+        ...pickSpecsAiNameVendorUpdates(result),
       };
-      if (result.standardizedName) updates.name = result.standardizedName;
-      if (result.vendor) updates.vendor = result.vendor;
       const merged = { ...item, ...updates };
       onUpdate(items.map((i) => (i.id === item.id ? merged : i)));
     } catch (e: unknown) {

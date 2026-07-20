@@ -20,6 +20,7 @@ import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { CATEGORY_IMAGES, searchAllHardware, HardwareMetadata } from '../services/hardwareDB';
 import { generateItemSpecs, getSpecsAIProvider, requestAIJson } from '../services/specsAI';
 import { mergeAiSpecsIntoEssential, resolveEssentialSpecKeys } from '../services/essentialSpecFields';
+import { pickSpecsAiNameVendorUpdates } from '../utils/applySpecsAiResult';
 import { correctGpuVramInSpecs, shouldApplyGpuVramCorrection } from '../services/gpuVramCorrection';
 import {
   buildRamKitSpecs,
@@ -721,8 +722,8 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                 specs: mergedSpecs,
                 specsAiSuggested: Object.keys(mergedSpecs).length ? { ...mergedSpecs } : undefined,
                 isDefective: stillDefective,
-                ...(result.standardizedName && { name: result.standardizedName }),
-                ...(result.vendor && { vendor: result.vendor }),
+                // Specs parse must not rename — keep pasted / reviewed title as-is.
+                ...pickSpecsAiNameVendorUpdates(result),
               };
             }
           } catch (e) {
