@@ -12,7 +12,6 @@ import { signInWithGoogle, logOut, completeGoogleRedirectSignIn, getAuthErrorMes
 import QuotaMonitor from './QuotaMonitor';
 import GlobalSearch from './GlobalSearch';
 import EbaySoldReminderWidget from './EbaySoldReminderWidget';
-import OnboardingWizard, { isOnboardingComplete } from './OnboardingWizard';
 import { useEbayListingReminder } from '../hooks/useEbayListingReminder';
 import { InventoryItem, Expense, BusinessSettings } from '../types';
 
@@ -44,7 +43,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   const { locale, setLocale } = usePanelLocale();
   usePanelKeyboardShortcuts();
   const [signingIn, setSigningIn] = React.useState(false);
-  const [showOnboarding, setShowOnboarding] = React.useState(() => !isOnboardingComplete());
   const [addMenuOpen, setAddMenuOpen] = React.useState(true);
   const [moreNavOpen, setMoreNavOpen] = React.useState(false);
   const { reminder: ebayReminder, dismiss: dismissEbayReminder, checksRemaining } = useEbayListingReminder();
@@ -157,7 +155,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
 
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 font-sans">
-      {showOnboarding && <OnboardingWizard onComplete={() => setShowOnboarding(false)} />}
       {/* DESKTOP SIDEBAR */}
       <aside className="w-[17.5rem] bg-slate-950 text-white flex flex-col hidden md:flex border-r border-white/5">
         <div className="p-5 space-y-3">
