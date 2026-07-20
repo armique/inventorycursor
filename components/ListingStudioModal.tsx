@@ -222,8 +222,8 @@ const ListingStudioModal: React.FC<Props> = ({
     if (isContainer && allItems?.length) {
       for (const child of getChildren(item, allItems)) {
         if (child.hasOVP === true) hasOVP = true;
-        if (child.hasIOShield === true) hasIOShield = true;
         if (child.hasReceipt === true) hasReceipt = true;
+        // IO only for motherboard listings — never lift child IO onto GPU/PC text.
       }
     }
     return { hasOVP, hasIOShield, hasReceipt };
