@@ -24,7 +24,7 @@ import {
   itemMatchesAmountFilter,
   amountFilterSummary,
 } from '../utils/inventoryAmountFilter';
-import { cycleInventoryItemPresence, getItemPresenceCycleState, getItemUserPhotoCount, normalizeImageList, prepareInventoryImagesForStorage } from '../utils/imageImport';
+import { cycleInventoryItemPresence, getItemPresenceCycleState, getItemUserPhotoCount, getItemUserPhotoUrls, normalizeImageList, prepareInventoryImagesForStorage } from '../utils/imageImport';
 import { photoQcSummary } from '../utils/photoQc';
 import { exportInventoryToExcel } from '../services/excelExportService';
 import { getRecentItemIds, addRecentItemId } from '../services/recentItemsService';
@@ -47,6 +47,7 @@ import QuickBundleAddModal from './QuickBundleAddModal';
 import EditItemModal from './EditItemModal';
 import ItemForm from './ItemForm';
 import ItemThumbnail from './ItemThumbnail';
+import ImageLightbox from './ImageLightbox';
 import InvoiceView from './InvoiceView';
 import InventoryAISpecsPanel from './InventoryAISpecsPanel';
 import AddPhotosModal, { type AddPhotosApplyOptions } from './AddPhotosModal';
@@ -778,7 +779,18 @@ const InventoryList: React.FC<Props> = ({
   const [editValue, setEditValue] = useState<string | number>('');
   const [parsingSingleId, setParsingSingleId] = useState<string | null>(null);
   const [listingAiItem, setListingAiItem] = useState<InventoryItem | null>(null);
+  const [photoLightbox, setPhotoLightbox] = useState<{
+    urls: string[];
+    index: number;
+    title: string;
+  } | null>(null);
   const rowClickTimeoutRef = useRef<number | null>(null);
+
+  const openItemPhotoLightbox = useCallback((item: InventoryItem) => {
+    const urls = getItemUserPhotoUrls(item);
+    if (!urls.length) return;
+    setPhotoLightbox({ urls, index: 0, title: item.name });
+  }, []);
 
   // Sync search from URL ?q= (e.g. from global search)
   useEffect(() => {
@@ -2653,28 +2665,34 @@ const InventoryList: React.FC<Props> = ({
           >
              <div className="flex items-start gap-1.5 cursor-pointer group/cell w-full py-0.5">
                 <div
-                  className={`relative shrink-0 rounded-md cursor-pointer hover:opacity-90 transition-opacity ${
+                  className={`relative shrink-0 rounded-md transition-opacity ${
                     hasUserPhotos
-                      ? 'ring-2 ring-emerald-500/45'
-                      : 'ring-1 ring-dashed ring-amber-400/80 bg-amber-50/40'
+                      ? 'ring-2 ring-emerald-500/45 cursor-zoom-in hover:opacity-90'
+                      : 'ring-1 ring-dashed ring-amber-400/80 bg-amber-50/40 cursor-pointer hover:opacity-90'
                   }`}
                   title={
                     hasUserPhotos
-                      ? `${userPhotoCount} photo${userPhotoCount === 1 ? '' : 's'} — click to add more`
+                      ? `${userPhotoCount} photo${userPhotoCount === 1 ? '' : 's'} — click to enlarge · badge to add more`
                       : 'Click to add photos'
                   }
                   onClick={(e) => {
                     e.stopPropagation();
-                    openAddPhotosModal([item.id]);
+                    if (hasUserPhotos) openItemPhotoLightbox(item);
+                    else openAddPhotosModal([item.id]);
                   }}
                 >
                   <ItemThumbnail item={item} className={`${dense ? 'w-8 h-8' : 'w-9 h-9'} rounded-md object-cover border border-slate-100 shrink-0`} size={thumbPx} />
                   <span
                     className={`absolute -bottom-0.5 -right-0.5 min-w-[14px] h-3.5 px-0.5 rounded-full flex items-center justify-center shadow-sm ${
                       hasUserPhotos
-                        ? 'bg-emerald-600 text-white'
+                        ? 'bg-emerald-600 text-white cursor-pointer hover:bg-emerald-700'
                         : 'bg-amber-100 text-amber-700 border border-amber-300'
                     }`}
+                    title={hasUserPhotos ? 'Add photos' : undefined}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openAddPhotosModal([item.id]);
+                    }}
                     aria-hidden
                   >
                     {hasUserPhotos ? (
@@ -4461,8 +4479,9 @@ const InventoryList: React.FC<Props> = ({
             const current = items.find((i) => i.id === listingAiItem.id) || listingAiItem;
             await onUpdate([{ ...current, ...patch }]);
             setListingAiItem((prev) => (prev ? { ...prev, ...patch } : prev));
-            setToast('Item updated');
-            setTimeout(() => setToast(null), 1600);
+            const appliedListing = !!(patch.marketTitle || patch.marketDescription || patch.imageUrl);
+            setToast(appliedListing ? 'Listing applied to item' : 'Item updated');
+            setTimeout(() => setToast(null), 1800);
           }}
         />
       )}
@@ -4476,6 +4495,42 @@ const InventoryList: React.FC<Props> = ({
           </div>
         </div>
       )}
+
+      <ImageLightbox
+        open={!!photoLightbox}
+        src={photoLightbox ? photoLightbox.urls[photoLightbox.index] ?? null : null}
+        title={photoLightbox?.title}
+        subtitle={
+          photoLightbox && photoLightbox.urls.length > 1
+            ? `${photoLightbox.index + 1} / ${photoLightbox.urls.length}`
+            : photoLightbox
+              ? 'Item photo'
+              : undefined
+        }
+        onClose={() => setPhotoLightbox(null)}
+        hasPrev={!!photoLightbox && photoLightbox.index > 0}
+        hasNext={!!photoLightbox && photoLightbox.index < photoLightbox.urls.length - 1}
+        onPrev={
+          photoLightbox && photoLightbox.index > 0
+            ? () => setPhotoLightbox({ ...photoLightbox, index: photoLightbox.index - 1 })
+            : undefined
+        }
+        onNext={
+          photoLightbox && photoLightbox.index < photoLightbox.urls.length - 1
+            ? () => setPhotoLightbox({ ...photoLightbox, index: photoLightbox.index + 1 })
+            : undefined
+        }
+        ariaLabel="Item photo preview"
+        footer={
+          <button
+            type="button"
+            onClick={() => setPhotoLightbox(null)}
+            className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-white/15 text-white text-[10px] font-black uppercase hover:bg-white/25"
+          >
+            Close
+          </button>
+        }
+      />
 
       {/* Mobile-friendly sold list (phones) */}
       {statusFilter === 'SOLD' && !splitView && (
@@ -4524,14 +4579,29 @@ const InventoryList: React.FC<Props> = ({
                 <div className="flex gap-3 items-start">
                   <div
                     className={`relative shrink-0 rounded-xl ${
-                      hasUserPhotos ? 'ring-2 ring-emerald-500/45' : 'ring-1 ring-dashed ring-amber-400/80'
+                      hasUserPhotos
+                        ? 'ring-2 ring-emerald-500/45 cursor-zoom-in'
+                        : 'ring-1 ring-dashed ring-amber-400/80 cursor-pointer'
                     }`}
+                    title={hasUserPhotos ? 'Click to enlarge' : 'Click to add photos'}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (hasUserPhotos) openItemPhotoLightbox(item);
+                      else openAddPhotosModal([item.id]);
+                    }}
                   >
                     <ItemThumbnail item={item} className="w-12 h-12 rounded-xl object-cover border border-slate-100 shrink-0" size={48} />
                     <span
                       className={`absolute -bottom-0.5 -right-0.5 min-w-[14px] h-3.5 px-0.5 rounded-full flex items-center justify-center ${
-                        hasUserPhotos ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-700 border border-amber-300'
+                        hasUserPhotos
+                          ? 'bg-emerald-600 text-white cursor-pointer hover:bg-emerald-700'
+                          : 'bg-amber-100 text-amber-700 border border-amber-300'
                       }`}
+                      title={hasUserPhotos ? 'Add photos' : undefined}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openAddPhotosModal([item.id]);
+                      }}
                     >
                       {hasUserPhotos ? (userPhotoCount > 1 ? <span className="text-[8px] font-black">{userPhotoCount}</span> : <Camera size={8} />) : <ImageOff size={8} />}
                     </span>
