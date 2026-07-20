@@ -41,6 +41,10 @@ import {
   subscribeProductCardBackgroundJobs,
   type ProductCardBgJob,
 } from '../services/productCardBackgroundQueue';
+import {
+  countLocalProductCardsByItemId,
+  countProductCardsByItemId,
+} from '../services/productCardGallery';
 import ItemAccessoryToggles from './ItemAccessoryToggles';
 
 const ebaySoldSearchUrl = (query: string) =>
@@ -799,12 +803,38 @@ const InventoryList: React.FC<Props> = ({
   const [geminiCardItem, setGeminiCardItem] = useState<InventoryItem | null>(null);
   const [bgCardJobs, setBgCardJobs] = useState<ProductCardBgJob[]>([]);
   const bgCardNotifiedRef = useRef<Set<string>>(new Set());
+  const [itemAiCardCounts, setItemAiCardCounts] = useState<Record<string, number>>(() =>
+    countLocalProductCardsByItemId()
+  );
+  const [aiCardRegenConfirmId, setAiCardRegenConfirmId] = useState<string | null>(null);
+
+  const refreshAiCardCounts = useCallback(() => {
+    setItemAiCardCounts(countLocalProductCardsByItemId());
+    void countProductCardsByItemId()
+      .then((counts) => setItemAiCardCounts(counts))
+      .catch(() => {
+        /* keep local */
+      });
+  }, []);
+
+  useEffect(() => {
+    refreshAiCardCounts();
+  }, [refreshAiCardCounts]);
 
   useEffect(() => {
     return subscribeProductCardBackgroundJobs((jobs) => {
       setBgCardJobs(jobs);
     });
   }, []);
+
+  useEffect(() => {
+    if (!aiCardRegenConfirmId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setAiCardRegenConfirmId(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [aiCardRegenConfirmId]);
 
   const activeBgCardItemIds = useMemo(() => {
     const ids = new Set<string>();
@@ -1239,6 +1269,7 @@ const InventoryList: React.FC<Props> = ({
         setToast(
           `AI cards ready · ${job.itemName.slice(0, 40)}${job.itemName.length > 40 ? '…' : ''} · ${job.cardsSaved} in gallery${extra}`
         );
+        refreshAiCardCounts();
       } else {
         setToast(
           `AI card failed · ${job.itemName.slice(0, 36)}${job.itemName.length > 36 ? '…' : ''} · ${job.error || 'error'}`
@@ -1246,7 +1277,7 @@ const InventoryList: React.FC<Props> = ({
       }
       setTimeout(() => setToast((prev) => (prev?.startsWith('AI card') ? null : prev)), 4200);
     }
-  }, [bgCardJobs]);
+  }, [bgCardJobs, refreshAiCardCounts]);
 
   const queueBackgroundAiCards = useCallback(
     (item: InventoryItem) => {
@@ -1259,6 +1290,7 @@ const InventoryList: React.FC<Props> = ({
         (categoryFields || {})[`${item.category}:${item.subCategory}`] ||
         (categoryFields || {})[item.category];
       enqueueProductCardBackgroundJob(item, { categoryFields: fields });
+      setAiCardRegenConfirmId(null);
       setToast(
         `Generating AI cards in background · ${item.name.slice(0, 36)}${item.name.length > 36 ? '…' : ''}`
       );
@@ -1704,8 +1736,8 @@ const InventoryList: React.FC<Props> = ({
       // sees "no change," and the input silently stops updating after the very first keystroke.
       // Include quickBundleSeed so Flags “+” panel open/close re-renders the memoized row
       // (otherwise X / Cancel set state but the inline panel stays mounted).
-      `${editingCell?.itemId === item.id ? `${editingCell.field}:${editValue}` : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${(item.isPC || item.isBundle) && collapsedBundles.has(item.id) ? 'col' : 'exp'}|${quickBundleSeed?.id === item.id ? 'qb' : ''}|${activeBgCardItemIds.has(item.id) ? 'bgcard' : ''}`,
-    [editingCell, editValue, listingGenId, parsingSingleId, priceSuggestId, collapsedBundles, quickBundleSeed, activeBgCardItemIds]
+      `${editingCell?.itemId === item.id ? `${editingCell.field}:${editValue}` : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${(item.isPC || item.isBundle) && collapsedBundles.has(item.id) ? 'col' : 'exp'}|${quickBundleSeed?.id === item.id ? 'qb' : ''}|${activeBgCardItemIds.has(item.id) ? 'bgcard' : ''}|${itemAiCardCounts[item.id] || 0}|${aiCardRegenConfirmId === item.id ? 'confirm' : ''}`,
+    [editingCell, editValue, listingGenId, parsingSingleId, priceSuggestId, collapsedBundles, quickBundleSeed, activeBgCardItemIds, itemAiCardCounts, aiCardRegenConfirmId]
   );
 
   const showFinancials = splitView || (statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS');
@@ -2522,23 +2554,40 @@ const InventoryList: React.FC<Props> = ({
                 const bgJob = bgCardJobs.find(
                   (j) => j.itemId === item.id && (j.status === 'queued' || j.status === 'running')
                 );
+                const cardCount = itemAiCardCounts[item.id] || 0;
+                const hasCards = cardCount > 0;
+                const confirming = aiCardRegenConfirmId === item.id;
                 return (
+              <div className="relative shrink-0">
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (bgBusy) return;
+                  if (hasCards && !confirming) {
+                    setAiCardRegenConfirmId(item.id);
+                    return;
+                  }
                   queueBackgroundAiCards(item);
                 }}
                 disabled={bgBusy}
-                className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors disabled:opacity-70 ${
+                className={`${iconBtn} relative shrink-0 flex items-center justify-center rounded-lg border transition-colors disabled:opacity-70 ${
                   bgBusy
                     ? 'border-violet-300 bg-violet-50 text-violet-700'
-                    : 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100'
+                    : confirming
+                      ? 'border-amber-400 bg-amber-50 text-amber-800 ring-1 ring-amber-200'
+                      : hasCards
+                        ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                        : 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100'
                 }`}
                 title={
                   bgBusy
                     ? `Generating in background… ${bgJob?.progress || ''}`.trim()
-                    : 'Generate AI cards in background — saved to card gallery (come back later to pick)'
+                    : confirming
+                      ? `Already has ${cardCount} AI card${cardCount === 1 ? '' : 's'} — confirm to generate more`
+                      : hasCards
+                        ? `Already has ${cardCount} AI card${cardCount === 1 ? '' : 's'} in gallery — click to confirm another run`
+                        : 'Generate AI cards in background — saved to card gallery (come back later to pick)'
                 }
               >
                 {bgBusy ? (
@@ -2546,7 +2595,49 @@ const InventoryList: React.FC<Props> = ({
                 ) : (
                   <Images size={13} strokeWidth={2.25} />
                 )}
+                {hasCards && !bgBusy && (
+                  <span
+                    className="absolute -top-1 -right-1 min-w-[14px] h-3.5 px-0.5 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-sm"
+                    aria-hidden
+                  >
+                    {cardCount > 9 ? (
+                      <Check size={8} strokeWidth={3} />
+                    ) : (
+                      <span className="text-[8px] font-black leading-none">{cardCount}</span>
+                    )}
+                  </span>
+                )}
               </button>
+              {confirming && (
+                <div
+                  className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-[70] flex items-center gap-0.5 rounded-lg border border-slate-200 bg-white p-0.5 shadow-lg"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      queueBackgroundAiCards(item);
+                    }}
+                    className="p-1 rounded-md bg-emerald-600 text-white hover:bg-emerald-700"
+                    title="Yes — generate more cards"
+                  >
+                    <Check size={12} strokeWidth={2.75} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setAiCardRegenConfirmId(null);
+                    }}
+                    className="p-1 rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-rose-600"
+                    title="No — keep existing cards"
+                  >
+                    <X size={12} strokeWidth={2.75} />
+                  </button>
+                </div>
+              )}
+              </div>
                 );
               })()}
 
