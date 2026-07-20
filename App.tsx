@@ -62,6 +62,10 @@ import {
   mergeBulkImportsFromLocal,
   stampItemsFromBulkImportRecords,
 } from './utils/bulkImportHistory';
+import {
+  CONTAINER_BUY_DATE_BACKFILL_KEY,
+  backfillContainerBuyDates,
+} from './utils/backfillContainerBuyDates';
 
 const WRITE_DEBOUNCE_MS = 5000;
 /** Faster flush after bulk import so phone/PC see history without waiting full debounce. */
@@ -601,6 +605,18 @@ const App: React.FC = () => {
     }
   }, [appState, items.length]);
 
+  // One-time: fill empty Acquired (buyDate) on composed PC / Bundle / Mixed / Aufrustkit.
+  useEffect(() => {
+    if (appState !== 'READY' || items.length === 0) return;
+    if (localStorage.getItem(CONTAINER_BUY_DATE_BACKFILL_KEY) === '1') return;
+    const { items: next, updatedCount } = backfillContainerBuyDates(items);
+    localStorage.setItem(CONTAINER_BUY_DATE_BACKFILL_KEY, '1');
+    if (updatedCount > 0) {
+      setItems(next);
+      hasUnsavedChanges.current = true;
+    }
+  }, [appState, items.length]);
+
   // Enrich history rows with chat URL / screenshot from member items (legacy sessions).
   useEffect(() => {
     if (appState !== 'READY') return;
@@ -1122,6 +1138,7 @@ const App: React.FC = () => {
     localStorage.removeItem('action_history');
     localStorage.removeItem('bulk_imports');
     localStorage.removeItem(BULK_IMPORT_BACKFILL_KEY);
+    localStorage.removeItem(CONTAINER_BUY_DATE_BACKFILL_KEY);
     setActionHistory([]);
     setBulkImports([]);
     bulkImportsRef.current = [];
