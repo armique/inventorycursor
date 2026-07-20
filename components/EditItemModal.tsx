@@ -84,7 +84,7 @@ const EditItemModal: React.FC<Props> = ({
             title="Asset details"
           >
             <SlidersHorizontal size={12} />
-            <span className="hidden xs:inline sm:inline">Asset</span>
+            <span className="sm:inline">Asset</span>
           </button>
         }
       />
