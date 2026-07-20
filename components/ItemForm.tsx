@@ -48,6 +48,7 @@ import {
 } from '../utils/itemAddTemplates';
 import EbayListingPriceModal from './EbayListingPriceModal';
 import GeminiProductCardModal from './GeminiProductCardModal';
+import { isMotherboardLike } from '../utils/itemAccessories';
 
 /** How quantity is applied when creating a new item. */
 type QtyMode = 'single' | 'stock' | 'clones';
@@ -2323,7 +2324,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                     </div>
                  </div>
 
-                 {/* OVP & IO Blende – used by AI description generator */}
+                 {/* OVP & IO Blende – used by AI description + product card generators */}
                  <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 space-y-2.5">
                     <h3 className="font-black text-xs uppercase tracking-widest text-slate-400">AI Description Hints</h3>
                     <div className="flex flex-col gap-2">
@@ -2334,9 +2335,9 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                              onChange={e => setFormData({ ...formData, hasOVP: e.target.checked })}
                              className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                           />
-                          <span className="text-xs font-bold text-slate-700">OVP (Original Packaging)</span>
+                          <span className="text-xs font-bold text-slate-700">Original Box (OVP)</span>
                        </label>
-                       {(formData.isBundle || formData.subCategory === 'Motherboards' || formData.category === 'Motherboards') && (
+                       {(formData.isBundle || formData.isPC || isMotherboardLike(formData)) && (
                           <label className="flex items-center gap-2 cursor-pointer">
                              <input
                                 type="checkbox"
@@ -2344,7 +2345,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                                 onChange={e => setFormData({ ...formData, hasIOShield: e.target.checked })}
                                 className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                              />
-                             <span className="text-xs font-bold text-slate-700">IO Blende</span>
+                             <span className="text-xs font-bold text-slate-700">IO Shield (IO-Blende)</span>
                           </label>
                        )}
                        <label className="flex items-center gap-2 cursor-pointer">
@@ -2516,6 +2517,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
             comment1: formData.comment1 || '',
             comment2: formData.comment2 || '',
           }}
+          allItems={items}
           categoryFields={
             categoryFields[`${formData.category}:${formData.subCategory}`] ||
             categoryFields[formData.category || '']

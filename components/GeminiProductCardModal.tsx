@@ -35,22 +35,44 @@ import {
   saveGeneratedProductCard,
 } from '../services/productCardGallery';
 import { resolveUrlForInventoryMainPhoto } from '../utils/applyProductCardAsMainPhoto';
+import { resolveProductCardAccessoryHints } from '../utils/itemAccessories';
+import {
+  buildProductCardBatchJobs,
+  MAX_PRODUCT_CARD_BATCH,
+  resolveProductCardBatchCount,
+} from '../utils/productCardBatch';
 
 interface Props {
   item: InventoryItem;
   categoryFields?: string[];
+  /** Full inventory — used to resolve OVP / IO-Blende from bundle children. */
+  allItems?: InventoryItem[] | null;
   onClose: () => void;
   onApplyAsMainPhoto: (url: string) => void | Promise<void>;
 }
 
+type BatchCardPreview = {
+  index: number;
+  dataUrl: string;
+  entry: GeneratedProductCardEntry | null;
+  meta: string;
+  styleId: string;
+};
+
 const GeminiProductCardModal: React.FC<Props> = ({
   item,
   categoryFields,
+  allItems,
   onClose,
   onApplyAsMainPhoto,
 }) => {
   const fileRef = useRef<HTMLInputElement>(null);
-  const itemPhotos = useMemo(() => getItemUserPhotoUrls(item).slice(0, 3), [item]);
+  const allItemPhotos = useMemo(() => getItemUserPhotoUrls(item), [item]);
+  /** First N gallery photos used for the batch (extras beyond max ignored). */
+  const itemPhotos = useMemo(
+    () => allItemPhotos.slice(0, MAX_PRODUCT_CARD_BATCH),
+    [allItemPhotos]
+  );
   const [customPhotos, setCustomPhotos] = useState<string[]>([]);
   const [useItemPhotos, setUseItemPhotos] = useState(true);
   const [provider, setProvider] = useState<ProductCardProviderId>('openai');
@@ -71,14 +93,38 @@ const GeminiProductCardModal: React.FC<Props> = ({
   const [galleryLoading, setGalleryLoading] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
   const [galleryScope, setGalleryScope] = useState<'item' | 'all'>('item');
+  const [batchCards, setBatchCards] = useState<BatchCardPreview[]>([]);
+  const [batchProgress, setBatchProgress] = useState<string | null>(null);
+  const [selectedBatchIndex, setSelectedBatchIndex] = useState(0);
 
   const activePhotos = useMemo(() => {
-    if (customPhotos.length) return customPhotos.slice(0, 3);
+    if (customPhotos.length) return customPhotos.slice(0, MAX_PRODUCT_CARD_BATCH);
     if (useItemPhotos) return itemPhotos;
     return [];
   }, [customPhotos, useItemPhotos, itemPhotos]);
 
+  const accessoryHints = useMemo(
+    () => resolveProductCardAccessoryHints(item, allItems),
+    [item, allItems]
+  );
+
   const styleName = PRODUCT_CARD_STYLES.find((s) => s.id === styleId)?.name;
+
+  const plannedCardCount = useMemo(
+    () => resolveProductCardBatchCount(activePhotos.length),
+    [activePhotos.length]
+  );
+
+  const batchJobs = useMemo(
+    () =>
+      buildProductCardBatchJobs(activePhotos, {
+        styleId,
+        item,
+        categoryFields,
+        accessories: accessoryHints,
+      }),
+    [activePhotos, styleId, item, categoryFields, accessoryHints]
+  );
 
   const reloadGallery = async (scope: 'item' | 'all' = galleryScope) => {
     setGalleryLoading(true);
@@ -138,7 +184,7 @@ const GeminiProductCardModal: React.FC<Props> = ({
 
   const persistToGallery = async (
     dataUrl: string,
-    info: { provider?: string; model?: string; styleName?: string }
+    info: { provider?: string; model?: string; styleId?: string; styleName?: string }
   ): Promise<GeneratedProductCardEntry | null> => {
     setSavingGallery(true);
     setGalleryNote(null);
@@ -149,16 +195,14 @@ const GeminiProductCardModal: React.FC<Props> = ({
         dataUrl,
         provider: info.provider,
         model: info.model,
-        styleId,
+        styleId: (info.styleId as ProductCardStyleId) || styleId,
         styleName: info.styleName,
       });
-      setSavedEntry(entry);
       setGalleryNote(
         entry.cloudStored
           ? 'Saved to cloud gallery (high quality) — credits safe'
           : 'Saved locally (IndexedDB) — sign in to also sync to cloud'
       );
-      void reloadGallery(galleryScope);
       return entry;
     } catch (e) {
       setGalleryNote(e instanceof Error ? e.message : 'Could not save to gallery');
@@ -168,6 +212,13 @@ const GeminiProductCardModal: React.FC<Props> = ({
     }
   };
 
+  const selectBatchCard = (card: BatchCardPreview) => {
+    setSelectedBatchIndex(card.index);
+    setPreview(card.dataUrl);
+    setSavedEntry(card.entry);
+    setMeta(card.meta);
+  };
+
   const run = async () => {
     setStarted(true);
     setLoading(true);
@@ -175,42 +226,111 @@ const GeminiProductCardModal: React.FC<Props> = ({
     setPreview(null);
     setSavedEntry(null);
     setGalleryNote(null);
-    try {
-      const result = await generateProductCard(item, categoryFields, {
-        styleId,
-        provider,
-        photos: activePhotos,
-        editFromPhoto: activePhotos.length > 0,
-      });
-      // Show preview immediately so UX feels fast
-      setPreview(result.dataUrl);
-      setMeta(
-        [
-          result.styleName || styleId,
-          result.provider,
-          result.model,
-          activePhotos.length ? 'edited from your photo' : 'generated without photo',
-          result.note,
-        ]
-          .filter(Boolean)
-          .join(' · ')
-      );
-      setLoading(false);
+    setBatchCards([]);
+    setSelectedBatchIndex(0);
 
-      // Guaranteed save before user can lose the paid generation
-      setSavingGallery(true);
-      const entry = await persistToGallery(result.dataUrl, {
-        provider: result.provider,
-        model: result.model,
-        styleName: result.styleName,
-      });
-      if (entry?.cloudStored && entry.imageUrl.startsWith('http')) {
-        // Prefer durable URL for later Apply (avoids re-encoding huge data URLs)
-        setPreview(entry.imageUrl);
+    const jobs = buildProductCardBatchJobs(activePhotos, {
+      styleId,
+      item,
+      categoryFields,
+      accessories: resolveProductCardAccessoryHints(item, allItems),
+    });
+    const completed: BatchCardPreview[] = [];
+    const errors: string[] = [];
+
+    try {
+      for (let i = 0; i < jobs.length; i++) {
+        const job = jobs[i];
+        setBatchProgress(
+          jobs.length > 1
+            ? `Generating card ${i + 1} / ${jobs.length}…`
+            : 'Generating card…'
+        );
+        try {
+          const result = await generateProductCard(item, categoryFields, {
+            styleId: job.styleId,
+            provider,
+            photos: job.photos,
+            editFromPhoto: job.editFromPhoto,
+            allItems,
+            specs: job.specs,
+            perks: job.perks,
+            variantFocus: job.variantFocus,
+            hasOVP: job.hasOVP,
+            hasIOShield: job.hasIOShield,
+            cardIndex: job.index,
+            cardCount: job.cardCount,
+          });
+          const cardMeta = [
+            result.styleName || job.styleId,
+            result.provider,
+            result.model,
+            job.photos.length ? `from photo ${i + 1}` : 'no photo',
+            jobs.length > 1 ? `card ${i + 1}/${jobs.length}` : null,
+            job.perks.slice(0, 2).join(' · ') || null,
+            result.note,
+          ]
+            .filter(Boolean)
+            .join(' · ');
+
+          // Persist immediately so a mid-batch failure still keeps paid cards
+          setSavingGallery(true);
+          const entry = await persistToGallery(result.dataUrl, {
+            provider: result.provider,
+            model: result.model,
+            styleId: result.styleId || job.styleId,
+            styleName: result.styleName,
+          });
+
+          let displayUrl = result.dataUrl;
+          if (entry?.cloudStored && entry.imageUrl.startsWith('http')) {
+            displayUrl = entry.imageUrl;
+          }
+
+          const card: BatchCardPreview = {
+            index: i,
+            dataUrl: displayUrl,
+            entry,
+            meta: cardMeta,
+            styleId: (result.styleId as string) || job.styleId,
+          };
+          completed.push(card);
+          setBatchCards([...completed]);
+
+          // Keep latest as live preview while batch runs
+          setPreview(displayUrl);
+          setSavedEntry(entry);
+          setMeta(cardMeta);
+          setSelectedBatchIndex(i);
+        } catch (e) {
+          errors.push(
+            `Card ${i + 1}: ${e instanceof Error ? e.message : 'Generation failed'}`
+          );
+        }
       }
+
+      if (completed.length === 0) {
+        throw new Error(errors.join('\n') || 'All card generations failed');
+      }
+
+      // Prefer first successful card as the selected preview
+      selectBatchCard(completed[0]);
+      void reloadGallery(galleryScope);
+
+      if (errors.length) {
+        setError(
+          `Generated ${completed.length}/${jobs.length} cards. Some failed:\n${errors.join('\n')}`
+        );
+      }
+      setGalleryNote(
+        `Saved ${completed.length} card${completed.length === 1 ? '' : 's'} to gallery — pick one to use as main photo`
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Generation failed');
+    } finally {
       setLoading(false);
+      setBatchProgress(null);
+      setSavingGallery(false);
     }
   };
 
@@ -397,7 +517,7 @@ const GeminiProductCardModal: React.FC<Props> = ({
                 </div>
               ) : gallery.length === 0 ? (
                 <p className="text-[11px] text-slate-500 font-medium text-center py-8">
-                  No saved cards yet. Generate one — it will appear here automatically.
+                  No saved cards yet. Generate — cards appear here automatically.
                 </p>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -478,7 +598,9 @@ const GeminiProductCardModal: React.FC<Props> = ({
                   Your product photo
                 </p>
                 <p className="text-[10px] text-slate-500 font-medium mb-2">
-                  Upload a real photo — AI will edit it into a card (not invent a random product).
+                  1 photo → 1 card, 2 photos → 2 cards, 3+ photos → {MAX_PRODUCT_CARD_BATCH}{' '}
+                  cards (first {MAX_PRODUCT_CARD_BATCH} only). Each card highlights different
+                  specs / perks.
                 </p>
                 <div className="flex flex-wrap gap-2 items-center">
                   <input
@@ -498,7 +620,7 @@ const GeminiProductCardModal: React.FC<Props> = ({
                     {uploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
                     Upload photo
                   </button>
-                  {itemPhotos.length > 0 && (
+                  {allItemPhotos.length > 0 && (
                     <button
                       type="button"
                       disabled={loading}
@@ -508,7 +630,13 @@ const GeminiProductCardModal: React.FC<Props> = ({
                       }}
                       className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-[10px] font-black uppercase text-slate-600 hover:bg-slate-50"
                     >
-                      <ImageIcon size={12} /> Use item photos ({itemPhotos.length})
+                      <ImageIcon size={12} /> Use item photos ({allItemPhotos.length}
+                      {allItemPhotos.length > 0
+                        ? ` → ${Math.min(MAX_PRODUCT_CARD_BATCH, allItemPhotos.length)} card${
+                            Math.min(MAX_PRODUCT_CARD_BATCH, allItemPhotos.length) === 1 ? '' : 's'
+                          }`
+                        : ''}
+                      )
                     </button>
                   )}
                   {activePhotos.length > 0 && (
@@ -527,22 +655,32 @@ const GeminiProductCardModal: React.FC<Props> = ({
                 </div>
                 {activePhotos.length > 0 ? (
                   <div className="flex flex-wrap gap-2 mt-2">
-                    {activePhotos.map((url) => (
-                      <img
-                        key={url.slice(0, 48)}
-                        src={url}
-                        alt="Source"
-                        className="w-16 h-16 rounded-lg object-cover border border-slate-200 bg-slate-50"
-                      />
+                    {activePhotos.map((url, idx) => (
+                      <div key={`${idx}-${url.slice(0, 40)}`} className="relative">
+                        <img
+                          src={url}
+                          alt={`Source ${idx + 1}`}
+                          className="w-16 h-16 rounded-lg object-cover border border-slate-200 bg-slate-50"
+                        />
+                        <span className="absolute -top-1 -left-1 w-4 h-4 rounded-full bg-emerald-600 text-white text-[8px] font-black flex items-center justify-center">
+                          {idx + 1}
+                        </span>
+                      </div>
                     ))}
                     <span className="text-[10px] font-bold text-emerald-700 self-center">
-                      Edit mode · {activePhotos.length} photo
+                      {plannedCardCount} card{plannedCardCount === 1 ? '' : 's'} ·{' '}
+                      {activePhotos.length} source photo
                       {activePhotos.length === 1 ? '' : 's'}
+                      {allItemPhotos.length > MAX_PRODUCT_CARD_BATCH &&
+                      useItemPhotos &&
+                      !customPhotos.length
+                        ? ` (of ${allItemPhotos.length})`
+                        : ''}
                     </span>
                   </div>
                 ) : (
                   <p className="text-[10px] text-amber-700 font-medium mt-2">
-                    No photo selected — AI will invent a product look from the name/specs only.
+                    No photo selected — generates 1 card from name/specs only.
                   </p>
                 )}
               </div>
@@ -608,10 +746,42 @@ const GeminiProductCardModal: React.FC<Props> = ({
                 <div className="flex flex-col items-center justify-center py-12 gap-3 text-slate-500">
                   <Loader2 size={28} className="animate-spin text-emerald-600" />
                   <p className="text-xs font-bold">
-                    {activePhotos.length
-                      ? `Editing your photo with ${provider === 'openai' ? 'OpenAI' : 'Gemini'}…`
-                      : `Generating with ${provider === 'openai' ? 'OpenAI' : 'Gemini'}…`}
+                    {batchProgress ||
+                      (activePhotos.length
+                        ? `Editing photos into ${plannedCardCount} card${plannedCardCount === 1 ? '' : 's'} with ${provider === 'openai' ? 'OpenAI' : 'Gemini'}…`
+                        : `Generating with ${provider === 'openai' ? 'OpenAI' : 'Gemini'}…`)}
                   </p>
+                  {batchCards.length > 0 && (
+                    <div
+                      className={`grid gap-2 w-full max-w-sm mt-2 ${
+                        plannedCardCount >= 3
+                          ? 'grid-cols-3'
+                          : plannedCardCount === 2
+                            ? 'grid-cols-2'
+                            : 'grid-cols-1'
+                      }`}
+                    >
+                      {Array.from({ length: plannedCardCount }).map((_, i) => {
+                        const card = batchCards.find((c) => c.index === i);
+                        return (
+                          <div
+                            key={i}
+                            className="aspect-square rounded-lg border border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center"
+                          >
+                            {card ? (
+                              <img
+                                src={card.dataUrl}
+                                alt={`Card ${i + 1}`}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <Loader2 size={14} className="animate-spin text-slate-300" />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -619,8 +789,50 @@ const GeminiProductCardModal: React.FC<Props> = ({
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 space-y-2">
                   <p className="text-xs font-bold text-amber-900 whitespace-pre-wrap">{error}</p>
                   <p className="text-[10px] text-amber-800/80">
-                    If you already generated a card, open Gallery — it should still be saved.
+                    Successful cards are still in Gallery — open Gallery and try Use.
                   </p>
+                </div>
+              )}
+
+              {batchCards.length > 0 && !loading && (
+                <div className="space-y-2">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    This batch ({batchCards.length} card{batchCards.length === 1 ? '' : 's'})
+                  </p>
+                  <div
+                    className={`grid gap-2 ${
+                      batchCards.length >= 3
+                        ? 'grid-cols-3'
+                        : batchCards.length === 2
+                          ? 'grid-cols-2'
+                          : 'grid-cols-1'
+                    }`}
+                  >
+                    {batchCards.map((card) => {
+                      const active = selectedBatchIndex === card.index;
+                      return (
+                        <button
+                          key={card.index}
+                          type="button"
+                          onClick={() => selectBatchCard(card)}
+                          className={`rounded-xl overflow-hidden border-2 text-left transition-all ${
+                            active
+                              ? 'border-emerald-500 ring-2 ring-emerald-200'
+                              : 'border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          <img
+                            src={card.dataUrl}
+                            alt={`Card ${card.index + 1}`}
+                            className="w-full aspect-square object-cover bg-slate-50"
+                          />
+                          <span className="block text-[9px] font-black uppercase text-center py-1 bg-white text-slate-600">
+                            Card {card.index + 1}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
@@ -650,7 +862,13 @@ const GeminiProductCardModal: React.FC<Props> = ({
 
               {!started && !loading && !error && (
                 <p className="text-[11px] text-slate-500 font-medium text-center py-4">
-                  Upload photo → pick style → generate. Each card is auto-saved before you apply it.
+                  Generate creates {plannedCardCount} card
+                  {plannedCardCount === 1 ? '' : 's'}
+                  {batchJobs.some((j) => j.photos.length)
+                    ? ' from your photos'
+                    : ' from name/specs'}
+                  {plannedCardCount > 1 ? ', each with different specs/perks' : ''}. Auto-saved
+                  before you apply.
                 </p>
               )}
             </>
@@ -659,6 +877,23 @@ const GeminiProductCardModal: React.FC<Props> = ({
 
         {!showGallery && (
           <div className="px-4 py-3 border-t border-slate-100 flex flex-wrap gap-2 bg-white">
+            {(accessoryHints.hasOVP || accessoryHints.hasIOShield) && (
+              <div className="w-full flex flex-wrap gap-1.5 mb-1">
+                {accessoryHints.hasOVP && (
+                  <span className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 text-[9px] font-black uppercase tracking-wide">
+                    Mit OVP
+                  </span>
+                )}
+                {accessoryHints.hasIOShield && (
+                  <span className="px-2 py-0.5 rounded-lg bg-sky-50 text-sky-700 text-[9px] font-black uppercase tracking-wide">
+                    IO-Blende inklusive
+                  </span>
+                )}
+                <span className="text-[9px] text-slate-400 font-medium self-center">
+                  from item / bundle parts — added as text badges on the card
+                </span>
+              </div>
+            )}
             <button
               type="button"
               onClick={onClose}
@@ -673,7 +908,13 @@ const GeminiProductCardModal: React.FC<Props> = ({
               className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase hover:bg-emerald-700 disabled:opacity-50"
             >
               {loading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-              {preview ? 'Regenerate' : activePhotos.length ? 'Edit into card' : 'Generate'}
+              {preview || batchCards.length
+                ? plannedCardCount > 1
+                  ? `Regenerate ${plannedCardCount}`
+                  : 'Regenerate'
+                : plannedCardCount > 1
+                  ? `Generate ${plannedCardCount} cards`
+                  : 'Generate card'}
             </button>
             {preview && (
               <>

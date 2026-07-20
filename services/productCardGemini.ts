@@ -1,6 +1,7 @@
 import type { InventoryItem } from '../types';
 import { getProductCardSpecs } from '../utils/productCardContent';
 import { getItemUserPhotoUrls } from '../utils/imageImport';
+import { resolveProductCardAccessoryHints } from '../utils/itemAccessories';
 import {
   DEFAULT_PRODUCT_CARD_STYLE_ID,
   type ProductCardStyleId,
@@ -31,6 +32,22 @@ export interface GenerateProductCardOptions {
   photos?: string[] | null;
   /** Force edit-from-photo wording even if only one photo */
   editFromPhoto?: boolean;
+  /**
+   * Full inventory — used to OR OVP / IO-Blende from PC/Bundle children
+   * when generating a card for a container item.
+   */
+  allItems?: InventoryItem[] | null;
+  /** Override specs shown on this card (batch variants). */
+  specs?: { label: string; value: string }[] | null;
+  /** Marketing perks unique to this card variant. */
+  perks?: string[] | null;
+  /** Prompt hint so sibling cards don't look identical. */
+  variantFocus?: string | null;
+  /** Override accessory badges for this card variant. */
+  hasOVP?: boolean;
+  hasIOShield?: boolean;
+  cardIndex?: number;
+  cardCount?: number;
 }
 
 export async function fetchProductCardProviders(): Promise<ProductCardProviderInfo[]> {
@@ -66,10 +83,13 @@ export async function generateProductCard(
   const styleId = opts.styleId || DEFAULT_PRODUCT_CARD_STYLE_ID;
   const provider = opts.provider || 'openai';
 
-  const specs = getProductCardSpecs(item, categoryFields, 8).map((s) => ({
-    label: s.label,
-    value: s.value,
-  }));
+  const specs =
+    opts.specs != null
+      ? opts.specs.map((s) => ({ label: s.label, value: s.value }))
+      : getProductCardSpecs(item, categoryFields, 8).map((s) => ({
+          label: s.label,
+          value: s.value,
+        }));
 
   const photoUrls =
     opts.photos !== undefined && opts.photos !== null
@@ -80,6 +100,11 @@ export async function generateProductCard(
     url.startsWith('data:') ? { imageBase64: url } : { imageUrl: url }
   );
 
+  const accessories = resolveProductCardAccessoryHints(item, opts.allItems);
+  const hasOVP = opts.hasOVP !== undefined ? opts.hasOVP === true : accessories.hasOVP;
+  const hasIOShield =
+    opts.hasIOShield !== undefined ? opts.hasIOShield === true : accessories.hasIOShield;
+
   const res = await fetch('/api/images?route=product-card', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -89,10 +114,16 @@ export async function generateProductCard(
       subCategory: item.subCategory,
       comment: item.comment1 || '',
       specs,
+      perks: opts.perks || [],
+      variantFocus: opts.variantFocus || '',
+      cardIndex: opts.cardIndex ?? 0,
+      cardCount: opts.cardCount ?? 1,
       images,
       styleId,
       provider,
       editFromPhoto: opts.editFromPhoto ?? images.length > 0,
+      hasOVP,
+      hasIOShield,
     }),
   });
 
