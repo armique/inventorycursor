@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Database, HardDrive, Loader2, RefreshCw } from 'lucide-react';
-import {
-  collectFirestoreFreeQuotaSnapshot,
-} from '../services/firestoreQuotaService';
+import { HardDrive, Loader2, RefreshCw } from 'lucide-react';
+import type { InventoryItem } from '../types';
+import { collectFirestoreFreeQuotaSnapshot } from '../services/firestoreQuotaService';
 import {
   formatBytes,
   formatOps,
@@ -12,7 +11,15 @@ import {
 
 function MeterBar({ meter, tone }: { meter: QuotaMeter; tone: 'emerald' | 'sky' | 'amber' }) {
   const fill =
-    meter.pctUsed > 90 ? 'bg-red-500' : meter.pctUsed > 70 ? 'bg-amber-500' : tone === 'sky' ? 'bg-sky-500' : tone === 'amber' ? 'bg-amber-500' : 'bg-emerald-500';
+    meter.pctUsed > 90
+      ? 'bg-red-500'
+      : meter.pctUsed > 70
+        ? 'bg-amber-500'
+        : tone === 'sky'
+          ? 'bg-sky-500'
+          : tone === 'amber'
+            ? 'bg-amber-500'
+            : 'bg-emerald-500';
   return (
     <div className="h-1 w-full rounded-full bg-slate-200 overflow-hidden">
       <div className={`h-full transition-all ${fill}`} style={{ width: `${Math.min(100, meter.pctUsed)}%` }} />
@@ -20,24 +27,38 @@ function MeterBar({ meter, tone }: { meter: QuotaMeter; tone: 'emerald' | 'sky' 
   );
 }
 
-const FirestoreQuotaWidget: React.FC = () => {
+type Props = {
+  items?: InventoryItem[];
+  /** Tighter chip when inventory list needs the corner. */
+  compact?: boolean;
+};
+
+const FirestoreQuotaWidget: React.FC<Props> = ({ items = [], compact }) => {
   const [snap, setSnap] = useState<FirestoreFreeQuotaSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
 
-  const refresh = useCallback(async (force = false) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const next = await collectFirestoreFreeQuotaSnapshot({ force, includeStorage: true, includeMonitoring: true });
-      setSnap(next);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load quota');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const refresh = useCallback(
+    async (force = false) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const next = await collectFirestoreFreeQuotaSnapshot({
+          force,
+          includeStorage: true,
+          includeMonitoring: true,
+          items,
+        });
+        setSnap(next);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not load quota');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [items]
+  );
 
   useEffect(() => {
     void refresh(false);
@@ -47,8 +68,8 @@ const FirestoreQuotaWidget: React.FC = () => {
 
   if (!snap && loading) {
     return (
-      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/95 border border-slate-200 shadow-lg text-[10px] font-bold text-slate-500">
-        <Loader2 size={12} className="animate-spin" /> Quota…
+      <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/95 border border-slate-200 shadow text-[9px] font-bold text-slate-500">
+        <Loader2 size={10} className="animate-spin" /> Quota…
       </div>
     );
   }
@@ -57,95 +78,96 @@ const FirestoreQuotaWidget: React.FC = () => {
 
   const fs = snap.firestore.stored;
   const st = snap.storage.stored;
+  // Photos live in Storage — lead with that so 2 MB Firestore docs aren't mistaken for images.
+  const primary = st.used > 0 || (snap.storage.files ?? 0) > 0 ? st : fs;
+  const primaryLabel = st.used > 0 || (snap.storage.files ?? 0) > 0 ? 'Photos' : 'Docs';
 
   return (
     <div className="relative">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-[min(18rem,calc(100vw-2rem))] text-left rounded-xl bg-white/95 border border-slate-200 shadow-lg px-3 py-2 hover:border-slate-300 transition-colors"
-        title="Firestore & Storage free-tier usage"
+        className={`text-left rounded-lg bg-white/95 border border-slate-200 shadow hover:border-slate-300 transition-colors ${
+          compact ? 'px-2 py-1 w-[11.5rem]' : 'px-2.5 py-1.5 w-[13.5rem]'
+        }`}
+        title="Free-tier usage — photos are Firebase Storage (5 GB), not the 1 GiB Firestore docs quota"
       >
-        <div className="flex items-center justify-between gap-2 mb-1">
-          <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 inline-flex items-center gap-1">
-            <Database size={11} className="text-sky-600" />
-            Free quota
+        <div className="flex items-center justify-between gap-1.5 mb-0.5">
+          <span className="text-[8px] font-black uppercase tracking-widest text-slate-500 inline-flex items-center gap-1">
+            <HardDrive size={10} className="text-sky-600" />
+            {primaryLabel}
           </span>
-          <span className="text-[9px] font-mono text-slate-400">
-            {loading ? <Loader2 size={10} className="animate-spin inline" /> : `${Math.round(fs.pctFree)}% free`}
+          <span className="text-[8px] font-mono text-slate-400">
+            {loading ? (
+              <Loader2 size={9} className="animate-spin inline" />
+            ) : (
+              `${Math.round(primary.pctFree)}% free`
+            )}
           </span>
         </div>
-        <MeterBar meter={fs} tone="emerald" />
-        <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] font-bold text-slate-600">
-          <span className="truncate">
-            FS {formatBytes(fs.used)} / {formatBytes(fs.limit)}
+        <MeterBar meter={primary} tone="sky" />
+        <div className="mt-1 flex items-center justify-between gap-1 text-[9px] font-bold text-slate-600">
+          <span className="truncate font-mono">
+            {formatBytes(primary.used)}/{formatBytes(primary.limit)}
           </span>
-          <span className="shrink-0 text-slate-400 font-mono">
-            R {formatOps(snap.firestore.readsToday.used)}/{formatOps(snap.firestore.readsToday.limit)}
-          </span>
+          {(snap.storage.files ?? 0) > 0 && (
+            <span className="shrink-0 text-slate-400">{snap.storage.files} files</span>
+          )}
         </div>
       </button>
 
       {open && (
-        <div className="absolute bottom-full left-0 mb-2 w-[min(20rem,calc(100vw-2rem))] rounded-2xl bg-white border border-slate-200 shadow-2xl p-3 z-[120]">
+        <div className="absolute bottom-full left-0 mb-1.5 w-[16.5rem] rounded-xl bg-white border border-slate-200 shadow-2xl p-2.5 z-[120]">
           <div className="flex items-start justify-between gap-2 mb-2">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-800">Spark free tier</p>
-              <p className="text-[9px] text-slate-400 font-medium mt-0.5 truncate" title={snap.projectId}>
-                {snap.projectId} · {snap.source}
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-800">Spark free tier</p>
+              <p className="text-[8px] text-slate-400 font-medium mt-0.5 truncate" title={snap.projectId}>
+                {snap.projectId}
               </p>
             </div>
             <button
               type="button"
               onClick={() => void refresh(true)}
               disabled={loading}
-              className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40"
+              className="p-1 rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40"
               title="Refresh"
             >
-              <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+              <RefreshCw size={11} className={loading ? 'animate-spin' : ''} />
             </button>
           </div>
 
-          <div className="space-y-2.5">
+          <div className="space-y-2">
             <div>
-              <div className="flex justify-between text-[10px] font-bold text-slate-600 mb-1">
-                <span className="inline-flex items-center gap-1">
-                  <Database size={11} /> Firestore storage
-                </span>
-                <span className="font-mono text-slate-500">
-                  {formatBytes(fs.remaining)} left
-                </span>
-              </div>
-              <MeterBar meter={fs} tone="emerald" />
-              <p className="text-[9px] text-slate-400 mt-1 font-medium">
-                {formatBytes(fs.used)} used of {formatBytes(fs.limit)}
-                {snap.firestore.syncDocs != null ? ` · ${snap.firestore.syncDocs} docs` : ''}
-              </p>
-              {snap.firestore.note && (
-                <p className="text-[9px] text-slate-400 mt-0.5 leading-snug">{snap.firestore.note}</p>
-              )}
-            </div>
-
-            <div>
-              <div className="flex justify-between text-[10px] font-bold text-slate-600 mb-1">
-                <span className="inline-flex items-center gap-1">
-                  <HardDrive size={11} /> Storage files
-                </span>
-                <span className="font-mono text-slate-500">
-                  {formatBytes(st.remaining)} left
-                </span>
+              <div className="flex justify-between text-[9px] font-bold text-slate-600 mb-0.5">
+                <span>Storage photos</span>
+                <span className="font-mono text-slate-500">{formatBytes(st.remaining)} left</span>
               </div>
               <MeterBar meter={st} tone="sky" />
-              <p className="text-[9px] text-slate-400 mt-1 font-medium">
-                {formatBytes(st.used)} used of {formatBytes(st.limit)}
+              <p className="text-[8px] text-slate-400 mt-0.5 font-medium">
+                {formatBytes(st.used)} / {formatBytes(st.limit)}
                 {snap.storage.files != null ? ` · ${snap.storage.files} files` : ''}
               </p>
               {snap.storage.note && (
-                <p className="text-[9px] text-slate-400 mt-0.5 leading-snug">{snap.storage.note}</p>
+                <p className="text-[8px] text-slate-400 mt-0.5 leading-snug">{snap.storage.note}</p>
               )}
             </div>
 
-            <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-slate-100">
+            <div>
+              <div className="flex justify-between text-[9px] font-bold text-slate-600 mb-0.5">
+                <span>Firestore docs</span>
+                <span className="font-mono text-slate-500">{formatBytes(fs.remaining)} left</span>
+              </div>
+              <MeterBar meter={fs} tone="emerald" />
+              <p className="text-[8px] text-slate-400 mt-0.5 font-medium">
+                {formatBytes(fs.used)} / {formatBytes(fs.limit)}
+                {snap.firestore.syncDocs != null ? ` · ${snap.firestore.syncDocs} docs` : ''}
+              </p>
+              <p className="text-[8px] text-slate-400 mt-0.5 leading-snug">
+                Inventory JSON only — images are not stored in this 1 GiB quota.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-1 pt-1 border-t border-slate-100">
               {(
                 [
                   ['Reads', snap.firestore.readsToday],
@@ -153,28 +175,22 @@ const FirestoreQuotaWidget: React.FC = () => {
                   ['Deletes', snap.firestore.deletesToday],
                 ] as const
               ).map(([label, meter]) => (
-                <div key={label} className="rounded-lg bg-slate-50 px-1.5 py-1.5">
-                  <p className="text-[8px] font-black uppercase tracking-wider text-slate-400">{label}/day</p>
-                  <p className="text-[10px] font-bold text-slate-700 font-mono mt-0.5">
+                <div key={label} className="rounded-md bg-slate-50 px-1 py-1">
+                  <p className="text-[7px] font-black uppercase tracking-wider text-slate-400">{label}</p>
+                  <p className="text-[9px] font-bold text-slate-700 font-mono">
                     {formatOps(meter.used)}
                     <span className="text-slate-400">/{formatOps(meter.limit)}</span>
                   </p>
-                  <MeterBar meter={meter} tone="amber" />
                 </div>
               ))}
             </div>
 
             {snap.monitoring?.error && !snap.monitoring.available && (
-              <p className="text-[9px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5 leading-snug">
-                Live project ops: {snap.monitoring.error}
+              <p className="text-[8px] text-amber-700 bg-amber-50 border border-amber-100 rounded-md px-1.5 py-1 leading-snug">
+                Live ops: {snap.monitoring.error}
               </p>
             )}
-            {error && (
-              <p className="text-[9px] text-red-600">{error}</p>
-            )}
-            <p className="text-[8px] text-slate-400 font-medium">
-              Daily ops reset ~midnight Pacific. Storage size is scanned from your folders; ops use Monitoring when configured, else local session counters.
-            </p>
+            {error && <p className="text-[8px] text-red-600">{error}</p>}
           </div>
         </div>
       )}

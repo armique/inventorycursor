@@ -13,6 +13,7 @@ import {
   parseMonitoringTimeSeries,
   pacificDayKey,
 } from '../utils/firestoreFreeQuota';
+import { collectStorageUrlsFromItems } from '../services/firestoreQuotaService';
 
 assert.equal(FIRESTORE_FREE.storedBytes, 1 * 1024 * 1024 * 1024);
 assert.equal(FIRESTORE_FREE.readsPerDay, 50_000);
@@ -59,5 +60,17 @@ assert.ok(snap.firestore.stored.remaining > 0);
 assert.ok(snap.pacificDay === pacificDayKey() || /^\d{4}-\d{2}-\d{2}$/.test(snap.pacificDay));
 assert.ok(formatBytes(1536).includes('KB'));
 assert.equal(formatOps(1500), '1.5k');
+
+const urls = collectStorageUrlsFromItems([
+  {
+    imageUrl: 'https://firebasestorage.googleapis.com/v0/b/x/o/items%2Fa%2Fb%2Fc.jpg?alt=media',
+    imageUrls: [
+      'https://firebasestorage.googleapis.com/v0/b/x/o/items%2Fa%2Fb%2Fc.jpg?alt=media',
+      'https://firebasestorage.googleapis.com/v0/b/x/o/items%2Fa%2Fb%2Fd.jpg?alt=media',
+      'data:image/png;base64,xxx',
+    ],
+  },
+]);
+assert.equal(urls.length, 2);
 
 console.log('verify-firestore-free-quota: ok');
