@@ -55,7 +55,7 @@ export const MobileStockCard: React.FC<{
               ? 'border-violet-200 shadow-[inset_3px_0_0_0_#8b5cf6]'
               : selected
                 ? 'border-slate-900 ring-1 ring-slate-900/10'
-                : 'border-slate-150 border-slate-100'
+                : 'border-slate-100'
         }`}
       >
         <div className="flex gap-3 items-start">
