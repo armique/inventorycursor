@@ -1,5 +1,7 @@
 /** Resize + JPEG compress inventory photos before storing locally or in Firebase Storage. */
 
+import { isLikelyImageFile, materializeLocalImageFile } from './localImageFile';
+
 export interface CompressImageOptions {
   maxWidth?: number;
   maxHeight?: number;
@@ -172,10 +174,12 @@ export async function compressImageFile(
   file: File,
   options?: CompressImageOptions
 ): Promise<string> {
-  if (!file.type.startsWith('image/')) {
+  if (!isLikelyImageFile(file)) {
     throw new Error('Not an image file');
   }
-  const img = await loadImageFromFile(file);
+  // Materialize first: hydrates iCloud/OneDrive online-only placeholders and fixes empty MIME types.
+  const readable = await materializeLocalImageFile(file);
+  const img = await loadImageFromFile(readable);
   return compressLoadedImage(img, options);
 }
 
@@ -183,10 +187,12 @@ export async function compressImageFileToBlob(
   file: File,
   options?: CompressImageOptions
 ): Promise<Blob> {
-  if (!file.type.startsWith('image/')) {
+  if (!isLikelyImageFile(file)) {
     throw new Error('Not an image file');
   }
-  const img = await loadImageFromFile(file);
+  // Materialize first: hydrates iCloud/OneDrive online-only placeholders and fixes empty MIME types.
+  const readable = await materializeLocalImageFile(file);
+  const img = await loadImageFromFile(readable);
   return compressLoadedImageToBlob(img, options);
 }
 

@@ -531,7 +531,8 @@ export async function persistInventoryImageFiles(
       }
     } catch (err) {
       console.warn('persistInventoryImageFiles failed for', file.name, err);
-      throw err;
+      const { localImageReadErrorMessage } = await import('../utils/localImageFile');
+      throw new Error(localImageReadErrorMessage(err));
     }
     options?.onProgress?.(i + 1, total);
   }

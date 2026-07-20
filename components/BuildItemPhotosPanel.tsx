@@ -54,8 +54,9 @@ const BuildItemPhotosPanel: React.FC<Props> = ({ name, photos, onChange, itemId 
     if (!files.length) return;
     try {
       await addPhotos(await filesToDataUrls(files, storageOptions));
-    } catch {
-      alert('Could not process one or more images.');
+    } catch (err) {
+      const { localImageReadErrorMessage } = await import('../utils/localImageFile');
+      alert(localImageReadErrorMessage(err, 'Could not process one or more images.'));
     } finally {
       e.target.value = '';
     }
