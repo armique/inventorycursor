@@ -60,6 +60,33 @@ export function isLikelyImageFile(file: Pick<File, 'name' | 'type'>): boolean {
   return resolveImageMimeType(file) !== null;
 }
 
+/** heic2any rejects plain `{ code, message }` objects — never use String(err). */
+export function formatCaughtError(err: unknown): string {
+  if (err instanceof Error && err.message.trim()) return err.message.trim();
+  if (typeof err === 'string' && err.trim()) return err.trim();
+  if (err && typeof err === 'object') {
+    const o = err as Record<string, unknown>;
+    const msg =
+      (typeof o.message === 'string' && o.message) ||
+      (typeof o.Message === 'string' && o.Message) ||
+      (typeof o.error === 'string' && o.error) ||
+      '';
+    const code = o.code ?? o.Code;
+    if (msg.trim()) {
+      return code != null && String(code).trim() ? `${String(code)}: ${msg.trim()}` : msg.trim();
+    }
+    try {
+      const json = JSON.stringify(err);
+      if (json && json !== '{}' && json !== 'null') return json;
+    } catch {
+      /* ignore */
+    }
+  }
+  if (err == null) return '';
+  const s = String(err);
+  return s === '[object Object]' ? '' : s;
+}
+
 function cloudHint(fileName: string): string {
   return (
     `Could not read "${fileName}". If it shows a cloud icon in File Explorer, ` +
@@ -67,15 +94,78 @@ function cloudHint(fileName: string): string {
   );
 }
 
-function heicFailHint(fileName: string): string {
-  return (
+function heicFailHint(fileName: string, detail?: string): string {
+  const base =
     `Could not convert "${fileName}" from HEIC. Wait until iCloud finishes downloading ` +
-    `(green check, not cloud icon), then try again — or export as JPEG from Photos.`
-  );
+    `(green check, not cloud icon), then try again — or export as JPEG from Photos.`;
+  const d = (detail || '').trim();
+  if (!d || d === '[object Object]') return base;
+  return `${base} (${d})`;
 }
 
 function jpegNameFromHeic(name: string): string {
   return name.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg');
+}
+
+/**
+ * Sniff real container from bytes — iCloud often keeps a .HEIC name on JPEG data,
+ * or returns a tiny stub before download finishes.
+ */
+export function sniffImageKind(
+  buffer: ArrayBuffer
+): 'jpeg' | 'png' | 'webp' | 'gif' | 'heic' | 'unknown' {
+  const u8 = new Uint8Array(buffer);
+  if (u8.length >= 3 && u8[0] === 0xff && u8[1] === 0xd8 && u8[2] === 0xff) return 'jpeg';
+  if (
+    u8.length >= 8 &&
+    u8[0] === 0x89 &&
+    u8[1] === 0x50 &&
+    u8[2] === 0x4e &&
+    u8[3] === 0x47
+  ) {
+    return 'png';
+  }
+  if (
+    u8.length >= 6 &&
+    u8[0] === 0x47 &&
+    u8[1] === 0x49 &&
+    u8[2] === 0x46
+  ) {
+    return 'gif';
+  }
+  if (
+    u8.length >= 12 &&
+    u8[0] === 0x52 &&
+    u8[1] === 0x49 &&
+    u8[2] === 0x46 &&
+    u8[3] === 0x46 &&
+    u8[8] === 0x57 &&
+    u8[9] === 0x45 &&
+    u8[10] === 0x42 &&
+    u8[11] === 0x50
+  ) {
+    return 'webp';
+  }
+  if (u8.length >= 12) {
+    const brand = String.fromCharCode(u8[4], u8[5], u8[6], u8[7]);
+    if (brand === 'ftyp') {
+      const head = String.fromCharCode(...u8.slice(8, Math.min(u8.length, 32))).toLowerCase();
+      if (/heic|heix|hevf|heif|mif1|msf1|heim|heis|avic/.test(head)) return 'heic';
+    }
+  }
+  return 'unknown';
+}
+
+function fileFromBuffer(
+  buffer: ArrayBuffer,
+  name: string,
+  type: string,
+  lastModified?: number
+): File {
+  return new File([buffer], name, {
+    type,
+    lastModified: lastModified || Date.now(),
+  });
 }
 
 /** Convert iPhone/iCloud HEIC/HEIF to a JPEG File Chrome can decode. */
@@ -97,11 +187,12 @@ export async function convertHeicFileToJpeg(file: File): Promise<File> {
     });
   } catch (err) {
     if (err instanceof LocalImageReadError) throw err;
-    const msg = err instanceof Error ? err.message : String(err);
-    throw new LocalImageReadError(
-      `${heicFailHint(file.name)}${msg ? ` (${msg})` : ''}`,
-      'heic'
-    );
+    const detail = formatCaughtError(err);
+    // heic2any: file is already JPEG/PNG despite .HEIC name — treat as success path upstream.
+    if (/already browser readable/i.test(detail)) {
+      throw new LocalImageReadError(detail, 'decode');
+    }
+    throw new LocalImageReadError(heicFailHint(file.name, detail), 'heic');
   }
 }
 
@@ -124,7 +215,7 @@ export async function materializeLocalImageFile(
   const attempts = options?.attempts ?? 12;
   const delayMs = options?.delayMs ?? 600;
   let lastError: unknown;
-  const heic = looksLikeHeic(file);
+  const namedHeic = looksLikeHeic(file);
 
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {
@@ -143,14 +234,53 @@ export async function materializeLocalImageFile(
         throw new LocalImageReadError(cloudHint(file.name), 'cloud');
       }
 
-      let materialized = new File([buffer], file.name, {
-        type: mime,
-        lastModified: file.lastModified || Date.now(),
-      });
+      const kind = sniffImageKind(buffer);
 
-      if (heic) {
-        // Chromium cannot decode HEIC — convert before compress/upload.
-        materialized = await convertHeicFileToJpeg(materialized);
+      // Named HEIC but still a cloud stub / incomplete download.
+      if (namedHeic && kind === 'unknown' && buffer.byteLength < 8_192) {
+        throw new LocalImageReadError(cloudHint(file.name), 'cloud');
+      }
+
+      // iCloud sometimes keeps .HEIC extension on already-JPEG bytes.
+      if (kind === 'jpeg' || kind === 'png' || kind === 'webp' || kind === 'gif') {
+        const realMime =
+          kind === 'jpeg'
+            ? 'image/jpeg'
+            : kind === 'png'
+              ? 'image/png'
+              : kind === 'webp'
+                ? 'image/webp'
+                : 'image/gif';
+        const realName =
+          namedHeic && kind === 'jpeg' ? jpegNameFromHeic(file.name) : file.name;
+        const ready = fileFromBuffer(buffer, realName, realMime, file.lastModified);
+        await assertImageDecodable(ready);
+        return ready;
+      }
+
+      let materialized = fileFromBuffer(buffer, file.name, mime, file.lastModified);
+
+      if (namedHeic || kind === 'heic') {
+        try {
+          materialized = await convertHeicFileToJpeg(materialized);
+        } catch (convErr) {
+          // Already-readable per heic2any — retry as JPEG.
+          if (
+            convErr instanceof LocalImageReadError &&
+            convErr.code === 'decode' &&
+            /already browser readable/i.test(convErr.message)
+          ) {
+            const asJpeg = fileFromBuffer(
+              buffer,
+              jpegNameFromHeic(file.name),
+              'image/jpeg',
+              file.lastModified
+            );
+            await assertImageDecodable(asJpeg);
+            return asJpeg;
+          }
+          throw convErr;
+        }
       }
 
       try {
@@ -158,7 +288,7 @@ export async function materializeLocalImageFile(
         return materialized;
       } catch (decodeErr) {
         // Some files are HEIC despite a .jpg name from iCloud — try convert once.
-        if (!heic && attempt === 0) {
+        if (!namedHeic && kind !== 'heic' && attempt === 0) {
           try {
             const converted = await convertHeicFileToJpeg(materialized);
             await assertImageDecodable(converted);
@@ -178,7 +308,7 @@ export async function materializeLocalImageFile(
       if (
         err instanceof LocalImageReadError &&
         err.code === 'heic' &&
-        attempt >= Math.min(3, attempts - 1)
+        attempt >= Math.min(4, attempts - 1)
       ) {
         throw err;
       }
@@ -190,8 +320,10 @@ export async function materializeLocalImageFile(
 
   if (lastError instanceof LocalImageReadError) throw lastError;
   throw new LocalImageReadError(
-    heic ? heicFailHint(file.name) : cloudHint(file.name),
-    heic ? 'heic' : 'cloud'
+    namedHeic
+      ? heicFailHint(file.name, formatCaughtError(lastError))
+      : cloudHint(file.name),
+    namedHeic ? 'heic' : 'cloud'
   );
 }
 
@@ -221,17 +353,20 @@ function assertImageDecodable(file: File): Promise<void> {
 }
 
 /** Friendly message for any upload/read failure (including non-LocalImageReadError). */
-export function localImageReadErrorMessage(err: unknown, fallback = 'Could not read one or more image files.'): string {
+export function localImageReadErrorMessage(
+  err: unknown,
+  fallback = 'Could not read one or more image files.'
+): string {
   if (err instanceof LocalImageReadError) return err.message;
-  if (err instanceof Error && err.message.trim()) {
-    const m = err.message;
-    if (/not an image|failed to decode|could not read|empty|heic/i.test(m)) {
+  const detail = formatCaughtError(err);
+  if (detail) {
+    if (/not an image|failed to decode|could not read|empty|heic|libheif/i.test(detail)) {
       return (
-        `${m} If the photo has a cloud icon in iCloud Drive, right-click → ` +
+        `${detail} If the photo has a cloud icon in iCloud Drive, right-click → ` +
         `Always keep on this device, then try again.`
       );
     }
-    return m;
+    return detail;
   }
   return (
     `${fallback} If the photo has a cloud icon in iCloud Drive, right-click → ` +
