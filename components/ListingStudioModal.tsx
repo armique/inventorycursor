@@ -973,6 +973,9 @@ const ListingStudioModal: React.FC<Props> = ({
                   ? 'GEN1–3 from name/specs'
                   : `${photos.length} photo${photos.length === 1 ? '' : 's'} · hold+drag · GEN1/2/3`}
               </p>
+              <p className="text-[9px] text-slate-400 mt-0.5 font-medium">
+                Before each card, AI Google-checks official specs (drops impossible features like M.2 on old boards).
+              </p>
             </section>
 
             <button
