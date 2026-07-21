@@ -23,10 +23,19 @@ function isCategoryPlaceholderImage(url: string): boolean {
   return CATEGORY_PLACEHOLDER_IMAGES.has(url.trim());
 }
 
+export interface PersistImageProgressInfo {
+  fileName?: string;
+  /** 0-based index of the file currently being processed. */
+  currentIndex?: number;
+  phase?: 'start' | 'done' | 'error';
+}
+
 export interface PersistInventoryImagesOptions {
   /** Inventory item id — photos land in items/{uid}/{itemId}/. Use "shared" for bulk imports. */
   itemId?: string;
-  onProgress?: (done: number, total: number) => void;
+  onProgress?: (done: number, total: number, info?: PersistImageProgressInfo) => void;
+  /** Fired when one file fails but the rest of the batch continues. */
+  onFileError?: (fileName: string, message: string) => void;
 }
 
 /** Session cache: source URL → persisted Storage URL (avoids re-uploading the same eBay photo). */
@@ -518,9 +527,15 @@ export async function persistInventoryImageFiles(
   const itemId = options?.itemId?.trim() || 'shared';
   const total = files.length;
   const out: string[] = [];
+  const failures: string[] = [];
 
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
+    options?.onProgress?.(i, total, {
+      fileName: file.name,
+      currentIndex: i,
+      phase: 'start',
+    });
     try {
       const blob = await compressImageFileToBlob(file, INVENTORY_PHOTO_STORAGE_OPTIONS);
       if (canUploadToCloud()) {
@@ -529,12 +544,31 @@ export async function persistInventoryImageFiles(
       } else {
         out.push(await dataUrlFromBlob(blob));
       }
+      options?.onProgress?.(i + 1, total, {
+        fileName: file.name,
+        currentIndex: i,
+        phase: 'done',
+      });
     } catch (err) {
       console.warn('persistInventoryImageFiles failed for', file.name, err);
       const { localImageReadErrorMessage } = await import('../utils/localImageFile');
-      throw new Error(localImageReadErrorMessage(err));
+      const message = localImageReadErrorMessage(err);
+      failures.push(`${file.name}: ${message}`);
+      options?.onFileError?.(file.name, message);
+      options?.onProgress?.(i + 1, total, {
+        fileName: file.name,
+        currentIndex: i,
+        phase: 'error',
+      });
     }
-    options?.onProgress?.(i + 1, total);
+  }
+
+  if (!out.length) {
+    throw new Error(
+      failures.length
+        ? failures.join('\n')
+        : 'Photo upload failed.'
+    );
   }
 
   return out;

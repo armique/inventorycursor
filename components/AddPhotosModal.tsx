@@ -50,6 +50,12 @@ const AddPhotosModal: React.FC<Props> = ({
   const [imgurInput, setImgurInput] = useState('');
   const [pendingUrls, setPendingUrls] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{
+    done: number;
+    total: number;
+    fileName?: string;
+    phase?: 'start' | 'done' | 'error';
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [imageProviders, setImageProviders] = useState<ImageSearchProvider[]>([]);
@@ -80,6 +86,7 @@ const AddPhotosModal: React.FC<Props> = ({
     setImgurInput('');
     setPendingUrls([]);
     setLoading(false);
+    setUploadProgress(null);
     setError(null);
     setSelectedProvider('');
     setPhotoSearchResults(null);
@@ -120,11 +127,39 @@ const AddPhotosModal: React.FC<Props> = ({
     if (!files.length) return;
     setLoading(true);
     setError(null);
+    const fileErrors: string[] = [];
+    setUploadProgress({
+      done: 0,
+      total: files.length,
+      fileName: files[0]?.name,
+      phase: 'start',
+    });
     try {
-      addUrls(await filesToDataUrls(files, storageOptions));
+      addUrls(
+        await filesToDataUrls(files, {
+          ...storageOptions,
+          onProgress: (done, total, info) => {
+            setUploadProgress({
+              done,
+              total,
+              fileName: info?.fileName,
+              phase: info?.phase,
+            });
+          },
+          onFileError: (fileName, message) => {
+            fileErrors.push(`${fileName}: ${message}`);
+          },
+        })
+      );
+      if (fileErrors.length) {
+        setError(
+          `Uploaded some photos. Failed ${fileErrors.length}:\n${fileErrors.join('\n')}`
+        );
+      }
     } catch (err) {
       setError(localImageReadErrorMessage(err));
     } finally {
+      setUploadProgress(null);
       setLoading(false);
       e.target.value = '';
     }
@@ -591,11 +626,65 @@ const AddPhotosModal: React.FC<Props> = ({
               <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
                 <Upload size={12} /> Upload from device
               </label>
-              <label className="flex items-center justify-center gap-2 w-full py-3 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 text-xs font-bold text-slate-600 cursor-pointer hover:border-blue-300 hover:bg-blue-50/50 transition-colors">
-                <Camera size={16} className="text-slate-400" />
-                Choose images
+              <label
+                className={`flex items-center justify-center gap-2 w-full py-3 rounded-xl border-2 border-dashed text-xs font-bold transition-colors ${
+                  loading
+                    ? 'border-blue-200 bg-blue-50 text-blue-800 cursor-wait'
+                    : 'border-slate-200 bg-slate-50 text-slate-600 cursor-pointer hover:border-blue-300 hover:bg-blue-50/50'
+                }`}
+              >
+                {loading ? (
+                  <Loader2 size={16} className="animate-spin text-blue-500" />
+                ) : (
+                  <Camera size={16} className="text-slate-400" />
+                )}
+                {uploadProgress
+                  ? `Uploading ${uploadProgress.done}/${uploadProgress.total}…`
+                  : 'Choose images'}
                 <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} disabled={loading} />
               </label>
+              {uploadProgress && (
+                <div className="rounded-xl border border-blue-200 bg-blue-50/80 px-3 py-2 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[11px] font-black uppercase tracking-wide text-blue-900">
+                      {uploadProgress.done}/{uploadProgress.total} photos
+                    </p>
+                    <span className="text-[10px] font-bold text-blue-800 tabular-nums">
+                      {uploadProgress.total
+                        ? Math.round((uploadProgress.done / uploadProgress.total) * 100)
+                        : 0}
+                      %
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-blue-100 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-blue-500 transition-[width] duration-300 ease-out"
+                      style={{
+                        width: `${
+                          uploadProgress.total
+                            ? Math.min(
+                                100,
+                                Math.round(
+                                  ((uploadProgress.phase === 'start'
+                                    ? uploadProgress.done + 0.35
+                                    : uploadProgress.done) /
+                                    uploadProgress.total) *
+                                    100
+                                )
+                              )
+                            : 0
+                        }%`,
+                      }}
+                    />
+                  </div>
+                  {uploadProgress.fileName ? (
+                    <p className="text-[10px] text-blue-800/90 truncate font-medium">
+                      {uploadProgress.phase === 'error' ? 'Failed · ' : 'Working on · '}
+                      {uploadProgress.fileName}
+                    </p>
+                  ) : null}
+                </div>
+              )}
               <p className="text-[10px] text-slate-400 font-medium leading-snug">
                 iPhone HEIC photos are converted to JPEG automatically. iCloud files with a cloud icon must
                 finish downloading first (right-click → Always keep on this device).

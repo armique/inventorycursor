@@ -160,6 +160,12 @@ const ListingStudioModal: React.FC<Props> = ({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [photoUpload, setPhotoUpload] = useState<{
+    done: number;
+    total: number;
+    fileName?: string;
+    phase?: 'start' | 'done' | 'error';
+  } | null>(null);
 
   const [gallery, setGallery] = useState<GeneratedProductCardEntry[]>([]);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
@@ -608,31 +614,79 @@ const ListingStudioModal: React.FC<Props> = ({
     }
   };
 
-  const handleAddPhotos = async (files: FileList | null) => {
-    if (!files?.length) return;
+  const runPhotoImport = async (files: File[], emptyMessage: string) => {
+    if (!files.length) return;
+    const list = files.slice(0, 6);
+    const fileErrors: string[] = [];
+    setError(null);
+    setPhotoUpload({
+      done: 0,
+      total: list.length,
+      fileName: list[0]?.name,
+      phase: 'start',
+    });
     try {
-      const urls = await filesToDataUrls(Array.from(files).slice(0, 6), { itemId: item.id });
+      const urls = await filesToDataUrls(list, {
+        itemId: item.id,
+        onProgress: (done, total, info) => {
+          setPhotoUpload({
+            done,
+            total,
+            fileName: info?.fileName,
+            phase: info?.phase,
+          });
+        },
+        onFileError: (fileName, message) => {
+          fileErrors.push(`${fileName}: ${message}`);
+        },
+      });
       const merged = normalizeImageList([...photos, ...urls]);
       await persistPatch({ imageUrl: merged[0] || '', imageUrls: merged });
+      if (fileErrors.length) {
+        setError(
+          `Uploaded ${urls.length} of ${list.length}. Failed:\n${fileErrors.join('\n')}`
+        );
+      }
     } catch (e) {
       const { localImageReadErrorMessage } = await import('../utils/localImageFile');
-      setError(localImageReadErrorMessage(e, 'Photo import failed'));
+      setError(localImageReadErrorMessage(e, emptyMessage));
     } finally {
+      setPhotoUpload(null);
       if (fileRef.current) fileRef.current.value = '';
       if (cameraRef.current) cameraRef.current.value = '';
     }
   };
 
+  const handleAddPhotos = async (files: FileList | null) => {
+    if (!files?.length) return;
+    await runPhotoImport(Array.from(files), 'Photo import failed');
+  };
+
   const mergeRemotePhotoUrls = useCallback(
     async (urls: string[]) => {
       if (!urls.length) return;
+      const list = urls.slice(0, 12);
+      setError(null);
+      setPhotoUpload({ done: 0, total: list.length, fileName: 'iPhone photo', phase: 'start' });
       try {
-        const prepared = await prepareInventoryImagesForStorage(urls, { itemId: item.id });
+        const prepared = await prepareInventoryImagesForStorage(list, {
+          itemId: item.id,
+          onProgress: (done, total) => {
+            setPhotoUpload({
+              done,
+              total,
+              fileName: `Photo ${Math.min(done + 1, total)}`,
+              phase: done >= total ? 'done' : 'start',
+            });
+          },
+        });
         const existing = getItemUserPhotoUrls(item);
         const merged = normalizeImageList([...existing, ...prepared]);
         await persistPatch({ imageUrl: merged[0] || '', imageUrls: merged });
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not attach iPhone photos');
+      } finally {
+        setPhotoUpload(null);
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -641,14 +695,7 @@ const ListingStudioModal: React.FC<Props> = ({
 
   const handleFolderFiles = async (files: File[]) => {
     if (!files.length) return;
-    try {
-      const urls = await filesToDataUrls(files.slice(0, 6), { itemId: item.id });
-      const merged = normalizeImageList([...photos, ...urls]);
-      await persistPatch({ imageUrl: merged[0] || '', imageUrls: merged });
-    } catch (e) {
-      const { localImageReadErrorMessage } = await import('../utils/localImageFile');
-      setError(localImageReadErrorMessage(e, 'Folder photo import failed'));
-    }
+    await runPhotoImport(files, 'Folder photo import failed');
   };
 
   const updateSpecValue = (key: string, value: string) => {
@@ -879,10 +926,12 @@ const ListingStudioModal: React.FC<Props> = ({
                       </button>
                       <button
                         type="button"
+                        disabled={!!photoUpload}
                         onClick={() => fileRef.current?.click()}
-                        className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-slate-600 hover:text-rose-700"
+                        className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-slate-600 hover:text-rose-700 disabled:opacity-50"
                       >
-                        <Upload size={11} /> Add
+                        {photoUpload ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}{' '}
+                        {photoUpload ? 'Uploading…' : 'Add'}
                       </button>
                     </>
                   )}
@@ -904,6 +953,51 @@ const ListingStudioModal: React.FC<Props> = ({
                   onChange={(e) => void handleAddPhotos(e.target.files)}
                 />
               </div>
+
+              {photoUpload && (
+                <div className="mb-2 rounded-xl border border-rose-200 bg-rose-50/80 px-3 py-2.5 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[11px] font-black uppercase tracking-wide text-rose-900 flex items-center gap-1.5">
+                      <Loader2 size={13} className="animate-spin shrink-0" />
+                      Uploading photos {photoUpload.done}/{photoUpload.total}
+                    </p>
+                    <span className="text-[10px] font-bold text-rose-800 tabular-nums">
+                      {photoUpload.total
+                        ? Math.round((photoUpload.done / photoUpload.total) * 100)
+                        : 0}
+                      %
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-rose-100 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-rose-500 transition-[width] duration-300 ease-out"
+                      style={{
+                        width: `${
+                          photoUpload.total
+                            ? Math.min(
+                                100,
+                                Math.round(
+                                  ((photoUpload.phase === 'start'
+                                    ? photoUpload.done + 0.35
+                                    : photoUpload.done) /
+                                    photoUpload.total) *
+                                    100
+                                )
+                              )
+                            : 0
+                        }%`,
+                      }}
+                    />
+                  </div>
+                  {photoUpload.fileName ? (
+                    <p className="text-[10px] text-rose-800/90 truncate font-medium">
+                      {photoUpload.phase === 'error' ? 'Failed · ' : 'Working on · '}
+                      {photoUpload.fileName}
+                      {photoUpload.phase === 'start' ? ' (convert / compress)' : ''}
+                    </p>
+                  ) : null}
+                </div>
+              )}
 
               {nativePhoto && photos.length === 0 && photoSource === 'none' && (
                 <div className="mb-2 grid grid-cols-2 gap-1.5">
@@ -959,11 +1053,12 @@ const ListingStudioModal: React.FC<Props> = ({
                   trailing={
                     <button
                       type="button"
+                      disabled={!!photoUpload}
                       onClick={() => fileRef.current?.click()}
-                      className="shrink-0 w-[4.5rem] h-[4.5rem] sm:w-20 sm:h-20 rounded-xl border border-dashed border-slate-300 text-slate-400 font-black hover:border-rose-400 hover:text-rose-600 flex items-center justify-center snap-start"
+                      className="shrink-0 w-[4.5rem] h-[4.5rem] sm:w-20 sm:h-20 rounded-xl border border-dashed border-slate-300 text-slate-400 font-black hover:border-rose-400 hover:text-rose-600 flex items-center justify-center snap-start disabled:opacity-50"
                       title="Add photos"
                     >
-                      <Plus size={18} />
+                      {photoUpload ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
                     </button>
                   }
                 />
