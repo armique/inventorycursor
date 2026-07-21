@@ -8,8 +8,9 @@ import {
   MessageCircle, Link as LinkIcon, Upload, Search, Database, 
   Cpu, Monitor, HardDrive, Zap, Wind, AlertCircle, CheckCircle2, Copy,
   Fan, Lightbulb, Keyboard, Mouse, Tv, MoreHorizontal, Cable, Laptop as LaptopIcon, Wrench,
-  Wand2, Sliders, X, History, Repeat2, Package, FileText, Sparkles, Loader2, ScanBarcode
+  Wand2, Sliders, X, History, Repeat2, Package, FileText, Sparkles, Loader2, ScanBarcode, Camera
 } from 'lucide-react';
+import { prefersNativePhotoCapture } from '../utils/deviceUi';
 import { InventoryItem, ItemStatus, Platform, PaymentType } from '../types';
 import { SALE_PLATFORM_OPTIONS } from '../utils/salePlatform';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
@@ -202,6 +203,9 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   const [ebayPriceModalOpen, setEbayPriceModalOpen] = useState(false);
   const [showProductCardGen, setShowProductCardGen] = useState(false);
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
+  const nativePhoto = prefersNativePhotoCapture();
+  const cameraPhotoRef = React.useRef<HTMLInputElement>(null);
+  const libraryPhotoRef = React.useRef<HTMLInputElement>(null);
   const [ebayPriceModalError, setEbayPriceModalError] = useState<string | null>(null);
   const [previewPhoto, setPreviewPhoto] = useState<ImageSearchResult | null>(null);
   const [imageProviders, setImageProviders] = useState<ImageSearchProvider[]>([]);
@@ -2024,10 +2028,47 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                         >
                           <Wand2 size={12} /> AI card
                         </button>
-                        <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-600 cursor-pointer hover:bg-slate-50">
-                          <Upload size={12} /> Add images
-                          <input type="file" accept="image/*" multiple className="hidden" onChange={handleMultiImageUpload} />
-                        </label>
+                        {nativePhoto ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => cameraPhotoRef.current?.click()}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-rose-700"
+                              title="Take a photo with this phone"
+                            >
+                              <Camera size={12} /> Camera
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => libraryPhotoRef.current?.click()}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50"
+                              title="Pick from Photos library"
+                            >
+                              <Upload size={12} /> Library
+                            </button>
+                            <input
+                              ref={cameraPhotoRef}
+                              type="file"
+                              accept="image/*"
+                              capture="environment"
+                              className="hidden"
+                              onChange={handleMultiImageUpload}
+                            />
+                            <input
+                              ref={libraryPhotoRef}
+                              type="file"
+                              accept="image/*"
+                              multiple
+                              className="hidden"
+                              onChange={handleMultiImageUpload}
+                            />
+                          </>
+                        ) : (
+                          <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-600 cursor-pointer hover:bg-slate-50">
+                            <Upload size={12} /> Add images
+                            <input type="file" accept="image/*" multiple className="hidden" onChange={handleMultiImageUpload} />
+                          </label>
+                        )}
                       </div>
 
                       {photoSearchError && (
@@ -2656,7 +2697,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
               </div>
 
               {/* Sticky action bar — always visible, no scrolling needed to Save/Cancel */}
-              <div className="lg:col-span-12 sticky bottom-0 -mx-4 px-4 pt-3 pb-1 mt-1 bg-gradient-to-t from-slate-50 via-slate-50/95 to-transparent flex gap-2.5">
+              <div className="lg:col-span-12 sticky bottom-0 -mx-4 px-4 pt-3 pb-safe-min mt-1 bg-gradient-to-t from-slate-50 via-slate-50/95 to-transparent flex gap-2.5 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
                  {isModal && (
                     <button type="button" onClick={onClose} className="px-6 py-3 bg-white border border-slate-200 text-slate-500 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-slate-100 transition-all">
                        Cancel

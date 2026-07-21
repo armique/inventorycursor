@@ -271,7 +271,11 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
   const [items, setItems] = useState<DraftItem[]>([]);
   
   // Entry Form State
-  const [mode, setMode] = useState<'SEARCH' | 'MANUAL' | 'SCAN'>('MANUAL');
+  const [mode, setMode] = useState<'SEARCH' | 'MANUAL' | 'SCAN'>(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches
+      ? 'SCAN'
+      : 'MANUAL'
+  );
   const [parseSpecsBeforeImport, setParseSpecsBeforeImport] = useState(true);
   const [parsingSpecs, setParsingSpecs] = useState(false);
   const [parseProgress, setParseProgress] = useState<string | null>(null);
@@ -889,26 +893,26 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
   };
 
   return (
-    <div className="max-w-[1600px] mx-auto h-[calc(100vh-100px)] flex flex-col animate-in fade-in">
+    <div className="max-w-[1600px] mx-auto h-[calc(100dvh-5.5rem)] md:h-[calc(100vh-100px)] flex flex-col animate-in fade-in">
       {/* HEADER */}
-      <header className="flex justify-between items-center mb-6 shrink-0 px-4">
-        <div className="flex items-center gap-4">
-           <button onClick={() => navigate(-1)} className="p-3 bg-white border border-slate-200 rounded-2xl text-slate-400 hover:text-slate-900 transition-all"><ArrowLeft size={24}/></button>
-           <div>
-              <h1 className="text-3xl font-black text-slate-900 tracking-tight">Bulk Entry</h1>
-              <p className="text-sm text-slate-500 font-bold">Add Multiple Items • One Transaction</p>
+      <header className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-3 mb-3 lg:mb-6 shrink-0 px-3 sm:px-4">
+        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+           <button onClick={() => navigate(-1)} className="p-2.5 sm:p-3 bg-white border border-slate-200 rounded-2xl text-slate-400 hover:text-slate-900 transition-all shrink-0"><ArrowLeft size={22}/></button>
+           <div className="min-w-0">
+              <h1 className="text-xl sm:text-3xl font-black text-slate-900 tracking-tight truncate">Bulk Entry</h1>
+              <p className="text-xs sm:text-sm text-slate-500 font-bold truncate">Add Multiple Items • One Transaction</p>
            </div>
            <button
              type="button"
              onClick={() => navigate('/panel/bulk-imports')}
-             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-50"
+             className="ml-auto lg:ml-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-50 shrink-0"
              title="Open bulk import history"
            >
              <Layers size={14} />
-             History
+             <span className="hidden sm:inline">History</span>
            </button>
         </div>
-        <div className="flex flex-wrap items-end gap-3 md:gap-4 bg-white p-2 md:p-3 rounded-2xl border border-slate-200 shadow-sm">
+        <div className="flex flex-wrap items-end gap-2 sm:gap-3 md:gap-4 bg-white p-2 md:p-3 rounded-2xl border border-slate-200 shadow-sm">
            <div className="px-3 border-r border-slate-100 min-w-[6rem]">
               <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest block">Total paid</label>
               <div className="flex items-center gap-1">
@@ -982,10 +986,10 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
         </div>
       </header>
 
-      <div className="flex flex-1 gap-6 overflow-hidden px-4">
+      <div className="flex flex-1 flex-col lg:flex-row gap-3 lg:gap-6 overflow-y-auto lg:overflow-hidden px-3 sm:px-4 pb-[max(5.5rem,calc(4rem+env(safe-area-inset-bottom)))] lg:pb-4">
          
          {/* LEFT: ITEM BUILDER */}
-         <div className="w-[450px] flex flex-col gap-6 shrink-0 overflow-y-auto pb-20 scrollbar-hide">
+         <div className="w-full lg:w-[450px] flex flex-col gap-4 lg:gap-6 shrink-0 lg:overflow-y-auto lg:pb-20 scrollbar-hide">
             
             {/* INPUT MODE TABS */}
             <div className="bg-slate-200 p-1 rounded-2xl flex font-bold text-xs">
@@ -1332,14 +1336,14 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
          </div>
 
          {/* RIGHT: DRAFT LIST */}
-         <div className="flex-1 bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden flex flex-col">
-            <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+         <div className="flex-1 min-h-[40vh] lg:min-h-0 bg-white rounded-[1.75rem] lg:rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden flex flex-col">
+            <div className="p-4 sm:p-6 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                <div className="flex items-center gap-3">
                   <div className="bg-blue-100 text-blue-600 p-2 rounded-xl">
                      <Layers size={20}/>
                   </div>
                   <div>
-                     <h3 className="text-lg font-black text-slate-900">Items to Import</h3>
+                     <h3 className="text-base sm:text-lg font-black text-slate-900">Items to Import</h3>
                      <p className="text-xs text-slate-500 font-bold">{items.length} items added</p>
                   </div>
                </div>
@@ -1360,12 +1364,13 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+            <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2">
                {items.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-center opacity-40">
-                     <ShoppingBag size={48} className="mb-4 text-slate-300"/>
+                  <div className="h-full min-h-[8rem] flex flex-col items-center justify-center text-center opacity-40 py-8">
+                     <ShoppingBag size={40} className="mb-3 text-slate-300"/>
                      <p className="font-black text-slate-400 text-sm uppercase tracking-widest">List is empty</p>
-                     <p className="text-xs text-slate-400 mt-2 max-w-xs">Use the panel on the left to build your inventory list.</p>
+                     <p className="text-xs text-slate-400 mt-2 max-w-xs lg:hidden">Scan a barcode or add items above.</p>
+                     <p className="text-xs text-slate-400 mt-2 max-w-xs hidden lg:block">Use the panel on the left to build your inventory list.</p>
                   </div>
                ) : (
                   items.map((item, idx) => (
@@ -1554,14 +1559,14 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                      {parseSpecsBeforeImport && <CheckCircle2 size={16} className="text-amber-500"/>}
                   </label>
                )}
-               <div className="flex justify-between items-center mb-6 text-xs font-bold text-slate-500">
+               <div className="hidden lg:flex justify-between items-center mb-6 text-xs font-bold text-slate-500">
                   <span>Total Paid: <span className="text-slate-900">€{formatEUR(totalCost)}</span></span>
                   <span>Allocated: <span className={Math.abs(allocatedTotal - totalCost) > 0.1 ? 'text-red-500' : 'text-emerald-500'}>€{formatEUR(allocatedTotal)}</span></span>
                </div>
                <button 
                   onClick={handleSubmit}
                   disabled={items.length === 0 || parsingSpecs}
-                  className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-200 hover:bg-emerald-700 transition-all disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-3"
+                  className="hidden lg:flex w-full py-5 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-200 hover:bg-emerald-700 transition-all disabled:opacity-50 disabled:shadow-none items-center justify-center gap-3"
                >
                   {parsingSpecs ? (
                      <>
@@ -1575,6 +1580,37 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                </button>
             </div>
          </div>
+      </div>
+
+      {/* Phone: sticky confirm above bottom nav */}
+      <div className="lg:hidden fixed inset-x-0 bottom-[calc(3.75rem+env(safe-area-inset-bottom,0px))] z-[90] border-t border-slate-200 bg-white/95 backdrop-blur-sm px-3 pt-2 pb-2 shadow-[0_-6px_20px_rgba(15,23,42,0.08)]">
+         <div className="flex justify-between items-center mb-1.5 text-[10px] font-bold text-slate-500">
+            <span>{items.length} item{items.length === 1 ? '' : 's'} · €{formatEUR(totalCost)}</span>
+            <span className={Math.abs(allocatedTotal - totalCost) > 0.1 ? 'text-red-500' : 'text-emerald-500'}>
+              Alloc €{formatEUR(allocatedTotal)}
+            </span>
+         </div>
+         <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={items.length === 0 || parsingSpecs}
+            className="w-full py-3.5 bg-emerald-600 text-white rounded-xl font-black text-[11px] uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-2"
+         >
+            {parsingSpecs ? (
+               <>
+                  <Loader2 size={16} className="animate-spin" /> {parseProgress || 'Parsing…'}
+               </>
+            ) : (
+               <>
+                  <Save size={16} />
+                  {items.length === 0
+                    ? 'Add items to import'
+                    : addAsBundle && items.length >= 2
+                      ? `Import bundle (${items.length})`
+                      : `Confirm import (${items.length})`}
+               </>
+            )}
+         </button>
       </div>
     </div>
   );

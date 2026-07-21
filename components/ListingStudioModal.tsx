@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  Camera,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -19,6 +20,7 @@ import {
   X,
   Download,
 } from 'lucide-react';
+import { prefersNativePhotoCapture } from '../utils/deviceUi';
 import type { GeneratedProductCardEntry, InventoryItem, PaymentType, Platform } from '../types';
 import { generateMarketplaceListing } from '../services/marketplaceListingAI';
 import { generateItemSpecs } from '../services/specsAI';
@@ -120,6 +122,8 @@ const ListingStudioModal: React.FC<Props> = ({
   headerExtra,
 }) => {
   const fileRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const nativePhoto = prefersNativePhotoCapture();
 
   const [name, setName] = useState(item.name || '');
   const [specs, setSpecs] = useState<Record<string, string | number>>({ ...(item.specs || {}) });
@@ -615,6 +619,7 @@ const ListingStudioModal: React.FC<Props> = ({
       setError(localImageReadErrorMessage(e, 'Photo import failed'));
     } finally {
       if (fileRef.current) fileRef.current.value = '';
+      if (cameraRef.current) cameraRef.current.value = '';
     }
   };
 
@@ -819,36 +824,77 @@ const ListingStudioModal: React.FC<Props> = ({
                   Photos for card
                 </h4>
                 <div className="flex items-center gap-1 flex-wrap justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setPhotoSource((s) => (s === 'iphone' ? 'none' : 'iphone'))}
-                    className={`inline-flex items-center gap-1 text-[9px] font-black uppercase ${
-                      photoSource === 'iphone' ? 'text-sky-700' : 'text-slate-600 hover:text-sky-700'
-                    }`}
-                    title="Scan QR on iPhone — pick from full Photos library"
-                  >
-                    <Smartphone size={11} /> iPhone
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPhotoSource((s) => (s === 'folder' ? 'none' : 'folder'))}
-                    className={`inline-flex items-center gap-1 text-[9px] font-black uppercase ${
-                      photoSource === 'folder'
-                        ? 'text-violet-700'
-                        : 'text-slate-600 hover:text-violet-700'
-                    }`}
-                    title="Browse synced iCloud / Photos folder on this PC"
-                  >
-                    <FolderOpen size={11} /> Folder
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => fileRef.current?.click()}
-                    className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-slate-600 hover:text-rose-700"
-                  >
-                    <Upload size={11} /> Add
-                  </button>
+                  {nativePhoto ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => cameraRef.current?.click()}
+                        className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-rose-700"
+                        title="Take a photo with this phone"
+                      >
+                        <Camera size={11} /> Camera
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => fileRef.current?.click()}
+                        className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-slate-600 hover:text-rose-700"
+                        title="Pick from Photos library on this phone"
+                      >
+                        <Upload size={11} /> Library
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPhotoSource((s) => (s === 'iphone' ? 'none' : 'iphone'))}
+                        className={`inline-flex items-center gap-1 text-[9px] font-black uppercase ${
+                          photoSource === 'iphone' ? 'text-sky-700' : 'text-slate-500 hover:text-sky-700'
+                        }`}
+                        title="Send photos from another phone via QR"
+                      >
+                        <Smartphone size={11} /> Other phone
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setPhotoSource((s) => (s === 'iphone' ? 'none' : 'iphone'))}
+                        className={`inline-flex items-center gap-1 text-[9px] font-black uppercase ${
+                          photoSource === 'iphone' ? 'text-sky-700' : 'text-slate-600 hover:text-sky-700'
+                        }`}
+                        title="Scan QR on iPhone — pick from full Photos library"
+                      >
+                        <Smartphone size={11} /> iPhone
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPhotoSource((s) => (s === 'folder' ? 'none' : 'folder'))}
+                        className={`inline-flex items-center gap-1 text-[9px] font-black uppercase ${
+                          photoSource === 'folder'
+                            ? 'text-violet-700'
+                            : 'text-slate-600 hover:text-violet-700'
+                        }`}
+                        title="Browse synced iCloud / Photos folder on this PC"
+                      >
+                        <FolderOpen size={11} /> Folder
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => fileRef.current?.click()}
+                        className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-slate-600 hover:text-rose-700"
+                      >
+                        <Upload size={11} /> Add
+                      </button>
+                    </>
+                  )}
                 </div>
+                <input
+                  ref={cameraRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={(e) => void handleAddPhotos(e.target.files)}
+                />
                 <input
                   ref={fileRef}
                   type="file"
@@ -858,6 +904,27 @@ const ListingStudioModal: React.FC<Props> = ({
                   onChange={(e) => void handleAddPhotos(e.target.files)}
                 />
               </div>
+
+              {nativePhoto && photos.length === 0 && photoSource === 'none' && (
+                <div className="mb-2 grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => cameraRef.current?.click()}
+                    className="flex flex-col items-center justify-center gap-1 h-20 rounded-xl border border-dashed border-rose-300 bg-rose-50/50 text-rose-700"
+                  >
+                    <Camera size={18} />
+                    <span className="text-[10px] font-black uppercase">Camera</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    className="flex flex-col items-center justify-center gap-1 h-20 rounded-xl border border-dashed border-slate-300 bg-slate-50 text-slate-600"
+                  >
+                    <Upload size={18} />
+                    <span className="text-[10px] font-black uppercase">Library</span>
+                  </button>
+                </div>
+              )}
 
               {photoSource === 'iphone' && (
                 <div className="mb-2">
@@ -869,7 +936,7 @@ const ListingStudioModal: React.FC<Props> = ({
                   />
                 </div>
               )}
-              {photoSource === 'folder' && (
+              {photoSource === 'folder' && !nativePhoto && (
                 <div className="mb-2">
                   <LocalPhotoFolderPanel
                     maxSelect={6}
@@ -879,11 +946,11 @@ const ListingStudioModal: React.FC<Props> = ({
                 </div>
               )}
 
-              {photos.length === 0 ? (
+              {photos.length === 0 && !(nativePhoto && photoSource === 'none') ? (
                 <div className="h-20 rounded-xl border border-dashed border-slate-300 flex items-center justify-center text-[10px] font-bold text-slate-400">
                   No photos yet
                 </div>
-              ) : (
+              ) : photos.length === 0 ? null : (
                 <ReorderablePhotoThumbs
                   urls={photos}
                   layout="row"

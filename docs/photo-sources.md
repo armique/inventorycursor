@@ -1,10 +1,18 @@
 # Photo sources (iPhone + local iCloud folder)
 
-There is **no public iCloud Photos API** for web apps, so DeInventory uses two practical bridges:
+There is **no public iCloud Photos API** for web apps, so DeInventory uses practical bridges.
 
-## 1. From iPhone (primary)
+## 0. On the phone itself (when the app is open on mobile)
 
-In **Listing Studio → Photos → iPhone**:
+In **Listing Studio**, **Add photos**, and **Add item**:
+
+1. **Camera** opens the rear camera (`capture=environment`).
+2. **Library** opens the device photo picker (multi-select).
+3. QR “Other phone” stays available if you need a second device.
+
+## 1. From iPhone to PC (desktop primary)
+
+In **Listing Studio → Photos → iPhone** (desktop):
 
 1. PC shows a QR code + short link (`/upload/:token`).
 2. Scan with iPhone Camera → mobile upload page.

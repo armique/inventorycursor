@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Camera, CheckCircle2, Loader2, Search, ShoppingBag, Upload, X, Link2, Images } from 'lucide-react';
+import { prefersNativePhotoCapture } from '../utils/deviceUi';
 import {
   filesToDataUrls,
   fetchImgurAlbumImageUrls,
@@ -69,6 +70,9 @@ const AddPhotosModal: React.FC<Props> = ({
   const storageOptions = { itemId: storageItemId };
   const canSearch = Boolean(searchName.trim());
   const singleItemMode = itemCount === 1;
+  const nativePhoto = prefersNativePhotoCapture();
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const libraryInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -294,11 +298,17 @@ const AddPhotosModal: React.FC<Props> = ({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[210] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4"
+      className={`fixed inset-0 z-[210] flex bg-slate-900/50 backdrop-blur-sm ${
+        nativePhoto ? 'items-end sm:items-center justify-center p-0 sm:p-4' : 'items-center justify-center p-4'
+      }`}
       onClick={() => !loading && onClose()}
     >
       <div
-        className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[min(92vh,720px)]"
+        className={`bg-white w-full max-w-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col ${
+          nativePhoto
+            ? 'rounded-t-2xl sm:rounded-2xl max-h-[min(92dvh,720px)] pb-safe'
+            : 'rounded-2xl max-h-[min(92vh,720px)]'
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-2 bg-slate-50/80 shrink-0">
@@ -324,6 +334,52 @@ const AddPhotosModal: React.FC<Props> = ({
         </div>
 
         <div className="p-4 space-y-4 overflow-y-auto flex-1 min-h-0">
+          {nativePhoto && (
+            <div className="space-y-2">
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                From this phone
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => cameraInputRef.current?.click()}
+                  className="flex flex-col items-center justify-center gap-1.5 py-4 rounded-xl border-2 border-dashed border-rose-300 bg-rose-50/60 text-rose-800 disabled:opacity-50"
+                >
+                  <Camera size={20} />
+                  <span className="text-[11px] font-black uppercase">Camera</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => libraryInputRef.current?.click()}
+                  className="flex flex-col items-center justify-center gap-1.5 py-4 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 text-slate-700 disabled:opacity-50"
+                >
+                  <Upload size={20} />
+                  <span className="text-[11px] font-black uppercase">Library</span>
+                </button>
+              </div>
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={handleUpload}
+                disabled={loading}
+              />
+              <input
+                ref={libraryInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={handleUpload}
+                disabled={loading}
+              />
+            </div>
+          )}
+
           {/* Fetch from web — same as item editor */}
           <div className="space-y-2 rounded-xl border border-blue-100 bg-blue-50/40 p-3">
             <p className="text-[10px] font-black uppercase tracking-wider text-blue-800">Fetch photos</p>
@@ -530,20 +586,27 @@ const AddPhotosModal: React.FC<Props> = ({
             )}
           </div>
 
-          <div className="space-y-2">
-            <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-              <Upload size={12} /> Upload from device
-            </label>
-            <label className="flex items-center justify-center gap-2 w-full py-3 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 text-xs font-bold text-slate-600 cursor-pointer hover:border-blue-300 hover:bg-blue-50/50 transition-colors">
-              <Camera size={16} className="text-slate-400" />
-              Choose images
-              <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} disabled={loading} />
-            </label>
+          {!nativePhoto && (
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                <Upload size={12} /> Upload from device
+              </label>
+              <label className="flex items-center justify-center gap-2 w-full py-3 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 text-xs font-bold text-slate-600 cursor-pointer hover:border-blue-300 hover:bg-blue-50/50 transition-colors">
+                <Camera size={16} className="text-slate-400" />
+                Choose images
+                <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} disabled={loading} />
+              </label>
+              <p className="text-[10px] text-slate-400 font-medium leading-snug">
+                iPhone HEIC photos are converted to JPEG automatically. iCloud files with a cloud icon must
+                finish downloading first (right-click → Always keep on this device).
+              </p>
+            </div>
+          )}
+          {nativePhoto && (
             <p className="text-[10px] text-slate-400 font-medium leading-snug">
-              iPhone HEIC photos are converted to JPEG automatically. iCloud files with a cloud icon must
-              finish downloading first (right-click → Always keep on this device).
+              HEIC photos convert to JPEG automatically. Prefer Library for multiple shots at once.
             </p>
-          </div>
+          )}
 
           <div className="space-y-2">
             <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
