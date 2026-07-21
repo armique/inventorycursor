@@ -2,6 +2,7 @@ import type { InventoryItem } from '../types';
 import { getEssentialSpecFieldKeys } from '../services/essentialSpecFields';
 import { orderedSpecKeys } from '../components/storefront/storefrontUtils';
 import { formatEUR } from './formatMoney';
+import { sanitizeProductCardSpecs } from './productCardSpecSanity';
 
 export type ProductCardFamily = 'pc' | '3d' | 'generic';
 
@@ -68,9 +69,13 @@ export function getProductCardSpecs(
     const raw = specs[key];
     if (raw == null || String(raw).trim() === '') continue;
     lines.push({ label: key, value: String(raw).trim() });
-    if (lines.length >= max) break;
+    if (lines.length >= max * 2) break; // gather extra then sanitize down
   }
-  return lines;
+  return sanitizeProductCardSpecs(lines, {
+    name: item.name,
+    category: item.category,
+    subCategory: item.subCategory,
+  }).slice(0, max);
 }
 
 export function getProductCardPrice(item: InventoryItem): { label: string; value: string; hasPrice: boolean } {
