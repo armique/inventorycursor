@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Database, HardDrive, Loader2, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronUp, Database, HardDrive, Loader2, RefreshCw } from 'lucide-react';
 import type { InventoryItem } from '../types';
 import { collectFirestoreFreeQuotaSnapshot } from '../services/firestoreQuotaService';
 import {
@@ -8,6 +8,8 @@ import {
   type FirestoreFreeQuotaSnapshot,
   type QuotaMeter,
 } from '../utils/firestoreFreeQuota';
+
+const COLLAPSED_KEY = 'firestore_quota_widget_expanded_v1';
 
 function MeterBar({ meter, tone }: { meter: QuotaMeter; tone: 'emerald' | 'sky' | 'amber' }) {
   const fill =
@@ -27,6 +29,15 @@ function MeterBar({ meter, tone }: { meter: QuotaMeter; tone: 'emerald' | 'sky' 
   );
 }
 
+function friendlyMonitoringHint(raw?: string | null): string | null {
+  if (!raw) return null;
+  const t = raw.toLowerCase();
+  if (t.includes('google_service_account') || t.includes('monitoring viewer') || t.includes('not configured')) {
+    return 'Live daily reads/writes need Monitoring setup on the server. Storage & doc size still work.';
+  }
+  return raw.length > 120 ? `${raw.slice(0, 117)}…` : raw;
+}
+
 type Props = {
   items?: InventoryItem[];
   /** Slightly narrower panel when inventory list needs the corner. */
@@ -37,6 +48,22 @@ const FirestoreQuotaWidget: React.FC<Props> = ({ items = [], compact }) => {
   const [snap, setSnap] = useState<FirestoreFreeQuotaSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(() => {
+    try {
+      return localStorage.getItem(COLLAPSED_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+
+  const setExpandedPersist = (next: boolean) => {
+    setExpanded(next);
+    try {
+      localStorage.setItem(COLLAPSED_KEY, next ? '1' : '0');
+    } catch {
+      /* ignore */
+    }
+  };
 
   const refresh = useCallback(
     async (force = false) => {
@@ -67,12 +94,8 @@ const FirestoreQuotaWidget: React.FC<Props> = ({ items = [], compact }) => {
 
   if (!snap && loading) {
     return (
-      <div
-        className={`inline-flex items-center gap-2 rounded-xl bg-white/95 border border-slate-200 shadow-lg text-xs font-bold text-slate-500 ${
-          compact ? 'px-3 py-2 w-[16rem]' : 'px-3.5 py-2.5 w-[18rem]'
-        }`}
-      >
-        <Loader2 size={14} className="animate-spin" /> Loading free quota…
+      <div className="inline-flex items-center gap-2 rounded-full bg-white/95 border border-slate-200 shadow-lg px-3 py-2 text-xs font-bold text-slate-500">
+        <Loader2 size={14} className="animate-spin" /> Quota…
       </div>
     );
   }
@@ -81,21 +104,48 @@ const FirestoreQuotaWidget: React.FC<Props> = ({ items = [], compact }) => {
 
   const fs = snap.firestore.stored;
   const st = snap.storage.stored;
+  const monitoringHint = friendlyMonitoringHint(snap.monitoring?.error);
+
+  // Collapsed chip — does not cover Flip Coach / page content
+  if (!expanded) {
+    return (
+      <button
+        type="button"
+        onClick={() => setExpandedPersist(true)}
+        className="inline-flex items-center gap-2 rounded-full bg-white/95 border border-slate-200 shadow-lg px-3 py-2 text-[11px] font-bold text-slate-700 hover:bg-slate-50 max-w-[14rem]"
+        title="Show Spark free-tier usage"
+      >
+        <Database size={13} className="text-emerald-600 shrink-0" />
+        <span className="truncate">
+          Docs {Math.round(fs.pctFree)}% · Photos {Math.round(st.pctFree)}%
+        </span>
+        <ChevronUp size={13} className="text-slate-400 shrink-0" />
+      </button>
+    );
+  }
 
   return (
     <div
-      className={`rounded-xl bg-white/95 border border-slate-200 shadow-lg ${
-        compact ? 'w-[16rem] p-3' : 'w-[18rem] p-3.5'
+      className={`rounded-xl bg-white/95 border border-slate-200 shadow-lg max-h-[min(70vh,28rem)] overflow-y-auto ${
+        compact ? 'w-[15rem] p-3' : 'w-[17rem] p-3.5'
       }`}
       title="Free-tier usage — photos are Firebase Storage (5 GB), not the 1 GiB Firestore docs quota"
     >
       <div className="flex items-start justify-between gap-2 mb-3">
-        <div className="min-w-0">
-          <p className="text-xs font-black uppercase tracking-widest text-slate-800">Spark free tier</p>
+        <button
+          type="button"
+          onClick={() => setExpandedPersist(false)}
+          className="min-w-0 text-left group"
+          title="Collapse"
+        >
+          <p className="text-xs font-black uppercase tracking-widest text-slate-800 inline-flex items-center gap-1">
+            Spark free tier
+            <ChevronDown size={13} className="text-slate-400 group-hover:text-slate-600" />
+          </p>
           <p className="text-[11px] text-slate-400 font-medium mt-0.5 truncate" title={snap.projectId}>
             {snap.projectId}
           </p>
-        </div>
+        </button>
         <button
           type="button"
           onClick={() => void refresh(true)}
@@ -170,9 +220,9 @@ const FirestoreQuotaWidget: React.FC<Props> = ({ items = [], compact }) => {
           ))}
         </div>
 
-        {snap.monitoring?.error && !snap.monitoring.available && (
-          <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5 leading-snug">
-            Live ops: {snap.monitoring.error}
+        {monitoringHint && !snap.monitoring?.available && (
+          <p className="text-[10px] text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-2 py-1.5 leading-snug">
+            {monitoringHint}
           </p>
         )}
         {error && <p className="text-[11px] text-red-600">{error}</p>}

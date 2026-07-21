@@ -318,12 +318,8 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
           </div>
         )}
         {isCloudEnabled && authUser && (
-          <div className="fixed bottom-3 left-3 z-[100] flex flex-col gap-1.5 items-start pointer-events-none">
-            <div
-              className={`pointer-events-auto ${
-                location.pathname.startsWith('/panel/inventory') ? 'opacity-90' : ''
-              }`}
-            >
+          <div className="fixed bottom-3 left-3 z-[80] flex flex-col gap-1.5 items-start pointer-events-none max-w-[min(18rem,calc(100vw-1.5rem))]">
+            <div className="pointer-events-auto">
               <div className="hidden md:block">
                 <FirestoreQuotaWidget
                   items={items}
@@ -382,7 +378,13 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
               <button type="button" onClick={() => setLocale('de')} className={`px-2 py-1 rounded ${locale === 'de' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>DE</button>
             </div>
           </div>
-          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+          <div
+            className={
+              isDockedPanelPage
+                ? 'flex-1 min-h-0 flex flex-col overflow-hidden'
+                : 'flex flex-col min-w-0'
+            }
+          >
             <Suspense fallback={
               <div className="flex items-center justify-center min-h-[300px] flex-1">
                 <Loader2 size={32} className="animate-spin text-slate-400" />
