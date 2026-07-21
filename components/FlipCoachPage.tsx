@@ -101,8 +101,8 @@ const FlipCoachPage: React.FC<Props> = ({ items }) => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto pb-24 md:pb-8 animate-in fade-in space-y-3">
-      <header className="flex flex-wrap items-center justify-between gap-2">
+    <div className="w-full px-3 sm:px-4 md:px-5 pb-24 md:pb-6 animate-in fade-in space-y-3">
+      <header className="flex flex-wrap items-end justify-between gap-2">
         <div className="min-w-0">
           <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Flip Coach</h1>
           <p className="text-xs text-slate-500">
@@ -117,214 +117,207 @@ const FlipCoachPage: React.FC<Props> = ({ items }) => {
         </Link>
       </header>
 
-      {/* Desktop: left missions + sell queue | right tools. Mobile: stack. */}
-      <div className="grid lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] gap-3 lg:gap-4 lg:items-start">
-        {/* LEFT */}
-        <div className="space-y-3 min-w-0">
-          <section className="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-3 space-y-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-xs font-black uppercase tracking-widest text-amber-900 flex items-center gap-1.5">
-                <Target size={14} /> Daily Mission
-              </h2>
-              <div className="flex flex-wrap gap-1.5 text-[10px] font-black uppercase tracking-wide">
-                <span className="rounded-md bg-white border border-amber-200 px-2 py-0.5 text-amber-900">
-                  Today {missionProgress.completedToday}/{missionProgress.targetToday}
-                </span>
-                <span className="inline-flex items-center gap-1 rounded-md bg-white border border-amber-200 px-2 py-0.5 text-amber-900">
-                  <Trophy size={11} /> {missionProgress.weekCompleted}/{missionProgress.weekTarget}
-                </span>
-                <span className="inline-flex items-center gap-1 rounded-md bg-white border border-amber-200 px-2 py-0.5 text-amber-900">
-                  <Flame size={11} /> {missionProgress.streakDays}d
-                </span>
-              </div>
-            </div>
-
-            {missions.length === 0 ? (
-              <p className="text-xs text-slate-600">No open missions left for today.</p>
-            ) : (
-              <ul className="space-y-2">
-                {missions.map((m, idx) => {
-                  const scripts = getSellScripts(m.preferredChannel);
-                  const buy = Number(m.item.buyPrice) || 0;
-                  return (
-                    <li
-                      key={m.missionId}
-                      className={`rounded-lg border bg-white p-2.5 space-y-2 ${
-                        m.done ? 'border-emerald-200 opacity-75' : 'border-amber-100'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-[9px] font-black uppercase tracking-widest text-amber-700">
-                            #{idx + 1}
-                            {m.action === 'listed' ? ' · listed' : null}
-                            {m.action === 'skipped' ? ' · skipped' : null}
-                          </p>
-                          <p className="text-sm font-black text-slate-900 truncate">{m.item.name}</p>
-                          <p className="text-[10px] text-slate-500 truncate">
-                            €{formatEUR(buy)} · {m.daysHeld}d · {channelLabel(m.preferredChannel)}
-                          </p>
-                        </div>
-                        <div className="text-right shrink-0 leading-tight">
-                          <p className="text-sm font-black text-emerald-700">
-                            K €{formatEUR(m.kleinList)}
-                          </p>
-                          <p className="text-[11px] font-bold text-blue-700">
-                            E €{formatEUR(m.ebayList)}
-                          </p>
-                        </div>
-                      </div>
-
-                      {!m.done ? (
-                        <div className="flex flex-wrap gap-1.5">
-                          <Link
-                            to={`/panel/edit/${m.item.id}`}
-                            className="inline-flex items-center gap-1 rounded-md bg-slate-900 text-white px-2 py-1.5 text-[10px] font-black uppercase tracking-wide hover:bg-slate-800"
-                          >
-                            <ExternalLink size={11} /> Open
-                          </Link>
-                          <button
-                            type="button"
-                            onClick={() => void onCopyPrice(m.item.id, 'klein', m.kleinList)}
-                            className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-900 px-2 py-1.5 text-[10px] font-black uppercase tracking-wide"
-                          >
-                            {copiedKey === `${m.item.id}-klein` ? (
-                              <Check size={11} />
-                            ) : (
-                              <ClipboardCopy size={11} />
-                            )}
-                            Klein
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void onCopyPrice(m.item.id, 'ebay', m.ebayList)}
-                            className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 text-blue-900 px-2 py-1.5 text-[10px] font-black uppercase tracking-wide"
-                          >
-                            {copiedKey === `${m.item.id}-ebay` ? (
-                              <Check size={11} />
-                            ) : (
-                              <ClipboardCopy size={11} />
-                            )}
-                            eBay
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onMarkListed(m.item.id, m.preferredChannel)}
-                            className="inline-flex items-center gap-1 rounded-md bg-amber-500 text-white px-2 py-1.5 text-[10px] font-black uppercase tracking-wide hover:bg-amber-600"
-                          >
-                            <Check size={11} /> Listed
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onSkip(m.item.id)}
-                            className="inline-flex items-center gap-1 rounded-md border border-slate-200 text-slate-600 px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide"
-                          >
-                            <SkipForward size={11} /> Skip
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setScriptOpenId((cur) => (cur === m.missionId ? null : m.missionId))
-                            }
-                            className="inline-flex items-center gap-1 rounded-md border border-slate-200 text-slate-600 px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide"
-                          >
-                            Scripts
-                          </button>
-                        </div>
-                      ) : null}
-
-                      {scriptOpenId === m.missionId ? (
-                        <div className="rounded-md bg-slate-50 border border-slate-100 px-2 py-1.5 space-y-1.5">
-                          {scripts.map((s) => (
-                            <div key={s.id} className="space-y-0.5">
-                              <p className="text-[9px] font-black uppercase text-slate-500">
-                                {s.title}
-                              </p>
-                              <p className="text-[10px] text-slate-700 leading-snug">{s.body}</p>
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  const ok = await copyText(s.body);
-                                  if (ok) flashCopied(`${m.missionId}-${s.id}`);
-                                }}
-                                className="text-[9px] font-black uppercase text-amber-800 hover:underline"
-                              >
-                                {copiedKey === `${m.missionId}-${s.id}` ? 'Copied' : 'Copy'}
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </section>
-
-          <section className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
-            <h2 className="text-[11px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
-              <Zap size={13} className="text-amber-500" /> Sell these next
-            </h2>
-            {sellNow.length === 0 ? (
-              <p className="text-xs text-slate-500">No in-stock items to rank yet.</p>
-            ) : (
-              <div className="space-y-1.5 max-h-[min(52vh,28rem)] overflow-y-auto overscroll-contain pr-0.5">
-                {sellNow.map((row) => (
-                  <div
-                    key={row.item.id}
-                    className="p-2 rounded-lg border border-slate-100 bg-slate-50/80 space-y-1.5"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-xs font-black text-slate-900 truncate">{row.item.name}</p>
-                        <p className="text-[10px] text-slate-500">
-                          Buy €{formatEUR(row.item.buyPrice || 0)} · {row.daysHeld}d
-                          {row.compCount ? ` · ${row.compCount} comps` : ''}
-                        </p>
-                      </div>
-                      <Link
-                        to={`/panel/edit/${row.item.id}`}
-                        className="shrink-0 inline-flex items-center gap-0.5 text-[9px] font-black uppercase text-blue-700"
-                      >
-                        Open <ArrowRight size={10} />
-                      </Link>
-                    </div>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      <div className="rounded-md bg-emerald-50 border border-emerald-100 px-2 py-1">
-                        <p className="text-[8px] font-black uppercase text-emerald-700">Klein</p>
-                        <p className="text-xs font-black text-emerald-900">
-                          €{formatEUR(row.kleinList)}
-                        </p>
-                      </div>
-                      <div className="rounded-md bg-blue-50 border border-blue-100 px-2 py-1">
-                        <p className="text-[8px] font-black uppercase text-blue-700">eBay</p>
-                        <p className="text-xs font-black text-blue-900">€{formatEUR(row.ebayList)}</p>
-                      </div>
-                    </div>
-                    <p className="text-[10px] text-slate-600 flex items-start gap-1">
-                      <ShoppingBag size={10} className="mt-0.5 shrink-0 text-slate-400" />
-                      <span className="line-clamp-2">
-                        <strong>
-                          {row.preferredChannel === 'kleinanzeigen.de'
-                            ? 'Klein'
-                            : row.preferredChannel === 'ebay.de'
-                              ? 'eBay'
-                              : 'Either'}
-                        </strong>
-                        {' — '}
-                        {row.reason}
-                      </span>
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
+      {/* Missions: full width, 3 across on desktop */}
+      <section className="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-3 space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-xs font-black uppercase tracking-widest text-amber-900 flex items-center gap-1.5">
+            <Target size={14} /> Daily Mission
+          </h2>
+          <div className="flex flex-wrap gap-1.5 text-[10px] font-black uppercase tracking-wide">
+            <span className="rounded-md bg-white border border-amber-200 px-2 py-0.5 text-amber-900">
+              Today {missionProgress.completedToday}/{missionProgress.targetToday}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-md bg-white border border-amber-200 px-2 py-0.5 text-amber-900">
+              <Trophy size={11} /> {missionProgress.weekCompleted}/{missionProgress.weekTarget}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-md bg-white border border-amber-200 px-2 py-0.5 text-amber-900">
+              <Flame size={11} /> {missionProgress.streakDays}d
+            </span>
+          </div>
         </div>
 
-        {/* RIGHT */}
-        <div className="space-y-3 min-w-0 lg:sticky lg:top-2">
+        {missions.length === 0 ? (
+          <p className="text-xs text-slate-600">No open missions left for today.</p>
+        ) : (
+          <ul className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            {missions.map((m, idx) => {
+              const scripts = getSellScripts(m.preferredChannel);
+              const buy = Number(m.item.buyPrice) || 0;
+              return (
+                <li
+                  key={m.missionId}
+                  className={`rounded-lg border bg-white p-2.5 space-y-2 min-w-0 ${
+                    m.done ? 'border-emerald-200 opacity-75' : 'border-amber-100'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-amber-700">
+                        #{idx + 1}
+                        {m.action === 'listed' ? ' · listed' : null}
+                        {m.action === 'skipped' ? ' · skipped' : null}
+                      </p>
+                      <p className="text-sm font-black text-slate-900 line-clamp-2">{m.item.name}</p>
+                      <p className="text-[10px] text-slate-500 truncate">
+                        €{formatEUR(buy)} · {m.daysHeld}d · {channelLabel(m.preferredChannel)}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0 leading-tight">
+                      <p className="text-sm font-black text-emerald-700">
+                        K €{formatEUR(m.kleinList)}
+                      </p>
+                      <p className="text-[11px] font-bold text-blue-700">
+                        E €{formatEUR(m.ebayList)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {!m.done ? (
+                    <div className="flex flex-wrap gap-1">
+                      <Link
+                        to={`/panel/edit/${m.item.id}`}
+                        className="inline-flex items-center gap-1 rounded-md bg-slate-900 text-white px-2 py-1 text-[10px] font-black uppercase tracking-wide hover:bg-slate-800"
+                      >
+                        <ExternalLink size={11} /> Open
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => void onCopyPrice(m.item.id, 'klein', m.kleinList)}
+                        className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-900 px-2 py-1 text-[10px] font-black uppercase tracking-wide"
+                      >
+                        {copiedKey === `${m.item.id}-klein` ? (
+                          <Check size={11} />
+                        ) : (
+                          <ClipboardCopy size={11} />
+                        )}
+                        Klein
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void onCopyPrice(m.item.id, 'ebay', m.ebayList)}
+                        className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 text-blue-900 px-2 py-1 text-[10px] font-black uppercase tracking-wide"
+                      >
+                        {copiedKey === `${m.item.id}-ebay` ? (
+                          <Check size={11} />
+                        ) : (
+                          <ClipboardCopy size={11} />
+                        )}
+                        eBay
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onMarkListed(m.item.id, m.preferredChannel)}
+                        className="inline-flex items-center gap-1 rounded-md bg-amber-500 text-white px-2 py-1 text-[10px] font-black uppercase tracking-wide hover:bg-amber-600"
+                      >
+                        <Check size={11} /> Listed
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onSkip(m.item.id)}
+                        className="inline-flex items-center gap-1 rounded-md border border-slate-200 text-slate-600 px-2 py-1 text-[10px] font-bold uppercase tracking-wide"
+                      >
+                        <SkipForward size={11} /> Skip
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setScriptOpenId((cur) => (cur === m.missionId ? null : m.missionId))
+                        }
+                        className="inline-flex items-center gap-1 rounded-md border border-slate-200 text-slate-600 px-2 py-1 text-[10px] font-bold uppercase tracking-wide"
+                      >
+                        Scripts
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {scriptOpenId === m.missionId ? (
+                    <div className="rounded-md bg-slate-50 border border-slate-100 px-2 py-1.5 space-y-1.5">
+                      {scripts.map((s) => (
+                        <div key={s.id} className="space-y-0.5">
+                          <p className="text-[9px] font-black uppercase text-slate-500">{s.title}</p>
+                          <p className="text-[10px] text-slate-700 leading-snug">{s.body}</p>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const ok = await copyText(s.body);
+                              if (ok) flashCopied(`${m.missionId}-${s.id}`);
+                            }}
+                            className="text-[9px] font-black uppercase text-amber-800 hover:underline"
+                          >
+                            {copiedKey === `${m.missionId}-${s.id}` ? 'Copied' : 'Copy'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      {/* Bottom: sell queue fills remaining width | tools rail */}
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(17rem,22rem)] xl:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)] gap-3 items-start">
+        <section className="rounded-xl border border-slate-200 bg-white p-3 space-y-2 min-w-0">
+          <h2 className="text-[11px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+            <Zap size={13} className="text-amber-500" /> Sell these next
+          </h2>
+          {sellNow.length === 0 ? (
+            <p className="text-xs text-slate-500">No in-stock items to rank yet.</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-2 max-h-[min(58vh,34rem)] overflow-y-auto overscroll-contain pr-0.5">
+              {sellNow.map((row) => (
+                <div
+                  key={row.item.id}
+                  className="p-2 rounded-lg border border-slate-100 bg-slate-50/80 space-y-1.5 min-w-0"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-xs font-black text-slate-900 line-clamp-2">{row.item.name}</p>
+                      <p className="text-[10px] text-slate-500">
+                        Buy €{formatEUR(row.item.buyPrice || 0)} · {row.daysHeld}d
+                        {row.compCount ? ` · ${row.compCount} comps` : ''}
+                      </p>
+                    </div>
+                    <Link
+                      to={`/panel/edit/${row.item.id}`}
+                      className="shrink-0 inline-flex items-center gap-0.5 text-[9px] font-black uppercase text-blue-700"
+                    >
+                      Open <ArrowRight size={10} />
+                    </Link>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <div className="rounded-md bg-emerald-50 border border-emerald-100 px-2 py-1">
+                      <p className="text-[8px] font-black uppercase text-emerald-700">Klein</p>
+                      <p className="text-xs font-black text-emerald-900">€{formatEUR(row.kleinList)}</p>
+                    </div>
+                    <div className="rounded-md bg-blue-50 border border-blue-100 px-2 py-1">
+                      <p className="text-[8px] font-black uppercase text-blue-700">eBay</p>
+                      <p className="text-xs font-black text-blue-900">€{formatEUR(row.ebayList)}</p>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-600 flex items-start gap-1">
+                    <ShoppingBag size={10} className="mt-0.5 shrink-0 text-slate-400" />
+                    <span className="line-clamp-2">
+                      <strong>
+                        {row.preferredChannel === 'kleinanzeigen.de'
+                          ? 'Klein'
+                          : row.preferredChannel === 'ebay.de'
+                            ? 'eBay'
+                            : 'Either'}
+                      </strong>
+                      {' — '}
+                      {row.reason}
+                    </span>
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <aside className="space-y-3 min-w-0 lg:sticky lg:top-2">
           <section className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
             <h2 className="text-[11px] font-black uppercase tracking-widest text-slate-400">
               eBay cost %
@@ -427,7 +420,7 @@ const FlipCoachPage: React.FC<Props> = ({ items }) => {
             {buyFocus.length === 0 ? (
               <p className="text-xs text-slate-500">Need more sold history with dates.</p>
             ) : (
-              <div className="space-y-1.5 max-h-[min(36vh,18rem)] overflow-y-auto overscroll-contain">
+              <div className="space-y-1.5 max-h-[min(32vh,16rem)] overflow-y-auto overscroll-contain">
                 {buyFocus.map((row) => (
                   <div
                     key={row.category}
@@ -468,7 +461,7 @@ const FlipCoachPage: React.FC<Props> = ({ items }) => {
               <li>Cut price on stock &gt;45 days.</li>
             </ul>
           </section>
-        </div>
+        </aside>
       </div>
     </div>
   );
