@@ -32,6 +32,52 @@ export type SoldPulseWatchItem = {
 
 export type SoldPulseLinkKind = 'used_bin' | 'used_all' | 'for_parts';
 
+/**
+ * Minus-words baked into working-goods sold searches so results skew to
+ * standalone, non-faulty parts (Defekt / bundles / PCs filtered in the query).
+ */
+export const SOLD_PULSE_WORKING_EXCLUDES: readonly string[] = [
+  'defekt',
+  'bastler',
+  'defective',
+  'kaputt',
+  'fürteile',
+  'fuerteile',
+  'ersatzteil',
+  'forparts',
+  'for parts',
+  'bundle',
+  'komplettsystem',
+  'gamingpc',
+  'gaming pc',
+  'allinone',
+  'all in one',
+  'mining',
+  'schrott',
+];
+
+function excludeToken(word: string): string {
+  return /\s/.test(word) ? `-"${word}"` : `-${word}`;
+}
+
+/** Query text for eBay: user terms + working-goods excludes (unless for_parts). */
+export function buildSoldPulseSearchQuery(
+  query: string,
+  kind: SoldPulseLinkKind = 'used_bin'
+): string {
+  const base = query.trim().replace(/\s+/g, ' ');
+  if (!base) return '';
+  if (kind === 'for_parts') return base;
+
+  const lower = base.toLowerCase();
+  const extras = SOLD_PULSE_WORKING_EXCLUDES.filter((w) => {
+    const token = excludeToken(w).toLowerCase();
+    return !lower.includes(token) && !lower.includes(`-${w.toLowerCase()}`);
+  }).map(excludeToken);
+
+  return extras.length ? `${base} ${extras.join(' ')}` : base;
+}
+
 /** Starter PC-part queries — edit/delete freely in the UI. */
 export const DEFAULT_SOLD_PULSE_PRESETS: Array<Pick<SoldPulseWatchItem, 'query' | 'category'>> = [
   { query: 'RTX 3060 12GB', category: 'GPU' },
@@ -48,7 +94,7 @@ export const DEFAULT_SOLD_PULSE_PRESETS: Array<Pick<SoldPulseWatchItem, 'query' 
 ];
 
 export function buildEbaySoldUrl(query: string, kind: SoldPulseLinkKind = 'used_bin'): string {
-  const q = query.trim();
+  const q = buildSoldPulseSearchQuery(query, kind);
   const params = new URLSearchParams();
   params.set('_nkw', q);
   params.set('LH_Sold', '1');

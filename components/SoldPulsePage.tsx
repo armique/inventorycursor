@@ -155,10 +155,15 @@ const SoldPulsePage: React.FC<Props> = ({ items }) => {
           <CircleHelp size={16} /> How to use (2 minutes)
         </h2>
         <ol className="text-sm text-slate-700 space-y-1 list-decimal pl-5 leading-relaxed">
-          <li>Tap a part → open <strong>Used + Buy It Now</strong> sold link.</li>
-          <li>Ignore Defekt, wrong models, crazy cheap auctions.</li>
-          <li>Type low / median / high (or paste sold rows and let AI/local math help).</li>
-          <li>Save → next week you see what’s stale to re-check.</li>
+          <li>
+            Tap a part → open <strong>Used + Buy It Now</strong> (already excludes Defekt / Bastler /
+            bundles / PCs in the search).
+          </li>
+          <li>
+            Still skim titles for wrong models — then paste a few sold rows here and tap{' '}
+            <strong>Read paste</strong> (AI cleans junk; it cannot open eBay for you).
+          </li>
+          <li>Save low / median / high → next week re-check what’s stale.</li>
         </ol>
       </section>
 
@@ -309,7 +314,7 @@ const SoldPulsePage: React.FC<Props> = ({ items }) => {
                   rel="noreferrer"
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase"
                 >
-                  <ExternalLink size={12} /> Used + Buy It Now
+                  <ExternalLink size={12} /> Used + Buy It Now (clean)
                 </a>
                 <a
                   href={buildEbaySoldUrl(active.query, 'used_all')}
@@ -317,7 +322,7 @@ const SoldPulsePage: React.FC<Props> = ({ items }) => {
                   rel="noreferrer"
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-700 text-[10px] font-black uppercase"
                 >
-                  Used (incl. auctions)
+                  Used + auctions (clean)
                 </a>
                 <a
                   href={buildEbaySoldUrl(active.query, 'for_parts')}
@@ -328,9 +333,14 @@ const SoldPulsePage: React.FC<Props> = ({ items }) => {
                   For parts / Defekt
                 </a>
               </div>
-              <p className="text-[11px] text-slate-500">
-                Prefer <strong>Used + Buy It Now</strong> for normal working parts. Use Defekt link only if you
-                flip broken gear.
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Clean links auto-add <strong>-defekt -bastler -bundle -gamingpc</strong> (and similar). Defekt
+                link does <em>not</em> — use it only for scrap value.
+              </p>
+              <p className="text-[11px] text-slate-500 leading-relaxed bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
+                <strong>One-click AI of live eBay?</strong> No — the browser can’t scrape eBay sold pages.
+                Flow is: open clean link → select sold rows → paste → <strong>Read paste</strong> (one click
+                after paste). AI only reads what you paste; it never invents prices.
               </p>
 
               <div className="grid grid-cols-3 gap-2">

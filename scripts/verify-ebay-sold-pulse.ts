@@ -5,9 +5,21 @@
 import assert from 'node:assert/strict';
 import {
   buildEbaySoldUrl,
+  buildSoldPulseSearchQuery,
   extractPricesFromPaste,
   summarizePriceList,
 } from '../utils/ebaySoldPulse';
+
+const cleaned = buildSoldPulseSearchQuery('RTX 3060 12GB', 'used_bin');
+assert.ok(cleaned.startsWith('RTX 3060 12GB'));
+assert.ok(cleaned.includes('-defekt'));
+assert.ok(cleaned.includes('-bastler'));
+assert.ok(cleaned.includes('-bundle'));
+assert.ok(cleaned.includes('-"for parts"') || cleaned.includes('-forparts'));
+
+const partsQuery = buildSoldPulseSearchQuery('RTX 3060', 'for_parts');
+assert.equal(partsQuery, 'RTX 3060');
+assert.ok(!partsQuery.includes('-defekt'));
 
 const bin = buildEbaySoldUrl('RTX 3060 12GB', 'used_bin');
 assert.ok(bin.includes('ebay.de/sch'));
@@ -15,10 +27,12 @@ assert.ok(bin.includes('LH_Sold=1'));
 assert.ok(bin.includes('LH_Complete=1'));
 assert.ok(bin.includes('LH_BIN=1'));
 assert.ok(bin.includes('LH_ItemCondition=3000'));
+assert.ok(bin.includes(encodeURIComponent('-defekt')) || bin.includes('-defekt'));
 
 const parts = buildEbaySoldUrl('RTX 3060', 'for_parts');
 assert.ok(parts.includes('LH_ItemCondition=7000'));
 assert.ok(!parts.includes('LH_BIN=1'));
+assert.ok(!decodeURIComponent(parts).includes('-defekt'));
 
 const prices = extractPricesFromPaste('ASUS Dual RTX 3060 12GB 189,00 € · MSI 175€ · EUR 210.50');
 assert.deepEqual(prices, [189, 175, 210.5]);
