@@ -1,13 +1,19 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight,
   Activity,
+  Check,
   CircleHelp,
+  ClipboardCopy,
+  ExternalLink,
+  Flame,
   Lightbulb,
   ShoppingBag,
+  SkipForward,
   Target,
   TrendingUp,
+  Trophy,
   Zap,
 } from 'lucide-react';
 import type { InventoryItem } from '../types';
@@ -24,6 +30,16 @@ import {
   totalEbayFeePct,
   type FlipFeeSettings,
 } from '../utils/flipCoach';
+import {
+  buildDailyMissions,
+  channelLabel,
+  copyText,
+  getMissionProgress,
+  getSellScripts,
+  loadMissionLog,
+  recordMissionAction,
+  type MissionLogEntry,
+} from '../utils/flipCoachMissions';
 
 interface Props {
   items: InventoryItem[];
@@ -37,11 +53,23 @@ const FlipCoachPage: React.FC<Props> = ({ items }) => {
   const [fees, setFees] = useState<FlipFeeSettings>(() => loadFlipFees());
   const [lookupName, setLookupName] = useState('');
   const [minProfit, setMinProfit] = useState(30);
+  const [missionLog, setMissionLog] = useState<MissionLogEntry[]>([]);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [scriptOpenId, setScriptOpenId] = useState<string | null>(null);
 
   const feePct = totalEbayFeePct(fees);
 
   const buyFocus = useMemo(() => computeBuyFocus(items, 10), [items]);
   const sellNow = useMemo(() => buildSellNowQueue(items, fees, 15), [items, fees]);
+  const missions = useMemo(
+    () => buildDailyMissions(items, fees, missionLog, 3),
+    [items, fees, missionLog]
+  );
+  const missionProgress = useMemo(() => getMissionProgress(missionLog, 3), [missionLog]);
+
+  useEffect(() => {
+    setMissionLog(loadMissionLog());
+  }, []);
 
   const lookup = useMemo(() => {
     if (lookupName.trim().length < 3) return null;
@@ -59,6 +87,28 @@ const FlipCoachPage: React.FC<Props> = ({ items }) => {
 
   const example = listPricesForPocket(100, feePct);
 
+  const flashCopied = (key: string) => {
+    setCopiedKey(key);
+    window.setTimeout(() => setCopiedKey((cur) => (cur === key ? null : cur)), 1600);
+  };
+
+  const onCopyPrice = async (
+    itemId: string,
+    channel: 'klein' | 'ebay',
+    price: number
+  ) => {
+    const ok = await copyText(String(Math.round(price)));
+    if (ok) flashCopied(`${itemId}-${channel}`);
+  };
+
+  const onMarkListed = (itemId: string, preferred: string) => {
+    setMissionLog(recordMissionAction(itemId, 'listed', preferred));
+  };
+
+  const onSkip = (itemId: string) => {
+    setMissionLog(recordMissionAction(itemId, 'skipped'));
+  };
+
   return (
     <div className="max-w-5xl mx-auto space-y-5 pb-24 md:pb-10 animate-in fade-in">
       <header className="space-y-2">
@@ -75,6 +125,161 @@ const FlipCoachPage: React.FC<Props> = ({ items }) => {
           <Activity size={14} /> Check eBay sold market (Sold Pulse)
         </Link>
       </header>
+
+      {/* Daily Mission */}
+      <section className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-4 sm:p-5 space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-black uppercase tracking-widest text-amber-900 flex items-center gap-2">
+              <Target size={16} /> Daily Mission
+            </h2>
+            <p className="text-xs text-slate-600 mt-1 max-w-xl leading-relaxed">
+              Top 3 sell actions today. One tap: open item · copy price · mark listed.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-[11px] font-black uppercase tracking-wide">
+            <span className="inline-flex items-center gap-1 rounded-full bg-white border border-amber-200 px-2.5 py-1 text-amber-900">
+              Today {missionProgress.completedToday}/{missionProgress.targetToday}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-white border border-amber-200 px-2.5 py-1 text-amber-900">
+              <Trophy size={12} /> Week {missionProgress.weekCompleted}/{missionProgress.weekTarget}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-white border border-amber-200 px-2.5 py-1 text-amber-900">
+              <Flame size={12} /> {missionProgress.streakDays}d streak
+            </span>
+          </div>
+        </div>
+
+        {missions.length === 0 ? (
+          <p className="text-sm text-slate-600">
+            No open stock to list — or you already cleared today’s three. Nice.
+          </p>
+        ) : (
+          <ul className="space-y-3">
+            {missions.map((m, idx) => {
+              const scripts = getSellScripts(m.preferredChannel);
+              const buy = Number(m.item.buyPrice) || 0;
+              return (
+                <li
+                  key={m.missionId}
+                  className={`rounded-xl border bg-white p-3 sm:p-4 space-y-3 ${
+                    m.done ? 'border-emerald-200 opacity-80' : 'border-amber-100'
+                  }`}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">
+                        Mission {idx + 1}
+                        {m.action === 'listed' ? ' · listed' : null}
+                        {m.action === 'skipped' ? ' · skipped' : null}
+                      </p>
+                      <p className="text-sm font-black text-slate-900 truncate">{m.item.name}</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Cost €{formatEUR(buy)} · held {m.daysHeld}d · prefer{' '}
+                        {channelLabel(m.preferredChannel)} · {m.reason}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0 space-y-0.5">
+                      <p className="text-sm font-black text-emerald-700">
+                        Klein €{formatEUR(m.kleinList)}
+                      </p>
+                      <p className="text-xs font-bold text-blue-700">
+                        eBay €{formatEUR(m.ebayList)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {!m.done ? (
+                    <div className="flex flex-wrap gap-2">
+                      <Link
+                        to={`/panel/edit/${m.item.id}`}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 text-white px-3 py-2 text-xs font-black uppercase tracking-wide hover:bg-slate-800"
+                      >
+                        <ExternalLink size={13} /> Open
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => void onCopyPrice(m.item.id, 'klein', m.kleinList)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-900 px-3 py-2 text-xs font-black uppercase tracking-wide hover:bg-emerald-100"
+                      >
+                        {copiedKey === `${m.item.id}-klein` ? (
+                          <Check size={13} />
+                        ) : (
+                          <ClipboardCopy size={13} />
+                        )}
+                        Copy Klein
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void onCopyPrice(m.item.id, 'ebay', m.ebayList)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 text-blue-900 px-3 py-2 text-xs font-black uppercase tracking-wide hover:bg-blue-100"
+                      >
+                        {copiedKey === `${m.item.id}-ebay` ? (
+                          <Check size={13} />
+                        ) : (
+                          <ClipboardCopy size={13} />
+                        )}
+                        Copy eBay
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onMarkListed(m.item.id, m.preferredChannel)}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 text-white px-3 py-2 text-xs font-black uppercase tracking-wide hover:bg-amber-600"
+                      >
+                        <Check size={13} /> Mark listed
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onSkip(m.item.id)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 text-slate-600 px-3 py-2 text-xs font-bold uppercase tracking-wide hover:bg-slate-50"
+                      >
+                        <SkipForward size={13} /> Skip
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setScriptOpenId((cur) => (cur === m.missionId ? null : m.missionId))
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 text-slate-600 px-3 py-2 text-xs font-bold uppercase tracking-wide hover:bg-slate-50"
+                      >
+                        Scripts
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {scriptOpenId === m.missionId ? (
+                    <div className="rounded-lg bg-slate-50 border border-slate-100 px-3 py-2 space-y-2">
+                      {scripts.map((s) => (
+                        <div key={s.id} className="space-y-0.5">
+                          <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">
+                            {s.title}
+                          </p>
+                          <p className="text-[11px] text-slate-700 leading-relaxed">{s.body}</p>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const ok = await copyText(s.body);
+                              if (ok) flashCopied(`${m.missionId}-${s.id}`);
+                            }}
+                            className="text-[10px] font-black uppercase text-amber-800 hover:underline"
+                          >
+                            {copiedKey === `${m.missionId}-${s.id}` ? 'Copied' : 'Copy'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        <p className="text-[10px] text-slate-500 leading-relaxed">
+          Progress stays on this device (local). Mark listed when the ad is live — week score = listed
+          this Mon–Sun.
+        </p>
+      </section>
 
       {/* What is a sold comp? */}
       <section className="rounded-2xl border border-sky-100 bg-sky-50/60 p-4 sm:p-5 space-y-2">
