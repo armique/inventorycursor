@@ -99,8 +99,10 @@ export function buildEbaySoldUrl(query: string, kind: SoldPulseLinkKind = 'used_
   params.set('_nkw', q);
   params.set('LH_Sold', '1');
   params.set('LH_Complete', '1');
-  // Newest sold first
+  // Newest sold first — scroll for ~last month of sales
   params.set('_sop', '13');
+  // More rows per page so you can copy a full month sample, not 2–3
+  params.set('_ipg', '240');
 
   if (kind === 'for_parts') {
     // 7000 = for parts / not working

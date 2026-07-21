@@ -17,6 +17,7 @@ import { computeBuyFocus } from '../utils/flipCoach';
 import {
   buildEbaySoldUrl,
   daysSince,
+  extractPricesFromPaste,
   markSoldPulseChecked,
   removeSoldPulseItem,
   seedSoldPulsePresetsIfEmpty,
@@ -72,6 +73,7 @@ const SoldPulsePage: React.FC<Props> = ({ items }) => {
   }, [watchlist, filterCat]);
 
   const active = watchlist.find((x) => x.id === activeId) || null;
+  const pastePriceCount = useMemo(() => extractPricesFromPaste(paste).length, [paste]);
 
   const openItem = (item: SoldPulseWatchItem) => {
     setActiveId(item.id);
@@ -156,15 +158,19 @@ const SoldPulsePage: React.FC<Props> = ({ items }) => {
         </h2>
         <ol className="text-sm text-slate-700 space-y-1 list-decimal pl-5 leading-relaxed">
           <li>
-            Tap a part → open <strong>Used + Buy It Now</strong> (already excludes Defekt / Bastler /
-            bundles / PCs in the search).
+            Open <strong>Used + Buy It Now (clean)</strong> — 240 results/page, newest sold first, Defekt/bundles
+            excluded.
           </li>
           <li>
-            Still skim titles for wrong models — then paste a few sold rows here and tap{' '}
-            <strong>Read paste</strong> (AI cleans junk; it cannot open eBay for you).
+            Scroll about <strong>one month</strong> of “Verkauft …” dates. Select a big block of titles + prices
+            (aim <strong>15–30 €</strong> amounts), copy, paste here → <strong>Read paste</strong>.
           </li>
-          <li>Save low / median / high → next week re-check what’s stale.</li>
+          <li>Save low / median / high. That median is your monthly working-parts market — not 2–3 cherry picks.</li>
         </ol>
+        <p className="text-[11px] text-slate-600 leading-relaxed">
+          eBay does not offer a true “last 30 days only” sold filter. You get the month by scrolling recent sold
+          and pasting enough rows. The app cannot scrape eBay for you.
+        </p>
       </section>
 
       {/* Add */}
@@ -386,25 +392,43 @@ const SoldPulsePage: React.FC<Props> = ({ items }) => {
               <div className="space-y-2">
                 <label className="block space-y-1">
                   <span className="text-[9px] font-black uppercase text-slate-400">
-                    Optional: paste sold rows from eBay
+                    Paste last-month sold rows from eBay (15–30 prices)
                   </span>
                   <textarea
                     value={paste}
                     onChange={(e) => setPaste(e.target.value)}
-                    rows={4}
-                    placeholder="Paste a few sold titles + prices here…"
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-medium outline-none resize-y"
+                    rows={8}
+                    placeholder={
+                      'Scroll the clean sold page (~1 month of “Verkauft” dates).\n' +
+                      'Copy a large block of titles + € prices, paste here, then Read paste.'
+                    }
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-medium outline-none resize-y min-h-[8rem]"
                   />
                 </label>
-                <button
-                  type="button"
-                  disabled={busy || !paste.trim()}
-                  onClick={() => void runAiOnPaste()}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-violet-200 bg-violet-50 text-violet-800 text-[10px] font-black uppercase disabled:opacity-50"
-                >
-                  {busy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                  {aiOk ? 'Read paste (AI + local)' : 'Read paste (local only)'}
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={busy || !paste.trim()}
+                    onClick={() => void runAiOnPaste()}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-violet-200 bg-violet-50 text-violet-800 text-[10px] font-black uppercase disabled:opacity-50"
+                  >
+                    {busy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                    {aiOk ? 'Read paste (AI + local)' : 'Read paste (local only)'}
+                  </button>
+                  <span
+                    className={`text-[10px] font-bold ${
+                      pastePriceCount >= 15
+                        ? 'text-emerald-700'
+                        : pastePriceCount >= 8
+                          ? 'text-amber-700'
+                          : 'text-slate-400'
+                    }`}
+                  >
+                    {pastePriceCount} € prices detected
+                    {pastePriceCount > 0 && pastePriceCount < 15 ? ' · add more for a monthly read' : ''}
+                    {pastePriceCount >= 15 ? ' · good monthly sample' : ''}
+                  </span>
+                </div>
               </div>
 
               {message && (

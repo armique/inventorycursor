@@ -45,8 +45,14 @@ export async function summarizePastedSoldComps(
       median: local.median,
       high: local.high,
       count: local.count,
-      advice: 'Local math from the € amounts you pasted (no AI). Skip Defekt and weird auction outliers by hand.',
-      warnings: local.count < 3 ? ['Few prices — check more sold listings before trusting this.'] : [],
+      advice:
+        local.count < 12
+          ? 'Local math only. Paste more sold rows from the last ~30 days (aim for 15–30 € prices) for a real monthly picture.'
+          : 'Local math from the € amounts you pasted (no AI).',
+      warnings:
+        local.count < 12
+          ? ['Thin sample — not enough for a full last-month read.']
+          : [],
       usedAi: false,
     };
   }
@@ -60,15 +66,18 @@ export async function summarizePastedSoldComps(
       advice?: string;
       warnings?: string[];
     }>(
-      `You help a German PC-parts reseller read eBay.de SOLD listings.
+      `You help a German PC-parts reseller read eBay.de SOLD listings for the LAST ~30 DAYS.
 Product query: "${query}"
 
-The user pasted real sold-result text from eBay. Extract ONLY realistic BUY-IT-NOW / fixed-price style used sales for WORKING units.
-IGNORE or down-weight: Defekt/for parts, auctions with 1 bidder giveaways, wrong models, lots/bundles unless the query is a lot, shipping-only weirdness.
+The user pasted real sold-result text from eBay (often a long scroll of many sales). Goal: a clear monthly market picture — NOT 2–3 cherry-picked rows.
+
+Extract ONLY realistic used sales for WORKING standalone units (Buy It Now / fixed-price preferred).
+IGNORE or down-weight: Defekt/for parts, 1-bidder auction giveaways, wrong models, lots/bundles/PCs, mining farms, obvious shipping-only weirdness.
+If sold dates appear (e.g. "Verkauft …"), prefer comps from roughly the last month; down-weight much older ones when the paste is large enough.
 
 Pasted text:
 """
-${pastedText.slice(0, 6000)}
+${pastedText.slice(0, 14000)}
 """
 
 Local extracted prices (may include junk): low=${local.low}, median=${local.median}, high=${local.high}, count=${local.count}
@@ -79,15 +88,16 @@ Return JSON only:
   "median": number,
   "high": number,
   "count": number,
-  "advice": "1-2 short sentences in simple English or German",
+  "advice": "1-2 short sentences in simple English or German about the monthly market",
   "warnings": ["short warning", "..."]
 }
 
 Rules:
 - Numbers must be grounded in the pasted text (or the local extract). Do NOT invent market prices from memory.
+- Prefer median of a fat sample (15+ when available). If paste has few usable prices, warn to copy more recent sold rows.
 - If paste is too messy, keep local median and warn.
 - count = how many usable comps you trusted.`,
-      { maxTokens: 400 }
+      { maxTokens: 450 }
     );
 
     const low = Number(result.low);

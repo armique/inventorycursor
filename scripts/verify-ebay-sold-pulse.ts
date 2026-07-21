@@ -27,6 +27,7 @@ assert.ok(bin.includes('LH_Sold=1'));
 assert.ok(bin.includes('LH_Complete=1'));
 assert.ok(bin.includes('LH_BIN=1'));
 assert.ok(bin.includes('LH_ItemCondition=3000'));
+assert.ok(bin.includes('_ipg=240'));
 assert.ok(bin.includes(encodeURIComponent('-defekt')) || bin.includes('-defekt'));
 
 const parts = buildEbaySoldUrl('RTX 3060', 'for_parts');
