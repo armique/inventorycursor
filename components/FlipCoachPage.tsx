@@ -14,7 +14,6 @@ import { formatEUR } from '../utils/formatMoney';
 import {
   buildSellNowQueue,
   computeBuyFocus,
-  DEFAULT_FLIP_FEES,
   listPricesForPocket,
   loadFlipFees,
   maxBuyForEbayFlip,
