@@ -26,6 +26,7 @@ const ProductCardGalleryPage = lazy(() => import('./components/ProductCardGaller
 const BulkImportHistoryPage = lazy(() => import('./components/BulkImportHistoryPage'));
 const EditItemRoute = lazy(() => import('./components/EditItemRoute'));
 const PhonePhotoUploadPage = lazy(() => import('./components/PhonePhotoUploadPage'));
+const FlipCoachPage = lazy(() => import('./components/FlipCoachPage'));
 import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense, DashboardPreferences, ActionHistoryEntry, TaxMode, ItemUpdateOptions, BulkImportRecord } from './types';
 import {
   loadDashboardPreferencesFromLocalStorage,
@@ -1563,6 +1564,7 @@ const App: React.FC = () => {
             }
           />
           <Route path="inventory" element={<InventoryList key="inventory-main" items={items} totalCount={items.length} onUpdate={handleUpdate} onDelete={handleDelete} onUndo={handleUndo} onRedo={handleRedo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} pageTitle="Inventory" allowedStatuses={ALL_STATUSES} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} persistenceKey="inventory_main" onPublishStoreCatalog={publishStoreCatalogNow} bulkImports={bulkImports} />} />
+          <Route path="flip-coach" element={<FlipCoachPage items={items} />} />
           <Route path="add" element={<ItemForm onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="add-bulk" element={<BulkItemForm onSave={handleUpdate} onBulkImportComplete={handleBulkImportComplete} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="edit/:id" element={<EditItemRoute onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
