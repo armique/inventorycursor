@@ -8,7 +8,12 @@
  */
 
 import { InventoryItem, ItemStatus, Platform } from '../types';
-import { getInventorySoldPriceBand, nameSimilarity } from './inventorySoldComps';
+import {
+  getInventorySoldPriceBand,
+  nameSimilarity,
+  productModelKeys,
+  soldCompsModelCompatible,
+} from './inventorySoldComps';
 import { resolveSalePlatform } from './salePlatform';
 import { roundMoney } from '../services/financialAggregation';
 
@@ -130,15 +135,22 @@ export function suggestChannelPrices(
       (i.sellPrice as number) > 0
   );
 
+  const queryHasModel = productModelKeys(q).length > 0;
+  const minSim = queryHasModel ? 0.28 : 0.45;
+
   const scored = sold
     .map((i) => {
+      if (!soldCompsModelCompatible(q, i.name)) {
+        return { item: i, sim: 0, pocketInfo: null as ReturnType<typeof soldPocket> };
+      }
       let sim = nameSimilarity(q, i.name);
-      if (opts?.subCategory && i.subCategory === opts.subCategory) sim += 0.15;
-      else if (opts?.category && i.category === opts.category) sim += 0.08;
+      if (opts?.subCategory && i.subCategory === opts.subCategory) sim += 0.12;
+      else if (opts?.category && i.category === opts.category) sim += 0.06;
+      if (queryHasModel && sim >= 0.28) sim = Math.max(sim, 0.45);
       const pocketInfo = soldPocket(i);
       return { item: i, sim: Math.min(1, sim), pocketInfo };
     })
-    .filter((x) => x.sim >= 0.35 && x.pocketInfo)
+    .filter((x) => x.sim >= minSim && x.pocketInfo)
     .sort((a, b) => b.sim - a.sim)
     .slice(0, 16);
 
@@ -229,6 +241,25 @@ function emptySuggestion(feePct: number, note: string): ChannelPriceSuggestion {
     median: 0,
     note,
   };
+}
+
+/**
+ * Reject wild comps (e.g. Quadro 2000 priced like a modern GPU).
+ * Cheap parts: cap ~4× buy; normal stock: ~3.5–5×; always allow +€40 absolute.
+ */
+export function sanitizePocketAgainstBuy(
+  pocket: number,
+  buy: number,
+  compCount: number
+): { pocket: number; clamped: boolean } {
+  if (!(buy > 0) || !(pocket > 0) || compCount <= 0) {
+    return { pocket: roundMoney(Math.max(0, pocket)), clamped: false };
+  }
+  const multiple = buy < 20 ? 4 : buy < 80 ? 3.5 : 5;
+  const cap = Math.max(buy * multiple, buy + 40);
+  if (pocket <= cap) return { pocket: roundMoney(pocket), clamped: false };
+  // Comps look wrong — soft list from cost, not fantasy retail.
+  return { pocket: roundMoney(buy * 1.35), clamped: true };
 }
 
 export type BuyFocusRow = {
@@ -351,10 +382,22 @@ export function buildSellNowQueue(
       : 0;
 
     // If no comps, use a soft fallback: buy * 1.25 as pocket target.
-    const pocket =
+    let pocket =
       suggestion.compCount > 0 ? suggestion.pocketTarget : roundMoney(buy > 0 ? buy * 1.25 : 0);
+    let compCount = suggestion.compCount;
+    let note = suggestion.note;
+
+    if (suggestion.compCount > 0) {
+      const sane = sanitizePocketAgainstBuy(pocket, buy, suggestion.compCount);
+      if (sane.clamped) {
+        pocket = sane.pocket;
+        compCount = 0;
+        note = 'Sold comps looked unrealistic vs your buy price — using a cost-based guess instead.';
+      }
+    }
+
     const lists =
-      suggestion.compCount > 0
+      compCount > 0
         ? { kleinanzeigen: suggestion.kleinList, ebay: suggestion.ebayList }
         : listPricesForPocket(pocket, feePct);
 
@@ -362,8 +405,11 @@ export function buildSellNowQueue(
     const profitEbay = roundMoney(pocketFromEbayListPrice(lists.ebay, feePct) - buy);
 
     let preferred: SellNowRow['preferredChannel'] = 'either';
-    let reason = suggestion.note;
-    if (profitKlein <= 10 && profitEbay <= 10) {
+    let reason = note;
+    if (note.startsWith('Sold comps looked')) {
+      reason = note;
+      preferred = 'either';
+    } else if (profitKlein <= 10 && profitEbay <= 10) {
       reason = 'Thin margin — cut buy cost next time or bundle.';
       preferred = profitKlein >= profitEbay ? 'kleinanzeigen.de' : 'ebay.de';
     } else if (profitEbay < profitKlein - 5) {
@@ -372,7 +418,7 @@ export function buildSellNowQueue(
     } else if (daysHeld >= 45) {
       preferred = 'either';
       reason = 'Sitting too long — list on both, drop price if needed.';
-    } else if (suggestion.compCount === 0) {
+    } else if (compCount === 0) {
       reason = 'No sold comps yet — prices are a rough guess from your buy price.';
     }
 
@@ -386,7 +432,7 @@ export function buildSellNowQueue(
       estimatedPocketProfitEbay: profitEbay,
       preferredChannel: preferred,
       reason,
-      compCount: suggestion.compCount,
+      compCount,
     });
   }
 

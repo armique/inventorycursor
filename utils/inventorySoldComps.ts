@@ -1,4 +1,5 @@
 import { InventoryItem, ItemStatus } from '../types';
+import { extractModelTokens } from './ebayListingMatch';
 
 export interface SoldPriceBand {
   count: number;
@@ -27,6 +28,28 @@ export function nameSimilarity(a: string, b: string): number {
   return inter / Math.max(ta.size, tb.size);
 }
 
+/**
+ * Model keys that must agree for comps (RTX 2060 ≠ RTX 3060, Quadro 2000 ≠ Quadro RTX).
+ * Ignores the full-compact name blob from extractModelTokens.
+ */
+export function productModelKeys(name: string): string[] {
+  const compact = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return extractModelTokens(name).filter((k) => k !== compact && k.length >= 4);
+}
+
+/**
+ * If the query has a concrete model (e.g. rtx2060 / quadro2000), the candidate
+ * must share that model. Stops “Nvidia + Graphics” from pricing a Quadro 2000
+ * like a modern GPU.
+ */
+export function soldCompsModelCompatible(queryName: string, candidateName: string): boolean {
+  const qKeys = productModelKeys(queryName);
+  if (!qKeys.length) return true;
+  const cKeys = productModelKeys(candidateName);
+  if (!cKeys.length) return false;
+  return qKeys.some((k) => cKeys.includes(k));
+}
+
 function medianOf(nums: number[]): number {
   if (!nums.length) return 0;
   const sorted = [...nums].sort((a, b) => a - b);
@@ -45,8 +68,9 @@ export function getInventorySoldPriceBand(
 ): SoldPriceBand | null {
   const q = name.trim();
   if (q.length < 3) return null;
-  const minSim = opts?.minSimilarity ?? 0.35;
+  const minSim = opts?.minSimilarity ?? 0.45;
   const limit = opts?.limit ?? 12;
+  const queryHasModel = productModelKeys(q).length > 0;
 
   const scored = items
     .filter(
@@ -58,9 +82,15 @@ export function getInventorySoldPriceBand(
         !i.isBundle
     )
     .map((i) => {
+      if (!soldCompsModelCompatible(q, i.name)) {
+        return { item: i, sim: 0 };
+      }
       let sim = nameSimilarity(q, i.name);
-      if (opts?.subCategory && i.subCategory === opts.subCategory) sim += 0.15;
-      else if (opts?.category && i.category === opts.category) sim += 0.08;
+      // Category bonus only after model compatibility — never alone.
+      if (opts?.subCategory && i.subCategory === opts.subCategory) sim += 0.12;
+      else if (opts?.category && i.category === opts.category) sim += 0.06;
+      // Model-matched pairs can pass with slightly lower token overlap.
+      if (queryHasModel && sim >= 0.28) sim = Math.max(sim, minSim);
       return { item: i, sim: Math.min(1, sim) };
     })
     .filter((x) => x.sim >= minSim)

@@ -28,6 +28,11 @@ export function extractModelTokens(text: string): string[] {
     /\brtx\s?\d{4}(?:\s?(?:ti|super|s))?\b/gi,
     /\bgtx\s?\d{3,4}(?:\s?ti)?\b/gi,
     /\brx\s?\d{4}(?:\s?xt)?\b/gi,
+    // Legacy / pro GPUs — Quadro 2000 must not match Quadro RTX 5000
+    /\bquadro\s*[a-z]?\s*\d{3,4}[a-z]?\b/gi,
+    /\btesla\s*[a-z]?\s*\d{3,4}\b/gi,
+    /\bfirepro\s*[a-z]?\s*\d{3,4}\b/gi,
+    /\barc\s*a\d{3,4}\b/gi,
     /\bct\d{2}g[a-z0-9]+\b/gi,
     // Chipset / board codes: B450, H81M-K, X570, Z690
     /\b(?:a|b|h|x|z)\d{2,3}[a-z]?(?:-[a-z0-9]+)?\b/gi,
