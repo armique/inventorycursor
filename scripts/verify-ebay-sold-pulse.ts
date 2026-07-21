@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import {
   buildEbaySoldUrl,
+  buildSoldPulseChecklist,
   buildSoldPulseSearchQuery,
   extractPricesFromPaste,
   summarizePriceList,
@@ -29,6 +30,11 @@ assert.ok(bin.includes('LH_BIN=1'));
 assert.ok(bin.includes('LH_ItemCondition=3000'));
 assert.ok(bin.includes('_ipg=240'));
 assert.ok(bin.includes(encodeURIComponent('-defekt')) || bin.includes('-defekt'));
+
+const checklist = buildSoldPulseChecklist('RTX 3060 12GB', 'used_bin');
+assert.ok(checklist.includes('RTX 3060 12GB'));
+assert.ok(checklist.includes('15–30') || checklist.includes('15-30'));
+assert.ok(checklist.includes('ebay.de/sch'));
 
 const parts = buildEbaySoldUrl('RTX 3060', 'for_parts');
 assert.ok(parts.includes('LH_ItemCondition=7000'));

@@ -1,21 +1,24 @@
 import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  Activity,
   Check,
   CircleHelp,
+  ClipboardCopy,
   ExternalLink,
   Loader2,
   Plus,
   Sparkles,
   Target,
   Trash2,
-  Activity,
 } from 'lucide-react';
 import type { InventoryItem } from '../types';
 import { formatEUR } from '../utils/formatMoney';
 import { computeBuyFocus } from '../utils/flipCoach';
 import {
   buildEbaySoldUrl,
+  buildSoldPulseChecklist,
+  copyTextToClipboard,
   daysSince,
   extractPricesFromPaste,
   markSoldPulseChecked,
@@ -24,6 +27,7 @@ import {
   sortWatchlistForCheck,
   upsertSoldPulseItem,
   type SoldPulseCategory,
+  type SoldPulseLinkKind,
   type SoldPulseWatchItem,
 } from '../utils/ebaySoldPulse';
 import { canUseSoldPulseAi, summarizePastedSoldComps } from '../services/soldPulseAI';
@@ -130,6 +134,19 @@ const SoldPulsePage: React.FC<Props> = ({ items }) => {
     } finally {
       setBusy(false);
     }
+  };
+
+  const openCleanSearch = async (kind: SoldPulseLinkKind = 'used_bin') => {
+    if (!active) return;
+    const url = buildEbaySoldUrl(active.query, kind);
+    const checklist = buildSoldPulseChecklist(active.query, kind);
+    const copied = await copyTextToClipboard(checklist);
+    window.open(url, '_blank', 'noopener,noreferrer');
+    setMessage(
+      copied
+        ? 'Opened clean sold search. Checklist + URL copied — paste into Notepad if you want, then copy 15–30 sold rows back here.'
+        : 'Opened clean sold search. (Clipboard copy failed — use the link buttons if needed.)'
+    );
   };
 
   return (
@@ -314,6 +331,13 @@ const SoldPulsePage: React.FC<Props> = ({ items }) => {
               </div>
 
               <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void openCleanSearch('used_bin')}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-600 text-white text-[10px] font-black uppercase hover:bg-rose-700"
+                >
+                  <ClipboardCopy size={12} /> Open clean + copy checklist
+                </button>
                 <a
                   href={buildEbaySoldUrl(active.query, 'used_bin')}
                   target="_blank"
@@ -340,13 +364,13 @@ const SoldPulsePage: React.FC<Props> = ({ items }) => {
                 </a>
               </div>
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                Clean links auto-add <strong>-defekt -bastler -bundle -gamingpc</strong> (and similar). Defekt
-                link does <em>not</em> — use it only for scrap value.
+                <strong>Open clean + copy checklist</strong> opens the filtered sold page and copies the month-sample
+                steps + URL. Clean links auto-add <strong>-defekt -bastler -bundle</strong> (etc.). Defekt link does
+                not.
               </p>
               <p className="text-[11px] text-slate-500 leading-relaxed bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
-                <strong>One-click AI of live eBay?</strong> No — the browser can’t scrape eBay sold pages.
-                Flow is: open clean link → select sold rows → paste → <strong>Read paste</strong> (one click
-                after paste). AI only reads what you paste; it never invents prices.
+                AI still only reads what you paste (15–30 € prices from ~last month). No live eBay scrape in the app —
+                and we won’t ship a proxy scraper outside it either (eBay ToS / ban risk).
               </p>
 
               <div className="grid grid-cols-3 gap-2">

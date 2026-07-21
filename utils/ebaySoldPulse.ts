@@ -119,6 +119,53 @@ export function buildEbaySoldUrl(query: string, kind: SoldPulseLinkKind = 'used_
   return `https://www.ebay.de/sch/i.html?${params.toString()}`;
 }
 
+/** Checklist copied when opening a clean sold search (manual month sample). */
+export function buildSoldPulseChecklist(
+  query: string,
+  kind: SoldPulseLinkKind = 'used_bin'
+): string {
+  const url = buildEbaySoldUrl(query, kind);
+  const label =
+    kind === 'for_parts'
+      ? 'For parts / Defekt'
+      : kind === 'used_all'
+        ? 'Used + auctions (clean)'
+        : 'Used + Buy It Now (clean)';
+  return [
+    `Sold Pulse — ${query}`,
+    `Link (${label}):`,
+    url,
+    '',
+    'Checklist:',
+    '1. Page should already be Sold + Completed, Used, newest first, 240/page.',
+    '2. Scroll ~1 month of “Verkauft …” dates (not just the top 2–3).',
+    '3. Skip wrong models / OVP unicorns / lots still in the list.',
+    '4. Select a big block of titles + € prices (aim 15–30).',
+    '5. Copy → paste into Sold Pulse → Read paste → Save.',
+  ].join('\n');
+}
+
+export async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+}
+
 export function loadSoldPulseWatchlist(): SoldPulseWatchItem[] {
   try {
     const raw = localStorage.getItem(SOLD_PULSE_STORAGE_KEY);
