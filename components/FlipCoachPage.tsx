@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight,
+  Activity,
   CircleHelp,
   Lightbulb,
   ShoppingBag,
@@ -67,6 +68,12 @@ const FlipCoachPage: React.FC<Props> = ({ items }) => {
           <strong>eBay</strong>, and which kinds of parts to keep buying — based on{' '}
           <em>your</em> sales.
         </p>
+        <Link
+          to="/panel/sold-pulse"
+          className="inline-flex items-center gap-1.5 text-xs font-black uppercase text-rose-700 hover:text-rose-900"
+        >
+          <Activity size={14} /> Check eBay sold market (Sold Pulse)
+        </Link>
       </header>
 
       {/* What is a sold comp? */}

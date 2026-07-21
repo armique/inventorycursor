@@ -4,7 +4,7 @@ import {
   Package, PlusCircle, Settings, RefreshCw, Trash2, CloudUpload, LayoutDashboard,
   Layers, Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe,
   Printer, LayoutTemplate, PackageSearch, Monitor, Boxes, ChevronDown, Plus, Images,
-  Target,
+  Target, Activity,
 } from 'lucide-react';
 import PanelBreadcrumbs from './PanelBreadcrumbs';
 import { usePanelLocale } from '../context/PanelLocaleContext';
@@ -145,6 +145,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     { to: '/panel/dashboard', icon: <LayoutDashboard size={18} />, label: 'Dashboard' },
     { to: '/panel/inventory', icon: <Package size={18} />, label: 'Inventory' },
     { to: '/panel/flip-coach', icon: <Target size={18} />, label: 'Flip Coach' },
+    { to: '/panel/sold-pulse', icon: <Activity size={18} />, label: 'Sold Pulse' },
     { to: '/panel/add-bulk', icon: <Layers size={18} />, label: 'Bulk Entry' },
     { to: '/panel/bulk-imports', icon: <History size={18} />, label: 'Bulk imports' },
     { to: '/panel/ebay-store-pull', icon: <PackageSearch size={18} />, label: 'eBay Tools', alert: !!ebayReminder },
