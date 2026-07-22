@@ -46,7 +46,7 @@ const ItemAccessoryToggles: React.FC<Props> = ({ item, onPatch, dense, mini }) =
 
   return (
     <div
-      className={`flex items-center gap-0.5 flex-wrap ${mini ? 'mt-0' : dense ? 'mt-0.5' : 'mt-1'}`}
+      className="flex items-center gap-0.5 flex-wrap"
       onClick={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
     >

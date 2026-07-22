@@ -192,15 +192,20 @@ export function buildSuggestedEbayMap(
   fees: FlipFeeSettings = loadFlipFees(),
   opts?: { limit?: number; childrenByParent?: Map<string, InventoryItem[]> }
 ): Map<string, SuggestedEbayPrice> {
-  const limit = opts?.limit ?? 120;
+  const limit = opts?.limit ?? 400;
   const map = new Map<string, SuggestedEbayPrice>();
   const stock = items.filter(
     (i) =>
       (i.status === ItemStatus.IN_STOCK || i.status === ItemStatus.ORDERED) &&
       !i.isDraft
   );
+  // Prefer bundles/PCs first so container rows always get chips in a large inventory.
+  const ordered = [...stock].sort((a, b) => {
+    const score = (i: InventoryItem) => (i.isPC || i.isBundle ? 0 : 1);
+    return score(a) - score(b);
+  });
   let n = 0;
-  for (const item of stock) {
+  for (const item of ordered) {
     if (n >= limit) break;
     const children = opts?.childrenByParent?.get(item.id) || [];
     const s = resolveSuggestedEbayList(item, items, fees, children);

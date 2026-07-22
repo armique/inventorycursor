@@ -7,7 +7,7 @@ import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSort
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks,   Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone, Camera, Gift, User, Wand2, Images, Target
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks,   Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone, Camera, Gift, User, Wand2, Images
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, TaxMode, BulkImportRecord } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
@@ -1987,7 +1987,7 @@ const InventoryList: React.FC<Props> = ({
     () =>
       buildSuggestedEbayMap(items, loadFlipFees(), {
         childrenByParent: childrenByParentId,
-        limit: 160,
+        limit: 400,
       }),
     [items, childrenByParentId]
   );
@@ -2986,16 +2986,62 @@ const InventoryList: React.FC<Props> = ({
                         </p>
                       )}
                    </div>
-                   <ItemAccessoryToggles
-                     item={item}
-                     mini={dense}
-                     dense={!dense}
-                     onPatch={(patch) =>
-                       onUpdate([{ ...item, ...patch }], undefined, {
-                         skipActionLog: true,
-                       })
-                     }
-                   />
+                   <div
+                     className="flex items-center gap-1.5 flex-wrap mt-0.5"
+                     onClick={(e) => e.stopPropagation()}
+                   >
+                     <ItemAccessoryToggles
+                       item={item}
+                       mini={dense}
+                       dense={!dense}
+                       onPatch={(patch) =>
+                         onUpdate([{ ...item, ...patch }], undefined, {
+                           skipActionLog: true,
+                         })
+                       }
+                     />
+                     {(item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) &&
+                       (() => {
+                         const sugg =
+                           suggestedEbayById.get(item.id) ||
+                           resolveSuggestedEbayList(item, items, loadFlipFees(), childItems);
+                         if (!sugg) return null;
+                         return (
+                           <button
+                             type="button"
+                             onClick={(e) => {
+                               e.stopPropagation();
+                               const fresh = resolveSuggestedEbayList(
+                                 item,
+                                 items,
+                                 loadFlipFees(),
+                                 childItems
+                               );
+                               if (!fresh) return;
+                               onUpdate(
+                                 [{ ...item, ...suggestionPatchFromPrice(fresh) }],
+                                 undefined,
+                                 { skipActionLog: true }
+                               );
+                               setToast(
+                                 `Saved suggest · KA €${formatEUR(fresh.kleinList)} (0% fees) · eBay €${formatEUR(fresh.ebayList)} (~${fresh.feePct}%)`
+                               );
+                               setTimeout(() => setToast(null), 2200);
+                             }}
+                             className="inline-flex items-center gap-1 text-[9px] font-black uppercase px-1.5 py-0.5 rounded-md border border-slate-300 bg-white text-slate-800 shadow-sm hover:bg-slate-50"
+                             title={`Kleinanzeigen €${formatEUR(sugg.kleinList)} (no fees) · eBay €${formatEUR(sugg.ebayList)} (~${sugg.feePct}% fees)${
+                               sugg.compCount
+                                 ? ` · ${sugg.compCount} sold comps`
+                                 : ' · rough cost-based guess'
+                             }. Click to refresh & save snapshot.`}
+                           >
+                             <span className="text-emerald-700">KA ~€{formatEUR(sugg.kleinList)}</span>
+                             <span className="text-slate-300">·</span>
+                             <span className="text-sky-700">EB ~€{formatEUR(sugg.ebayList)}</span>
+                           </button>
+                         );
+                       })()}
+                   </div>
                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                       {hasUserPhotos ? (
                         <span
@@ -3033,46 +3079,6 @@ const InventoryList: React.FC<Props> = ({
                           {childItems.length > 0 ? ` · ${childItems.length}` : ''}
                         </span>
                       )}
-                      {(item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) &&
-                        (() => {
-                          const sugg = suggestedEbayById.get(item.id);
-                          if (!sugg) return null;
-                          return (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const fresh = resolveSuggestedEbayList(
-                                  item,
-                                  items,
-                                  loadFlipFees(),
-                                  childItems
-                                );
-                                if (!fresh) return;
-                                onUpdate(
-                                  [{ ...item, ...suggestionPatchFromPrice(fresh) }],
-                                  undefined,
-                                  { skipActionLog: true }
-                                );
-                                setToast(
-                                  `Saved suggest · KA €${formatEUR(fresh.kleinList)} (0% fees) · eBay €${formatEUR(fresh.ebayList)} (~${fresh.feePct}%)`
-                                );
-                                setTimeout(() => setToast(null), 2200);
-                              }}
-                              className="inline-flex items-center gap-1 text-[9px] font-black uppercase px-1.5 py-0.5 rounded border border-emerald-200/90 bg-gradient-to-r from-emerald-50 to-sky-50 text-slate-700 hover:from-emerald-100 hover:to-sky-100"
-                              title={`Kleinanzeigen €${formatEUR(sugg.kleinList)} (no fees) · eBay €${formatEUR(sugg.ebayList)} (~${sugg.feePct}% fees)${
-                                sugg.compCount
-                                  ? ` · ${sugg.compCount} sold comps`
-                                  : ' · rough cost-based guess'
-                              }. Click to refresh & save snapshot.`}
-                            >
-                              <Target size={9} className="shrink-0 text-emerald-700" />
-                              <span className="text-emerald-800">KA ~€{formatEUR(sugg.kleinList)}</span>
-                              <span className="text-slate-300">·</span>
-                              <span className="text-sky-800">eBay ~€{formatEUR(sugg.ebayList)}</span>
-                            </button>
-                          );
-                        })()}
                       {!item.isPC && !item.isBundle && isInventoryContainer(item) && (
                         <span className="inline-flex items-center gap-0.5 text-[9px] bg-violet-600 text-white px-1.5 py-0.5 rounded font-black uppercase shadow-sm shadow-violet-200/80">
                           <Package size={9} className="shrink-0" /> Container
