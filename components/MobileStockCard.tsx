@@ -5,12 +5,14 @@ import {
   Gift,
   ImageOff,
   MoreHorizontal,
+  Plus,
   ShoppingBag,
   Sparkles,
   Trash2,
   ArrowRightLeft,
   X,
   Edit2,
+  Layers,
 } from 'lucide-react';
 import type { InventoryItem } from '../types';
 import { ItemStatus } from '../types';
@@ -25,6 +27,8 @@ export interface MobileStockCardActions {
   onSell: (item: InventoryItem) => void;
   onPhotos: (item: InventoryItem) => void;
   onListingStudio: (item: InventoryItem) => void;
+  /** Quick Bundle / add parts — same as desktop Flags “+”. */
+  onQuickBundle?: (item: InventoryItem) => void;
   onTrade?: (item: InventoryItem) => void;
   onGift?: (item: InventoryItem) => void;
   onDuplicate?: (item: InventoryItem) => void;
@@ -44,6 +48,17 @@ export const MobileStockCard: React.FC<{
   const photoCount = getItemUserPhotoCount(item);
   const hasPhotos = photoCount > 0;
   const inStock = item.status === ItemStatus.IN_STOCK;
+  const soldLike =
+    item.status === ItemStatus.SOLD ||
+    item.status === ItemStatus.TRADED ||
+    item.status === ItemStatus.GIFTED;
+  const canQuickBundle = Boolean(actions.onQuickBundle) && !soldLike;
+
+  const quickBundleLabel = item.isPC
+    ? 'Add parts to this PC'
+    : item.isBundle
+      ? 'Add parts to this bundle'
+      : 'Make Bundle / Mixed Bundle';
 
   return (
     <>
@@ -128,6 +143,17 @@ export const MobileStockCard: React.FC<{
           </div>
 
           <div className="flex items-center gap-0.5 shrink-0">
+            {canQuickBundle ? (
+              <button
+                type="button"
+                onClick={() => actions.onQuickBundle?.(item)}
+                className="h-9 w-9 rounded-lg border border-violet-200 bg-violet-50 text-violet-700 inline-flex items-center justify-center"
+                title={quickBundleLabel}
+                aria-label={quickBundleLabel}
+              >
+                <Plus size={16} strokeWidth={2.5} />
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => actions.onEdit(item)}
@@ -168,6 +194,14 @@ export const MobileStockCard: React.FC<{
       >
         <div className="space-y-2 pb-2">
           {[
+            canQuickBundle
+              ? {
+                  key: 'bundle',
+                  label: quickBundleLabel,
+                  icon: item.isPC || item.isBundle ? <Plus size={16} /> : <Layers size={16} />,
+                  run: () => actions.onQuickBundle?.(item),
+                }
+              : null,
             {
               key: 'edit',
               label: 'Edit / Listing Studio',
@@ -248,12 +282,18 @@ export const MobileStockCard: React.FC<{
                   className={`flex items-center gap-3 w-full rounded-2xl border px-3.5 py-3 text-left ${
                     r.danger
                       ? 'border-rose-100 bg-rose-50 text-rose-800'
-                      : 'border-slate-100 bg-white text-slate-900'
+                      : r.key === 'bundle'
+                        ? 'border-violet-100 bg-violet-50 text-violet-900'
+                        : 'border-slate-100 bg-white text-slate-900'
                   }`}
                 >
                   <span
                     className={`inline-flex h-9 w-9 items-center justify-center rounded-xl ${
-                      r.danger ? 'bg-rose-100' : 'bg-slate-100'
+                      r.danger
+                        ? 'bg-rose-100'
+                        : r.key === 'bundle'
+                          ? 'bg-violet-100 text-violet-700'
+                          : 'bg-slate-100'
                     }`}
                   >
                     {r.icon}

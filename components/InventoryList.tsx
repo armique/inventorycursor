@@ -5005,6 +5005,19 @@ const InventoryList: React.FC<Props> = ({
                     addRecentItemId(it.id);
                     setListingAiItem(it);
                   },
+                  onQuickBundle: (it) => {
+                    const parentOfItem = resolveParentContainer(
+                      it,
+                      containersById,
+                      containerByChildId
+                    );
+                    const soldLike =
+                      isRealizedDisposal(it) || it.status === ItemStatus.GIFTED;
+                    if (soldLike) return;
+                    const seed =
+                      parentOfItem && !it.isPC && !it.isBundle ? parentOfItem : it;
+                    openQuickBundlePanel(seed);
+                  },
                   onTrade: (it) => {
                     addRecentItemId(it.id);
                     setItemToTrade(it);
@@ -5022,6 +5035,35 @@ const InventoryList: React.FC<Props> = ({
             ))
           )}
       </div>
+
+      {/* Mobile Quick Bundle — desktop embeds the panel in the table row (hidden on phones). */}
+      {quickBundleSeed && (
+        <div className="lg:hidden fixed inset-0 z-[220] flex flex-col justify-end bg-slate-900/50 backdrop-blur-[1px]">
+          <button
+            type="button"
+            className="absolute inset-0 cursor-default"
+            aria-label="Close bundle panel"
+            onClick={() => setQuickBundleSeed(null)}
+          />
+          <div className="relative z-10 max-h-[min(92dvh,40rem)] overflow-y-auto overscroll-contain rounded-t-2xl bg-white shadow-2xl pb-[env(safe-area-inset-bottom,0px)]">
+            <QuickBundleAddModal
+              seed={quickBundleSeed}
+              items={items}
+              onClose={() => setQuickBundleSeed(null)}
+              onApply={(updates) => {
+                onUpdate(updates);
+                setToast(
+                  updates.some((u) => (u.isBundle || u.isPC) && u.componentIds)
+                    ? `Updated · ${updates.find((u) => u.isBundle || u.isPC)?.name || 'saved'}`
+                    : 'Bundle saved'
+                );
+                setTimeout(() => setToast(null), 2200);
+                setQuickBundleSeed(null);
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Table scrolls in remaining height; bulk bar is a separate row below (never overlays rows) */}
       <style>{`
