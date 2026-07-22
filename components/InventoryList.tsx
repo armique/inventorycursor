@@ -3055,19 +3055,21 @@ const InventoryList: React.FC<Props> = ({
                                   { skipActionLog: true }
                                 );
                                 setToast(
-                                  `Saved eBay suggest €${formatEUR(fresh.ebayList)} (~${fresh.feePct}% fees)`
+                                  `Saved suggest · KA €${formatEUR(fresh.kleinList)} (0% fees) · eBay €${formatEUR(fresh.ebayList)} (~${fresh.feePct}%)`
                                 );
-                                setTimeout(() => setToast(null), 1800);
+                                setTimeout(() => setToast(null), 2200);
                               }}
-                              className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase text-sky-800 bg-sky-50 px-1.5 py-0.5 rounded border border-sky-200/90 hover:bg-sky-100"
-                              title={`Suggested eBay list price after ~${sugg.feePct}% fees${
+                              className="inline-flex items-center gap-1 text-[9px] font-black uppercase px-1.5 py-0.5 rounded border border-emerald-200/90 bg-gradient-to-r from-emerald-50 to-sky-50 text-slate-700 hover:from-emerald-100 hover:to-sky-100"
+                              title={`Kleinanzeigen €${formatEUR(sugg.kleinList)} (no fees) · eBay €${formatEUR(sugg.ebayList)} (~${sugg.feePct}% fees)${
                                 sugg.compCount
                                   ? ` · ${sugg.compCount} sold comps`
                                   : ' · rough cost-based guess'
-                              }. Click to refresh & save snapshot for flip analytics.`}
+                              }. Click to refresh & save snapshot.`}
                             >
-                              <Target size={9} className="shrink-0" />
-                              eBay ~€{formatEUR(sugg.ebayList)}
+                              <Target size={9} className="shrink-0 text-emerald-700" />
+                              <span className="text-emerald-800">KA ~€{formatEUR(sugg.kleinList)}</span>
+                              <span className="text-slate-300">·</span>
+                              <span className="text-sky-800">eBay ~€{formatEUR(sugg.ebayList)}</span>
                             </button>
                           );
                         })()}
@@ -5026,6 +5028,7 @@ const InventoryList: React.FC<Props> = ({
                 item={item}
                 profit={profitForDisplay(item)}
                 suggestedEbayList={suggestedEbayById.get(item.id)?.ebayList}
+                suggestedKleinList={suggestedEbayById.get(item.id)?.kleinList}
                 suggestedFeePct={suggestedEbayById.get(item.id)?.feePct}
                 selected={selectedIdSet.has(item.id)}
                 onToggleSelect={() => toggleSelect(item.id)}

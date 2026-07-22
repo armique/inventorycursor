@@ -75,14 +75,20 @@ export function resolveSuggestedEbayList(
     Number.isFinite(item.suggestedEbayListPrice) &&
     item.suggestedEbayListPrice > 0
   ) {
+    const fee = item.suggestedFeePct ?? feePct;
+    const pocket = roundMoney(
+      item.suggestedPocketTarget ||
+        pocketFromEbayListPrice(item.suggestedEbayListPrice, fee)
+    );
+    // Kleinanzeigen has 0% fees — suggest the pocket amount (lower than eBay list).
+    const klein = roundMoney(
+      item.suggestedKleinListPrice || pocket || item.suggestedEbayListPrice
+    );
     return {
       ebayList: roundMoney(item.suggestedEbayListPrice),
-      kleinList: roundMoney(item.suggestedKleinListPrice || item.suggestedEbayListPrice),
-      pocketTarget: roundMoney(
-        item.suggestedPocketTarget ||
-          pocketFromEbayListPrice(item.suggestedEbayListPrice, item.suggestedFeePct ?? feePct)
-      ),
-      feePct: item.suggestedFeePct ?? feePct,
+      kleinList: klein,
+      pocketTarget: pocket,
+      feePct: fee,
       compCount: item.suggestedCompCount ?? 0,
       fromSnapshot: true,
     };

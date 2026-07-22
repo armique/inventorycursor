@@ -135,8 +135,8 @@ const FlipCoachPage: React.FC<Props> = ({ items }) => {
         </div>
         {flipInsights.soldWithTiming === 0 ? (
           <p className="text-xs text-slate-600">
-            Need sold items with buy + sell dates. Click inventory “eBay ~€…” chips to save price
-            suggestions for accuracy tracking.
+            Need sold items with buy + sell dates. Click inventory “KA / eBay ~€…” chips to save
+            price suggestions for accuracy tracking.
           </p>
         ) : (
           <>

@@ -36,6 +36,8 @@ describe('flipInsights', () => {
     expect(s?.ebayList).toBe(220);
     expect(s?.fromSnapshot).toBe(true);
     expect(s?.feePct).toBe(30);
+    // Klein = pocket after 30% fees (lower than eBay list)
+    expect(s?.kleinList).toBeLessThan(s!.ebayList);
   });
 
   it('summarizes flip speed and price accuracy', () => {
