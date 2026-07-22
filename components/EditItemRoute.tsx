@@ -12,8 +12,7 @@ interface Props {
 }
 
 /**
- * /panel/edit/:id — opens Listing Studio (same as inventory Edit),
- * not the classic full-page ItemForm.
+ * /panel/edit/:id — opens Listing Studio as the item edit card.
  */
 const EditItemRoute: React.FC<Props> = ({
   items,

@@ -7,7 +7,6 @@ import {
   MoreHorizontal,
   Plus,
   ShoppingBag,
-  Sparkles,
   Trash2,
   ArrowRightLeft,
   X,
@@ -26,7 +25,6 @@ export interface MobileStockCardActions {
   onEdit: (item: InventoryItem) => void;
   onSell: (item: InventoryItem) => void;
   onPhotos: (item: InventoryItem) => void;
-  onListingStudio: (item: InventoryItem) => void;
   /** Quick Bundle / add parts — same as desktop Flags “+”. */
   onQuickBundle?: (item: InventoryItem) => void;
   onTrade?: (item: InventoryItem) => void;
@@ -204,7 +202,7 @@ export const MobileStockCard: React.FC<{
               : null,
             {
               key: 'edit',
-              label: 'Edit / Listing Studio',
+              label: 'Edit item',
               icon: <Edit2 size={16} />,
               run: () => actions.onEdit(item),
             },
@@ -213,12 +211,6 @@ export const MobileStockCard: React.FC<{
               label: 'Add / manage photos',
               icon: <Camera size={16} />,
               run: () => actions.onPhotos(item),
-            },
-            {
-              key: 'studio',
-              label: 'Listing Studio (AI)',
-              icon: <Sparkles size={16} />,
-              run: () => actions.onListingStudio(item),
             },
             inStock && actions.onSell
               ? {

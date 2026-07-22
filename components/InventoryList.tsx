@@ -31,7 +31,6 @@ import { getRecentItemIds, addRecentItemId } from '../services/recentItemsServic
 import { generateStoreDescription } from '../services/specsAI';
 import { suggestPriceFromSoldListings, SoldPriceSuggestion, getSpecsAIProvider } from '../services/specsAI';
 import { bulkImportSourceLabel, countBulkImportItems } from '../utils/bulkImportHistory';
-import ListingStudioModal from './ListingStudioModal';
 import MobileStockCard from './MobileStockCard';
 import { MobileSheetShell } from './MobileBottomSheets';
 import { generateMarketplaceListing } from '../services/marketplaceListingAI';
@@ -848,9 +847,6 @@ const InventoryList: React.FC<Props> = ({
   const [editingCell, setEditingCell] = useState<{ itemId: string, field: ColumnId } | null>(null);
   const [editValue, setEditValue] = useState<string | number>('');
   const [parsingSingleId, setParsingSingleId] = useState<string | null>(null);
-  const [listingAiItem, setListingAiItem] = useState<InventoryItem | null>(null);
-  const listingAiItemRef = useRef<InventoryItem | null>(null);
-  listingAiItemRef.current = listingAiItem;
   const rowClickTimeoutRef = useRef<number | null>(null);
 
   // Sync search from URL ?q= (e.g. from global search)
@@ -3622,7 +3618,7 @@ const InventoryList: React.FC<Props> = ({
             className="text-left relative sticky right-0 z-[18] bg-white group-hover/row:bg-slate-50 border-l border-slate-200/90 shadow-[-6px_0_12px_-4px_rgba(15,23,42,0.07)]"
             style={style}
           >
-            <div className={`flex flex-nowrap justify-start items-center gap-0.5 transition-opacity ${listingAiItem?.id === item.id ? 'opacity-100' : 'opacity-100 sm:opacity-0 sm:group-hover/row:opacity-100'}`}>
+            <div className={`flex flex-nowrap justify-start items-center gap-0.5 transition-opacity ${itemToEdit?.id === item.id ? 'opacity-100' : 'opacity-100 sm:opacity-0 sm:group-hover/row:opacity-100'}`}>
               {item.status === ItemStatus.IN_STOCK && (
                  <>
                    <button onClick={(e) => { e.stopPropagation(); setItemToCrossPost(item); }} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-md shrink-0" title="Cross-Post"><Share2 size={14}/></button>
@@ -3631,14 +3627,14 @@ const InventoryList: React.FC<Props> = ({
                      type="button"
                      onClick={(e) => {
                        e.stopPropagation();
-                       setListingAiItem(item);
+                       handleEditClick(item);
                      }}
                      className={`p-1.5 rounded-md shrink-0 transition-colors ${
-                       listingAiItem?.id === item.id || item.marketDescription || item.marketTitle
+                       itemToEdit?.id === item.id || item.marketDescription || item.marketTitle
                          ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
                          : 'text-emerald-600 hover:bg-emerald-50'
                      }`}
-                     title="Listing Studio — specs, card gallery, title & description"
+                     title="Edit item — inventory, specs, cards, listing"
                    >
                      {listingGenId === item.id ? (
                        <Loader2 size={14} className="animate-spin text-emerald-600" />
@@ -3648,7 +3644,7 @@ const InventoryList: React.FC<Props> = ({
                    </button>
                  </>
               )}
-              <button onClick={(e) => { e.stopPropagation(); handleEditClick(item); }} className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-md shrink-0" title="Edit">
+              <button onClick={(e) => { e.stopPropagation(); handleEditClick(item); }} className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-md shrink-0" title="Edit item">
                  <Edit2 size={14}/>
               </button>
               <button onClick={(e) => { e.stopPropagation(); handleDuplicate(item); }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-md shrink-0" title="Duplicate Item">
@@ -4931,40 +4927,6 @@ const InventoryList: React.FC<Props> = ({
         />
       )}
 
-      {listingAiItem && (
-        <ListingStudioModal
-          item={(() => {
-            const fromItems = items.find((i) => i.id === listingAiItem.id);
-            // Studio session patches (photos, listing text) win over a possibly stale items[] row.
-            return fromItems ? { ...fromItems, ...listingAiItem } : listingAiItem;
-          })()}
-          allItems={items}
-          categoryFields={categoryFields}
-          onClose={() => setListingAiItem(null)}
-          onUpdateItem={async (patch) => {
-            // Compute merge outside setState — never rely on updater side-effects for the payload.
-            const base = listingAiItemRef.current;
-            if (!base) return;
-            const fromItems = items.find((i) => i.id === base.id);
-            const merged: InventoryItem = { ...(fromItems || base), ...base, ...patch };
-            listingAiItemRef.current = merged;
-            setListingAiItem(merged);
-            await Promise.resolve(
-              onUpdate([merged], undefined, {
-                flushCloud:
-                  patch.marketTitle !== undefined ||
-                  patch.marketDescription !== undefined ||
-                  patch.name !== undefined,
-              })
-            );
-            if (patch.marketTitle !== undefined || patch.marketDescription !== undefined) {
-              setToast('Listing saved to item');
-              setTimeout(() => setToast(null), 1600);
-            }
-          }}
-        />
-      )}
-
       {/* Toast notification for quick actions (e.g. copy listing text) */}
       {toast && (
         <div className={`pointer-events-none fixed z-[180] ${selectedIds.length > 0 ? 'top-4 right-4' : 'bottom-6 right-6 max-lg:bottom-[calc(5rem+env(safe-area-inset-bottom))]'}`}>
@@ -5001,10 +4963,6 @@ const InventoryList: React.FC<Props> = ({
                     setItemToSell(it);
                   },
                   onPhotos: (it) => openAddPhotosModal([it.id]),
-                  onListingStudio: (it) => {
-                    addRecentItemId(it.id);
-                    setListingAiItem(it);
-                  },
                   onQuickBundle: (it) => {
                     const parentOfItem = resolveParentContainer(
                       it,
@@ -5175,8 +5133,22 @@ const InventoryList: React.FC<Props> = ({
             items={items}
             onSave={(updatedList) => {
                // Persist patches while Listing Studio stays open.
-               // Classic ItemForm still closes via its own onClose after Save.
-               onUpdate(updatedList);
+               const updated = updatedList[0];
+               onUpdate(updatedList, undefined, {
+                 flushCloud:
+                   !!updated &&
+                   (updated.marketTitle !== itemToEdit.marketTitle ||
+                     updated.marketDescription !== itemToEdit.marketDescription ||
+                     updated.name !== itemToEdit.name),
+               });
+               if (
+                 updated &&
+                 (updated.marketTitle !== itemToEdit.marketTitle ||
+                   updated.marketDescription !== itemToEdit.marketDescription)
+               ) {
+                 setToast('Listing saved to item');
+                 setTimeout(() => setToast(null), 1600);
+               }
             }}
             onClose={() => setItemToEdit(null)}
             categories={categories}

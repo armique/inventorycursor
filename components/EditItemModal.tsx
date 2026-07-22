@@ -1,6 +1,4 @@
 import React, { useMemo, useState } from 'react';
-import { SlidersHorizontal, Sparkles, X } from 'lucide-react';
-import ItemForm from './ItemForm';
 import ListingStudioModal from './ListingStudioModal';
 import ContainerMembershipBadge from './ContainerMembershipBadge';
 import TradeLinkBadge from './TradeLinkBadge';
@@ -24,8 +22,8 @@ interface Props {
 }
 
 /**
- * Edit opens Listing Studio (#15 Specs Mirror) by default.
- * "Asset details" switches to the classic pricing / status form.
+ * Edit opens Listing Studio as the single item card (inventory + listing).
+ * Classic Asset details form is retired for edit — Add/new still uses ItemForm.
  */
 const EditItemModal: React.FC<Props> = ({
   item,
@@ -34,14 +32,12 @@ const EditItemModal: React.FC<Props> = ({
   categoryFields,
   onSave,
   onClose,
-  onAddCategory,
   parentContainer,
   onOpenParentContainer,
   onLocateParentContainer,
   onLocateTradeItem,
   onOpenTradeItem,
 }) => {
-  const [mode, setMode] = useState<'studio' | 'asset'>('studio');
   const [draft, setDraft] = useState<InventoryItem>(item);
   const draftRef = React.useRef(draft);
   draftRef.current = draft;
@@ -61,116 +57,69 @@ const EditItemModal: React.FC<Props> = ({
   const liveItem = items.find((i) => i.id === draft.id) || draft;
   const studioItem = { ...liveItem, ...draft };
 
-  if (mode === 'studio') {
-    return (
-      <ListingStudioModal
-        item={studioItem}
-        allItems={items}
-        categoryFields={categoryFields}
-        onClose={onClose}
-        onUpdateItem={async (patch) => {
-          const current = draftRef.current;
-          const fromItems = items.find((i) => i.id === current.id);
-          const next = { ...(fromItems || current), ...current, ...patch };
-          draftRef.current = next;
-          setDraft(next);
-          onSave([next]);
-        }}
-        headerExtra={
-          <button
-            type="button"
-            onClick={() => setMode('asset')}
-            className="inline-flex items-center gap-1 px-2 py-1.5 rounded-xl border border-slate-200 bg-white text-[10px] font-black uppercase text-slate-600 hover:bg-slate-50"
-            title="Asset details"
-          >
-            <SlidersHorizontal size={12} />
-            <span className="hidden sm:inline">Asset</span>
-          </button>
-        }
-      />
-    );
-  }
+  const headerExtra = (
+    <>
+      {showMembership && onOpenParentContainer && parentContainer && parentKind && (
+        <ContainerMembershipBadge
+          variant="inline"
+          kind={parentKind}
+          parentName={parentContainer.name}
+          onOpen={() => onOpenParentContainer(parentContainer)}
+          onLocate={
+            onLocateParentContainer
+              ? () => {
+                  onClose();
+                  onLocateParentContainer(parentContainer);
+                }
+              : undefined
+          }
+        />
+      )}
+      {draft.status === ItemStatus.TRADED &&
+        tradeReceived.length > 0 &&
+        onOpenTradeItem &&
+        onLocateTradeItem && (
+          <TradeLinkBadge
+            variant="outgoing"
+            receivedItems={tradeReceived}
+            onOpenItem={onOpenTradeItem}
+            onLocateItem={(target) => {
+              onClose();
+              onLocateTradeItem(target);
+            }}
+          />
+        )}
+      {tradeSource && onOpenTradeItem && onLocateTradeItem && (
+        <TradeLinkBadge
+          variant="incoming"
+          sourceItem={tradeSource}
+          onOpen={() => onOpenTradeItem(tradeSource)}
+          onLocate={() => {
+            onClose();
+            onLocateTradeItem(tradeSource);
+          }}
+        />
+      )}
+    </>
+  );
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-3 md:p-4 animate-in fade-in">
-      <div className="bg-slate-50 w-full max-w-6xl rounded-3xl shadow-2xl border border-white/20 overflow-hidden flex flex-col h-[min(88vh,820px)] relative">
-        <div className="absolute top-4 right-4 z-50 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setMode('studio')}
-            className="inline-flex items-center gap-1.5 px-3 py-2 bg-rose-600 text-white rounded-full shadow-lg text-[10px] font-black uppercase hover:bg-rose-700"
-          >
-            <Sparkles size={12} />
-            Listing Studio
-          </button>
-          <button
-            onClick={onClose}
-            className="p-2 bg-white rounded-full shadow-lg text-slate-400 hover:text-slate-900 hover:scale-110 transition-all"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        {(showMembership || tradeReceived.length > 0 || tradeSource) && (
-          <div className="shrink-0 px-4 md:px-5 pt-4 space-y-2">
-            {showMembership && onOpenParentContainer && parentContainer && parentKind && (
-              <ContainerMembershipBadge
-                variant="banner"
-                kind={parentKind}
-                parentName={parentContainer.name}
-                onOpen={() => onOpenParentContainer(parentContainer)}
-                onLocate={
-                  onLocateParentContainer
-                    ? () => {
-                        onClose();
-                        onLocateParentContainer(parentContainer);
-                      }
-                    : undefined
-                }
-              />
-            )}
-            {draft.status === ItemStatus.TRADED &&
-              tradeReceived.length > 0 &&
-              onOpenTradeItem &&
-              onLocateTradeItem && (
-                <TradeLinkBadge
-                  variant="banner-outgoing"
-                  receivedItems={tradeReceived}
-                  onOpenItem={onOpenTradeItem}
-                  onLocateItem={(target) => {
-                    onClose();
-                    onLocateTradeItem(target);
-                  }}
-                />
-              )}
-            {tradeSource && onOpenTradeItem && onLocateTradeItem && (
-              <TradeLinkBadge
-                variant="banner-incoming"
-                sourceItem={tradeSource}
-                onOpen={() => onOpenTradeItem(tradeSource)}
-                onLocate={() => {
-                  onClose();
-                  onLocateTradeItem(tradeSource);
-                }}
-              />
-            )}
-          </div>
-        )}
-
-        <div className="flex-1 overflow-hidden p-4 md:p-5">
-          <ItemForm
-            initialData={liveItem}
-            items={items}
-            onSave={onSave}
-            categories={categories}
-            categoryFields={categoryFields}
-            onAddCategory={onAddCategory}
-            onClose={onClose}
-            isModal={true}
-          />
-        </div>
-      </div>
-    </div>
+    <ListingStudioModal
+      item={studioItem}
+      allItems={items}
+      categories={categories}
+      categoryFields={categoryFields}
+      onClose={onClose}
+      onUpdateItem={async (patch) => {
+        const current = draftRef.current;
+        const fromItems = items.find((i) => i.id === current.id);
+        const next = { ...(fromItems || current), ...current, ...patch };
+        draftRef.current = next;
+        setDraft(next);
+        onSave([next]);
+      }}
+      headerExtra={headerExtra}
+    />
   );
 };
 

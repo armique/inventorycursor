@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { prefersNativePhotoCapture } from '../utils/deviceUi';
 import type { GeneratedProductCardEntry, InventoryItem, PaymentType, Platform } from '../types';
+import { ItemStatus } from '../types';
 import { generateMarketplaceListing } from '../services/marketplaceListingAI';
 import { generateItemSpecs } from '../services/specsAI';
 import { mergeAiSpecsIntoEssential, resolveEssentialSpecKeys } from '../services/essentialSpecFields';
@@ -67,7 +68,8 @@ import {
 import { resolveUrlForInventoryMainPhoto } from '../utils/applyProductCardAsMainPhoto';
 import { getChildren } from '../services/financialAggregation';
 import { getInventorySoldPriceBand } from '../utils/inventorySoldComps';
-import { formatEUR } from '../utils/formatMoney';
+import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
+import { HIERARCHY_CATEGORIES } from '../services/constants';
 import PhoneUploadQrPanel from './PhoneUploadQrPanel';
 import LocalPhotoFolderPanel from './LocalPhotoFolderPanel';
 import KleinanzeigenBuyChatProofFields from './KleinanzeigenBuyChatProofFields';
@@ -104,10 +106,11 @@ const PLATFORM_OPTION_LABEL: Record<Platform, string> = {
 interface Props {
   item: InventoryItem;
   allItems?: InventoryItem[] | null;
+  categories?: Record<string, string[]>;
   categoryFields?: Record<string, string[]>;
   onClose: () => void;
   onUpdateItem: (patch: Partial<InventoryItem>) => void | Promise<void>;
-  /** Optional controls in the studio header (e.g. Asset details). */
+  /** Optional controls in the studio header (e.g. membership badges). */
   headerExtra?: React.ReactNode;
 }
 
@@ -118,6 +121,7 @@ function resolveCardBatchCount(photoCount: number): number {
 const ListingStudioModal: React.FC<Props> = ({
   item,
   allItems,
+  categories = HIERARCHY_CATEGORIES,
   categoryFields = {},
   onClose,
   onUpdateItem,
@@ -154,6 +158,30 @@ const ListingStudioModal: React.FC<Props> = ({
   const [buyChatImage, setBuyChatImage] = useState(item.kleinanzeigenBuyChatImage || '');
   const [sellerProfileUrl, setSellerProfileUrl] = useState(item.kleinanzeigenSellerProfileUrl || '');
 
+  const [status, setStatus] = useState<ItemStatus>(item.status);
+  const [category, setCategory] = useState(item.category || 'Components');
+  const [subCategory, setSubCategory] = useState(item.subCategory || '');
+  const [buyPriceText, setBuyPriceText] = useState(
+    item.buyPrice != null && item.buyPrice !== 0 ? String(item.buyPrice) : ''
+  );
+  const [sellPriceText, setSellPriceText] = useState(
+    item.sellPrice != null ? String(item.sellPrice) : ''
+  );
+  const [storePriceText, setStorePriceText] = useState(
+    item.storePrice != null ? String(item.storePrice) : ''
+  );
+  const [buyDate, setBuyDate] = useState(item.buyDate || '');
+  const [sellDate, setSellDate] = useState(item.sellDate || '');
+  const [quantityText, setQuantityText] = useState(
+    item.quantity != null ? String(item.quantity) : ''
+  );
+  const [notes, setNotes] = useState(item.comment1 || '');
+  const [usesDifferentialVat, setUsesDifferentialVat] = useState(!!item.usesDifferentialVat);
+  const [isDefective, setIsDefective] = useState(!!item.isDefective);
+  const [parentContainerId, setParentContainerId] = useState(item.parentContainerId || '');
+  const [receiptUrl, setReceiptUrl] = useState(item.receiptUrl || '');
+  const [hasReceipt, setHasReceipt] = useState(!!item.hasReceipt);
+
   const [parsingSpecs, setParsingSpecs] = useState(false);
   const [generatingTitle, setGeneratingTitle] = useState(false);
   const [genListing, setGenListing] = useState(false);
@@ -189,11 +217,40 @@ const ListingStudioModal: React.FC<Props> = ({
       ...item,
       name,
       specs,
+      category,
+      subCategory: subCategory || undefined,
+      status,
+      buyDate: buyDate || item.buyDate,
+      sellDate: sellDate || undefined,
+      isDefective: isDefective || undefined,
+      usesDifferentialVat: usesDifferentialVat || undefined,
+      parentContainerId: parentContainerId || undefined,
+      hasReceipt,
+      receiptUrl: receiptUrl || undefined,
+      comment1: notes.trim() || undefined,
       marketTitle: title,
       marketDescription: description,
       aiDescriptionNote: aiDescriptionNote.trim() || undefined,
     }),
-    [item, name, specs, title, description, aiDescriptionNote]
+    [
+      item,
+      name,
+      specs,
+      category,
+      subCategory,
+      status,
+      buyDate,
+      sellDate,
+      isDefective,
+      usesDifferentialVat,
+      parentContainerId,
+      hasReceipt,
+      receiptUrl,
+      notes,
+      title,
+      description,
+      aiDescriptionNote,
+    ]
   );
 
   const photos = useMemo(() => getItemUserPhotoUrls(workingItem), [workingItem]);
@@ -210,8 +267,8 @@ const ListingStudioModal: React.FC<Props> = ({
   }, [photos, previewPhotoIndex]);
 
   const cardFields =
-    categoryFields[`${item.category}:${item.subCategory}`] ||
-    categoryFields[item.category] ||
+    categoryFields[`${category}:${subCategory}`] ||
+    categoryFields[category] ||
     [];
 
   const cardSpecChips = useMemo(
@@ -222,11 +279,28 @@ const ListingStudioModal: React.FC<Props> = ({
   const soldPriceBand = useMemo(
     () =>
       getInventorySoldPriceBand(allItems || [], name.trim() || item.name || '', {
-        category: item.category,
-        subCategory: item.subCategory,
+        category: category || item.category,
+        subCategory: subCategory || item.subCategory,
       }),
-    [allItems, name, item.name, item.category, item.subCategory]
+    [allItems, name, item.name, category, item.category, subCategory, item.subCategory]
   );
+
+  const openContainers = useMemo(
+    () =>
+      (allItems || []).filter(
+        (i) =>
+          i.id !== item.id &&
+          (i.isPC || i.isBundle) &&
+          (i.status === ItemStatus.IN_STOCK ||
+            i.status === ItemStatus.IN_COMPOSITION ||
+            i.status === ItemStatus.ORDERED) &&
+          !i.isDraft
+      ),
+    [allItems, item.id]
+  );
+
+  const categoryOptions = Object.keys(categories);
+  const subCategoryOptions = categories[category] || [];
 
   /** Buyer-facing listing hints only (not used by product-card image GEN). */
   const listingAccessories = useMemo(() => {
@@ -300,6 +374,21 @@ const ListingStudioModal: React.FC<Props> = ({
     setBuyChatUrl(item.kleinanzeigenBuyChatUrl || '');
     setBuyChatImage(item.kleinanzeigenBuyChatImage || '');
     setSellerProfileUrl(item.kleinanzeigenSellerProfileUrl || '');
+    setStatus(item.status);
+    setCategory(item.category || 'Components');
+    setSubCategory(item.subCategory || '');
+    setBuyPriceText(item.buyPrice != null && item.buyPrice !== 0 ? String(item.buyPrice) : '');
+    setSellPriceText(item.sellPrice != null ? String(item.sellPrice) : '');
+    setStorePriceText(item.storePrice != null ? String(item.storePrice) : '');
+    setBuyDate(item.buyDate || '');
+    setSellDate(item.sellDate || '');
+    setQuantityText(item.quantity != null ? String(item.quantity) : '');
+    setNotes(item.comment1 || '');
+    setUsesDifferentialVat(!!item.usesDifferentialVat);
+    setIsDefective(!!item.isDefective);
+    setParentContainerId(item.parentContainerId || '');
+    setReceiptUrl(item.receiptUrl || '');
+    setHasReceipt(!!item.hasReceipt);
     setPreviewPhotoIndex(null);
     setError(null);
     // intentionally only item.id — local draft fields are source of truth while studio is open
@@ -350,6 +439,48 @@ const ListingStudioModal: React.FC<Props> = ({
     await onUpdateItem(patch);
   };
 
+  const commitMoneyField = (
+    raw: string,
+    field: 'buyPrice' | 'sellPrice' | 'storePrice',
+    setText: (v: string) => void
+  ) => {
+    if (raw.trim() === '') {
+      if (field === 'buyPrice') {
+        setText('');
+        void persistPatch({ buyPrice: 0 });
+        return;
+      }
+      setText('');
+      void persistPatch({ [field]: undefined });
+      return;
+    }
+    const n = parseLocaleNumber(raw);
+    if (!Number.isFinite(n)) return;
+    setText(String(n));
+    void persistPatch({ [field]: n });
+  };
+
+  const handleReceiptUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const reader = new FileReader();
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('read failed'));
+        reader.readAsDataURL(file);
+      });
+      if (!dataUrl) throw new Error('empty');
+      setHasReceipt(true);
+      setReceiptUrl(dataUrl);
+      await persistPatch({ hasReceipt: true, receiptUrl: dataUrl });
+    } catch {
+      setError('Could not attach receipt.');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
   const handleGenerateItemTitle = async () => {
     if (!name.trim()) {
       setError('Enter an item name first.');
@@ -358,8 +489,8 @@ const ListingStudioModal: React.FC<Props> = ({
     setGeneratingTitle(true);
     setError(null);
     try {
-      const categoryContext = `${item.category || 'Unknown'}${item.subCategory ? ` / ${item.subCategory}` : ''}`;
-      const knownKeys = resolveEssentialSpecKeys(item.category || '', item.subCategory, categoryFields);
+      const categoryContext = `${category || 'Unknown'}${subCategory ? ` / ${subCategory}` : ''}`;
+      const knownKeys = resolveEssentialSpecKeys(category || '', subCategory, categoryFields);
       const result = await generateItemSpecs(name.trim(), categoryContext, knownKeys);
       const nv = pickSpecsAiNameVendorUpdates(result, { applyStandardizedName: true });
       if (!nv.name) {
@@ -388,14 +519,14 @@ const ListingStudioModal: React.FC<Props> = ({
     setParsingSpecs(true);
     setError(null);
     try {
-      const categoryContext = `${item.category || 'Unknown'}${item.subCategory ? ` / ${item.subCategory}` : ''}`;
-      const knownKeys = resolveEssentialSpecKeys(item.category || '', item.subCategory, categoryFields);
+      const categoryContext = `${category || 'Unknown'}${subCategory ? ` / ${subCategory}` : ''}`;
+      const knownKeys = resolveEssentialSpecKeys(category || '', subCategory, categoryFields);
       const result = await generateItemSpecs(name.trim(), categoryContext, knownKeys);
       const newSpecs = mergeAiSpecsIntoEssential(
         specs,
         result.specs,
-        item.category || '',
-        item.subCategory,
+        category || '',
+        subCategory,
         categoryFields
       );
       setSpecs(newSpecs);
@@ -789,7 +920,7 @@ const ListingStudioModal: React.FC<Props> = ({
               <Sparkles size={14} className="text-rose-600" /> Listing Studio
             </h3>
             <p className="hidden sm:block text-[11px] text-slate-500 font-medium truncate">
-              Specs · Photos · Title & description
+              Inventory · Specs · Photos · Title & description
             </p>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -1091,7 +1222,7 @@ const ListingStudioModal: React.FC<Props> = ({
               aria-expanded={mobileDetailsOpen}
             >
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">
-                Specs & purchase
+                Inventory · Specs · purchase
                 {Object.keys(specs).length > 0 ? ` · ${Object.keys(specs).length}` : ''}
               </span>
               <span className="text-[10px] font-bold text-slate-400">
@@ -1193,6 +1324,313 @@ const ListingStudioModal: React.FC<Props> = ({
                     </button>
                   </div>
                 ))}
+              </div>
+            </section>
+
+            <section>
+              <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
+                Inventory
+              </h4>
+              <div className="space-y-1.5 text-[11px]">
+                <div className="flex flex-wrap gap-1">
+                  {(
+                    [
+                      ItemStatus.IN_STOCK,
+                      ItemStatus.ORDERED,
+                      ItemStatus.SOLD,
+                      ItemStatus.TRADED,
+                      ItemStatus.GIFTED,
+                      ItemStatus.IN_COMPOSITION,
+                    ] as ItemStatus[]
+                  ).map((st) => (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => {
+                        setStatus(st);
+                        const patch: Partial<InventoryItem> = { status: st };
+                        if (
+                          st === ItemStatus.SOLD ||
+                          st === ItemStatus.TRADED ||
+                          st === ItemStatus.GIFTED
+                        ) {
+                          const nextSellDate = sellDate || new Date().toISOString().split('T')[0];
+                          setSellDate(nextSellDate);
+                          patch.sellDate = nextSellDate;
+                        }
+                        if (st === ItemStatus.TRADED) {
+                          setPaymentType('Trade');
+                          patch.paymentType = 'Trade';
+                        }
+                        if (st === ItemStatus.GIFTED) {
+                          setPaymentType('Gift');
+                          patch.paymentType = 'Gift';
+                        }
+                        if (st === ItemStatus.IN_COMPOSITION && !parentContainerId && openContainers[0]) {
+                          setParentContainerId(openContainers[0].id);
+                          patch.parentContainerId = openContainers[0].id;
+                        }
+                        void persistPatch(patch);
+                      }}
+                      className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide border ${
+                        status === st
+                          ? 'bg-slate-900 text-white border-slate-900'
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      {st}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-2 gap-1.5">
+                  <label className="block space-y-0.5">
+                    <span className="text-[9px] font-black uppercase text-slate-400">Category</span>
+                    <select
+                      className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-semibold text-slate-900 outline-none"
+                      value={category}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        const nextSubs = categories[next] || [];
+                        const nextSub = nextSubs.includes(subCategory) ? subCategory : nextSubs[0] || '';
+                        setCategory(next);
+                        setSubCategory(nextSub);
+                        void persistPatch({
+                          category: next,
+                          subCategory: nextSub || undefined,
+                        });
+                      }}
+                    >
+                      {categoryOptions.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block space-y-0.5">
+                    <span className="text-[9px] font-black uppercase text-slate-400">Subcategory</span>
+                    <select
+                      className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-semibold text-slate-900 outline-none disabled:opacity-50"
+                      value={subCategory}
+                      disabled={!subCategoryOptions.length}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setSubCategory(next);
+                        void persistPatch({ subCategory: next || undefined });
+                      }}
+                    >
+                      {!subCategoryOptions.length && <option value="">—</option>}
+                      {subCategoryOptions.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-3 gap-1.5">
+                  <label className="block space-y-0.5">
+                    <span className="text-[9px] font-black uppercase text-slate-400">Buy €</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-bold text-slate-900 outline-none focus:border-rose-400"
+                      value={buyPriceText}
+                      placeholder="0"
+                      onChange={(e) => setBuyPriceText(e.target.value)}
+                      onBlur={() => commitMoneyField(buyPriceText, 'buyPrice', setBuyPriceText)}
+                    />
+                  </label>
+                  <label className="block space-y-0.5">
+                    <span className="text-[9px] font-black uppercase text-slate-400">Sold €</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-bold text-slate-900 outline-none focus:border-rose-400"
+                      value={sellPriceText}
+                      placeholder="—"
+                      onChange={(e) => setSellPriceText(e.target.value)}
+                      onBlur={() => commitMoneyField(sellPriceText, 'sellPrice', setSellPriceText)}
+                    />
+                  </label>
+                  <label className="block space-y-0.5">
+                    <span className="text-[9px] font-black uppercase text-slate-400">Store €</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-bold text-slate-900 outline-none focus:border-rose-400"
+                      value={storePriceText}
+                      placeholder="—"
+                      onChange={(e) => setStorePriceText(e.target.value)}
+                      onBlur={() => commitMoneyField(storePriceText, 'storePrice', setStorePriceText)}
+                    />
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-3 gap-1.5">
+                  <label className="block space-y-0.5">
+                    <span className="text-[9px] font-black uppercase text-slate-400">Buy date</span>
+                    <input
+                      type="date"
+                      className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-semibold text-slate-900 outline-none"
+                      value={buyDate}
+                      onChange={(e) => {
+                        setBuyDate(e.target.value);
+                        void persistPatch({ buyDate: e.target.value });
+                      }}
+                    />
+                  </label>
+                  <label className="block space-y-0.5">
+                    <span className="text-[9px] font-black uppercase text-slate-400">Sell date</span>
+                    <input
+                      type="date"
+                      className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-semibold text-slate-900 outline-none"
+                      value={sellDate}
+                      onChange={(e) => {
+                        setSellDate(e.target.value);
+                        void persistPatch({ sellDate: e.target.value || undefined });
+                      }}
+                    />
+                  </label>
+                  <label className="block space-y-0.5">
+                    <span className="text-[9px] font-black uppercase text-slate-400">Qty</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-bold text-slate-900 outline-none focus:border-rose-400"
+                      value={quantityText}
+                      placeholder="1"
+                      onChange={(e) => setQuantityText(e.target.value)}
+                      onBlur={() => {
+                        if (quantityText.trim() === '') {
+                          setQuantityText('');
+                          void persistPatch({ quantity: undefined });
+                          return;
+                        }
+                        const n = Math.max(1, Math.floor(Number(quantityText)));
+                        if (!Number.isFinite(n)) return;
+                        setQuantityText(String(n));
+                        void persistPatch({ quantity: n });
+                      }}
+                    />
+                  </label>
+                </div>
+
+                <label className="block space-y-0.5">
+                  <span className="text-[9px] font-black uppercase text-slate-400">Notes / condition</span>
+                  <textarea
+                    className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-semibold text-slate-900 outline-none focus:border-rose-400 min-h-[48px] resize-y"
+                    value={notes}
+                    placeholder="Condition, defects, accessories…"
+                    onChange={(e) => setNotes(e.target.value)}
+                    onBlur={() => void persistPatch({ comment1: notes.trim() || undefined })}
+                  />
+                </label>
+
+                <div className="flex flex-wrap gap-3 pt-0.5">
+                  <label className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={isDefective}
+                      onChange={(e) => {
+                        setIsDefective(e.target.checked);
+                        void persistPatch({ isDefective: e.target.checked || undefined });
+                      }}
+                      className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                    />
+                    Defective
+                  </label>
+                  <label className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={usesDifferentialVat}
+                      onChange={(e) => {
+                        setUsesDifferentialVat(e.target.checked);
+                        void persistPatch({ usesDifferentialVat: e.target.checked || undefined });
+                      }}
+                      className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                    />
+                    Diff. VAT
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 gap-1.5 pt-1 border-t border-slate-200/80">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[9px] font-black uppercase text-slate-400">Receipt</span>
+                    <label className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-slate-200 text-[9px] font-black uppercase text-slate-600 cursor-pointer hover:bg-slate-50">
+                      <Upload size={11} />
+                      {hasReceipt ? 'Replace' : 'Attach'}
+                      <input
+                        type="file"
+                        accept="image/*,application/pdf"
+                        className="hidden"
+                        onChange={(e) => void handleReceiptUpload(e)}
+                      />
+                    </label>
+                    {hasReceipt && (
+                      <>
+                        {receiptUrl && (
+                          <a
+                            href={receiptUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[9px] font-bold text-sky-700 hover:underline"
+                          >
+                            Open
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setHasReceipt(false);
+                            setReceiptUrl('');
+                            void persistPatch({ hasReceipt: false, receiptUrl: undefined });
+                          }}
+                          className="text-[9px] font-bold text-rose-600 hover:underline"
+                        >
+                          Remove
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  <label className="block space-y-0.5">
+                    <span className="text-[9px] font-black uppercase text-slate-400">
+                      Add into PC / Bundle
+                    </span>
+                    <select
+                      className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-semibold text-slate-900 outline-none"
+                      value={parentContainerId}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setParentContainerId(v);
+                        if (v) {
+                          setStatus(ItemStatus.IN_COMPOSITION);
+                          void persistPatch({
+                            parentContainerId: v,
+                            status: ItemStatus.IN_COMPOSITION,
+                          });
+                        } else {
+                          const nextStatus =
+                            status === ItemStatus.IN_COMPOSITION ? ItemStatus.IN_STOCK : status;
+                          setStatus(nextStatus);
+                          void persistPatch({
+                            parentContainerId: undefined,
+                            status: nextStatus,
+                          });
+                        }
+                      }}
+                    >
+                      <option value="">— Not linked —</option>
+                      {openContainers.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.isPC ? 'PC' : 'Bundle'}: {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
               </div>
             </section>
 
@@ -1583,12 +2021,15 @@ const ListingStudioModal: React.FC<Props> = ({
                 <div className="flex flex-wrap gap-1.5">
                   <button
                     type="button"
-                    onClick={() =>
+                    onClick={() => {
+                      const m = soldPriceBand.median;
+                      setSellPriceText(String(m));
+                      setStorePriceText(String(m));
                       void persistPatch({
-                        sellPrice: soldPriceBand.median,
-                        storePrice: soldPriceBand.median,
-                      })
-                    }
+                        sellPrice: m,
+                        storePrice: m,
+                      });
+                    }}
                     className="px-2 py-1 rounded-md bg-emerald-600 text-white text-[10px] font-bold"
                     title="Set target sell + store price to your median sold price"
                   >
@@ -1596,7 +2037,11 @@ const ListingStudioModal: React.FC<Props> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => void persistPatch({ storePrice: soldPriceBand.median })}
+                    onClick={() => {
+                      const m = soldPriceBand.median;
+                      setStorePriceText(String(m));
+                      void persistPatch({ storePrice: m });
+                    }}
                     className="px-2 py-1 rounded-md bg-white border border-emerald-200 text-emerald-800 text-[10px] font-bold"
                   >
                     Use as store price
