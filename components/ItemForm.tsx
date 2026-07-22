@@ -38,7 +38,6 @@ import { searchProductPhotos, getImageSearchProviders, ImageSearchResult, ImageS
 import { getCachedProductPhoto, setCachedProductPhoto } from '../services/firebaseService';
 import { fetchMyEbayListings, getEbayUsername, ebayListingToPriceMatch, type EbayMyListing, type EbayListingPriceMatch } from '../services/ebayService';
 import { matchEbayListingsForItem } from '../utils/ebayListingMatch';
-import { getInventorySoldPriceBand } from '../utils/inventorySoldComps';
 import { findDuplicateCandidates } from '../utils/duplicateMatch';
 import KleinanzeigenBuyChatProofFields from './KleinanzeigenBuyChatProofFields';
 import {
@@ -318,15 +317,6 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     if (!isCreatingNew || duplicateDismissed) return [];
     return findDuplicateCandidates(items, formData.name || '', formData.id, 4);
   }, [items, formData.name, formData.id, isCreatingNew, duplicateDismissed]);
-
-  const soldPriceBand = useMemo(
-    () =>
-      getInventorySoldPriceBand(items, formData.name || '', {
-        category: formData.category,
-        subCategory: formData.subCategory,
-      }),
-    [items, formData.name, formData.category, formData.subCategory]
-  );
 
   const historyPresets = useMemo(() => buildHistoryPresets(items, 6), [items]);
 
@@ -1705,43 +1695,6 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                              />
                           </div>
                          </div>
-
-                         {soldPriceBand && (
-                           <div className="rounded-lg bg-white border border-emerald-100 px-3 py-2 space-y-1.5">
-                             <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">
-                               Your sold prices ({soldPriceBand.count})
-                             </p>
-                             <p className="text-xs text-slate-700 font-bold">
-                               €{formatEUR(soldPriceBand.low)} – €{formatEUR(soldPriceBand.high)}
-                               <span className="text-slate-400 font-medium"> · median </span>
-                               €{formatEUR(soldPriceBand.median)}
-                               <span className="text-slate-400 font-medium"> · avg sold </span>
-                               €{formatEUR(soldPriceBand.average)}
-                             </p>
-                             <div className="flex flex-wrap gap-1.5">
-                               <button
-                                 type="button"
-                                 onClick={() => {
-                                   setSellPriceText(String(soldPriceBand.median));
-                                   setFormData((prev) => ({ ...prev, sellPrice: soldPriceBand.median }));
-                                 }}
-                                 className="px-2 py-1 rounded-md bg-emerald-600 text-white text-[10px] font-bold"
-                               >
-                                 Use median as target
-                               </button>
-                               <button
-                                 type="button"
-                                 onClick={() => {
-                                   setStorePriceText(String(soldPriceBand.median));
-                                   setFormData((prev) => ({ ...prev, storePrice: soldPriceBand.median }));
-                                 }}
-                                 className="px-2 py-1 rounded-md bg-white border border-emerald-200 text-emerald-800 text-[10px] font-bold"
-                               >
-                                 Use as store price
-                               </button>
-                             </div>
-                           </div>
-                         )}
 
                          <div className="flex flex-wrap items-center gap-2">
                            <button

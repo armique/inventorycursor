@@ -66,6 +66,8 @@ import {
 } from '../services/productCardGallery';
 import { resolveUrlForInventoryMainPhoto } from '../utils/applyProductCardAsMainPhoto';
 import { getChildren } from '../services/financialAggregation';
+import { getInventorySoldPriceBand } from '../utils/inventorySoldComps';
+import { formatEUR } from '../utils/formatMoney';
 import PhoneUploadQrPanel from './PhoneUploadQrPanel';
 import LocalPhotoFolderPanel from './LocalPhotoFolderPanel';
 import KleinanzeigenBuyChatProofFields from './KleinanzeigenBuyChatProofFields';
@@ -215,6 +217,15 @@ const ListingStudioModal: React.FC<Props> = ({
   const cardSpecChips = useMemo(
     () => getProductCardSpecs(workingItem, cardFields, 8),
     [workingItem, cardFields]
+  );
+
+  const soldPriceBand = useMemo(
+    () =>
+      getInventorySoldPriceBand(allItems || [], name.trim() || item.name || '', {
+        category: item.category,
+        subCategory: item.subCategory,
+      }),
+    [allItems, name, item.name, item.category, item.subCategory]
   );
 
   /** Buyer-facing listing hints only (not used by product-card image GEN). */
@@ -1557,6 +1568,43 @@ const ListingStudioModal: React.FC<Props> = ({
             id="studio-listing"
             className="overflow-y-auto p-2.5 space-y-2 lg:p-3 lg:space-y-2.5 bg-slate-50/30 flex flex-col scroll-mt-2"
           >
+            {soldPriceBand && (
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-2.5 py-2 space-y-1.5 shrink-0">
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">
+                  Your sold comps ({soldPriceBand.count})
+                </p>
+                <p className="text-xs text-slate-700 font-bold">
+                  €{formatEUR(soldPriceBand.low)} – €{formatEUR(soldPriceBand.high)}
+                  <span className="text-slate-400 font-medium"> · median </span>
+                  €{formatEUR(soldPriceBand.median)}
+                  <span className="text-slate-400 font-medium"> · avg sold </span>
+                  €{formatEUR(soldPriceBand.average)}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void persistPatch({
+                        sellPrice: soldPriceBand.median,
+                        storePrice: soldPriceBand.median,
+                      })
+                    }
+                    className="px-2 py-1 rounded-md bg-emerald-600 text-white text-[10px] font-bold"
+                    title="Set target sell + store price to your median sold price"
+                  >
+                    Use median as target
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void persistPatch({ storePrice: soldPriceBand.median })}
+                    className="px-2 py-1 rounded-md bg-white border border-emerald-200 text-emerald-800 text-[10px] font-bold"
+                  >
+                    Use as store price
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shrink-0">
               <div className="px-2.5 py-1.5 border-b border-slate-100 bg-slate-50 flex justify-between items-center gap-2">
                 <div className="min-w-0 flex items-baseline gap-2">
