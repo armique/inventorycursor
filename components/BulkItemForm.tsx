@@ -884,6 +884,30 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
     navigate('/panel/inventory');
   };
 
+  const persistBulkChatProof = async (patch: {
+    kleinanzeigenBuyChatUrl?: string;
+    kleinanzeigenBuyChatImage?: string;
+    kleinanzeigenSellerProfileUrl?: string;
+  }) => {
+    setChatUrl(patch.kleinanzeigenBuyChatUrl || '');
+    setChatImage(patch.kleinanzeigenBuyChatImage || '');
+    setSellerProfileUrl(patch.kleinanzeigenSellerProfileUrl || '');
+  };
+
+  const renderSellerChatProofFields = () => (
+    <KleinanzeigenBuyChatProofFields
+      itemId="bulk-draft"
+      compact
+      chatUrl={chatUrl}
+      chatImage={chatImage}
+      sellerProfileUrl={sellerProfileUrl}
+      onChatUrlChange={setChatUrl}
+      onChatImageChange={setChatImage}
+      onSellerProfileUrlChange={setSellerProfileUrl}
+      onPersist={persistBulkChatProof}
+    />
+  );
+
   return (
     <div className="max-w-[1600px] mx-auto h-[calc(100dvh-5.5rem)] md:h-[calc(100vh-100px)] flex flex-col animate-in fade-in">
       {/* HEADER */}
@@ -978,6 +1002,19 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
         </div>
       </header>
 
+      {platform === 'kleinanzeigen.de' && (
+        <div className="lg:hidden shrink-0 mx-3 sm:mx-4 mb-3 rounded-2xl border border-emerald-100 bg-emerald-50/50 px-3 py-3 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <MessageCircle size={12} className="text-emerald-700" />
+            <h4 className="font-black text-[10px] uppercase tracking-widest text-emerald-800">
+              Seller / chat proof
+            </h4>
+            <span className="text-[9px] font-bold text-emerald-700/70">Applies to every row</span>
+          </div>
+          {renderSellerChatProofFields()}
+        </div>
+      )}
+
       <div className="flex flex-1 flex-col lg:flex-row gap-3 lg:gap-6 overflow-y-auto lg:overflow-hidden px-3 sm:px-4 pb-[max(5.5rem,calc(4rem+env(safe-area-inset-bottom)))] lg:pb-4">
          
          {/* LEFT: ITEM BUILDER */}
@@ -989,33 +1026,6 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                <button onClick={() => setMode('SCAN')} className={`flex-1 py-3 rounded-xl transition-all flex items-center justify-center gap-1 ${mode === 'SCAN' ? 'bg-white shadow text-rose-600' : 'text-slate-500 hover:text-slate-700'}`}><ScanBarcode size={12} /> Scan</button>
                <button onClick={() => setMode('SEARCH')} className={`flex-1 py-3 rounded-xl transition-all ${mode === 'SEARCH' ? 'bg-white shadow text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Database</button>
             </div>
-
-            {platform === 'kleinanzeigen.de' && (
-              <div className="bg-white p-4 sm:p-5 rounded-[1.75rem] sm:rounded-[2.5rem] border border-emerald-100 shadow-sm space-y-2">
-                <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 flex items-center gap-2">
-                  <MessageCircle size={12} /> Seller / chat proof
-                </h3>
-                <p className="text-[10px] text-slate-500 font-medium leading-snug">
-                  Same as single-item add — applies to every row in this bulk import (chat link, seller profile,
-                  screenshot).
-                </p>
-                <KleinanzeigenBuyChatProofFields
-                  itemId="bulk-draft"
-                  compact
-                  chatUrl={chatUrl}
-                  chatImage={chatImage}
-                  sellerProfileUrl={sellerProfileUrl}
-                  onChatUrlChange={setChatUrl}
-                  onChatImageChange={setChatImage}
-                  onSellerProfileUrlChange={setSellerProfileUrl}
-                  onPersist={async (patch) => {
-                    setChatUrl(patch.kleinanzeigenBuyChatUrl || '');
-                    setChatImage(patch.kleinanzeigenBuyChatImage || '');
-                    setSellerProfileUrl(patch.kleinanzeigenSellerProfileUrl || '');
-                  }}
-                />
-              </div>
-            )}
 
             {mode === 'SCAN' ? (
                <div className="bg-white p-4 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-3">
@@ -1239,8 +1249,8 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
             <div className="bg-slate-50 p-4 sm:p-6 rounded-[1.75rem] sm:rounded-[2.5rem] border border-slate-200 space-y-4">
                <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 flex items-center gap-2"><Globe size={12}/> Item photos</h3>
                <p className="text-[10px] text-slate-500 font-medium leading-snug">
-                 Optional photos applied to every imported row. Seller chat proof is above when Bought on =
-                 Kleinanzeigen.
+                 Optional photos applied to every imported row. Seller chat proof lives in the Items panel when
+                 Bought on = Kleinanzeigen.
                </p>
 
                <div className="space-y-2">
@@ -1324,6 +1334,21 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                   </button>
                </div>
             </div>
+
+            {platform === 'kleinanzeigen.de' && (
+              <div className="hidden lg:block shrink-0 border-b border-emerald-100 bg-emerald-50/40 px-3 sm:px-4 py-3 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <MessageCircle size={12} className="text-emerald-700" />
+                  <h4 className="font-black text-[10px] uppercase tracking-widest text-emerald-800">
+                    Seller / chat proof
+                  </h4>
+                  <span className="text-[9px] font-bold text-emerald-700/70">
+                    Applies to every row
+                  </span>
+                </div>
+                {renderSellerChatProofFields()}
+              </div>
+            )}
 
             <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2">
                {items.length === 0 ? (
