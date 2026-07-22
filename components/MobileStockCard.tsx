@@ -38,10 +38,13 @@ export interface MobileStockCardActions {
 export const MobileStockCard: React.FC<{
   item: InventoryItem;
   profit?: number | null;
+  /** Suggested eBay list € (fee-aware). */
+  suggestedEbayList?: number | null;
+  suggestedFeePct?: number | null;
   selected?: boolean;
   onToggleSelect?: () => void;
   actions: MobileStockCardActions;
-}> = ({ item, profit, selected, onToggleSelect, actions }) => {
+}> = ({ item, profit, suggestedEbayList, suggestedFeePct, selected, onToggleSelect, actions }) => {
   const [moreOpen, setMoreOpen] = React.useState(false);
   const photoCount = getItemUserPhotoCount(item);
   const hasPhotos = photoCount > 0;
@@ -120,6 +123,13 @@ export const MobileStockCard: React.FC<{
                 )}
                 €{formatEUR(item.buyPrice)}
                 {item.sellPrice != null ? ` · aim €${formatEUR(item.sellPrice)}` : ''}
+                {suggestedEbayList != null && suggestedEbayList > 0 ? (
+                  <span className="text-sky-700">
+                    {' '}
+                    · eBay ~€{formatEUR(suggestedEbayList)}
+                    {suggestedFeePct != null ? ` (−${suggestedFeePct}%)` : ''}
+                  </span>
+                ) : null}
                 {profit != null ? (
                   <span className={profit >= 0 ? ' text-emerald-600' : ' text-rose-600'}>
                     {' '}

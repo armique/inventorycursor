@@ -5,6 +5,7 @@ import {
   Activity,
   Check,
   ClipboardCopy,
+  Clock,
   ExternalLink,
   Flame,
   Lightbulb,
@@ -29,6 +30,10 @@ import {
   totalEbayFeePct,
   type FlipFeeSettings,
 } from '../utils/flipCoach';
+import {
+  computeBuyFirstProducts,
+  summarizeFlipInsights,
+} from '../utils/flipInsights';
 import {
   buildDailyMissions,
   channelLabel,
@@ -55,6 +60,8 @@ const FlipCoachPage: React.FC<Props> = ({ items }) => {
   const feePct = totalEbayFeePct(fees);
 
   const buyFocus = useMemo(() => computeBuyFocus(items, 8), [items]);
+  const buyFirstProducts = useMemo(() => computeBuyFirstProducts(items, 8), [items]);
+  const flipInsights = useMemo(() => summarizeFlipInsights(items), [items]);
   const sellNow = useMemo(() => buildSellNowQueue(items, fees, 12), [items, fees]);
   const missions = useMemo(
     () => buildDailyMissions(items, fees, missionLog, 3),
@@ -106,7 +113,7 @@ const FlipCoachPage: React.FC<Props> = ({ items }) => {
         <div className="min-w-0">
           <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Flip Coach</h1>
           <p className="text-xs text-slate-500">
-            Sell next · Klein vs eBay prices · what to keep buying
+            Sell next · eBay prices (~{feePct.toFixed(0)}% fees) · flip speed · buy first
           </p>
         </div>
         <Link
@@ -116,6 +123,95 @@ const FlipCoachPage: React.FC<Props> = ({ items }) => {
           <Activity size={13} /> Sold Pulse
         </Link>
       </header>
+
+      <section className="rounded-xl border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-indigo-50 p-3 space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-xs font-black uppercase tracking-widest text-sky-900 flex items-center gap-1.5">
+            <Clock size={14} /> Flip Insights
+          </h2>
+          <p className="text-[10px] font-bold text-sky-800/80">
+            Speed · profit · how close sales hit your suggested eBay price
+          </p>
+        </div>
+        {flipInsights.soldWithTiming === 0 ? (
+          <p className="text-xs text-slate-600">
+            Need sold items with buy + sell dates. Click inventory “eBay ~€…” chips to save price
+            suggestions for accuracy tracking.
+          </p>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <div className="rounded-lg border border-sky-100 bg-white p-2.5">
+                <p className="text-[9px] font-black uppercase text-slate-400">Avg flip</p>
+                <p className="text-lg font-black text-slate-900">{flipInsights.avgDaysToSell}d</p>
+                <p className="text-[10px] text-slate-500">median {flipInsights.medianDaysToSell}d</p>
+              </div>
+              <div className="rounded-lg border border-emerald-100 bg-white p-2.5">
+                <p className="text-[9px] font-black uppercase text-slate-400">Avg profit</p>
+                <p className="text-lg font-black text-emerald-700">
+                  €{formatEUR(flipInsights.avgProfit)}
+                </p>
+                <p className="text-[10px] text-slate-500">{flipInsights.soldWithTiming} timed sales</p>
+              </div>
+              <div className="rounded-lg border border-violet-100 bg-white p-2.5">
+                <p className="text-[9px] font-black uppercase text-slate-400">vs suggest</p>
+                <p className="text-lg font-black text-violet-800">
+                  {flipInsights.avgPriceAccuracyPct != null
+                    ? `${Math.round(flipInsights.avgPriceAccuracyPct)}%`
+                    : '—'}
+                </p>
+                <p className="text-[10px] text-slate-500">
+                  {flipInsights.withSuggestion
+                    ? `${flipInsights.withSuggestion} with saved suggest`
+                    : 'Save eBay chips to track'}
+                </p>
+              </div>
+              <div className="rounded-lg border border-amber-100 bg-white p-2.5">
+                <p className="text-[9px] font-black uppercase text-slate-400">Fee model</p>
+                <p className="text-lg font-black text-amber-800">{feePct.toFixed(1)}%</p>
+                <p className="text-[10px] text-slate-500">eBay fee + ads (editable →)</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div className="rounded-lg border border-slate-100 bg-white p-2 space-y-1">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                  Fastest flips
+                </p>
+                {flipInsights.fastest.slice(0, 5).map((r) => (
+                  <div
+                    key={r.itemId}
+                    className="flex items-center justify-between gap-2 text-[11px]"
+                  >
+                    <span className="font-bold text-slate-800 truncate">{r.name}</span>
+                    <span className="shrink-0 font-black text-sky-800">
+                      {r.daysToSell}d · €{formatEUR(r.profit)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="rounded-lg border border-slate-100 bg-white p-2 space-y-1">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                  Best € / day
+                </p>
+                {flipInsights.bestProfitPerDay.slice(0, 5).map((r) => (
+                  <div
+                    key={r.itemId}
+                    className="flex items-center justify-between gap-2 text-[11px]"
+                  >
+                    <span className="font-bold text-slate-800 truncate">{r.name}</span>
+                    <span className="shrink-0 font-black text-emerald-700">
+                      €{formatEUR(r.profit / Math.max(r.daysToSell, 1))}/d
+                      {r.priceAccuracyPct != null
+                        ? ` · ${Math.round(r.priceAccuracyPct)}% hit`
+                        : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </section>
 
       {/* Missions: full width, 3 across on desktop */}
       <section className="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-3 space-y-2.5">
@@ -366,7 +462,8 @@ const FlipCoachPage: React.FC<Props> = ({ items }) => {
               </label>
             </div>
             <p className="text-[10px] text-slate-500 leading-snug">
-              €100 pocket → Klein €{formatEUR(example.kleinanzeigen)} · eBay €{formatEUR(example.ebay)}
+              Default ~30% total cut. €100 pocket → Klein €{formatEUR(example.kleinanzeigen)} · eBay €
+              {formatEUR(example.ebay)}
             </p>
           </section>
 
@@ -415,7 +512,48 @@ const FlipCoachPage: React.FC<Props> = ({ items }) => {
 
           <section className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
             <h2 className="text-[11px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
-              <TrendingUp size={13} className="text-violet-600" /> Keep buying
+              <Zap size={13} className="text-amber-500" /> Buy these first
+            </h2>
+            {buyFirstProducts.length === 0 ? (
+              <p className="text-xs text-slate-500">
+                Need ≥2 timed sales of the same model. Fast + profitable products show up here.
+              </p>
+            ) : (
+              <div className="space-y-1.5 max-h-[min(36vh,18rem)] overflow-y-auto overscroll-contain">
+                {buyFirstProducts.map((row) => (
+                  <div
+                    key={row.key}
+                    className="p-2 rounded-lg bg-amber-50/50 border border-amber-100 space-y-0.5"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-xs font-black text-slate-900 line-clamp-2">{row.label}</p>
+                      <span
+                        className={`shrink-0 text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${
+                          row.advice.startsWith('Buy first') || row.advice.startsWith('Restock')
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : row.advice.startsWith('Slow')
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-slate-200 text-slate-700'
+                        }`}
+                      >
+                        {row.advice.split('—')[0].trim()}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 font-bold">
+                      {row.soldCount} sold · ~{row.avgDaysToSell}d · avg sold €
+                      {formatEUR(row.avgSoldPrice)} · €{formatEUR(row.avgProfit)} profit · €
+                      {formatEUR(row.profitPerDay)}/d
+                      {row.inStock ? ` · ${row.inStock} in stock` : ''}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
+            <h2 className="text-[11px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+              <TrendingUp size={13} className="text-violet-600" /> Keep buying (categories)
             </h2>
             {buyFocus.length === 0 ? (
               <p className="text-xs text-slate-500">Need more sold history with dates.</p>

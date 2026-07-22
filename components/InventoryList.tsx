@@ -7,7 +7,7 @@ import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSort
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks,   Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone, Camera, Gift, User, Wand2, Images
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks,   Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone, Camera, Gift, User, Wand2, Images, Target
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, TaxMode, BulkImportRecord } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
@@ -34,6 +34,12 @@ import { bulkImportSourceLabel, countBulkImportItems } from '../utils/bulkImport
 import MobileStockCard from './MobileStockCard';
 import { MobileSheetShell } from './MobileBottomSheets';
 import { generateMarketplaceListing } from '../services/marketplaceListingAI';
+import {
+  buildSuggestedEbayMap,
+  resolveSuggestedEbayList,
+  suggestionPatchFromPrice,
+} from '../utils/flipInsights';
+import { loadFlipFees } from '../utils/flipCoach';
 import {
   enqueueProductCardBackgroundJob,
   isItemProductCardJobActive,
@@ -1959,6 +1965,33 @@ const InventoryList: React.FC<Props> = ({
   const containersById = useMemo(() => buildContainersById(items), [items]);
   const containerByChildId = useMemo(() => buildContainerByChildId(items), [items]);
 
+  const childrenByParentId = useMemo(() => {
+    const map = new Map<string, InventoryItem[]>();
+    for (const child of items) {
+      if (!child.parentContainerId) continue;
+      const list = map.get(child.parentContainerId) || [];
+      list.push(child);
+      map.set(child.parentContainerId, list);
+    }
+    for (const parent of items) {
+      if (!(parent.isPC || parent.isBundle) || !parent.componentIds?.length) continue;
+      const kids = parent.componentIds
+        .map((id) => itemsById.get(id))
+        .filter(Boolean) as InventoryItem[];
+      if (kids.length) map.set(parent.id, kids);
+    }
+    return map;
+  }, [items, itemsById]);
+
+  const suggestedEbayById = useMemo(
+    () =>
+      buildSuggestedEbayMap(items, loadFlipFees(), {
+        childrenByParent: childrenByParentId,
+        limit: 160,
+      }),
+    [items, childrenByParentId]
+  );
+
   const handleDuplicate = (item: InventoryItem) => {
     const copy: InventoryItem = {
       ...item,
@@ -3000,6 +3033,44 @@ const InventoryList: React.FC<Props> = ({
                           {childItems.length > 0 ? ` · ${childItems.length}` : ''}
                         </span>
                       )}
+                      {(item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) &&
+                        (() => {
+                          const sugg = suggestedEbayById.get(item.id);
+                          if (!sugg) return null;
+                          return (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const fresh = resolveSuggestedEbayList(
+                                  item,
+                                  items,
+                                  loadFlipFees(),
+                                  childItems
+                                );
+                                if (!fresh) return;
+                                onUpdate(
+                                  [{ ...item, ...suggestionPatchFromPrice(fresh) }],
+                                  undefined,
+                                  { skipActionLog: true }
+                                );
+                                setToast(
+                                  `Saved eBay suggest €${formatEUR(fresh.ebayList)} (~${fresh.feePct}% fees)`
+                                );
+                                setTimeout(() => setToast(null), 1800);
+                              }}
+                              className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase text-sky-800 bg-sky-50 px-1.5 py-0.5 rounded border border-sky-200/90 hover:bg-sky-100"
+                              title={`Suggested eBay list price after ~${sugg.feePct}% fees${
+                                sugg.compCount
+                                  ? ` · ${sugg.compCount} sold comps`
+                                  : ' · rough cost-based guess'
+                              }. Click to refresh & save snapshot for flip analytics.`}
+                            >
+                              <Target size={9} className="shrink-0" />
+                              eBay ~€{formatEUR(sugg.ebayList)}
+                            </button>
+                          );
+                        })()}
                       {!item.isPC && !item.isBundle && isInventoryContainer(item) && (
                         <span className="inline-flex items-center gap-0.5 text-[9px] bg-violet-600 text-white px-1.5 py-0.5 rounded font-black uppercase shadow-sm shadow-violet-200/80">
                           <Package size={9} className="shrink-0" /> Container
@@ -4954,6 +5025,8 @@ const InventoryList: React.FC<Props> = ({
                 key={item.id}
                 item={item}
                 profit={profitForDisplay(item)}
+                suggestedEbayList={suggestedEbayById.get(item.id)?.ebayList}
+                suggestedFeePct={suggestedEbayById.get(item.id)?.feePct}
                 selected={selectedIdSet.has(item.id)}
                 onToggleSelect={() => toggleSelect(item.id)}
                 actions={{

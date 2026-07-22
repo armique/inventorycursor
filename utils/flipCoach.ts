@@ -28,8 +28,9 @@ export type FlipFeeSettings = {
 };
 
 export const DEFAULT_FLIP_FEES: FlipFeeSettings = {
-  ebayFeePct: 10,
-  ebayAdsPct: 12.5,
+  /** ~30% total eBay cut by default (fee + ads). */
+  ebayFeePct: 12.5,
+  ebayAdsPct: 17.5,
 };
 
 export function loadFlipFees(): FlipFeeSettings {

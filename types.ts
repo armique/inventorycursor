@@ -250,6 +250,19 @@ export interface InventoryItem {
    * Used for the bulk-import icon and dedicated batch filter view.
    */
   bulkImportId?: string;
+
+  /**
+   * Snapshot of suggested marketplace list prices (Flip Coach / sold comps).
+   * Used for inventory chips and later sale-vs-suggestion accuracy.
+   */
+  suggestedEbayListPrice?: number;
+  suggestedKleinListPrice?: number;
+  suggestedPocketTarget?: number;
+  /** Total eBay fee % assumed when the suggestion was computed (e.g. 30). */
+  suggestedFeePct?: number;
+  suggestedCompCount?: number;
+  suggestedPriceSource?: 'flip_coach' | 'inventory_sold_comps' | 'cost_fallback' | 'manual';
+  suggestedPriceUpdatedAt?: string;
 }
 
 /** Saved AI-generated product card (gallery history — paid generations kept for reuse). */
