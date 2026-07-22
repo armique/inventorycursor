@@ -28,7 +28,10 @@ describe('flipInsights', () => {
     const row = item({
       id: '1',
       name: 'RTX 3060 12GB',
+      buyPrice: 100,
       suggestedEbayListPrice: 220,
+      suggestedKleinListPrice: 154,
+      suggestedPocketTarget: 154,
       suggestedFeePct: 30,
       suggestedCompCount: 4,
     });
@@ -38,6 +41,48 @@ describe('flipInsights', () => {
     expect(s?.feePct).toBe(30);
     // Klein = pocket after 30% fees (lower than eBay list)
     expect(s?.kleinList).toBeLessThan(s!.ebayList);
+  });
+
+  it('rejects below-cost bundle comps and falls back to buy × 1.25', () => {
+    const bundle = item({
+      id: 'bundle',
+      name: 'Mixed Bundle MT-61',
+      buyPrice: 61.7,
+      isBundle: true,
+      category: 'Bundle',
+      subCategory: 'Bundle',
+      // Bad saved snapshot / comps-style values below cost
+      suggestedEbayListPrice: 43.11,
+      suggestedKleinListPrice: 30.17,
+      suggestedPocketTarget: 30.17,
+      suggestedFeePct: 30,
+      suggestedCompCount: 3,
+    });
+    const s = resolveSuggestedEbayList(bundle, [bundle], fees);
+    expect(s).not.toBeNull();
+    expect(s!.kleinList).toBeGreaterThanOrEqual(61.7);
+    expect(s!.ebayList).toBeGreaterThan(s!.kleinList);
+    // Cost fallback: 61.7 × 1.25 = 77.125 → KA 77.13, EB ≈ 110.18 at 30%
+    expect(s!.kleinList).toBeCloseTo(77.13, 1);
+    expect(s!.compCount).toBe(0);
+  });
+
+  it('uses child buy sum when bundle parent buy is empty', () => {
+    const parent = item({
+      id: 'p',
+      name: 'Parts Bundle',
+      buyPrice: 0,
+      isBundle: true,
+      category: 'Bundle',
+      subCategory: 'Bundle',
+    });
+    const children = [
+      item({ id: 'c1', name: 'RAM stick', buyPrice: 20, category: 'Components', subCategory: 'RAM' }),
+      item({ id: 'c2', name: 'PSU 500W', buyPrice: 41.7, category: 'Components', subCategory: 'Power Supplies' }),
+    ];
+    const s = resolveSuggestedEbayList(parent, [parent, ...children], fees, children);
+    expect(s).not.toBeNull();
+    expect(s!.kleinList).toBeGreaterThanOrEqual(61.7);
   });
 
   it('summarizes flip speed and price accuracy', () => {

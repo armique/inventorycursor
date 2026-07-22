@@ -9,6 +9,7 @@ import {
   loadFlipFees,
   listPricesForPocket,
   pocketFromEbayListPrice,
+  sanitizePocketAgainstBuy,
   suggestChannelPrices,
   totalEbayFeePct,
   type FlipFeeSettings,
@@ -56,10 +57,90 @@ function pocketProfit(item: InventoryItem): number | null {
   return roundMoney(sell - fee - buy);
 }
 
+/** Bundle/PC cost: parent buy, or sum of parts when parent buy is empty. */
+export function effectiveSuggestionBuy(
+  item: InventoryItem,
+  children: InventoryItem[] = []
+): number {
+  const own = Number(item.buyPrice) || 0;
+  if (!children.length) return own > 0 ? own : 0;
+  const childSum = children.reduce((s, c) => s + (Number(c.buyPrice) || 0), 0);
+  return Math.max(own, childSum);
+}
+
+function costBasedSuggestion(buy: number, feePct: number): SuggestedEbayPrice | null {
+  if (!(buy > 0)) return null;
+  const pocket = roundMoney(buy * 1.25);
+  const lists = listPricesForPocket(pocket, feePct);
+  return {
+    ebayList: lists.ebay,
+    kleinList: lists.kleinanzeigen,
+    pocketTarget: pocket,
+    feePct,
+    compCount: 0,
+    fromSnapshot: false,
+  };
+}
+
+/**
+ * Never suggest listing below cost. KA (0% fees) and eBay pocket after fees
+ * must both clear the buy price; otherwise fall back to buy × 1.25.
+ * Also reject wildly high comps via sanitizePocketAgainstBuy.
+ */
+export function finalizeSuggestionAgainstBuy(
+  raw: SuggestedEbayPrice,
+  buy: number,
+  feePct: number
+): SuggestedEbayPrice | null {
+  if (!(raw.ebayList > 0) || !(raw.kleinList > 0)) {
+    return costBasedSuggestion(buy, feePct);
+  }
+
+  let pocket = roundMoney(Math.max(0, raw.pocketTarget || raw.kleinList));
+  let compCount = raw.compCount;
+  const fee = Number.isFinite(raw.feePct) ? raw.feePct : feePct;
+
+  if (compCount > 0 && buy > 0) {
+    const sane = sanitizePocketAgainstBuy(pocket, buy, compCount);
+    if (sane.clamped) {
+      return costBasedSuggestion(buy, fee);
+    }
+    pocket = sane.pocket;
+  }
+
+  // Below cost (or eBay net below cost): comps matched the wrong cheap parts.
+  const ebayPocket = pocketFromEbayListPrice(raw.ebayList, fee);
+  if (buy > 0 && (pocket < buy || raw.kleinList < buy || ebayPocket < buy)) {
+    return costBasedSuggestion(buy, fee);
+  }
+
+  if (compCount > 0 && pocket !== raw.pocketTarget) {
+    const lists = listPricesForPocket(pocket, fee);
+    return {
+      ebayList: lists.ebay,
+      kleinList: lists.kleinanzeigen,
+      pocketTarget: pocket,
+      feePct: fee,
+      compCount,
+      fromSnapshot: false,
+    };
+  }
+
+  return {
+    ebayList: roundMoney(raw.ebayList),
+    kleinList: roundMoney(raw.kleinList),
+    pocketTarget: pocket,
+    feePct: fee,
+    compCount,
+    fromSnapshot: raw.fromSnapshot,
+  };
+}
+
 /**
  * Suggested eBay list price for an inventory row.
  * Prefer a stored snapshot; otherwise derive from Flip Coach comps + fee %.
  * Bundles/PCs: prefer comps on the container name; else sum child suggestions.
+ * Always floors against buy cost so chips never recommend a loss.
  */
 export function resolveSuggestedEbayList(
   item: InventoryItem,
@@ -68,7 +149,7 @@ export function resolveSuggestedEbayList(
   children: InventoryItem[] = []
 ): SuggestedEbayPrice | null {
   const feePct = totalEbayFeePct(fees);
-  const buy = Number(item.buyPrice) || 0;
+  const buy = effectiveSuggestionBuy(item, children);
 
   if (
     item.suggestedEbayListPrice != null &&
@@ -84,14 +165,19 @@ export function resolveSuggestedEbayList(
     const klein = roundMoney(
       item.suggestedKleinListPrice || pocket || item.suggestedEbayListPrice
     );
-    return {
-      ebayList: roundMoney(item.suggestedEbayListPrice),
-      kleinList: klein,
-      pocketTarget: pocket,
-      feePct: fee,
-      compCount: item.suggestedCompCount ?? 0,
-      fromSnapshot: true,
-    };
+    const fromSnap = finalizeSuggestionAgainstBuy(
+      {
+        ebayList: roundMoney(item.suggestedEbayListPrice),
+        kleinList: klein,
+        pocketTarget: pocket,
+        feePct: fee,
+        compCount: item.suggestedCompCount ?? 0,
+        fromSnapshot: true,
+      },
+      buy,
+      fee
+    );
+    if (fromSnap) return fromSnap;
   }
 
   const name = (item.name || '').trim();
@@ -101,28 +187,21 @@ export function resolveSuggestedEbayList(
       subCategory: item.subCategory,
     });
     if (suggestion.compCount > 0 && suggestion.ebayList > 0) {
-      return {
-        ebayList: suggestion.ebayList,
-        kleinList: suggestion.kleinList,
-        pocketTarget: suggestion.pocketTarget,
-        feePct: suggestion.ebayFeePct,
-        compCount: suggestion.compCount,
-        fromSnapshot: false,
-      };
+      const finalized = finalizeSuggestionAgainstBuy(
+        {
+          ebayList: suggestion.ebayList,
+          kleinList: suggestion.kleinList,
+          pocketTarget: suggestion.pocketTarget,
+          feePct: suggestion.ebayFeePct,
+          compCount: suggestion.compCount,
+          fromSnapshot: false,
+        },
+        buy,
+        feePct
+      );
+      if (finalized) return finalized;
     }
-    if (buy > 0) {
-      const pocket = roundMoney(buy * 1.25);
-      const lists = listPricesForPocket(pocket, feePct);
-      return {
-        ebayList: lists.ebay,
-        kleinList: lists.kleinanzeigen,
-        pocketTarget: pocket,
-        feePct,
-        compCount: 0,
-        fromSnapshot: false,
-      };
-    }
-    return null;
+    return costBasedSuggestion(buy, feePct);
   }
 
   // Containers: comps on bundle/PC name, else sum children
@@ -132,14 +211,20 @@ export function resolveSuggestedEbayList(
       subCategory: item.subCategory,
     });
     if (suggestion.compCount >= 2 && suggestion.ebayList > 0) {
-      return {
-        ebayList: suggestion.ebayList,
-        kleinList: suggestion.kleinList,
-        pocketTarget: suggestion.pocketTarget,
-        feePct: suggestion.ebayFeePct,
-        compCount: suggestion.compCount,
-        fromSnapshot: false,
-      };
+      const finalized = finalizeSuggestionAgainstBuy(
+        {
+          ebayList: suggestion.ebayList,
+          kleinList: suggestion.kleinList,
+          pocketTarget: suggestion.pocketTarget,
+          feePct: suggestion.ebayFeePct,
+          compCount: suggestion.compCount,
+          fromSnapshot: false,
+        },
+        buy,
+        feePct
+      );
+      // Only keep name-comps when they clear cost; otherwise try children / cost.
+      if (finalized && finalized.compCount > 0) return finalized;
     }
   }
 
@@ -159,31 +244,23 @@ export function resolveSuggestedEbayList(
       comps += s.compCount;
     }
     if (any) {
-      return {
-        ebayList: roundMoney(ebay),
-        kleinList: roundMoney(klein),
-        pocketTarget: roundMoney(pocket),
-        feePct,
-        compCount: comps,
-        fromSnapshot: false,
-      };
+      const finalized = finalizeSuggestionAgainstBuy(
+        {
+          ebayList: roundMoney(ebay),
+          kleinList: roundMoney(klein),
+          pocketTarget: roundMoney(pocket),
+          feePct,
+          compCount: comps,
+          fromSnapshot: false,
+        },
+        buy,
+        feePct
+      );
+      if (finalized) return finalized;
     }
   }
 
-  if (buy > 0) {
-    const pocket = roundMoney(buy * 1.25);
-    const lists = listPricesForPocket(pocket, feePct);
-    return {
-      ebayList: lists.ebay,
-      kleinList: lists.kleinanzeigen,
-      pocketTarget: pocket,
-      feePct,
-      compCount: 0,
-      fromSnapshot: false,
-    };
-  }
-
-  return null;
+  return costBasedSuggestion(buy, feePct);
 }
 
 /** Build a map of suggested eBay € for in-stock rows (capped for UI performance). */

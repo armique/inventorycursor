@@ -3005,7 +3005,7 @@ const InventoryList: React.FC<Props> = ({
                          const sugg =
                            suggestedEbayById.get(item.id) ||
                            resolveSuggestedEbayList(item, items, loadFlipFees(), childItems);
-                         if (!sugg) return null;
+                         if (!sugg || !(sugg.kleinList > 0) || !(sugg.ebayList > 0)) return null;
                          return (
                            <button
                              type="button"
@@ -3017,14 +3017,14 @@ const InventoryList: React.FC<Props> = ({
                                  loadFlipFees(),
                                  childItems
                                );
-                               if (!fresh) return;
+                               if (!fresh || !(fresh.kleinList > 0) || !(fresh.ebayList > 0)) return;
                                onUpdate(
                                  [{ ...item, ...suggestionPatchFromPrice(fresh) }],
                                  undefined,
                                  { skipActionLog: true }
                                );
                                setToast(
-                                 `Saved suggest · KA €${formatEUR(fresh.kleinList)} (0% fees) · eBay €${formatEUR(fresh.ebayList)} (~${fresh.feePct}%)`
+                                 `Saved suggest · KA €${formatEUR(fresh.kleinList)} (0% fees) · eBay €${formatEUR(fresh.ebayList)} (~${fresh.feePct}% fees)`
                                );
                                setTimeout(() => setToast(null), 2200);
                              }}
@@ -3032,7 +3032,7 @@ const InventoryList: React.FC<Props> = ({
                              title={`Kleinanzeigen €${formatEUR(sugg.kleinList)} (no fees) · eBay €${formatEUR(sugg.ebayList)} (~${sugg.feePct}% fees)${
                                sugg.compCount
                                  ? ` · ${sugg.compCount} sold comps`
-                                 : ' · rough cost-based guess'
+                                 : ' · cost-based (≥ buy × 1.25)'
                              }. Click to refresh & save snapshot.`}
                            >
                              <span className="text-emerald-700">KA ~€{formatEUR(sugg.kleinList)}</span>
