@@ -6,6 +6,7 @@
 
 import {
   EBAY_ORDER_SCREENSHOT_EXTRACTION_PROMPT,
+  parseExtractedEurAmount,
   parseExtractedSaleDate,
 } from '../lib/ebayOrderScreenshotPrompt.js';
 import { callGeminiVisionJson } from '../lib/geminiVisionClient.js';
@@ -16,7 +17,18 @@ export interface ParsedEbayOrderScreenshot {
   buyerFullName: string | null;
   shippingAddress: string | null;
   phone?: string | null;
-  /** Seller's net EUR after eBay / ad fees when visible on the screenshot. */
+  /**
+   * Item sold price EUR excluding buyer shipping — primary value to store as sellPrice
+   * for comps / average sold analysis.
+   */
+  soldPriceExShippingEur?: number | null;
+  /** Versand the buyer paid (excluded from soldPriceExShippingEur). */
+  buyerShippingEur?: number | null;
+  /** eBay Verkaufsgebühr only. */
+  ebayFeeEur?: number | null;
+  /** Anzeigengebühr / promoted listing ads only. */
+  adFeeEur?: number | null;
+  /** Seller Auszahlung after fees — display only, not sellPrice. */
   amountReceivedNetEur?: number | null;
   /** ISO calendar date YYYY-MM-DD from "Verkauft" / "Sold" when visible. */
   saleDate?: string | null;
@@ -75,27 +87,20 @@ async function fetchImageAsBase64(url: string): Promise<{ mime: string; base64: 
   return { mime, base64 };
 }
 
-function parseNetEurAmount(v: unknown): number | null {
-  if (typeof v === 'number' && Number.isFinite(v)) return v;
-  if (typeof v === 'string') {
-    const t = v.trim().replace(/€/g, '').replace(/\s/g, '').replace(',', '.');
-    const n = parseFloat(t);
-    return Number.isFinite(n) ? n : null;
-  }
-  return null;
-}
-
 function normalizeParsed(raw: unknown): ParsedEbayOrderScreenshot {
   const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
-  const net = parseNetEurAmount(o.amountReceivedNetEur);
   return {
     ebayOrderId: str(o.ebayOrderId),
     ebayUsername: str(o.ebayUsername),
     buyerFullName: str(o.buyerFullName),
     shippingAddress: str(o.shippingAddress),
     phone: str(o.phone) ?? undefined,
-    amountReceivedNetEur: net,
+    soldPriceExShippingEur: parseExtractedEurAmount(o.soldPriceExShippingEur),
+    buyerShippingEur: parseExtractedEurAmount(o.buyerShippingEur),
+    ebayFeeEur: parseExtractedEurAmount(o.ebayFeeEur),
+    adFeeEur: parseExtractedEurAmount(o.adFeeEur),
+    amountReceivedNetEur: parseExtractedEurAmount(o.amountReceivedNetEur),
     saleDate: parseExtractedSaleDate(o.saleDate),
   };
 }

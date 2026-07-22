@@ -2,9 +2,10 @@
  * Flip Coach: pocket-money pricing for Kleinanzeigen (0% fees) vs eBay,
  * plus “keep buying” focus from sold history.
  *
- * Assumption (your workflow): eBay sold sellPrice = net Auszahlung (after fees).
- * Kleinanzeigen sold sellPrice = full buyer amount (= your pocket).
- * So historical sellPrices are treated as pocket money unless noted otherwise.
+ * Assumption (your workflow): InventoryItem.sellPrice = actual sold price
+ * (item amount the buyer paid, excluding shipping). eBay Verkaufsgebühr + ads
+ * live in feeAmount when parsed from order screenshots. Pocket money =
+ * sellPrice − feeAmount. Kleinanzeigen feeAmount is usually 0.
  */
 
 import { InventoryItem, ItemStatus, Platform } from '../types';
@@ -103,8 +104,7 @@ function soldPocket(
 ): { pocket: number; platform: Platform | 'unknown' } | null {
   const sell = Number(item.sellPrice) || 0;
   if (sell <= 0) return null;
-  // Your workflow: sellPrice already = pocket for eBay (net) and Klein (gross=net).
-  // Still subtract explicit feeAmount if someone filled both (avoid double-friendly).
+  // sellPrice = market sold price; feeAmount = platform fees (0 on Klein / older net-as-sell rows).
   const fee = Number(item.feeAmount) || 0;
   const pocket = Math.max(0, sell - fee);
   return { pocket, platform: resolveSalePlatform(item) };
@@ -209,10 +209,10 @@ export function suggestChannelPrices(
 
   const note =
     source === 'ebay_net'
-      ? 'From your eBay sales (net you received). Klein list = that pocket; eBay list is higher so fees don’t eat it.'
+      ? 'From your eBay sold prices (pocket = sold − fees). Klein list = that pocket; eBay list is higher so fees don’t eat it.'
       : source === 'klein'
         ? 'From your Kleinanzeigen sales (no fees). eBay list is raised so you keep about the same after fees.'
-        : 'From your sold history (treated as money in your pocket).';
+        : 'From your sold history (pocket = sold price minus any recorded fees).';
 
   return {
     pocketTarget: roundMoney(median),

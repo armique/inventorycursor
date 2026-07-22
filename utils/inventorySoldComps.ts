@@ -59,7 +59,8 @@ function medianOf(nums: number[]): number {
 
 /**
  * Price band from your own sold inventory — similar names (and optional same subcategory).
- * Prefer this over AI when you already have comps in stock history.
+ * Uses InventoryItem.sellPrice = actual sold price (not profit; eBay screenshot flow stores
+ * item sold amount excluding shipping). Prefer this over AI when you already have comps.
  */
 export function getInventorySoldPriceBand(
   items: InventoryItem[],

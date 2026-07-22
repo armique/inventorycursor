@@ -1709,13 +1709,13 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                          {soldPriceBand && (
                            <div className="rounded-lg bg-white border border-emerald-100 px-3 py-2 space-y-1.5">
                              <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">
-                               Your sold comps ({soldPriceBand.count})
+                               Your sold prices ({soldPriceBand.count})
                              </p>
                              <p className="text-xs text-slate-700 font-bold">
                                €{formatEUR(soldPriceBand.low)} – €{formatEUR(soldPriceBand.high)}
                                <span className="text-slate-400 font-medium"> · median </span>
                                €{formatEUR(soldPriceBand.median)}
-                               <span className="text-slate-400 font-medium"> · avg </span>
+                               <span className="text-slate-400 font-medium"> · avg sold </span>
                                €{formatEUR(soldPriceBand.average)}
                              </p>
                              <div className="flex flex-wrap gap-1.5">

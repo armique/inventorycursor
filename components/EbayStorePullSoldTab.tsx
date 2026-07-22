@@ -43,6 +43,7 @@ import {
 import { filterAppearedListingsNotInInventory } from '../utils/ebayListingChangePlan';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 import { matchesEbayToolSearch } from '../utils/ebayToolSearch';
+import { ebayScreenshotSaleFields } from '../utils/ebayScreenshotSaleFields';
 import { computeItemProfitBeforeOverhead } from '../services/financialAggregation';
 import type { ParsedEbayOrderScreenshot } from '../services/ebayOrderScreenshotAI';
 import EbayOrderScreenshotInline from './EbayOrderScreenshotInline';
@@ -57,6 +58,10 @@ interface SoldRowState {
   ebayOrderId: string;
   ebayUsername: string;
   buyerName: string;
+  feeAmount: number;
+  ebayFeeEur: number | null;
+  adFeeEur: number | null;
+  amountReceivedNetEur: number | null;
 }
 
 interface Props {
@@ -75,6 +80,10 @@ function defaultSoldRowState(match: EbaySoldDetectionMatch): SoldRowState {
     ebayOrderId: '',
     ebayUsername: '',
     buyerName: '',
+    feeAmount: Number(match.item.feeAmount) || 0,
+    ebayFeeEur: null,
+    adFeeEur: null,
+    amountReceivedNetEur: null,
   };
 }
 
@@ -397,13 +406,18 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
     setRowState((prev) => {
       const row = prev[key];
       if (!row) return prev;
+      const money = ebayScreenshotSaleFields(data);
       const next: SoldRowState = { ...row };
       if (data.ebayOrderId) next.ebayOrderId = data.ebayOrderId;
       if (data.ebayUsername) next.ebayUsername = data.ebayUsername;
       if (data.buyerFullName) next.buyerName = data.buyerFullName;
-      if (data.amountReceivedNetEur != null && Number.isFinite(data.amountReceivedNetEur)) {
-        next.sellPrice = formatEUR(data.amountReceivedNetEur);
+      if (money.soldPriceExShippingEur != null) {
+        next.sellPrice = formatEUR(money.soldPriceExShippingEur);
       }
+      next.feeAmount = money.totalFeesEur;
+      next.ebayFeeEur = money.ebayFeeEur;
+      next.adFeeEur = money.adFeeEur;
+      next.amountReceivedNetEur = money.amountReceivedNetEur;
       if (data.saleDate) next.sellDate = data.saleDate;
       return { ...prev, [key]: next };
     });
@@ -461,6 +475,8 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
           paymentType: 'ebay.de',
           listedOnEbay: true,
           storeVisible: false,
+          hasFee: row.feeAmount > 0,
+          feeAmount: row.feeAmount > 0 ? row.feeAmount : 0,
           ebayOrderId: row.ebayOrderId.trim() || match.item.ebayOrderId,
           ebayUsername: row.ebayUsername.trim() || match.item.ebayUsername,
           customer: row.buyerName.trim()
@@ -744,7 +760,7 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
                 {row.confirmed && (
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pt-2 border-t border-slate-100">
                     <label className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase text-slate-500">
-                      Sell €
+                      Sold €
                       <input
                         type="text"
                         inputMode="decimal"
@@ -752,6 +768,7 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
                         onChange={(e) => updateRow(key, { sellPrice: e.target.value })}
                         placeholder={defaultSellPriceForDetection(match.item, listing) || '0,00'}
                         className="w-24 px-2 py-1.5 rounded-lg border border-slate-200 text-sm font-bold text-slate-900 outline-none focus:border-emerald-400"
+                        title="Item sold price excluding buyer shipping"
                       />
                     </label>
                     <label className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase text-slate-500">
@@ -767,6 +784,21 @@ const EbayStorePullSoldTab: React.FC<Props> = ({ items, taxMode, onUpdate, onPub
                       onParsed={(data) => applyParsedOrder(key, data)}
                       className="flex-1 min-w-[280px]"
                     />
+                    {(row.feeAmount > 0 ||
+                      row.amountReceivedNetEur != null ||
+                      row.ebayFeeEur != null ||
+                      row.adFeeEur != null) && (
+                      <div className="w-full flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] font-bold text-slate-500">
+                        {row.ebayFeeEur != null && <span>Gebühr €{formatEUR(row.ebayFeeEur)}</span>}
+                        {row.adFeeEur != null && <span>Ads €{formatEUR(row.adFeeEur)}</span>}
+                        {row.feeAmount > 0 && <span>Fees €{formatEUR(row.feeAmount)}</span>}
+                        {row.amountReceivedNetEur != null && (
+                          <span className="text-emerald-700">
+                            Auszahlung €{formatEUR(row.amountReceivedNetEur)}
+                          </span>
+                        )}
+                      </div>
+                    )}
                     {(row.ebayOrderId || row.ebayUsername || row.buyerName) && (
                       <div className="w-full flex flex-wrap gap-2 text-[10px] text-slate-600">
                         {row.ebayOrderId && (

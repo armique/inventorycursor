@@ -6,6 +6,7 @@ import { mapKleinanzeigenPaymentMethod, parseKleinanzeigenChatFromImageInput } f
 import { fetchEbayOrder } from '../services/ebayService';
 import { findEbayOrderById } from '../services/ebayOrderIndex';
 import { customerFromEbayOrder } from '../utils/ebayOrderBuyerData';
+import { ebayScreenshotSaleFields } from '../utils/ebayScreenshotSaleFields';
 import { persistSaleProofImage, urlNeedsPhotoArchive } from '../services/inventoryImageStorage';
 import { InventoryItem, ItemStatus, PaymentType, CustomerInfo, Platform, TaxMode } from '../types';
 import { SALE_PLATFORM_OPTIONS } from '../utils/salePlatform';
@@ -40,6 +41,13 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
   const [platformSold, setPlatformSold] = useState<Platform>(item.platformSold || 'ebay.de');
   const [hasFee, setHasFee] = useState(item.hasFee || false);
   const [feeAmount, setFeeAmount] = useState(item.feeAmount || 0);
+  /** Last screenshot fee breakdown (display only; totals live in feeAmount). */
+  const [ebayFeeNote, setEbayFeeNote] = useState<{
+    ebayFeeEur: number | null;
+    adFeeEur: number | null;
+    amountReceivedNetEur: number | null;
+    buyerShippingEur: number | null;
+  } | null>(null);
   const [sellerPaidShipping, setSellerPaidShipping] = useState(item.sellerPaidShipping || false);
   const [sellerShippingAmount, setSellerShippingAmount] = useState(
     item.sellerShippingAmount != null ? String(item.sellerShippingAmount) : ''
@@ -266,13 +274,20 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
         ...(data.shippingAddress && { address: data.shippingAddress }),
         ...(data.phone && { phone: data.phone }),
       }));
-      if (data.amountReceivedNetEur != null && Number.isFinite(data.amountReceivedNetEur)) {
-        const fmtPrice = formatEUR(data.amountReceivedNetEur);
+      const money = ebayScreenshotSaleFields(data);
+      if (money.soldPriceExShippingEur != null) {
+        const fmtPrice = formatEUR(money.soldPriceExShippingEur);
         setSalePrice(fmtPrice);
         setUnitPrice(fmtPrice);
-        setHasFee(false);
-        setFeeAmount(0);
       }
+      setHasFee(money.hasFee);
+      setFeeAmount(money.totalFeesEur);
+      setEbayFeeNote({
+        ebayFeeEur: money.ebayFeeEur,
+        adFeeEur: money.adFeeEur,
+        amountReceivedNetEur: money.amountReceivedNetEur,
+        buyerShippingEur: money.buyerShippingEur,
+      });
       if (data.saleDate) setSaleDate(data.saleDate);
     } catch (err: unknown) {
       setOrderScreenshotError(err instanceof Error ? err.message : 'Parse failed');
@@ -518,7 +533,7 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
           <div className={`grid gap-2 ${isEditBuyer ? 'grid-cols-2' : 'grid-cols-3'}`}>
             <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 min-h-[72px]">
               <label className="text-[8px] font-black uppercase tracking-wider text-slate-400">
-                {isBatchItem ? 'Unit price' : 'Price'}
+                {isBatchItem ? 'Unit price' : platformSold === 'ebay.de' ? 'Sold price' : 'Price'}
               </label>
               {isBatchItem ? (
                 <div className="mt-1 flex gap-1 items-center">
@@ -810,6 +825,38 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
               {orderScreenshotError && (
                 <p className="text-[9px] text-red-600 font-medium">{orderScreenshotError}</p>
               )}
+              {ebayFeeNote &&
+                (ebayFeeNote.ebayFeeEur != null ||
+                  ebayFeeNote.adFeeEur != null ||
+                  ebayFeeNote.amountReceivedNetEur != null ||
+                  ebayFeeNote.buyerShippingEur != null) && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 space-y-1">
+                    <p className="text-[8px] font-black uppercase tracking-wider text-slate-400">
+                      eBay fees (info) · sell price is item sold amount, not Auszahlung
+                    </p>
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] font-bold text-slate-600">
+                      {ebayFeeNote.ebayFeeEur != null && (
+                        <span>Verkaufsgebühr €{formatEUR(ebayFeeNote.ebayFeeEur)}</span>
+                      )}
+                      {ebayFeeNote.adFeeEur != null && (
+                        <span>Ads €{formatEUR(ebayFeeNote.adFeeEur)}</span>
+                      )}
+                      {feeAmount > 0 && (
+                        <span className="text-slate-800">Fees total €{formatEUR(feeAmount)}</span>
+                      )}
+                      {ebayFeeNote.buyerShippingEur != null && (
+                        <span className="text-slate-400">
+                          Buyer Versand €{formatEUR(ebayFeeNote.buyerShippingEur)} (excluded)
+                        </span>
+                      )}
+                      {ebayFeeNote.amountReceivedNetEur != null && (
+                        <span className="text-emerald-700">
+                          Auszahlung €{formatEUR(ebayFeeNote.amountReceivedNetEur)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
               <div className="grid grid-cols-2 gap-2">
                 <input
                   type="text"
