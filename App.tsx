@@ -1511,6 +1511,44 @@ const App: React.FC = () => {
     requestFastCloudFlush();
   }, [requestFastCloudFlush]);
 
+  const handleUpdateBulkImport = useCallback((record: BulkImportRecord) => {
+    setBulkImports((prev) => {
+      const next = mergeBulkImportsFromLocal(
+        prev.filter((r) => r.id !== record.id),
+        [record]
+      ).slice(0, BULK_IMPORTS_LIMIT);
+      bulkImportsRef.current = next;
+      localStorage.setItem('bulk_imports', JSON.stringify(next));
+      return next;
+    });
+    hasUnsavedChanges.current = true;
+    requestFastCloudFlush();
+  }, [requestFastCloudFlush]);
+
+  const handleDeleteBulkImport = useCallback(
+    (importId: string) => {
+      setBulkImports((prev) => {
+        const next = prev.filter((r) => r.id !== importId);
+        bulkImportsRef.current = next;
+        localStorage.setItem('bulk_imports', JSON.stringify(next));
+        return next;
+      });
+      const stamped = items.filter((i) => i.bulkImportId === importId);
+      if (stamped.length > 0) {
+        handleUpdate(
+          // Use '' (not omit) so PRESERVE_FROM_OLD_IF_UPDATE_MISSING does not restore the stamp.
+          stamped.map((i) => ({ ...i, bulkImportId: '' })),
+          undefined,
+          { skipActionLog: true, flushCloud: true }
+        );
+      } else {
+        hasUnsavedChanges.current = true;
+        requestFastCloudFlush();
+      }
+    },
+    [items, handleUpdate, requestFastCloudFlush]
+  );
+
   const handleRevertSale = useCallback(
     (entry: ActionHistoryEntry) => {
       if (!entry.itemId || !entry.action.includes('Sold')) return;
@@ -1731,7 +1769,7 @@ const App: React.FC = () => {
               />
             }
           />
-          <Route path="inventory" element={<InventoryList key="inventory-main" items={items} totalCount={items.length} onUpdate={handleUpdate} onDelete={handleDelete} onUndo={handleUndo} onRedo={handleRedo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} pageTitle="Inventory" allowedStatuses={ALL_STATUSES} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} persistenceKey="inventory_main" onPublishStoreCatalog={publishStoreCatalogNow} bulkImports={bulkImports} />} />
+          <Route path="inventory" element={<InventoryList key="inventory-main" items={items} totalCount={items.length} onUpdate={handleUpdate} onDelete={handleDelete} onUndo={handleUndo} onRedo={handleRedo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} pageTitle="Inventory" allowedStatuses={ALL_STATUSES} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} persistenceKey="inventory_main" onPublishStoreCatalog={publishStoreCatalogNow} bulkImports={bulkImports} onUpdateBulkImport={handleUpdateBulkImport} onDeleteBulkImport={handleDeleteBulkImport} />} />
           <Route path="flip-coach" element={<FlipCoachPage items={items} />} />
           <Route path="sold-pulse" element={<SoldPulsePage items={items} />} />
           <Route path="add" element={<ItemForm onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
@@ -1746,7 +1784,16 @@ const App: React.FC = () => {
           />
           <Route
             path="bulk-imports"
-            element={<BulkImportHistoryPage records={bulkImports} items={items} />}
+            element={
+              <BulkImportHistoryPage
+                records={bulkImports}
+                items={items}
+                categories={categories}
+                onUpdateItems={handleUpdate}
+                onUpdateBulkImport={handleUpdateBulkImport}
+                onDeleteBulkImport={handleDeleteBulkImport}
+              />
+            }
           />
           <Route path="invoices" element={<InvoiceManager items={items} businessSettings={businessSettings} />} />
           <Route

@@ -8,7 +8,7 @@ import { createPortal } from 'react-dom';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useSettingsModal } from '../context/SettingsModalContext';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks,   Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone,   Camera, Gift, User, Images, Scissors, GripVertical
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks,   Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone,   Camera, Gift, User, Images, Scissors, GripVertical, RefreshCw
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, TaxMode, BulkImportRecord } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
@@ -31,7 +31,15 @@ import { exportInventoryToExcel } from '../services/excelExportService';
 import { getRecentItemIds, addRecentItemId } from '../services/recentItemsService';
 import { generateStoreDescription } from '../services/specsAI';
 import { suggestPriceFromSoldListings, SoldPriceSuggestion, getSpecsAIProvider } from '../services/specsAI';
-import { bulkImportSourceLabel, countBulkImportItems } from '../utils/bulkImportHistory';
+import {
+  appendBulkImportMember,
+  bulkImportSourceLabel,
+  countBulkImportItems,
+  getBulkImportMembers,
+  removeBulkImportMember,
+} from '../utils/bulkImportHistory';
+import { applyBulkImportResplit } from '../utils/bulkImportEdit';
+import { CATEGORY_IMAGES } from '../services/hardwareDB';
 import MobileStockCard from './MobileStockCard';
 import { MobileSheetShell } from './MobileBottomSheets';
 import { generateMarketplaceListing } from '../services/marketplaceListingAI';
@@ -128,6 +136,8 @@ interface Props {
   persistenceKey?: string;
   onPublishStoreCatalog?: () => void | Promise<void>;
   bulkImports?: BulkImportRecord[];
+  onUpdateBulkImport?: (record: BulkImportRecord) => void;
+  onDeleteBulkImport?: (importId: string) => void;
 }
 
 const EMPTY_TIME_GAUGE_SORT_MAP = new Map<string, number>();
@@ -770,6 +780,8 @@ const InventoryList: React.FC<Props> = ({
   persistenceKey = 'default_inv',
   onPublishStoreCatalog,
   bulkImports = [],
+  onUpdateBulkImport,
+  onDeleteBulkImport,
 }) => {
   const navigate = useNavigate();
   const { openSettings } = useSettingsModal();
@@ -1088,6 +1100,8 @@ const InventoryList: React.FC<Props> = ({
     );
   }, [setSearchParams]);
 
+  const bulkBatchActive = Boolean(bulkImportFilterId);
+
   const bulkImportRecord = useMemo(
     () => (bulkImportFilterId ? bulkImports.find((r) => r.id === bulkImportFilterId) ?? null : null),
     [bulkImports, bulkImportFilterId]
@@ -1153,6 +1167,161 @@ const InventoryList: React.FC<Props> = ({
       { skipUndo: true, skipActionLog: true }
     );
   }, [bulkImportFilterId, bulkImportRecord, items, onUpdate]);
+
+  const [bulkParentExpanded, setBulkParentExpanded] = useState(true);
+  const [bulkTotalDraft, setBulkTotalDraft] = useState('');
+  const [bulkAdding, setBulkAdding] = useState(false);
+  const [bulkNewName, setBulkNewName] = useState('');
+  const [bulkNewCategory, setBulkNewCategory] = useState('Components');
+  const [bulkNewSubCategory, setBulkNewSubCategory] = useState('Spare Parts');
+  const [bulkNewManualCost, setBulkNewManualCost] = useState('');
+  const [bulkBusy, setBulkBusy] = useState(false);
+
+  useEffect(() => {
+    if (!bulkImportRecord) {
+      setBulkTotalDraft('');
+      setBulkAdding(false);
+      return;
+    }
+    setBulkTotalDraft(String(bulkImportRecord.totalCost ?? ''));
+    setBulkParentExpanded(true);
+  }, [bulkImportRecord?.id]);
+
+  const bulkMembers = useMemo(
+    () => (bulkImportRecord ? getBulkImportMembers(bulkImportRecord, items) : []),
+    [bulkImportRecord, items]
+  );
+
+  const recalcBulkBatch = useCallback(
+    (totalOverride?: number) => {
+      if (!bulkImportRecord || !onUpdateBulkImport) return;
+      const raw =
+        totalOverride ?? parseLocaleNumber(bulkTotalDraft || String(bulkImportRecord.totalCost));
+      const total = Number.isFinite(raw) ? Math.max(0, raw) : bulkImportRecord.totalCost;
+      setBulkBusy(true);
+      try {
+        const { record: nextRecord, patchedItems } = applyBulkImportResplit({
+          record: bulkImportRecord,
+          items,
+          totalCost: total,
+          mode: 'SMART',
+        });
+        if (patchedItems.length) {
+          onUpdate(patchedItems, undefined, { flushCloud: true, skipActionLog: true });
+        }
+        onUpdateBulkImport(nextRecord);
+        setBulkTotalDraft(String(nextRecord.totalCost ?? total));
+        setToast('Batch prices recalculated');
+        setTimeout(() => setToast(null), 2200);
+      } finally {
+        setBulkBusy(false);
+      }
+    },
+    [bulkImportRecord, bulkTotalDraft, items, onUpdate, onUpdateBulkImport]
+  );
+
+  const removeFromBulkBatch = useCallback(
+    (itemId: string) => {
+      if (!bulkImportRecord || !onUpdateBulkImport) return;
+      const members = bulkMembers.filter((m) => m.id !== itemId);
+      const nextRecord = removeBulkImportMember(bulkImportRecord, itemId, members);
+      const item = items.find((i) => i.id === itemId);
+      if (item) {
+        // '' clears stamp; omitting the key would be restored by App merge preserve.
+        onUpdate([{ ...item, bulkImportId: '' }], undefined, { flushCloud: true, skipActionLog: true });
+      }
+      onUpdateBulkImport(nextRecord);
+      if (members.length > 0 && window.confirm('Re-split remaining items to the batch total?')) {
+        const { record: afterSplit, patchedItems } = applyBulkImportResplit({
+          record: nextRecord,
+          items: items.filter((i) => i.id !== itemId),
+          totalCost: nextRecord.totalCost,
+          mode: 'SMART',
+        });
+        if (patchedItems.length) {
+          onUpdate(patchedItems, undefined, { flushCloud: true, skipActionLog: true });
+        }
+        onUpdateBulkImport(afterSplit);
+      }
+    },
+    [bulkImportRecord, bulkMembers, items, onUpdate, onUpdateBulkImport]
+  );
+
+  const addToBulkBatch = useCallback(() => {
+    if (!bulkImportRecord || !onUpdateBulkImport) return;
+    const name = bulkNewName.trim();
+    if (!name) return;
+    const manual = bulkNewManualCost.trim() ? parseLocaleNumber(bulkNewManualCost) : undefined;
+    const fallbackImage =
+      CATEGORY_IMAGES[bulkNewSubCategory] ||
+      CATEGORY_IMAGES[bulkNewCategory] ||
+      CATEGORY_IMAGES.Components;
+    const id = `bulk-${Date.now()}-extra`;
+    const newItem: InventoryItem = {
+      id,
+      name,
+      category: bulkNewCategory,
+      subCategory: bulkNewSubCategory,
+      buyPrice: Number.isFinite(manual) ? Number(manual) : 0,
+      buyDate: bulkImportRecord.buyDate || new Date().toISOString().split('T')[0],
+      status: ItemStatus.IN_STOCK,
+      vendor: 'Unknown',
+      platformBought: bulkImportRecord.platformBought,
+      bulkImportId: bulkImportRecord.id,
+      imageUrl: fallbackImage,
+      imageUrls: fallbackImage ? [fallbackImage] : [],
+      comment1: '',
+      comment2: `Bulk Import (added later). Source total: €${bulkImportRecord.totalCost}.`,
+      kleinanzeigenBuyChatUrl: bulkImportRecord.kleinanzeigenBuyChatUrl,
+      kleinanzeigenBuyChatImage: bulkImportRecord.kleinanzeigenBuyChatImage,
+      kleinanzeigenSellerProfileUrl: bulkImportRecord.kleinanzeigenSellerProfileUrl,
+    };
+    const membersAfter = [...bulkMembers, newItem];
+    const nextRecord = appendBulkImportMember(bulkImportRecord, newItem, membersAfter);
+    onUpdate([newItem], undefined, { flushCloud: true });
+    onUpdateBulkImport(nextRecord);
+    const locked = new Set<string>();
+    if (manual !== undefined && Number.isFinite(manual)) locked.add(id);
+    const { record: afterSplit, patchedItems } = applyBulkImportResplit({
+      record: nextRecord,
+      items: [...items, newItem],
+      totalCost: nextRecord.totalCost,
+      mode: 'SMART',
+      lockedItemIds: locked.size ? locked : undefined,
+    });
+    if (patchedItems.length) {
+      onUpdate(patchedItems, undefined, { flushCloud: true, skipActionLog: true });
+    }
+    onUpdateBulkImport(afterSplit);
+    setBulkNewName('');
+    setBulkNewManualCost('');
+    setBulkAdding(false);
+    setToast(`Added “${name}” to batch`);
+    setTimeout(() => setToast(null), 2200);
+  }, [
+    bulkImportRecord,
+    bulkMembers,
+    bulkNewName,
+    bulkNewCategory,
+    bulkNewSubCategory,
+    bulkNewManualCost,
+    items,
+    onUpdate,
+    onUpdateBulkImport,
+  ]);
+
+  const deleteBulkBatchHistory = useCallback(() => {
+    if (!bulkImportRecord || !onDeleteBulkImport) return;
+    if (
+      !window.confirm(
+        `Remove “${bulkImportRecord.label}” from bulk import history?\n\nInventory items stay — only the history link is removed.`
+      )
+    ) {
+      return;
+    }
+    onDeleteBulkImport(bulkImportRecord.id);
+    clearBulkImportBatch();
+  }, [bulkImportRecord, onDeleteBulkImport, clearBulkImportBatch]);
 
   // -- STATE PERSISTENCE (batched; avoids many sync localStorage writes per keystroke) --
   const listPrefsPersistRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -4569,40 +4738,183 @@ const InventoryList: React.FC<Props> = ({
 
       <header className="shrink-0 space-y-1">
          {bulkImportFilterId && (
-           <div className="flex flex-wrap items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-sm">
-             <Layers size={16} className="text-violet-700 shrink-0" />
-             <div className="min-w-0 flex-1">
-               <p className="font-bold text-violet-950 truncate">
-                 Bulk import
-                 {bulkImportRecord?.label ? ` · ${bulkImportRecord.label}` : ''}
-               </p>
-               <p className="text-[11px] font-semibold text-violet-800/80">
-                 {bulkImportRecord
-                   ? `${bulkImportSourceLabel(bulkImportRecord.source)} · ${bulkImportRecord.itemCount} items`
-                   : 'Batch view'}
-                 {bulkImportCounts
-                   ? ` · ${bulkImportCounts.inStock} in stock · ${bulkImportCounts.sold} sold`
-                   : ''}
-                 {bulkImportCounts && bulkImportCounts.missing > 0
-                   ? ` · ${bulkImportCounts.missing} missing`
-                   : ''}
-                 {' · includes sold'}
-               </p>
+           <div className="rounded-xl border border-violet-200 bg-violet-50 text-sm overflow-hidden">
+             <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+               <button
+                 type="button"
+                 onClick={() => setBulkParentExpanded((v) => !v)}
+                 className="p-1 rounded-md text-violet-700 hover:bg-violet-100"
+                 aria-label={bulkParentExpanded ? 'Collapse batch' : 'Expand batch'}
+               >
+                 {bulkParentExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+               </button>
+               <Layers size={16} className="text-violet-700 shrink-0" />
+               <div className="min-w-0 flex-1">
+                 <p className="font-bold text-violet-950 truncate">
+                   Bulk batch
+                   {bulkImportRecord?.label ? ` · ${bulkImportRecord.label}` : ''}
+                 </p>
+                 <p className="text-[11px] font-semibold text-violet-800/80">
+                   {bulkImportRecord
+                     ? `${bulkImportSourceLabel(bulkImportRecord.source)} · ${bulkMembers.length} children · €${formatEUR(bulkImportRecord.totalCost || 0)}`
+                     : 'Batch view'}
+                   {bulkImportCounts
+                     ? ` · ${bulkImportCounts.inStock} in stock · ${bulkImportCounts.sold} sold`
+                     : ''}
+                   {bulkImportCounts && bulkImportCounts.missing > 0
+                     ? ` · ${bulkImportCounts.missing} missing`
+                     : ''}
+                   {' · includes sold'}
+                 </p>
+               </div>
+               {bulkImportRecord && onUpdateBulkImport && (
+                 <>
+                   <label className="inline-flex items-center gap-1 text-[10px] font-bold text-violet-800">
+                     Total €
+                     <input
+                       type="text"
+                       inputMode="decimal"
+                       value={bulkTotalDraft}
+                       onChange={(e) => setBulkTotalDraft(e.target.value)}
+                       className="w-20 px-1.5 py-1 rounded-md border border-violet-200 bg-white text-[11px] font-bold text-slate-900"
+                     />
+                   </label>
+                   <button
+                     type="button"
+                     disabled={bulkBusy}
+                     onClick={() => recalcBulkBatch()}
+                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-violet-200 bg-white text-[11px] font-bold text-violet-800 hover:bg-violet-100 disabled:opacity-50"
+                   >
+                     <RefreshCw size={12} className={bulkBusy ? 'animate-spin' : ''} /> Recalc
+                   </button>
+                   <button
+                     type="button"
+                     onClick={() => setBulkAdding((v) => !v)}
+                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-violet-200 bg-white text-[11px] font-bold text-violet-800 hover:bg-violet-100"
+                   >
+                     <Plus size={12} /> Add
+                   </button>
+                 </>
+               )}
+               <button
+                 type="button"
+                 onClick={() =>
+                   navigate('/panel/bulk-imports', {
+                     state: { expandId: bulkImportFilterId },
+                   })
+                 }
+                 className="px-2.5 py-1 rounded-lg border border-violet-200 bg-white text-[11px] font-bold text-violet-800 hover:bg-violet-100"
+               >
+                 History
+               </button>
+               {onDeleteBulkImport && bulkImportRecord && (
+                 <button
+                   type="button"
+                   onClick={deleteBulkBatchHistory}
+                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-red-200 bg-white text-[11px] font-bold text-red-700 hover:bg-red-50"
+                   title="Delete history (items stay)"
+                 >
+                   <Trash2 size={12} />
+                 </button>
+               )}
+               <button
+                 type="button"
+                 onClick={clearBulkImportBatch}
+                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-900 text-white text-[11px] font-bold hover:bg-violet-800"
+               >
+                 <X size={12} /> Clear
+               </button>
              </div>
-             <button
-               type="button"
-               onClick={() => navigate('/panel/bulk-imports')}
-               className="px-2.5 py-1 rounded-lg border border-violet-200 bg-white text-[11px] font-bold text-violet-800 hover:bg-violet-100"
-             >
-               History
-             </button>
-             <button
-               type="button"
-               onClick={clearBulkImportBatch}
-               className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-900 text-white text-[11px] font-bold hover:bg-violet-800"
-             >
-               <X size={12} /> Clear
-             </button>
+             {bulkParentExpanded && bulkImportRecord && (
+               <div className="border-t border-violet-200/80 bg-white/60 px-3 py-2 space-y-2">
+                 {bulkAdding && (
+                   <div className="flex flex-wrap items-end gap-2 rounded-lg border border-violet-100 bg-white p-2">
+                     <label className="text-[10px] font-bold text-slate-500 flex-1 min-w-[8rem]">
+                       Name
+                       <input
+                         value={bulkNewName}
+                         onChange={(e) => setBulkNewName(e.target.value)}
+                         className="mt-0.5 w-full px-2 py-1 rounded-md border border-slate-200 text-xs font-semibold"
+                         placeholder="Forgotten item…"
+                       />
+                     </label>
+                     <label className="text-[10px] font-bold text-slate-500">
+                       Category
+                       <select
+                         value={bulkNewCategory}
+                         onChange={(e) => {
+                           setBulkNewCategory(e.target.value);
+                           const subs = categories[e.target.value] || [];
+                           setBulkNewSubCategory(subs[0] || '');
+                         }}
+                         className="mt-0.5 block px-2 py-1 rounded-md border border-slate-200 text-xs font-semibold"
+                       >
+                         {Object.keys(categories).map((c) => (
+                           <option key={c} value={c}>
+                             {c}
+                           </option>
+                         ))}
+                       </select>
+                     </label>
+                     <label className="text-[10px] font-bold text-slate-500">
+                       Sub
+                       <select
+                         value={bulkNewSubCategory}
+                         onChange={(e) => setBulkNewSubCategory(e.target.value)}
+                         className="mt-0.5 block px-2 py-1 rounded-md border border-slate-200 text-xs font-semibold"
+                       >
+                         {(categories[bulkNewCategory] || []).map((s) => (
+                           <option key={s} value={s}>
+                             {s}
+                           </option>
+                         ))}
+                       </select>
+                     </label>
+                     <label className="text-[10px] font-bold text-slate-500 w-20">
+                       Manual €
+                       <input
+                         value={bulkNewManualCost}
+                         onChange={(e) => setBulkNewManualCost(e.target.value)}
+                         className="mt-0.5 w-full px-2 py-1 rounded-md border border-slate-200 text-xs font-semibold"
+                         placeholder="opt"
+                       />
+                     </label>
+                     <button
+                       type="button"
+                       onClick={addToBulkBatch}
+                       disabled={!bulkNewName.trim()}
+                       className="px-2.5 py-1.5 rounded-lg bg-violet-900 text-white text-[11px] font-bold disabled:opacity-40"
+                     >
+                       Add & resplit
+                     </button>
+                   </div>
+                 )}
+                 <ul className="space-y-1 max-h-40 overflow-y-auto">
+                   {bulkMembers.map((m) => (
+                     <li
+                       key={m.id}
+                       className="flex items-center gap-2 text-[11px] font-semibold text-slate-700 pl-2 border-l-2 border-violet-300"
+                     >
+                       <span className="truncate flex-1 min-w-0">{m.name}</span>
+                       <span className="shrink-0 text-slate-500">€{formatEUR(m.buyPrice || 0)}</span>
+                       {onUpdateBulkImport && (
+                         <button
+                           type="button"
+                           onClick={() => removeFromBulkBatch(m.id)}
+                           className="p-0.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"
+                           title="Remove from batch"
+                         >
+                           <Unlink size={12} />
+                         </button>
+                       )}
+                     </li>
+                   ))}
+                   {bulkMembers.length === 0 && (
+                     <li className="text-[11px] text-slate-400 font-medium pl-2">No members found</li>
+                   )}
+                 </ul>
+               </div>
+             )}
            </div>
          )}
 
@@ -5720,8 +6032,15 @@ const InventoryList: React.FC<Props> = ({
             </div>
           ) : (
             sortedItems.map((item) => (
-              <MobileStockCard
+              <div
                 key={item.id}
+                className={
+                  bulkBatchActive
+                    ? 'pl-2 ml-1 border-l-2 border-violet-300'
+                    : undefined
+                }
+              >
+              <MobileStockCard
                 item={item}
                 profit={profitForDisplay(item)}
                 suggestedEbayList={suggestedEbayById.get(item.id)?.ebayList}
@@ -5769,6 +6088,7 @@ const InventoryList: React.FC<Props> = ({
                     onUpdate([{ ...it, ...patch }], undefined, { skipActionLog: true }),
                 }}
               />
+              </div>
             ))
           )}
       </div>
@@ -5839,6 +6159,7 @@ const InventoryList: React.FC<Props> = ({
         [data-density="compact"] .text-sm { font-size: 0.6875rem; line-height: 1.2; }
         [data-density="compact"] .text-xs { font-size: 0.625rem; line-height: 1.2; }
         [data-density="comfortable"] .text-sm { line-height: 1.25; }
+        [data-bulk-batch] tbody > tr > td:first-child { box-shadow: inset 3px 0 0 #8b5cf6; }
       `}</style>
       {splitView && statusFilter !== 'PURCHASES' ? (
         <div className="hidden lg:flex flex-1 min-h-0 gap-2 flex-col lg:flex-row">
@@ -5868,6 +6189,7 @@ const InventoryList: React.FC<Props> = ({
             rowHeightEstimate={rowHeightEstimate}
             bulkBarSpacer={selectedIds.length > 0}
             collapsedBundles={collapsedBundles}
+            bulkBatchActive={bulkBatchActive}
           />
           <InventoryListTablePane
             key="split-sold"
@@ -5906,6 +6228,7 @@ const InventoryList: React.FC<Props> = ({
             rowHeightEstimate={rowHeightEstimate}
             bulkBarSpacer={selectedIds.length > 0}
             collapsedBundles={collapsedBundles}
+            bulkBatchActive={bulkBatchActive}
           />
         </div>
       ) : (
@@ -5939,6 +6262,7 @@ const InventoryList: React.FC<Props> = ({
           bulkBarSpacer={selectedIds.length > 0}
           collapsedBundles={collapsedBundles}
           className="flex flex-1"
+          bulkBatchActive={bulkBatchActive}
         />
         )}
         </div>
@@ -6992,6 +7316,7 @@ type InventoryListTablePaneProps = {
   bulkBarSpacer: boolean;
   collapsedBundles: Set<string>;
   className?: string;
+  bulkBatchActive?: boolean;
 };
 
 const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
@@ -7021,6 +7346,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
   bulkBarSpacer,
   collapsedBundles,
   className = 'flex flex-1',
+  bulkBatchActive = false,
 }) => {
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
 
@@ -7053,7 +7379,12 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
         </div>
       )}
       <div ref={attachScrollRef} className="flex-1 min-h-0 overflow-x-auto overflow-y-auto custom-scrollbar pb-3">
-        <table className="w-full text-left border-collapse min-w-[1160px] table-fixed" data-inventory-table data-density={listDensity}>
+        <table
+          className="w-full text-left border-collapse min-w-[1160px] table-fixed"
+          data-inventory-table
+          data-density={listDensity}
+          {...(bulkBatchActive ? { 'data-bulk-batch': '' } : {})}
+        >
           <thead className="sticky top-0 z-10 bg-white">
             <tr className="bg-slate-50/80 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-widest backdrop-blur-sm">
               {visibleColumns.map((colId) => {

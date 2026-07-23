@@ -42,6 +42,7 @@ import {
   createBulkImportRecord,
   resolveBulkImportSource,
 } from '../utils/bulkImportHistory';
+import { splitBulkImportCosts, type BulkCostSplitMode } from '../utils/bulkImportCostSplit';
 import BarcodeScanPanel from './BarcodeScanPanel';
 import type { BarcodeProduct } from '../services/barcodeLookup';
 
@@ -111,7 +112,7 @@ interface DraftItem {
   draftSource?: BulkImportSource;
 }
 
-type CostSplitMode = 'EQUAL' | 'SMART';
+type CostSplitMode = BulkCostSplitMode;
 type TextImportMode = 'AS_IS' | 'AI';
 /** How to expand Nx lines into the review list. */
 type BulkQtyMode = 'INDIVIDUAL' | 'LOT';
@@ -134,34 +135,6 @@ interface ParsedTextItem {
 const CATEGORY_KEYS = Object.keys(HIERARCHY_CATEGORIES);
 const MOTHERBOARD_PATTERN =
   /\b(mainboard|motherboard|mobo|chipset|form\s*factor|io[\s-]*shield|(?:a|b|h|x|z)\d{2,4}[a-z0-9-]*)\b/i;
-
-function estimateDraftWeight(item: DraftItem): number {
-  const sub = (item.subCategory || '').toLowerCase();
-  const name = (item.name || '').toLowerCase();
-  const bySub: Record<string, number> = {
-    'graphics cards': 6.0,
-    'processors': 4.2,
-    'motherboards': 2.6,
-    'ram': 1.8,
-    'storage (ssd/hdd)': 1.6,
-    'power supplies': 1.4,
-    'cases': 1.1,
-    'cooling': 1.0,
-    'monitors': 1.7,
-    'gaming laptop': 5.0,
-    'consoles': 3.2,
-  };
-  let w = bySub[sub] ?? 1.0;
-
-  // Lightweight "smart" bumps by model/tier hints in the title.
-  if (/(rtx|radeon|rx\s?\d{4,5}|gtx)/i.test(name)) w *= 1.35;
-  if (/(i9|i7|ryzen\s?9|ryzen\s?7)/i.test(name)) w *= 1.2;
-  if (/(4090|5090|4080|5080|7900\s?xtx)/i.test(name)) w *= 1.35;
-  if (/(64gb|48gb|32gb|2tb|4tb)/i.test(name)) w *= 1.1;
-  if (item.isDefective) w *= 0.6;
-
-  return Math.max(0.3, w);
-}
 
 function normalizeCategory(input?: string): string {
   const raw = (input || '').trim().toLowerCase();
@@ -320,31 +293,19 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
   const allocatedSum = items.reduce((sum, item) => sum + (item.manualCost !== undefined ? item.manualCost : 0), 0);
   const unallocatedCost = Math.max(0, totalCost - allocatedSum);
   const autoCostsById = useMemo(() => {
-    const withoutManual = items.filter((i) => i.manualCost === undefined);
-    if (withoutManual.length === 0 || unallocatedCost <= 0) return {} as Record<string, number>;
-
-    if (costSplitMode === 'EQUAL') {
-      const each = unallocatedCost / withoutManual.length;
-      return Object.fromEntries(withoutManual.map((i) => [i.id, each]));
-    }
-
-    const weighted = withoutManual.map((i) => ({ id: i.id, weight: estimateDraftWeight(i) }));
-    const weightSum = weighted.reduce((s, x) => s + x.weight, 0) || 1;
-    const totalCents = Math.round(unallocatedCost * 100);
-    const withRaw = weighted.map((x) => {
-      const rawCents = (totalCents * x.weight) / weightSum;
-      const base = Math.floor(rawCents);
-      const frac = rawCents - base;
-      return { ...x, base, frac };
-    });
-    let used = withRaw.reduce((s, x) => s + x.base, 0);
-    let remain = totalCents - used;
-    withRaw.sort((a, b) => b.frac - a.frac);
-    for (let i = 0; i < withRaw.length && remain > 0; i++, remain--) {
-      withRaw[i].base += 1;
-    }
-    return Object.fromEntries(withRaw.map((x) => [x.id, x.base / 100]));
-  }, [items, unallocatedCost, costSplitMode]);
+    return splitBulkImportCosts(
+      items.map((i) => ({
+        id: i.id,
+        name: i.name,
+        category: i.category,
+        subCategory: i.subCategory,
+        isDefective: i.isDefective,
+        manualCost: i.manualCost,
+      })),
+      totalCost,
+      costSplitMode
+    );
+  }, [items, totalCost, costSplitMode]);
   const allocatedTotal = items.reduce(
     (sum, item) => sum + (item.manualCost !== undefined ? item.manualCost : (autoCostsById[item.id] ?? 0)),
     0

@@ -448,3 +448,72 @@ export function bulkImportSourceLabel(source: BulkImportSource): string {
       return 'Mixed';
   }
 }
+
+/** Live inventory members for a history row (skips missing ids). */
+export function getBulkImportMembers(
+  record: BulkImportRecord,
+  items: InventoryItem[]
+): InventoryItem[] {
+  const byId = new Map(items.map((i) => [i.id, i]));
+  return (record.itemIds || [])
+    .map((id) => byId.get(id))
+    .filter((x): x is InventoryItem => Boolean(x));
+}
+
+export function withBulkImportMembership(
+  record: BulkImportRecord,
+  itemIds: string[],
+  memberNames?: string[]
+): BulkImportRecord {
+  const ids = unionBulkImportItemIds(itemIds, []);
+  return {
+    ...record,
+    itemIds: ids,
+    itemCount: ids.length,
+    label:
+      memberNames && memberNames.length > 0
+        ? buildBulkImportLabel(memberNames)
+        : record.label,
+  };
+}
+
+export function appendBulkImportMember(
+  record: BulkImportRecord,
+  item: InventoryItem,
+  allMembersAfter: InventoryItem[]
+): BulkImportRecord {
+  const ids = unionBulkImportItemIds(record.itemIds, [item.id]);
+  return {
+    ...record,
+    itemIds: ids,
+    itemCount: ids.length,
+    label: buildBulkImportLabel(allMembersAfter.map((m) => m.name)),
+  };
+}
+
+/** Refresh label from current live members. */
+export function refreshBulkImportLabel(
+  record: BulkImportRecord,
+  members: InventoryItem[]
+): BulkImportRecord {
+  return {
+    ...record,
+    itemIds: members.map((m) => m.id),
+    itemCount: members.length,
+    label: buildBulkImportLabel(members.map((m) => m.name)),
+  };
+}
+
+export function removeBulkImportMember(
+  record: BulkImportRecord,
+  itemId: string,
+  remainingMembers: InventoryItem[]
+): BulkImportRecord {
+  const ids = (record.itemIds || []).filter((id) => id !== itemId);
+  return {
+    ...record,
+    itemIds: ids,
+    itemCount: ids.length,
+    label: buildBulkImportLabel(remainingMembers.map((m) => m.name)),
+  };
+}
