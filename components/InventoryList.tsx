@@ -3530,8 +3530,6 @@ const InventoryList: React.FC<Props> = ({
                          })
                        }
                      />
-                   </div>
-                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                       {hasUserPhotos ? (
                         <span
                           className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/80"
@@ -6625,7 +6623,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
       const item = sortedItems[index];
       if (!item) return rowHeightEstimate;
       let h = rowHeightEstimate;
-      // OVP / Rechnung (/ IO) mini icons under the item name
+      // OVP / Rechnung + photo/specs chips share one under-name row
       h += 18;
       if (item.specs && Object.keys(item.specs).length > 0) h += 14;
       if (
