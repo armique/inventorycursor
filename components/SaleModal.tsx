@@ -8,7 +8,7 @@ import { findEbayOrderById, loadEbayOrderIndex } from '../services/ebayOrderInde
 import { refreshRecentEbayOrders } from '../services/ebayOrderBackfill';
 import { customerFromEbayOrder } from '../utils/ebayOrderBuyerData';
 import { ebayScreenshotSaleFields } from '../utils/ebayScreenshotSaleFields';
-import { findMatchingOrdersForItem, type EbayOrderMatch } from '../utils/ebayOrderMatch';
+import { listRecentEbayOrdersForSale, type EbayOrderMatch } from '../utils/ebayOrderMatch';
 import { getLinePayout } from '../utils/ebayOrderPayout';
 import { persistSaleProofImage, urlNeedsPhotoArchive } from '../services/inventoryImageStorage';
 import { InventoryItem, ItemStatus, PaymentType, CustomerInfo, Platform, TaxMode } from '../types';
@@ -90,8 +90,6 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const didLiveOrderFetchRef = useRef(false);
-  const ebayOrderIdRef = useRef(ebayOrderId);
-  ebayOrderIdRef.current = ebayOrderId;
 
   const rematchOrderSuggestions = useCallback((): EbayOrderMatch[] => {
     try {
@@ -100,7 +98,8 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
         setOrderMatchSuggestions([]);
         return [];
       }
-      const matches = findMatchingOrdersForItem(item, orders, 35).slice(0, 6);
+      // Newest first — seller picks the right order; name badges are hints only.
+      const matches = listRecentEbayOrdersForSale(item, orders, { days: 45, limit: 12 });
       setOrderMatchSuggestions(matches);
       return matches;
     } catch {
@@ -141,14 +140,13 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
     setPlatformSold('ebay.de');
     setPaymentType('ebay.de');
     setOrderIdLookupMessage(
-      `Filled from order history · ${match.matchKind === 'title' ? `title score ${match.matchScore}` : match.matchKind}`
+      match.matchKind === 'recent'
+        ? 'Filled from recent order — review price & buyer'
+        : `Filled from order history · ${match.matchKind === 'title' ? `name hint ${Math.round(match.matchScore)}` : match.matchKind}`
     );
   }, [item.ebaySku, item.ebayListingId]);
 
-  const applySuggestedOrderRef = useRef(applySuggestedOrder);
-  applySuggestedOrderRef.current = applySuggestedOrder;
-
-  // Cache matches immediately; once per modal, live-fetch recent eBay orders then re-match / auto-fill.
+  // Cache recent orders immediately; once per modal, live-fetch then refresh the newest-first list.
   useEffect(() => {
     if (platformSold !== 'ebay.de') {
       setOrderMatchSuggestions([]);
@@ -171,23 +169,9 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
           setOrderIdLookupMessage(result.error);
           return;
         }
-        const best = matches[0];
-        const canAutoFill =
-          !!best &&
-          !ebayOrderIdRef.current.trim() &&
-          (best.matchKind === 'listingId' ||
-            best.matchKind === 'sku' ||
-            (best.matchKind === 'title' &&
-              best.matchScore >= 180 &&
-              (best.orderAgeDays == null || best.orderAgeDays <= 7)));
-        if (canAutoFill) {
-          applySuggestedOrderRef.current(best);
+        if (result.ordersFetched > 0 || matches.length > 0) {
           setOrderIdLookupMessage(
-            `Auto-filled from live orders · ${best.matchKind} · ${result.ordersFetched} recent fetched`
-          );
-        } else if (result.ordersFetched > 0 || matches.length > 0) {
-          setOrderIdLookupMessage(
-            `Updated from eBay · ${result.ordersFetched} recent order(s) · ${matches.length} suggestion(s)`
+            `Updated from eBay · ${result.ordersFetched} recent · ${matches.length} listed (newest first) — tap to fill`
           );
         }
       } catch (e: unknown) {
@@ -904,7 +888,7 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
                 <div className="flex items-center gap-1.5">
                   <Receipt size={12} className="text-indigo-600 shrink-0" />
                   <p className="text-[9px] font-black uppercase tracking-wider text-indigo-800">
-                    Suggested from order history
+                    Recent eBay orders
                   </p>
                   {orderRefreshLoading && (
                     <span className="inline-flex items-center gap-1 text-[9px] font-bold text-indigo-600 ml-auto">
@@ -916,11 +900,11 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
                 {orderMatchSuggestions.length === 0 ? (
                   <p className="text-[10px] text-indigo-900/70 leading-snug">
                     {orderRefreshLoading
-                      ? 'Checking recent eBay orders…'
-                      : 'No close matches yet. Paste an Order ID below and click Load, or wait for Fetching to finish.'}
+                      ? 'Fetching recent eBay orders…'
+                      : 'No recent orders in cache yet. Wait for fetch, or paste an Order ID below and click Load.'}
                   </p>
                 ) : (
-                  <div className="space-y-1.5 max-h-44 overflow-y-auto pr-0.5">
+                  <div className="space-y-1.5 max-h-52 overflow-y-auto pr-0.5">
                     {orderMatchSuggestions.map((match) => {
                       const key = `${match.order.orderId}:${match.lineItem.sku || match.lineItem.title}`;
                       const payout = getLinePayout(match.order, match.lineItem);
@@ -941,26 +925,32 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
                               {match.lineItem.title}
                             </p>
                             <div className="flex flex-col items-end gap-0.5 shrink-0">
-                              {match.orderAgeDays != null && match.orderAgeDays <= 7 && (
-                                <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-700">
-                                  {match.orderAgeDays <= 1 ? 'Today' : `${match.orderAgeDays}d ago`}
+                              <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-700">
+                                {match.orderAgeDays == null
+                                  ? 'Recent'
+                                  : match.orderAgeDays <= 0
+                                    ? 'Today'
+                                    : match.orderAgeDays === 1
+                                      ? '1d ago'
+                                      : `${match.orderAgeDays}d ago`}
+                              </span>
+                              {match.matchKind !== 'recent' && (
+                                <span
+                                  className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full ${
+                                    match.matchKind === 'listingId'
+                                      ? 'bg-emerald-50 text-emerald-700'
+                                      : match.matchKind === 'sku'
+                                        ? 'bg-sky-50 text-sky-700'
+                                        : 'bg-amber-50 text-amber-800'
+                                  }`}
+                                >
+                                  {match.matchKind === 'listingId'
+                                    ? 'Listing'
+                                    : match.matchKind === 'sku'
+                                      ? 'SKU'
+                                      : 'Name hint'}
                                 </span>
                               )}
-                              <span
-                                className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full ${
-                                  match.matchKind === 'listingId'
-                                    ? 'bg-emerald-50 text-emerald-700'
-                                    : match.matchKind === 'sku'
-                                      ? 'bg-sky-50 text-sky-700'
-                                      : 'bg-amber-50 text-amber-800'
-                                }`}
-                              >
-                                {match.matchKind === 'listingId'
-                                  ? 'Listing'
-                                  : match.matchKind === 'sku'
-                                    ? 'SKU'
-                                    : `Name ${Math.round(match.matchScore)}`}
-                              </span>
                             </div>
                           </div>
                           <p className="text-[10px] text-slate-500 mt-0.5 tabular-nums">
