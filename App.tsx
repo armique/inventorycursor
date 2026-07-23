@@ -53,6 +53,7 @@ import { PanelLocaleProvider } from './context/PanelLocaleContext';
 import { UndoToastProvider, useUndoToastContext } from './context/UndoToastContext';
 import { appendUndoHistory } from './utils/appendUndoHistory';
 import { persistSnapshotToLocalStorage, scheduleBackgroundWork } from './services/backgroundPersistence';
+import { rebuildItemSalesPool } from './utils/itemSalesPool';
 import { buildStoreCatalog } from './utils/storefrontCatalog';
 import {
   BULK_IMPORTS_LIMIT,
@@ -386,6 +387,12 @@ const App: React.FC = () => {
       localStorage.setItem('recurring_expenses', JSON.stringify(newRecurringExpenses));
     }
     persistDashboardPreferencesToLocalStorage(dash);
+    // Keep part-level sales pool in sync for Flip Coach comps + Price Lab.
+    try {
+      rebuildItemSalesPool(newItems);
+    } catch {
+      /* ignore */
+    }
   };
 
   /** Merge remote inventory with local. Remote wins on conflicts, but local-only items (e.g. newly added via bulk) are preserved until synced. */

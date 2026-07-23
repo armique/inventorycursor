@@ -3025,6 +3025,102 @@ const InventoryList: React.FC<Props> = ({
                         </p>
                       )}
                    </div>
+                   {(item.status === ItemStatus.IN_STOCK ||
+                     item.status === ItemStatus.ORDERED ||
+                     item.status === ItemStatus.IN_COMPOSITION) && (
+                     <div
+                       className="flex items-center gap-1 mt-0.5"
+                       onClick={(e) => e.stopPropagation()}
+                     >
+                       {(() => {
+                         const kaOk = Boolean(item.listedOnKleinanzeigen);
+                         const ebOk = Boolean(item.listedOnEbay);
+                         const viaKit = Boolean(item.listedViaParent);
+                         const syncHint = item.listingPresenceSyncedAt
+                           ? ` · synced ${item.listingPresenceSyncedAt.slice(0, 16).replace('T', ' ')}`
+                           : '';
+                         return (
+                           <>
+                             <button
+                               type="button"
+                               title={
+                                 kaOk
+                                   ? viaKit && !item.kleinanzeigenListingUrl
+                                     ? `Listed on Kleinanzeigen via kit${syncHint}`
+                                     : `Listed on Kleinanzeigen${syncHint}`
+                                   : `Not posted on Kleinanzeigen${syncHint}. Sync in Settings → eBay API, or click to mark listed.`
+                               }
+                               onClick={() => {
+                                 if (item.kleinanzeigenListingUrl) {
+                                   window.open(item.kleinanzeigenListingUrl, '_blank', 'noopener,noreferrer');
+                                   return;
+                                 }
+                                 onUpdate(
+                                   [
+                                     {
+                                       ...item,
+                                       listedOnKleinanzeigen: !item.listedOnKleinanzeigen,
+                                       listedViaParent: false,
+                                     },
+                                   ],
+                                   undefined,
+                                   { skipActionLog: true }
+                                 );
+                               }}
+                               className={`inline-flex items-center px-1 py-0 rounded text-[8px] font-black uppercase tracking-wide border ${
+                                 kaOk
+                                   ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                   : 'bg-slate-50 text-slate-400 border-slate-200 line-through decoration-slate-300'
+                               }`}
+                             >
+                               KA
+                             </button>
+                             <button
+                               type="button"
+                               title={
+                                 ebOk
+                                   ? viaKit && !item.ebayListingId
+                                     ? `Listed on eBay via kit${syncHint}`
+                                     : `Listed on eBay${syncHint}`
+                                   : `Not posted on eBay${syncHint}. Sync in Settings → eBay API, or click to mark listed.`
+                               }
+                               onClick={() => {
+                                 if (item.ebayListingId) {
+                                   window.open(
+                                     `https://www.ebay.de/itm/${item.ebayListingId}`,
+                                     '_blank',
+                                     'noopener,noreferrer'
+                                   );
+                                   return;
+                                 }
+                                 onUpdate(
+                                   [
+                                     {
+                                       ...item,
+                                       listedOnEbay: !item.listedOnEbay,
+                                       listedViaParent: false,
+                                     },
+                                   ],
+                                   undefined,
+                                   { skipActionLog: true }
+                                 );
+                               }}
+                               className={`inline-flex items-center px-1 py-0 rounded text-[8px] font-black uppercase tracking-wide border ${
+                                 ebOk
+                                   ? 'bg-sky-50 text-sky-800 border-sky-200'
+                                   : 'bg-slate-50 text-slate-400 border-slate-200 line-through decoration-slate-300'
+                               }`}
+                             >
+                               EB
+                             </button>
+                             {viaKit && (kaOk || ebOk) && (
+                               <span className="text-[8px] font-bold text-violet-600 uppercase">via kit</span>
+                             )}
+                           </>
+                         );
+                       })()}
+                     </div>
+                   )}
                    <div
                      className="flex items-center gap-1.5 flex-wrap mt-0.5"
                      onClick={(e) => e.stopPropagation()}
@@ -3071,7 +3167,7 @@ const InventoryList: React.FC<Props> = ({
                              title={`Kleinanzeigen €${formatEUR(sugg.kleinList)} (no fees) · eBay €${formatEUR(sugg.ebayList)} (~${sugg.feePct}% fees)${
                                sugg.compCount
                                  ? ` · ${sugg.compCount} sold comps`
-                                 : ' · cost-based (~45% margin, min 30%)'
+                                 : ` · age target ${Math.round((sugg.targetMargin ?? 0.45) * 100)}% margin (day ${sugg.daysHeld ?? 0})`
                              }. Click to refresh & save snapshot.`}
                            >
                              <span className="text-emerald-700">KA €{formatEUR(sugg.kleinList)}</span>

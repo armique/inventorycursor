@@ -34,6 +34,7 @@ import {
   computeBuyFirstProducts,
   summarizeFlipInsights,
 } from '../utils/flipInsights';
+import { summarizePriceLab, rebuildItemSalesPool } from '../utils/itemSalesPool';
 import {
   buildDailyMissions,
   channelLabel,
@@ -62,6 +63,10 @@ const FlipCoachPage: React.FC<Props> = ({ items }) => {
   const buyFocus = useMemo(() => computeBuyFocus(items, 8), [items]);
   const buyFirstProducts = useMemo(() => computeBuyFirstProducts(items, 8), [items]);
   const flipInsights = useMemo(() => summarizeFlipInsights(items), [items]);
+  const priceLab = useMemo(() => {
+    const pool = rebuildItemSalesPool(items);
+    return summarizePriceLab(items, pool);
+  }, [items]);
   const sellNow = useMemo(() => buildSellNowQueue(items, fees, 12), [items, fees]);
   const missions = useMemo(
     () => buildDailyMissions(items, fees, missionLog, 3),
@@ -207,6 +212,111 @@ const FlipCoachPage: React.FC<Props> = ({ items }) => {
                     </span>
                   </div>
                 ))}
+              </div>
+            </div>
+          </>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50 p-3 space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-xs font-black uppercase tracking-widest text-emerald-900 flex items-center gap-1.5">
+            <TrendingUp size={14} /> Price Lab
+          </h2>
+          <p className="text-[10px] font-bold text-emerald-800/80">
+            Part-level sales pool · margin decay 60%→30% (−5pp / 2d from buy date)
+          </p>
+        </div>
+        {priceLab.eventCount === 0 ? (
+          <p className="text-xs text-slate-600">
+            No part-level sales yet. Standalone sells and kit-attributed parts will fill this pool
+            automatically.
+          </p>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <div className="rounded-lg border border-emerald-100 bg-white p-2.5">
+                <p className="text-[9px] font-black uppercase text-slate-400">Pool events</p>
+                <p className="text-lg font-black text-slate-900">{priceLab.eventCount}</p>
+                <p className="text-[10px] text-slate-500">
+                  {priceLab.standaloneCount} solo · {priceLab.bundleAttributedCount} kit ·{' '}
+                  {priceLab.splitChildCount} split
+                </p>
+              </div>
+              <div className="rounded-lg border border-emerald-100 bg-white p-2.5">
+                <p className="text-[9px] font-black uppercase text-slate-400">Avg margin</p>
+                <p className="text-lg font-black text-emerald-700">
+                  {priceLab.avgMarginPct != null ? `${Math.round(priceLab.avgMarginPct)}%` : '—'}
+                </p>
+                <p className="text-[10px] text-slate-500">
+                  pocket vs buy · avg hold {priceLab.avgDaysHeld ?? '—'}d
+                </p>
+              </div>
+              <div className="rounded-lg border border-emerald-100 bg-white p-2.5 md:col-span-2">
+                <p className="text-[9px] font-black uppercase text-slate-400 mb-1">
+                  Realized margin vs age target
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {priceLab.marginByAgeBucket.map((b) => (
+                    <span
+                      key={b.label}
+                      className="inline-flex flex-col rounded-md border border-slate-100 bg-slate-50 px-1.5 py-0.5 text-[9px]"
+                      title={`${b.count} sales`}
+                    >
+                      <span className="font-black text-slate-700">{b.label}</span>
+                      <span
+                        className={
+                          b.avgMarginPct >= b.targetMarginPct - 5
+                            ? 'font-bold text-emerald-700'
+                            : 'font-bold text-amber-700'
+                        }
+                      >
+                        {Math.round(b.avgMarginPct)}% / {b.targetMarginPct}%
+                      </span>
+                    </span>
+                  ))}
+                  {!priceLab.marginByAgeBucket.length && (
+                    <span className="text-[10px] text-slate-500">No aged sales yet</span>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div className="rounded-lg border border-slate-100 bg-white p-2 space-y-1">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                  Top models in pool
+                </p>
+                {priceLab.modelCoverage.slice(0, 6).map((m) => (
+                  <div
+                    key={m.modelKey}
+                    className="flex items-center justify-between gap-2 text-[11px]"
+                  >
+                    <span className="font-bold text-slate-800 truncate">{m.label}</span>
+                    <span className="shrink-0 font-black text-emerald-800">
+                      n={m.count} · {Math.round(m.avgMarginPct)}% · {Math.round(m.standaloneShare)}%
+                      solo
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="rounded-lg border border-slate-100 bg-white p-2 space-y-1">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                  Open stock — target margin by age
+                </p>
+                {priceLab.openStockTargetByAge.map((b) => (
+                  <div
+                    key={b.label}
+                    className="flex items-center justify-between gap-2 text-[11px]"
+                  >
+                    <span className="font-bold text-slate-800">{b.label}</span>
+                    <span className="shrink-0 font-black text-sky-800">
+                      {b.count} items · {Math.round(b.avgTargetMarginPct)}% target
+                    </span>
+                  </div>
+                ))}
+                {!priceLab.openStockTargetByAge.length && (
+                  <p className="text-[10px] text-slate-500">No open stock</p>
+                )}
               </div>
             </div>
           </>

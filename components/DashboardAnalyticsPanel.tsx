@@ -12,7 +12,9 @@ import {
   profitGoalProgress,
   type DateRange,
 } from '../utils/dashboardAnalytics';
+import { summarizePriceLab, getOrRebuildItemSalesPool } from '../utils/itemSalesPool';
 import PlatformBadge from './PlatformBadge';
+import { Link } from 'react-router-dom';
 
 interface Props {
   items: InventoryItem[];
@@ -29,6 +31,7 @@ const DashboardAnalyticsPanel: React.FC<Props> = ({ items, expenses, range, rang
   const sellThrough = useMemo(() => sellThroughRate(items, range), [items, range]);
   const valuation = useMemo(() => inventoryValuation(items), [items]);
   const goal = useMemo(() => profitGoalProgress(items, expenses, range, profitGoal), [items, expenses, range, profitGoal]);
+  const priceLab = useMemo(() => summarizePriceLab(items, getOrRebuildItemSalesPool(items)), [items]);
 
   const exportCsv = (filename: string, rows: Record<string, string | number>[]) => {
     if (!rows.length) return;
@@ -78,6 +81,41 @@ const DashboardAnalyticsPanel: React.FC<Props> = ({ items, expenses, range, rang
             €{formatEUR(valuation.potentialProfit)}
           </p>
           <p className="text-xs text-slate-500">{valuation.count} in stock</p>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <p className="text-xs font-black uppercase text-slate-400">Price Lab · part-level sales pool</p>
+          <Link to="/panel/flip-coach" className="text-[10px] font-black uppercase text-emerald-700 hover:underline">
+            Open Flip Coach →
+          </Link>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div>
+            <p className="text-[10px] font-bold uppercase text-slate-400">Events</p>
+            <p className="text-xl font-black text-slate-900">{priceLab.eventCount}</p>
+            <p className="text-[10px] text-slate-500">
+              {priceLab.bundleAttributedCount} from kits
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold uppercase text-slate-400">Avg margin</p>
+            <p className="text-xl font-black text-emerald-700">
+              {priceLab.avgMarginPct != null ? `${Math.round(priceLab.avgMarginPct)}%` : '—'}
+            </p>
+            <p className="text-[10px] text-slate-500">target curve 60→30%</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold uppercase text-slate-400">Avg hold</p>
+            <p className="text-xl font-black text-slate-900">
+              {priceLab.avgDaysHeld != null ? `${priceLab.avgDaysHeld}d` : '—'}
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold uppercase text-slate-400">Models tracked</p>
+            <p className="text-xl font-black text-slate-900">{priceLab.modelCoverage.length}</p>
+          </div>
         </div>
       </div>
 

@@ -17,6 +17,7 @@ import {
 } from './inventorySoldComps';
 import { resolveSalePlatform } from './salePlatform';
 import { roundMoney } from '../services/financialAggregation';
+import { findPoolComps, buildItemSaleEvents } from './itemSalesPool';
 
 export const FLIP_FEE_STORAGE_KEY = 'flip_coach_fees_v2';
 
@@ -113,7 +114,7 @@ function soldPocket(
 
 /**
  * Pocket target from your own sold items with similar names.
- * Prefers same-channel comps when enough exist.
+ * Prefers item-sales-pool comps (incl. bundle-attributed parts), then live sold leaves.
  */
 export function suggestChannelPrices(
   items: InventoryItem[],
@@ -125,6 +126,54 @@ export function suggestChannelPrices(
   const q = name.trim();
   if (q.length < 3) {
     return emptySuggestion(feePct, 'Type a product name to see price ideas.');
+  }
+
+  // Prefer attributed part-level pool (standalone + kit splits).
+  try {
+    const poolHits = findPoolComps(buildItemSaleEvents(items), q, opts);
+    if (poolHits.length >= 1) {
+      const ebayPockets = poolHits
+        .filter((x) => x.event.platform === 'ebay.de')
+        .map((x) => x.event.pocket);
+      const kleinPockets = poolHits
+        .filter((x) => x.event.platform === 'kleinanzeigen.de')
+        .map((x) => x.event.pocket);
+      const allPockets = poolHits.map((x) => x.event.pocket);
+      let pockets: number[];
+      let source: ChannelPriceSuggestion['compSource'];
+      if (ebayPockets.length >= 2) {
+        pockets = ebayPockets;
+        source = 'ebay_net';
+      } else if (kleinPockets.length >= 2) {
+        pockets = kleinPockets;
+        source = 'klein';
+      } else {
+        pockets = allPockets;
+        source = 'mixed';
+      }
+      const sorted = [...pockets].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      const median =
+        sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+      const lists = listPricesForPocket(median, feePct);
+      const attributed = poolHits.some((h) => h.event.source === 'bundle_attribution');
+      return {
+        pocketTarget: roundMoney(median),
+        kleinList: lists.kleinanzeigen,
+        ebayList: lists.ebay,
+        ebayFeePct: feePct,
+        compCount: pockets.length,
+        compSource: source,
+        low: roundMoney(sorted[0]),
+        high: roundMoney(sorted[sorted.length - 1]),
+        median: roundMoney(median),
+        note: attributed
+          ? 'From your part-level sales pool (includes kit-attributed sells).'
+          : 'From your item sales pool (standalone part sells).',
+      };
+    }
+  } catch {
+    /* pool unavailable — fall through */
   }
 
   const sold = items.filter(
@@ -247,19 +296,21 @@ function emptySuggestion(feePct: number, note: string): ChannelPriceSuggestion {
 /**
  * Reject comps that sit far above your buy (e.g. €140 ask on a €48 kit).
  * Cap ≈ buy × 1.6 (60% margin); always allow a small absolute cushion for cheap parts.
+ * When clamped, soft list uses age-aware targetMargin (default 45%).
  */
 export function sanitizePocketAgainstBuy(
   pocket: number,
   buy: number,
-  compCount: number
+  compCount: number,
+  targetMargin = 0.45
 ): { pocket: number; clamped: boolean } {
   if (!(buy > 0) || !(pocket > 0) || compCount <= 0) {
     return { pocket: roundMoney(Math.max(0, pocket)), clamped: false };
   }
   const cap = Math.max(buy * 1.6, buy + 8);
   if (pocket <= cap) return { pocket: roundMoney(pocket), clamped: false };
-  // Comps look too rich — soft list from cost (~45%), not fantasy retail.
-  return { pocket: roundMoney(buy * 1.45), clamped: true };
+  const margin = Math.max(0.3, Math.min(0.6, targetMargin));
+  return { pocket: roundMoney(buy * (1 + margin)), clamped: true };
 }
 
 export type BuyFocusRow = {
@@ -380,19 +431,31 @@ export function buildSellNowQueue(
     const daysHeld = item.buyDate
       ? Math.max(0, Math.round((now - new Date(item.buyDate).getTime()) / 86400000))
       : 0;
+    const ageMargin = Math.max(0.3, Math.min(0.6, 0.6 - 0.05 * Math.floor(daysHeld / 2)));
 
-    // If no comps, aim ~45% markup on buy (same as inventory suggest chips).
+    // No comps → age-aware markup on buy (60% → 30% over hold time).
     let pocket =
-      suggestion.compCount > 0 ? suggestion.pocketTarget : roundMoney(buy > 0 ? buy * 1.45 : 0);
+      suggestion.compCount > 0
+        ? suggestion.pocketTarget
+        : roundMoney(buy > 0 ? buy * (1 + ageMargin) : 0);
     let compCount = suggestion.compCount;
     let note = suggestion.note;
 
     if (suggestion.compCount > 0) {
-      const sane = sanitizePocketAgainstBuy(pocket, buy, suggestion.compCount);
+      const sane = sanitizePocketAgainstBuy(pocket, buy, suggestion.compCount, ageMargin);
       if (sane.clamped) {
-        pocket = sane.pocket;
+        pocket = roundMoney(buy > 0 ? buy * (1 + ageMargin) : sane.pocket);
         compCount = 0;
-        note = 'Sold comps looked unrealistic vs your buy price — using a cost-based guess instead.';
+        note = 'Sold comps looked unrealistic vs your buy price — using age-based margin instead.';
+      } else {
+        // Comps below age target → lift to age curve.
+        const minPocket = buy > 0 ? buy * (1 + ageMargin) : 0;
+        const maxPocket = buy > 0 ? buy * 1.6 : Infinity;
+        if (buy > 0 && (pocket < minPocket || pocket > maxPocket)) {
+          pocket = roundMoney(buy * (1 + ageMargin));
+          compCount = 0;
+          note = `Age target ${Math.round(ageMargin * 100)}% margin (day ${daysHeld}) — comps outside band.`;
+        }
       }
     }
 
@@ -406,7 +469,7 @@ export function buildSellNowQueue(
 
     let preferred: SellNowRow['preferredChannel'] = 'either';
     let reason = note;
-    if (note.startsWith('Sold comps looked')) {
+    if (note.startsWith('Sold comps looked') || note.startsWith('Age target')) {
       reason = note;
       preferred = 'either';
     } else if (profitKlein <= 10 && profitEbay <= 10) {
@@ -419,7 +482,7 @@ export function buildSellNowQueue(
       preferred = 'either';
       reason = 'Sitting too long — list on both, drop price if needed.';
     } else if (compCount === 0) {
-      reason = 'No sold comps yet — prices are a rough guess from your buy price.';
+      reason = `No sold comps — ${Math.round(ageMargin * 100)}% margin target (day ${daysHeld}).`;
     }
 
     rows.push({

@@ -6,15 +6,28 @@ import {
   resolveSuggestedEbayList,
   roundListPriceUp,
   summarizeFlipInsights,
+  targetMarginForDaysHeld,
+  daysHeldFromBuyDate,
 } from './flipInsights';
 import type { FlipFeeSettings } from './flipCoach';
 
 const fees: FlipFeeSettings = { ebayFeePct: 12.5, ebayAdsPct: 12.5 };
 
+/** Buy date = today so age target stays at 60%. */
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function daysAgoIso(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
 function item(partial: Partial<InventoryItem> & Pick<InventoryItem, 'id' | 'name'>): InventoryItem {
   return {
     buyPrice: 100,
-    buyDate: '2026-01-01',
+    buyDate: todayIso(),
     category: 'Components',
     subCategory: 'Graphics Cards',
     status: ItemStatus.IN_STOCK,
@@ -25,11 +38,23 @@ function item(partial: Partial<InventoryItem> & Pick<InventoryItem, 'id' | 'name
 }
 
 describe('flipInsights', () => {
+  it('decays margin −5pp every 2 days from 60% to 30%', () => {
+    expect(targetMarginForDaysHeld(0)).toBe(0.6);
+    expect(targetMarginForDaysHeld(1)).toBe(0.6);
+    expect(targetMarginForDaysHeld(2)).toBe(0.55);
+    expect(targetMarginForDaysHeld(4)).toBe(0.5);
+    expect(targetMarginForDaysHeld(6)).toBe(0.45);
+    expect(targetMarginForDaysHeld(12)).toBe(0.3);
+    expect(targetMarginForDaysHeld(99)).toBe(0.3);
+  });
+
   it('uses stored suggested ebay price snapshot when present', () => {
     const row = item({
       id: '1',
       name: 'RTX 3060 12GB',
       buyPrice: 100,
+      // Day 12+ → 30% floor; 154 pocket is within [130, 160]
+      buyDate: daysAgoIso(14),
       suggestedEbayListPrice: 220,
       suggestedKleinListPrice: 154,
       suggestedPocketTarget: 154,
@@ -45,11 +70,12 @@ describe('flipInsights', () => {
     expect(s?.kleinList).toBeLessThan(s!.ebayList);
   });
 
-  it('rejects fat comps on a cheap bundle and falls back to ~45%', () => {
+  it('rejects fat comps on a cheap bundle and falls back to age target (day 0 = 60%)', () => {
     const bundle = item({
       id: 'kit',
       name: 'PC Bundle · MSI B450M · Ryzen 3 3100 · 16GB',
       buyPrice: 48.29,
+      buyDate: todayIso(),
       isBundle: true,
       category: 'Bundle',
       suggestedEbayListPrice: 195,
@@ -60,21 +86,22 @@ describe('flipInsights', () => {
     });
     const s = resolveSuggestedEbayList(bundle, [bundle], fees);
     expect(s).not.toBeNull();
-    // 48.29 × 1.45 ≈ 70.02 → KA €70, EB 70/0.75 ≈ 93.33 → €95
-    expect(s!.kleinList).toBe(70);
-    expect(s!.ebayList).toBe(95);
-    expect(s!.kleinList).toBeLessThanOrEqual(48.29 * 1.6 + 1);
+    // 48.29 × 1.60 ≈ 77.26 → KA €80, EB 80/0.75 ≈ 106.67 → €110
+    expect(s!.kleinList).toBe(80);
+    expect(s!.ebayList).toBe(110);
+    expect(s!.targetMargin).toBe(0.6);
   });
 
-  it('rejects thin-margin bundle comps and falls back to ~45% rounded lists', () => {
+  it('rejects thin-margin comps and falls back to age target (day 6 = 45%)', () => {
     const bundle = item({
       id: 'bundle',
       name: 'Mixed Bundle MT-61',
       buyPrice: 61.7,
+      buyDate: daysAgoIso(6),
       isBundle: true,
       category: 'Bundle',
       subCategory: 'Bundle',
-      // Bad saved snapshot / comps-style values below 30% margin
+      // Bad saved snapshot / comps-style values below age target
       suggestedEbayListPrice: 43.11,
       suggestedKleinListPrice: 30.17,
       suggestedPocketTarget: 30.17,
@@ -83,10 +110,11 @@ describe('flipInsights', () => {
     });
     const s = resolveSuggestedEbayList(bundle, [bundle], fees);
     expect(s).not.toBeNull();
-    // Min 30% on 61.7 = 80.21; target 45% = 89.47 → round up to KA €90; EB 90/0.75 = 120
+    // Day 6 → 45%; 61.7 × 1.45 ≈ 89.47 → KA €90; EB 90/0.75 = 120
     expect(s!.kleinList).toBe(90);
     expect(s!.ebayList).toBe(120);
     expect(s!.compCount).toBe(0);
+    expect(s!.targetMargin).toBe(0.45);
   });
 
   it('uses child buy sum when bundle parent buy is empty', () => {
@@ -97,6 +125,7 @@ describe('flipInsights', () => {
       isBundle: true,
       category: 'Bundle',
       subCategory: 'Bundle',
+      buyDate: daysAgoIso(12),
     });
     const children = [
       item({ id: 'c1', name: 'RAM stick', buyPrice: 20, category: 'Components', subCategory: 'RAM' }),
@@ -104,6 +133,7 @@ describe('flipInsights', () => {
     ];
     const s = resolveSuggestedEbayList(parent, [parent, ...children], fees, children);
     expect(s).not.toBeNull();
+    // Parent day 12 → 30% floor on 61.7 cost
     expect(s!.kleinList).toBeGreaterThanOrEqual(Math.ceil(61.7 * 1.3));
   });
 
@@ -111,6 +141,11 @@ describe('flipInsights', () => {
     expect(roundListPriceUp(32.1)).toBe(35);
     expect(roundListPriceUp(47)).toBe(50);
     expect(roundListPriceUp(89.5)).toBe(90);
+  });
+
+  it('computes days held from buy date', () => {
+    expect(daysHeldFromBuyDate(daysAgoIso(0))).toBeLessThanOrEqual(1);
+    expect(daysHeldFromBuyDate(daysAgoIso(5))).toBeGreaterThanOrEqual(4);
   });
 
   it('summarizes flip speed and price accuracy', () => {

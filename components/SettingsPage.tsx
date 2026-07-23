@@ -185,6 +185,16 @@ const SettingsPage: React.FC<Props> = ({
   const [ebayTokenInput, setEbayTokenInput] = useState('');
   const [ebayUsernameInput, setEbayUsernameInput] = useState(() => getEbayConfig()?.username || 'rm4ik');
   const [ebayConfigVersion, setEbayConfigVersion] = useState(0);
+  const [kaProfileUrl, setKaProfileUrl] = useState(() => {
+    try {
+      return localStorage.getItem('kleinanzeigen_seller_profile_url_v1') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [kaTitlesPaste, setKaTitlesPaste] = useState('');
+  const [listingPresenceBusy, setListingPresenceBusy] = useState(false);
+  const [listingPresenceMsg, setListingPresenceMsg] = useState<string | null>(null);
 
   useEffect(() => {
     const tab = searchParams.get('tab')?.toUpperCase();
@@ -893,6 +903,70 @@ const SettingsPage: React.FC<Props> = ({
                          </div>
                       );
                    })()}
+                </div>
+
+                <div className="border-t border-slate-100 pt-6 space-y-4">
+                   <h4 className="text-sm font-black uppercase tracking-widest text-slate-500">Listing presence (KA + eBay)</h4>
+                   <p className="text-sm text-slate-500">
+                      Match your in-stock items to live listings. Inventory shows KA / EB icons under each name when something is not posted (or is listed via a kit).
+                   </p>
+                   <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Kleinanzeigen profile URL</label>
+                      <input
+                         type="url"
+                         className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm outline-none focus:border-slate-900"
+                         placeholder="https://www.kleinanzeigen.de/s-bestandsliste.html?…"
+                         value={kaProfileUrl}
+                         onChange={(e) => setKaProfileUrl(e.target.value)}
+                      />
+                   </div>
+                   <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase text-slate-400 ml-1">
+                         Paste KA titles (fallback if profile fetch is blocked)
+                      </label>
+                      <textarea
+                         className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs outline-none focus:border-slate-900 min-h-[88px]"
+                         placeholder={'One title per line\nOptional: Title | https://www.kleinanzeigen.de/s-anzeige/…'}
+                         value={kaTitlesPaste}
+                         onChange={(e) => setKaTitlesPaste(e.target.value)}
+                      />
+                   </div>
+                   <div className="flex flex-wrap items-center gap-3">
+                      <button
+                         type="button"
+                         disabled={listingPresenceBusy}
+                         onClick={async () => {
+                            setListingPresenceBusy(true);
+                            setListingPresenceMsg(null);
+                            try {
+                               const { saveKaProfileUrl, parseKaTitlesPaste, saveKaListingTitles } = await import('../utils/listingPresence');
+                               const { syncListingPresence } = await import('../utils/syncListingPresence');
+                               saveKaProfileUrl(kaProfileUrl);
+                               const pasted = parseKaTitlesPaste(kaTitlesPaste);
+                               if (pasted.length) saveKaListingTitles(pasted);
+                               const result = await syncListingPresence(items, {
+                                  kaTitlesOverride: pasted.length ? pasted : undefined,
+                               });
+                               onRestoreItems(result.items);
+                               setListingPresenceMsg(
+                                  `Synced · eBay ${result.ebayMatched}/${result.ebayTitleCount} · KA ${result.kaMatched}/${result.kaTitleCount}` +
+                                    (result.kaError ? ` · ${result.kaError}` : '')
+                               );
+                            } catch (e) {
+                               setListingPresenceMsg((e as Error)?.message || 'Sync failed');
+                            } finally {
+                               setListingPresenceBusy(false);
+                            }
+                         }}
+                         className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-xs uppercase hover:bg-indigo-700 flex items-center gap-2 disabled:opacity-50"
+                      >
+                         {listingPresenceBusy ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+                         Refresh listing presence
+                      </button>
+                      {listingPresenceMsg && (
+                         <span className="text-xs font-bold text-slate-600">{listingPresenceMsg}</span>
+                      )}
+                   </div>
                 </div>
              </div>
           )}

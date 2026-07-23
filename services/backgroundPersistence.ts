@@ -2,6 +2,8 @@ import {
   persistDashboardPreferencesToLocalStorage,
   type DashboardPreferences,
 } from './dashboardPreferences';
+import { rebuildItemSalesPool } from '../utils/itemSalesPool';
+import type { InventoryItem } from '../types';
 
 /** Yield control so typing / clicks stay responsive during large saves. */
 export function yieldToMain(): Promise<void> {
@@ -32,6 +34,12 @@ export type LocalPersistSnapshot = {
 export async function persistSnapshotToLocalStorage(snapshot: LocalPersistSnapshot): Promise<void> {
   await yieldToMain();
   localStorage.setItem('inventory_items', snapshot.itemsJson);
+  try {
+    const items = JSON.parse(snapshot.itemsJson) as InventoryItem[];
+    if (Array.isArray(items)) rebuildItemSalesPool(items);
+  } catch {
+    /* ignore */
+  }
   await yieldToMain();
   localStorage.setItem('inventory_trash', snapshot.trashJson);
   await yieldToMain();
