@@ -7,16 +7,24 @@ import { matchEbayListingsForItem } from '../utils/ebayListingMatch';
 import { roundPriceCentsTo99 } from '../utils/ebayPrice';
 
 // We point to our own server route. The server handles the actual call to api.ebay.com
-const PROXY_BASE = '/api/ebay'; 
+const PROXY_BASE = '/api/ebay';
 
 export interface EbayConfig {
   token?: string;
   username?: string;
+  /** Long-lived refresh token from Connect eBay (~18 months). */
+  refreshToken?: string;
+  /** Access-token expiry (epoch ms). */
+  expiresAt?: number;
+  /** Refresh-token expiry (epoch ms). */
+  refreshExpiresAt?: number;
+  connectedAt?: string;
 }
 
 const DEFAULT_EBAY_USERNAME = 'rm4ik';
+const ACCESS_TOKEN_SKEW_MS = 5 * 60 * 1000;
 
-const getEbayConfig = (): EbayConfig => {
+export const getEbayConfig = (): EbayConfig => {
   const saved = localStorage.getItem('ebay_config');
   if (saved) {
     try {
@@ -31,19 +39,27 @@ export function getEbayUsername(): string {
   return username || DEFAULT_EBAY_USERNAME;
 }
 
-export function saveEbayConfig(updates: Partial<EbayConfig>): void {
+export function saveEbayConfig(updates: Partial<EbayConfig>, opts?: { silent?: boolean }): void {
   const prev = getEbayConfig();
-  localStorage.setItem(
-    'ebay_config',
-    JSON.stringify({
-      token: updates.token !== undefined ? updates.token.trim() : prev.token || '',
-      username:
-        updates.username !== undefined
-          ? updates.username.trim().replace(/^@/, '') || DEFAULT_EBAY_USERNAME
-          : prev.username || DEFAULT_EBAY_USERNAME,
-    })
-  );
-  window.dispatchEvent(new Event('ebay-config-updated'));
+  const next: EbayConfig = {
+    token: updates.token !== undefined ? updates.token.trim() : prev.token || '',
+    username:
+      updates.username !== undefined
+        ? updates.username.trim().replace(/^@/, '') || DEFAULT_EBAY_USERNAME
+        : prev.username || DEFAULT_EBAY_USERNAME,
+    refreshToken:
+      updates.refreshToken !== undefined
+        ? updates.refreshToken.trim() || undefined
+        : prev.refreshToken,
+    expiresAt: updates.expiresAt !== undefined ? updates.expiresAt : prev.expiresAt,
+    refreshExpiresAt:
+      updates.refreshExpiresAt !== undefined ? updates.refreshExpiresAt : prev.refreshExpiresAt,
+    connectedAt: updates.connectedAt !== undefined ? updates.connectedAt : prev.connectedAt,
+  };
+  localStorage.setItem('ebay_config', JSON.stringify(next));
+  if (!opts?.silent) {
+    window.dispatchEvent(new Event('ebay-config-updated'));
+  }
 }
 
 export function getEbayToken(): string | null {
@@ -53,11 +69,153 @@ export function getEbayToken(): string | null {
 }
 
 export function hasEbayToken(): boolean {
-  return Boolean(getEbayToken());
+  return Boolean(getEbayToken() || getEbayConfig().refreshToken);
+}
+
+export function hasEbayRefreshToken(): boolean {
+  return Boolean(getEbayConfig().refreshToken?.trim());
+}
+
+export function getEbayConnectionStatus(): {
+  connected: boolean;
+  hasAccessToken: boolean;
+  hasRefreshToken: boolean;
+  accessExpiresAt?: number;
+  refreshExpiresAt?: number;
+  accessExpired: boolean;
+  refreshExpired: boolean;
+} {
+  const cfg = getEbayConfig();
+  const now = Date.now();
+  const refreshExpired = Boolean(cfg.refreshExpiresAt && cfg.refreshExpiresAt <= now);
+  const accessExpired = Boolean(cfg.expiresAt && cfg.expiresAt <= now + ACCESS_TOKEN_SKEW_MS);
+  return {
+    connected: Boolean(cfg.refreshToken?.trim() || cfg.token?.trim()),
+    hasAccessToken: Boolean(cfg.token?.trim()),
+    hasRefreshToken: Boolean(cfg.refreshToken?.trim()),
+    accessExpiresAt: cfg.expiresAt,
+    refreshExpiresAt: cfg.refreshExpiresAt,
+    accessExpired,
+    refreshExpired,
+  };
+}
+
+export function disconnectEbayOAuth(): void {
+  const username = getEbayUsername();
+  localStorage.setItem(
+    'ebay_config',
+    JSON.stringify({ token: '', username, refreshToken: undefined, expiresAt: undefined, refreshExpiresAt: undefined })
+  );
+  window.dispatchEvent(new Event('ebay-config-updated'));
+}
+
+export function saveEbayOAuthTokens(data: {
+  access_token: string;
+  expires_in?: number;
+  refresh_token?: string | null;
+  refresh_token_expires_in?: number | null;
+}): void {
+  const prev = getEbayConfig();
+  const now = Date.now();
+  const expiresIn = Number(data.expires_in) || 7200;
+  const refreshExpiresIn = Number(data.refresh_token_expires_in) || undefined;
+  saveEbayConfig({
+    token: data.access_token,
+    expiresAt: now + expiresIn * 1000,
+    refreshToken:
+      data.refresh_token != null && String(data.refresh_token).trim()
+        ? String(data.refresh_token).trim()
+        : prev.refreshToken,
+    refreshExpiresAt:
+      refreshExpiresIn != null
+        ? now + refreshExpiresIn * 1000
+        : prev.refreshExpiresAt,
+    connectedAt: prev.connectedAt || new Date().toISOString(),
+  });
+}
+
+let refreshInFlight: Promise<string | null> | null = null;
+
+/** Ensure we have a non-expired access token (auto-refresh when Connect eBay was used). */
+export async function ensureFreshEbayToken(): Promise<string | null> {
+  const cfg = getEbayConfig();
+  const token = cfg.token?.trim() || '';
+  const now = Date.now();
+  if (token && (!cfg.expiresAt || cfg.expiresAt > now + ACCESS_TOKEN_SKEW_MS)) {
+    return token;
+  }
+  if (!cfg.refreshToken?.trim()) {
+    return token || null;
+  }
+  if (cfg.refreshExpiresAt && cfg.refreshExpiresAt <= now) {
+    throw new Error('eBay connection expired (~18 months). Click Connect eBay in Settings to reconnect.');
+  }
+  if (refreshInFlight) return refreshInFlight;
+
+  refreshInFlight = (async () => {
+    const res = await fetch('/api/ebay?route=oauth_refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: cfg.refreshToken }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(
+        typeof data.error === 'string'
+          ? data.error
+          : 'Could not refresh eBay token. Click Connect eBay in Settings.'
+      );
+    }
+    if (!data.access_token) throw new Error('eBay refresh returned no access token.');
+    saveEbayOAuthTokens({
+      access_token: data.access_token,
+      expires_in: data.expires_in,
+      refresh_token: data.refresh_token,
+      refresh_token_expires_in: data.refresh_token_expires_in,
+    });
+    return String(data.access_token);
+  })().finally(() => {
+    refreshInFlight = null;
+  });
+
+  return refreshInFlight;
+}
+
+/** Build eBay consent URL (server uses EBAY_CLIENT_ID + EBAY_RUNAME). */
+export async function fetchEbayAuthorizeUrl(): Promise<{ url: string; configured: boolean }> {
+  const res = await fetch('/api/ebay?route=oauth_authorize_url');
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.url) {
+    throw new Error(
+      typeof data.error === 'string'
+        ? data.error
+        : 'eBay Connect is not configured on the server.'
+    );
+  }
+  return { url: data.url, configured: data.configured !== false };
+}
+
+/** Exchange authorization code from /auth/ebay/callback. */
+export async function exchangeEbayAuthorizationCode(code: string): Promise<void> {
+  const res = await fetch('/api/ebay?route=oauth_exchange', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.access_token) {
+    throw new Error(typeof data.error === 'string' ? data.error : 'eBay Connect failed.');
+  }
+  saveEbayOAuthTokens({
+    access_token: data.access_token,
+    expires_in: data.expires_in,
+    refresh_token: data.refresh_token,
+    refresh_token_expires_in: data.refresh_token_expires_in,
+  });
 }
 
 const makeRequest = async (endpoint: string, options: RequestInit) => {
-  const config = getEbayConfig();
+  const token = await ensureFreshEbayToken();
   
   // The server expects the eBay endpoint path (e.g. /offer)
   // endpoint passed here is like: https://api.ebay.com/sell/inventory/v1/offer
@@ -69,7 +227,7 @@ const makeRequest = async (endpoint: string, options: RequestInit) => {
       ...options,
       headers: {
         ...options.headers,
-        'Authorization': `Bearer ${config.token}`, // Pass token to our server
+        'Authorization': `Bearer ${token}`, // Pass token to our server
         'Content-Type': 'application/json'
       }
     });
@@ -150,14 +308,14 @@ export interface EbayOrderSummary {
 
 /** List orders from eBay Fulfillment API (last 7 days by default). */
 export const listEbayOrders = async (fromDate?: string, toDate?: string): Promise<EbayOrderSummary[]> => {
-  const config = getEbayConfig();
-  if (!config?.token) {
-    throw new Error('eBay token not configured. Add your token in Settings.');
+  const token = await ensureFreshEbayToken();
+  if (!token) {
+    throw new Error('eBay not connected. Open Settings → Listings sync → Connect eBay.');
   }
   const res = await fetch('/api/ebay-orders', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token: config.token, fromDate, toDate }),
+    body: JSON.stringify({ token, fromDate, toDate }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -182,14 +340,14 @@ export interface EbayPurchaseSummary {
 
 /** List items you bought on eBay (Trading API, buyer role). */
 export const listEbayPurchases = async (fromDate?: string, toDate?: string): Promise<EbayPurchaseSummary[]> => {
-  const config = getEbayConfig();
-  if (!config?.token) {
-    throw new Error('eBay token not configured. Add your token in Settings.');
+  const token = await ensureFreshEbayToken();
+  if (!token) {
+    throw new Error('eBay not connected. Open Settings → Listings sync → Connect eBay.');
   }
   const res = await fetch('/api/ebay-purchases', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token: config.token, fromDate, toDate }),
+    body: JSON.stringify({ token, fromDate, toDate }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -209,14 +367,14 @@ export interface EbayOrderData {
 
 /** Fetch sold order from eBay Fulfillment API and return buyer + shipping address for SaleModal. */
 export const fetchEbayOrder = async (orderId: string): Promise<EbayOrderData> => {
-  const config = getEbayConfig();
-  if (!config?.token) {
-    throw new Error('eBay token not configured. Add your token in Settings.');
+  const token = await ensureFreshEbayToken();
+  if (!token) {
+    throw new Error('eBay not connected. Open Settings → Listings sync → Connect eBay.');
   }
   const res = await fetch('/api/ebay-order', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ orderId: orderId.trim(), token: config.token }),
+    body: JSON.stringify({ orderId: orderId.trim(), token }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -316,7 +474,7 @@ export function ebayListingToPriceMatch(
 
 /** Fetch active eBay listings from the seller store (Browse API) plus optional OAuth inventory. */
 export async function fetchMyEbayListings(): Promise<EbayMyListing[]> {
-  const token = getEbayToken();
+  const token = await ensureFreshEbayToken();
   const username = getEbayUsername();
   const res = await fetch('/api/ebay-listings', {
     method: 'POST',

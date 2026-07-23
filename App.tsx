@@ -49,12 +49,14 @@ import { mergeTradeActionEntries } from './services/tradeActionHistory';
 import { applySaleRevert } from './services/saleRevert';
 import { pruneActionHistory } from './services/saleRevert';
 import { saveOAuthResult } from './services/githubBackupService';
+import { exchangeEbayAuthorizationCode } from './services/ebayService';
 import { generateExpensesFromRecurring } from './services/recurringExpenseService';
 import { Analytics } from '@vercel/analytics/react';
 import { PanelLocaleProvider } from './context/PanelLocaleContext';
 import {
   hydrateMarketplaceCredentialsFromSettings,
   mergeLocalMarketplaceCredentialsIntoSettings,
+  withLocalEbayOAuthOnSettings,
 } from './utils/marketplaceCredentialsSync';
 import { UndoToastProvider, useUndoToastContext } from './context/UndoToastContext';
 import { appendUndoHistory } from './utils/appendUndoHistory';
@@ -121,6 +123,60 @@ const PRESERVE_FROM_OLD_IF_UPDATE_MISSING: (keyof InventoryItem)[] = [
   'kleinanzeigenSellerProfileUrl',
   'bulkImportId',
 ];
+
+function EbayOAuthCallback() {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const [status, setStatus] = useState<'loading' | 'ok' | 'error'>('loading');
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    const err = searchParams.get('error');
+    const errDesc = searchParams.get('error_description');
+    if (err) {
+      setStatus('error');
+      setMessage(errDesc || err);
+      return;
+    }
+    const code = searchParams.get('code');
+    if (!code) {
+      setStatus('error');
+      setMessage('Missing authorization code from eBay.');
+      return;
+    }
+    exchangeEbayAuthorizationCode(code)
+      .then(() => {
+        setStatus('ok');
+        navigate('/panel/settings?tab=EBAY&ebay_connected=1', { replace: true });
+      })
+      .catch((e: unknown) => {
+        setStatus('error');
+        setMessage(e instanceof Error ? e.message : 'eBay Connect failed');
+      });
+  }, [searchParams, navigate]);
+
+  if (status === 'ok') return null;
+  return (
+    <div className="flex h-screen w-screen bg-slate-50 text-slate-900 items-center justify-center flex-col space-y-4 p-4">
+      {status === 'loading' && <Loader2 size={48} className="animate-spin text-slate-400" />}
+      {status === 'error' && (
+        <>
+          <p className="text-sm font-bold text-red-600 text-center max-w-md">{message}</p>
+          <button
+            type="button"
+            onClick={() => navigate('/panel/settings?tab=EBAY')}
+            className="px-4 py-2 bg-slate-900 text-white rounded-xl text-sm font-bold"
+          >
+            Back to Settings
+          </button>
+        </>
+      )}
+      <p className="text-slate-500 text-sm">
+        {status === 'loading' ? 'Connecting eBay account…' : ''}
+      </p>
+    </div>
+  );
+}
 
 function GitHubOAuthCallback() {
   const [searchParams] = useSearchParams();
@@ -274,8 +330,25 @@ const App: React.FC = () => {
   }, [
     businessSettings.ebaySellerUsername,
     businessSettings.ebayOAuthToken,
+    businessSettings.ebayOAuthRefreshToken,
+    businessSettings.ebayOAuthExpiresAt,
+    businessSettings.ebayOAuthRefreshExpiresAt,
     businessSettings.kleinanzeigenProfileUrl,
   ]);
+
+  // When Connect eBay / refresh updates localStorage, mirror into cloud business settings.
+  useEffect(() => {
+    const sync = () => {
+      setBusinessSettings((prev) => {
+        const next = withLocalEbayOAuthOnSettings(prev);
+        if (next === prev) return prev;
+        hasUnsavedChanges.current = true;
+        return next;
+      });
+    };
+    window.addEventListener('ebay-config-updated', sync);
+    return () => window.removeEventListener('ebay-config-updated', sync);
+  }, []);
   
   const [monthlyGoal, setMonthlyGoal] = useState<number>(() => {
     const saved = localStorage.getItem('monthly_profit_goal');
@@ -1708,6 +1781,7 @@ const App: React.FC = () => {
           <Route path="settings" element={<OpenSettingsFromRoute />} />
         </Route>
         <Route path="/auth/github/callback" element={<GitHubOAuthCallback />} />
+        <Route path="/auth/ebay/callback" element={<EbayOAuthCallback />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </PanelLocaleProvider>

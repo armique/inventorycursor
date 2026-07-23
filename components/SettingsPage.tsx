@@ -47,6 +47,11 @@ import {
 } from '../utils/exportDateRange';
 import { withMarketplaceCredentials } from '../utils/marketplaceCredentialsSync';
 import { saveKaProfileUrl } from '../utils/listingPresence';
+import {
+  disconnectEbayOAuth,
+  fetchEbayAuthorizeUrl,
+  getEbayConnectionStatus,
+} from '../services/ebayService';
 
 export interface BackupData {
   inventory: InventoryItem[];
@@ -120,6 +125,10 @@ const saveEbayConfigLocal = (updates: { token?: string; username?: string }) => 
         updates.username !== undefined
           ? updates.username.trim().replace(/^@/, '') || 'rm4ik'
           : prev.username || 'rm4ik',
+      refreshToken: prev.refreshToken,
+      expiresAt: prev.expiresAt,
+      refreshExpiresAt: prev.refreshExpiresAt,
+      connectedAt: prev.connectedAt,
     })
   );
   window.dispatchEvent(new Event('ebay-config-updated'));
@@ -195,6 +204,7 @@ const SettingsPage: React.FC<Props> = ({
   const [githubRepo, setGitHubRepo] = useState(() => getStoredConfig()?.repo || 'armique/inventorycursor');
   const [githubTokenInput, setGitHubTokenInput] = useState('');
   const [ebayTokenInput, setEbayTokenInput] = useState('');
+  const [ebayConnectBusy, setEbayConnectBusy] = useState(false);
   const [ebayUsernameInput, setEbayUsernameInput] = useState(
     () => businessSettings.ebaySellerUsername || getEbayConfig()?.username || 'rm4ik'
   );
@@ -226,6 +236,10 @@ const SettingsPage: React.FC<Props> = ({
   useEffect(() => {
     const tab = searchParams.get('tab')?.toUpperCase();
     if (tab === 'EBAY' || tab === 'EBAY API' || tab === 'LISTINGS') setActiveTab('EBAY');
+    if (searchParams.get('ebay_connected') === '1') {
+      setEbayConfigVersion((v) => v + 1);
+      showToast('eBay connected — token will auto-refresh for ~18 months', 'success');
+    }
   }, [searchParams]);
 
   useEffect(() => {
@@ -914,9 +928,9 @@ const SettingsPage: React.FC<Props> = ({
                    </p>
                 </div>
 
-                <h3 className="text-xl font-black text-slate-900 flex items-center gap-2"><ShoppingBag size={24}/> eBay sync (optional)</h3>
+                <h3 className="text-xl font-black text-slate-900 flex items-center gap-2"><ShoppingBag size={24}/> eBay sync</h3>
                 <p className="text-sm text-slate-500">
-                   Import photos from your public eBay seller store (Browse API). Order sync still uses an optional OAuth token. Most sellers mark sales with the eBay order screenshot parser in the sale dialog instead — no API setup required.
+                   Connect once with eBay OAuth (refresh token ~18 months). Access tokens refresh automatically — no more pasting a new key every 2 hours.
                 </p>
                 <div className="space-y-2">
                    <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Seller username</label>
@@ -928,7 +942,7 @@ const SettingsPage: React.FC<Props> = ({
                       onChange={e => setEbayUsernameInput(e.target.value.replace(/^@/, ''))}
                    />
                    <p className="text-xs text-slate-500">
-                      Listings are loaded from your public seller page, e.g.{' '}
+                      Public store for listings, e.g.{' '}
                       <a
                          href={`https://www.ebay.de/usr/${ebayUsernameInput.trim() || 'rm4ik'}`}
                          target="_blank"
@@ -937,11 +951,107 @@ const SettingsPage: React.FC<Props> = ({
                       >
                          ebay.de/usr/{ebayUsernameInput.trim() || 'rm4ik'}
                       </a>
-                      . Default: <code className="bg-slate-100 px-1 rounded">rm4ik</code>.
+                      .
                    </p>
                 </div>
-                <div className="space-y-2">
-                   <label className="text-[10px] font-black uppercase text-slate-400 ml-1">OAuth Access Token (optional)</label>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5 space-y-3">
+                   <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                         <p className="text-sm font-black text-slate-900">Connect eBay account</p>
+                         <p className="text-xs text-slate-500 mt-0.5">
+                            Scopes: fulfillment + inventory (read). Syncs to cloud for phone + desktop.
+                         </p>
+                      </div>
+                      {(() => {
+                         const st = getEbayConnectionStatus();
+                         if (st.hasRefreshToken && !st.refreshExpired) {
+                            const until = st.refreshExpiresAt
+                               ? new Date(st.refreshExpiresAt).toLocaleDateString()
+                               : '≈18 months';
+                            return (
+                               <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-100">
+                                  <CheckCircle2 size={14} /> Connected · refresh until {until}
+                               </span>
+                            );
+                         }
+                         if (st.hasAccessToken) {
+                            return (
+                               <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-900 text-xs font-bold border border-amber-100">
+                                  <AlertTriangle size={14} /> Manual token only (expires ~2h) — Connect eBay recommended
+                               </span>
+                            );
+                         }
+                         return (
+                            <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold">
+                               Not connected
+                            </span>
+                         );
+                      })()}
+                   </div>
+                   <div className="flex flex-wrap gap-2">
+                      <button
+                         type="button"
+                         disabled={ebayConnectBusy}
+                         onClick={async () => {
+                            setEbayConnectBusy(true);
+                            try {
+                               saveEbayConfigLocal({ username: ebayUsernameInput });
+                               onBusinessSettingsChange(
+                                  withMarketplaceCredentials(businessSettings, {
+                                     ebaySellerUsername: ebayUsernameInput,
+                                  })
+                               );
+                               const { url } = await fetchEbayAuthorizeUrl();
+                               window.location.href = url;
+                            } catch (e) {
+                               showToast(e instanceof Error ? e.message : 'Could not start eBay Connect', 'error');
+                               setEbayConnectBusy(false);
+                            }
+                         }}
+                         className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-xs uppercase hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
+                      >
+                         {ebayConnectBusy ? <Loader2 size={16} className="animate-spin" /> : <ShoppingBag size={16} />}
+                         {getEbayConnectionStatus().hasRefreshToken ? 'Reconnect eBay' : 'Connect eBay'}
+                      </button>
+                      {getEbayConnectionStatus().connected && (
+                         <button
+                            type="button"
+                            onClick={() => {
+                               disconnectEbayOAuth();
+                               onBusinessSettingsChange(
+                                  withMarketplaceCredentials(businessSettings, {
+                                     ebayOAuthToken: '',
+                                     ebayOAuthRefreshToken: '',
+                                     ebayOAuthExpiresAt: 0,
+                                     ebayOAuthRefreshExpiresAt: 0,
+                                     ebaySellerUsername: ebayUsernameInput,
+                                  })
+                               );
+                               setEbayConfigVersion((v) => v + 1);
+                               showToast('eBay disconnected', 'success');
+                            }}
+                            className="px-4 py-2.5 border border-slate-200 bg-white text-slate-700 rounded-xl font-bold text-xs uppercase hover:bg-slate-50"
+                         >
+                            Disconnect
+                         </button>
+                      )}
+                   </div>
+                   <p className="text-[11px] text-slate-500 leading-snug">
+                      Server needs <code className="bg-white px-1 rounded border">EBAY_CLIENT_ID</code>,{' '}
+                      <code className="bg-white px-1 rounded border">EBAY_CLIENT_SECRET</code>, and{' '}
+                      <code className="bg-white px-1 rounded border">EBAY_RUNAME</code>. In eBay Developer → User Tokens,
+                      set the RuName <strong>Accept URL</strong> to{' '}
+                      <code className="bg-white px-1 rounded border">{typeof window !== 'undefined' ? `${window.location.origin}/auth/ebay/callback` : 'https://YOUR_DOMAIN/auth/ebay/callback'}</code>.
+                   </p>
+                </div>
+
+                <details className="rounded-2xl border border-slate-200 bg-white p-4">
+                   <summary className="text-xs font-black uppercase tracking-widest text-slate-500 cursor-pointer">
+                      Advanced — paste access token manually (expires ~2h)
+                   </summary>
+                   <div className="mt-4 space-y-2">
+                   <label className="text-[10px] font-black uppercase text-slate-400 ml-1">OAuth Access Token</label>
                    <input
                       type="password"
                       className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm outline-none focus:border-slate-900"
@@ -950,18 +1060,10 @@ const SettingsPage: React.FC<Props> = ({
                       onChange={e => setEbayTokenInput(e.target.value)}
                    />
                    <p className="text-xs text-slate-500">
-                      eBay Developer Account → OAuth User Token. Scopes: <code className="bg-slate-100 px-1 rounded">sell.fulfillment.readonly</code> (seller order sync) and{' '}
-                      <code className="bg-slate-100 px-1 rounded">sell.inventory.readonly</code> (private listings). Buyer purchases use the same user token via Trading API.
-                   </p>
-                   <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-                      Tokens expire regularly (~2 h for OAuth access tokens). If Live order refresh or order sync shows &quot;token expired&quot;, generate a new User Token on{' '}
-                      <a href="https://developer.ebay.com/my/keys" target="_blank" rel="noopener noreferrer" className="text-indigo-700 font-bold hover:underline">
-                         developer.ebay.com
-                      </a>
-                      , paste it here, and Save. Username, KA profile URL, and token sync via cloud backup so phone and desktop stay aligned.
+                      Emergency fallback only. Prefer <strong>Connect eBay</strong> above so the app can refresh for ~18 months.
                    </p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 mt-3">
                    <button
                       type="button"
                       onClick={() => {
@@ -978,7 +1080,7 @@ const SettingsPage: React.FC<Props> = ({
                          );
                          setEbayTokenInput('');
                          setEbayConfigVersion((v) => v + 1);
-                         showToast('eBay settings saved (synced to cloud)', 'success');
+                         showToast('Manual eBay token saved (short-lived)', 'success');
                       }}
                       className="px-5 py-2.5 bg-slate-900 text-white rounded-xl font-bold text-xs uppercase hover:bg-slate-800 flex items-center gap-2"
                    >
@@ -1010,6 +1112,7 @@ const SettingsPage: React.FC<Props> = ({
                       );
                    })()}
                 </div>
+                </details>
 
                 <div className="border-t border-slate-100 pt-6 space-y-4">
                    <h4 className="text-sm font-black uppercase tracking-widest text-slate-500">Listing presence (KA + eBay)</h4>

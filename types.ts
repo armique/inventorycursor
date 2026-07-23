@@ -45,8 +45,14 @@ export interface BusinessSettings {
   ebayReturnPolicy?: 'ReturnsAccepted' | 'ReturnsNotAccepted';
   /** Public eBay seller username — cloud-synced for mobile/desktop. */
   ebaySellerUsername?: string;
-  /** eBay OAuth user token — cloud-synced so phone can use the same APIs. */
+  /** eBay OAuth user access token — cloud-synced (auto-refreshed via refresh token). */
   ebayOAuthToken?: string;
+  /** eBay OAuth refresh token (~18 months) — cloud-synced so phone/desktop stay connected. */
+  ebayOAuthRefreshToken?: string;
+  /** Access token expiry (epoch ms). */
+  ebayOAuthExpiresAt?: number;
+  /** Refresh token expiry (epoch ms). */
+  ebayOAuthRefreshExpiresAt?: number;
   /** Kleinanzeigen Bestandsliste / profile URL — cloud-synced. */
   kleinanzeigenProfileUrl?: string;
 }

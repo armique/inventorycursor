@@ -42,7 +42,125 @@ function ebayAppConfig() {
     clientId: pickEnv('EBAY_CLIENT_ID'),
     clientSecret: pickEnv('EBAY_CLIENT_SECRET'),
     marketplace: pickEnv('EBAY_MARKETPLACE_ID') || 'EBAY_DE',
+    ruName: pickEnv('EBAY_RUNAME') || pickEnv('EBAY_RU_NAME'),
+    env: (pickEnv('EBAY_ENV') || 'production').toLowerCase(),
   };
+}
+
+/** User OAuth scopes for seller order + inventory read. */
+const EBAY_USER_SCOPES = [
+  'https://api.ebay.com/oauth/api_scope',
+  'https://api.ebay.com/oauth/api_scope/sell.fulfillment.readonly',
+  'https://api.ebay.com/oauth/api_scope/sell.inventory.readonly',
+].join(' ');
+
+function ebayAuthHost(env) {
+  return env === 'sandbox' ? 'https://auth.sandbox.ebay.com' : 'https://auth.ebay.com';
+}
+
+function ebayApiHost(env) {
+  return env === 'sandbox' ? 'https://api.sandbox.ebay.com' : 'https://api.ebay.com';
+}
+
+async function ebayUserTokenRequest(body) {
+  const { clientId, clientSecret, env } = ebayAppConfig();
+  if (!clientId || !clientSecret) {
+    throw new Error('eBay app credentials not configured (EBAY_CLIENT_ID / EBAY_CLIENT_SECRET).');
+  }
+  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+  const r = await fetch(`${ebayApiHost(env)}/identity/v1/oauth2/token`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${basic}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body,
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    throw new Error(data?.error_description || data?.error || `eBay token request failed (${r.status})`);
+  }
+  return data;
+}
+
+function parseBody(req) {
+  if (req.method !== 'POST') return {};
+  return typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+}
+
+async function handleEbayOAuthAuthorizeUrl(req, res) {
+  const { clientId, ruName, env } = ebayAppConfig();
+  if (!clientId || !ruName) {
+    return res.status(503).json({
+      configured: false,
+      error:
+        'eBay Connect not configured. Set EBAY_CLIENT_ID, EBAY_CLIENT_SECRET, and EBAY_RUNAME on the server. In eBay Developer → User Tokens, set the RuName Accept URL to https://YOUR_DOMAIN/auth/ebay/callback',
+    });
+  }
+  const state =
+    (typeof req.query?.state === 'string' && req.query.state) ||
+    `ebay_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  const params = new URLSearchParams({
+    client_id: clientId,
+    response_type: 'code',
+    redirect_uri: ruName,
+    scope: EBAY_USER_SCOPES,
+    state,
+  });
+  const url = `${ebayAuthHost(env)}/oauth2/authorize?${params.toString()}`;
+  return res.status(200).json({ configured: true, url, state, env });
+}
+
+async function handleEbayOAuthExchange(req, res) {
+  try {
+    const body = parseBody(req);
+    const codeRaw = body.code || req.query?.code;
+    if (!codeRaw) return res.status(400).json({ error: 'Missing authorization code.' });
+    const { ruName } = ebayAppConfig();
+    if (!ruName) return res.status(503).json({ error: 'Missing EBAY_RUNAME on server.' });
+    const code = decodeURIComponent(String(codeRaw)).trim();
+    const data = await ebayUserTokenRequest(
+      new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: ruName,
+      }).toString()
+    );
+    return res.status(200).json({
+      access_token: data.access_token,
+      expires_in: data.expires_in,
+      refresh_token: data.refresh_token,
+      refresh_token_expires_in: data.refresh_token_expires_in,
+      token_type: data.token_type,
+    });
+  } catch (e) {
+    return res.status(400).json({ error: e instanceof Error ? e.message : 'OAuth exchange failed' });
+  }
+}
+
+async function handleEbayOAuthRefresh(req, res) {
+  try {
+    const body = parseBody(req);
+    const refreshToken = body.refresh_token || body.refreshToken;
+    if (!refreshToken) return res.status(400).json({ error: 'Missing refresh_token.' });
+    const data = await ebayUserTokenRequest(
+      new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: String(refreshToken).trim(),
+        scope: EBAY_USER_SCOPES,
+      }).toString()
+    );
+    return res.status(200).json({
+      access_token: data.access_token,
+      expires_in: data.expires_in,
+      // eBay may omit refresh_token on refresh; keep the old one client-side when missing.
+      refresh_token: data.refresh_token || null,
+      refresh_token_expires_in: data.refresh_token_expires_in || null,
+      token_type: data.token_type,
+    });
+  } catch (e) {
+    return res.status(401).json({ error: e instanceof Error ? e.message : 'OAuth refresh failed' });
+  }
 }
 
 async function getEbayAppToken() {
@@ -693,5 +811,8 @@ export default async function handler(req, res) {
   if (route === 'orders') return handleEbayOrders(req, res);
   if (route === 'purchases') return handleEbayPurchases(req, res);
   if (route === 'listings') return handleEbayListings(req, res);
+  if (route === 'oauth_authorize_url') return handleEbayOAuthAuthorizeUrl(req, res);
+  if (route === 'oauth_exchange') return handleEbayOAuthExchange(req, res);
+  if (route === 'oauth_refresh') return handleEbayOAuthRefresh(req, res);
   return handleEbayOrder(req, res);
 }
