@@ -3028,16 +3028,16 @@ const InventoryList: React.FC<Props> = ({
                                );
                                setTimeout(() => setToast(null), 2200);
                              }}
-                             className="inline-flex items-center gap-1 text-[9px] font-black uppercase px-1.5 py-0.5 rounded-md border border-slate-300 bg-white text-slate-800 shadow-sm hover:bg-slate-50"
+                             className="inline-flex items-center gap-1 text-[11px] font-black uppercase px-2 py-0.5 rounded-md border border-slate-300 bg-white text-slate-800 shadow-sm hover:bg-slate-50"
                              title={`Kleinanzeigen €${formatEUR(sugg.kleinList)} (no fees) · eBay €${formatEUR(sugg.ebayList)} (~${sugg.feePct}% fees)${
                                sugg.compCount
                                  ? ` · ${sugg.compCount} sold comps`
-                                 : ' · cost-based (≥ buy × 1.25)'
+                                 : ' · cost-based (~45% margin, min 30%)'
                              }. Click to refresh & save snapshot.`}
                            >
-                             <span className="text-emerald-700">KA ~€{formatEUR(sugg.kleinList)}</span>
+                             <span className="text-emerald-700">KA €{formatEUR(sugg.kleinList)}</span>
                              <span className="text-slate-300">·</span>
-                             <span className="text-sky-700">EB ~€{formatEUR(sugg.ebayList)}</span>
+                             <span className="text-sky-700">EB €{formatEUR(sugg.ebayList)}</span>
                            </button>
                          );
                        })()}

@@ -382,9 +382,9 @@ export function buildSellNowQueue(
       ? Math.max(0, Math.round((now - new Date(item.buyDate).getTime()) / 86400000))
       : 0;
 
-    // If no comps, use a soft fallback: buy * 1.25 as pocket target.
+    // If no comps, aim ~45% markup on buy (same as inventory suggest chips).
     let pocket =
-      suggestion.compCount > 0 ? suggestion.pocketTarget : roundMoney(buy > 0 ? buy * 1.25 : 0);
+      suggestion.compCount > 0 ? suggestion.pocketTarget : roundMoney(buy > 0 ? buy * 1.45 : 0);
     let compCount = suggestion.compCount;
     let note = suggestion.note;
 

@@ -57,6 +57,11 @@ function pocketProfit(item: InventoryItem): number | null {
   return roundMoney(sell - fee - buy);
 }
 
+/** Minimum markup on buy (pocket / KA list). Never suggest thinner than this. */
+export const MIN_SUGGEST_MARGIN = 0.3;
+/** Default cost-based target markup (middle of the 40–50% band). */
+export const TARGET_SUGGEST_MARGIN = 0.45;
+
 /** Bundle/PC cost: parent buy, or sum of parts when parent buy is empty. */
 export function effectiveSuggestionBuy(
   item: InventoryItem,
@@ -68,24 +73,57 @@ export function effectiveSuggestionBuy(
   return Math.max(own, childSum);
 }
 
-function costBasedSuggestion(buy: number, feePct: number): SuggestedEbayPrice | null {
-  if (!(buy > 0)) return null;
-  const pocket = roundMoney(buy * 1.25);
-  const lists = listPricesForPocket(pocket, feePct);
+/** Clean listing prices (e.g. €35 / €40 / €50) — always rounds up so margin isn’t cut. */
+export function roundListPriceUp(euro: number): number {
+  if (!(euro > 0) || !Number.isFinite(euro)) return 0;
+  if (euro < 15) return Math.ceil(euro);
+  if (euro < 100) return Math.ceil(euro / 5) * 5;
+  if (euro < 500) return Math.ceil(euro / 5) * 5;
+  return Math.ceil(euro / 10) * 10;
+}
+
+function minPocketForBuy(buy: number): number {
+  return buy > 0 ? roundMoney(buy * (1 + MIN_SUGGEST_MARGIN)) : 0;
+}
+
+function withRoundedLists(
+  suggestion: SuggestedEbayPrice,
+  feePct: number
+): SuggestedEbayPrice {
+  const fee = Number.isFinite(suggestion.feePct) ? suggestion.feePct : feePct;
+  const klein = roundListPriceUp(suggestion.kleinList);
+  // Keep eBay high enough that after fees you still pocket at least the KA amount.
+  const ebayFromPocket = listPricesForPocket(klein, fee).ebay;
+  const ebay = roundListPriceUp(Math.max(suggestion.ebayList, ebayFromPocket));
   return {
-    ebayList: lists.ebay,
-    kleinList: lists.kleinanzeigen,
-    pocketTarget: pocket,
-    feePct,
-    compCount: 0,
-    fromSnapshot: false,
+    ...suggestion,
+    kleinList: klein,
+    ebayList: ebay,
+    pocketTarget: klein,
+    feePct: fee,
   };
 }
 
+function costBasedSuggestion(buy: number, feePct: number): SuggestedEbayPrice | null {
+  if (!(buy > 0)) return null;
+  const pocket = roundMoney(buy * (1 + TARGET_SUGGEST_MARGIN));
+  const lists = listPricesForPocket(pocket, feePct);
+  return withRoundedLists(
+    {
+      ebayList: lists.ebay,
+      kleinList: lists.kleinanzeigen,
+      pocketTarget: pocket,
+      feePct,
+      compCount: 0,
+      fromSnapshot: false,
+    },
+    feePct
+  );
+}
+
 /**
- * Never suggest listing below cost. KA (0% fees) and eBay pocket after fees
- * must both clear the buy price; otherwise fall back to buy × 1.25.
- * Also reject wildly high comps via sanitizePocketAgainstBuy.
+ * Enforce ≥30% margin vs buy, reject wild comps, then round to clean list prices.
+ * Thin / below-margin comps fall back to buy × 1.45 (≈45% target).
  */
 export function finalizeSuggestionAgainstBuy(
   raw: SuggestedEbayPrice,
@@ -99,6 +137,7 @@ export function finalizeSuggestionAgainstBuy(
   let pocket = roundMoney(Math.max(0, raw.pocketTarget || raw.kleinList));
   let compCount = raw.compCount;
   const fee = Number.isFinite(raw.feePct) ? raw.feePct : feePct;
+  const minPocket = minPocketForBuy(buy);
 
   if (compCount > 0 && buy > 0) {
     const sane = sanitizePocketAgainstBuy(pocket, buy, compCount);
@@ -108,32 +147,41 @@ export function finalizeSuggestionAgainstBuy(
     pocket = sane.pocket;
   }
 
-  // Below cost (or eBay net below cost): comps matched the wrong cheap parts.
+  // Below 30% margin (or eBay net below min): comps too cheap → cost-based target.
   const ebayPocket = pocketFromEbayListPrice(raw.ebayList, fee);
-  if (buy > 0 && (pocket < buy || raw.kleinList < buy || ebayPocket < buy)) {
+  if (
+    buy > 0 &&
+    (pocket < minPocket || raw.kleinList < minPocket || ebayPocket < minPocket)
+  ) {
     return costBasedSuggestion(buy, fee);
   }
 
   if (compCount > 0 && pocket !== raw.pocketTarget) {
     const lists = listPricesForPocket(pocket, fee);
-    return {
-      ebayList: lists.ebay,
-      kleinList: lists.kleinanzeigen,
+    return withRoundedLists(
+      {
+        ebayList: lists.ebay,
+        kleinList: lists.kleinanzeigen,
+        pocketTarget: pocket,
+        feePct: fee,
+        compCount,
+        fromSnapshot: false,
+      },
+      fee
+    );
+  }
+
+  return withRoundedLists(
+    {
+      ebayList: roundMoney(raw.ebayList),
+      kleinList: roundMoney(raw.kleinList),
       pocketTarget: pocket,
       feePct: fee,
       compCount,
-      fromSnapshot: false,
-    };
-  }
-
-  return {
-    ebayList: roundMoney(raw.ebayList),
-    kleinList: roundMoney(raw.kleinList),
-    pocketTarget: pocket,
-    feePct: fee,
-    compCount,
-    fromSnapshot: raw.fromSnapshot,
-  };
+      fromSnapshot: raw.fromSnapshot,
+    },
+    fee
+  );
 }
 
 /**

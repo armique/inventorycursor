@@ -134,12 +134,12 @@ export const MobileStockCard: React.FC<{
                 €{formatEUR(item.buyPrice)}
                 {item.sellPrice != null ? ` · aim €${formatEUR(item.sellPrice)}` : ''}
                 {suggestedKleinList != null && suggestedKleinList > 0 ? (
-                  <span className="text-emerald-700"> · KA ~€{formatEUR(suggestedKleinList)}</span>
+                  <span className="text-emerald-700 font-bold"> · KA €{formatEUR(suggestedKleinList)}</span>
                 ) : null}
                 {suggestedEbayList != null && suggestedEbayList > 0 ? (
-                  <span className="text-sky-700">
+                  <span className="text-sky-700 font-bold">
                     {' '}
-                    · eBay ~€{formatEUR(suggestedEbayList)}
+                    · EB €{formatEUR(suggestedEbayList)}
                     {suggestedFeePct != null ? ` (−${suggestedFeePct}%)` : ''}
                   </span>
                 ) : null}

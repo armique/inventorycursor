@@ -4,6 +4,7 @@ import {
   buildFlipSaleRecords,
   computeBuyFirstProducts,
   resolveSuggestedEbayList,
+  roundListPriceUp,
   summarizeFlipInsights,
 } from './flipInsights';
 import type { FlipFeeSettings } from './flipCoach';
@@ -36,14 +37,15 @@ describe('flipInsights', () => {
       suggestedCompCount: 4,
     });
     const s = resolveSuggestedEbayList(row, [row], fees);
-    expect(s?.ebayList).toBe(220);
+    // Snapshot kept, then rounded up to clean €5 steps
+    expect(s?.kleinList).toBe(155);
+    expect(s?.ebayList).toBe(225);
     expect(s?.fromSnapshot).toBe(true);
     expect(s?.feePct).toBe(30);
-    // Klein = pocket after 30% fees (lower than eBay list)
     expect(s?.kleinList).toBeLessThan(s!.ebayList);
   });
 
-  it('rejects below-cost bundle comps and falls back to buy × 1.25', () => {
+  it('rejects thin-margin bundle comps and falls back to ~45% rounded lists', () => {
     const bundle = item({
       id: 'bundle',
       name: 'Mixed Bundle MT-61',
@@ -51,7 +53,7 @@ describe('flipInsights', () => {
       isBundle: true,
       category: 'Bundle',
       subCategory: 'Bundle',
-      // Bad saved snapshot / comps-style values below cost
+      // Bad saved snapshot / comps-style values below 30% margin
       suggestedEbayListPrice: 43.11,
       suggestedKleinListPrice: 30.17,
       suggestedPocketTarget: 30.17,
@@ -60,10 +62,9 @@ describe('flipInsights', () => {
     });
     const s = resolveSuggestedEbayList(bundle, [bundle], fees);
     expect(s).not.toBeNull();
-    expect(s!.kleinList).toBeGreaterThanOrEqual(61.7);
-    expect(s!.ebayList).toBeGreaterThan(s!.kleinList);
-    // Cost fallback: 61.7 × 1.25 = 77.125 → KA 77.13, EB ≈ 110.18 at 30%
-    expect(s!.kleinList).toBeCloseTo(77.13, 1);
+    // Min 30% on 61.7 = 80.21; target 45% = 89.47 → round up to KA €90, EB €130
+    expect(s!.kleinList).toBe(90);
+    expect(s!.ebayList).toBe(130);
     expect(s!.compCount).toBe(0);
   });
 
@@ -82,7 +83,13 @@ describe('flipInsights', () => {
     ];
     const s = resolveSuggestedEbayList(parent, [parent, ...children], fees, children);
     expect(s).not.toBeNull();
-    expect(s!.kleinList).toBeGreaterThanOrEqual(61.7);
+    expect(s!.kleinList).toBeGreaterThanOrEqual(Math.ceil(61.7 * 1.3));
+  });
+
+  it('rounds list prices up to clean euro steps', () => {
+    expect(roundListPriceUp(32.1)).toBe(35);
+    expect(roundListPriceUp(47)).toBe(50);
+    expect(roundListPriceUp(89.5)).toBe(90);
   });
 
   it('summarizes flip speed and price accuracy', () => {
