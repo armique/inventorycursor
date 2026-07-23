@@ -908,7 +908,9 @@ const SettingsPage: React.FC<Props> = ({
                 <div className="border-t border-slate-100 pt-6 space-y-4">
                    <h4 className="text-sm font-black uppercase tracking-widest text-slate-500">Listing presence (KA + eBay)</h4>
                    <p className="text-sm text-slate-500">
-                      Match your in-stock items to live listings. Inventory shows KA / EB icons under each name when something is not posted (or is listed via a kit).
+                      Sync only checks your <strong>sale-ready</strong> watchlist (and items already linked) — not the whole inventory.
+                      Mark items Ready under the name when photos/specs are done. Defective / unprepared stock is ignored.
+                      Live listing prices are stored so inventory can hint when you should change the ask.
                    </p>
                    <div className="space-y-2">
                       <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Kleinanzeigen profile URL</label>
@@ -926,7 +928,7 @@ const SettingsPage: React.FC<Props> = ({
                       </label>
                       <textarea
                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs outline-none focus:border-slate-900 min-h-[88px]"
-                         placeholder={'One title per line\nOptional: Title | https://www.kleinanzeigen.de/s-anzeige/…'}
+                         placeholder={'One per line\nTitle | 49\nTitle | 49 | https://www.kleinanzeigen.de/s-anzeige/…'}
                          value={kaTitlesPaste}
                          onChange={(e) => setKaTitlesPaste(e.target.value)}
                       />
@@ -949,8 +951,9 @@ const SettingsPage: React.FC<Props> = ({
                                });
                                onRestoreItems(result.items);
                                setListingPresenceMsg(
-                                  `Synced · eBay ${result.ebayMatched}/${result.ebayTitleCount} · KA ${result.kaMatched}/${result.kaTitleCount}` +
-                                    (result.kaError ? ` · ${result.kaError}` : '')
+                                  `Watch ${result.watchCount} · eBay ${result.ebayMatched}/${result.ebayTitleCount} · KA ${result.kaMatched}/${result.kaTitleCount} · ${result.priceHints} price hints` +
+                                    (result.ebayError ? ` · eBay: ${result.ebayError}` : '') +
+                                    (result.kaError ? ` · KA: ${result.kaError}` : '')
                                );
                             } catch (e) {
                                setListingPresenceMsg((e as Error)?.message || 'Sync failed');

@@ -68,13 +68,27 @@ function extractTitles(html) {
   const out = [];
   const seen = new Set();
 
+  // Prefer structured JSON blobs that often include priceAmount
+  const jsonPriceRe =
+    /"title"\s*:\s*"([^"\\]{8,160})"[\s\S]{0,400}?"(?:priceAmount|amount|price)"\s*:\s*"?(€?\s*)?(\d+(?:[.,]\d{1,2})?)"?/gi;
+  let jm;
+  while ((jm = jsonPriceRe.exec(html)) !== null) {
+    const title = decodeHtml(jm[1]).replace(/\s+/g, ' ').trim();
+    const price = parseEuroLoose(jm[2]);
+    if (title.length < 8 || /cookie|consent|datenschutz/i.test(title)) continue;
+    const key = title.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(price != null ? { title, price } : { title });
+    if (out.length >= 200) return out;
+  }
+
   // Common article title patterns on public profile / search result pages
   const patterns = [
     /data-testid="ad-title"[^>]*>([^<]+)</gi,
     /class="[^"]*ellipsis[^"]*"[^>]*>([^<]{8,160})</gi,
     /itemprop="name"[^>]*content="([^"]{8,160})"/gi,
     /<h2[^>]*class="[^"]*text-module-begin[^"]*"[^>]*>([^<]{8,160})</gi,
-    /"title"\s*:\s*"([^"\\]{8,160})"/g,
   ];
 
   for (const re of patterns) {
@@ -86,7 +100,10 @@ function extractTitles(html) {
       const key = title.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
-      out.push({ title });
+      // Look ahead ~400 chars for a price near the title
+      const window = html.slice(m.index, m.index + 500);
+      const price = extractNearbyPrice(window);
+      out.push(price != null ? { title, price } : { title });
       if (out.length >= 200) return out;
     }
   }
@@ -102,11 +119,36 @@ function extractTitles(html) {
     const key = title.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ title, url });
+    const window = html.slice(lm.index, lm.index + 500);
+    const price = extractNearbyPrice(window);
+    out.push(price != null ? { title, url, price } : { title, url });
     if (out.length >= 200) break;
   }
 
   return out;
+}
+
+function extractNearbyPrice(chunk) {
+  const m =
+    chunk.match(/€\s*(\d{1,5}(?:[.,]\d{1,2})?)/) ||
+    chunk.match(/(\d{1,5}(?:[.,]\d{1,2})?)\s*€/) ||
+    chunk.match(/"price"\s*:\s*"?(€?\s*)?(\d+(?:[.,]\d{1,2})?)"?/);
+  if (!m) return null;
+  return parseEuroLoose(m[2] || m[1]);
+}
+
+function parseEuroLoose(raw) {
+  const s = String(raw || '')
+    .replace(/€/g, '')
+    .replace(/\s/g, '')
+    .trim();
+  if (!s) return null;
+  let normalized = s;
+  if (/^\d+,\d{1,2}$/.test(s) || /\d+\.\d{3},\d{1,2}$/.test(s)) {
+    normalized = s.replace(/\./g, '').replace(',', '.');
+  }
+  const n = Number(normalized);
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
 }
 
 function decodeHtml(s) {

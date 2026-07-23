@@ -41,6 +41,11 @@ import {
 } from '../utils/flipInsights';
 import { loadFlipFees } from '../utils/flipCoach';
 import {
+  computePriceChangeHint,
+  isListingWatchCandidate,
+  isSaleReadyUnlisted,
+} from '../utils/listingWatch';
+import {
   enqueueProductCardBackgroundJob,
   isItemProductCardJobActive,
   subscribeProductCardBackgroundJobs,
@@ -438,7 +443,15 @@ const PAYMENT_METHODS: PaymentType[] = [
   'Other'
 ];
 
-type SmartPreset = 'no_photo' | 'presence_unknown' | 'no_specs' | 'defective' | 'aging' | null;
+type SmartPreset =
+  | 'no_photo'
+  | 'presence_unknown'
+  | 'no_specs'
+  | 'defective'
+  | 'aging'
+  | 'sale_ready_unlisted'
+  | 'price_change'
+  | null;
 
 type InventoryListFilterParams = {
   items: InventoryItem[];
@@ -515,6 +528,8 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
     if (smartPreset === 'presence_unknown' && getItemPresenceCycleState(item) !== 'unknown') return false;
     if (smartPreset === 'no_specs' && item.specs && Object.keys(item.specs).length > 0) return false;
     if (smartPreset === 'defective' && !item.isDefective) return false;
+    if (smartPreset === 'sale_ready_unlisted' && !isSaleReadyUnlisted(item)) return false;
+    if (smartPreset === 'price_change' && !computePriceChangeHint(item)) return false;
     if (smartPreset === 'aging') {
       const key = item.buyDate || '';
       if (!key) return false;
@@ -3026,97 +3041,169 @@ const InventoryList: React.FC<Props> = ({
                       )}
                    </div>
                    {(item.status === ItemStatus.IN_STOCK ||
-                     item.status === ItemStatus.ORDERED ||
-                     item.status === ItemStatus.IN_COMPOSITION) && (
+                     item.status === ItemStatus.ORDERED) &&
+                     !item.isDefective &&
+                     !item.parentContainerId && (
                      <div
-                       className="flex items-center gap-1 mt-0.5"
+                       className="flex flex-col gap-0.5 mt-0.5"
                        onClick={(e) => e.stopPropagation()}
                      >
+                       <div className="flex items-center gap-1 flex-wrap">
+                         <button
+                           type="button"
+                           title={
+                             item.saleReady
+                               ? 'Sale ready — watched by listing/price sync. Click to unwatch.'
+                               : 'Mark sale ready when photos/specs are done. Only ready items are checked for listings & live prices.'
+                           }
+                           onClick={() =>
+                             onUpdate(
+                               [{ ...item, saleReady: !item.saleReady }],
+                               undefined,
+                               { skipActionLog: true }
+                             )
+                           }
+                           className={`inline-flex items-center px-1 py-0 rounded text-[8px] font-black uppercase tracking-wide border ${
+                             item.saleReady
+                               ? 'bg-violet-50 text-violet-800 border-violet-200'
+                               : 'bg-slate-50 text-slate-400 border-slate-200'
+                           }`}
+                         >
+                           Ready
+                         </button>
+                         {isListingWatchCandidate(item) &&
+                           (() => {
+                             const kaOk = Boolean(item.listedOnKleinanzeigen);
+                             const ebOk = Boolean(item.listedOnEbay);
+                             const viaKit = Boolean(item.listedViaParent);
+                             const syncHint = item.listingPresenceSyncedAt
+                               ? ` · synced ${item.listingPresenceSyncedAt.slice(0, 16).replace('T', ' ')}`
+                               : '';
+                             const kaLive =
+                               item.liveKleinListPrice != null
+                                 ? ` · live €${Math.round(item.liveKleinListPrice)}`
+                                 : '';
+                             const ebLive =
+                               item.liveEbayListPrice != null
+                                 ? ` · live €${Math.round(item.liveEbayListPrice)}`
+                                 : '';
+                             return (
+                               <>
+                                 <button
+                                   type="button"
+                                   title={
+                                     kaOk
+                                       ? `Listed on Kleinanzeigen${kaLive}${syncHint}`
+                                       : `Not posted on Kleinanzeigen${syncHint}`
+                                   }
+                                   onClick={() => {
+                                     if (item.kleinanzeigenListingUrl) {
+                                       window.open(
+                                         item.kleinanzeigenListingUrl,
+                                         '_blank',
+                                         'noopener,noreferrer'
+                                       );
+                                       return;
+                                     }
+                                     onUpdate(
+                                       [
+                                         {
+                                           ...item,
+                                           listedOnKleinanzeigen: !item.listedOnKleinanzeigen,
+                                           listedViaParent: false,
+                                         },
+                                       ],
+                                       undefined,
+                                       { skipActionLog: true }
+                                     );
+                                   }}
+                                   className={`inline-flex items-center px-1 py-0 rounded text-[8px] font-black uppercase tracking-wide border ${
+                                     kaOk
+                                       ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                       : 'bg-slate-50 text-slate-400 border-slate-200 line-through decoration-slate-300'
+                                   }`}
+                                 >
+                                   KA
+                                   {item.liveKleinListPrice != null && kaOk
+                                     ? ` €${Math.round(item.liveKleinListPrice)}`
+                                     : ''}
+                                 </button>
+                                 <button
+                                   type="button"
+                                   title={
+                                     ebOk
+                                       ? `Listed on eBay${ebLive}${syncHint}`
+                                       : `Not posted on eBay${syncHint}`
+                                   }
+                                   onClick={() => {
+                                     if (item.ebayListingId) {
+                                       window.open(
+                                         `https://www.ebay.de/itm/${item.ebayListingId}`,
+                                         '_blank',
+                                         'noopener,noreferrer'
+                                       );
+                                       return;
+                                     }
+                                     onUpdate(
+                                       [
+                                         {
+                                           ...item,
+                                           listedOnEbay: !item.listedOnEbay,
+                                           listedViaParent: false,
+                                         },
+                                       ],
+                                       undefined,
+                                       { skipActionLog: true }
+                                     );
+                                   }}
+                                   className={`inline-flex items-center px-1 py-0 rounded text-[8px] font-black uppercase tracking-wide border ${
+                                     ebOk
+                                       ? 'bg-sky-50 text-sky-800 border-sky-200'
+                                       : 'bg-slate-50 text-slate-400 border-slate-200 line-through decoration-slate-300'
+                                   }`}
+                                 >
+                                   EB
+                                   {item.liveEbayListPrice != null && ebOk
+                                     ? ` €${Math.round(item.liveEbayListPrice)}`
+                                     : ''}
+                                 </button>
+                                 {viaKit && (kaOk || ebOk) && (
+                                   <span className="text-[8px] font-bold text-violet-600 uppercase">
+                                     via kit
+                                   </span>
+                                 )}
+                               </>
+                             );
+                           })()}
+                       </div>
                        {(() => {
-                         const kaOk = Boolean(item.listedOnKleinanzeigen);
-                         const ebOk = Boolean(item.listedOnEbay);
-                         const viaKit = Boolean(item.listedViaParent);
-                         const syncHint = item.listingPresenceSyncedAt
-                           ? ` · synced ${item.listingPresenceSyncedAt.slice(0, 16).replace('T', ' ')}`
-                           : '';
+                         const sugg =
+                           suggestedEbayById.get(item.id) ||
+                           resolveSuggestedEbayList(item, items, loadFlipFees(), childItems);
+                         const hint = computePriceChangeHint(item, sugg);
+                         if (!hint) return null;
                          return (
-                           <>
-                             <button
-                               type="button"
-                               title={
-                                 kaOk
-                                   ? viaKit && !item.kleinanzeigenListingUrl
-                                     ? `Listed on Kleinanzeigen via kit${syncHint}`
-                                     : `Listed on Kleinanzeigen${syncHint}`
-                                   : `Not posted on Kleinanzeigen${syncHint}. Sync in Settings → eBay API, or click to mark listed.`
-                               }
-                               onClick={() => {
-                                 if (item.kleinanzeigenListingUrl) {
-                                   window.open(item.kleinanzeigenListingUrl, '_blank', 'noopener,noreferrer');
-                                   return;
-                                 }
-                                 onUpdate(
-                                   [
-                                     {
-                                       ...item,
-                                       listedOnKleinanzeigen: !item.listedOnKleinanzeigen,
-                                       listedViaParent: false,
-                                     },
-                                   ],
-                                   undefined,
-                                   { skipActionLog: true }
-                                 );
-                               }}
-                               className={`inline-flex items-center px-1 py-0 rounded text-[8px] font-black uppercase tracking-wide border ${
-                                 kaOk
-                                   ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                   : 'bg-slate-50 text-slate-400 border-slate-200 line-through decoration-slate-300'
-                               }`}
-                             >
-                               KA
-                             </button>
-                             <button
-                               type="button"
-                               title={
-                                 ebOk
-                                   ? viaKit && !item.ebayListingId
-                                     ? `Listed on eBay via kit${syncHint}`
-                                     : `Listed on eBay${syncHint}`
-                                   : `Not posted on eBay${syncHint}. Sync in Settings → eBay API, or click to mark listed.`
-                               }
-                               onClick={() => {
-                                 if (item.ebayListingId) {
-                                   window.open(
-                                     `https://www.ebay.de/itm/${item.ebayListingId}`,
-                                     '_blank',
-                                     'noopener,noreferrer'
-                                   );
-                                   return;
-                                 }
-                                 onUpdate(
-                                   [
-                                     {
-                                       ...item,
-                                       listedOnEbay: !item.listedOnEbay,
-                                       listedViaParent: false,
-                                     },
-                                   ],
-                                   undefined,
-                                   { skipActionLog: true }
-                                 );
-                               }}
-                               className={`inline-flex items-center px-1 py-0 rounded text-[8px] font-black uppercase tracking-wide border ${
-                                 ebOk
-                                   ? 'bg-sky-50 text-sky-800 border-sky-200'
-                                   : 'bg-slate-50 text-slate-400 border-slate-200 line-through decoration-slate-300'
-                               }`}
-                             >
-                               EB
-                             </button>
-                             {viaKit && (kaOk || ebOk) && (
-                               <span className="text-[8px] font-bold text-violet-600 uppercase">via kit</span>
-                             )}
-                           </>
+                           <button
+                             type="button"
+                             className={`self-start text-left text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded border ${
+                               hint.deltaEur > 0
+                                 ? 'bg-amber-50 text-amber-900 border-amber-200'
+                                 : 'bg-sky-50 text-sky-900 border-sky-200'
+                             }`}
+                             title="Live listing price vs age-aware suggest. Click to save suggest snapshot."
+                             onClick={() => {
+                               if (!sugg) return;
+                               onUpdate(
+                                 [{ ...item, ...suggestionPatchFromPrice(sugg) }],
+                                 undefined,
+                                 { skipActionLog: true }
+                               );
+                               setToast(`Saved suggest · ${hint.label}`);
+                               setTimeout(() => setToast(null), 2200);
+                             }}
+                           >
+                             {hint.label}
+                           </button>
                          );
                        })()}
                      </div>
@@ -4716,6 +4803,8 @@ const InventoryList: React.FC<Props> = ({
                    ['no_specs', 'No specs'],
                    ['defective', 'Defekt'],
                    ['aging', '>90d'],
+                   ['sale_ready_unlisted', 'Ready · not listed'],
+                   ['price_change', 'Change price'],
                  ] as const
                ).map(([id, label]) => (
                  <button
@@ -4993,6 +5082,8 @@ const InventoryList: React.FC<Props> = ({
                 ['no_specs', 'No specs'],
                 ['defective', 'Defekt'],
                 ['aging', '>90d'],
+                ['sale_ready_unlisted', 'Ready · not listed'],
+                ['price_change', 'Change price'],
               ] as const
             ).map(([id, label]) => (
               <button

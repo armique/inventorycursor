@@ -184,12 +184,23 @@ export interface InventoryItem {
   // Listing status on external marketplaces
   listedOnKleinanzeigen?: boolean;
   listedOnEbay?: boolean;
+  /**
+   * Opt-in: item is prepared for sale (photos/specs done). Listing presence + live
+   * price sync only watch these (+ already-linked listings). Skips defective/junk.
+   */
+  saleReady?: boolean;
   /** True when listing presence comes from a matched parent kit listing. */
   listedViaParent?: boolean;
   /** Last time listing presence was synced for this row. */
   listingPresenceSyncedAt?: string;
   /** Matched Kleinanzeigen ad URL (optional). */
   kleinanzeigenListingUrl?: string;
+  /** Live ask price scraped/synced from your eBay listing. */
+  liveEbayListPrice?: number;
+  /** Live ask price scraped/synced from your Kleinanzeigen ad. */
+  liveKleinListPrice?: number;
+  /** When live marketplace prices were last written. */
+  liveListingPriceSyncedAt?: string;
 
   // Trade related
   tradedForIds?: string[]; // IDs of items received in exchange

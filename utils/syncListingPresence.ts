@@ -13,6 +13,7 @@ import {
   saveKaListingTitles,
   type ListingTitleHit,
 } from './listingPresence';
+import { computePriceChangeHint, isListingWatchCandidate } from './listingWatch';
 
 export type ListingPresenceSyncResult = {
   items: InventoryItem[];
@@ -20,7 +21,10 @@ export type ListingPresenceSyncResult = {
   kaMatched: number;
   ebayTitleCount: number;
   kaTitleCount: number;
+  watchCount: number;
+  priceHints: number;
   kaError?: string;
+  ebayError?: string;
 };
 
 export async function syncListingPresence(
@@ -33,19 +37,23 @@ export async function syncListingPresence(
   let ebayTitleCount = 0;
   let kaTitleCount = 0;
   let kaError: string | undefined;
+  let ebayError: string | undefined;
+  const watchCount = items.filter(isListingWatchCandidate).length;
 
   if (!opts?.skipEbay) {
     try {
       const listings = await fetchMyEbayListings();
       ebayTitleCount = listings.length;
       next = applyEbayPresenceToItems(next, listings);
-      ebayMatched = next.filter((i) => i.listedOnEbay && !i.listedViaParent).length;
+      ebayMatched = next.filter(
+        (i) => isListingWatchCandidate(i) && i.listedOnEbay && !i.listedViaParent
+      ).length;
       markPresenceMeta({
         ebaySyncedAt: new Date().toISOString(),
         ebayTitleCount,
       });
     } catch (e) {
-      kaError = (e as Error)?.message || 'eBay listing fetch failed';
+      ebayError = (e as Error)?.message || 'eBay listing fetch failed';
     }
   }
 
@@ -73,7 +81,9 @@ export async function syncListingPresence(
     if (titles.length) {
       kaTitleCount = titles.length;
       next = applyKaPresenceToItems(next, titles);
-      kaMatched = next.filter((i) => i.listedOnKleinanzeigen && !i.listedViaParent).length;
+      kaMatched = next.filter(
+        (i) => isListingWatchCandidate(i) && i.listedOnKleinanzeigen && !i.listedViaParent
+      ).length;
       markPresenceMeta({
         kaSyncedAt: new Date().toISOString(),
         kaTitleCount,
@@ -81,12 +91,17 @@ export async function syncListingPresence(
     }
   }
 
+  const priceHints = next.filter((i) => computePriceChangeHint(i)).length;
+
   return {
     items: next,
     ebayMatched,
     kaMatched,
     ebayTitleCount,
     kaTitleCount,
-    kaError,
+    watchCount,
+    priceHints,
+    kaError: kaError || undefined,
+    ebayError,
   };
 }
