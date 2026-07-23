@@ -111,22 +111,38 @@ function emptyMeta(): EbayOrderIndexMeta {
   return { updatedAt: '', count: 0 };
 }
 
+/** In-memory cache — avoids re-parsing a multi‑MB localStorage blob on every call. */
+let memOrders: EbayOrderRecord[] | null = null;
+let memMeta: EbayOrderIndexMeta | null = null;
+
 function loadRaw(): { orders: EbayOrderRecord[]; meta: EbayOrderIndexMeta } {
+  if (memOrders && memMeta) return { orders: memOrders, meta: memMeta };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { orders: [], meta: emptyMeta() };
+    if (!raw) {
+      memOrders = [];
+      memMeta = emptyMeta();
+      return { orders: memOrders, meta: memMeta };
+    }
     const parsed = JSON.parse(raw) as { orders?: EbayOrderRecord[]; meta?: EbayOrderIndexMeta };
-    return {
-      orders: Array.isArray(parsed?.orders) ? parsed.orders : [],
-      meta: parsed?.meta || emptyMeta(),
-    };
+    memOrders = Array.isArray(parsed?.orders) ? parsed.orders : [];
+    memMeta = parsed?.meta || emptyMeta();
+    return { orders: memOrders, meta: memMeta };
   } catch {
-    return { orders: [], meta: emptyMeta() };
+    memOrders = [];
+    memMeta = emptyMeta();
+    return { orders: memOrders, meta: memMeta };
   }
 }
 
 function saveRaw(orders: EbayOrderRecord[], meta: EbayOrderIndexMeta): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ orders, meta }));
+  memOrders = orders;
+  memMeta = meta;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ orders, meta }));
+  } catch (e) {
+    console.warn('Failed to persist eBay order index:', e);
+  }
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('ebay-order-index-updated'));
   }
@@ -248,6 +264,8 @@ export function addCsvImportMeta(entry: { fileName: string; rowCount: number; or
 }
 
 export function clearEbayOrderIndex(): void {
+  memOrders = null;
+  memMeta = null;
   localStorage.removeItem(STORAGE_KEY);
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('ebay-order-index-updated'));
@@ -296,10 +314,16 @@ export interface CloudPullResult {
 /**
  * Pull every order cached in Firestore down into the local cache (merged, not replaced).
  * Safe to call repeatedly — orders are deduped by orderId. No-op if signed out / cloud disabled.
+ * Pass `{ force: true }` to pull even when the local cache already has data.
  */
-export async function pullOrderIndexFromCloud(): Promise<CloudPullResult> {
+export async function pullOrderIndexFromCloud(options?: { force?: boolean }): Promise<CloudPullResult> {
   if (!isCloudEnabled()) return { pulled: 0, skipped: true };
   try {
+    const localCount = loadRaw().orders.length;
+    // Skip automatic full rehydrate when we already have a local library — huge UI freezes otherwise.
+    if (!options?.force && localCount > 0) {
+      return { pulled: 0, skipped: true };
+    }
     const cloud = await fetchEbayOrdersFromCloud();
     if (!cloud) return { pulled: 0, skipped: true };
 

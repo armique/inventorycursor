@@ -46,7 +46,6 @@ interface Props {
 }
 
 const DEFAULT_FROM = '2025-02-01';
-const ORDER_CACHE_RESET_KEY = 'ebay_order_cache_reset_2026_07_13';
 
 function todayISO(): string {
   return new Date().toISOString().split('T')[0];
@@ -76,6 +75,7 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
   const [statsVersion, setStatsVersion] = useState(0);
   const [browseOpen, setBrowseOpen] = useState(false);
   const [orderSearch, setOrderSearch] = useState('');
+  const [browseLimit, setBrowseLimit] = useState(40);
 
   const refreshStats = () => setStatsVersion((v) => v + 1);
   const { stats, meta } = React.useMemo(() => {
@@ -86,29 +86,30 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
   const cloudReady = isCloudEnabled();
   const [cloudPulling, setCloudPulling] = useState(false);
   const [cloudPullMessage, setCloudPullMessage] = useState<string | null>(null);
-  const cloudPulledOnceRef = useRef(false);
 
-  useEffect(() => {
-    try {
-      if (localStorage.getItem(ORDER_CACHE_RESET_KEY) === 'done') return;
-      localStorage.setItem(ORDER_CACHE_RESET_KEY, 'done');
-      void clearEbayOrderIndexEverywhere().then(() => {
-        invalidateEbaySalesSyncPeekCache();
-        setCloudPullMessage('Order cache reset completed. Import CSV to rebuild suggestions.');
-        setStatsVersion((v) => v + 1);
-      });
-    } catch {
-      // ignore localStorage failures; manual clear is still available
+  const restoreFromCloud = useCallback(async () => {
+    if (!cloudReady) return;
+    setCloudPulling(true);
+    setCloudPullMessage('Restoring orders from cloud…');
+    const result = await pullOrderIndexFromCloud({ force: true });
+    setCloudPulling(false);
+    if (result.error) {
+      setCloudPullMessage(`Cloud pull failed: ${result.error}`);
+    } else if (result.pulled > 0) {
+      setCloudPullMessage(`Restored ${result.pulled} order(s) from cloud.`);
+      setStatsVersion((v) => v + 1);
+    } else {
+      setCloudPullMessage('Cloud has no extra orders (or already in sync).');
     }
-  }, []);
+  }, [cloudReady]);
 
-  // On first open, re-hydrate the local cache from the cloud mirror — covers a cleared
-  // browser or a brand-new PC where localStorage never had this data to begin with.
+  // Only auto-hydrate when this browser has an empty cache (skips multi‑MB pulls on every visit).
   useEffect(() => {
-    if (!cloudReady || cloudPulledOnceRef.current) return;
-    cloudPulledOnceRef.current = true;
+    if (!cloudReady || getOrderIndexStats().count > 0) return;
+    let cancelled = false;
     setCloudPulling(true);
     void pullOrderIndexFromCloud().then((result) => {
+      if (cancelled) return;
       setCloudPulling(false);
       if (result.error) {
         setCloudPullMessage(`Cloud pull failed: ${result.error}`);
@@ -117,6 +118,9 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
         setStatsVersion((v) => v + 1);
       }
     });
+    return () => {
+      cancelled = true;
+    };
   }, [cloudReady]);
 
   const suggested = useMemo(
@@ -141,19 +145,24 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
     };
   }, []);
 
-  const soldOnEbayMissingLink = items.filter(
-    (i) =>
-      (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
-      (i.platformSold === 'ebay.de' || Boolean(i.ebaySku)) &&
-      !i.ebayOrderId
-  ).length;
+  const soldOnEbayMissingLink = useMemo(
+    () =>
+      items.filter(
+        (i) =>
+          (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) &&
+          (i.platformSold === 'ebay.de' || Boolean(i.ebaySku)) &&
+          !i.ebayOrderId
+      ).length,
+    [items]
+  );
 
   const cachedOrders = useMemo(() => {
+    if (!browseOpen) return [] as EbayOrderRecord[];
     return [...loadEbayOrderIndex().orders].sort((a, b) =>
       (b.creationDate || '').localeCompare(a.creationDate || '')
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statsVersion]);
+  }, [statsVersion, browseOpen]);
 
   const visibleCachedOrders = useMemo(() => {
     return cachedOrders.filter((o) =>
@@ -167,6 +176,11 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
       ])
     );
   }, [cachedOrders, orderSearch]);
+
+  const visibleCachedOrdersPage = useMemo(
+    () => visibleCachedOrders.slice(0, browseLimit),
+    [visibleCachedOrders, browseLimit]
+  );
 
   const runBackfill = useCallback(
     async (fromDate: string, toDate: string) => {
@@ -350,6 +364,17 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
                 <p className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-1.5 inline-block">
                   {cloudPullMessage}
                 </p>
+              )}
+              {cloudReady && (
+                <button
+                  type="button"
+                  disabled={cloudPulling}
+                  onClick={() => void restoreFromCloud()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-indigo-200 bg-white text-[10px] font-black uppercase text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+                >
+                  {cloudPulling ? <Loader2 size={12} className="animate-spin" /> : <Cloud size={12} />}
+                  Restore from cloud
+                </button>
               )}
             </div>
 
@@ -650,7 +675,8 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
                     {orderSearch.trim() ? 'No orders match your search.' : 'Cache is empty.'}
                   </p>
                 ) : (
-                  visibleCachedOrders.map((order) => {
+                  <>
+                    {visibleCachedOrdersPage.map((order) => {
                     const net = getOrderEffectiveNet(order);
                     const itemTitles = order.lineItems.map((li) => li.title).filter(Boolean).join(' · ');
                     return (
@@ -676,7 +702,17 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
                         )}
                       </div>
                     );
-                  })
+                  })}
+                    {visibleCachedOrders.length > browseLimit && (
+                      <button
+                        type="button"
+                        onClick={() => setBrowseLimit((n) => n + 60)}
+                        className="w-full py-2.5 text-[10px] font-black uppercase text-indigo-700 hover:bg-indigo-50"
+                      >
+                        Show more ({visibleCachedOrders.length - browseLimit} left)
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             </div>

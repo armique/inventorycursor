@@ -209,11 +209,15 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
     };
   }, []);
 
-  // Hydrate local library from Firestore so history past eBay’s 90-day window stays available.
+  // Hydrate from cloud only when this browser has an empty purchase library.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       if (!isCloudEnabled()) return;
+      if (loadEbayPurchaseIndex().purchases.length > 0) {
+        setCloudMessage(null);
+        return;
+      }
       setCloudMessage('Loading purchase library from cloud…');
       const result = await pullPurchaseIndexFromCloud();
       if (cancelled) return;

@@ -79,6 +79,9 @@ function emptyIndex(): EbayPurchaseIndex {
   };
 }
 
+let memPurchases: EbayPurchaseRecord[] | null = null;
+let memPurchaseMeta: EbayPurchaseIndexMeta | null = null;
+
 function normalizeRecord(raw: Partial<EbayPurchaseRecord> & { lineKey?: string }): EbayPurchaseRecord | null {
   if (!raw?.lineKey || typeof raw.lineKey !== 'string') return null;
   const title = String(raw.title || '');
@@ -113,20 +116,36 @@ function normalizeRecord(raw: Partial<EbayPurchaseRecord> & { lineKey?: string }
 }
 
 export function loadEbayPurchaseIndex(): EbayPurchaseIndex {
+  if (memPurchases && memPurchaseMeta) {
+    return { purchases: memPurchases, meta: memPurchaseMeta };
+  }
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return emptyIndex();
+    if (!raw) {
+      const empty = emptyIndex();
+      memPurchases = empty.purchases;
+      memPurchaseMeta = empty.meta;
+      return empty;
+    }
     const parsed = JSON.parse(raw) as EbayPurchaseIndex;
-    if (!Array.isArray(parsed?.purchases)) return emptyIndex();
+    if (!Array.isArray(parsed?.purchases)) {
+      const empty = emptyIndex();
+      memPurchases = empty.purchases;
+      memPurchaseMeta = empty.meta;
+      return empty;
+    }
     const purchases = parsed.purchases
       .map((p) => normalizeRecord(p))
       .filter((p): p is EbayPurchaseRecord => Boolean(p));
-    return {
-      purchases,
-      meta: parsed.meta || { updatedAt: new Date().toISOString(), count: purchases.length },
-    };
+    const meta = parsed.meta || { updatedAt: new Date().toISOString(), count: purchases.length };
+    memPurchases = purchases;
+    memPurchaseMeta = meta;
+    return { purchases, meta };
   } catch {
-    return emptyIndex();
+    const empty = emptyIndex();
+    memPurchases = empty.purchases;
+    memPurchaseMeta = empty.meta;
+    return empty;
   }
 }
 
@@ -139,6 +158,8 @@ function saveIndex(index: EbayPurchaseIndex): void {
       count: index.purchases.length,
     },
   };
+  memPurchases = next.purchases;
+  memPurchaseMeta = next.meta;
   try {
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
@@ -313,9 +334,13 @@ export interface CloudPullResult {
 }
 
 /** Merge Firestore purchase archive into local library. */
-export async function pullPurchaseIndexFromCloud(): Promise<CloudPullResult> {
+export async function pullPurchaseIndexFromCloud(options?: { force?: boolean }): Promise<CloudPullResult> {
   if (!isCloudEnabled()) return { pulled: 0, skipped: true };
   try {
+    const localCount = loadEbayPurchaseIndex().purchases.length;
+    if (!options?.force && localCount > 0) {
+      return { pulled: 0, skipped: true };
+    }
     const cloud = await fetchEbayPurchasesFromCloud();
     if (!cloud) return { pulled: 0, skipped: true };
 
@@ -418,6 +443,8 @@ export async function pushPurchaseIndexToCloud(records: EbayPurchaseRecord[]): P
 }
 
 export async function clearEbayPurchaseIndexEverywhere(): Promise<void> {
+  memPurchases = null;
+  memPurchaseMeta = null;
   try {
     localStorage.removeItem(STORAGE_KEY);
     if (typeof window !== 'undefined') {

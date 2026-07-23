@@ -217,19 +217,26 @@ const EbaySalesSyncPanel: React.FC<Props> = ({
     [applyAnalysis, onRematchComplete]
   );
 
-  // On open: analyze cache once (idle) — avoid re-running on every inventory edit.
+  // On open: analyze cache once when idle — skip auto-run for very large caches (user clicks Re-match).
   useEffect(() => {
     if (autoRanRef.current) return;
     autoRanRef.current = true;
+    const { orders } = loadEbayOrderIndex();
+    if (!orders.length) return;
+    if (orders.length > 400) {
+      setMessage(
+        `Large order cache (${orders.length}) — click “Re-match cache only” when you want suggestions (avoids freezing on open).`
+      );
+      return;
+    }
     const run = () => {
-      const { orders } = loadEbayOrderIndex();
-      if (orders.length) rematchFromCache();
+      rematchFromCache();
     };
     if (typeof requestIdleCallback === 'function') {
-      const id = requestIdleCallback(run, { timeout: 2000 });
+      const id = requestIdleCallback(run, { timeout: 4000 });
       return () => cancelIdleCallback(id);
     }
-    const t = window.setTimeout(run, 200);
+    const t = window.setTimeout(run, 600);
     return () => clearTimeout(t);
   }, [rematchFromCache]);
 
@@ -241,11 +248,18 @@ const EbaySalesSyncPanel: React.FC<Props> = ({
     rematchFromCache();
   }, [cacheVersion, rematchFromCache]);
 
-  // Re-match when order cache changes from other tabs / same page events.
+  // Debounced rematch when order cache changes elsewhere (avoids storm during cloud hydrate).
   useEffect(() => {
-    const refreshFromCache = () => rematchFromCache();
+    let timer: number | null = null;
+    const refreshFromCache = () => {
+      if (timer != null) window.clearTimeout(timer);
+      timer = window.setTimeout(() => rematchFromCache(), 750);
+    };
     window.addEventListener('ebay-order-index-updated', refreshFromCache);
-    return () => window.removeEventListener('ebay-order-index-updated', refreshFromCache);
+    return () => {
+      if (timer != null) window.clearTimeout(timer);
+      window.removeEventListener('ebay-order-index-updated', refreshFromCache);
+    };
   }, [rematchFromCache]);
 
   const visible = useMemo(() => {

@@ -1,5 +1,5 @@
 import { useSearchParams } from 'react-router-dom';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
@@ -27,15 +27,16 @@ import {
 import { formatEUR } from '../utils/formatMoney';
 import { normalizeImageList, prepareInventoryImagesForStorage } from '../utils/imageImport';
 import { matchesEbayToolSearch } from '../utils/ebayToolSearch';
-import EbayStorePullImportTab from './EbayStorePullImportTab';
-import EbayStorePullSoldTab from './EbayStorePullSoldTab';
-import EbayStorePullOrdersTab from './EbayStorePullOrdersTab';
-import EbayStorePullPurchasesTab from './EbayStorePullPurchasesTab';
-import EbayStorePullBundlesTab from './EbayStorePullBundlesTab';
-import EbayOrderSourceCompareTab from './EbayOrderSourceCompareTab';
 import EbayToolProgressBar, { type EbayToolProgress } from './EbayToolProgressBar';
 import EbayToolSearchInput from './EbayToolSearchInput';
 import type { Expense } from '../types';
+
+const EbayStorePullImportTab = lazy(() => import('./EbayStorePullImportTab'));
+const EbayStorePullSoldTab = lazy(() => import('./EbayStorePullSoldTab'));
+const EbayStorePullOrdersTab = lazy(() => import('./EbayStorePullOrdersTab'));
+const EbayStorePullPurchasesTab = lazy(() => import('./EbayStorePullPurchasesTab'));
+const EbayStorePullBundlesTab = lazy(() => import('./EbayStorePullBundlesTab'));
+const EbayOrderSourceCompareTab = lazy(() => import('./EbayOrderSourceCompareTab'));
 
 type PhotoMode = 'none' | 'all' | 'pick';
 type PullTab = 'sync' | 'import' | 'sold' | 'orders' | 'purchases' | 'compare' | 'bundles';
@@ -76,12 +77,27 @@ interface RowState {
   expanded: boolean;
 }
 
-const TABS: { id: PullTab; label: string; icon: React.ReactNode; hint: string }[] = [
+const PRIMARY_TABS: { id: PullTab; label: string; icon: React.ReactNode; hint: string }[] = [
+  {
+    id: 'orders',
+    label: 'Sales sync',
+    icon: <PackageSearch size={14} />,
+    hint: 'Fetch eBay orders and match inventory',
+  },
+  {
+    id: 'purchases',
+    label: 'Purchases',
+    icon: <ShoppingBag size={14} />,
+    hint: 'What you bought on eBay — filament, expenses, personal',
+  },
+];
+
+const MORE_TABS: { id: PullTab; label: string; icon: React.ReactNode; hint: string }[] = [
   {
     id: 'bundles',
     label: 'Parse bundles',
     icon: <Layers size={14} />,
-    hint: 'Match eBay bundle listings to free inventory parts and create bundles + photos',
+    hint: 'Match eBay bundle listings to free inventory parts',
   },
   {
     id: 'sync',
@@ -99,27 +115,23 @@ const TABS: { id: PullTab; label: string; icon: React.ReactNode; hint: string }[
     id: 'sold',
     label: 'Detect sold',
     icon: <TrendingDown size={14} />,
-    hint: 'Legacy: listing snapshot diff — prefer Sales sync for order-based matching',
-  },
-  {
-    id: 'orders',
-    label: 'Sales sync',
-    icon: <PackageSearch size={14} />,
-    hint: 'Fetch eBay orders and match inventory — mark forgotten sales, link order IDs, fix net payout',
+    hint: 'Legacy listing snapshot diff — prefer Sales sync',
   },
   {
     id: 'compare',
     label: 'API vs CSV',
     icon: <GitCompare size={14} />,
-    hint: 'Compare isolated API and CSV snapshots — find orders missing from Transaktionsbericht',
-  },
-  {
-    id: 'purchases',
-    label: 'Purchases',
-    icon: <ShoppingBag size={14} />,
-    hint: 'What you bought on eBay — filament stock, expenses, personal',
+    hint: 'Compare API and CSV snapshots',
   },
 ];
+
+function TabFallback() {
+  return (
+    <div className="flex items-center justify-center gap-2 py-16 text-slate-500 text-sm font-bold">
+      <Loader2 size={18} className="animate-spin" /> Loading tool…
+    </div>
+  );
+}
 
 const EbayStorePullPage: React.FC<Props> = ({
   items,
@@ -131,6 +143,7 @@ const EbayStorePullPage: React.FC<Props> = ({
   onAddExpense,
 }) => {
   const [tab, setTab] = useState<PullTab>('orders');
+  const [showMoreTools, setShowMoreTools] = useState(false);
   const [searchParams] = useSearchParams();
 
   useEffect(() => {
@@ -145,8 +158,10 @@ const EbayStorePullPage: React.FC<Props> = ({
       t === 'compare' ||
       t === 'purchases' ||
       t === 'bundles'
-    )
+    ) {
       setTab(t);
+      if (MORE_TABS.some((x) => x.id === t)) setShowMoreTools(true);
+    }
   }, [searchParams]);
   const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -411,9 +426,9 @@ const EbayStorePullPage: React.FC<Props> = ({
         )}
       </header>
 
-      <div className="shrink-0 w-full overflow-x-auto mt-4">
+      <div className="shrink-0 w-full overflow-x-auto mt-4 space-y-2">
         <div className="flex gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200/80 w-full min-w-max">
-          {TABS.map((t) => (
+          {PRIMARY_TABS.map((t) => (
             <button
               key={t.id}
               type="button"
@@ -427,7 +442,37 @@ const EbayStorePullPage: React.FC<Props> = ({
               {t.label}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => setShowMoreTools((v) => !v)}
+            className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide whitespace-nowrap ${
+              showMoreTools || MORE_TABS.some((t) => t.id === tab)
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            More
+            {showMoreTools ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          </button>
         </div>
+        {showMoreTools && (
+          <div className="flex gap-1 p-1 bg-slate-50 rounded-xl border border-slate-200/80 w-full min-w-max">
+            {MORE_TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTab(t.id)}
+                title={t.hint}
+                className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide transition-all whitespace-nowrap ${
+                  tab === t.id ? 'bg-white text-slate-900 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {t.icon}
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto mt-4 pb-2">
@@ -435,6 +480,7 @@ const EbayStorePullPage: React.FC<Props> = ({
         <EbayToolProgressBar {...progress} tone="blue" />
       )}
 
+      <Suspense fallback={<TabFallback />}>
       {tab === 'bundles' ? (
         <EbayStorePullBundlesTab items={items} onUpdate={onUpdate} />
       ) : tab === 'import' ? (
@@ -804,6 +850,7 @@ const EbayStorePullPage: React.FC<Props> = ({
       )}
         </>
       )}
+      </Suspense>
       </div>
     </div>
   );
