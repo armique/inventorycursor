@@ -53,7 +53,7 @@ import {
   PURCHASE_TYPE_LABELS,
   PURCHASE_TYPE_ORDER,
 } from '../utils/purchaseTypeDetect';
-import { createInventoryFromPurchase } from '../utils/ebayPurchaseToInventory';
+import { createInventoryFromPurchase, parseAndSavePurchaseSpecs, purchaseHasParsedSpecs } from '../utils/ebayPurchaseToInventory';
 import { formatEUR } from '../utils/formatMoney';
 import { matchesEbayToolSearch } from '../utils/ebayToolSearch';
 import EbayToolProgressBar from './EbayToolProgressBar';
@@ -444,6 +444,26 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({
   };
 
   const [receivingKey, setReceivingKey] = useState<string | null>(null);
+  const [parsingKey, setParsingKey] = useState<string | null>(null);
+
+  const parseSpecsForPurchase = async (p: EbayPurchaseRecord) => {
+    if (p.disposition !== 'pending') return;
+    setParsingKey(p.lineKey);
+    try {
+      const { draft } = await parseAndSavePurchaseSpecs(p, categories, categoryFields);
+      refresh();
+      const specCount = Object.keys(draft.specs || {}).length;
+      setBackfillMessage(
+        `Parsed specs: ${draft.name} · ${draft.category}${
+          draft.subCategory ? ` / ${draft.subCategory}` : ''
+        } · ${specCount} field(s)${draft.enrichError ? ` · ${draft.enrichError}` : ''}`
+      );
+    } catch (e) {
+      alert((e as Error)?.message || 'Failed to parse specs.');
+    } finally {
+      setParsingKey(null);
+    }
+  };
 
   const addAsInventory = async (p: EbayPurchaseRecord) => {
     if (p.disposition !== 'pending') {
@@ -456,8 +476,9 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({
     }
     setReceivingKey(p.lineKey);
     try {
-      const { item, draft } = await createInventoryFromPurchase(p, categories, categoryFields, {
-        parseSpecs: true,
+      const fresh = loadEbayPurchaseIndex().purchases.find((x) => x.lineKey === p.lineKey) || p;
+      const { item, draft } = await createInventoryFromPurchase(fresh, categories, categoryFields, {
+        parseSpecs: !purchaseHasParsedSpecs(fresh),
       });
       onUpdate([item]);
       setPurchaseDisposition(p.lineKey, 'inventory', {
@@ -465,8 +486,9 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({
         note: draft.enrichError || undefined,
       });
       refresh();
+      const specCount = Object.keys(item.specs || {}).length;
       setBackfillMessage(
-        `Received → inventory: ${item.name} · €${formatEUR(item.buyPrice)}${
+        `Received → inventory: ${item.name} · €${formatEUR(item.buyPrice)} · ${specCount} spec(s)${
           draft.enrichError ? ` · ${draft.enrichError}` : ''
         }`
       );
@@ -721,6 +743,9 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({
             const likelyFilament = looksLikeFilamentPurchase(p.title);
             const isOpen = expandedFilament === p.lineKey;
             const form = filamentForms[p.lineKey];
+            const hasSpecs = purchaseHasParsedSpecs(p);
+            const draft = p.inventoryDraft;
+            const specEntries = draft?.specs ? Object.entries(draft.specs).slice(0, 5) : [];
             return (
               <div
                 key={p.lineKey}
@@ -734,6 +759,11 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({
                       <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${DISPOSITION_STYLE[p.disposition]}`}>
                         {DISPOSITION_LABELS[p.disposition]}
                       </span>
+                      {hasSpecs && (
+                        <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-violet-100 text-violet-800 inline-flex items-center gap-0.5">
+                          <Sparkles size={10} /> Specs ready
+                        </span>
+                      )}
                       <label className="inline-flex items-center gap-1">
                         <span className="sr-only">Purchase type</span>
                         <select
@@ -759,12 +789,30 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({
                       )}
                       <span className="text-[10px] text-slate-400 font-bold">{p.creationDate || '—'}</span>
                     </div>
-                    <p className="text-sm font-bold text-slate-900 leading-snug">{p.title}</p>
+                    <p className="text-sm font-bold text-slate-900 leading-snug">{draft?.name || p.title}</p>
+                    {draft?.name && draft.name !== p.title && (
+                      <p className="text-[11px] text-slate-400 truncate">{p.title}</p>
+                    )}
                     <p className="text-[11px] text-slate-500">
                       Order {p.orderId}
                       {p.sellerUsername ? ` · seller ${p.sellerUsername}` : ''}
                       {p.quantity > 1 ? ` · qty ${p.quantity}` : ''}
+                      {draft?.category
+                        ? ` · ${draft.category}${draft.subCategory ? ` / ${draft.subCategory}` : ''}`
+                        : ''}
                     </p>
+                    {specEntries.length > 0 && (
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        {specEntries.map(([k, v]) => (
+                          <span
+                            key={k}
+                            className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600"
+                          >
+                            {k}: {String(v)}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-lg font-black text-slate-900">€{formatEUR(p.totalPaid ?? 0)}</p>
@@ -788,8 +836,21 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({
                   <div className="px-4 pb-4 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
                     <button
                       type="button"
+                      onClick={() => void parseSpecsForPurchase(p)}
+                      disabled={parsingKey !== null || receivingKey !== null}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-violet-600 text-white text-[10px] font-black uppercase disabled:opacity-50"
+                    >
+                      {parsingKey === p.lineKey ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        <Sparkles size={12} />
+                      )}
+                      {parsingKey === p.lineKey ? 'Parsing…' : hasSpecs ? 'Re-parse specs' : 'Parse specs'}
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => void addAsInventory(p)}
-                      disabled={receivingKey !== null}
+                      disabled={receivingKey !== null || parsingKey !== null}
                       className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[10px] font-black uppercase disabled:opacity-50"
                     >
                       {receivingKey === p.lineKey ? (

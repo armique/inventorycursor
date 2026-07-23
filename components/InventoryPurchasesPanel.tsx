@@ -12,6 +12,7 @@ import {
   PackageCheck,
   RefreshCw,
   ShoppingBag,
+  Sparkles,
 } from 'lucide-react';
 import type { InventoryItem } from '../types';
 import { hasEbayToken } from '../services/ebayService';
@@ -23,7 +24,11 @@ import {
   type EbayPurchaseRecord,
 } from '../services/ebayPurchaseIndex';
 import { syncNewEbayPurchases } from '../services/ebayPurchaseBackfill';
-import { createInventoryFromPurchase } from '../utils/ebayPurchaseToInventory';
+import {
+  createInventoryFromPurchase,
+  parseAndSavePurchaseSpecs,
+  purchaseHasParsedSpecs,
+} from '../utils/ebayPurchaseToInventory';
 import { formatEUR } from '../utils/formatMoney';
 import { matchesEbayToolSearch } from '../utils/ebayToolSearch';
 import EbayToolProgressBar, { type EbayToolProgress } from './EbayToolProgressBar';
@@ -54,6 +59,7 @@ const InventoryPurchasesPanel: React.FC<Props> = ({
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'pending' | 'received' | 'all'>('pending');
   const [receivingKey, setReceivingKey] = useState<string | null>(null);
+  const [parsingKey, setParsingKey] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -133,6 +139,29 @@ const InventoryPurchasesPanel: React.FC<Props> = ({
     }
   };
 
+  const parseSpecs = async (p: EbayPurchaseRecord) => {
+    if (p.disposition !== 'pending') return;
+    setParsingKey(p.lineKey);
+    setError(null);
+    setMessage(null);
+    try {
+      const { draft } = await parseAndSavePurchaseSpecs(p, categories, categoryFields);
+      refresh();
+      const specCount = Object.keys(draft.specs || {}).length;
+      setMessage(
+        `Parsed specs for “${draft.name}” · ${draft.category}${
+          draft.subCategory ? ` / ${draft.subCategory}` : ''
+        } · ${specCount} field${specCount === 1 ? '' : 's'}${
+          draft.enrichError ? ` · ${draft.enrichError}` : ''
+        }`
+      );
+    } catch (e) {
+      setError((e as Error)?.message || 'Failed to parse specs.');
+    } finally {
+      setParsingKey(null);
+    }
+  };
+
   const confirmReceived = async (p: EbayPurchaseRecord) => {
     if (p.disposition === 'inventory' && p.inventoryItemId) {
       setError('Already added to inventory.');
@@ -146,8 +175,10 @@ const InventoryPurchasesPanel: React.FC<Props> = ({
     setError(null);
     setMessage(null);
     try {
-      const { item, draft } = await createInventoryFromPurchase(p, categories, categoryFields, {
-        parseSpecs: true,
+      // Prefer already-parsed draft; only run AI again if none saved yet.
+      const fresh = loadEbayPurchaseIndex().purchases.find((x) => x.lineKey === p.lineKey) || p;
+      const { item, draft } = await createInventoryFromPurchase(fresh, categories, categoryFields, {
+        parseSpecs: !purchaseHasParsedSpecs(fresh),
         itemId: `item-${Date.now()}-ebay-buy`,
         receiveDate: todayISO(),
       });
@@ -157,10 +188,11 @@ const InventoryPurchasesPanel: React.FC<Props> = ({
         note: draft.enrichError || undefined,
       });
       refresh();
+      const specCount = Object.keys(item.specs || {}).length;
       setMessage(
-        `Received → Active: ${item.name} · €${formatEUR(item.buyPrice)}${
-          draft.enrichError ? ` (${draft.enrichError})` : ''
-        }`
+        `Received → Active: ${item.name} · €${formatEUR(item.buyPrice)} · ${specCount} spec${
+          specCount === 1 ? '' : 's'
+        }${draft.enrichError ? ` (${draft.enrichError})` : ''}`
       );
       onOpenItem?.(item.id);
     } catch (e) {
@@ -186,7 +218,8 @@ const InventoryPurchasesPanel: React.FC<Props> = ({
             </h2>
             <p className="text-xs text-slate-500 mt-1">
               Confirm when an eBay buy arrives — it is added to Active with buy price, order ID, and
-              parsed stats. Sync new lines from{' '}
+              parsed specs. Use <span className="font-bold">Parse specs</span> first so Confirm is
+              instant. Sync new lines from{' '}
               <span className="font-bold">{suggested.from}</span> (incremental).
             </p>
           </div>
@@ -267,56 +300,105 @@ const InventoryPurchasesPanel: React.FC<Props> = ({
           {rows.map((p) => {
             const linked = linkedItem(p);
             const busy = receivingKey === p.lineKey;
+            const parsing = parsingKey === p.lineKey;
+            const draft = p.inventoryDraft;
+            const hasSpecs = purchaseHasParsedSpecs(p);
+            const specEntries = draft?.specs ? Object.entries(draft.specs).slice(0, 6) : [];
             return (
               <div
                 key={p.lineKey}
-                className="rounded-2xl border border-slate-200 bg-white p-4 flex flex-wrap gap-3 items-start justify-between shadow-sm"
+                className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3 shadow-sm"
               >
-                <div className="flex-1 min-w-0 space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span
-                      className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
-                        p.disposition === 'inventory'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : p.disposition === 'pending'
-                            ? 'bg-amber-100 text-amber-900'
-                            : 'bg-slate-100 text-slate-600'
-                      }`}
-                    >
-                      {p.disposition === 'inventory' ? 'Received' : p.disposition}
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-bold">{p.creationDate || '—'}</span>
+                <div className="flex flex-wrap gap-3 items-start justify-between">
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                          p.disposition === 'inventory'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : p.disposition === 'pending'
+                              ? 'bg-amber-100 text-amber-900'
+                              : 'bg-slate-100 text-slate-600'
+                        }`}
+                      >
+                        {p.disposition === 'inventory' ? 'Received' : p.disposition}
+                      </span>
+                      {hasSpecs && (
+                        <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-violet-100 text-violet-800 inline-flex items-center gap-0.5">
+                          <Sparkles size={10} /> Specs ready
+                        </span>
+                      )}
+                      <span className="text-[10px] text-slate-400 font-bold">{p.creationDate || '—'}</span>
+                    </div>
+                    <p className="text-sm font-bold text-slate-900 leading-snug">
+                      {draft?.name || p.title}
+                    </p>
+                    {draft?.name && draft.name !== p.title && (
+                      <p className="text-[11px] text-slate-400 truncate">{p.title}</p>
+                    )}
+                    <p className="text-[11px] text-slate-500">
+                      Order {p.orderId}
+                      {p.sellerUsername ? ` · ${p.sellerUsername}` : ''}
+                      {p.quantity > 1 ? ` · qty ${p.quantity}` : ''}
+                      {draft?.category
+                        ? ` · ${draft.category}${draft.subCategory ? ` / ${draft.subCategory}` : ''}`
+                        : ''}
+                    </p>
+                    {linked && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenItem?.(linked.id)}
+                        className="text-[11px] font-bold text-indigo-600 hover:underline"
+                      >
+                        Open in Active → {linked.name}
+                      </button>
+                    )}
                   </div>
-                  <p className="text-sm font-bold text-slate-900 leading-snug">{p.title}</p>
-                  <p className="text-[11px] text-slate-500">
-                    Order {p.orderId}
-                    {p.sellerUsername ? ` · ${p.sellerUsername}` : ''}
-                    {p.quantity > 1 ? ` · qty ${p.quantity}` : ''}
-                  </p>
-                  {linked && (
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    <p className="text-lg font-black text-slate-900">€{formatEUR(p.totalPaid ?? 0)}</p>
+                  </div>
+                </div>
+
+                {specEntries.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {specEntries.map(([k, v]) => (
+                      <span
+                        key={k}
+                        className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600"
+                      >
+                        {k}: {String(v)}
+                      </span>
+                    ))}
+                    {Object.keys(draft?.specs || {}).length > specEntries.length && (
+                      <span className="text-[10px] font-bold text-slate-400 px-1 py-0.5">
+                        +{Object.keys(draft!.specs).length - specEntries.length} more
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {p.disposition === 'pending' && (
+                  <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
                     <button
                       type="button"
-                      onClick={() => onOpenItem?.(linked.id)}
-                      className="text-[11px] font-bold text-indigo-600 hover:underline"
+                      onClick={() => void parseSpecs(p)}
+                      disabled={parsing || receivingKey !== null || parsingKey !== null}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-violet-600 text-white text-[10px] font-black uppercase tracking-wide hover:bg-violet-700 disabled:opacity-50"
                     >
-                      Open in Active → {linked.name}
+                      {parsing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                      {parsing ? 'Parsing…' : hasSpecs ? 'Re-parse specs' : 'Parse specs'}
                     </button>
-                  )}
-                </div>
-                <div className="flex flex-col items-end gap-2 shrink-0">
-                  <p className="text-lg font-black text-slate-900">€{formatEUR(p.totalPaid ?? 0)}</p>
-                  {p.disposition === 'pending' && (
                     <button
                       type="button"
                       onClick={() => void confirmReceived(p)}
-                      disabled={busy || receivingKey !== null}
+                      disabled={busy || receivingKey !== null || parsingKey !== null}
                       className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wide hover:bg-emerald-700 disabled:opacity-50"
                     >
                       {busy ? <Loader2 size={14} className="animate-spin" /> : <PackageCheck size={14} />}
                       {busy ? 'Adding…' : 'Confirm received'}
                     </button>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             );
           })}

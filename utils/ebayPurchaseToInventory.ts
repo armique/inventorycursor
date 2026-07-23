@@ -1,11 +1,16 @@
 /**
  * Turn an eBay buyer-purchase line into an InventoryItem (confirm received).
  * Reuses category + optional AI specs parsing from the listing import pipeline.
+ * Prefer a pre-saved `purchase.inventoryDraft` from “Parse specs” when present.
  */
 
 import type { InventoryItem } from '../types';
 import { ItemStatus } from '../types';
-import type { EbayPurchaseRecord } from '../services/ebayPurchaseIndex';
+import {
+  setPurchaseInventoryDraft,
+  type EbayPurchaseInventoryDraft,
+  type EbayPurchaseRecord,
+} from '../services/ebayPurchaseIndex';
 import { CATEGORY_IMAGES } from '../services/hardwareDB';
 import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
 import { filterSpecsToEssentialKeys, resolveEssentialSpecKeys } from '../services/essentialSpecFields';
@@ -21,6 +26,25 @@ export interface PurchaseInventoryDraft {
   specsAiSuggested?: Record<string, string | number>;
   vendor?: string;
   enrichError?: string;
+}
+
+function draftFromStored(stored: EbayPurchaseInventoryDraft): PurchaseInventoryDraft {
+  return {
+    name: stored.name,
+    category: stored.category,
+    subCategory: stored.subCategory,
+    categorySource: stored.categorySource || 'cached',
+    specs: stored.specs || {},
+    specsAiSuggested: stored.specsAiSuggested,
+    vendor: stored.vendor,
+    enrichError: stored.enrichError,
+  };
+}
+
+export function purchaseHasParsedSpecs(purchase: EbayPurchaseRecord): boolean {
+  const d = purchase.inventoryDraft;
+  if (!d?.name || !d.category) return false;
+  return Object.keys(d.specs || {}).length > 0 || Boolean(d.parsedAt);
 }
 
 /** Enrich purchase title → name, category, optional specs (same AI path as listing import). */
@@ -82,6 +106,32 @@ export async function enrichPurchaseForInventory(
   };
 }
 
+/**
+ * Parse specs now and persist on the purchase row so Confirm received can reuse them.
+ */
+export async function parseAndSavePurchaseSpecs(
+  purchase: EbayPurchaseRecord,
+  categories: Record<string, string[]>,
+  categoryFields: Record<string, string[]>
+): Promise<{ draft: PurchaseInventoryDraft; stored: EbayPurchaseInventoryDraft }> {
+  const draft = await enrichPurchaseForInventory(purchase, categories, categoryFields, {
+    parseSpecs: true,
+  });
+  const stored: EbayPurchaseInventoryDraft = {
+    name: draft.name,
+    category: draft.category,
+    subCategory: draft.subCategory,
+    categorySource: draft.categorySource,
+    specs: draft.specs,
+    specsAiSuggested: draft.specsAiSuggested,
+    vendor: draft.vendor,
+    enrichError: draft.enrichError,
+    parsedAt: new Date().toISOString(),
+  };
+  setPurchaseInventoryDraft(purchase.lineKey, stored);
+  return { draft, stored };
+}
+
 export function buildInventoryItemFromPurchase(
   purchase: EbayPurchaseRecord,
   draft: PurchaseInventoryDraft,
@@ -131,16 +181,24 @@ export function buildInventoryItemFromPurchase(
   };
 }
 
-/** Full pipeline: enrich + build InventoryItem ready to pass to onUpdate. */
+/**
+ * Full pipeline: use cached inventoryDraft when present (unless forceReparse),
+ * otherwise enrich, then build InventoryItem.
+ */
 export async function createInventoryFromPurchase(
   purchase: EbayPurchaseRecord,
   categories: Record<string, string[]>,
   categoryFields: Record<string, string[]>,
-  options?: { parseSpecs?: boolean; itemId?: string; receiveDate?: string }
+  options?: { parseSpecs?: boolean; forceReparse?: boolean; itemId?: string; receiveDate?: string }
 ): Promise<{ item: InventoryItem; draft: PurchaseInventoryDraft }> {
-  const draft = await enrichPurchaseForInventory(purchase, categories, categoryFields, {
-    parseSpecs: options?.parseSpecs,
-  });
+  let draft: PurchaseInventoryDraft;
+  if (!options?.forceReparse && purchase.inventoryDraft?.name && purchase.inventoryDraft.category) {
+    draft = draftFromStored(purchase.inventoryDraft);
+  } else {
+    draft = await enrichPurchaseForInventory(purchase, categories, categoryFields, {
+      parseSpecs: options?.parseSpecs,
+    });
+  }
   const item = buildInventoryItemFromPurchase(purchase, draft, {
     itemId: options?.itemId,
     receiveDate: options?.receiveDate,

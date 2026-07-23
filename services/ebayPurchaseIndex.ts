@@ -27,6 +27,19 @@ export type EbayPurchaseDisposition =
 
 export type { EbayPurchaseType };
 
+/** Pre-parsed inventory fields (from “Parse specs”) applied on Confirm received. */
+export interface EbayPurchaseInventoryDraft {
+  name: string;
+  category: string;
+  subCategory: string;
+  categorySource?: string;
+  specs: Record<string, string | number>;
+  specsAiSuggested?: Record<string, string | number>;
+  vendor?: string;
+  enrichError?: string;
+  parsedAt: string;
+}
+
 export interface EbayPurchaseRecord {
   /** Stable dedupe key: orderId-transactionId or orderId-itemId */
   lineKey: string;
@@ -52,6 +65,8 @@ export interface EbayPurchaseRecord {
   filamentSpoolId?: string;
   inventoryItemId?: string;
   note?: string;
+  /** Cached AI/heuristic parse for Confirm received → Active inventory. */
+  inventoryDraft?: EbayPurchaseInventoryDraft;
 }
 
 export interface EbayPurchaseIndexMeta {
@@ -81,6 +96,28 @@ function emptyIndex(): EbayPurchaseIndex {
 
 let memPurchases: EbayPurchaseRecord[] | null = null;
 let memPurchaseMeta: EbayPurchaseIndexMeta | null = null;
+
+function normalizeInventoryDraft(
+  raw: unknown
+): EbayPurchaseInventoryDraft | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const d = raw as Partial<EbayPurchaseInventoryDraft>;
+  if (!d.name || !d.category) return undefined;
+  return {
+    name: String(d.name),
+    category: String(d.category),
+    subCategory: String(d.subCategory || ''),
+    categorySource: d.categorySource,
+    specs: d.specs && typeof d.specs === 'object' ? { ...d.specs } : {},
+    specsAiSuggested:
+      d.specsAiSuggested && typeof d.specsAiSuggested === 'object'
+        ? { ...d.specsAiSuggested }
+        : undefined,
+    vendor: d.vendor,
+    enrichError: d.enrichError,
+    parsedAt: d.parsedAt || new Date().toISOString(),
+  };
+}
 
 function normalizeRecord(raw: Partial<EbayPurchaseRecord> & { lineKey?: string }): EbayPurchaseRecord | null {
   if (!raw?.lineKey || typeof raw.lineKey !== 'string') return null;
@@ -112,6 +149,7 @@ function normalizeRecord(raw: Partial<EbayPurchaseRecord> & { lineKey?: string }
     filamentSpoolId: raw.filamentSpoolId,
     inventoryItemId: raw.inventoryItemId,
     note: raw.note,
+    inventoryDraft: normalizeInventoryDraft(raw.inventoryDraft),
   };
 }
 
@@ -281,6 +319,31 @@ export function setPurchaseType(lineKey: string, purchaseType: EbayPurchaseType)
   return next;
 }
 
+/** Save (or clear) the pre-parsed inventory draft used by Confirm received. */
+export function setPurchaseInventoryDraft(
+  lineKey: string,
+  draft: EbayPurchaseInventoryDraft | null
+): EbayPurchaseIndex {
+  const index = loadEbayPurchaseIndex();
+  let touched: EbayPurchaseRecord | null = null;
+  const purchases = index.purchases.map((p) => {
+    if (p.lineKey !== lineKey) return p;
+    if (draft) {
+      touched = { ...p, inventoryDraft: draft };
+    } else {
+      const { inventoryDraft: _removed, ...rest } = p;
+      touched = rest;
+    }
+    return touched!;
+  });
+  const next = { purchases, meta: index.meta };
+  saveIndex(next);
+  if (touched) {
+    void pushPurchaseIndexToCloud([touched]).catch(() => undefined);
+  }
+  return next;
+}
+
 export function setPurchaseBackfillMeta(
   patch: NonNullable<EbayPurchaseIndexMeta['apiBackfill']>
 ): void {
@@ -386,6 +449,10 @@ export async function pullPurchaseIndexFromCloud(options?: { force?: boolean }):
         filamentSpoolId: local.filamentSpoolId || remote.filamentSpoolId,
         inventoryItemId: local.inventoryItemId || remote.inventoryItemId,
         note: local.note || remote.note,
+        inventoryDraft:
+          (local.inventoryDraft?.parsedAt || '') >= (remote.inventoryDraft?.parsedAt || '')
+            ? local.inventoryDraft || remote.inventoryDraft
+            : remote.inventoryDraft || local.inventoryDraft,
         sources: Array.from(new Set([...local.sources, ...remote.sources, 'cloud' as const])),
         importedAt: remote.importedAt > local.importedAt ? remote.importedAt : local.importedAt,
       });
