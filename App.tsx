@@ -52,6 +52,10 @@ import { saveOAuthResult } from './services/githubBackupService';
 import { generateExpensesFromRecurring } from './services/recurringExpenseService';
 import { Analytics } from '@vercel/analytics/react';
 import { PanelLocaleProvider } from './context/PanelLocaleContext';
+import {
+  hydrateMarketplaceCredentialsFromSettings,
+  mergeLocalMarketplaceCredentialsIntoSettings,
+} from './utils/marketplaceCredentialsSync';
 import { UndoToastProvider, useUndoToastContext } from './context/UndoToastContext';
 import { appendUndoHistory } from './utils/appendUndoHistory';
 import { persistSnapshotToLocalStorage, scheduleBackgroundWork } from './services/backgroundPersistence';
@@ -247,10 +251,31 @@ const App: React.FC = () => {
   
   const [businessSettings, setBusinessSettings] = useState<BusinessSettings>(() => {
     const saved = localStorage.getItem('business_settings');
-    return saved ? JSON.parse(saved) : { 
-      companyName: '', ownerName: '', address: '', phone: '', taxId: '', vatId: '', iban: '', bic: '', bankName: '', taxMode: 'SmallBusiness' 
-    };
+    const base: BusinessSettings = saved
+      ? JSON.parse(saved)
+      : {
+          companyName: '',
+          ownerName: '',
+          address: '',
+          phone: '',
+          taxId: '',
+          vatId: '',
+          iban: '',
+          bic: '',
+          bankName: '',
+          taxMode: 'SmallBusiness',
+        };
+    return mergeLocalMarketplaceCredentialsIntoSettings(base);
   });
+
+  // Keep this browser’s eBay/KA local keys in sync when cloud settings arrive / change.
+  useEffect(() => {
+    hydrateMarketplaceCredentialsFromSettings(businessSettings);
+  }, [
+    businessSettings.ebaySellerUsername,
+    businessSettings.ebayOAuthToken,
+    businessSettings.kleinanzeigenProfileUrl,
+  ]);
   
   const [monthlyGoal, setMonthlyGoal] = useState<number>(() => {
     const saved = localStorage.getItem('monthly_profit_goal');
@@ -294,6 +319,19 @@ const App: React.FC = () => {
   const [authReady, setAuthReady] = useState<boolean>(!isCloudEnabled());
   const isRemoteUpdate = useRef(false);
   const hasUnsavedChanges = useRef(false);
+
+  // One-shot: if this device had credentials only in localStorage, push them into cloud settings.
+  useEffect(() => {
+    setBusinessSettings((prev) => {
+      const merged = mergeLocalMarketplaceCredentialsIntoSettings(prev);
+      if (merged !== prev) {
+        hasUnsavedChanges.current = true;
+      }
+      return merged;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- migrate once on boot
+  }, []);
+
   /** After remote merge, push if this device had bulk-import history cloud lacked. */
   const pendingCloudPushAfterRemoteRef = useRef(false);
   const writeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);

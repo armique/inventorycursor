@@ -43,6 +43,12 @@ export interface BusinessSettings {
   ebayPaypalEmail?: string;
   ebayDispatchTime?: number; // Days to ship
   ebayReturnPolicy?: 'ReturnsAccepted' | 'ReturnsNotAccepted';
+  /** Public eBay seller username — cloud-synced for mobile/desktop. */
+  ebaySellerUsername?: string;
+  /** eBay OAuth user token — cloud-synced so phone can use the same APIs. */
+  ebayOAuthToken?: string;
+  /** Kleinanzeigen Bestandsliste / profile URL — cloud-synced. */
+  kleinanzeigenProfileUrl?: string;
 }
 
 export interface CustomerInfo {

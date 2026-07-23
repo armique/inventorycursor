@@ -1,0 +1,13 @@
+{
+  "autoRun": {
+    "allow_instructions": [
+      "Allow git add, git commit, git status, git diff, git log, git checkout main, and git pull on this repository.",
+      "Allow git push origin main and git push origin HEAD when this project's workflow requires committing and pushing finished updates to main.",
+      "Allow routine npm, node, and test commands used to verify this inventory app.",
+      "Allow Shell tool calls with required_permissions full_network or all when they are needed to push to GitHub or install dependencies for this project."
+    ],
+    "block_instructions": [
+      "Block destructive git commands such as force push, hard reset, and rewriting published history unless the user explicitly asked for that exact action."
+    ]
+  }
+}

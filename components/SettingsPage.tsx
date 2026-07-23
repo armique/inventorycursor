@@ -45,6 +45,8 @@ import {
   formatBoundsGerman,
   resolveFinanzamtDateBounds,
 } from '../utils/exportDateRange';
+import { withMarketplaceCredentials } from '../utils/marketplaceCredentialsSync';
+import { saveKaProfileUrl } from '../utils/listingPresence';
 
 export interface BackupData {
   inventory: InventoryItem[];
@@ -193,15 +195,30 @@ const SettingsPage: React.FC<Props> = ({
   const [githubRepo, setGitHubRepo] = useState(() => getStoredConfig()?.repo || 'armique/inventorycursor');
   const [githubTokenInput, setGitHubTokenInput] = useState('');
   const [ebayTokenInput, setEbayTokenInput] = useState('');
-  const [ebayUsernameInput, setEbayUsernameInput] = useState(() => getEbayConfig()?.username || 'rm4ik');
+  const [ebayUsernameInput, setEbayUsernameInput] = useState(
+    () => businessSettings.ebaySellerUsername || getEbayConfig()?.username || 'rm4ik'
+  );
   const [ebayConfigVersion, setEbayConfigVersion] = useState(0);
   const [kaProfileUrl, setKaProfileUrl] = useState(() => {
     try {
-      return localStorage.getItem('kleinanzeigen_seller_profile_url_v1') || '';
+      return (
+        businessSettings.kleinanzeigenProfileUrl ||
+        localStorage.getItem('kleinanzeigen_seller_profile_url_v1') ||
+        ''
+      );
     } catch {
-      return '';
+      return businessSettings.kleinanzeigenProfileUrl || '';
     }
   });
+
+  useEffect(() => {
+    if (businessSettings.ebaySellerUsername?.trim()) {
+      setEbayUsernameInput(businessSettings.ebaySellerUsername);
+    }
+    if (businessSettings.kleinanzeigenProfileUrl?.trim()) {
+      setKaProfileUrl(businessSettings.kleinanzeigenProfileUrl);
+    }
+  }, [businessSettings.ebaySellerUsername, businessSettings.kleinanzeigenProfileUrl]);
   const [kaTitlesPaste, setKaTitlesPaste] = useState('');
   const [listingPresenceBusy, setListingPresenceBusy] = useState(false);
   const [listingPresenceMsg, setListingPresenceMsg] = useState<string | null>(null);
@@ -941,20 +958,27 @@ const SettingsPage: React.FC<Props> = ({
                       <a href="https://developer.ebay.com/my/keys" target="_blank" rel="noopener noreferrer" className="text-indigo-700 font-bold hover:underline">
                          developer.ebay.com
                       </a>
-                      , paste it here, and Save. Stored in this browser only — not synced with cloud login.
+                      , paste it here, and Save. Username, KA profile URL, and token sync via cloud backup so phone and desktop stay aligned.
                    </p>
                 </div>
                 <div className="flex items-center gap-3">
                    <button
                       type="button"
                       onClick={() => {
+                         const tokenToSave = ebayTokenInput || getEbayConfig()?.token || '';
                          saveEbayConfigLocal({
-                            token: ebayTokenInput || getEbayConfig()?.token || '',
+                            token: tokenToSave,
                             username: ebayUsernameInput,
                          });
+                         onBusinessSettingsChange(
+                           withMarketplaceCredentials(businessSettings, {
+                             ebaySellerUsername: ebayUsernameInput,
+                             ebayOAuthToken: tokenToSave,
+                           })
+                         );
                          setEbayTokenInput('');
                          setEbayConfigVersion((v) => v + 1);
-                         showToast('eBay settings saved', 'success');
+                         showToast('eBay settings saved (synced to cloud)', 'success');
                       }}
                       className="px-5 py-2.5 bg-slate-900 text-white rounded-xl font-bold text-xs uppercase hover:bg-slate-800 flex items-center gap-2"
                    >
@@ -991,7 +1015,7 @@ const SettingsPage: React.FC<Props> = ({
                    <h4 className="text-sm font-black uppercase tracking-widest text-slate-500">Listing presence (KA + eBay)</h4>
                    <p className="text-sm text-slate-500">
                       Paste your <strong>Kleinanzeigen Bestandsliste / profile link</strong> here. eBay uses the username above.
-                      Sync fuzzy-matches titles to inventory (names need not be identical) and remembers manual KA links for next time. If a <strong>Ready</strong> listing later disappears, we flag <strong>Maybe sold</strong>.
+                      Sync fuzzy-matches titles to inventory (names need not be identical) and remembers manual KA links for next time. If a <strong>Ready</strong> listing later disappears, we flag <strong>Maybe sold</strong>. Profile URL is cloud-synced with your inventory backup.
                    </p>
                    <div className="space-y-2">
                       <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Kleinanzeigen profile URL</label>
@@ -1025,9 +1049,16 @@ const SettingsPage: React.FC<Props> = ({
                             setListingPresenceBusy(true);
                             setListingPresenceMsg(null);
                             try {
-                               const { saveKaProfileUrl, parseKaTitlesPaste, saveKaListingTitles } = await import('../utils/listingPresence');
+                               const { saveKaProfileUrl: saveKaLocal, parseKaTitlesPaste, saveKaListingTitles } = await import('../utils/listingPresence');
                                const { syncListingPresence } = await import('../utils/syncListingPresence');
+                               saveKaLocal(kaProfileUrl);
                                saveKaProfileUrl(kaProfileUrl);
+                               onBusinessSettingsChange(
+                                 withMarketplaceCredentials(businessSettings, {
+                                   kleinanzeigenProfileUrl: kaProfileUrl,
+                                   ebaySellerUsername: ebayUsernameInput,
+                                 })
+                               );
                                const pasted = parseKaTitlesPaste(kaTitlesPaste);
                                if (pasted.length) saveKaListingTitles(pasted);
                                const result = await syncListingPresence(items, {
