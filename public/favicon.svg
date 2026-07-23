@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="ArmikTech">
+  <defs>
+    <linearGradient id="bg" x1="4" y1="2" x2="28" y2="30" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#7c3aed"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="8" fill="url(#bg)"/>
+  <!-- Inventory package  white, bold at 16px -->
+  <path fill="#ffffff" d="M16 6.2 7.6 10.4v11.2L16 25.8l8.4-4.2V10.4L16 6.2zm0 2.3 5.9 2.95L16 14.4l-5.9-2.95L16 8.5zm-6.5 4.7 5.7 2.85v7.7l-5.7-2.85v-7.7zm7.3 10.55v-7.7l5.7-2.85v7.7l-5.7 2.85z"/>
+</svg>
