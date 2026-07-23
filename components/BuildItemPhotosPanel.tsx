@@ -6,7 +6,8 @@ import {
   normalizeImageList,
 } from '../utils/imageImport';
 import { searchProductPhotos, type ImageSearchResult } from '../services/imageSearchService';
-import { fetchMyEbayListings, getEbayUsername } from '../services/ebayService';
+import { getEbayUsername } from '../services/ebayService';
+import { ensureEbayListings } from '../services/ebayListingIndex';
 import { matchEbayListingsForItem } from '../utils/ebayListingMatch';
 
 interface Props {
@@ -92,7 +93,7 @@ const BuildItemPhotosPanel: React.FC<Props> = ({ name, photos, onChange, itemId 
     setEbayError(null);
     setEbayMatches(null);
     try {
-      const all = await fetchMyEbayListings();
+      const { listings: all } = await ensureEbayListings();
       if (!all.length) {
         setEbayError(`No listings found for seller ${getEbayUsername()}.`);
         return;

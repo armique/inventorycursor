@@ -4,6 +4,7 @@
  */
 
 import { matchEbayListingsForItem } from '../utils/ebayListingMatch';
+import { ensureEbayListings } from './ebayListingIndex';
 import { roundPriceCentsTo99 } from '../utils/ebayPrice';
 
 // We point to our own server route. The server handles the actual call to api.ebay.com
@@ -425,7 +426,7 @@ async function getCachedMyEbayListings(): Promise<EbayMyListing[]> {
   if (listingsCache && Date.now() - listingsCache.at < LISTINGS_CACHE_MS) {
     return listingsCache.listings;
   }
-  const listings = await fetchMyEbayListings();
+  const { listings } = await ensureEbayListings();
   listingsCache = { at: Date.now(), listings };
   return listings;
 }

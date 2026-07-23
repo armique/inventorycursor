@@ -12,12 +12,11 @@ import {
   RefreshCw,
   ShoppingBag,
   Tag,
-  GitCompare,
-  TrendingDown,
   Layers,
 } from 'lucide-react';
 import { InventoryItem, TaxMode } from '../types';
-import { fetchMyEbayListings, getEbayUsername } from '../services/ebayService';
+import { getEbayUsername } from '../services/ebayService';
+import { ensureEbayListings, loadEbayListingIndex, pullListingIndexFromCloud } from '../services/ebayListingIndex';
 import {
   buildEbayStorePullPlan,
   getStorePullRoundedPrice,
@@ -32,14 +31,12 @@ import EbayToolSearchInput from './EbayToolSearchInput';
 import type { Expense } from '../types';
 
 const EbayStorePullImportTab = lazy(() => import('./EbayStorePullImportTab'));
-const EbayStorePullSoldTab = lazy(() => import('./EbayStorePullSoldTab'));
 const EbayStorePullOrdersTab = lazy(() => import('./EbayStorePullOrdersTab'));
 const EbayStorePullPurchasesTab = lazy(() => import('./EbayStorePullPurchasesTab'));
 const EbayStorePullBundlesTab = lazy(() => import('./EbayStorePullBundlesTab'));
-const EbayOrderSourceCompareTab = lazy(() => import('./EbayOrderSourceCompareTab'));
 
 type PhotoMode = 'none' | 'all' | 'pick';
-type PullTab = 'sync' | 'import' | 'sold' | 'orders' | 'purchases' | 'compare' | 'bundles';
+type PullTab = 'sync' | 'import' | 'orders' | 'purchases' | 'bundles';
 
 interface Props {
   items: InventoryItem[];
@@ -82,13 +79,13 @@ const PRIMARY_TABS: { id: PullTab; label: string; icon: React.ReactNode; hint: s
     id: 'orders',
     label: 'Sales sync',
     icon: <PackageSearch size={14} />,
-    hint: 'Fetch eBay orders and match inventory',
+    hint: 'Fetch new eBay orders into cache and match inventory',
   },
   {
     id: 'purchases',
     label: 'Purchases',
     icon: <ShoppingBag size={14} />,
-    hint: 'What you bought on eBay — filament, expenses, personal',
+    hint: 'Sync new buyer purchases into your library',
   },
 ];
 
@@ -110,18 +107,6 @@ const MORE_TABS: { id: PullTab; label: string; icon: React.ReactNode; hint: stri
     label: 'Import missing',
     icon: <PlusCircle size={14} />,
     hint: 'Add new inventory items from eBay listings',
-  },
-  {
-    id: 'sold',
-    label: 'Detect sold',
-    icon: <TrendingDown size={14} />,
-    hint: 'Legacy listing snapshot diff — prefer Sales sync',
-  },
-  {
-    id: 'compare',
-    label: 'API vs CSV',
-    icon: <GitCompare size={14} />,
-    hint: 'Compare API and CSV snapshots',
   },
 ];
 
@@ -148,21 +133,22 @@ const EbayStorePullPage: React.FC<Props> = ({
 
   useEffect(() => {
     const t = searchParams.get('tab');
-    if (t === 'sales') setTab('orders');
+    if (t === 'sales' || t === 'sold' || t === 'compare') setTab('orders');
     else if (t === 'purchases') setTab('purchases');
-    else if (
-      t === 'sync' ||
-      t === 'import' ||
-      t === 'sold' ||
-      t === 'orders' ||
-      t === 'compare' ||
-      t === 'purchases' ||
-      t === 'bundles'
-    ) {
+    else if (t === 'sync' || t === 'import' || t === 'orders' || t === 'purchases' || t === 'bundles') {
       setTab(t);
       if (MORE_TABS.some((x) => x.id === t)) setShowMoreTools(true);
     }
   }, [searchParams]);
+
+  // Hydrate active listing cache from cloud when this browser has none.
+  useEffect(() => {
+    if (loadEbayListingIndex().listings.length > 0) return;
+    void pullListingIndexFromCloud().catch(() => {
+      /* best-effort */
+    });
+  }, []);
+
   const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -174,20 +160,29 @@ const EbayStorePullPage: React.FC<Props> = ({
 
   const rowKey = (match: EbayStorePullMatch) => `${match.item.id}:${match.listing.listingId}`;
 
-  const analyze = useCallback(async () => {
+  const analyze = useCallback(async (forceRefresh = false) => {
     setLoading(true);
     setError(null);
     setApplyMessage(null);
     setPlan(null);
     setRowState({});
-    setProgress({ label: 'Fetching active eBay listings…', done: 0, total: 3 });
+    setProgress({
+      label: forceRefresh ? 'Refreshing active eBay listings…' : 'Loading eBay listings…',
+      done: 0,
+      total: 3,
+    });
     try {
-      const listings = await fetchMyEbayListings();
+      const { listings, fromCache, fetchedAt } = await ensureEbayListings({
+        force: forceRefresh,
+        sellerUsername: getEbayUsername(),
+      });
       setProgress({
-        label: 'Fetching active eBay listings…',
+        label: fromCache ? 'Using cached eBay listings…' : 'Fetched active eBay listings…',
         done: 1,
         total: 3,
-        detail: `${listings.length} listing${listings.length === 1 ? '' : 's'}`,
+        detail: `${listings.length} listing${listings.length === 1 ? '' : 's'}${
+          fromCache && fetchedAt ? ` · cached ${fetchedAt.slice(0, 10)}` : ''
+        }`,
       });
       if (!listings.length) {
         setError(`No active eBay listings found for seller ${getEbayUsername()}.`);
@@ -199,16 +194,23 @@ const EbayStorePullPage: React.FC<Props> = ({
         label: 'Preparing results…',
         done: 3,
         total: 3,
-        detail: `${nextPlan.matches.length} match${nextPlan.matches.length === 1 ? '' : 'es'}`,
+        detail: fromCache ? 'From listing cache' : 'Fresh from eBay',
       });
       setPlan(nextPlan);
       const initial: Record<string, RowState> = {};
-      for (const match of nextPlan.matches) {
-        initial[rowKey(match)] = defaultRowState(match);
+      for (const m of nextPlan.matches) {
+        initial[rowKey(m)] = defaultRowState(m);
       }
       setRowState(initial);
+      if (fromCache) {
+        setApplyMessage(
+          `Analyzed ${listings.length} cached listing(s)${
+            fetchedAt ? ` (last refreshed ${fetchedAt.slice(0, 10)})` : ''
+          }. Use Refresh from eBay to pull live store changes.`
+        );
+      }
     } catch (e: unknown) {
-      setError((e as Error)?.message || 'Failed to load eBay listings.');
+      setError((e as Error)?.message || 'Failed to analyze eBay listings.');
     } finally {
       setLoading(false);
       setTimeout(() => setProgress(null), 900);
@@ -407,22 +409,32 @@ const EbayStorePullPage: React.FC<Props> = ({
           <div className="min-w-0">
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">eBay Tools</h1>
             <p className="text-sm text-slate-500 mt-1">
-              Sync, import, and reconcile orders from{' '}
-              <span className="font-bold text-slate-700">{getEbayUsername()}</span> — review every change
-              before applying.
+              Incremental sales & purchases sync, plus listing tools that reuse your saved eBay cache — seller{' '}
+              <span className="font-bold text-slate-700">{getEbayUsername()}</span>.
             </p>
           </div>
         </div>
         {tab === 'sync' && (
-          <button
-            type="button"
-            onClick={() => void analyze()}
-            disabled={loading || applying}
-            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-blue-600 text-white text-xs font-black uppercase tracking-widest hover:bg-blue-700 disabled:opacity-50 shadow-lg shadow-blue-500/20"
-          >
-            {loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-            {loading ? 'Analyzing…' : 'Analyze eBay listings'}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void analyze(false)}
+              disabled={loading || applying}
+              className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-blue-600 text-white text-xs font-black uppercase tracking-widest hover:bg-blue-700 disabled:opacity-50 shadow-lg shadow-blue-500/20"
+            >
+              {loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+              {loading ? 'Analyzing…' : 'Analyze (use cache)'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void analyze(true)}
+              disabled={loading || applying}
+              className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-black uppercase tracking-widest hover:bg-slate-50 disabled:opacity-50"
+              title="Re-fetch active listings from eBay and update the shared cache"
+            >
+              Refresh from eBay
+            </button>
+          </div>
         )}
       </header>
 
@@ -491,17 +503,8 @@ const EbayStorePullPage: React.FC<Props> = ({
           onUpdate={onUpdate}
           onPublishCatalog={onPublishCatalog}
         />
-      ) : tab === 'sold' ? (
-        <EbayStorePullSoldTab
-          items={items}
-          taxMode={taxMode}
-          onUpdate={onUpdate}
-          onPublishCatalog={onPublishCatalog}
-        />
       ) : tab === 'orders' ? (
         <EbayStorePullOrdersTab items={items} taxMode={taxMode} onUpdate={onUpdate} />
-      ) : tab === 'compare' ? (
-        <EbayOrderSourceCompareTab />
       ) : tab === 'purchases' ? (
         <EbayStorePullPurchasesTab items={items} onAddExpense={onAddExpense} />
       ) : (

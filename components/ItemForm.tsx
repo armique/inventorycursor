@@ -36,7 +36,8 @@ import { filesToDataUrls, prepareInventoryImagesForStorage, getItemUserPhotoCoun
 import ReorderablePhotoThumbs from './ReorderablePhotoThumbs';
 import { searchProductPhotos, getImageSearchProviders, ImageSearchResult, ImageSearchProvider } from '../services/imageSearchService';
 import { getCachedProductPhoto, setCachedProductPhoto } from '../services/firebaseService';
-import { fetchMyEbayListings, getEbayUsername, ebayListingToPriceMatch, type EbayMyListing, type EbayListingPriceMatch } from '../services/ebayService';
+import { getEbayUsername, ebayListingToPriceMatch, type EbayMyListing, type EbayListingPriceMatch } from '../services/ebayService';
+import { ensureEbayListings } from '../services/ebayListingIndex';
 import { matchEbayListingsForItem } from '../utils/ebayListingMatch';
 import { findDuplicateCandidates } from '../utils/duplicateMatch';
 import KleinanzeigenBuyChatProofFields from './KleinanzeigenBuyChatProofFields';
@@ -697,7 +698,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     setPhotoSearchResults(null);
     setPhotoSearchError(null);
     try {
-      const all = await fetchMyEbayListings();
+      const { listings: all } = await ensureEbayListings();
       if (!all.length) {
         setEbayListingError(`No active eBay listings found for seller ${getEbayUsername()}.`);
         return;

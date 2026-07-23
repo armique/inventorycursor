@@ -1401,6 +1401,125 @@ export async function clearEbayPurchasesCloud(): Promise<void> {
   if (count > 0) await batch.commit();
 }
 
+// --- EBAY ACTIVE LISTINGS (current store snapshot for sync/import/bundles) ---
+
+const EBAY_ACTIVE_LISTINGS_COLLECTION = "ebayActiveListings";
+const EBAY_ACTIVE_LISTINGS_META_DOC_ID = "_meta";
+
+function sanitizeListingDocId(listingId: string): string {
+  const cleaned = listingId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 300);
+  return cleaned || "unknown";
+}
+
+export interface EbayActiveListingsCloudMeta {
+  updatedAt?: string;
+  count?: number;
+  lastFetchedAt?: string;
+  sellerUsername?: string;
+}
+
+/** Fetch cached active listings (+ meta). Returns null if signed out / cloud disabled. */
+export async function fetchEbayActiveListingsFromCloud(): Promise<{
+  listings: Record<string, unknown>[];
+  meta: EbayActiveListingsCloudMeta | null;
+} | null> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) return null;
+  try {
+    const colRef = collection(ctx.db, "users", user.uid, EBAY_ACTIVE_LISTINGS_COLLECTION);
+    const snap = await getDocs(colRef);
+    const listings: Record<string, unknown>[] = [];
+    let meta: EbayActiveListingsCloudMeta | null = null;
+    snap.forEach((d) => {
+      if (d.id === EBAY_ACTIVE_LISTINGS_META_DOC_ID) {
+        meta = d.data() as EbayActiveListingsCloudMeta;
+      } else {
+        listings.push(d.data() as Record<string, unknown>);
+      }
+    });
+    return { listings, meta };
+  } catch (err) {
+    console.error("fetchEbayActiveListingsFromCloud failed:", err);
+    return null;
+  }
+}
+
+/**
+ * Replace the cloud active-listing mirror: upsert current listings, delete stale docs, write meta.
+ */
+export async function writeEbayActiveListingsToCloud(
+  listings: (Record<string, unknown> & { listingId: string })[],
+  metaPatch?: EbayActiveListingsCloudMeta
+): Promise<void> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) throw new Error("Not signed in");
+  const colRef = collection(ctx.db, "users", user.uid, EBAY_ACTIVE_LISTINGS_COLLECTION);
+
+  const keepIds = new Set(listings.map((l) => sanitizeListingDocId(String(l.listingId))));
+  keepIds.add(EBAY_ACTIVE_LISTINGS_META_DOC_ID);
+
+  const existing = await getDocs(colRef);
+  const BATCH_MAX = 450;
+  let batch = writeBatch(ctx.db);
+  let count = 0;
+
+  for (const d of existing.docs) {
+    if (!keepIds.has(d.id)) {
+      batch.delete(d.ref);
+      count++;
+      if (count >= BATCH_MAX) {
+        await batch.commit();
+        batch = writeBatch(ctx.db);
+        count = 0;
+      }
+    }
+  }
+
+  for (const listing of listings) {
+    const id = sanitizeListingDocId(String(listing.listingId));
+    batch.set(doc(colRef, id), stripUndefined(listing));
+    count++;
+    if (count >= BATCH_MAX) {
+      await batch.commit();
+      batch = writeBatch(ctx.db);
+      count = 0;
+    }
+  }
+
+  if (metaPatch) {
+    batch.set(
+      doc(colRef, EBAY_ACTIVE_LISTINGS_META_DOC_ID),
+      stripUndefined({ ...metaPatch, updatedAt: new Date().toISOString(), count: listings.length }),
+      { merge: true }
+    );
+    count++;
+  }
+  if (count > 0) await batch.commit();
+}
+
+export async function clearEbayActiveListingsCloud(): Promise<void> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) return;
+  const colRef = collection(ctx.db, "users", user.uid, EBAY_ACTIVE_LISTINGS_COLLECTION);
+  const snap = await getDocs(colRef);
+  const BATCH_MAX = 450;
+  let batch = writeBatch(ctx.db);
+  let count = 0;
+  for (const d of snap.docs) {
+    batch.delete(d.ref);
+    count++;
+    if (count >= BATCH_MAX) {
+      await batch.commit();
+      batch = writeBatch(ctx.db);
+      count = 0;
+    }
+  }
+  if (count > 0) await batch.commit();
+}
+
 // --- AI product card gallery (users/{uid}/productCardGallery/{id}) ---
 
 const PRODUCT_CARD_GALLERY_COLLECTION = "productCardGallery";

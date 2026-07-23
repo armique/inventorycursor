@@ -3,7 +3,7 @@
  */
 
 import type { InventoryItem } from '../types';
-import { fetchMyEbayListings } from '../services/ebayService';
+import { ensureEbayListings } from '../services/ebayListingIndex';
 import {
   applyEbayPresenceToItems,
   applyKaPresenceToItems,
@@ -45,7 +45,7 @@ export async function syncListingPresence(
 
   if (!opts?.skipEbay) {
     try {
-      const listings = await fetchMyEbayListings();
+      const { listings } = await ensureEbayListings();
       ebayTitleCount = listings.length;
       next = applyEbayPresenceToItems(next, listings);
       ebayMatched = next.filter(

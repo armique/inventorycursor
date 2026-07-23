@@ -15,7 +15,8 @@ import {
   X,
 } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
-import { fetchMyEbayListings, getEbayUsername, type EbayMyListing } from '../services/ebayService';
+import { getEbayUsername, type EbayMyListing } from '../services/ebayService';
+import { ensureEbayListings } from '../services/ebayListingIndex';
 import {
   buildEbayBundleParsePlan,
   isFreeBundlePart,
@@ -125,21 +126,30 @@ const EbayStorePullBundlesTab: React.FC<Props> = ({ items, onUpdate }) => {
 
   const freeParts = useMemo(() => items.filter(isFreeBundlePart), [items]);
 
-  const analyze = useCallback(async () => {
+  const analyze = useCallback(async (forceRefresh = false) => {
     setLoading(true);
     setError(null);
     setApplyMessage(null);
     setPlan(null);
     setRowState({});
     setPicker(null);
-    setProgress({ label: 'Fetching your eBay store listings…', done: 0, total: 3 });
+    setProgress({
+      label: forceRefresh ? 'Refreshing eBay store listings…' : 'Loading eBay listings…',
+      done: 0,
+      total: 3,
+    });
     try {
-      const listings = await fetchMyEbayListings();
+      const { listings, fromCache, fetchedAt } = await ensureEbayListings({
+        force: forceRefresh,
+        sellerUsername: getEbayUsername(),
+      });
       setProgress({
-        label: 'Fetching your eBay store listings…',
+        label: fromCache ? 'Using cached eBay listings…' : 'Fetched your eBay store listings…',
         done: 1,
         total: 3,
-        detail: `${listings.length} listing${listings.length === 1 ? '' : 's'} · ${getEbayUsername()}`,
+        detail: `${listings.length} listing${listings.length === 1 ? '' : 's'} · ${getEbayUsername()}${
+          fromCache && fetchedAt ? ` · cached ${fetchedAt.slice(0, 10)}` : ''
+        }`,
       });
       if (!listings.length) {
         setError(`No active eBay listings found for seller ${getEbayUsername()}.`);
@@ -418,15 +428,25 @@ const EbayStorePullBundlesTab: React.FC<Props> = ({ items, onUpdate }) => {
               or pick replacements from free inventory before confirm.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => void analyze()}
-            disabled={loading || applying}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-violet-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-violet-700 disabled:opacity-50"
-          >
-            {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-            {plan ? 'Re-scan' : 'Scan profile'}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void analyze(false)}
+              disabled={loading || applying}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-violet-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-violet-700 disabled:opacity-50"
+            >
+              {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              {plan ? 'Re-scan (cache)' : 'Scan (use cache)'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void analyze(true)}
+              disabled={loading || applying}
+              className="inline-flex items-center gap-2 px-3 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-700 text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 disabled:opacity-50"
+            >
+              Refresh from eBay
+            </button>
+          </div>
         </div>
       </div>
 

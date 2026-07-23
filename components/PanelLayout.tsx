@@ -14,8 +14,6 @@ import { signInWithGoogle, logOut, completeGoogleRedirectSignIn, getAuthErrorMes
 import QuotaMonitor from './QuotaMonitor';
 import FirestoreQuotaWidget from './FirestoreQuotaWidget';
 import GlobalSearch from './GlobalSearch';
-import EbaySoldReminderWidget from './EbaySoldReminderWidget';
-import { useEbayListingReminder } from '../hooks/useEbayListingReminder';
 import { InventoryItem, Expense, BusinessSettings } from '../types';
 import { cloudSyncBadgeLabel, cloudSyncBadgeTitle } from '../utils/cloudSyncStatus';
 
@@ -50,7 +48,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   const [signingIn, setSigningIn] = React.useState(false);
   const [addMenuOpen, setAddMenuOpen] = React.useState(true);
   const [moreNavOpen, setMoreNavOpen] = React.useState(false);
-  const { reminder: ebayReminder, dismiss: dismissEbayReminder, checksRemaining } = useEbayListingReminder();
 
   React.useEffect(() => {
     void completeGoogleRedirectSignIn().catch(() => {});
@@ -150,7 +147,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     { to: '/panel/sold-pulse', icon: <Activity size={18} />, label: 'Sold Pulse' },
     { to: '/panel/add-bulk', icon: <Layers size={18} />, label: 'Bulk Entry' },
     { to: '/panel/bulk-imports', icon: <History size={18} />, label: 'Bulk imports' },
-    { to: '/panel/ebay-store-pull', icon: <PackageSearch size={18} />, label: 'eBay Tools', alert: !!ebayReminder },
+    { to: '/panel/ebay-store-pull', icon: <PackageSearch size={18} />, label: 'eBay Tools' },
     {
       to: '/panel/ebay-store-pull?tab=bundles',
       icon: <Boxes size={18} />,
@@ -303,13 +300,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
           )}
         </nav>
         <div className="p-4 border-t border-white/5">
-          {ebayReminder && (
-            <EbaySoldReminderWidget
-              reminder={ebayReminder}
-              onDismiss={dismissEbayReminder}
-              variant="sidebar"
-            />
-          )}
           <QuotaMonitor />
         </div>
       </aside>
@@ -321,16 +311,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             : 'p-4 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:p-8 lg:p-8 xl:p-10 2xl:p-12 md:pb-8'
         }`}
       >
-        {ebayReminder && (
-          <div className="md:hidden">
-            <EbaySoldReminderWidget
-              reminder={ebayReminder}
-              onDismiss={dismissEbayReminder}
-              variant="float"
-              checksRemaining={checksRemaining}
-            />
-          </div>
-        )}
         {/* Mobile global search — skip on Stock (has its own search) */}
         {!location.pathname.startsWith('/panel/inventory') &&
           !location.pathname.startsWith('/panel/edit') && (

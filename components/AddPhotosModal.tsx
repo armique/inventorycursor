@@ -16,7 +16,8 @@ import {
   type ImageSearchProvider,
   type ImageSearchResult,
 } from '../services/imageSearchService';
-import { fetchMyEbayListings, getEbayUsername, ebayListingToPriceMatch, type EbayMyListing, type EbayListingPriceMatch } from '../services/ebayService';
+import { getEbayUsername, ebayListingToPriceMatch, type EbayMyListing, type EbayListingPriceMatch } from '../services/ebayService';
+import { ensureEbayListings } from '../services/ebayListingIndex';
 import { matchEbayListingsForItem } from '../utils/ebayListingMatch';
 import { formatEUR } from '../utils/formatMoney';
 
@@ -224,7 +225,7 @@ const AddPhotosModal: React.FC<Props> = ({
     setPhotoSearchResults(null);
     setPhotoSearchError(null);
     try {
-      const all = await fetchMyEbayListings();
+      const { listings: all } = await ensureEbayListings();
       if (!all.length) {
         setEbayListingError(`No active eBay listings found for seller ${getEbayUsername()}.`);
         return;

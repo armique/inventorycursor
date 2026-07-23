@@ -39,6 +39,8 @@ import {
 } from './services/dashboardPreferences';
 import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchFromCloud } from './services/firebaseService';
 import { pullOrderIndexFromCloud } from './services/ebayOrderIndex';
+import { pullPurchaseIndexFromCloud } from './services/ebayPurchaseIndex';
+import { pullListingIndexFromCloud } from './services/ebayListingIndex';
 import { DEFAULT_CATEGORIES } from './services/constants';
 import { migrateCategoriesRecord, migrateContainerItem } from './utils/containerTaxonomy';
 import { appendPriceHistoryIfChanged } from './services/priceHistory';
@@ -877,13 +879,13 @@ const App: React.FC = () => {
     })();
   }, [authUser, items, trash, expenses, recurringExpenses, categories, categoryFields, businessSettings, monthlyGoal, dashboardPrefs, actionHistory, bulkImports, applyRemoteData]);
 
-  // Re-hydrate the cached eBay order history (Order lookup button in Flags column) from the
-  // cloud mirror as soon as we're signed in — so a cleared browser or brand-new PC has the
-  // order cache ready before the user ever opens the eBay Store Pull → Order history tab.
+  // Re-hydrate eBay caches (orders / purchases / active listings) from Firestore when local is empty.
   useEffect(() => {
     if (!authUser || !isCloudEnabled() || ebayOrderIndexPulledRef.current) return;
     ebayOrderIndexPulledRef.current = true;
     void pullOrderIndexFromCloud().catch((e) => console.warn('eBay order index cloud pull failed:', e));
+    void pullPurchaseIndexFromCloud().catch((e) => console.warn('eBay purchase index cloud pull failed:', e));
+    void pullListingIndexFromCloud().catch((e) => console.warn('eBay listing index cloud pull failed:', e));
   }, [authUser]);
 
   // Publish store catalog once when panel has items and auth (ensures storefront gets data)

@@ -13,7 +13,8 @@ import {
   Wand2,
 } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
-import { fetchMyEbayListings, getEbayUsername } from '../services/ebayService';
+import { getEbayUsername } from '../services/ebayService';
+import { ensureEbayListings } from '../services/ebayListingIndex';
 import {
   buildEbayOrphanListingsPlan,
   getStorePullRoundedPrice,
@@ -87,25 +88,34 @@ const EbayStorePullImportTab: React.FC<Props> = ({
 
   const rowKey = (listingId: string) => listingId;
 
-  const analyze = useCallback(async () => {
+  const analyze = useCallback(async (forceRefresh = false) => {
     setLoading(true);
     setError(null);
     setApplyMessage(null);
     setDrafts([]);
     setRowState({});
     setOrphanStats(null);
-    setProgress({ label: 'Fetching active eBay listings…', done: 0, total: 1 });
+    setProgress({
+      label: forceRefresh ? 'Refreshing active eBay listings…' : 'Loading eBay listings…',
+      done: 0,
+      total: 1,
+    });
     try {
-      const listings = await fetchMyEbayListings();
+      const { listings, fromCache, fetchedAt } = await ensureEbayListings({
+        force: forceRefresh,
+        sellerUsername: getEbayUsername(),
+      });
       if (!listings.length) {
         setError(`No active eBay listings found for seller ${getEbayUsername()}.`);
         return;
       }
       setProgress({
-        label: 'Finding listings missing from inventory…',
+        label: fromCache ? 'Using cached listings…' : 'Finding listings missing from inventory…',
         done: 1,
         total: 1,
-        detail: `${listings.length} active listing${listings.length === 1 ? '' : 's'}`,
+        detail: `${listings.length} active listing${listings.length === 1 ? '' : 's'}${
+          fromCache && fetchedAt ? ` · cached ${fetchedAt.slice(0, 10)}` : ''
+        }`,
       });
       const plan = buildEbayOrphanListingsPlan(items, listings);
       setOrphanStats({ activeInventory: plan.activeInventoryCount, listings: plan.activeListingCount });
@@ -345,15 +355,25 @@ const EbayStorePullImportTab: React.FC<Props> = ({
           <li>Re-listed parts with a new listing ID appear here until you add them (sold rows are ignored).</li>
           <li>Already-linked listings (<code className="text-[10px]">ebayListingId</code>) are skipped.</li>
         </ul>
-        <button
-          type="button"
-          onClick={() => void analyze()}
-          disabled={loading || applying}
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-black uppercase tracking-widest hover:bg-indigo-700 disabled:opacity-50"
-        >
-          {loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-          {loading ? 'Analyzing…' : 'Find missing listings'}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void analyze(false)}
+            disabled={loading || applying}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-black uppercase tracking-widest hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {loading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+            {loading ? 'Analyzing…' : 'Find missing (use cache)'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void analyze(true)}
+            disabled={loading || applying}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-black uppercase tracking-widest hover:bg-slate-50 disabled:opacity-50"
+          >
+            Refresh from eBay
+          </button>
+        </div>
         {progress && <EbayToolProgressBar {...progress} tone="indigo" />}
       </div>
 
