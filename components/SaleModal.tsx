@@ -9,7 +9,7 @@ import { refreshRecentEbayOrders } from '../services/ebayOrderBackfill';
 import { customerFromEbayOrder } from '../utils/ebayOrderBuyerData';
 import { ebayScreenshotSaleFields } from '../utils/ebayScreenshotSaleFields';
 import { listRecentEbayOrdersForSale, type EbayOrderMatch } from '../utils/ebayOrderMatch';
-import { getLinePayout } from '../utils/ebayOrderPayout';
+import { getLinePayout, estimateEbayMarketplaceFee } from '../utils/ebayOrderPayout';
 import { persistSaleProofImage, urlNeedsPhotoArchive } from '../services/inventoryImageStorage';
 import { InventoryItem, ItemStatus, PaymentType, CustomerInfo, Platform, TaxMode } from '../types';
 import { SALE_PLATFORM_OPTIONS } from '../utils/salePlatform';
@@ -131,18 +131,29 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
       setHasFee(true);
       setFeeAmount(Math.round(payout.fee * 100) / 100);
       setEbayFeeNote({
-        ebayFeeEur: payout.fee,
+        ebayFeeEur: payout.feeEstimated ? null : payout.fee,
         adFeeEur: null,
-        amountReceivedNetEur: null,
+        amountReceivedNetEur: payout.gross != null ? Math.round((payout.gross - payout.fee) * 100) / 100 : null,
         buyerShippingEur: null,
       });
+    } else {
+      setHasFee(false);
+      setFeeAmount(0);
+      setEbayFeeNote(null);
     }
     setPlatformSold('ebay.de');
     setPaymentType('ebay.de');
+    const feeHint = payout.feeEstimated
+      ? ` · fees ~€${formatEUR(payout.fee)} (Flip Coach % — adjust if needed)`
+      : payout.netKnown
+        ? ' · net payout'
+        : payout.fee > 0
+          ? ` · fees €${formatEUR(payout.fee)}`
+          : '';
     setOrderIdLookupMessage(
       match.matchKind === 'recent'
-        ? 'Filled from recent order — review price & buyer'
-        : `Filled from order history · ${match.matchKind === 'title' ? `name hint ${Math.round(match.matchScore)}` : match.matchKind}`
+        ? `Filled from recent order${feeHint}`
+        : `Filled from order history · ${match.matchKind === 'title' ? `name hint ${Math.round(match.matchScore)}` : match.matchKind}${feeHint}`
     );
   }, [item.ebaySku, item.ebayListingId]);
 
@@ -229,9 +240,35 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
             customer: customerFromEbayOrder(cached),
             sellDate: cached.creationDate || undefined,
           });
+          const line = cached.lineItems[0];
+          if (line && !isEditBuyer) {
+            const payout = getLinePayout(cached, line);
+            if (payout.sellPrice > 0) {
+              const fmt = formatEUR(payout.sellPrice);
+              setSalePrice(fmt);
+              setUnitPrice(fmt);
+            }
+            if (payout.netKnown) {
+              setHasFee(false);
+              setFeeAmount(0);
+              setEbayFeeNote(null);
+            } else if (payout.fee > 0) {
+              setHasFee(true);
+              setFeeAmount(Math.round(payout.fee * 100) / 100);
+              setEbayFeeNote({
+                ebayFeeEur: payout.feeEstimated ? null : payout.fee,
+                adFeeEur: null,
+                amountReceivedNetEur:
+                  payout.gross != null ? Math.round((payout.gross - payout.fee) * 100) / 100 : null,
+                buyerShippingEur: null,
+              });
+            }
+            if (line.sku) setEbaySku(line.sku);
+            if (line.listingId) setEbayListingId(line.listingId);
+          }
           setPlatformSold('ebay.de');
           setPaymentType('ebay.de');
-          setOrderIdLookupMessage('Buyer filled from order cache.');
+          setOrderIdLookupMessage('Filled from order cache (fees estimated if API-only).');
           return;
         }
         const live = await fetchEbayOrder(orderId);
@@ -242,9 +279,26 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
           sellDate: live.sellDate,
           sellPrice: live.sellPrice,
         });
+        if (!isEditBuyer && live.sellPrice != null && live.sellPrice > 0) {
+          const fee = estimateEbayMarketplaceFee(live.sellPrice);
+          if (fee > 0) {
+            setHasFee(true);
+            setFeeAmount(fee);
+            setEbayFeeNote({
+              ebayFeeEur: null,
+              adFeeEur: null,
+              amountReceivedNetEur: Math.round((live.sellPrice - fee) * 100) / 100,
+              buyerShippingEur: null,
+            });
+          }
+        }
         setPlatformSold('ebay.de');
         setPaymentType('ebay.de');
-        setOrderIdLookupMessage('Buyer filled from eBay API.');
+        setOrderIdLookupMessage(
+          live.sellPrice != null && live.sellPrice > 0
+            ? `Filled from eBay API · fees ~€${formatEUR(estimateEbayMarketplaceFee(live.sellPrice))} (Flip Coach %)`
+            : 'Buyer filled from eBay API.'
+        );
       } catch (err: unknown) {
         if (!opts?.silent) {
           setOrderIdLookupMessage(err instanceof Error ? err.message : 'Order not found in cache or API.');
@@ -253,7 +307,7 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
         setOrderIdLookupLoading(false);
       }
     },
-    [applyEbayOrderBuyerFields]
+    [applyEbayOrderBuyerFields, isEditBuyer]
   );
 
   useEffect(() => {
@@ -957,6 +1011,11 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
                             {match.order.orderId} · {match.order.creationDate || 'no date'} ·{' '}
                             {match.order.buyer.username || match.order.buyer.fullName || 'buyer?'}
                             {payout.sellPrice > 0 ? ` · €${formatEUR(payout.sellPrice)}` : ''}
+                            {payout.fee > 0
+                              ? payout.feeEstimated
+                                ? ` · ~€${formatEUR(payout.fee)} fees est.`
+                                : ` · €${formatEUR(payout.fee)} fees`
+                              : ''}
                           </p>
                           <p className="text-[9px] font-black uppercase text-indigo-700 mt-1">
                             {active ? 'Selected — review & confirm sale' : 'Tap to fill sale from this order'}
