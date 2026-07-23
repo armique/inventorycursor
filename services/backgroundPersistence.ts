@@ -2,7 +2,7 @@ import {
   persistDashboardPreferencesToLocalStorage,
   type DashboardPreferences,
 } from './dashboardPreferences';
-import { rebuildItemSalesPool } from '../utils/itemSalesPool';
+import { scheduleItemSalesPoolRebuild } from '../utils/itemSalesPool';
 import type { InventoryItem } from '../types';
 
 /** Yield control so typing / clicks stay responsive during large saves. */
@@ -36,7 +36,7 @@ export async function persistSnapshotToLocalStorage(snapshot: LocalPersistSnapsh
   localStorage.setItem('inventory_items', snapshot.itemsJson);
   try {
     const items = JSON.parse(snapshot.itemsJson) as InventoryItem[];
-    if (Array.isArray(items)) rebuildItemSalesPool(items);
+    if (Array.isArray(items)) scheduleItemSalesPoolRebuild(items);
   } catch {
     /* ignore */
   }

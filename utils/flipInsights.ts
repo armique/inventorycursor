@@ -14,6 +14,7 @@ import {
   totalEbayFeePct,
   type FlipFeeSettings,
 } from './flipCoach';
+import { getCachedSaleEvents } from './itemSalesPool';
 import { productModelKeys } from './inventorySoldComps';
 import { resolveSalePlatform } from './salePlatform';
 
@@ -383,7 +384,9 @@ export function buildSuggestedEbayMap(
   fees: FlipFeeSettings = loadFlipFees(),
   opts?: { limit?: number; childrenByParent?: Map<string, InventoryItem[]> }
 ): Map<string, SuggestedEbayPrice> {
-  const limit = opts?.limit ?? 400;
+  // Warm sales-pool memory cache once for this batch (not per chip).
+  getCachedSaleEvents(items);
+  const limit = opts?.limit ?? 200;
   const map = new Map<string, SuggestedEbayPrice>();
   const stock = items.filter(
     (i) =>

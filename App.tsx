@@ -53,7 +53,7 @@ import { PanelLocaleProvider } from './context/PanelLocaleContext';
 import { UndoToastProvider, useUndoToastContext } from './context/UndoToastContext';
 import { appendUndoHistory } from './utils/appendUndoHistory';
 import { persistSnapshotToLocalStorage, scheduleBackgroundWork } from './services/backgroundPersistence';
-import { rebuildItemSalesPool } from './utils/itemSalesPool';
+import { scheduleItemSalesPoolRebuild } from './utils/itemSalesPool';
 import { buildStoreCatalog } from './utils/storefrontCatalog';
 import {
   BULK_IMPORTS_LIMIT,
@@ -387,9 +387,9 @@ const App: React.FC = () => {
       localStorage.setItem('recurring_expenses', JSON.stringify(newRecurringExpenses));
     }
     persistDashboardPreferencesToLocalStorage(dash);
-    // Keep part-level sales pool in sync for Flip Coach comps + Price Lab.
+    // Debounced — only when sold-set changes; never block clicks.
     try {
-      rebuildItemSalesPool(newItems);
+      scheduleItemSalesPoolRebuild(newItems);
     } catch {
       /* ignore */
     }

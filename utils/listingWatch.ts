@@ -7,11 +7,11 @@ import type { InventoryItem } from '../types';
 import { ItemStatus } from '../types';
 import {
   daysHeldFromBuyDate,
-  resolveSuggestedEbayList,
   targetMarginForDaysHeld,
   type SuggestedEbayPrice,
 } from './flipInsights';
-import { loadFlipFees } from './flipCoach';
+import { listPricesForPocket, loadFlipFees, totalEbayFeePct } from './flipCoach';
+import { roundMoney } from '../services/financialAggregation';
 
 /** Absolute € or % gap before we nudge “change price”. */
 export const PRICE_HINT_MIN_EUR = 5;
@@ -55,35 +55,75 @@ function gapSignificant(live: number, suggest: number): boolean {
   return delta / suggest >= PRICE_HINT_MIN_PCT;
 }
 
+/** Cheap suggest pair without comps / sales-pool scans (safe for filters + row paint). */
+function cheapSuggestLists(item: InventoryItem): {
+  klein: number;
+  ebay: number;
+  targetMargin: number;
+  daysHeld: number;
+} | null {
+  const daysHeld = daysHeldFromBuyDate(item.buyDate);
+  const targetMargin = targetMarginForDaysHeld(daysHeld);
+  const storedKlein = Number(item.suggestedKleinListPrice) || 0;
+  const storedEbay = Number(item.suggestedEbayListPrice) || 0;
+  if (storedKlein > 0 && storedEbay > 0) {
+    return { klein: storedKlein, ebay: storedEbay, targetMargin, daysHeld };
+  }
+  const buy = Number(item.buyPrice) || 0;
+  if (!(buy > 0)) return null;
+  const pocket = roundMoney(buy * (1 + targetMargin));
+  const feePct = totalEbayFeePct(loadFlipFees());
+  const lists = listPricesForPocket(pocket, feePct);
+  return {
+    klein: lists.kleinanzeigen,
+    ebay: lists.ebay,
+    targetMargin,
+    daysHeld,
+  };
+}
+
 /**
- * Compare live marketplace ask vs age-aware suggest. Prefer drop hints when live > suggest.
+ * Compare live marketplace ask vs suggest.
+ * Pass `suggestion` from the inventory chip map when available; never runs full comps.
  */
 export function computePriceChangeHint(
   item: InventoryItem,
   suggestion?: SuggestedEbayPrice | null
 ): PriceChangeHint | null {
   if (!isListingWatchCandidate(item)) return null;
-  const fees = loadFlipFees();
-  const sugg =
-    suggestion ||
-    resolveSuggestedEbayList(item, [item], fees, []);
-  if (!sugg) return null;
+
+  let klein: number;
+  let ebay: number;
+  let targetPct: number;
+
+  if (suggestion && suggestion.kleinList > 0 && suggestion.ebayList > 0) {
+    klein = suggestion.kleinList;
+    ebay = suggestion.ebayList;
+    targetPct = Math.round(
+      (suggestion.targetMargin ??
+        targetMarginForDaysHeld(suggestion.daysHeld ?? daysHeldFromBuyDate(item.buyDate))) *
+        100
+    );
+  } else {
+    const cheap = cheapSuggestLists(item);
+    if (!cheap) return null;
+    klein = cheap.klein;
+    ebay = cheap.ebay;
+    targetPct = Math.round(cheap.targetMargin * 100);
+  }
 
   const kaLive = item.listedOnKleinanzeigen ? Number(item.liveKleinListPrice) || 0 : 0;
   const ebLive = item.listedOnEbay ? Number(item.liveEbayListPrice) || 0 : 0;
-  const days = sugg.daysHeld ?? daysHeldFromBuyDate(item.buyDate);
-  const targetPct = Math.round((sugg.targetMargin ?? targetMarginForDaysHeld(days)) * 100);
 
   const hints: Array<{ channel: 'KA' | 'EB'; live: number; suggest: number }> = [];
-  if (kaLive > 0 && gapSignificant(kaLive, sugg.kleinList)) {
-    hints.push({ channel: 'KA', live: kaLive, suggest: sugg.kleinList });
+  if (kaLive > 0 && gapSignificant(kaLive, klein)) {
+    hints.push({ channel: 'KA', live: kaLive, suggest: klein });
   }
-  if (ebLive > 0 && gapSignificant(ebLive, sugg.ebayList)) {
-    hints.push({ channel: 'EB', live: ebLive, suggest: sugg.ebayList });
+  if (ebLive > 0 && gapSignificant(ebLive, ebay)) {
+    hints.push({ channel: 'EB', live: ebLive, suggest: ebay });
   }
   if (!hints.length) return null;
 
-  // Prefer the channel where live is above suggest (stale high ask).
   const over = hints.filter((h) => h.live > h.suggest);
   const pick = (over.length ? over : hints).sort(
     (a, b) => Math.abs(b.live - b.suggest) - Math.abs(a.live - a.suggest)
@@ -104,6 +144,11 @@ export function computePriceChangeHint(
     deltaPct,
     label: `${action} · ${targetPct}% target`,
   };
+}
+
+/** Filter-friendly: true if live vs stored/age suggest looks off — no comps. */
+export function hasPriceChangeHintFast(item: InventoryItem): boolean {
+  return computePriceChangeHint(item) != null;
 }
 
 export function isSaleReadyUnlisted(item: InventoryItem): boolean {

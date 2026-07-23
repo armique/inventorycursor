@@ -17,7 +17,7 @@ import {
 } from './inventorySoldComps';
 import { resolveSalePlatform } from './salePlatform';
 import { roundMoney } from '../services/financialAggregation';
-import { findPoolComps, buildItemSaleEvents } from './itemSalesPool';
+import { findPoolComps, getCachedSaleEvents } from './itemSalesPool';
 
 export const FLIP_FEE_STORAGE_KEY = 'flip_coach_fees_v2';
 
@@ -128,9 +128,9 @@ export function suggestChannelPrices(
     return emptySuggestion(feePct, 'Type a product name to see price ideas.');
   }
 
-  // Prefer attributed part-level pool (standalone + kit splits).
+  // Prefer attributed part-level pool (standalone + kit splits) — cached, not rebuilt per chip.
   try {
-    const poolHits = findPoolComps(buildItemSaleEvents(items), q, opts);
+    const poolHits = findPoolComps(getCachedSaleEvents(items), q, opts);
     if (poolHits.length >= 1) {
       const ebayPockets = poolHits
         .filter((x) => x.event.platform === 'ebay.de')

@@ -42,6 +42,7 @@ import {
 import { loadFlipFees } from '../utils/flipCoach';
 import {
   computePriceChangeHint,
+  hasPriceChangeHintFast,
   isListingWatchCandidate,
   isSaleReadyUnlisted,
 } from '../utils/listingWatch';
@@ -529,7 +530,7 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
     if (smartPreset === 'no_specs' && item.specs && Object.keys(item.specs).length > 0) return false;
     if (smartPreset === 'defective' && !item.isDefective) return false;
     if (smartPreset === 'sale_ready_unlisted' && !isSaleReadyUnlisted(item)) return false;
-    if (smartPreset === 'price_change' && !computePriceChangeHint(item)) return false;
+    if (smartPreset === 'price_change' && !hasPriceChangeHintFast(item)) return false;
     if (smartPreset === 'aging') {
       const key = item.buyDate || '';
       if (!key) return false;
@@ -2045,13 +2046,15 @@ const InventoryList: React.FC<Props> = ({
     return map;
   }, [items, itemsById]);
 
+  const deferredItemsForSuggest = useDeferredValue(items);
+  const deferredChildrenByParent = useDeferredValue(childrenByParentId);
   const suggestedEbayById = useMemo(
     () =>
-      buildSuggestedEbayMap(items, loadFlipFees(), {
-        childrenByParent: childrenByParentId,
-        limit: 400,
+      buildSuggestedEbayMap(deferredItemsForSuggest, loadFlipFees(), {
+        childrenByParent: deferredChildrenByParent,
+        limit: 200,
       }),
-    [items, childrenByParentId]
+    [deferredItemsForSuggest, deferredChildrenByParent]
   );
 
   const handleDuplicate = (item: InventoryItem) => {
@@ -3177,9 +3180,7 @@ const InventoryList: React.FC<Props> = ({
                            })()}
                        </div>
                        {(() => {
-                         const sugg =
-                           suggestedEbayById.get(item.id) ||
-                           resolveSuggestedEbayList(item, items, loadFlipFees(), childItems);
+                         const sugg = suggestedEbayById.get(item.id) || null;
                          const hint = computePriceChangeHint(item, sugg);
                          if (!hint) return null;
                          return (
@@ -3190,11 +3191,18 @@ const InventoryList: React.FC<Props> = ({
                                  ? 'bg-amber-50 text-amber-900 border-amber-200'
                                  : 'bg-sky-50 text-sky-900 border-sky-200'
                              }`}
-                             title="Live listing price vs age-aware suggest. Click to save suggest snapshot."
+                             title="Live listing price vs age-aware suggest. Click to refresh & save suggest snapshot."
                              onClick={() => {
-                               if (!sugg) return;
+                               const fresh =
+                                 resolveSuggestedEbayList(
+                                   item,
+                                   items,
+                                   loadFlipFees(),
+                                   childItems
+                                 ) || sugg;
+                               if (!fresh) return;
                                onUpdate(
-                                 [{ ...item, ...suggestionPatchFromPrice(sugg) }],
+                                 [{ ...item, ...suggestionPatchFromPrice(fresh) }],
                                  undefined,
                                  { skipActionLog: true }
                                );
@@ -3224,9 +3232,8 @@ const InventoryList: React.FC<Props> = ({
                      />
                      {(item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) &&
                        (() => {
-                         const sugg =
-                           suggestedEbayById.get(item.id) ||
-                           resolveSuggestedEbayList(item, items, loadFlipFees(), childItems);
+                         // Never resolve comps per row paint — map is precomputed; click refreshes.
+                         const sugg = suggestedEbayById.get(item.id);
                          if (!sugg || !(sugg.kleinList > 0) || !(sugg.ebayList > 0)) return null;
                          return (
                            <button

@@ -34,7 +34,7 @@ import {
   computeBuyFirstProducts,
   summarizeFlipInsights,
 } from '../utils/flipInsights';
-import { summarizePriceLab, rebuildItemSalesPool } from '../utils/itemSalesPool';
+import { summarizePriceLab, getOrRebuildItemSalesPool } from '../utils/itemSalesPool';
 import {
   buildDailyMissions,
   channelLabel,
@@ -64,7 +64,7 @@ const FlipCoachPage: React.FC<Props> = ({ items }) => {
   const buyFirstProducts = useMemo(() => computeBuyFirstProducts(items, 8), [items]);
   const flipInsights = useMemo(() => summarizeFlipInsights(items), [items]);
   const priceLab = useMemo(() => {
-    const pool = rebuildItemSalesPool(items);
+    const pool = getOrRebuildItemSalesPool(items);
     return summarizePriceLab(items, pool);
   }, [items]);
   const sellNow = useMemo(() => buildSellNowQueue(items, fees, 12), [items, fees]);

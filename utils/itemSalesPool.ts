@@ -192,11 +192,13 @@ export function buildItemSaleEvents(items: InventoryItem[]): ItemSaleEvent[] {
 }
 
 export function rebuildItemSalesPool(items: InventoryItem[]): ItemSalesPoolSnapshot {
+  const events = buildItemSaleEvents(items);
   const snapshot: ItemSalesPoolSnapshot = {
     version: 1,
     updatedAt: new Date().toISOString(),
-    events: buildItemSaleEvents(items),
+    events,
   };
+  memCache = { token: poolToken(items), events, snapshot };
   try {
     localStorage.setItem(ITEM_SALES_POOL_KEY, JSON.stringify(snapshot));
   } catch {
@@ -217,11 +219,79 @@ export function loadItemSalesPool(): ItemSalesPoolSnapshot | null {
   }
 }
 
-/** Prefer cache; rebuild if missing/stale empty while inventory has sales. */
+/** In-memory cache so suggest chips don't rebuild the pool hundreds of times per frame. */
+let memCache: {
+  token: string;
+  events: ItemSaleEvent[];
+  snapshot: ItemSalesPoolSnapshot;
+} | null = null;
+
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+function poolToken(items: InventoryItem[]): string {
+  let sold = 0;
+  let sig = 0;
+  for (const i of items) {
+    if (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) {
+      sold += 1;
+      sig = (sig + Math.round((Number(i.sellPrice) || 0) * 100) + (i.id?.length || 0)) | 0;
+      if (i.isBundle || i.isPC) sig = (sig + 17) | 0;
+    }
+  }
+  return `${items.length}:${sold}:${sig}`;
+}
+
+/**
+ * Fast path for comps: reuse memory cache keyed by sold-set fingerprint.
+ * Never rebuilds on every chip — that froze the UI.
+ */
+export function getCachedSaleEvents(items: InventoryItem[]): ItemSaleEvent[] {
+  const token = poolToken(items);
+  if (memCache && memCache.token === token) return memCache.events;
+
+  const events = buildItemSaleEvents(items);
+  const snapshot: ItemSalesPoolSnapshot = {
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    events,
+  };
+  memCache = { token, events, snapshot };
+  // Persist off the hot path (debounce) so clicks stay responsive.
+  if (typeof setTimeout !== 'undefined') {
+    if (persistTimer) clearTimeout(persistTimer);
+    persistTimer = setTimeout(() => {
+      try {
+        localStorage.setItem(ITEM_SALES_POOL_KEY, JSON.stringify(snapshot));
+      } catch {
+        /* ignore */
+      }
+    }, 2000);
+  }
+  return events;
+}
+
+/** Prefer memory cache; build once when sold-set fingerprint changes. */
 export function getOrRebuildItemSalesPool(items: InventoryItem[]): ItemSalesPoolSnapshot {
-  const cached = loadItemSalesPool();
-  if (cached && cached.events.length > 0) return cached;
+  getCachedSaleEvents(items);
+  if (memCache) return memCache.snapshot;
   return rebuildItemSalesPool(items);
+}
+
+/**
+ * Debounced rebuild after inventory saves. Skips work when sold-set fingerprint unchanged.
+ */
+export function scheduleItemSalesPoolRebuild(items: InventoryItem[]): void {
+  const token = poolToken(items);
+  if (memCache && memCache.token === token) return;
+  if (typeof setTimeout === 'undefined') {
+    rebuildItemSalesPool(items);
+    return;
+  }
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    if (memCache && memCache.token === poolToken(items)) return;
+    rebuildItemSalesPool(items);
+  }, 2500);
 }
 
 export type PoolCompHit = {
@@ -231,6 +301,7 @@ export type PoolCompHit = {
 
 /**
  * Match pool events to a product name for channel pricing.
+ * When the query has a model key, only scan same-key events (avoids O(n) over full pool per chip).
  */
 export function findPoolComps(
   events: ItemSaleEvent[],
@@ -239,10 +310,34 @@ export function findPoolComps(
 ): PoolCompHit[] {
   const q = name.trim();
   if (q.length < 3 || !events.length) return [];
-  const queryHasModel = productModelKeys(q).length > 0;
+  const qKeys = productModelKeys(q);
+  const queryHasModel = qKeys.length > 0;
   const minSim = queryHasModel ? 0.28 : 0.45;
   const limit = opts?.limit ?? 16;
 
+  const candidates =
+    queryHasModel
+      ? events.filter((ev) => qKeys.some((k) => ev.modelKey === k || ev.name.toLowerCase().includes(k)))
+      : events.length > 80
+        ? events.slice(0, 80) // unbounded fuzzy scan is too costly on large pools
+        : events;
+
+  if (!candidates.length && queryHasModel) {
+    // Fall back to a capped full scan if model key index missed (renames).
+    return findPoolCompsUnindexed(events.slice(0, 120), q, opts, minSim, limit, true);
+  }
+
+  return findPoolCompsUnindexed(candidates, q, opts, minSim, limit, queryHasModel);
+}
+
+function findPoolCompsUnindexed(
+  events: ItemSaleEvent[],
+  q: string,
+  opts: { category?: string; subCategory?: string; limit?: number } | undefined,
+  minSim: number,
+  limit: number,
+  queryHasModel: boolean
+): PoolCompHit[] {
   return events
     .map((ev) => {
       if (!soldCompsModelCompatible(q, ev.name)) return { event: ev, sim: 0 };
