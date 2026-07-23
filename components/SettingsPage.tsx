@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { 
   Cloud, Building2, Layers, Wrench, ShoppingBag, Sparkles, Shield,
-  CheckCircle2, AlertTriangle, ArrowUp, RefreshCw, Save, LogIn, LogOut, User as UserIcon, Download, Upload, FileText, Github, History, ArchiveRestore, Rocket, Copy, ExternalLink, Plus, FolderPlus, FileSpreadsheet, Images, Loader2
+  CheckCircle2, AlertTriangle, ArrowUp, RefreshCw, Save, LogIn, LogOut, User as UserIcon, Download, Upload, FileText, Github, History, ArchiveRestore, Rocket, Copy, ExternalLink, Plus, FolderPlus, FileSpreadsheet, Images, Loader2, X
 } from 'lucide-react';
 import { fixItemsEncoding } from '../services/encodingFix';
 import { InventoryItem, BusinessSettings, Expense, ItemStatus, DashboardPreferences, ActionHistoryEntry, BulkImportRecord } from '../types';
@@ -82,6 +82,11 @@ interface Props {
   actionHistory?: ActionHistoryEntry[];
   bulkImports?: BulkImportRecord[];
   onApplyArchivedPhotos?: (items: InventoryItem[], trash: InventoryItem[]) => void;
+  /** Render inside a modal shell (tighter layout + optional close). */
+  variant?: 'page' | 'modal';
+  onClose?: () => void;
+  /** Preferred starting tab (overrides URL when set). */
+  initialTabProp?: string;
 }
 
 const SETTINGS_TABS = [
@@ -148,13 +153,18 @@ const SettingsPage: React.FC<Props> = ({
   actionHistory = [],
   bulkImports = [],
   onApplyArchivedPhotos,
+  variant = 'page',
+  onClose,
+  initialTabProp,
 }) => {
   const [searchParams] = useSearchParams();
   const tabFromUrl = searchParams.get('tab')?.toUpperCase();
+  const tabFromProp = initialTabProp?.toUpperCase();
+  const preferredTab = tabFromProp || tabFromUrl;
   const initialTab =
-    tabFromUrl === 'EBAY' || tabFromUrl === 'EBAY API' || tabFromUrl === 'LISTINGS'
+    preferredTab === 'EBAY' || preferredTab === 'EBAY API' || preferredTab === 'LISTINGS'
       ? 'EBAY'
-      : (SETTINGS_TABS.find((t) => t.id === tabFromUrl)?.id ?? 'BUSINESS');
+      : (SETTINGS_TABS.find((t) => t.id === preferredTab)?.id ?? 'BUSINESS');
   const [activeTab, setActiveTab] = useState<typeof SETTINGS_TABS[number]['id']>(initialTab);
   const [aiSettings, setAiSettings] = useState<AISettings>(() => loadAISettings());
   const [backupEncrypt, setBackupEncrypt] = useState(false);
@@ -200,6 +210,13 @@ const SettingsPage: React.FC<Props> = ({
     const tab = searchParams.get('tab')?.toUpperCase();
     if (tab === 'EBAY' || tab === 'EBAY API' || tab === 'LISTINGS') setActiveTab('EBAY');
   }, [searchParams]);
+
+  useEffect(() => {
+    if (!initialTabProp) return;
+    const t = initialTabProp.toUpperCase();
+    if (t === 'EBAY' || t === 'EBAY API' || t === 'LISTINGS') setActiveTab('EBAY');
+    else if (SETTINGS_TABS.some((x) => x.id === t)) setActiveTab(t as typeof SETTINGS_TABS[number]['id']);
+  }, [initialTabProp]);
   const [githubSyncLoading, setGitHubSyncLoading] = useState(false);
   const [githubCommits, setGitHubCommits] = useState<BackupCommit[]>([]);
   const [githubCommitsLoading, setGitHubCommitsLoading] = useState(false);
@@ -769,8 +786,16 @@ const SettingsPage: React.FC<Props> = ({
     navigator.clipboard.writeText(text).then(() => showToast('Copied to clipboard', 'success')).catch(() => showToast('Copy failed', 'error'));
   };
 
+  const isModal = variant === 'modal';
+
   return (
-    <div className="max-w-[1600px] mx-auto pb-20 px-4 md:px-8 animate-in fade-in duration-500">
+    <div
+      className={
+        isModal
+          ? 'w-full h-full min-h-0 flex flex-col animate-in fade-in duration-200'
+          : 'max-w-[1600px] mx-auto pb-20 px-4 md:px-8 animate-in fade-in duration-500'
+      }
+    >
       {toast && (
         <div className={`fixed top-8 left-1/2 -translate-x-1/2 z-[200] px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-in slide-in-from-top-4 duration-300 border ${toast.type === 'success' ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-red-600 border-red-500 text-white'}`}>
            {toast.type === 'success' ? <CheckCircle2 size={18}/> : <AlertTriangle size={18}/>}
@@ -778,12 +803,42 @@ const SettingsPage: React.FC<Props> = ({
         </div>
       )}
 
-      <header className="mb-8 pt-6">
-        <h1 className="text-4xl font-black text-slate-900 tracking-tight">System Control</h1>
+      <header
+        className={
+          isModal
+            ? 'shrink-0 flex items-center justify-between gap-3 px-4 md:px-5 pt-4 pb-3 border-b border-slate-100'
+            : 'mb-8 pt-6'
+        }
+      >
+        <h1
+          className={
+            isModal
+              ? 'text-xl font-black text-slate-900 tracking-tight'
+              : 'text-4xl font-black text-slate-900 tracking-tight'
+          }
+        >
+          System Control
+        </h1>
+        {isModal && onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+            aria-label="Close settings"
+          >
+            <X size={18} />
+          </button>
+        )}
       </header>
 
-      <div className="flex flex-col lg:flex-row gap-8 items-start">
-        <nav className="w-full lg:w-72 shrink-0">
+      <div
+        className={
+          isModal
+            ? 'flex-1 min-h-0 flex flex-col lg:flex-row gap-4 items-stretch overflow-hidden px-4 md:px-5 pb-4 pt-3'
+            : 'flex flex-col lg:flex-row gap-8 items-start'
+        }
+      >
+        <nav className={isModal ? 'w-full lg:w-56 shrink-0' : 'w-full lg:w-72 shrink-0'}>
           <div className="bg-white p-2 rounded-3xl border border-slate-200">
             <div className="flex lg:flex-col gap-2 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0 px-2 lg:px-0">
               {SETTINGS_TABS.map((tab) => (
@@ -800,7 +855,13 @@ const SettingsPage: React.FC<Props> = ({
           </div>
         </nav>
 
-        <div className="flex-1 min-w-0 w-full space-y-6">
+        <div
+          className={
+            isModal
+              ? 'flex-1 min-w-0 w-full min-h-0 overflow-y-auto space-y-6 pr-1'
+              : 'flex-1 min-w-0 w-full space-y-6'
+          }
+        >
           {activeTab === 'BUSINESS' && (
              <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
                 <h3 className="text-xl font-black text-slate-900">Business Profile</h3>

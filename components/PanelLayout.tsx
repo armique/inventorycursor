@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import PanelBreadcrumbs from './PanelBreadcrumbs';
 import { usePanelLocale } from '../context/PanelLocaleContext';
+import { useSettingsModal } from '../context/SettingsModalContext';
 import { usePanelKeyboardShortcuts } from '../hooks/usePanelKeyboardShortcuts';
 import { signInWithGoogle, logOut, completeGoogleRedirectSignIn, getAuthErrorMessage } from '../services/firebaseService';
 import QuotaMonitor from './QuotaMonitor';
@@ -44,6 +45,7 @@ interface PanelLayoutProps {
 const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, authReady = false, isAdmin = false, syncState = { status: 'idle', lastSynced: null }, onForcePush, backupBannerDismissed = true, onDismissBackupBanner, items = [], expenses = [], businessSettings = { companyName: '', ownerName: '', address: '', taxMode: 'SmallBusiness' }, onUpdateItems }) => {
   const location = useLocation();
   const { locale, setLocale } = usePanelLocale();
+  const { openSettings } = useSettingsModal();
   usePanelKeyboardShortcuts();
   const [signingIn, setSigningIn] = React.useState(false);
   const [addMenuOpen, setAddMenuOpen] = React.useState(true);
@@ -155,7 +157,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
       label: 'Parse Bundles',
     },
     { to: '/panel/card-gallery', icon: <Images size={18} />, label: 'Card gallery' },
-    { to: '/panel/settings', icon: <Settings size={18} />, label: 'Settings', alert: !isCloudEnabled },
+    { action: 'settings', icon: <Settings size={18} />, label: 'Settings', alert: !isCloudEnabled },
   ];
 
   const moreNav = [
@@ -232,7 +234,26 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
 
         <nav className="flex-1 px-4 space-y-1 overflow-y-auto scrollbar-hide pb-4">
           <p className="px-3 pt-1 pb-1.5 text-[9px] font-black uppercase tracking-[0.2em] text-slate-500">Navigate</p>
-          {primaryNav.map(({ to, icon, label, alert }) => {
+          {primaryNav.map((item) => {
+            if ('action' in item && item.action === 'settings') {
+              return (
+                <button
+                  key="settings"
+                  type="button"
+                  onClick={() => openSettings()}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl font-bold text-sm transition-all relative w-full text-left text-slate-400 hover:bg-white/5 hover:text-white"
+                >
+                  {item.icon} {item.label}
+                  {item.alert && <span className="absolute right-3 top-3 w-2 h-2 bg-red-500 rounded-full animate-pulse" />}
+                </button>
+              );
+            }
+            const { to, icon, label, alert } = item as {
+              to: string;
+              icon: React.ReactNode;
+              label: string;
+              alert?: boolean;
+            };
             const [navPath, navQuery] = to.split('?');
             const isActive = navQuery
               ? location.pathname === navPath && location.search.includes(navQuery)
@@ -355,7 +376,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             <Cloud className="shrink-0 mt-0.5 text-amber-600" size={20}/>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-bold">Set up Cloud Backup so your inventory is stored on the web.</p>
-              <Link to="/panel/settings" className="inline-block mt-2 text-xs font-black uppercase tracking-widest text-amber-700 hover:text-amber-900 underline">Settings → Cloud Sync</Link>
+              <button type="button" onClick={() => openSettings('CLOUD')} className="inline-block mt-2 text-xs font-black uppercase tracking-widest text-amber-700 hover:text-amber-900 underline">Settings → Cloud Sync</button>
             </div>
             <button type="button" onClick={onDismissBackupBanner} className="shrink-0 p-1 rounded-lg hover:bg-amber-100 text-amber-600" aria-label="Dismiss">
               <X size={18}/>
@@ -373,9 +394,20 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             <div className={isDockedPanelPage ? 'hidden md:block min-w-0' : 'min-w-0'}>
               <PanelBreadcrumbs />
             </div>
-            <div className="flex rounded-lg border border-slate-200 bg-white p-0.5 text-[10px] font-black uppercase ml-auto">
+            <div className="flex items-center gap-1.5 ml-auto">
+              <div className="flex rounded-lg border border-slate-200 bg-white p-0.5 text-[10px] font-black uppercase">
               <button type="button" onClick={() => setLocale('en')} className={`px-2 py-1 rounded ${locale === 'en' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>EN</button>
               <button type="button" onClick={() => setLocale('de')} className={`px-2 py-1 rounded ${locale === 'de' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>DE</button>
+                          </div>
+              <button
+                type="button"
+                onClick={() => openSettings()}
+                className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                title="Settings"
+                aria-label="Open settings"
+              >
+                <Settings size={16} />
+              </button>
             </div>
           </div>
           <div
@@ -426,8 +458,24 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             { to: '/panel/inventory', icon: <Package size={18} />, label: 'Stock' },
             { to: '/panel/flip-coach', icon: <Target size={18} />, label: 'Flip' },
             { to: '/panel/add', icon: <Plus size={18} />, label: 'Add' },
-            { to: '/panel/settings', icon: <Settings size={18} />, label: 'Settings' },
-          ].map(({ to, icon, label }) => {
+            { action: 'settings' as const, icon: <Settings size={18} />, label: 'Settings' },
+          ].map((item) => {
+              if ('action' in item && item.action === 'settings') {
+                return (
+                  <button
+                    key="settings"
+                    type="button"
+                    onClick={() => openSettings()}
+                    className="flex flex-col items-center justify-center flex-1 px-1 py-1.5 text-[11px] font-semibold transition-colors text-slate-400"
+                  >
+                    <span className="mb-0.5 inline-flex items-center justify-center rounded-full p-1.5 bg-slate-100 text-slate-500">
+                      {item.icon}
+                    </span>
+                    <span className="truncate">{item.label}</span>
+                  </button>
+                );
+              }
+              const { to, icon, label } = item as { to: string; icon: React.ReactNode; label: string };
               const isActive = location.pathname === to || (to === '/panel/add' && location.pathname.startsWith('/panel/builder'));
               return (
                 <Link

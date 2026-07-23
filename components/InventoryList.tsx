@@ -6,6 +6,7 @@ import { toLocalCalendarDateKey, todayLocalDateKey } from '../utils/calendarDate
 import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSortKey, buildTimeGaugeSortKeyMap } from '../utils/inventoryTimeGauge';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useSettingsModal } from '../context/SettingsModalContext';
 import { 
   Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks,   Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone,   Camera, Gift, User, Images, Scissors, GripVertical
 } from 'lucide-react';
@@ -766,6 +767,7 @@ const InventoryList: React.FC<Props> = ({
   bulkImports = [],
 }) => {
   const navigate = useNavigate();
+  const { openSettings } = useSettingsModal();
   const [searchParams, setSearchParams] = useSearchParams();
   
   // -- PERSISTENT STATE LOADING --
@@ -5127,13 +5129,14 @@ const InventoryList: React.FC<Props> = ({
                    </div>
                  )}
                </div>
-               <Link
-                 to="/panel/settings?tab=EBAY"
+               <button
+                 type="button"
+                 onClick={() => openSettings('EBAY')}
                  className="px-2 py-1 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-800 text-[9px] font-black uppercase tracking-wide hover:bg-indigo-100"
                  title="Paste KA profile URL + eBay username, then Refresh listing presence"
                >
                  Listings sync
-               </Link>
+               </button>
                <button
                  type="button"
                  onClick={() => setShowAISpecsModal(true)}
@@ -5437,12 +5440,13 @@ const InventoryList: React.FC<Props> = ({
                 {label}
               </button>
             ))}
-            <Link
-              to="/panel/settings?tab=EBAY"
+            <button
+              type="button"
+              onClick={() => openSettings('EBAY')}
               className="px-3 py-2 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-800 text-[11px] font-black uppercase"
             >
               Listings sync
-            </Link>
+            </button>
           </div>
           <button
             type="button"

@@ -4,13 +4,15 @@ import { Cloud, CheckCircle2, Loader2, WifiOff, RefreshCw, X } from 'lucide-reac
 
 import PanelLayout from './components/PanelLayout';
 import QuotaMonitor from './components/QuotaMonitor';
+import { SettingsModalProvider } from './context/SettingsModalContext';
+import SettingsModalHost from './components/SettingsModalHost';
+import OpenSettingsFromRoute from './components/OpenSettingsFromRoute';
 
 const StorefrontPage = lazy(() => import('./components/StorefrontPage'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
 const InventoryList = lazy(() => import('./components/InventoryList'));
 const ItemForm = lazy(() => import('./components/ItemForm'));
 const BulkItemForm = lazy(() => import('./components/BulkItemForm'));
-const SettingsPage = lazy(() => import('./components/SettingsPage'));
 const SheetsImport = lazy(() => import('./components/SheetsImport'));
 const ExpenseManager = lazy(() => import('./components/ExpenseManager'));
 const TrashPage = lazy(() => import('./components/TrashPage'));
@@ -1555,23 +1557,48 @@ const App: React.FC = () => {
         <Route
           path="/panel"
           element={
-            <PanelLayout
-              isCloudEnabled={isConfigured}
-              authUser={authUser}
-              authReady={authReady}
-              isAdmin={isAdminUser}
-              syncState={syncState}
-              onForcePush={handleForcePush}
-              backupBannerDismissed={backupBannerDismissed}
-              onDismissBackupBanner={() => {
-                localStorage.setItem('cloud_backup_banner_dismissed', '1');
-                setBackupBannerDismissed(true);
-              }}
-              items={items}
-              expenses={expenses}
-              businessSettings={businessSettings}
-              onUpdateItems={handleUpdate}
-            />
+            <SettingsModalProvider>
+              <PanelLayout
+                isCloudEnabled={isConfigured}
+                authUser={authUser}
+                authReady={authReady}
+                isAdmin={isAdminUser}
+                syncState={syncState}
+                onForcePush={handleForcePush}
+                backupBannerDismissed={backupBannerDismissed}
+                onDismissBackupBanner={() => {
+                  localStorage.setItem('cloud_backup_banner_dismissed', '1');
+                  setBackupBannerDismissed(true);
+                }}
+                items={items}
+                expenses={expenses}
+                businessSettings={businessSettings}
+                onUpdateItems={handleUpdate}
+              />
+              <SettingsModalHost
+                items={items}
+                trash={trash}
+                expenses={expenses}
+                monthlyGoal={monthlyGoal}
+                dashboardPreferences={dashboardPrefs}
+                actionHistory={actionHistory}
+                bulkImports={bulkImports}
+                onForcePush={handleForcePush}
+                onRestoreItems={handleRestoreItems}
+                onRestoreBackup={handleRestoreBackup}
+                onFixEncoding={handleFixEncoding}
+                businessSettings={businessSettings}
+                onBusinessSettingsChange={setBusinessSettings}
+                categories={categories}
+                categoryFields={categoryFields}
+                onUpdateCategoryStructure={handleUpdateCategoryStructure}
+                onUpdateCategoryFields={handleUpdateCategoryFields}
+                onApplyArchivedPhotos={(archivedItems, archivedTrash) => {
+                  setItems(archivedItems);
+                  setTrash(archivedTrash);
+                }}
+              />
+            </SettingsModalProvider>
           }
         >
           <Route index element={<Navigate to="/panel/dashboard" replace />} />
@@ -1640,7 +1667,7 @@ const App: React.FC = () => {
           <Route path="trash" element={<TrashPage items={trash} onRestore={handleRestoreFromTrash} onPermanentDelete={handlePermanentDelete} />} />
           <Route path="store-management" element={<StoreManagementPage items={items} categories={categories} categoryFields={categoryFields} onUpdate={handleUpdate} onPublishCatalog={publishStoreCatalogNow} />} />
           <Route path="storefront-configurator" element={<StorefrontConfiguratorPage />} />
-          <Route path="settings" element={<SettingsPage items={items} trash={trash} expenses={expenses} monthlyGoal={monthlyGoal} dashboardPreferences={dashboardPrefs} actionHistory={actionHistory} bulkImports={bulkImports} onForcePush={handleForcePush} onRestoreItems={handleRestoreItems} onRestoreBackup={handleRestoreBackup} onFixEncoding={handleFixEncoding} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} onUpdateCategoryStructure={handleUpdateCategoryStructure} onUpdateCategoryFields={handleUpdateCategoryFields} onRenameCategory={() => {}} onRenameSubCategory={() => {}} onApplyArchivedPhotos={(archivedItems, archivedTrash) => { setItems(archivedItems); setTrash(archivedTrash); }} />} />
+          <Route path="settings" element={<OpenSettingsFromRoute />} />
         </Route>
         <Route path="/auth/github/callback" element={<GitHubOAuthCallback />} />
         <Route path="*" element={<Navigate to="/" replace />} />

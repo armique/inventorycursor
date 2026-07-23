@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Search, Package, Wallet, Settings, X } from 'lucide-react';
 import { InventoryItem, Expense, BusinessSettings } from '../types';
 import { formatEUR } from '../utils/formatMoney';
+import { useSettingsModal } from '../context/SettingsModalContext';
 
 interface Props {
   items: InventoryItem[];
@@ -20,6 +21,7 @@ function matches(text: string, q: string): boolean {
 
 const GlobalSearch: React.FC<Props> = ({ items, expenses, businessSettings, onClose }) => {
   const navigate = useNavigate();
+  const { openSettings } = useSettingsModal();
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query);
   const [isOpen, setIsOpen] = useState(false);
@@ -95,7 +97,7 @@ const GlobalSearch: React.FC<Props> = ({ items, expenses, businessSettings, onCl
   };
 
   const handleSelectSettings = () => {
-    navigate('/panel/settings');
+    openSettings();
     setIsOpen(false);
     setQuery('');
   };
