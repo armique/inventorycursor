@@ -47,8 +47,6 @@ interface Props {
   onAddExpense: (expense: Expense) => void;
 }
 
-const DEFAULT_FROM = '2025-01-01';
-
 function todayISO(): string {
   return new Date().toISOString().split('T')[0];
 }
@@ -73,6 +71,72 @@ const DISPOSITION_STYLE: Record<EbayPurchaseDisposition, string> = {
 
 const COLORS = ['Black', 'White', 'Grey', 'Red', 'Blue', 'Green', 'Custom'];
 
+/** eBay Trading GetOrders CreateTime window max (~90 days). */
+const EBAY_PURCHASE_MAX_DAYS = 90;
+
+type PurchaseRangePreset = 'this_week' | 'last_week' | 'last_month' | 'last_3_months';
+
+const RANGE_PILLS: { id: PurchaseRangePreset; label: string }[] = [
+  { id: 'this_week', label: 'This week' },
+  { id: 'last_week', label: 'Last week' },
+  { id: 'last_month', label: 'Last month' },
+  { id: 'last_3_months', label: 'Last 3 months' },
+];
+
+function localISO(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function todayLocal(): Date {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+/** Monday of the week containing `d` (Europe-style weeks). */
+function mondayOf(d: Date): Date {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const day = x.getDay();
+  const offset = day === 0 ? 6 : day - 1;
+  x.setDate(x.getDate() - offset);
+  return x;
+}
+
+function rangeForPreset(id: PurchaseRangePreset): { from: string; to: string } {
+  const today = todayLocal();
+  if (id === 'this_week') {
+    return { from: localISO(mondayOf(today)), to: localISO(today) };
+  }
+  if (id === 'last_week') {
+    const thisMon = mondayOf(today);
+    const lastMon = new Date(thisMon);
+    lastMon.setDate(lastMon.getDate() - 7);
+    const lastSun = new Date(thisMon);
+    lastSun.setDate(lastSun.getDate() - 1);
+    return { from: localISO(lastMon), to: localISO(lastSun) };
+  }
+  if (id === 'last_month') {
+    const firstThisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const lastPrev = new Date(firstThisMonth);
+    lastPrev.setDate(0);
+    const firstPrev = new Date(lastPrev.getFullYear(), lastPrev.getMonth(), 1);
+    return { from: localISO(firstPrev), to: localISO(lastPrev) };
+  }
+  // Last 3 months ≈ full eBay-allowed window (inclusive ~90 days).
+  const from = new Date(today);
+  from.setDate(from.getDate() - (EBAY_PURCHASE_MAX_DAYS - 1));
+  return { from: localISO(from), to: localISO(today) };
+}
+
+function daysBetweenInclusive(from: string, to: string): number {
+  const a = new Date(`${from}T12:00:00`);
+  const b = new Date(`${to}T12:00:00`);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return 0;
+  return Math.max(0, Math.round((b.getTime() - a.getTime()) / 86400000) + 1);
+}
+
 const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
   const [indexVersion, setIndexVersion] = useState(0);
   const refresh = useCallback(() => setIndexVersion((v) => v + 1), []);
@@ -95,13 +159,25 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
   const [backfillError, setBackfillError] = useState<string | null>(null);
   const [backfillMessage, setBackfillMessage] = useState<string | null>(null);
   const cancelRef = useRef({ cancelled: false });
-  const [fromDate, setFromDate] = useState(DEFAULT_FROM);
-  const [toDate, setToDate] = useState(todayISO());
+  const initialRange = rangeForPreset('last_3_months');
+  const [fromDate, setFromDate] = useState(initialRange.from);
+  const [toDate, setToDate] = useState(initialRange.to);
+  const [rangePreset, setRangePreset] = useState<PurchaseRangePreset | null>('last_3_months');
   const [tokenReady, setTokenReady] = useState(() => hasEbayToken());
   const [expandedFilament, setExpandedFilament] = useState<string | null>(null);
   const [filamentForms, setFilamentForms] = useState<
     Record<string, { type: string; color: string; colorCustom: string; weightKg: string }>
   >({});
+
+  const applyRangePreset = useCallback((id: PurchaseRangePreset) => {
+    const range = rangeForPreset(id);
+    setFromDate(range.from);
+    setToDate(range.to);
+    setRangePreset(id);
+  }, []);
+
+  const rangeDays = daysBetweenInclusive(fromDate, toDate);
+  const rangeTooWide = rangeDays > EBAY_PURCHASE_MAX_DAYS;
 
   useEffect(() => {
     const refreshToken = () => setTokenReady(hasEbayToken());
@@ -142,6 +218,16 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
   const runBackfill = async () => {
     if (!tokenReady) {
       setBackfillError('Add your eBay user token in Settings first.');
+      return;
+    }
+    if (!fromDate || !toDate || fromDate > toDate) {
+      setBackfillError('Pick a valid From / To date range.');
+      return;
+    }
+    if (daysBetweenInclusive(fromDate, toDate) > EBAY_PURCHASE_MAX_DAYS) {
+      setBackfillError(
+        `eBay only allows ~${EBAY_PURCHASE_MAX_DAYS} days per purchase fetch. Use a pill range or shorten From/To.`
+      );
       return;
     }
     setBackfilling(true);
@@ -273,8 +359,9 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
               eBay purchases (buyer history)
             </h2>
             <p className="text-xs text-slate-500 mt-1 max-w-2xl leading-relaxed">
-              Fetches what <strong>you bought</strong> on eBay via Trading API. Classify each line: filament stock
-              (links expense + spool), business expense, personal, or skip. Amazon still needs manual entry on{' '}
+              Fetches what <strong>you bought</strong> on eBay via Trading API (max ~{EBAY_PURCHASE_MAX_DAYS}{' '}
+              days per request). Classify each line: filament stock (links expense + spool), business expense,
+              personal, or skip. Amazon still needs manual entry on{' '}
               <Link to="/panel/3d-print" className="text-indigo-600 font-bold hover:underline">
                 3D Print → Filament stock
               </Link>
@@ -309,34 +396,87 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
           </div>
         )}
 
-        <div className="flex flex-wrap gap-3 items-end">
-          <label className="space-y-1">
-            <span className="text-[10px] font-black uppercase text-slate-500">From</span>
-            <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="px-3 py-2 rounded-xl border text-sm font-bold" />
-          </label>
-          <label className="space-y-1">
-            <span className="text-[10px] font-black uppercase text-slate-500">To</span>
-            <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="px-3 py-2 rounded-xl border text-sm font-bold" />
-          </label>
-          <button
-            type="button"
-            disabled={backfilling || !tokenReady}
-            onClick={() => void runBackfill()}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-black uppercase disabled:opacity-50"
-          >
-            {backfilling ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-            Fetch purchases
-          </button>
-          {backfilling && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-1.5">
+            {RANGE_PILLS.map((pill) => {
+              const active = rangePreset === pill.id;
+              return (
+                <button
+                  key={pill.id}
+                  type="button"
+                  disabled={backfilling}
+                  onClick={() => applyRangePreset(pill.id)}
+                  className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide border transition-colors disabled:opacity-50 ${
+                    active
+                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm shadow-indigo-200'
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:text-indigo-700'
+                  }`}
+                >
+                  {pill.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-wrap gap-3 items-end">
+            <label className="space-y-1">
+              <span className="text-[10px] font-black uppercase text-slate-500">From</span>
+              <input
+                type="date"
+                value={fromDate}
+                onChange={(e) => {
+                  setFromDate(e.target.value);
+                  setRangePreset(null);
+                }}
+                disabled={backfilling}
+                className="px-3 py-2 rounded-xl border text-sm font-bold"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-[10px] font-black uppercase text-slate-500">To</span>
+              <input
+                type="date"
+                value={toDate}
+                onChange={(e) => {
+                  setToDate(e.target.value);
+                  setRangePreset(null);
+                }}
+                disabled={backfilling}
+                className="px-3 py-2 rounded-xl border text-sm font-bold"
+              />
+            </label>
             <button
               type="button"
-              onClick={() => {
-                cancelRef.current.cancelled = true;
-              }}
-              className="text-xs font-bold text-red-600"
+              disabled={backfilling || !tokenReady || rangeTooWide}
+              onClick={() => void runBackfill()}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-black uppercase disabled:opacity-50"
             >
-              Cancel
+              {backfilling ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              Fetch purchases
             </button>
+            {backfilling && (
+              <button
+                type="button"
+                onClick={() => {
+                  cancelRef.current.cancelled = true;
+                }}
+                className="text-xs font-bold text-red-600"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+
+          {rangeTooWide ? (
+            <p className="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+              Range is {rangeDays} days — eBay caps purchase history at ~{EBAY_PURCHASE_MAX_DAYS} days. Pick a
+              pill or shorten the dates.
+            </p>
+          ) : (
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">
+              {rangeDays} day{rangeDays === 1 ? '' : 's'} selected
+              {rangePreset ? ` · ${RANGE_PILLS.find((p) => p.id === rangePreset)?.label}` : ''}
+            </p>
           )}
         </div>
 
