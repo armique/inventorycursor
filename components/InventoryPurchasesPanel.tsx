@@ -33,6 +33,7 @@ import { formatEUR } from '../utils/formatMoney';
 import { matchesEbayToolSearch } from '../utils/ebayToolSearch';
 import EbayToolProgressBar, { type EbayToolProgress } from './EbayToolProgressBar';
 import EbayToolSearchInput from './EbayToolSearchInput';
+import PurchaseBuyInfoBlock from './PurchaseBuyInfoBlock';
 
 interface Props {
   items: InventoryItem[];
@@ -217,10 +218,10 @@ const InventoryPurchasesPanel: React.FC<Props> = ({
               Purchases to receive
             </h2>
             <p className="text-xs text-slate-500 mt-1">
-              Confirm when an eBay buy arrives — it is added to Active with buy price, order ID, and
-              parsed specs. Use <span className="font-bold">Parse specs</span> first so Confirm is
-              instant. Sync new lines from{' '}
-              <span className="font-bold">{suggested.from}</span> (incremental).
+              Confirm when an eBay buy arrives — Active gets buy price, date, platform (eBay), seller,
+              order ID, and parsed specs. Use <span className="font-bold">Parse specs</span> first so
+              Confirm is instant. Sync new from{' '}
+              <span className="font-bold">{suggested.from}</span>.
             </p>
           </div>
           <button
@@ -358,6 +359,8 @@ const InventoryPurchasesPanel: React.FC<Props> = ({
                     <p className="text-lg font-black text-slate-900">€{formatEUR(p.totalPaid ?? 0)}</p>
                   </div>
                 </div>
+
+                <PurchaseBuyInfoBlock purchase={p} />
 
                 {specEntries.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">

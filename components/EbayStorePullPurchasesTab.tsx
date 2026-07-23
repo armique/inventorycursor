@@ -58,6 +58,7 @@ import { formatEUR } from '../utils/formatMoney';
 import { matchesEbayToolSearch } from '../utils/ebayToolSearch';
 import EbayToolProgressBar from './EbayToolProgressBar';
 import EbayToolSearchInput from './EbayToolSearchInput';
+import PurchaseBuyInfoBlock from './PurchaseBuyInfoBlock';
 
 interface Props {
   items: InventoryItem[];
@@ -830,6 +831,10 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({
                       </Link>
                     )}
                   </div>
+                </div>
+
+                <div className="px-4 pb-2">
+                  <PurchaseBuyInfoBlock purchase={p} />
                 </div>
 
                 {p.disposition === 'pending' && (

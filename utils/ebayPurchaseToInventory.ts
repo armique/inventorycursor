@@ -16,6 +16,8 @@ import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
 import { filterSpecsToEssentialKeys, resolveEssentialSpecKeys } from '../services/essentialSpecFields';
 import { detectItemCategory } from './itemCategoryDetect';
 import { cleanEbayListingTitle } from './ebayBulkSyncPlan';
+import { formatEUR } from './formatMoney';
+import { formatPlatformBoughtLabel } from './purchaseSource';
 
 export interface PurchaseInventoryDraft {
   name: string;
@@ -26,6 +28,49 @@ export interface PurchaseInventoryDraft {
   specsAiSuggested?: Record<string, string | number>;
   vendor?: string;
   enrichError?: string;
+}
+
+/** Human-readable buy summary for comments / purchase UI. */
+export function formatPurchaseBuySummary(purchase: EbayPurchaseRecord): string {
+  const buyPrice =
+    purchase.totalPaid != null && Number.isFinite(purchase.totalPaid)
+      ? purchase.totalPaid
+      : purchase.unitPrice != null && Number.isFinite(purchase.unitPrice)
+        ? purchase.unitPrice * Math.max(1, purchase.quantity || 1)
+        : null;
+  const parts = [
+    `Bought on ${formatPlatformBoughtLabel('ebay.de') || 'eBay'}`,
+    purchase.sellerUsername ? `seller ${purchase.sellerUsername}` : null,
+    buyPrice != null ? `€${formatEUR(buyPrice)}` : null,
+    purchase.creationDate ? `date ${purchase.creationDate}` : null,
+    purchase.orderId ? `order ${purchase.orderId}` : null,
+    purchase.quantity > 1 ? `qty ${purchase.quantity}` : null,
+  ].filter(Boolean);
+  return parts.join(' · ');
+}
+
+export function formatPurchaseBuyDetailLines(purchase: EbayPurchaseRecord): Array<{ label: string; value: string }> {
+  const buyPrice =
+    purchase.totalPaid != null && Number.isFinite(purchase.totalPaid)
+      ? purchase.totalPaid
+      : purchase.unitPrice != null && Number.isFinite(purchase.unitPrice)
+        ? purchase.unitPrice * Math.max(1, purchase.quantity || 1)
+        : null;
+  const rows: Array<{ label: string; value: string }> = [
+    { label: 'Platform', value: formatPlatformBoughtLabel('ebay.de') || 'eBay' },
+    { label: 'Payment', value: 'eBay' },
+  ];
+  if (purchase.sellerUsername) rows.push({ label: 'Seller', value: purchase.sellerUsername });
+  if (buyPrice != null) rows.push({ label: 'Price paid', value: `€${formatEUR(buyPrice)}` });
+  if (purchase.unitPrice != null && purchase.quantity > 1) {
+    rows.push({ label: 'Unit price', value: `€${formatEUR(purchase.unitPrice)}` });
+  }
+  if (purchase.creationDate) rows.push({ label: 'Buy date', value: purchase.creationDate });
+  if (purchase.orderId) rows.push({ label: 'Order ID', value: purchase.orderId });
+  if (purchase.itemId) rows.push({ label: 'Listing / item ID', value: purchase.itemId });
+  if (purchase.transactionId) rows.push({ label: 'Transaction', value: purchase.transactionId });
+  if (purchase.quantity > 1) rows.push({ label: 'Quantity', value: String(purchase.quantity) });
+  return rows;
 }
 
 function draftFromStored(stored: EbayPurchaseInventoryDraft): PurchaseInventoryDraft {
@@ -146,18 +191,30 @@ export function buildInventoryItemFromPurchase(
         ? purchase.unitPrice * Math.max(1, purchase.quantity || 1)
         : 0;
   const buyDate = purchase.creationDate || today;
-  const sellerVendor = purchase.sellerUsername ? `eBay: ${purchase.sellerUsername}` : 'eBay';
+  // Vendor = where/who you bought from (seller), not the AI product brand.
+  const sellerVendor = purchase.sellerUsername
+    ? `eBay: ${purchase.sellerUsername}`
+    : 'eBay';
+  const brandNote =
+    draft.vendor && draft.vendor.trim() && draft.vendor.trim().toLowerCase() !== purchase.sellerUsername?.toLowerCase()
+      ? `Brand: ${draft.vendor.trim()}`
+      : null;
   const fallbackImage =
     CATEGORY_IMAGES[draft.subCategory || draft.category] ||
     CATEGORY_IMAGES[draft.category] ||
     CATEGORY_IMAGES.Components ||
     Object.values(CATEGORY_IMAGES)[0];
-  const orderBits = [
-    `eBay purchase #${purchase.orderId}`,
-    purchase.itemId ? `item ${purchase.itemId}` : null,
+  const comment1 = [formatPurchaseBuySummary(purchase), brandNote].filter(Boolean).join(' · ');
+  const comment2 = [
+    purchase.orderId ? `Order ${purchase.orderId}` : null,
+    purchase.transactionId ? `txn ${purchase.transactionId}` : null,
+    purchase.itemId ? `listing ${purchase.itemId}` : null,
     purchase.quantity > 1 ? `qty ${purchase.quantity}` : null,
     `line ${purchase.lineKey}`,
-  ].filter(Boolean);
+    `received ${today}`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   return {
     id,
@@ -167,17 +224,18 @@ export function buildInventoryItemFromPurchase(
     buyPrice,
     buyDate,
     status: ItemStatus.IN_STOCK,
-    vendor: draft.vendor || sellerVendor,
+    vendor: sellerVendor,
     platformBought: 'ebay.de',
     buyPaymentType: 'ebay.de',
-    ebayOrderId: purchase.orderId,
+    ebayOrderId: purchase.orderId || undefined,
     ebaySku: purchase.itemId || undefined,
+    quantity: purchase.quantity > 1 ? purchase.quantity : undefined,
     specs: draft.specs,
     specsAiSuggested: draft.specsAiSuggested,
     imageUrl: fallbackImage,
     imageUrls: fallbackImage ? [fallbackImage] : [],
-    comment1: '',
-    comment2: orderBits.join(' · '),
+    comment1,
+    comment2,
   };
 }
 
