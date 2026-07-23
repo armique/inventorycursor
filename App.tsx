@@ -2,10 +2,10 @@ import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspens
 import { BrowserRouter as Router, Routes, Route, Navigate, useSearchParams, useNavigate } from 'react-router-dom';
 import { Cloud, CheckCircle2, Loader2, WifiOff, RefreshCw, X } from 'lucide-react';
 
-import StorefrontPage from './components/StorefrontPage';
 import PanelLayout from './components/PanelLayout';
 import QuotaMonitor from './components/QuotaMonitor';
 
+const StorefrontPage = lazy(() => import('./components/StorefrontPage'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
 const InventoryList = lazy(() => import('./components/InventoryList'));
 const ItemForm = lazy(() => import('./components/ItemForm'));
@@ -1526,8 +1526,22 @@ const App: React.FC = () => {
       <UndoToastBridge showUndoRef={showUndoRef} />
       <PanelLocaleProvider>
       <Routes>
-        <Route path="/" element={<StorefrontPage />} />
-        <Route path="/item/:id" element={<StorefrontPage />} />
+        <Route
+          path="/"
+          element={
+            <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+              <StorefrontPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/item/:id"
+          element={
+            <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+              <StorefrontPage />
+            </Suspense>
+          }
+        />
         <Route path="/upload/:token" element={<PhonePhotoUploadPage />} />
         <Route path="/impressum" element={<LegalPage />} />
         <Route path="/datenschutz" element={<LegalPage />} />

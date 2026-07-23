@@ -38,6 +38,7 @@ import {
   buildSuggestedEbayMap,
   resolveSuggestedEbayList,
   suggestionPatchFromPrice,
+  type SuggestedEbayPrice,
 } from '../utils/flipInsights';
 import { loadFlipFees } from '../utils/flipCoach';
 import {
@@ -378,7 +379,13 @@ function computeAutoColumnWidths(items: InventoryItem[]): Partial<Record<ColumnI
 
   let maxFlagActionButtons = 0;
 
-  for (const item of items) {
+  // Sample — measuring every row on large inventories blocks first paint.
+  const sample =
+    items.length <= 120
+      ? items
+      : items.filter((_, idx) => idx % Math.ceil(items.length / 120) === 0).slice(0, 120);
+
+  for (const item of sample) {
     maxFlagActionButtons = Math.max(maxFlagActionButtons, countMergedFlagActionButtons(item));
     if (item.category) {
       categoryW = Math.max(categoryW, measureTextWidth(ctx, item.category.toUpperCase(), '900 11px Inter, sans-serif'));
@@ -480,6 +487,8 @@ type InventoryListFilterParams = {
   bulkImportFilterId: string | null;
   /** Item ids from the history record — used when rows were never stamped with bulkImportId. */
   bulkImportItemIds: Set<string> | null;
+  /** Precomputed kit-child ids — avoids O(n²) hide scans. */
+  hiddenChildIds?: Set<string>;
 };
 
 function filterAndSortInventoryItems(params: InventoryListFilterParams): InventoryItem[] {
@@ -502,6 +511,7 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
     smartPreset,
     bulkImportFilterId,
     bulkImportItemIds,
+    hiddenChildIds,
   } = params;
 
   const query = searchTerm.trim();
@@ -549,7 +559,13 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
     // Bundle/PC/mixed components always nest under the parent — never as top-level rows.
     // Search still surfaces the parent when a child matches.
     // Dedicated bulk-batch view lists every stamped member (including sold / in-composition kids).
-    if (!bulkBatchActive && shouldHideContainerChildInList(item, items)) return false;
+    if (!bulkBatchActive) {
+      if (hiddenChildIds) {
+        if (!item.isBundle && !item.isPC && hiddenChildIds.has(item.id)) return false;
+      } else if (shouldHideContainerChildInList(item, items)) {
+        return false;
+      }
+    }
     // Orphan "in composition" rows (no parent container) respect the visibility toggle.
     if (!bulkBatchActive && !searchActive && !showInComposition && item.status === ItemStatus.IN_COMPOSITION) return false;
 
@@ -1734,6 +1750,18 @@ const InventoryList: React.FC<Props> = ({
     return specOptions.find((o) => lowerMatch(o.key));
   }, [specOptions]);
 
+  /** Fast hide set for kit children — built before filter to avoid O(n²) parent scans. */
+  const hiddenChildIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const i of items) {
+      if (i.parentContainerId) s.add(i.id);
+      if ((i.isBundle || i.isPC) && i.componentIds?.length) {
+        for (const id of i.componentIds) s.add(id);
+      }
+    }
+    return s;
+  }, [items]);
+
   // Filtering & Sorting
   const listFilterParams = useMemo(
     (): Omit<InventoryListFilterParams, 'statusFilter'> => ({
@@ -1754,6 +1782,7 @@ const InventoryList: React.FC<Props> = ({
       smartPreset,
       bulkImportFilterId,
       bulkImportItemIds,
+      hiddenChildIds,
     }),
     [
       items,
@@ -1773,6 +1802,7 @@ const InventoryList: React.FC<Props> = ({
       smartPreset,
       bulkImportFilterId,
       bulkImportItemIds,
+      hiddenChildIds,
     ]
   );
 
@@ -2055,14 +2085,59 @@ const InventoryList: React.FC<Props> = ({
 
   const deferredItemsForSuggest = useDeferredValue(items);
   const deferredChildrenByParent = useDeferredValue(childrenByParentId);
-  const suggestedEbayById = useMemo(
-    () =>
-      buildSuggestedEbayMap(deferredItemsForSuggest, loadFlipFees(), {
-        childrenByParent: deferredChildrenByParent,
-        limit: 200,
-      }),
-    [deferredItemsForSuggest, deferredChildrenByParent]
+  const [suggestedEbayById, setSuggestedEbayById] = useState(
+    () => new Map<string, SuggestedEbayPrice>()
   );
+
+  // Suggest chips: cheap snapshots first frame, full comps after idle (keeps open instant).
+  useEffect(() => {
+    let cancelled = false;
+    const fees = loadFlipFees();
+    const children = deferredChildrenByParent;
+    const list = deferredItemsForSuggest;
+
+    const paintFast = () => {
+      if (cancelled) return;
+      setSuggestedEbayById(
+        buildSuggestedEbayMap(list, fees, {
+          childrenByParent: children,
+          limit: 80,
+          snapshotsOnly: true,
+        })
+      );
+    };
+
+    const paintFull = () => {
+      if (cancelled) return;
+      startTransition(() => {
+        setSuggestedEbayById(
+          buildSuggestedEbayMap(list, fees, {
+            childrenByParent: children,
+            limit: 100,
+            snapshotsOnly: false,
+          })
+        );
+      });
+    };
+
+    // Microtask: snapshots/cost only (no sales-pool rebuild).
+    const t0 = window.setTimeout(paintFast, 0);
+    let idleId: number | null = null;
+    let t1: number | null = null;
+    if (typeof window.requestIdleCallback === 'function') {
+      idleId = window.requestIdleCallback(paintFull, { timeout: 1800 });
+    } else {
+      t1 = window.setTimeout(paintFull, 400);
+    }
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t0);
+      if (t1 != null) window.clearTimeout(t1);
+      if (idleId != null && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleId);
+      }
+    };
+  }, [deferredItemsForSuggest, deferredChildrenByParent]);
 
   const handleDuplicate = (item: InventoryItem) => {
     const copy: InventoryItem = {

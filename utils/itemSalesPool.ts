@@ -243,11 +243,31 @@ function poolToken(items: InventoryItem[]): string {
 
 /**
  * Fast path for comps: reuse memory cache keyed by sold-set fingerprint.
- * Never rebuilds on every chip — that froze the UI.
+ * Hydrates from localStorage instantly; rebuilds in background if fingerprint drifts.
  */
 export function getCachedSaleEvents(items: InventoryItem[]): ItemSaleEvent[] {
   const token = poolToken(items);
   if (memCache && memCache.token === token) return memCache.events;
+
+  // Instant hydrate from disk — never block first paint rebuilding thousands of sales.
+  const disk = loadItemSalesPool();
+  if (disk && disk.events.length > 0) {
+    memCache = { token, events: disk.events, snapshot: disk };
+    // Rebuild quietly if sold-set likely changed (token stored separately would be ideal;
+    // for now, only rebuild when event count is wildly off vs sold rows).
+    let sold = 0;
+    for (const i of items) {
+      if (i.status === ItemStatus.SOLD || i.status === ItemStatus.TRADED) sold += 1;
+    }
+    const drift = Math.abs(disk.events.length - sold) > Math.max(8, Math.floor(sold * 0.25));
+    if (drift && typeof setTimeout !== 'undefined') {
+      if (persistTimer) clearTimeout(persistTimer);
+      persistTimer = setTimeout(() => {
+        rebuildItemSalesPool(items);
+      }, 3000);
+    }
+    return disk.events;
+  }
 
   const events = buildItemSaleEvents(items);
   const snapshot: ItemSalesPoolSnapshot = {
@@ -256,7 +276,6 @@ export function getCachedSaleEvents(items: InventoryItem[]): ItemSaleEvent[] {
     events,
   };
   memCache = { token, events, snapshot };
-  // Persist off the hot path (debounce) so clicks stay responsive.
   if (typeof setTimeout !== 'undefined') {
     if (persistTimer) clearTimeout(persistTimer);
     persistTimer = setTimeout(() => {

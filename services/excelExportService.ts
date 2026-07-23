@@ -1,5 +1,4 @@
-import * as XLSX from 'xlsx';
-import { InventoryItem } from '../types';
+import type { InventoryItem } from '../types';
 
 /** Flatten an item into a row object for Excel. */
 function itemToRow(item: InventoryItem): Record<string, string | number> {
@@ -27,12 +26,13 @@ function itemToRow(item: InventoryItem): Record<string, string | number> {
 
 /**
  * Export inventory items to .xlsx and trigger download.
+ * xlsx is loaded on demand so it stays out of the inventory first-paint chunk.
  */
-export function exportInventoryToExcel(items: InventoryItem[], filename?: string): void {
+export async function exportInventoryToExcel(items: InventoryItem[]): Promise<void> {
+  const XLSX = await import('xlsx');
   const rows = items.map(itemToRow);
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Inventory');
-  const name = filename || `inventory-export-${new Date().toISOString().slice(0, 10)}.xlsx`;
-  XLSX.writeFile(wb, name);
+  XLSX.writeFile(wb, `inventory-${new Date().toISOString().slice(0, 10)}.xlsx`);
 }

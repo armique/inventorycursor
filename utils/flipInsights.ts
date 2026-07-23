@@ -382,11 +382,18 @@ export function resolveSuggestedEbayList(
 export function buildSuggestedEbayMap(
   items: InventoryItem[],
   fees: FlipFeeSettings = loadFlipFees(),
-  opts?: { limit?: number; childrenByParent?: Map<string, InventoryItem[]> }
+  opts?: {
+    limit?: number;
+    childrenByParent?: Map<string, InventoryItem[]>;
+    /** Skip sold-comps (age/cost + saved snapshots only) — use for first paint. */
+    snapshotsOnly?: boolean;
+  }
 ): Map<string, SuggestedEbayPrice> {
-  // Warm sales-pool memory cache once for this batch (not per chip).
-  getCachedSaleEvents(items);
-  const limit = opts?.limit ?? 200;
+  const snapshotsOnly = opts?.snapshotsOnly === true;
+  if (!snapshotsOnly) {
+    getCachedSaleEvents(items);
+  }
+  const limit = opts?.limit ?? (snapshotsOnly ? 80 : 120);
   const map = new Map<string, SuggestedEbayPrice>();
   const stock = items.filter(
     (i) =>
@@ -402,12 +409,89 @@ export function buildSuggestedEbayMap(
   for (const item of ordered) {
     if (n >= limit) break;
     const children = opts?.childrenByParent?.get(item.id) || [];
-    const s = resolveSuggestedEbayList(item, items, fees, children);
+    let s: SuggestedEbayPrice | null;
+    if (snapshotsOnly) {
+      s = resolveSuggestedFromSnapshotOrCost(item, fees, children);
+    } else {
+      s = resolveSuggestedEbayList(item, items, fees, children);
+    }
     if (!s) continue;
     map.set(item.id, s);
     n += 1;
   }
   return map;
+}
+
+/** Cheap suggest for first paint — no comps / sales-pool scans. */
+function resolveSuggestedFromSnapshotOrCost(
+  item: InventoryItem,
+  fees: FlipFeeSettings,
+  children: InventoryItem[]
+): SuggestedEbayPrice | null {
+  const feePct = totalEbayFeePct(fees);
+  const buy = effectiveSuggestionBuy(item, children);
+  const daysHeld = daysHeldFromBuyDate(item.buyDate);
+  const targetMargin = targetMarginForDaysHeld(daysHeld);
+
+  if (
+    item.suggestedEbayListPrice != null &&
+    Number.isFinite(item.suggestedEbayListPrice) &&
+    item.suggestedEbayListPrice > 0
+  ) {
+    const fee = item.suggestedFeePct ?? feePct;
+    const pocket = roundMoney(
+      item.suggestedPocketTarget ||
+        pocketFromEbayListPrice(item.suggestedEbayListPrice, fee)
+    );
+    const klein = roundMoney(
+      item.suggestedKleinListPrice || pocket || item.suggestedEbayListPrice
+    );
+    return finalizeSuggestionAgainstBuy(
+      {
+        ebayList: roundMoney(item.suggestedEbayListPrice),
+        kleinList: klein,
+        pocketTarget: pocket,
+        feePct: fee,
+        compCount: item.suggestedCompCount ?? 0,
+        fromSnapshot: true,
+      },
+      buy,
+      fee,
+      daysHeld
+    );
+  }
+
+  if (children.length) {
+    let ebay = 0;
+    let klein = 0;
+    let pocket = 0;
+    let any = false;
+    for (const child of children) {
+      const s = resolveSuggestedFromSnapshotOrCost(child, fees, []);
+      if (!s) continue;
+      any = true;
+      ebay += s.ebayList;
+      klein += s.kleinList;
+      pocket += s.pocketTarget;
+    }
+    if (any) {
+      return finalizeSuggestionAgainstBuy(
+        {
+          ebayList: roundMoney(ebay),
+          kleinList: roundMoney(klein),
+          pocketTarget: roundMoney(pocket),
+          feePct,
+          compCount: 0,
+          fromSnapshot: false,
+        },
+        buy,
+        feePct,
+        daysHeld
+      );
+    }
+  }
+
+  return costBasedSuggestion(buy, feePct, targetMargin, daysHeld);
 }
 
 export type FlipSaleRecord = {
