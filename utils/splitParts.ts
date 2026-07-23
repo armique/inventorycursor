@@ -21,34 +21,66 @@ export type SplitPartPresetId =
 export type SplitPartPreset = {
   id: SplitPartPresetId;
   label: string;
+  /** Short label used in generated names. */
+  shortLabel: string;
   /** Relative weight for buy-cost allocation (normalized across selected). */
   weight: number;
   category: string;
   subCategory: string;
-  /** Fans support a quantity stepper. */
+  /** Fans support a quantity stepper → one child row with quantity. */
   hasQty?: boolean;
 };
 
 export const SPLIT_PART_PRESETS: SplitPartPreset[] = [
-  { id: 'ovp', label: 'OVP', weight: 5, category: 'Misc', subCategory: 'Spare Parts' },
-  { id: 'lcd', label: 'LCD', weight: 30, category: 'Components', subCategory: 'Cooling' },
+  {
+    id: 'ovp',
+    label: 'OVP',
+    shortLabel: 'OVP',
+    weight: 5,
+    category: 'Misc',
+    subCategory: 'Spare Parts',
+  },
+  {
+    id: 'lcd',
+    label: 'LCD',
+    shortLabel: 'LCD',
+    weight: 30,
+    category: 'Components',
+    subCategory: 'Cooling',
+  },
   {
     id: 'fans',
     label: 'Fans',
+    shortLabel: 'Fans',
     weight: 10,
     category: 'Components',
     subCategory: 'Cooling',
     hasQty: true,
   },
-  { id: 'radiator', label: 'Radiator', weight: 25, category: 'Components', subCategory: 'Cooling' },
+  {
+    id: 'radiator',
+    label: 'Radiator',
+    shortLabel: 'Rad',
+    weight: 25,
+    category: 'Components',
+    subCategory: 'Cooling',
+  },
   {
     id: 'controller',
     label: 'Controller',
+    shortLabel: 'Ctrl',
     weight: 10,
     category: 'Components',
     subCategory: 'Cooling',
   },
-  { id: 'cable', label: 'Cable', weight: 5, category: 'Misc', subCategory: 'Cables' },
+  {
+    id: 'cable',
+    label: 'Cable',
+    shortLabel: 'Cable',
+    weight: 5,
+    category: 'Misc',
+    subCategory: 'Cables',
+  },
 ];
 
 export type AioHints = {
@@ -57,6 +89,55 @@ export type AioHints = {
   defaultFanQty: number;
   likelyLcd: boolean;
 };
+
+const FILLER_WORDS =
+  /\b(aio|all[\s-]?in[\s-]?one|wasserk(?:ue|ü)hlung|water\s*cooling|liquid\s*cooler|cpu\s*cooler|rgb|argb|white|black|blackout|edition|kit|set|defekt|faulty|broken|neu|new|ovp)\b/gi;
+
+/** Compact brand + model/size stem for short part names (e.g. "Arctic 360", "Corsair H100i"). */
+export function shortSourceStem(sourceName: string, radiatorMm?: number | null): string {
+  let s = (sourceName || '').trim();
+  if (!s) return 'Item';
+
+  s = s.replace(FILLER_WORDS, ' ');
+  s = s.replace(/[|/·•]+/g, ' ');
+  s = s.replace(/\s+/g, ' ').trim();
+
+  // Prefer known short product tokens + size.
+  const model =
+    s.match(/\b(h100i|h115i|h150i|h170i|h100|kraken\s*z?\d*|liquid\s*freezer(?:\s*ii|\s*iii)?|lf\s*ii|lf\s*iii|castlex|galahad|ryujin|mag\s*coreliquid[^\s]*)\b/i)?.[0] ||
+    '';
+  const brand =
+    s.match(
+      /\b(arctic|corsair|nzxt|cooler\s*master|deepcool|be\s*quiet!?|noctua|asus|msi|gigabyte|ekwb|ek\b|thermaltake|fractal|lian\s*li|alphacool)\b/i
+    )?.[0] || s.split(/\s+/)[0] || 'Item';
+
+  const mm = radiatorMm ?? (s.match(/\b(120|140|240|280|360|420)\b/) ? Number(s.match(/\b(120|140|240|280|360|420)\b/)![1]) : null);
+
+  const brandClean = brand.replace(/\s+/g, ' ').trim();
+  let modelClean = model.replace(/\s+/g, ' ').trim();
+  modelClean = modelClean
+    .replace(/liquid\s*freezer\s*iii/i, 'LF III')
+    .replace(/liquid\s*freezer\s*ii/i, 'LF II')
+    .replace(/liquid\s*freezer/i, 'LF')
+    .replace(/coreliquid/i, 'CL');
+
+  let stem = brandClean;
+  if (modelClean && !stem.toLowerCase().includes(modelClean.toLowerCase().slice(0, 5))) {
+    stem = `${stem} ${modelClean}`.trim();
+  }
+  if (mm && !stem.includes(String(mm))) {
+    stem = `${stem} ${mm}`.trim();
+  }
+
+  // Fallback: first 3 meaningful tokens if still too generic.
+  if (stem.split(/\s+/).length < 2) {
+    const tokens = s.split(/\s+/).filter((t) => t.length > 1).slice(0, 3);
+    if (tokens.length) stem = tokens.join(' ');
+  }
+
+  if (stem.length > 24) stem = stem.slice(0, 24).trim();
+  return stem || 'Item';
+}
 
 export function detectAioHints(
   name: string,
@@ -100,21 +181,29 @@ export function detectAioHints(
 export function buildPartName(
   sourceName: string,
   partLabel: string,
-  opts?: { fanIndex?: number; fanTotal?: number; radiatorMm?: number | null }
+  opts?: { fanQty?: number; radiatorMm?: number | null; shortLabel?: string }
 ): string {
-  const base = (sourceName || 'Item').trim() || 'Item';
-  let label = partLabel;
-  if (partLabel === 'Radiator' && opts?.radiatorMm) {
-    label = `Radiator ${opts.radiatorMm}mm`;
+  const stem = shortSourceStem(sourceName, opts?.radiatorMm);
+  const short =
+    opts?.shortLabel ||
+    (partLabel === 'Radiator'
+      ? 'Rad'
+      : partLabel === 'Controller'
+        ? 'Ctrl'
+        : partLabel === 'Fans' || partLabel === 'Fan'
+          ? 'Fans'
+          : partLabel);
+
+  if (short === 'Rad' && opts?.radiatorMm) {
+    // Avoid "… 360 Rad 360"
+    if (stem.includes(String(opts.radiatorMm))) return `${stem} Rad`;
+    return `${stem} Rad ${opts.radiatorMm}`;
   }
-  if (partLabel === 'Fans' || partLabel === 'Fan') {
-    if (opts?.fanTotal && opts.fanTotal > 1 && opts.fanIndex != null) {
-      label = `Fan ${opts.fanIndex}/${opts.fanTotal}`;
-    } else {
-      label = 'Fan';
-    }
+  if (short === 'Fans') {
+    const q = opts?.fanQty && opts.fanQty > 1 ? opts.fanQty : null;
+    return q ? `${stem} Fans ×${q}` : `${stem} Fan`;
   }
-  return `${base} · ${label}`;
+  return `${stem} ${short}`;
 }
 
 export type SplitPartDraft = {
@@ -126,6 +215,10 @@ export type SplitPartDraft = {
   weight: number;
   category: string;
   subCategory: string;
+  /** Fans: stock quantity on the single child row. */
+  quantity?: number;
+  /** Per-part defective flag. */
+  isDefective?: boolean;
   /** Manual override — skipped on next auto-allocate. */
   buyLocked?: boolean;
 };
@@ -151,7 +244,6 @@ export function allocateBuyAcrossParts(
   let remaining = Math.max(0, totalCents - lockedCents);
 
   if (!free.length) {
-    // Dump leftover onto last locked part if any.
     if (locked.length && remaining !== 0) {
       const last = locked[locked.length - 1];
       out[last.key] = roundMoney(out[last.key] + remaining / 100);
@@ -203,7 +295,6 @@ export function defaultSplitSelection(
     cable: coolingish,
   } as Record<SplitPartPresetId, boolean>;
 
-  // If it looks like an AIO but no LCD hint, still offer LCD unchecked; enable core parts.
   if (coolingish && !hints.likelyLcd) {
     enabled.lcd = false;
   }
@@ -215,7 +306,7 @@ export function defaultSplitSelection(
 }
 
 export function buildSplitDrafts(
-  source: Pick<InventoryItem, 'name' | 'buyPrice' | 'specs' | 'hasOVP'>,
+  source: Pick<InventoryItem, 'name' | 'buyPrice' | 'specs' | 'hasOVP' | 'isDefective'>,
   selection: SplitSelection,
   previous?: SplitPartDraft[]
 ): SplitPartDraft[] {
@@ -228,27 +319,28 @@ export function buildSplitDrafts(
 
     if (preset.id === 'fans') {
       const qty = Math.min(6, Math.max(1, selection.fanQty || 1));
-      for (let i = 1; i <= qty; i++) {
-        const key = `fans-${i}`;
-        const prev = prevByKey.get(key);
-        drafts.push({
-          key,
-          presetId: 'fans',
-          label: qty > 1 ? `Fan ${i}/${qty}` : 'Fan',
-          name:
-            prev?.name ||
-            buildPartName(source.name, 'Fans', {
-              fanIndex: i,
-              fanTotal: qty,
-              radiatorMm: hints.radiatorMm,
-            }),
-          buyPrice: prev?.buyLocked ? prev.buyPrice : 0,
-          weight: preset.weight,
-          category: preset.category,
-          subCategory: preset.subCategory,
-          buyLocked: prev?.buyLocked,
-        });
-      }
+      const key = 'fans';
+      const prev = prevByKey.get(key);
+      drafts.push({
+        key,
+        presetId: 'fans',
+        label: qty > 1 ? `Fans ×${qty}` : 'Fan',
+        name:
+          prev?.name ||
+          buildPartName(source.name, 'Fans', {
+            fanQty: qty,
+            radiatorMm: hints.radiatorMm,
+            shortLabel: 'Fans',
+          }),
+        buyPrice: prev?.buyLocked ? prev.buyPrice : 0,
+        // Scale fan weight with qty so 3 fans get a fairer share of cost.
+        weight: preset.weight * qty,
+        category: preset.category,
+        subCategory: preset.subCategory,
+        quantity: qty,
+        isDefective: prev?.isDefective ?? false,
+        buyLocked: prev?.buyLocked,
+      });
       continue;
     }
 
@@ -260,11 +352,15 @@ export function buildSplitDrafts(
       label: preset.label,
       name:
         prev?.name ||
-        buildPartName(source.name, preset.label, { radiatorMm: hints.radiatorMm }),
+        buildPartName(source.name, preset.label, {
+          radiatorMm: hints.radiatorMm,
+          shortLabel: preset.shortLabel,
+        }),
       buyPrice: prev?.buyLocked ? prev.buyPrice : 0,
       weight: preset.weight,
       category: preset.category,
       subCategory: preset.subCategory,
+      isDefective: prev?.isDefective ?? false,
       buyLocked: prev?.buyLocked,
     });
   }
@@ -286,10 +382,7 @@ export function buildSplitDrafts(
   }));
 }
 
-export function canSplitItem(
-  item: InventoryItem,
-  childCount = 0
-): boolean {
+export function canSplitItem(item: InventoryItem, childCount = 0): boolean {
   if (item.status !== ItemStatus.IN_STOCK) return false;
   if ((item.isPC || item.isBundle) && childCount > 0) return false;
   return true;
@@ -328,8 +421,11 @@ export function buildSplitApplyItems(
       parentContainerId: source.id,
       vendor: source.vendor,
       presence: source.presence || 'present',
-      isDefective: source.isDefective,
+      isDefective: d.isDefective === true,
     };
+    if (d.presetId === 'fans' && d.quantity && d.quantity > 1) {
+      child = { ...child, quantity: d.quantity };
+    }
     if (d.presetId === 'ovp') child = { ...child, hasOVP: true };
 
     const sugg = resolveSuggestedEbayList(child, [...allItems, child], loadFlipFees(), []);
@@ -340,17 +436,18 @@ export function buildSplitApplyItems(
   });
 
   const buyTotal = roundMoney(children.reduce((s, c) => s + (Number(c.buyPrice) || 0), 0));
+  const anyDefective = children.some((c) => c.isDefective);
   const parent: InventoryItem = {
     ...source,
     isBundle: true,
     isPC: false,
-    category: source.isDefective ? 'Mixed Bundle' : 'Bundle',
+    category: anyDefective || source.isDefective ? 'Mixed Bundle' : 'Bundle',
     status: ItemStatus.IN_STOCK,
     buyPrice: buyTotal,
     componentIds: children.map((c) => c.id),
     comment1: `Split into ${children.length} parts from original item.`,
     comment2: children
-      .map((c) => `- ${c.name}`)
+      .map((c) => `- ${c.name}${c.isDefective ? ' [defekt]' : ''}`)
       .join('\n')
       .slice(0, 2000),
     marketTitle: source.marketTitle || source.name,

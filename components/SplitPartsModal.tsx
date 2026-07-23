@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { X, Scissors, Plus, Minus, Check } from 'lucide-react';
+import { X, Scissors, Plus, Minus, Check, AlertTriangle } from 'lucide-react';
 import type { InventoryItem } from '../types';
 import { formatEUR, parseLocaleMoney } from '../utils/formatMoney';
 import {
@@ -55,9 +55,7 @@ const SplitPartsModal: React.FC<Props> = ({ item, items, onClose, onApply }) => 
   };
 
   const patchDraft = (key: string, patch: Partial<SplitPartDraft>) => {
-    setDrafts((prev) =>
-      prev.map((d) => (d.key === key ? { ...d, ...patch } : d))
-    );
+    setDrafts((prev) => prev.map((d) => (d.key === key ? { ...d, ...patch } : d)));
   };
 
   const handleConfirm = () => {
@@ -107,7 +105,7 @@ const SplitPartsModal: React.FC<Props> = ({ item, items, onClose, onApply }) => 
 
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
           <p className="text-[11px] text-slate-500 font-medium">
-            Pick parts to create. Cost is split by weight; edit names or lock a buy €.
+            Pick parts. Fans stay one row with qty. Mark each part faulty if needed.
           </p>
 
           <div className="space-y-2">
@@ -172,7 +170,11 @@ const SplitPartsModal: React.FC<Props> = ({ item, items, onClose, onApply }) => 
               {drafts.map((d) => (
                 <div
                   key={d.key}
-                  className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 space-y-1.5"
+                  className={`rounded-xl border px-3 py-2 space-y-1.5 ${
+                    d.isDefective
+                      ? 'border-amber-300 bg-amber-50/70'
+                      : 'border-slate-200 bg-slate-50/80'
+                  }`}
                 >
                   <input
                     type="text"
@@ -180,7 +182,7 @@ const SplitPartsModal: React.FC<Props> = ({ item, items, onClose, onApply }) => 
                     onChange={(e) => patchDraft(d.key, { name: e.target.value })}
                     className="w-full text-xs font-semibold text-slate-900 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-violet-300"
                   />
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-[10px] font-bold uppercase text-slate-400 shrink-0">
                       Buy €
                     </span>
@@ -197,8 +199,11 @@ const SplitPartsModal: React.FC<Props> = ({ item, items, onClose, onApply }) => 
                           return buildSplitDrafts(item, selection, next);
                         });
                       }}
-                      className="flex-1 text-xs font-bold tabular-nums bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-violet-300"
+                      className="w-24 text-xs font-bold tabular-nums bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-violet-300"
                     />
+                    {d.quantity != null && d.quantity > 1 && (
+                      <span className="text-[10px] font-bold text-slate-500">×{d.quantity}</span>
+                    )}
                     {d.buyLocked && (
                       <button
                         type="button"
@@ -218,6 +223,20 @@ const SplitPartsModal: React.FC<Props> = ({ item, items, onClose, onApply }) => 
                         Auto
                       </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => patchDraft(d.key, { isDefective: !d.isDefective })}
+                      className={`ml-auto inline-flex items-center gap-1 text-[10px] font-black uppercase px-2 py-1 rounded-md border transition-colors ${
+                        d.isDefective
+                          ? 'bg-amber-100 text-amber-900 border-amber-300'
+                          : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                      }`}
+                      aria-pressed={Boolean(d.isDefective)}
+                      title={d.isDefective ? 'Marked faulty' : 'Mark as faulty'}
+                    >
+                      <AlertTriangle size={11} />
+                      {d.isDefective ? 'Faulty' : 'OK'}
+                    </button>
                   </div>
                 </div>
               ))}
