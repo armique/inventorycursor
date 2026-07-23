@@ -77,6 +77,10 @@ describe('listingWatch', () => {
     expect(a!.daysHeld).toBeGreaterThanOrEqual(5);
     expect(a!.channels.some((c) => c.channel === 'KA' && c.action === 'drop')).toBe(true);
     expect(a!.channels.some((c) => c.channel === 'EB' && c.action === 'list')).toBe(true);
+    expect(a!.minMarginPct).toBe(30);
+    expect(a!.minKlein).toBeGreaterThanOrEqual(Math.round(48 * 1.3));
+    expect(a!.minEbay).toBeGreaterThanOrEqual(a!.minKlein);
+    expect(a!.minLabel).toMatch(/Min 30%/);
   });
 });
 

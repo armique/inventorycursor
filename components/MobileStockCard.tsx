@@ -182,6 +182,12 @@ export const MobileStockCard: React.FC<{
                     <span className="text-[9px] font-bold uppercase tracking-wide text-slate-500">
                       {analyzer.ageLabel}
                     </span>
+                    {analyzer.minKlein > 0 && analyzer.minEbay > 0 && (
+                      <span className="inline-flex self-start px-1.5 py-0.5 rounded border border-rose-200 bg-rose-50 text-[9px] font-black uppercase text-rose-900">
+                        Min {analyzer.minMarginPct}% · KA €{formatEUR(analyzer.minKlein)} · EB €
+                        {formatEUR(analyzer.minEbay)}
+                      </span>
+                    )}
                     <div className="flex flex-wrap gap-1">
                       {analyzer.channels.map((ch) => (
                         <span

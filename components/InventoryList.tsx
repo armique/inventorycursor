@@ -3413,6 +3413,18 @@ const InventoryList: React.FC<Props> = ({
                                  </span>
                                )}
                              </div>
+                             {analyzer.minKlein > 0 && analyzer.minEbay > 0 && (
+                               <div
+                                 className="inline-flex items-center gap-1 flex-wrap self-start px-1.5 py-0.5 rounded border border-rose-200 bg-rose-50 text-[9px] font-black uppercase tracking-wide text-rose-900"
+                                 title={`Hard floor: ${analyzer.minMarginPct}% pocket vs buy. KA has no fees; eBay list is higher so you still net the same after fees. Never list below these.`}
+                               >
+                                 <span>Min {analyzer.minMarginPct}%</span>
+                                 <span className="text-rose-300">·</span>
+                                 <span>KA €{formatEUR(analyzer.minKlein)}</span>
+                                 <span className="text-rose-300">·</span>
+                                 <span>EB €{formatEUR(analyzer.minEbay)}</span>
+                               </div>
+                             )}
                              <div className="flex items-center gap-1 flex-wrap">
                                {analyzer.channels.map((ch) => (
                                  <button

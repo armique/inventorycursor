@@ -8,6 +8,8 @@ import type { InventoryItem } from '../types';
 import { ItemStatus } from '../types';
 import {
   daysHeldFromBuyDate,
+  MIN_SUGGEST_MARGIN,
+  roundListPriceUp,
   targetMarginForDaysHeld,
   type SuggestedEbayPrice,
 } from './flipInsights';
@@ -74,6 +76,12 @@ export type PriceAnalyzer = {
   ageLabel: string;
   kleinSuggest: number;
   ebaySuggest: number;
+  /** Hard floor: list prices that yield exactly MIN_SUGGEST_MARGIN (30%) pocket vs buy. */
+  minMarginPct: number;
+  minKlein: number;
+  minEbay: number;
+  /** "Min 30% · KA €63 · EB €84" */
+  minLabel: string;
   channels: PriceAnalyzerChannel[];
   /** Most urgent channel (drop/raise preferred over ok/list). */
   primary: PriceAnalyzerChannel | null;
@@ -112,6 +120,26 @@ export function cheapSuggestLists(item: InventoryItem): {
     targetMargin,
     daysHeld,
     buy,
+  };
+}
+
+/** KA + eBay list prices that pocket exactly `margin` on buy (default 30% floor). */
+export function minMarginListPrices(
+  buy: number,
+  margin: number = MIN_SUGGEST_MARGIN
+): { klein: number; ebay: number; marginPct: number } | null {
+  if (!(buy > 0)) return null;
+  const m = Math.max(0, margin);
+  const pocket = roundMoney(buy * (1 + m));
+  const feePct = totalEbayFeePct(loadFlipFees());
+  const lists = listPricesForPocket(pocket, feePct);
+  const klein = roundListPriceUp(lists.kleinanzeigen);
+  const ebayFromPocket = listPricesForPocket(klein, feePct).ebay;
+  const ebay = roundListPriceUp(Math.max(lists.ebay, ebayFromPocket));
+  return {
+    klein,
+    ebay,
+    marginPct: Math.round(m * 100),
   };
 }
 
@@ -202,6 +230,10 @@ export function computePriceAnalyzer(
   }
 
   const targetMarginPct = Math.round(targetMargin * 100);
+  const floor = minMarginListPrices(buy > 0 ? buy : Number(item.buyPrice) || 0);
+  const minMarginPct = floor?.marginPct ?? Math.round(MIN_SUGGEST_MARGIN * 100);
+  const minKlein = floor?.klein ?? 0;
+  const minEbay = floor?.ebay ?? 0;
   const kaLive = Number(item.liveKleinListPrice) || 0;
   const ebLive = Number(item.liveEbayListPrice) || 0;
   const channels: PriceAnalyzerChannel[] = [
@@ -223,6 +255,13 @@ export function computePriceAnalyzer(
     ageLabel: `Day ${daysHeld} · ${targetMarginPct}% target`,
     kleinSuggest: klein,
     ebaySuggest: ebay,
+    minMarginPct,
+    minKlein,
+    minEbay,
+    minLabel:
+      minKlein > 0 && minEbay > 0
+        ? `Min ${minMarginPct}% · KA €${Math.round(minKlein)} · EB €${Math.round(minEbay)}`
+        : `Min ${minMarginPct}%`,
     channels,
     primary,
   };
