@@ -147,6 +147,12 @@ export const MobileStockCard: React.FC<{
                     ({profit >= 0 ? '+' : ''}€{formatEUR(profit)})
                   </span>
                 ) : null}
+                {(Number(item.feeAmount) || 0) > 0 ? (
+                  <span className="text-amber-700">
+                    {' '}
+                    · fees −€{formatEUR(Number(item.feeAmount))}
+                  </span>
+                ) : null}
                 {item.subCategory || item.category
                   ? ` · ${item.subCategory || item.category}`
                   : ''}

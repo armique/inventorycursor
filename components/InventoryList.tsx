@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, TaxMode, BulkImportRecord } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
-import { computeItemProfitBeforeOverhead, getChildren, getSoldContainerDisplayTotals, shouldHideContainerChildInList, containerOrChildMatchesSearch } from '../services/financialAggregation';
+import { computeItemProfitBeforeOverhead, getChildren, getItemDisplayFeeAmount, getSoldContainerDisplayTotals, shouldHideContainerChildInList, containerOrChildMatchesSearch } from '../services/financialAggregation';
 import { itemMatchesSalePlatformFilter, isMissingExplicitSalePlatform, MISSING_PLATFORM_FILTER, SALE_PLATFORM_OPTIONS, formatItemSalePlatform, formatSalePlatformLabel } from '../utils/salePlatform';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { getCompatibleItemsForItem } from '../services/compatibility';
@@ -1969,6 +1969,7 @@ const InventoryList: React.FC<Props> = ({
     let totalNetRevenue = 0;
     let totalProfit = 0;
     let cashMargin = 0;
+    let totalFees = 0;
 
     const soldItems = (splitView ? sortedSoldItems : sortedItems).filter((i) => isRealizedDisposal(i));
     const soldAtomicItems = soldItems.filter(i => !i.isPC && !i.isBundle);
@@ -1996,6 +1997,7 @@ const InventoryList: React.FC<Props> = ({
         totalGross += sell;
         totalTax += tax;
         totalNetRevenue += netSell;
+        totalFees += Number(item.feeAmount) || 0;
         cashMargin += computeItemProfitBeforeOverhead(item, 'SmallBusiness');
     });
 
@@ -2003,7 +2005,7 @@ const InventoryList: React.FC<Props> = ({
         totalProfit += computeItemProfitBeforeOverhead(item, businessSettings.taxMode);
     });
 
-    return { totalGross, totalTax, totalNetRevenue, totalProfit, cashMargin };
+    return { totalGross, totalTax, totalNetRevenue, totalProfit, cashMargin, totalFees };
   }, [sortedItems, sortedSoldItems, splitView, businessSettings.taxMode, showFinancials]);
 
   const profitForDisplay = useCallback(
@@ -3912,6 +3914,7 @@ const InventoryList: React.FC<Props> = ({
             ? getSoldContainerDisplayTotals(item, items, businessSettings.taxMode).sellPrice
             : null;
         const displaySellPrice = soldContainerSell ?? item.sellPrice;
+        const feeAmt = getItemDisplayFeeAmount(item, items);
         return (
           <td 
             key={id} 
@@ -3920,7 +3923,9 @@ const InventoryList: React.FC<Props> = ({
             title={
               soldContainerSell != null
                 ? 'Bundle total sell price (sum of components)'
-                : 'Double click to edit'
+                : feeAmt > 0
+                  ? `Sold amount before marketplace fees. Fees −€${formatEUR(feeAmt)} are deducted in Margin (sell − buy − fees).`
+                  : 'Double click to edit'
             }
             onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, 'sellPrice', item.sellPrice || 0); }}
           >
@@ -3936,8 +3941,17 @@ const InventoryList: React.FC<Props> = ({
                  onKeyDown={e => { if(e.key === 'Enter') saveEdit(); if(e.key === 'Escape') setEditingCell(null); }}
                  onClick={e => e.stopPropagation()}
                />
+            ) : displaySellPrice ? (
+              <div className="flex flex-col items-start leading-tight gap-0.5">
+                <span>€{formatEUR(displaySellPrice)}</span>
+                {feeAmt > 0 && (
+                  <span className="text-[9px] font-bold text-amber-700 tabular-nums whitespace-nowrap">
+                    −€{formatEUR(feeAmt)} fees
+                  </span>
+                )}
+              </div>
             ) : (
-               displaySellPrice ? `€${formatEUR(displaySellPrice)}` : '-'
+              '-'
             )}
           </td>
         );
@@ -3978,6 +3992,11 @@ const InventoryList: React.FC<Props> = ({
             ? getSoldContainerDisplayTotals(item, items, businessSettings.taxMode).profit
             : null;
         const displayProfit = soldContainerProfit ?? profitForDisplay(item);
+        const feeAmt = getItemDisplayFeeAmount(item, items);
+        const feeHint =
+          feeAmt > 0
+            ? `Profit = sell − buy − fees (€${formatEUR(feeAmt)} marketplace fees).`
+            : 'Profit = sell − buy − fees (when recorded).';
         if (item.isPC || item.isBundle) {
           if (soldContainerProfit != null) {
             return (
@@ -3985,9 +4004,16 @@ const InventoryList: React.FC<Props> = ({
                 key={id}
                 className={`text-left font-black ${soldContainerProfit > 0 ? 'text-emerald-600' : soldContainerProfit < 0 ? 'text-red-500' : 'text-slate-300'}`}
                 style={style}
-                title="Bundle total profit (sum of component margins)"
+                title={`Bundle total profit (sum of component margins). ${feeHint}`}
               >
-                €{formatEUR(soldContainerProfit)}
+                <div className="flex flex-col items-start leading-tight gap-0.5">
+                  <span>€{formatEUR(soldContainerProfit)}</span>
+                  {feeAmt > 0 && (
+                    <span className="text-[9px] font-bold text-amber-700 tabular-nums whitespace-nowrap">
+                      −€{formatEUR(feeAmt)} fees
+                    </span>
+                  )}
+                </div>
               </td>
             );
           }
@@ -3998,8 +4024,24 @@ const InventoryList: React.FC<Props> = ({
           );
         }
         return (
-          <td key={id} className={`text-left font-black ${displayProfit && displayProfit > 0 ? 'text-emerald-600' : displayProfit && displayProfit < 0 ? 'text-red-500' : 'text-slate-300'}`} style={style}>
-             {displayProfit != null ? `€${formatEUR(displayProfit)}` : '-'}
+          <td
+            key={id}
+            className={`text-left font-black ${displayProfit && displayProfit > 0 ? 'text-emerald-600' : displayProfit && displayProfit < 0 ? 'text-red-500' : 'text-slate-300'}`}
+            style={style}
+            title={feeHint}
+          >
+            {displayProfit != null ? (
+              <div className="flex flex-col items-start leading-tight gap-0.5">
+                <span>€{formatEUR(displayProfit)}</span>
+                {feeAmt > 0 && (
+                  <span className="text-[9px] font-bold text-amber-700 tabular-nums whitespace-nowrap">
+                    −€{formatEUR(feeAmt)} fees
+                  </span>
+                )}
+              </div>
+            ) : (
+              '-'
+            )}
           </td>
         );
       }
@@ -6710,6 +6752,7 @@ type SoldFinancialBarProps = {
     totalNetRevenue: number;
     totalProfit: number;
     cashMargin: number;
+    totalFees: number;
   };
   taxMode: TaxMode;
   businessSettings: BusinessSettings;
@@ -6738,6 +6781,15 @@ const SoldFinancialBar: React.FC<SoldFinancialBarProps> = ({
         <span className="text-[9px] font-black uppercase text-slate-400">Gross</span>
         <span className="font-black text-slate-900">€{formatEUR(stats.totalGross)}</span>
       </span>
+      {stats.totalFees > 0 && (
+        <span
+          className="inline-flex items-baseline gap-1"
+          title="Marketplace fees (eBay etc.) deducted from profit: sell − buy − fees"
+        >
+          <span className="text-[9px] font-black uppercase text-amber-600">Fees</span>
+          <span className="font-black text-amber-700">−€{formatEUR(stats.totalFees)}</span>
+        </span>
+      )}
       {taxMode !== 'SmallBusiness' && (
         <span className="inline-flex items-baseline gap-1">
           <span className="text-[9px] font-black uppercase text-slate-400">VAT</span>

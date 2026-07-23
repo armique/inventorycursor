@@ -104,7 +104,22 @@ export function containerOrChildMatchesSearch(
 export type SoldContainerDisplayTotals = {
   sellPrice: number | null;
   profit: number | null;
+  feeAmount: number;
 };
+
+/**
+ * Marketplace fees recorded on the item (eBay etc.).
+ * For sold bundles/PCs with proportional children, sums child fees.
+ */
+export function getItemDisplayFeeAmount(item: InventoryItem, items: InventoryItem[]): number {
+  if ((item.isPC || item.isBundle) && isRealizedDisposal(item)) {
+    const children = getChildren(item, items);
+    if (children.length > 0 && isSoldWithProportionalChildren(item, items)) {
+      return roundMoney(children.reduce((s, c) => s + (Number(c.feeAmount) || 0), 0));
+    }
+  }
+  return roundMoney(Number(item.feeAmount) || 0);
+}
 
 /** Aggregated sell price + profit for a sold bundle/PC row in the inventory list. */
 export function getSoldContainerDisplayTotals(
@@ -112,29 +127,35 @@ export function getSoldContainerDisplayTotals(
   items: InventoryItem[],
   taxMode: TaxMode
 ): SoldContainerDisplayTotals {
-  if (!isRealizedDisposal(container)) return { sellPrice: null, profit: null };
+  if (!isRealizedDisposal(container)) return { sellPrice: null, profit: null, feeAmount: 0 };
   const children = getChildren(container, items);
   if (children.length === 0) {
     const sellPrice = Number(container.sellPrice) || 0;
-    if (!sellPrice) return { sellPrice: null, profit: null };
+    if (!sellPrice) return { sellPrice: null, profit: null, feeAmount: 0 };
     return {
       sellPrice: roundMoney(sellPrice),
       profit: roundMoney(computeItemProfitBeforeOverhead(container, taxMode)),
+      feeAmount: getItemDisplayFeeAmount(container, items),
     };
   }
   if (isSoldWithProportionalChildren(container, items)) {
     const sellPrice = children.reduce((s, c) => s + (Number(c.sellPrice) || 0), 0);
     const profit = children.reduce((s, c) => s + computeItemProfitBeforeOverhead(c, taxMode), 0);
-    return { sellPrice: roundMoney(sellPrice), profit: roundMoney(profit) };
+    return {
+      sellPrice: roundMoney(sellPrice),
+      profit: roundMoney(profit),
+      feeAmount: getItemDisplayFeeAmount(container, items),
+    };
   }
   const parentSell = Number(container.sellPrice) || 0;
   if (parentSell > 0) {
     return {
       sellPrice: roundMoney(parentSell),
       profit: roundMoney(computeItemProfitBeforeOverhead(container, taxMode)),
+      feeAmount: getItemDisplayFeeAmount(container, items),
     };
   }
-  return { sellPrice: null, profit: null };
+  return { sellPrice: null, profit: null, feeAmount: 0 };
 }
 
 /** Sold / traded revenue & profit: same rows as Finanzamt ware sheet. */
