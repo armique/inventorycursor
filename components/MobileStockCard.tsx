@@ -185,15 +185,15 @@ export const MobileStockCard: React.FC<{
                 };
                 return (
                   <div
-                    className="mt-1 flex items-center gap-1 flex-wrap leading-none"
+                    className="mt-1 flex items-center gap-1.5 flex-wrap leading-tight"
                     onClick={(e) => e.stopPropagation()}
                     title={analyzer.ageLabel}
                   >
-                    <span className="text-[8px] font-bold text-slate-500 tabular-nums">
+                    <span className="text-[11px] font-bold text-slate-500 tabular-nums">
                       d{analyzer.daysHeld} · {analyzer.targetMarginPct}%
                     </span>
                     {analyzer.minKlein > 0 && analyzer.minEbay > 0 && (
-                      <span className="inline-flex px-1 py-0 rounded border border-rose-200 bg-rose-50 text-[8px] font-black uppercase text-rose-900 tabular-nums">
+                      <span className="inline-flex px-1.5 py-0.5 rounded border border-rose-200 bg-rose-50 text-[11px] font-black uppercase text-rose-900 tabular-nums">
                         min €{Math.round(analyzer.minKlein)}/€{Math.round(analyzer.minEbay)}
                       </span>
                     )}
@@ -209,7 +209,7 @@ export const MobileStockCard: React.FC<{
                       return (
                         <span
                           key={ch.channel}
-                          className={`inline-flex px-1 py-0 rounded border text-[8px] font-black uppercase tabular-nums ${cls(ch.action)}`}
+                          className={`inline-flex px-1.5 py-0.5 rounded border text-[11px] font-black uppercase tabular-nums ${cls(ch.action)}`}
                         >
                           {label}
                         </span>

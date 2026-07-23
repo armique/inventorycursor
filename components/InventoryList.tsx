@@ -3285,7 +3285,7 @@ const InventoryList: React.FC<Props> = ({
                          return (
                            <>
                              <div
-                               className="flex items-center gap-1 flex-wrap leading-none"
+                               className="flex items-center gap-1.5 flex-wrap leading-tight"
                                title={
                                  analyzer
                                    ? `Age-aware price from buy €${formatEUR(analyzer.buy || item.buyPrice || 0)}. Floor 30%; age target decays 60%→30%. ${analyzer.marginReason ? `Now: ${analyzer.marginReason}.` : ''} Click price chips to save.`
@@ -3306,7 +3306,7 @@ const InventoryList: React.FC<Props> = ({
                                      { skipActionLog: true }
                                    )
                                  }
-                                 className={`inline-flex items-center px-1 py-0 rounded text-[8px] font-black uppercase tracking-wide border ${
+                                 className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-black uppercase tracking-wide border ${
                                    item.saleReady
                                      ? 'bg-violet-50 text-violet-800 border-violet-200'
                                      : 'bg-slate-50 text-slate-400 border-slate-200'
@@ -3363,7 +3363,7 @@ const InventoryList: React.FC<Props> = ({
                                      { skipActionLog: true }
                                    );
                                  }}
-                                 className={`inline-flex items-center px-1 py-0 rounded text-[8px] font-black uppercase tracking-wide border ${
+                                 className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-black uppercase tracking-wide border ${
                                    kaOk
                                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                                      : 'bg-slate-50 text-slate-400 border-slate-200 line-through decoration-slate-300'
@@ -3402,7 +3402,7 @@ const InventoryList: React.FC<Props> = ({
                                      { skipActionLog: true }
                                    );
                                  }}
-                                 className={`inline-flex items-center px-1 py-0 rounded text-[8px] font-black uppercase tracking-wide border ${
+                                 className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-black uppercase tracking-wide border ${
                                    ebOk
                                      ? 'bg-sky-50 text-sky-800 border-sky-200'
                                      : 'bg-slate-50 text-slate-400 border-slate-200 line-through decoration-slate-300'
@@ -3414,13 +3414,13 @@ const InventoryList: React.FC<Props> = ({
                                    : ''}
                                </button>
                                {viaKit && (kaOk || ebOk) && (
-                                 <span className="text-[8px] font-bold text-violet-600 uppercase">
+                                 <span className="text-[11px] font-bold text-violet-600 uppercase">
                                    via kit
                                  </span>
                                )}
                                {analyzer && (
                                  <>
-                                   <span className="text-[8px] font-bold text-slate-500 tabular-nums">
+                                   <span className="text-[11px] font-bold text-slate-500 tabular-nums">
                                      d{analyzer.daysHeld} · {analyzer.targetMarginPct}%
                                      {analyzer.buy > 0
                                        ? ` · €${formatEUR(analyzer.buy)}`
@@ -3428,7 +3428,7 @@ const InventoryList: React.FC<Props> = ({
                                    </span>
                                    {analyzer.minKlein > 0 && analyzer.minEbay > 0 && (
                                      <span
-                                       className="inline-flex items-center px-1 py-0 rounded border border-rose-200 bg-rose-50 text-[8px] font-black uppercase text-rose-900 tabular-nums"
+                                       className="inline-flex items-center px-1.5 py-0.5 rounded border border-rose-200 bg-rose-50 text-[11px] font-black uppercase text-rose-900 tabular-nums"
                                        title={`Hard floor ${analyzer.minMarginPct}%: KA €${formatEUR(analyzer.minKlein)} · EB €${formatEUR(analyzer.minEbay)}`}
                                      >
                                        min €{Math.round(analyzer.minKlein)}/€
@@ -3441,7 +3441,7 @@ const InventoryList: React.FC<Props> = ({
                                        type="button"
                                        onClick={saveSuggest}
                                        title={ch.label}
-                                       className={`inline-flex items-center px-1 py-0 rounded border text-[8px] font-black uppercase tracking-wide tabular-nums ${actionClass(ch.action)}`}
+                                       className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[11px] font-black uppercase tracking-wide tabular-nums ${actionClass(ch.action)}`}
                                      >
                                        {shortChannelLabel(ch)}
                                      </button>
@@ -3450,10 +3450,10 @@ const InventoryList: React.FC<Props> = ({
                                )}
                              </div>
                              {isMaybeSoldCandidate(item) && (
-                               <div className="flex items-center gap-1 flex-wrap mt-0.5">
+                               <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                                  <button
                                    type="button"
-                                   className="text-[8px] font-black uppercase tracking-wide px-1 py-0 rounded border bg-rose-50 text-rose-900 border-rose-200"
+                                   className="text-[11px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded border bg-rose-50 text-rose-900 border-rose-200"
                                    title="Listing vanished from your seller profile while still In Stock"
                                    onClick={() => {
                                      addRecentItemId(item.id);
@@ -3464,7 +3464,7 @@ const InventoryList: React.FC<Props> = ({
                                  </button>
                                  <button
                                    type="button"
-                                   className="text-[8px] font-bold uppercase text-slate-500 hover:text-slate-800"
+                                   className="text-[11px] font-bold uppercase text-slate-500 hover:text-slate-800"
                                    title="Dismiss nudge"
                                    onClick={() =>
                                      onUpdate(
