@@ -145,18 +145,145 @@ export function getActiveInventoryForEbayMatch(items: InventoryItem[]): Inventor
   );
 }
 
-/** Strip common eBay title noise before AI / category detection. */
+/** Marketplace fluff / condition words stripped from eBay titles before AI / inventory names. */
+const EBAY_TITLE_NOISE_PHRASES = [
+  'voll funktionsfähig',
+  'voll funktionsfaehig',
+  'voll funktionsfahig',
+  '100% funktionsfähig',
+  '100% funktionsfaehig',
+  '100% funktionsfahig',
+  'normale gebrauchsspuren',
+  'leichte gebrauchsspuren',
+  'starke gebrauchsspuren',
+  'top zustand',
+  'sehr guter zustand',
+  'guter zustand',
+  'einwandfreier zustand',
+  'wie neu',
+  'fast neu',
+  'zustand',
+  'inkl mwst',
+  'inkl. mwst',
+  'inkl ust',
+  'inkl. ust',
+  'zzgl versand',
+  'inkl versand',
+  'versandkostenfrei',
+  'kostenloser versand',
+  'free shipping',
+  'fast dispatch',
+  'read description',
+  'siehe beschreibung',
+  'bitte lesen',
+  'bitte beachten',
+  'ausgebaut aus',
+  'aus pc ausgebaut',
+  'aus notebook ausgebaut',
+  'nur abholung',
+  'privatverkauf',
+  'gewerblich',
+  'originalverpackung',
+  'original verpackt',
+  'neu und ovp',
+];
+
+const EBAY_TITLE_NOISE_WORDS = [
+  'funktionsfähig',
+  'funktionsfaehig',
+  'funktionsfahig',
+  'gebraucht',
+  'gebrauchte',
+  'gebrauchter',
+  'gebrauchtes',
+  'neuwertig',
+  'neuwertige',
+  'defekt',
+  'defekte',
+  'defekter',
+  'defektes',
+  'ungetestet',
+  'ungetestete',
+  'getestet',
+  'getestete',
+  'geprüft',
+  'geprueft',
+  'ovp',
+  'ovp.',
+  'neu',
+  'new',
+  'refurbished',
+  'generalüberholt',
+  'generalueberholt',
+  'versand',
+  'versandfertig',
+  'schnellversand',
+  'expressversand',
+  'sofortversand',
+  'sofort',
+  'sofortkauf',
+  'auktion',
+  'snappy',
+  'hammerpreis',
+  'schnäppchen',
+  'schnaeppchen',
+  'günstig',
+  'guenstig',
+  'top',
+  'super',
+  'mega',
+  'krasse',
+  'krasser',
+  'abholung',
+  'abholer',
+  'mwst',
+  'ust',
+  'rechnung',
+  'garantie',
+  'gewährleistung',
+  'gewaehrleistung',
+  'sammeln',
+  'restposten',
+  'b-ware',
+  'bware',
+  'c-ware',
+  '1a',
+  '1-a',
+];
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Strip common eBay title noise before AI / category detection.
+ * Keeps brand, model, size/capacity — drops condition/shipping fluff
+ * (e.g. funktionsfähig, gebraucht, OVP, Versand…).
+ */
 export function cleanEbayListingTitle(title: string): string {
-  return title
+  let t = String(title || '');
+  t = t
     .replace(/\([^)]*\)/g, ' ')
     .replace(/\[[^\]]*\]/g, ' ')
-    .replace(/[|/\\]+/g, ' ')
-    .replace(
-      /\b(neu|ovp|originalverpackung|versandkostenfrei|inkl\.?\s*mwst|top zustand|sehr gut|wie neu|free shipping|fast dispatch|read description)\b/gi,
-      ' '
-    )
+    .replace(/[|/\\•·]+/g, ' ')
+    .replace(/[,:;]+/g, ' ');
+
+  for (const phrase of EBAY_TITLE_NOISE_PHRASES) {
+    t = t.replace(new RegExp(`\\b${escapeRegExp(phrase)}\\b`, 'gi'), ' ');
+  }
+  for (const word of EBAY_TITLE_NOISE_WORDS) {
+    t = t.replace(new RegExp(`\\b${escapeRegExp(word)}\\b`, 'gi'), ' ');
+  }
+
+  // Lone condition emoji / stars / percent fluff
+  t = t
+    .replace(/[★☆✅❌🔥💥⚡]+/g, ' ')
+    .replace(/\b\d{1,3}\s*%\b/g, ' ')
+    .replace(/\s*[-–—]\s*/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+
+  return t;
 }
 
 export function listingMatchesAnyActiveItem(

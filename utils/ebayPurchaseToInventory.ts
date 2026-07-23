@@ -115,7 +115,9 @@ export async function enrichPurchaseForInventory(
     category = catResult.category;
     subCategory = catResult.subCategory;
     categorySource = catResult.source;
-    if (catResult.standardizedName) name = catResult.standardizedName;
+    if (catResult.standardizedName) {
+      name = cleanEbayListingTitle(catResult.standardizedName) || catResult.standardizedName;
+    }
   } catch (e) {
     enrichError = (e as Error)?.message || 'Category detection failed.';
   }
@@ -125,7 +127,10 @@ export async function enrichPurchaseForInventory(
       const categoryContext = `${category}${subCategory ? ` / ${subCategory}` : ''}`;
       const knownKeys = resolveEssentialSpecKeys(category, subCategory, categoryFields);
       const result = await generateItemSpecs(name, categoryContext, knownKeys);
-      if (result.standardizedName?.trim()) name = result.standardizedName.trim();
+      if (result.standardizedName?.trim()) {
+        name =
+          cleanEbayListingTitle(result.standardizedName.trim()) || result.standardizedName.trim();
+      }
       if (result.vendor) vendor = result.vendor;
       if (result.specs && Object.keys(result.specs).length > 0) {
         specs = filterSpecsToEssentialKeys(result.specs, knownKeys);
@@ -138,6 +143,9 @@ export async function enrichPurchaseForInventory(
   } else if (parseSpecs && !getSpecsAIProvider()) {
     enrichError = enrichError || 'No AI provider configured — name and category only.';
   }
+
+  // Final pass: never keep marketplace fluff in the inventory name.
+  name = cleanEbayListingTitle(name) || name;
 
   return {
     name,

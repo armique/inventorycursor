@@ -38,7 +38,7 @@ export async function enrichOrphanListingDraft(
     subCategory = catResult.subCategory;
     categorySource = catResult.source;
     if (catResult.standardizedName) {
-      parsedName = catResult.standardizedName;
+      parsedName = cleanEbayListingTitle(catResult.standardizedName) || catResult.standardizedName;
     }
   } catch (e) {
     enrichError = (e as Error)?.message || 'Category detection failed.';
@@ -50,7 +50,8 @@ export async function enrichOrphanListingDraft(
       const knownKeys = resolveEssentialSpecKeys(category, subCategory, categoryFields);
       const result = await generateItemSpecs(parsedName, categoryContext, knownKeys);
       if (result.standardizedName?.trim()) {
-        parsedName = result.standardizedName.trim();
+        parsedName =
+          cleanEbayListingTitle(result.standardizedName.trim()) || result.standardizedName.trim();
       }
       if (result.vendor) vendor = result.vendor;
       if (result.specs && Object.keys(result.specs).length > 0) {

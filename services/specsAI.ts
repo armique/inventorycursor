@@ -162,6 +162,9 @@ Return a valid JSON object with this exact structure (no markdown, no code fence
 
 Rules: specs values can be string or number. Only include keys allowed above.
 
+standardizedName: short product name only — brand + model + key size/capacity (e.g. "Samsung 980 Pro 1TB", "Corsair Vengeance 16GB DDR4").
+Do NOT include marketplace fluff: funktionsfähig, gebraucht, Zustand, OVP, Versand, getestet, Garantie, Sofortkauf, "wie neu", etc.
+
 GRAPHICS CARDS (GPUs): For the "VRAM" field, use the exact frame-buffer memory of that GPU model only (e.g. RTX 5070 has 12GB VRAM). Do not use system RAM, total memory across unrelated devices, or another GPU tier. If the product name includes a GB figure next to the chip name (e.g. "RTX 5070 12GB"), that GB value is the VRAM.
 
 RAM / MEMORY MODULES (think carefully — especially older DDR2/DDR3 OEM sticks):
