@@ -4667,6 +4667,18 @@ const InventoryList: React.FC<Props> = ({
                <Sliders size={13} />
                Filter
              </button>
+             <button
+               type="button"
+               onClick={() => navigate('/panel/bulk-imports')}
+               className="shrink-0 inline-flex items-center gap-1 px-2.5 py-2 rounded-lg border border-violet-200 bg-violet-50 text-[11px] font-black uppercase text-violet-900"
+               title="Bulk import / parse history — reopen a batch"
+             >
+               <Layers size={13} />
+               Imports
+               {bulkImports.length > 0 && (
+                 <span className="text-[10px] opacity-75">({Math.min(bulkImports.length, 99)}{bulkImports.length > 99 ? '+' : ''})</span>
+               )}
+             </button>
            </div>
            <div className="relative">
              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={15} />
