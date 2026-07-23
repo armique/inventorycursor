@@ -506,7 +506,13 @@ const EbayStorePullPage: React.FC<Props> = ({
       ) : tab === 'orders' ? (
         <EbayStorePullOrdersTab items={items} taxMode={taxMode} onUpdate={onUpdate} />
       ) : tab === 'purchases' ? (
-        <EbayStorePullPurchasesTab items={items} onAddExpense={onAddExpense} />
+        <EbayStorePullPurchasesTab
+          items={items}
+          categories={categories}
+          categoryFields={categoryFields}
+          onUpdate={onUpdate}
+          onAddExpense={onAddExpense}
+        />
       ) : (
         <>
 

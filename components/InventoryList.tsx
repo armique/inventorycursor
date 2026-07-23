@@ -104,6 +104,7 @@ import {
 import { resolveTradeReceivedItems, resolveTradeSourceItem } from '../utils/tradeLinks';
 import { formatPlatformBoughtLabel } from '../utils/purchaseSource';
 import TradeLinkBadge from './TradeLinkBadge';
+import InventoryPurchasesPanel from './InventoryPurchasesPanel';
 
 interface Props {
   items: InventoryItem[];
@@ -209,7 +210,7 @@ function isMarkReadyEligible(item: InventoryItem): boolean {
     !item.parentContainerId
   );
 }
-type StatusFilter = 'ACTIVE' | 'SOLD' | 'DRAFTS' | 'ALL';
+type StatusFilter = 'ACTIVE' | 'SOLD' | 'DRAFTS' | 'ALL' | 'PURCHASES';
 
 type QuickCategoryPin = {
   id: string;
@@ -4260,7 +4261,7 @@ const InventoryList: React.FC<Props> = ({
      setSelectedIds([]);
   };
 
-  const hasActiveFilters = statusFilter !== 'ACTIVE' || categoryFilter !== 'ALL' || subCategoryFilter || timeFilter !== 'ALL' || salePlatformFilter !== 'ALL' || salePaymentFilter !== 'ALL' || isAmountFilterActive(amountFilter) || activeSpecFilterCount > 0;
+  const hasActiveFilters = statusFilter !== 'ACTIVE' && statusFilter !== 'PURCHASES' || categoryFilter !== 'ALL' || subCategoryFilter || timeFilter !== 'ALL' || salePlatformFilter !== 'ALL' || salePaymentFilter !== 'ALL' || isAmountFilterActive(amountFilter) || activeSpecFilterCount > 0;
   const clearAllFilters = () => {
     setStatusFilter('ACTIVE');
     setCategoryFilter('ALL');
@@ -4594,6 +4595,15 @@ const InventoryList: React.FC<Props> = ({
                >
                  <ShoppingBag size={13} /> Sold
                </button>
+               <button
+                 type="button"
+                 onClick={() => { setStatusFilter('PURCHASES'); setSplitView(false); }}
+                 className={`flex-1 inline-flex items-center justify-center gap-1 px-1.5 py-2 rounded-md text-[11px] font-black uppercase ${
+                   statusFilter === 'PURCHASES' ? 'bg-indigo-600 text-white' : 'text-slate-600'
+                 }`}
+               >
+                 Buys
+               </button>
                <select
                  value={statusFilter === 'DRAFTS' || statusFilter === 'ALL' ? statusFilter : ''}
                  onChange={(e) => {
@@ -4692,10 +4702,10 @@ const InventoryList: React.FC<Props> = ({
 
          <div className="hidden lg:block space-y-1">
          <div className="flex flex-wrap items-center gap-1">
-            {(statusFilter === 'DRAFTS' || statusFilter === 'ALL') && !splitView ? (
+            {(statusFilter === 'DRAFTS' || statusFilter === 'ALL' || statusFilter === 'PURCHASES') && !splitView ? (
               <>
                 <span className="text-[10px] font-black uppercase text-slate-600 px-0.5">
-                  {statusFilter === 'DRAFTS' ? 'Drafts' : 'All'}
+                  {statusFilter === 'DRAFTS' ? 'Drafts' : statusFilter === 'PURCHASES' ? 'Purchases' : 'All'}
                 </span>
                 <button
                   type="button"
@@ -4727,6 +4737,15 @@ const InventoryList: React.FC<Props> = ({
                   >
                     <ShoppingBag size={12} className="shrink-0" />
                     Sold
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setStatusFilter('PURCHASES'); setSplitView(false); }}
+                    className={`inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black uppercase transition-all ${
+                      !splitView && statusFilter === 'PURCHASES' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    Purchases
                   </button>
                 </div>
                 <button
@@ -4766,7 +4785,9 @@ const InventoryList: React.FC<Props> = ({
               </>
             )}
             <span className="text-slate-500 text-xs font-medium">
-              {splitView
+              {statusFilter === 'PURCHASES'
+                ? 'eBay buys → confirm received'
+                : splitView
                 ? `${sortedActiveItems.length} active · ${sortedSoldItems.length} sold${timeFilter !== 'ALL' ? ' · period' : ''}`
                 : `${sortedItems.length} items${timeFilter !== 'ALL' ? ' · period' : ''}`}
             </span>
@@ -5626,6 +5647,20 @@ const InventoryList: React.FC<Props> = ({
         </div>
       )}
 
+      {statusFilter === 'PURCHASES' ? (
+        <InventoryPurchasesPanel
+          items={items}
+          categories={categories}
+          categoryFields={categoryFields || {}}
+          onUpdate={(newItems) => onUpdate(newItems, undefined, { flushCloud: true })}
+          onOpenItem={(id) => {
+            setStatusFilter('ACTIVE');
+            navigate(`/panel/edit/${id}`);
+          }}
+        />
+      ) : (
+      <>
+
       {/* Phase 1: phone card list — never the sticky Actions table */}
       <div
         className="lg:hidden flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y custom-scrollbar px-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] space-y-1.5"
@@ -5866,6 +5901,8 @@ const InventoryList: React.FC<Props> = ({
           actions={bulkActions}
         />
       </div>
+      </>
+      )}
 
       {/* MODALS */}
       {itemToEdit && (

@@ -7,6 +7,7 @@ import {
   ChevronUp,
   Loader2,
   Package,
+  PackageCheck,
   RefreshCw,
   ShoppingCart,
   SkipForward,
@@ -52,6 +53,7 @@ import {
   PURCHASE_TYPE_LABELS,
   PURCHASE_TYPE_ORDER,
 } from '../utils/purchaseTypeDetect';
+import { createInventoryFromPurchase } from '../utils/ebayPurchaseToInventory';
 import { formatEUR } from '../utils/formatMoney';
 import { matchesEbayToolSearch } from '../utils/ebayToolSearch';
 import EbayToolProgressBar from './EbayToolProgressBar';
@@ -59,6 +61,9 @@ import EbayToolSearchInput from './EbayToolSearchInput';
 
 interface Props {
   items: InventoryItem[];
+  categories: Record<string, string[]>;
+  categoryFields: Record<string, string[]>;
+  onUpdate: (items: InventoryItem[]) => void;
   onAddExpense: (expense: Expense) => void;
 }
 
@@ -152,7 +157,13 @@ function daysBetweenInclusive(from: string, to: string): number {
   return Math.max(0, Math.round((b.getTime() - a.getTime()) / 86400000) + 1);
 }
 
-const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
+const EbayStorePullPurchasesTab: React.FC<Props> = ({
+  items,
+  categories,
+  categoryFields,
+  onUpdate,
+  onAddExpense,
+}) => {
   const [indexVersion, setIndexVersion] = useState(0);
   const refresh = useCallback(() => setIndexVersion((v) => v + 1), []);
 
@@ -430,6 +441,40 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
     onAddExpense(expense);
     setPurchaseDisposition(p.lineKey, 'expense', { expenseId: expense.id });
     refresh();
+  };
+
+  const [receivingKey, setReceivingKey] = useState<string | null>(null);
+
+  const addAsInventory = async (p: EbayPurchaseRecord) => {
+    if (p.disposition !== 'pending') {
+      alert('Only pending purchases can be added to inventory.');
+      return;
+    }
+    if (p.inventoryItemId) {
+      alert('Already linked to an inventory item.');
+      return;
+    }
+    setReceivingKey(p.lineKey);
+    try {
+      const { item, draft } = await createInventoryFromPurchase(p, categories, categoryFields, {
+        parseSpecs: true,
+      });
+      onUpdate([item]);
+      setPurchaseDisposition(p.lineKey, 'inventory', {
+        inventoryItemId: item.id,
+        note: draft.enrichError || undefined,
+      });
+      refresh();
+      setBackfillMessage(
+        `Received → inventory: ${item.name} · €${formatEUR(item.buyPrice)}${
+          draft.enrichError ? ` · ${draft.enrichError}` : ''
+        }`
+      );
+    } catch (e) {
+      alert((e as Error)?.message || 'Failed to add to inventory.');
+    } finally {
+      setReceivingKey(null);
+    }
   };
 
   const markDisposition = (lineKey: string, disposition: EbayPurchaseDisposition) => {
@@ -728,11 +773,32 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
                         View spool →
                       </Link>
                     )}
+                    {p.inventoryItemId && (
+                      <Link
+                        to={`/panel/edit/${p.inventoryItemId}`}
+                        className="text-[10px] font-bold text-emerald-700 hover:underline block"
+                      >
+                        {items.find((i) => i.id === p.inventoryItemId)?.name || 'Open inventory item'} →
+                      </Link>
+                    )}
                   </div>
                 </div>
 
                 {p.disposition === 'pending' && (
                   <div className="px-4 pb-4 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => void addAsInventory(p)}
+                      disabled={receivingKey !== null}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[10px] font-black uppercase disabled:opacity-50"
+                    >
+                      {receivingKey === p.lineKey ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        <PackageCheck size={12} />
+                      )}
+                      Confirm received
+                    </button>
                     <button
                       type="button"
                       onClick={() => (isOpen ? setExpandedFilament(null) : openFilamentForm(p))}
