@@ -185,6 +185,31 @@ export async function parseAndSavePurchaseSpecs(
   return { draft, stored };
 }
 
+/** Lightweight InventoryItem for rendering purchases in the same UI as stock rows. */
+export function purchaseToPreviewItem(purchase: EbayPurchaseRecord): InventoryItem {
+  const draft: PurchaseInventoryDraft = purchase.inventoryDraft
+    ? {
+        name: purchase.inventoryDraft.name,
+        category: purchase.inventoryDraft.category,
+        subCategory: purchase.inventoryDraft.subCategory,
+        categorySource: purchase.inventoryDraft.categorySource || 'cached',
+        specs: purchase.inventoryDraft.specs || {},
+        specsAiSuggested: purchase.inventoryDraft.specsAiSuggested,
+        vendor: purchase.inventoryDraft.vendor,
+        enrichError: purchase.inventoryDraft.enrichError,
+      }
+    : {
+        name: cleanEbayListingTitle(purchase.title) || purchase.title,
+        category: 'Misc',
+        subCategory: 'Spare Parts',
+        categorySource: 'preview',
+        specs: {},
+      };
+  return buildInventoryItemFromPurchase(purchase, draft, {
+    itemId: `purchase-preview-${purchase.lineKey}`,
+  });
+}
+
 export function buildInventoryItemFromPurchase(
   purchase: EbayPurchaseRecord,
   draft: PurchaseInventoryDraft,

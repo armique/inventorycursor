@@ -1958,7 +1958,8 @@ const InventoryList: React.FC<Props> = ({
     [editingCell, editValue, listingGenId, parsingSingleId, priceSuggestId, collapsedBundles, quickBundleSeed, activeBgCardItemIds, itemAiCardCounts, aiCardRegenConfirmId]
   );
 
-  const showFinancials = splitView || (statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS');
+  const showFinancials =
+    splitView || (statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS' && statusFilter !== 'PURCHASES');
 
   const missingPlatformSoldCount = useMemo(() => {
     const list = splitView ? sortedSoldItems : sortedItems;
@@ -4261,7 +4262,15 @@ const InventoryList: React.FC<Props> = ({
      setSelectedIds([]);
   };
 
-  const hasActiveFilters = statusFilter !== 'ACTIVE' && statusFilter !== 'PURCHASES' || categoryFilter !== 'ALL' || subCategoryFilter || timeFilter !== 'ALL' || salePlatformFilter !== 'ALL' || salePaymentFilter !== 'ALL' || isAmountFilterActive(amountFilter) || activeSpecFilterCount > 0;
+  const hasActiveFilters =
+    (statusFilter !== 'ACTIVE' && statusFilter !== 'PURCHASES') ||
+    categoryFilter !== 'ALL' ||
+    !!subCategoryFilter ||
+    timeFilter !== 'ALL' ||
+    salePlatformFilter !== 'ALL' ||
+    salePaymentFilter !== 'ALL' ||
+    isAmountFilterActive(amountFilter) ||
+    activeSpecFilterCount > 0;
   const clearAllFilters = () => {
     setStatusFilter('ACTIVE');
     setCategoryFilter('ALL');
@@ -4599,10 +4608,10 @@ const InventoryList: React.FC<Props> = ({
                  type="button"
                  onClick={() => { setStatusFilter('PURCHASES'); setSplitView(false); }}
                  className={`flex-1 inline-flex items-center justify-center gap-1 px-1.5 py-2 rounded-md text-[11px] font-black uppercase ${
-                   statusFilter === 'PURCHASES' ? 'bg-indigo-600 text-white' : 'text-slate-600'
+                   statusFilter === 'PURCHASES' ? 'bg-slate-900 text-white' : 'text-slate-600'
                  }`}
                >
-                 Buys
+                 Purchases
                </button>
                <select
                  value={statusFilter === 'DRAFTS' || statusFilter === 'ALL' ? statusFilter : ''}
@@ -4619,6 +4628,7 @@ const InventoryList: React.FC<Props> = ({
                  <option value="ALL">All</option>
                </select>
              </div>
+             {statusFilter !== 'PURCHASES' && (
              <button
                type="button"
                onClick={() => setShowMobileFiltersSheet(true)}
@@ -4631,6 +4641,7 @@ const InventoryList: React.FC<Props> = ({
                <Sliders size={13} />
                Filter
              </button>
+             )}
            </div>
            <div className="relative">
              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={15} />
@@ -4638,7 +4649,7 @@ const InventoryList: React.FC<Props> = ({
                type="search"
                enterKeyHint="search"
                className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-slate-900/15"
-               placeholder="Search stock…"
+               placeholder={statusFilter === 'PURCHASES' ? 'Search purchases…' : 'Search stock…'}
                value={searchTerm}
                onChange={(e) => setSearchTerm(e.target.value)}
                onFocus={() => setSearchSuggestionsOpen(true)}
@@ -4679,7 +4690,7 @@ const InventoryList: React.FC<Props> = ({
                </button>
              )}
            </div>
-           {quickCategoryPins.length > 0 && (
+           {statusFilter !== 'PURCHASES' && quickCategoryPins.length > 0 && (
              <div className="flex gap-1 overflow-x-auto pb-0.5 -mx-0.5 px-0.5">
                {quickCategoryPins.map((pin) => {
                  const active = isQuickCategoryPinActive(pin);
@@ -4702,10 +4713,10 @@ const InventoryList: React.FC<Props> = ({
 
          <div className="hidden lg:block space-y-1">
          <div className="flex flex-wrap items-center gap-1">
-            {(statusFilter === 'DRAFTS' || statusFilter === 'ALL' || statusFilter === 'PURCHASES') && !splitView ? (
+            {(statusFilter === 'DRAFTS' || statusFilter === 'ALL') && !splitView ? (
               <>
                 <span className="text-[10px] font-black uppercase text-slate-600 px-0.5">
-                  {statusFilter === 'DRAFTS' ? 'Drafts' : statusFilter === 'PURCHASES' ? 'Purchases' : 'All'}
+                  {statusFilter === 'DRAFTS' ? 'Drafts' : 'All'}
                 </span>
                 <button
                   type="button"
@@ -4742,7 +4753,7 @@ const InventoryList: React.FC<Props> = ({
                     type="button"
                     onClick={() => { setStatusFilter('PURCHASES'); setSplitView(false); }}
                     className={`inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black uppercase transition-all ${
-                      !splitView && statusFilter === 'PURCHASES' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-50'
+                      !splitView && statusFilter === 'PURCHASES' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'
                     }`}
                   >
                     Purchases
@@ -4786,7 +4797,7 @@ const InventoryList: React.FC<Props> = ({
             )}
             <span className="text-slate-500 text-xs font-medium">
               {statusFilter === 'PURCHASES'
-                ? 'eBay buys → confirm received'
+                ? 'Purchases · parse specs · confirm received'
                 : splitView
                 ? `${sortedActiveItems.length} active · ${sortedSoldItems.length} sold${timeFilter !== 'ALL' ? ' · period' : ''}`
                 : `${sortedItems.length} items${timeFilter !== 'ALL' ? ' · period' : ''}`}
@@ -4797,7 +4808,7 @@ const InventoryList: React.FC<Props> = ({
                   ref={searchInputRef}
                   type="text"
                   className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-slate-900/20"
-                  placeholder="Search..."
+                  placeholder={statusFilter === 'PURCHASES' ? 'Search purchases…' : 'Search...'}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   onFocus={() => setSearchSuggestionsOpen(true)}
@@ -4858,6 +4869,8 @@ const InventoryList: React.FC<Props> = ({
                  </div>
                )}
             </div>
+            {statusFilter !== 'PURCHASES' && (
+            <>
             <button
                type="button"
                onClick={() => navigate('/panel/bulk-imports')}
@@ -5031,6 +5044,10 @@ const InventoryList: React.FC<Props> = ({
                   </div>
                </>
             )}
+            </>
+            )}
+            {statusFilter !== 'PURCHASES' && (
+            <>
             <div className="relative flex items-center" ref={columnsPanelRef}>
                <button
                   type="button"
@@ -5270,6 +5287,8 @@ const InventoryList: React.FC<Props> = ({
                  <span>Add Item</span>
                </button>
             </div>
+            </>
+            )}
             {hasActiveFilters && (
                <button type="button" onClick={clearAllFilters} className="text-[10px] font-bold uppercase text-slate-500 hover:text-red-600">Reset all</button>
             )}
@@ -5278,7 +5297,7 @@ const InventoryList: React.FC<Props> = ({
          {/* Active filter chips */}
          {hasActiveFilters && (
             <div className="flex flex-wrap items-center gap-1.5">
-               {statusFilter !== 'ACTIVE' && (
+               {statusFilter !== 'ACTIVE' && statusFilter !== 'PURCHASES' && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 text-xs font-medium">
                      {statusFilter} <button type="button" onClick={() => setStatusFilter('ACTIVE')} className="hover:opacity-80">×</button>
                   </span>
@@ -5293,7 +5312,7 @@ const InventoryList: React.FC<Props> = ({
                      {timeFilter} <button type="button" onClick={() => setTimeFilter('ALL')} className="hover:opacity-80">×</button>
                   </span>
                )}
-               {statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS' && (salePlatformFilter !== 'ALL' || salePaymentFilter !== 'ALL') && (
+               {statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS' && statusFilter !== 'PURCHASES' && (salePlatformFilter !== 'ALL' || salePaymentFilter !== 'ALL') && (
                   <>
                      {salePlatformFilter !== 'ALL' && (
                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 text-xs font-medium">
@@ -5652,6 +5671,7 @@ const InventoryList: React.FC<Props> = ({
           items={items}
           categories={categories}
           categoryFields={categoryFields || {}}
+          searchTerm={searchTerm}
           onUpdate={(newItems) => onUpdate(newItems, undefined, { flushCloud: true })}
           onOpenItem={(id) => {
             setStatusFilter('ACTIVE');

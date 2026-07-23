@@ -1,5 +1,5 @@
 /**
- * Inventory → Purchases tab: triage eBay buyer purchases and confirm received → Active stock.
+ * Inventory → Purchases tab: same stock-row look as Active, with Parse specs + Confirm received.
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -11,10 +11,10 @@ import {
   Package,
   PackageCheck,
   RefreshCw,
-  ShoppingBag,
   Sparkles,
 } from 'lucide-react';
 import type { InventoryItem } from '../types';
+import { ItemStatus } from '../types';
 import { hasEbayToken } from '../services/ebayService';
 import {
   getSuggestedPurchaseFetchRange,
@@ -28,12 +28,13 @@ import {
   createInventoryFromPurchase,
   parseAndSavePurchaseSpecs,
   purchaseHasParsedSpecs,
+  purchaseToPreviewItem,
 } from '../utils/ebayPurchaseToInventory';
 import { formatEUR } from '../utils/formatMoney';
+import { formatPlatformBoughtLabel } from '../utils/purchaseSource';
 import { matchesEbayToolSearch } from '../utils/ebayToolSearch';
+import ItemThumbnail from './ItemThumbnail';
 import EbayToolProgressBar, { type EbayToolProgress } from './EbayToolProgressBar';
-import EbayToolSearchInput from './EbayToolSearchInput';
-import PurchaseBuyInfoBlock from './PurchaseBuyInfoBlock';
 
 interface Props {
   items: InventoryItem[];
@@ -41,6 +42,8 @@ interface Props {
   categoryFields: Record<string, string[]>;
   onUpdate: (items: InventoryItem[]) => void;
   onOpenItem?: (id: string) => void;
+  /** Shared inventory search box value when embedded in InventoryList. */
+  searchTerm?: string;
 }
 
 function todayISO(): string {
@@ -53,11 +56,11 @@ const InventoryPurchasesPanel: React.FC<Props> = ({
   categoryFields,
   onUpdate,
   onOpenItem,
+  searchTerm = '',
 }) => {
   const [version, setVersion] = useState(0);
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
   const purchases = useMemo(() => loadEbayPurchaseIndex().purchases, [version]);
-  const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'pending' | 'received' | 'all'>('pending');
   const [receivingKey, setReceivingKey] = useState<string | null>(null);
   const [parsingKey, setParsingKey] = useState<string | null>(null);
@@ -91,20 +94,24 @@ const InventoryPurchasesPanel: React.FC<Props> = ({
   const rows = useMemo(() => {
     let list =
       filter === 'pending' ? pending : filter === 'received' ? received : purchases;
-    if (search.trim()) {
+    const q = searchTerm.trim();
+    if (q) {
       list = list.filter((p) =>
-        matchesEbayToolSearch(search, [
+        matchesEbayToolSearch(q, [
           p.title,
+          p.inventoryDraft?.name,
           p.orderId,
           p.sellerUsername,
           p.itemId,
           p.lineKey,
           p.disposition,
+          p.inventoryDraft?.category,
+          p.inventoryDraft?.subCategory,
         ])
       );
     }
     return [...list].sort((a, b) => (b.creationDate || '').localeCompare(a.creationDate || ''));
-  }, [filter, pending, received, purchases, search]);
+  }, [filter, pending, received, purchases, searchTerm]);
 
   const syncNew = async () => {
     if (!tokenReady) {
@@ -150,9 +157,9 @@ const InventoryPurchasesPanel: React.FC<Props> = ({
       refresh();
       const specCount = Object.keys(draft.specs || {}).length;
       setMessage(
-        `Parsed specs for “${draft.name}” · ${draft.category}${
+        `Parsed “${draft.name}” · ${draft.category}${
           draft.subCategory ? ` / ${draft.subCategory}` : ''
-        } · ${specCount} field${specCount === 1 ? '' : 's'}${
+        } · ${specCount} spec${specCount === 1 ? '' : 's'}${
           draft.enrichError ? ` · ${draft.enrichError}` : ''
         }`
       );
@@ -176,7 +183,6 @@ const InventoryPurchasesPanel: React.FC<Props> = ({
     setError(null);
     setMessage(null);
     try {
-      // Prefer already-parsed draft; only run AI again if none saved yet.
       const fresh = loadEbayPurchaseIndex().purchases.find((x) => x.lineKey === p.lineKey) || p;
       const { item, draft } = await createInventoryFromPurchase(fresh, categories, categoryFields, {
         parseSpecs: !purchaseHasParsedSpecs(fresh),
@@ -193,7 +199,7 @@ const InventoryPurchasesPanel: React.FC<Props> = ({
       setMessage(
         `Received → Active: ${item.name} · €${formatEUR(item.buyPrice)} · ${specCount} spec${
           specCount === 1 ? '' : 's'
-        }${draft.enrichError ? ` (${draft.enrichError})` : ''}`
+        }`
       );
       onOpenItem?.(item.id);
     } catch (e) {
@@ -207,205 +213,281 @@ const InventoryPurchasesPanel: React.FC<Props> = ({
     p.inventoryItemId ? items.find((i) => i.id === p.inventoryItemId) : undefined;
 
   const suggested = getSuggestedPurchaseFetchRange(todayISO());
+  const busy = receivingKey !== null || parsingKey !== null;
+
+  const actionButtons = (p: EbayPurchaseRecord) => {
+    if (p.disposition !== 'pending') {
+      const linked = linkedItem(p);
+      if (linked) {
+        return (
+          <button
+            type="button"
+            onClick={() => onOpenItem?.(linked.id)}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-[10px] font-black uppercase"
+          >
+            Open in Active
+          </button>
+        );
+      }
+      return (
+        <span className="text-[10px] font-black uppercase text-slate-400 px-2">{p.disposition}</span>
+      );
+    }
+    const parsing = parsingKey === p.lineKey;
+    const receiving = receivingKey === p.lineKey;
+    const hasSpecs = purchaseHasParsedSpecs(p);
+    return (
+      <div className="flex flex-wrap items-center gap-1.5 justify-end">
+        <button
+          type="button"
+          onClick={() => void parseSpecs(p)}
+          disabled={busy}
+          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-violet-600 text-white text-[10px] font-black uppercase disabled:opacity-50"
+        >
+          {parsing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+          {parsing ? 'Parsing…' : hasSpecs ? 'Re-parse' : 'Parse specs'}
+        </button>
+        <button
+          type="button"
+          onClick={() => void confirmReceived(p)}
+          disabled={busy}
+          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white text-[10px] font-black uppercase disabled:opacity-50"
+        >
+          {receiving ? <Loader2 size={12} className="animate-spin" /> : <PackageCheck size={12} />}
+          {receiving ? 'Adding…' : 'Confirm'}
+        </button>
+      </div>
+    );
+  };
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-1.5 lg:px-0 pb-4 space-y-4">
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 space-y-3 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="text-sm font-black text-slate-900 inline-flex items-center gap-2">
-              <ShoppingBag size={16} className="text-indigo-600" />
-              Purchases to receive
-            </h2>
-            <p className="text-xs text-slate-500 mt-1">
-              Confirm when an eBay buy arrives — Active gets buy price, date, platform (eBay), seller,
-              order ID, and parsed specs. Use <span className="font-bold">Parse specs</span> first so
-              Confirm is instant. Sync new from{' '}
-              <span className="font-bold">{suggested.from}</span>.
-            </p>
-          </div>
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+      <div className="shrink-0 px-1.5 lg:px-0 pb-2 space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {(
+            [
+              ['pending', `Pending · ${pending.length}`],
+              ['received', `Received · ${received.length}`],
+              ['all', `All · ${purchases.length}`],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setFilter(id)}
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase border ${
+                filter === id
+                  ? 'bg-slate-900 text-white border-slate-900'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
           <button
             type="button"
             onClick={() => void syncNew()}
             disabled={syncing || !tokenReady}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-wide hover:bg-indigo-700 disabled:opacity-50"
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-[10px] font-black uppercase disabled:opacity-50 ml-auto"
           >
-            {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            {syncing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
             Sync new
           </button>
-        </div>
-        {syncProgress && <EbayToolProgressBar {...syncProgress} tone="indigo" />}
-        <p className="text-[11px] text-slate-400">
-          Full history / filament / expenses:{' '}
-          <Link to="/panel/ebay-store-pull?tab=purchases" className="font-bold text-indigo-600 hover:underline">
-            eBay Tools → Purchases
-          </Link>
-        </p>
-      </div>
-
-      {error && (
-        <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs font-bold text-red-800">
-          <AlertCircle size={14} className="shrink-0 mt-0.5" />
-          {error}
-        </div>
-      )}
-      {message && (
-        <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs font-bold text-emerald-900">
-          <CheckCircle2 size={14} className="shrink-0 mt-0.5" />
-          {message}
-        </div>
-      )}
-
-      <div className="flex flex-wrap gap-2">
-        {(
-          [
-            ['pending', `Pending · ${pending.length}`],
-            ['received', `In stock · ${received.length}`],
-            ['all', `All · ${purchases.length}`],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setFilter(id)}
-            className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase border ${
-              filter === id ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200'
-            }`}
+          <Link
+            to="/panel/ebay-store-pull?tab=purchases"
+            className="text-[10px] font-bold text-indigo-600 hover:underline"
           >
-            {label}
-          </button>
-        ))}
+            eBay Tools
+          </Link>
+        </div>
+        <p className="text-[11px] text-slate-400">
+          Parse specs, then Confirm received · sync since{' '}
+          <span className="font-bold text-slate-500">{suggested.from}</span>
+        </p>
+        {syncProgress && <EbayToolProgressBar {...syncProgress} tone="indigo" />}
+        {error && (
+          <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-800">
+            <AlertCircle size={14} className="shrink-0 mt-0.5" />
+            {error}
+          </div>
+        )}
+        {message && (
+          <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-900">
+            <CheckCircle2 size={14} className="shrink-0 mt-0.5" />
+            {message}
+          </div>
+        )}
       </div>
-
-      {purchases.length > 0 && (
-        <EbayToolSearchInput
-          value={search}
-          onChange={setSearch}
-          placeholder="Search title, order ID, seller…"
-          matchCount={rows.length}
-          totalCount={filter === 'pending' ? pending.length : filter === 'received' ? received.length : purchases.length}
-        />
-      )}
 
       {rows.length === 0 ? (
-        <div className="py-16 text-center opacity-50">
+        <div className="flex-1 py-16 text-center opacity-40">
           <Package size={40} className="mx-auto mb-3 text-slate-300" />
-          <p className="font-bold text-slate-500 text-sm">
+          <p className="font-bold text-slate-400 text-sm">
             {purchases.length === 0
-              ? 'No purchases cached yet — Sync new or open eBay Tools.'
-              : 'Nothing in this view.'}
+              ? 'No purchases yet — Sync new or open eBay Tools.'
+              : searchTerm.trim()
+                ? 'No matches found'
+                : 'Nothing in this view.'}
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {rows.map((p) => {
-            const linked = linkedItem(p);
-            const busy = receivingKey === p.lineKey;
-            const parsing = parsingKey === p.lineKey;
-            const draft = p.inventoryDraft;
-            const hasSpecs = purchaseHasParsedSpecs(p);
-            const specEntries = draft?.specs ? Object.entries(draft.specs).slice(0, 6) : [];
-            return (
-              <div
-                key={p.lineKey}
-                className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3 shadow-sm"
-              >
-                <div className="flex flex-wrap gap-3 items-start justify-between">
-                  <div className="flex-1 min-w-0 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span
-                        className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
-                          p.disposition === 'inventory'
-                            ? 'bg-emerald-100 text-emerald-800'
+        <>
+          {/* Mobile — same dense card chrome as Active stock */}
+          <div
+            className="lg:hidden flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y custom-scrollbar px-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] space-y-1.5"
+            style={{ WebkitOverflowScrolling: 'touch' }}
+          >
+            {rows.map((p) => {
+              const preview = purchaseToPreviewItem(p);
+              const hasSpecs = purchaseHasParsedSpecs(p);
+              return (
+                <article
+                  key={p.lineKey}
+                  className={`rounded-xl border bg-white px-2.5 py-2 ${
+                    p.disposition === 'pending'
+                      ? 'border-amber-200/80'
+                      : p.disposition === 'inventory'
+                        ? 'border-emerald-200/80'
+                        : 'border-slate-100'
+                  }`}
+                >
+                  <div className="flex gap-2 items-center">
+                    <ItemThumbnail
+                      item={preview}
+                      className="w-11 h-11 rounded-lg object-cover border border-slate-100 shrink-0"
+                      size={44}
+                    />
+                    <div className="min-w-0 flex-1 py-0.5">
+                      <p className="font-bold text-[13px] leading-tight text-slate-900 line-clamp-1">
+                        {preview.name}
+                      </p>
+                      <p className="mt-0.5 text-[11px] font-semibold text-slate-500 truncate">
+                        €{formatEUR(preview.buyPrice)}
+                        {preview.buyDate ? ` · ${preview.buyDate}` : ''}
+                        {preview.subCategory || preview.category
+                          ? ` · ${preview.subCategory || preview.category}`
+                          : ''}
+                        {` · ${formatPlatformBoughtLabel(preview.platformBought) || 'eBay'}`}
+                        {preview.ebayOrderId ? ` · #${preview.ebayOrderId}` : ''}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-1">
+                        <span
+                          className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded border ${
+                            p.disposition === 'pending'
+                              ? 'bg-amber-50 text-amber-900 border-amber-200'
+                              : p.disposition === 'inventory'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : 'bg-slate-50 text-slate-500 border-slate-200'
+                          }`}
+                        >
+                          {p.disposition === 'inventory'
+                            ? 'Received'
                             : p.disposition === 'pending'
-                              ? 'bg-amber-100 text-amber-900'
-                              : 'bg-slate-100 text-slate-600'
-                        }`}
-                      >
-                        {p.disposition === 'inventory' ? 'Received' : p.disposition}
-                      </span>
-                      {hasSpecs && (
-                        <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-violet-100 text-violet-800 inline-flex items-center gap-0.5">
-                          <Sparkles size={10} /> Specs ready
+                              ? ItemStatus.ORDERED
+                              : p.disposition}
                         </span>
-                      )}
-                      <span className="text-[10px] text-slate-400 font-bold">{p.creationDate || '—'}</span>
+                        {hasSpecs && (
+                          <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded border bg-violet-50 text-violet-800 border-violet-200 inline-flex items-center gap-0.5">
+                            <Sparkles size={9} /> Specs
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <p className="text-sm font-bold text-slate-900 leading-snug">
-                      {draft?.name || p.title}
-                    </p>
-                    {draft?.name && draft.name !== p.title && (
-                      <p className="text-[11px] text-slate-400 truncate">{p.title}</p>
-                    )}
-                    <p className="text-[11px] text-slate-500">
-                      Order {p.orderId}
-                      {p.sellerUsername ? ` · ${p.sellerUsername}` : ''}
-                      {p.quantity > 1 ? ` · qty ${p.quantity}` : ''}
-                      {draft?.category
-                        ? ` · ${draft.category}${draft.subCategory ? ` / ${draft.subCategory}` : ''}`
-                        : ''}
-                    </p>
-                    {linked && (
-                      <button
-                        type="button"
-                        onClick={() => onOpenItem?.(linked.id)}
-                        className="text-[11px] font-bold text-indigo-600 hover:underline"
+                  </div>
+                  <div className="mt-2 pt-2 border-t border-slate-100">{actionButtons(p)}</div>
+                </article>
+              );
+            })}
+          </div>
+
+          {/* Desktop — inventory-style table */}
+          <div className="hidden lg:flex flex-1 min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <div className="overflow-auto flex-1 custom-scrollbar">
+              <table className="w-full text-left border-collapse min-w-[720px]">
+                <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
+                  <tr className="text-[10px] font-black uppercase tracking-wide text-slate-500">
+                    <th className="px-3 py-2.5 font-black">Item</th>
+                    <th className="px-3 py-2.5 font-black">Category</th>
+                    <th className="px-3 py-2.5 font-black">Status</th>
+                    <th className="px-3 py-2.5 font-black text-right">Buy price</th>
+                    <th className="px-3 py-2.5 font-black">Acquired</th>
+                    <th className="px-3 py-2.5 font-black">Bought</th>
+                    <th className="px-3 py-2.5 font-black text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((p) => {
+                    const preview = purchaseToPreviewItem(p);
+                    const hasSpecs = purchaseHasParsedSpecs(p);
+                    return (
+                      <tr
+                        key={p.lineKey}
+                        className="border-b border-slate-100 hover:bg-slate-50/80 align-middle"
                       >
-                        Open in Active → {linked.name}
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex flex-col items-end gap-2 shrink-0">
-                    <p className="text-lg font-black text-slate-900">€{formatEUR(p.totalPaid ?? 0)}</p>
-                  </div>
-                </div>
-
-                <PurchaseBuyInfoBlock purchase={p} />
-
-                {specEntries.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {specEntries.map(([k, v]) => (
-                      <span
-                        key={k}
-                        className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600"
-                      >
-                        {k}: {String(v)}
-                      </span>
-                    ))}
-                    {Object.keys(draft?.specs || {}).length > specEntries.length && (
-                      <span className="text-[10px] font-bold text-slate-400 px-1 py-0.5">
-                        +{Object.keys(draft!.specs).length - specEntries.length} more
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {p.disposition === 'pending' && (
-                  <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
-                    <button
-                      type="button"
-                      onClick={() => void parseSpecs(p)}
-                      disabled={parsing || receivingKey !== null || parsingKey !== null}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-violet-600 text-white text-[10px] font-black uppercase tracking-wide hover:bg-violet-700 disabled:opacity-50"
-                    >
-                      {parsing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                      {parsing ? 'Parsing…' : hasSpecs ? 'Re-parse specs' : 'Parse specs'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void confirmReceived(p)}
-                      disabled={busy || receivingKey !== null || parsingKey !== null}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wide hover:bg-emerald-700 disabled:opacity-50"
-                    >
-                      {busy ? <Loader2 size={14} className="animate-spin" /> : <PackageCheck size={14} />}
-                      {busy ? 'Adding…' : 'Confirm received'}
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <ItemThumbnail
+                              item={preview}
+                              className="w-9 h-9 rounded-lg object-cover border border-slate-100 shrink-0"
+                              size={36}
+                            />
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold text-slate-900 truncate">{preview.name}</p>
+                              <p className="text-[11px] text-slate-400 truncate">
+                                {preview.vendor || 'eBay'}
+                                {preview.ebayOrderId ? ` · order ${preview.ebayOrderId}` : ''}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-xs font-semibold text-slate-600 whitespace-nowrap">
+                          {preview.subCategory || preview.category || '—'}
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-wrap gap-1">
+                            <span
+                              className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded border ${
+                                p.disposition === 'pending'
+                                  ? 'bg-amber-50 text-amber-900 border-amber-200'
+                                  : p.disposition === 'inventory'
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                    : 'bg-slate-50 text-slate-500 border-slate-200'
+                              }`}
+                            >
+                              {p.disposition === 'inventory'
+                                ? 'Received'
+                                : p.disposition === 'pending'
+                                  ? 'Ordered'
+                                  : p.disposition}
+                            </span>
+                            {hasSpecs && (
+                              <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded border bg-violet-50 text-violet-800 border-violet-200">
+                                Specs
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-sm font-black text-slate-900 text-right tabular-nums whitespace-nowrap">
+                          €{formatEUR(preview.buyPrice)}
+                        </td>
+                        <td className="px-3 py-2 text-xs font-semibold text-slate-600 whitespace-nowrap">
+                          {preview.buyDate || '—'}
+                        </td>
+                        <td className="px-3 py-2 text-xs font-semibold text-slate-600 whitespace-nowrap">
+                          {formatPlatformBoughtLabel(preview.platformBought) || 'eBay'}
+                        </td>
+                        <td className="px-3 py-2 text-right">{actionButtons(p)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="shrink-0 px-3 py-2 border-t border-slate-100 text-[11px] font-semibold text-slate-400">
+              {rows.length} purchase{rows.length === 1 ? '' : 's'}
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
