@@ -7,11 +7,13 @@ import { Link } from 'react-router-dom';
 import {
   AlertCircle,
   CheckCircle2,
+  EyeOff,
   Loader2,
   Package,
   PackageCheck,
   RefreshCw,
   Sparkles,
+  Undo2,
 } from 'lucide-react';
 import type { InventoryItem } from '../types';
 import { hasEbayToken } from '../services/ebayService';
@@ -36,7 +38,7 @@ import ItemThumbnail from './ItemThumbnail';
 import MobileStockCard from './MobileStockCard';
 import EbayToolProgressBar, { type EbayToolProgress } from './EbayToolProgressBar';
 
-export type PurchaseViewFilter = 'pending' | 'received' | 'all';
+export type PurchaseViewFilter = 'pending' | 'received' | 'ignored' | 'all';
 
 export type UseInventoryPurchasesArgs = {
   items: InventoryItem[];
@@ -94,10 +96,25 @@ export function useInventoryPurchases({
     () => purchases.filter((p) => p.disposition === 'inventory' && p.inventoryItemId),
     [purchases]
   );
+  const ignored = useMemo(
+    () => purchases.filter((p) => p.disposition === 'skipped'),
+    [purchases]
+  );
+  /** Business-relevant rows (hide ignored personal buys from “All”). */
+  const activePurchases = useMemo(
+    () => purchases.filter((p) => p.disposition !== 'skipped'),
+    [purchases]
+  );
 
   const rows = useMemo(() => {
     let list =
-      filter === 'pending' ? pending : filter === 'received' ? received : purchases;
+      filter === 'pending'
+        ? pending
+        : filter === 'received'
+          ? received
+          : filter === 'ignored'
+            ? ignored
+            : activePurchases;
     const q = searchTerm.trim();
     if (q) {
       list = list.filter((p) =>
@@ -115,7 +132,7 @@ export function useInventoryPurchases({
       );
     }
     return [...list].sort((a, b) => (b.creationDate || '').localeCompare(a.creationDate || ''));
-  }, [filter, pending, received, purchases, searchTerm]);
+  }, [filter, pending, received, ignored, activePurchases, searchTerm]);
 
   const syncNew = async () => {
     if (!tokenReady) {
@@ -213,6 +230,24 @@ export function useInventoryPurchases({
     }
   };
 
+  const ignorePurchase = (p: EbayPurchaseRecord) => {
+    if (p.disposition !== 'pending') return;
+    setPurchaseDisposition(p.lineKey, 'skipped', {
+      note: 'Ignored — not business inventory',
+    });
+    refresh();
+    setError(null);
+    setMessage(`Ignored “${p.inventoryDraft?.name || p.title}” — open Ignored to undo`);
+  };
+
+  const undoIgnore = (p: EbayPurchaseRecord) => {
+    if (p.disposition !== 'skipped') return;
+    setPurchaseDisposition(p.lineKey, 'pending');
+    refresh();
+    setError(null);
+    setMessage(`Restored to Pending: ${p.inventoryDraft?.name || p.title}`);
+  };
+
   const linkedItem = (p: EbayPurchaseRecord) =>
     p.inventoryItemId ? items.find((i) => i.id === p.inventoryItemId) : undefined;
 
@@ -220,6 +255,17 @@ export function useInventoryPurchases({
   const busy = receivingKey !== null || parsingKey !== null;
 
   const actionButtons = (p: EbayPurchaseRecord) => {
+    if (p.disposition === 'skipped') {
+      return (
+        <button
+          type="button"
+          onClick={() => undoIgnore(p)}
+          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-[10px] font-black uppercase"
+        >
+          <Undo2 size={12} /> Undo ignore
+        </button>
+      );
+    }
     if (p.disposition !== 'pending') {
       const linked = linkedItem(p);
       if (linked) {
@@ -260,6 +306,15 @@ export function useInventoryPurchases({
           {receiving ? <Loader2 size={12} className="animate-spin" /> : <PackageCheck size={12} />}
           {receiving ? 'Adding…' : 'Confirm'}
         </button>
+        <button
+          type="button"
+          onClick={() => ignorePurchase(p)}
+          disabled={busy}
+          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 text-[10px] font-black uppercase disabled:opacity-50 hover:border-slate-300 hover:text-slate-700"
+          title="Not for this business — hide from Purchases"
+        >
+          <EyeOff size={12} /> Ignore
+        </button>
       </div>
     );
   };
@@ -271,7 +326,8 @@ export function useInventoryPurchases({
           [
             ['pending', `Pending · ${pending.length}`],
             ['received', `Received · ${received.length}`],
-            ['all', `All · ${purchases.length}`],
+            ['ignored', `Ignored · ${ignored.length}`],
+            ['all', `All · ${activePurchases.length}`],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -321,7 +377,8 @@ export function useInventoryPurchases({
         </div>
       )}
       <p className="text-[10px] text-slate-400 truncate">
-        Parse specs · Confirm · since <span className="font-bold text-slate-500">{suggested.from}</span>
+        Parse · Confirm · Ignore personal buys · since{' '}
+        <span className="font-bold text-slate-500">{suggested.from}</span>
       </p>
     </div>
   );
@@ -348,12 +405,14 @@ export function useInventoryPurchases({
           const hasSpecs = purchaseHasParsedSpecs(p);
           const linked = linkedItem(p);
           const received = p.disposition === 'inventory' && Boolean(linked || p.inventoryItemId);
+          const isIgnored = p.disposition === 'skipped';
           return (
             <MobileStockCard
               key={p.lineKey}
               item={preview}
               actions={{
                 onEdit: (it) => {
+                  if (isIgnored) return;
                   if (received && linked) onOpenItem?.(linked.id);
                   else onOpenPurchaseDraft?.(it);
                 },
@@ -365,10 +424,13 @@ export function useInventoryPurchases({
               purchaseActions={{
                 onParseSpecs: () => void parseSpecs(p),
                 onConfirmReceived: () => void confirmReceived(p),
+                onIgnore: () => ignorePurchase(p),
+                onUndoIgnore: () => undoIgnore(p),
                 parsing: parsingKey === p.lineKey,
                 confirming: receivingKey === p.lineKey,
                 hasParsedSpecs: hasSpecs,
                 received,
+                ignored: isIgnored,
                 onOpenActive: () => {
                   if (linked) onOpenItem?.(linked.id);
                 },

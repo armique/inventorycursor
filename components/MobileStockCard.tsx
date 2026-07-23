@@ -16,6 +16,8 @@ import {
   Loader2,
   PackageCheck,
   Sparkles,
+  EyeOff,
+  Undo2,
 } from 'lucide-react';
 import type { InventoryItem } from '../types';
 import { ItemStatus } from '../types';
@@ -45,11 +47,14 @@ export interface MobileStockCardActions {
 export interface MobilePurchaseActions {
   onParseSpecs: () => void;
   onConfirmReceived: () => void;
+  onIgnore?: () => void;
+  onUndoIgnore?: () => void;
   parsing?: boolean;
   confirming?: boolean;
   hasParsedSpecs?: boolean;
   /** Already linked to Active — show Open instead of Confirm. */
   received?: boolean;
+  ignored?: boolean;
   onOpenActive?: () => void;
 }
 
@@ -260,7 +265,15 @@ export const MobileStockCard: React.FC<{
 
           <div className="flex items-center gap-0.5 shrink-0">
             {purchaseActions ? (
-              purchaseActions.received ? (
+              purchaseActions.ignored ? (
+                <button
+                  type="button"
+                  onClick={() => purchaseActions.onUndoIgnore?.()}
+                  className="h-9 px-2.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-[10px] font-black uppercase inline-flex items-center gap-1"
+                >
+                  <Undo2 size={12} /> Undo
+                </button>
+              ) : purchaseActions.received ? (
                 <button
                   type="button"
                   onClick={() => purchaseActions.onOpenActive?.()}
@@ -297,6 +310,16 @@ export const MobileStockCard: React.FC<{
                       <PackageCheck size={12} />
                     )}
                     {purchaseActions.confirming ? '…' : 'Confirm'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => purchaseActions.onIgnore?.()}
+                    disabled={purchaseActions.parsing || purchaseActions.confirming}
+                    className="h-9 w-9 rounded-lg border border-slate-200 text-slate-500 inline-flex items-center justify-center disabled:opacity-50"
+                    title="Ignore — not for this business"
+                    aria-label="Ignore purchase"
+                  >
+                    <EyeOff size={14} />
                   </button>
                   <button
                     type="button"
