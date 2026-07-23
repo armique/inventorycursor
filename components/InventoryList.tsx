@@ -842,23 +842,35 @@ const InventoryList: React.FC<Props> = ({
     });
   }, []);
 
-  // Sort State — Active defaults to buyDate; Sold tab forces sellDate (newest first).
+  // Sort State — Active defaults to buyDate (acquired, newest first); Sold forces sellDate.
   const [sortConfig, setSortConfig] = useState<SortConfig>(() => {
      const savedStatus = loadState<StatusFilter>('status_filter', 'ACTIVE');
      const saved = localStorage.getItem(`${persistenceKey}_sort_config`);
      if (savedStatus === 'SOLD') {
        return { key: 'sellDate', direction: 'desc' };
      }
+     if (savedStatus === 'ACTIVE') {
+       return { key: 'buyDate', direction: 'desc' };
+     }
      return saved ? JSON.parse(saved) : { key: 'buyDate', direction: 'desc' };
   });
 
-  // Whenever Sold tab is shown (not split dual-pane), default sort = latest sell date.
+  // Tab defaults: Active = date acquired newest first; Sold = sell date newest first.
   useEffect(() => {
-    if (statusFilter === 'SOLD' && !splitView) {
+    if (splitView) return;
+    if (statusFilter === 'SOLD') {
       setSortConfig((prev) =>
         prev.key === 'sellDate' && prev.direction === 'desc'
           ? prev
           : { key: 'sellDate', direction: 'desc' }
+      );
+      return;
+    }
+    if (statusFilter === 'ACTIVE') {
+      setSortConfig((prev) =>
+        prev.key === 'buyDate' && prev.direction === 'desc'
+          ? prev
+          : { key: 'buyDate', direction: 'desc' }
       );
     }
   }, [statusFilter, splitView]);
