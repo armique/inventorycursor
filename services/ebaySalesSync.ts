@@ -62,7 +62,8 @@ export async function runEbaySalesSync(
     fetchSkippedReason = 'No eBay token — using cached orders only.';
   } else {
     const range = getSuggestedBackfillRange(DEFAULT_HISTORY_FROM, todayISO());
-    if (range.isIncremental && range.from >= range.to) {
+    // Skip only when resume window is empty (from after today). Same-day still fetches.
+    if (range.isIncremental && range.from > range.to) {
       fetchSkipped = true;
       fetchSkippedReason = 'Order cache already up to date for today.';
     } else {
@@ -72,6 +73,11 @@ export async function runEbaySalesSync(
         options?.onFetchProgress,
         options?.cancelToken
       );
+      if (fetch) {
+        fetch.from = range.from;
+        fetch.to = range.to;
+        fetch.isIncremental = range.isIncremental;
+      }
     }
   }
 

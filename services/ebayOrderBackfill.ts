@@ -31,6 +31,9 @@ export interface BackfillResult {
   merged: number;
   cancelled: boolean;
   error?: string;
+  from?: string;
+  to?: string;
+  isIncremental?: boolean;
 }
 
 function toDateOnly(d: Date): string {
@@ -96,7 +99,7 @@ export async function backfillEbayOrders(
 
   for (let i = 0; i < chunks.length; i++) {
     if (cancelToken?.cancelled) {
-      return { ordersFetched, added, merged, cancelled: true };
+      return { ordersFetched, added, merged, cancelled: true, from: fromDate, to: toDate };
     }
     const chunk = chunks[i];
     const rangeLabel = `${chunk.from} → ${chunk.to}`;
@@ -122,7 +125,7 @@ export async function backfillEbayOrders(
         lastRunAt: new Date().toISOString(),
         isComplete: i === chunks.length - 1,
       });
-      // Mirror this chunk's changes to Firestore right away so progress survives even if a later chunk fails.
+      // Mirror this chunk's changes + meta to Firestore (empty changed still updates meta).
       await pushOrderIndexToCloud(result.changed);
       onProgress?.({
         chunkIndex: i,
@@ -146,7 +149,7 @@ export async function backfillEbayOrders(
     }
   }
 
-  return { ordersFetched, added, merged, cancelled: false };
+  return { ordersFetched, added, merged, cancelled: false, from: fromDate, to: toDate };
 }
 
 /**
@@ -166,21 +169,18 @@ export async function refreshRecentEbayOrders(days = 21): Promise<BackfillResult
     const result = upsertEbayOrders(records);
 
     const existing = loadEbayOrderIndex().meta.apiBackfill;
-    if (existing?.fromDate) {
-      setApiBackfillMeta({
-        fromDate: existing.fromDate < from ? existing.fromDate : from,
-        toDate: !existing.toDate || to > existing.toDate ? to : existing.toDate,
-        completedThroughDate: to,
-        lastRunAt: new Date().toISOString(),
-        isComplete: existing.isComplete ?? false,
-      });
-    }
+    setApiBackfillMeta({
+      fromDate: existing?.fromDate && existing.fromDate < from ? existing.fromDate : from,
+      toDate: !existing?.toDate || to > existing.toDate ? to : existing.toDate,
+      completedThroughDate: to,
+      lastRunAt: new Date().toISOString(),
+      isComplete: existing?.isComplete ?? false,
+    });
 
-    if (result.changed.length) {
-      void pushOrderIndexToCloud(result.changed).catch(() => {
-        /* cloud mirror is best-effort during sale flow */
-      });
-    }
+    // Always mirror meta (+ any new/merged rows) so the next fetch can resume from completedThroughDate.
+    void pushOrderIndexToCloud(result.changed).catch(() => {
+      /* cloud mirror is best-effort during sale flow */
+    });
 
     return {
       ordersFetched: orders.length,

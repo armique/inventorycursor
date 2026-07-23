@@ -280,20 +280,32 @@ export interface SuggestedBackfillRange {
 }
 
 /**
- * Suggest the smallest range that still covers everything: resumes from the last
- * completed day (with a 1-day overlap for safety) instead of re-fetching from
- * the very start every time. Falls back to the full default range on first run.
+ * Suggest the smallest range that still covers everything: resumes from the later of
+ * (a) last completed API day and (b) newest cached order date, with a 1-day overlap.
+ * Falls back to the full default range only when the cache has no history yet.
  */
 export function getSuggestedBackfillRange(defaultFromDate: string, todayDate: string): SuggestedBackfillRange {
-  const { meta } = loadRaw();
-  const completedThrough = meta.apiBackfill?.completedThroughDate;
-  if (completedThrough) {
-    const resumeFrom = new Date(`${completedThrough}T00:00:00Z`);
-    resumeFrom.setUTCDate(resumeFrom.getUTCDate() - 1);
-    const from = resumeFrom.toISOString().split('T')[0];
-    return { from, to: todayDate, isIncremental: true };
+  const { orders, meta } = loadRaw();
+  const completedThrough = meta.apiBackfill?.completedThroughDate || meta.apiBackfill?.toDate || null;
+
+  let newestOrder: string | null = null;
+  for (const o of orders) {
+    const d = o.creationDate?.slice(0, 10);
+    if (d && (!newestOrder || d > newestOrder)) newestOrder = d;
   }
-  return { from: defaultFromDate, to: todayDate, isIncremental: false };
+
+  const anchors = [completedThrough, newestOrder].filter((d): d is string => Boolean(d));
+  if (!anchors.length) {
+    return { from: defaultFromDate, to: todayDate, isIncremental: false };
+  }
+
+  // Resume from the furthest progress we already have locally / in meta.
+  const resumeAnchor = anchors.sort()[anchors.length - 1];
+  const resumeFrom = new Date(`${resumeAnchor}T00:00:00Z`);
+  resumeFrom.setUTCDate(resumeFrom.getUTCDate() - 1); // 1-day overlap for late-settling orders
+  let from = resumeFrom.toISOString().split('T')[0];
+  if (from > todayDate) from = todayDate;
+  return { from, to: todayDate, isIncremental: true };
 }
 
 export interface EbayOrderIndexStats {
@@ -360,10 +372,13 @@ export async function pullOrderIndexFromCloud(options?: { force?: boolean }): Pr
 
 /** Upload the given (already locally-merged) order records to Firestore, plus the current meta. Fire-and-forget friendly — swallows errors. */
 export async function pushOrderIndexToCloud(records: EbayOrderRecord[]): Promise<void> {
-  if (!isCloudEnabled() || !records.length) return;
+  if (!isCloudEnabled()) return;
   try {
     const { meta } = loadRaw();
-    await writeEbayOrdersToCloud(records as unknown as (Record<string, unknown> & { orderId: string })[], meta as EbayOrderCloudMeta);
+    await writeEbayOrdersToCloud(
+      records as unknown as (Record<string, unknown> & { orderId: string })[],
+      meta as EbayOrderCloudMeta
+    );
   } catch (e) {
     console.warn('Failed to push eBay orders to cloud cache:', e);
   }

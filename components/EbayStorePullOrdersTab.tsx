@@ -128,7 +128,8 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [statsVersion]
   );
-  const alreadyUpToDate = suggested.isIncremental && suggested.from >= suggested.to;
+  const lastThrough = meta.apiBackfill?.completedThroughDate || null;
+  const syncedThroughToday = Boolean(lastThrough && lastThrough >= todayISO());
 
   const [tokenReady, setTokenReady] = useState(() => hasEbayToken());
 
@@ -209,7 +210,7 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
           setBackfillMessage(`Cancelled — fetched ${result.ordersFetched} order(s) before stopping.`);
         } else {
           setBackfillMessage(
-            `Fetched ${result.ordersFetched} order(s) from eBay · ${result.added} new, ${result.merged} updated in cache — matching inventory…`
+            `Synced ${fromDate} → ${toDate} · ${result.ordersFetched} from eBay · ${result.added} new, ${result.merged} updated · saved to local + cloud cache`
           );
         }
       } catch (e: unknown) {
@@ -446,31 +447,30 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
         )}
 
         <div className="flex flex-wrap items-center gap-3">
-          {alreadyUpToDate ? (
+          {syncedThroughToday && (
             <p className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
-              Up to date — cache already covers through {meta.apiBackfill?.completedThroughDate}.
+              Synced through today ({lastThrough}). Next sync only checks for newer orders.
             </p>
-          ) : (
-            <button
-              type="button"
-              onClick={() => void runBackfill(suggested.from, suggested.to)}
-              disabled={backfilling || !tokenReady}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 text-white text-[11px] font-black uppercase tracking-widest hover:bg-blue-700 disabled:opacity-50"
-            >
-              {backfilling ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : suggested.isIncremental ? (
-                <RefreshCw size={14} />
-              ) : (
-                <CalendarRange size={14} />
-              )}
-              {backfilling
-                ? 'Fetching…'
-                : suggested.isIncremental
-                  ? `Sync new orders since ${suggested.from}`
-                  : `Start full backfill since ${suggested.from}`}
-            </button>
           )}
+          <button
+            type="button"
+            onClick={() => void runBackfill(suggested.from, suggested.to)}
+            disabled={backfilling || !tokenReady}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 text-white text-[11px] font-black uppercase tracking-widest hover:bg-blue-700 disabled:opacity-50"
+          >
+            {backfilling ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : suggested.isIncremental ? (
+              <RefreshCw size={14} />
+            ) : (
+              <CalendarRange size={14} />
+            )}
+            {backfilling
+              ? 'Fetching…'
+              : suggested.isIncremental
+                ? `Sync new orders since ${suggested.from}`
+                : `Start full backfill since ${suggested.from}`}
+          </button>
           {backfilling && (
             <button
               type="button"
@@ -486,7 +486,7 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
             className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-slate-400 hover:text-slate-600 ml-auto"
           >
             {showAdvanced ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-            Advanced: custom range
+            Advanced: full / custom range
           </button>
         </div>
 

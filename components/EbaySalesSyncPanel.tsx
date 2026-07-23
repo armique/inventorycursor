@@ -9,7 +9,7 @@ import {
   TrendingDown,
 } from 'lucide-react';
 import { InventoryItem, TaxMode } from '../types';
-import { loadEbayOrderIndex } from '../services/ebayOrderIndex';
+import { loadEbayOrderIndex, getSuggestedBackfillRange } from '../services/ebayOrderIndex';
 import { runEbaySalesSync, peekEbaySalesSync } from '../services/ebaySalesSync';
 import { hasEbayToken } from '../services/ebayService';
 import type { BackfillProgress } from '../services/ebayOrderBackfill';
@@ -110,6 +110,11 @@ const EbaySalesSyncPanel: React.FC<Props> = ({
   const itemsRef = useRef(items);
   itemsRef.current = items;
 
+  const syncHint = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    return getSuggestedBackfillRange('2025-02-01', today);
+  }, [cacheVersion, stats?.cachedOrders]);
+
   const applyAnalysis = useCallback(
     (result: ReturnType<typeof peekEbaySalesSync>, info?: string) => {
       setSuggestions(result.suggestions);
@@ -164,7 +169,10 @@ const EbaySalesSyncPanel: React.FC<Props> = ({
 
         let info: string | undefined;
         if (result.fetch && !result.fetch.error && !result.fetch.cancelled) {
-          info = `Fetched ${result.fetch.ordersFetched} new order(s) · ${result.analysis.suggestions.length} suggestion(s) to review.`;
+          const f = result.fetch;
+          const rangeBit = f.from && f.to ? `${f.from} → ${f.to}` : null;
+          const kind = f.isIncremental ? 'New orders only' : 'Full history pull';
+          info = `${kind}${rangeBit ? ` (${rangeBit})` : ''} · ${f.ordersFetched} from eBay · ${f.added} new, ${f.merged} updated · ${result.analysis.suggestions.length} suggestion(s).`;
           onCacheUpdated?.();
         } else if (result.fetchSkipped && result.fetchSkippedReason) {
           info = `${result.fetchSkippedReason} · ${result.analysis.suggestions.length} suggestion(s) from cache.`;
@@ -382,10 +390,20 @@ const EbaySalesSyncPanel: React.FC<Props> = ({
           onClick={() => void runSync(false)}
           disabled={syncing || applying || !tokenReady}
           className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-[11px] font-black uppercase tracking-widest hover:bg-indigo-700 disabled:opacity-50"
-          title={!tokenReady ? 'Add eBay token in Settings' : undefined}
+          title={
+            !tokenReady
+              ? 'Add eBay token in Settings'
+              : syncHint.isIncremental
+                ? `Only fetch orders since ${syncHint.from} (skips older history already in cache)`
+                : `First sync will fetch history since ${syncHint.from}`
+          }
         >
           {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-          {syncing ? 'Syncing…' : 'Sync sales (fetch + match)'}
+          {syncing
+            ? 'Syncing…'
+            : syncHint.isIncremental
+              ? `Sync new since ${syncHint.from}`
+              : 'Sync sales (first full fetch)'}
         </button>
         <button
           type="button"
