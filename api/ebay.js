@@ -89,7 +89,8 @@ function parseBody(req) {
 }
 
 async function handleEbayOAuthAuthorizeUrl(req, res) {
-  const { clientId, ruName, env } = ebayAppConfig();
+  const { clientId, ruName: ruNameRaw, env } = ebayAppConfig();
+  const ruName = String(ruNameRaw || '').trim();
   if (!clientId || !ruName) {
     return res.status(503).json({
       configured: false,
@@ -97,17 +98,24 @@ async function handleEbayOAuthAuthorizeUrl(req, res) {
         'eBay Connect not configured. Set EBAY_CLIENT_ID, EBAY_CLIENT_SECRET, and EBAY_RUNAME on the server. In eBay Developer → User Tokens, set the RuName Accept URL to https://YOUR_DOMAIN/auth/ebay/callback',
     });
   }
+  if (/^https?:\/\//i.test(ruName)) {
+    return res.status(400).json({
+      configured: false,
+      error:
+        'EBAY_RUNAME is set to a website URL. It must be the RuName ID from eBay (e.g. Armen_Abelian-ArmenAbe-Delnve-jkupc), not https://armiktech.com/.... Put the https callback only in eBay’s Auth Accepted URL field.',
+    });
+  }
   const state =
     (typeof req.query?.state === 'string' && req.query.state) ||
     `ebay_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-  const params = new URLSearchParams({
-    client_id: clientId,
-    response_type: 'code',
-    redirect_uri: ruName,
-    scope: EBAY_USER_SCOPES,
-    state,
-  });
-  const url = `${ebayAuthHost(env)}/oauth2/authorize?${params.toString()}`;
+  // eBay is picky: encode scopes with %20 (not +) and pass RuName as redirect_uri.
+  const qs =
+    `client_id=${encodeURIComponent(clientId)}` +
+    `&response_type=code` +
+    `&redirect_uri=${encodeURIComponent(ruName)}` +
+    `&scope=${encodeURIComponent(EBAY_USER_SCOPES)}` +
+    `&state=${encodeURIComponent(state)}`;
+  const url = `${ebayAuthHost(env)}/oauth2/authorize?${qs}`;
   return res.status(200).json({ configured: true, url, state, env });
 }
 
