@@ -18,7 +18,7 @@ import {
 import { resolveSalePlatform } from './salePlatform';
 import { roundMoney } from '../services/financialAggregation';
 
-export const FLIP_FEE_STORAGE_KEY = 'flip_coach_fees_v1';
+export const FLIP_FEE_STORAGE_KEY = 'flip_coach_fees_v2';
 
 export type FlipFeeSettings = {
   /** eBay selling fee %, e.g. 10 */
@@ -28,9 +28,9 @@ export type FlipFeeSettings = {
 };
 
 export const DEFAULT_FLIP_FEES: FlipFeeSettings = {
-  /** ~30% total eBay cut by default (fee + ads). */
+  /** ~25% total eBay cut by default (fee + ads). */
   ebayFeePct: 12.5,
-  ebayAdsPct: 17.5,
+  ebayAdsPct: 12.5,
 };
 
 export function loadFlipFees(): FlipFeeSettings {

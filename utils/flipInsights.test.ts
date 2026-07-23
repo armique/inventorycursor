@@ -9,7 +9,7 @@ import {
 } from './flipInsights';
 import type { FlipFeeSettings } from './flipCoach';
 
-const fees: FlipFeeSettings = { ebayFeePct: 12.5, ebayAdsPct: 17.5 };
+const fees: FlipFeeSettings = { ebayFeePct: 12.5, ebayAdsPct: 12.5 };
 
 function item(partial: Partial<InventoryItem> & Pick<InventoryItem, 'id' | 'name'>): InventoryItem {
   return {
@@ -33,15 +33,15 @@ describe('flipInsights', () => {
       suggestedEbayListPrice: 220,
       suggestedKleinListPrice: 154,
       suggestedPocketTarget: 154,
-      suggestedFeePct: 30,
+      suggestedFeePct: 25,
       suggestedCompCount: 4,
     });
     const s = resolveSuggestedEbayList(row, [row], fees);
     // Snapshot kept, then rounded up to clean €5 steps
     expect(s?.kleinList).toBe(155);
-    expect(s?.ebayList).toBe(225);
+    expect(s?.ebayList).toBe(220);
     expect(s?.fromSnapshot).toBe(true);
-    expect(s?.feePct).toBe(30);
+    expect(s?.feePct).toBe(25);
     expect(s?.kleinList).toBeLessThan(s!.ebayList);
   });
 
@@ -57,14 +57,14 @@ describe('flipInsights', () => {
       suggestedEbayListPrice: 43.11,
       suggestedKleinListPrice: 30.17,
       suggestedPocketTarget: 30.17,
-      suggestedFeePct: 30,
+      suggestedFeePct: 25,
       suggestedCompCount: 3,
     });
     const s = resolveSuggestedEbayList(bundle, [bundle], fees);
     expect(s).not.toBeNull();
-    // Min 30% on 61.7 = 80.21; target 45% = 89.47 → round up to KA €90, EB €130
+    // Min 30% on 61.7 = 80.21; target 45% = 89.47 → round up to KA €90; EB 90/0.75 = 120
     expect(s!.kleinList).toBe(90);
-    expect(s!.ebayList).toBe(130);
+    expect(s!.ebayList).toBe(120);
     expect(s!.compCount).toBe(0);
   });
 

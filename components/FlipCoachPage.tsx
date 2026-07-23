@@ -462,7 +462,7 @@ const FlipCoachPage: React.FC<Props> = ({ items }) => {
               </label>
             </div>
             <p className="text-[10px] text-slate-500 leading-snug">
-              Default ~30% total cut. €100 pocket → Klein €{formatEUR(example.kleinanzeigen)} · eBay €
+              Default ~25% total cut. €100 pocket → Klein €{formatEUR(example.kleinanzeigen)} · eBay €
               {formatEUR(example.ebay)}
             </p>
           </section>
