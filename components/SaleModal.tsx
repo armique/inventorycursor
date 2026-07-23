@@ -1,12 +1,14 @@
 
-import React, { useCallback, useEffect, useState } from 'react';
-import { X, Euro, CheckCircle2, ChevronDown, Upload, ImagePlus, Loader2, Truck } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { X, Euro, CheckCircle2, ChevronDown, Upload, ImagePlus, Loader2, Truck, Receipt } from 'lucide-react';
 import { parseEbayOrderFromImageInput } from '../services/ebayOrderScreenshotAI';
 import { mapKleinanzeigenPaymentMethod, parseKleinanzeigenChatFromImageInput } from '../services/kleinanzeigenChatScreenshotAI';
 import { fetchEbayOrder } from '../services/ebayService';
-import { findEbayOrderById } from '../services/ebayOrderIndex';
+import { findEbayOrderById, loadEbayOrderIndex } from '../services/ebayOrderIndex';
 import { customerFromEbayOrder } from '../utils/ebayOrderBuyerData';
 import { ebayScreenshotSaleFields } from '../utils/ebayScreenshotSaleFields';
+import { findMatchingOrdersForItem, type EbayOrderMatch } from '../utils/ebayOrderMatch';
+import { getLinePayout } from '../utils/ebayOrderPayout';
 import { persistSaleProofImage, urlNeedsPhotoArchive } from '../services/inventoryImageStorage';
 import { InventoryItem, ItemStatus, PaymentType, CustomerInfo, Platform, TaxMode } from '../types';
 import { SALE_PLATFORM_OPTIONS } from '../utils/salePlatform';
@@ -63,8 +65,11 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
 
   const [ebayUsername, setEbayUsername] = useState(item.ebayUsername || '');
   const [ebayOrderId, setEbayOrderId] = useState(item.ebayOrderId || '');
+  const [ebaySku, setEbaySku] = useState(item.ebaySku || '');
+  const [ebayListingId, setEbayListingId] = useState(item.ebayListingId || '');
   const [kleinanzeigenChatUrl, setKleinanzeigenChatUrl] = useState(item.kleinanzeigenChatUrl || '');
   const [kleinanzeigenChatImage, setKleinanzeigenChatImage] = useState(item.kleinanzeigenChatImage || '');
+  const [pickedOrderKey, setPickedOrderKey] = useState<string | null>(null);
 
   const [customer, setCustomer] = useState<CustomerInfo>({
     name: item.customer?.name || '',
@@ -81,6 +86,53 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
   const [orderIdLookupMessage, setOrderIdLookupMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  const orderMatchSuggestions = useMemo(() => {
+    if (platformSold !== 'ebay.de') return [] as EbayOrderMatch[];
+    try {
+      const { orders } = loadEbayOrderIndex();
+      if (!orders.length) return [];
+      return findMatchingOrdersForItem(item, orders, 35).slice(0, 6);
+    } catch {
+      return [];
+    }
+  }, [platformSold, item]);
+
+  const applySuggestedOrder = useCallback((match: EbayOrderMatch) => {
+    const payout = getLinePayout(match.order, match.lineItem);
+    const key = `${match.order.orderId}:${match.lineItem.sku || match.lineItem.title}`;
+    setPickedOrderKey(key);
+    setEbayOrderId(match.order.orderId);
+    setEbayUsername(match.order.buyer.username || '');
+    setEbaySku(match.lineItem.sku || item.ebaySku || '');
+    setEbayListingId(match.lineItem.listingId || item.ebayListingId || '');
+    setCustomer(customerFromEbayOrder(match.order));
+    if (match.order.creationDate) setSaleDate(match.order.creationDate);
+    if (payout.sellPrice > 0) {
+      const fmt = formatEUR(payout.sellPrice);
+      setSalePrice(fmt);
+      setUnitPrice(fmt);
+    }
+    if (payout.netKnown) {
+      setHasFee(false);
+      setFeeAmount(0);
+      setEbayFeeNote(null);
+    } else if (payout.fee > 0) {
+      setHasFee(true);
+      setFeeAmount(Math.round(payout.fee * 100) / 100);
+      setEbayFeeNote({
+        ebayFeeEur: payout.fee,
+        adFeeEur: null,
+        amountReceivedNetEur: null,
+        buyerShippingEur: null,
+      });
+    }
+    setPlatformSold('ebay.de');
+    setPaymentType('ebay.de');
+    setOrderIdLookupMessage(
+      `Filled from order history · ${match.matchKind === 'title' ? `title score ${match.matchScore}` : match.matchKind}`
+    );
+  }, [item.ebaySku, item.ebayListingId]);
 
   const applyEbayOrderBuyerFields = useCallback(
     (fields: {
@@ -393,6 +445,8 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
         customer,
         ebayUsername,
         ebayOrderId,
+        ebaySku: ebaySku || undefined,
+        ebayListingId: ebayListingId || undefined,
         kleinanzeigenChatUrl,
         kleinanzeigenChatImage: archivedKaImage || undefined,
         ebayOrderScreenshotUrl,
@@ -434,6 +488,8 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
           profit: profit != null ? parseFloat(profit.toFixed(2)) : undefined,
           ebayUsername,
           ebayOrderId,
+          ebaySku: ebaySku || undefined,
+          ebayListingId: ebayListingId || undefined,
           kleinanzeigenChatUrl,
           kleinanzeigenChatImage: archivedKaImage || undefined,
           ebayOrderScreenshotUrl,
@@ -458,6 +514,8 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
           profit: profit != null ? parseFloat(profit.toFixed(2)) : undefined,
           ebayUsername,
           ebayOrderId,
+          ebaySku: ebaySku || undefined,
+          ebayListingId: ebayListingId || undefined,
           kleinanzeigenChatUrl,
           kleinanzeigenChatImage: archivedKaImage || undefined,
           ebayOrderScreenshotUrl,
@@ -772,6 +830,70 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
 
           {platformSold === 'ebay.de' && (
             <div className="space-y-2">
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-2.5 space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Receipt size={12} className="text-indigo-600 shrink-0" />
+                  <p className="text-[9px] font-black uppercase tracking-wider text-indigo-800">
+                    Suggested from order history
+                  </p>
+                </div>
+                {orderMatchSuggestions.length === 0 ? (
+                  <p className="text-[10px] text-indigo-900/70 leading-snug">
+                    No close matches in the cached order index. Refresh orders in{' '}
+                    <span className="font-bold">eBay Tools → Sales sync</span>, or paste an Order ID below and click Load.
+                  </p>
+                ) : (
+                  <div className="space-y-1.5 max-h-44 overflow-y-auto pr-0.5">
+                    {orderMatchSuggestions.map((match) => {
+                      const key = `${match.order.orderId}:${match.lineItem.sku || match.lineItem.title}`;
+                      const payout = getLinePayout(match.order, match.lineItem);
+                      const active = pickedOrderKey === key;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => applySuggestedOrder(match)}
+                          className={`w-full text-left rounded-lg border px-2.5 py-2 transition-colors ${
+                            active
+                              ? 'border-indigo-500 bg-white ring-1 ring-indigo-300'
+                              : 'border-indigo-100/80 bg-white/80 hover:border-indigo-300 hover:bg-white'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-[11px] font-bold text-slate-900 line-clamp-2 leading-snug">
+                              {match.lineItem.title}
+                            </p>
+                            <span
+                              className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full shrink-0 ${
+                                match.matchKind === 'listingId'
+                                  ? 'bg-emerald-50 text-emerald-700'
+                                  : match.matchKind === 'sku'
+                                    ? 'bg-sky-50 text-sky-700'
+                                    : 'bg-amber-50 text-amber-800'
+                              }`}
+                            >
+                              {match.matchKind === 'listingId'
+                                ? 'Listing'
+                                : match.matchKind === 'sku'
+                                  ? 'SKU'
+                                  : `Name ${match.matchScore}`}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-slate-500 mt-0.5 tabular-nums">
+                            {match.order.orderId} · {match.order.creationDate || 'no date'} ·{' '}
+                            {match.order.buyer.username || match.order.buyer.fullName || 'buyer?'}
+                            {payout.sellPrice > 0 ? ` · €${formatEUR(payout.sellPrice)}` : ''}
+                          </p>
+                          <p className="text-[9px] font-black uppercase text-indigo-700 mt-1">
+                            {active ? 'Selected — review & confirm sale' : 'Tap to fill sale from this order'}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               <div className="grid grid-cols-[1.4fr_1fr] gap-2">
                 <div
                   className={`p-2 rounded-xl border-2 border-dashed min-h-[52px] flex flex-col justify-center ${
@@ -874,6 +996,7 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
                     onChange={(e) => {
                       setEbayOrderId(e.target.value);
                       setOrderIdLookupMessage(null);
+                      setPickedOrderKey(null);
                     }}
                     onBlur={() => {
                       if (ebayOrderId.trim()) void fillFromOrderId(ebayOrderId, { silent: true });
@@ -893,7 +1016,9 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
               {orderIdLookupMessage && (
                 <p
                   className={`text-[9px] font-bold ${
-                    orderIdLookupMessage.includes('filled') || orderIdLookupMessage.includes('Filled')
+                    orderIdLookupMessage.includes('filled') ||
+                    orderIdLookupMessage.includes('Filled') ||
+                    orderIdLookupMessage.includes('order history')
                       ? 'text-emerald-600'
                       : 'text-slate-500'
                   }`}
