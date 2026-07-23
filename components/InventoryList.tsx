@@ -104,7 +104,7 @@ import {
 import { resolveTradeReceivedItems, resolveTradeSourceItem } from '../utils/tradeLinks';
 import { formatPlatformBoughtLabel } from '../utils/purchaseSource';
 import TradeLinkBadge from './TradeLinkBadge';
-import InventoryPurchasesPanel from './InventoryPurchasesPanel';
+import { useInventoryPurchases } from './InventoryPurchasesPanel';
 
 interface Props {
   items: InventoryItem[];
@@ -4530,10 +4530,27 @@ const InventoryList: React.FC<Props> = ({
 
   const bulkSelectionCount = deferredSelectedIds.length;
 
+  const purchasesView = useInventoryPurchases({
+    items,
+    categories,
+    categoryFields: categoryFields || {},
+    searchTerm,
+    onUpdate: (newItems) => onUpdate(newItems, undefined, { flushCloud: true }),
+    onOpenItem: (id) => {
+      setStatusFilter('ACTIVE');
+      navigate(`/panel/edit/${id}`);
+    },
+  });
+
+  const listCountLabel =
+    statusFilter === 'PURCHASES'
+      ? `${purchasesView.rowCount} purchase${purchasesView.rowCount === 1 ? '' : 's'}`
+      : `${sortedItems.length} items`;
+
   return (
     <div className="flex-1 min-h-0 h-full flex flex-col gap-1 overflow-hidden relative">
-      {showFinancials && financialStats && !splitView && (
-        <div className="hidden lg:block">
+      {showFinancials && financialStats && !splitView ? (
+        <div className="hidden lg:block shrink-0">
           <SoldFinancialBar
             stats={financialStats}
             taxMode={businessSettings.taxMode}
@@ -4541,7 +4558,7 @@ const InventoryList: React.FC<Props> = ({
             onBusinessSettingsChange={onBusinessSettingsChange}
           />
         </div>
-      )}
+      ) : null}
 
       <header className="shrink-0 space-y-1">
          {bulkImportFilterId && (
@@ -4628,12 +4645,14 @@ const InventoryList: React.FC<Props> = ({
                  <option value="ALL">All</option>
                </select>
              </div>
-             {statusFilter !== 'PURCHASES' && (
              <button
                type="button"
                onClick={() => setShowMobileFiltersSheet(true)}
+               disabled={statusFilter === 'PURCHASES'}
                className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-2 rounded-lg border text-[11px] font-black uppercase ${
-                 hasActiveFilters || activeSpecFilterCount > 0 || smartPreset
+                 statusFilter === 'PURCHASES'
+                   ? 'bg-white text-slate-300 border-slate-100'
+                   : hasActiveFilters || activeSpecFilterCount > 0 || smartPreset
                    ? 'bg-slate-900 text-white border-slate-900'
                    : 'bg-white text-slate-700 border-slate-200'
                }`}
@@ -4641,7 +4660,6 @@ const InventoryList: React.FC<Props> = ({
                <Sliders size={13} />
                Filter
              </button>
-             )}
            </div>
            <div className="relative">
              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={15} />
@@ -4681,16 +4699,19 @@ const InventoryList: React.FC<Props> = ({
            </div>
            <div className="flex items-center justify-between gap-2 px-0.5">
              <span className="text-[11px] font-semibold text-slate-500">
-               {sortedItems.length} items
-               {categoryFilter !== 'ALL' ? ` · ${categoryFilter}` : ''}
+               {listCountLabel}
+               {statusFilter !== 'PURCHASES' && categoryFilter !== 'ALL' ? ` · ${categoryFilter}` : ''}
              </span>
-             {hasActiveFilters && (
+             {hasActiveFilters && statusFilter !== 'PURCHASES' && (
                <button type="button" onClick={clearAllFilters} className="text-[10px] font-black uppercase text-slate-500">
                  Reset
                </button>
              )}
            </div>
-           {statusFilter !== 'PURCHASES' && quickCategoryPins.length > 0 && (
+           <div className="min-h-[28px]">
+             {statusFilter === 'PURCHASES' ? (
+               purchasesView.chrome
+             ) : quickCategoryPins.length > 0 ? (
              <div className="flex gap-1 overflow-x-auto pb-0.5 -mx-0.5 px-0.5">
                {quickCategoryPins.map((pin) => {
                  const active = isQuickCategoryPinActive(pin);
@@ -4708,7 +4729,8 @@ const InventoryList: React.FC<Props> = ({
                  );
                })}
              </div>
-           )}
+             ) : null}
+           </div>
          </div>
 
          <div className="hidden lg:block space-y-1">
@@ -4797,7 +4819,7 @@ const InventoryList: React.FC<Props> = ({
             )}
             <span className="text-slate-500 text-xs font-medium">
               {statusFilter === 'PURCHASES'
-                ? 'Purchases · parse specs · confirm received'
+                ? listCountLabel
                 : splitView
                 ? `${sortedActiveItems.length} active · ${sortedSoldItems.length} sold${timeFilter !== 'ALL' ? ' · period' : ''}`
                 : `${sortedItems.length} items${timeFilter !== 'ALL' ? ' · period' : ''}`}
@@ -4869,8 +4891,6 @@ const InventoryList: React.FC<Props> = ({
                  </div>
                )}
             </div>
-            {statusFilter !== 'PURCHASES' && (
-            <>
             <button
                type="button"
                onClick={() => navigate('/panel/bulk-imports')}
@@ -4885,7 +4905,8 @@ const InventoryList: React.FC<Props> = ({
             <select
                value={categoryFilter}
                onChange={e => { setCategoryFilter(e.target.value); setSubCategoryFilter(''); }}
-               className="py-1.5 pl-2.5 pr-7 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-slate-900/20 appearance-none bg-no-repeat bg-right min-w-[100px]"
+               disabled={statusFilter === 'PURCHASES'}
+               className="py-1.5 pl-2.5 pr-7 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-slate-900/20 appearance-none bg-no-repeat bg-right min-w-[100px] disabled:opacity-40"
                style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.35rem center' }}
             >
                <option value="ALL">All categories</option>
@@ -5044,10 +5065,6 @@ const InventoryList: React.FC<Props> = ({
                   </div>
                </>
             )}
-            </>
-            )}
-            {statusFilter !== 'PURCHASES' && (
-            <>
             <div className="relative flex items-center" ref={columnsPanelRef}>
                <button
                   type="button"
@@ -5287,17 +5304,20 @@ const InventoryList: React.FC<Props> = ({
                  <span>Add Item</span>
                </button>
             </div>
-            </>
-            )}
             {hasActiveFilters && (
                <button type="button" onClick={clearAllFilters} className="text-[10px] font-bold uppercase text-slate-500 hover:text-red-600">Reset all</button>
             )}
          </div>
 
+         {/* Desktop purchase subfilters — same slot height as mobile pin row */}
+         {statusFilter === 'PURCHASES' && (
+           <div className="hidden lg:block min-h-[28px]">{purchasesView.chrome}</div>
+         )}
+
          {/* Active filter chips */}
-         {hasActiveFilters && (
+         {hasActiveFilters && statusFilter !== 'PURCHASES' && (
             <div className="flex flex-wrap items-center gap-1.5">
-               {statusFilter !== 'ACTIVE' && statusFilter !== 'PURCHASES' && (
+               {statusFilter !== 'ACTIVE' && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 text-xs font-medium">
                      {statusFilter} <button type="button" onClick={() => setStatusFilter('ACTIVE')} className="hover:opacity-80">×</button>
                   </span>
@@ -5312,7 +5332,7 @@ const InventoryList: React.FC<Props> = ({
                      {timeFilter} <button type="button" onClick={() => setTimeFilter('ALL')} className="hover:opacity-80">×</button>
                   </span>
                )}
-               {statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS' && statusFilter !== 'PURCHASES' && (salePlatformFilter !== 'ALL' || salePaymentFilter !== 'ALL') && (
+               {statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS' && (salePlatformFilter !== 'ALL' || salePaymentFilter !== 'ALL') && (
                   <>
                      {salePlatformFilter !== 'ALL' && (
                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 text-xs font-medium">
@@ -5666,27 +5686,14 @@ const InventoryList: React.FC<Props> = ({
         </div>
       )}
 
-      {statusFilter === 'PURCHASES' ? (
-        <InventoryPurchasesPanel
-          items={items}
-          categories={categories}
-          categoryFields={categoryFields || {}}
-          searchTerm={searchTerm}
-          onUpdate={(newItems) => onUpdate(newItems, undefined, { flushCloud: true })}
-          onOpenItem={(id) => {
-            setStatusFilter('ACTIVE');
-            navigate(`/panel/edit/${id}`);
-          }}
-        />
-      ) : (
-      <>
-
-      {/* Phase 1: phone card list — never the sticky Actions table */}
+      {/* Shared list shells — only the inner items swap between Active / Sold / Purchases */}
       <div
         className="lg:hidden flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y custom-scrollbar px-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] space-y-1.5"
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
-          {sortedItems.length === 0 ? (
+          {statusFilter === 'PURCHASES' ? (
+            purchasesView.mobileList
+          ) : sortedItems.length === 0 ? (
             <div className="py-16 text-center opacity-40">
               <Package size={40} className="mx-auto mb-3 text-slate-300" />
               <p className="font-bold text-slate-400 text-sm">No matches found</p>
@@ -5814,7 +5821,7 @@ const InventoryList: React.FC<Props> = ({
         [data-density="compact"] .text-xs { font-size: 0.625rem; line-height: 1.2; }
         [data-density="comfortable"] .text-sm { line-height: 1.25; }
       `}</style>
-      {splitView ? (
+      {splitView && statusFilter !== 'PURCHASES' ? (
         <div className="hidden lg:flex flex-1 min-h-0 gap-2 flex-col lg:flex-row">
           <InventoryListTablePane
             key="split-active"
@@ -5884,8 +5891,11 @@ const InventoryList: React.FC<Props> = ({
         </div>
       ) : (
         <div className="hidden lg:flex flex-1 min-h-0 min-w-0 flex-col">
+        {statusFilter === 'PURCHASES' ? (
+          purchasesView.desktopList
+        ) : (
         <InventoryListTablePane
-          key={`single-${statusFilter}`}
+          key="single-pane"
           paneItems={sortedItems}
           paneStatus={statusFilter}
           scrollRef={tableContainerRef}
@@ -5911,18 +5921,19 @@ const InventoryList: React.FC<Props> = ({
           collapsedBundles={collapsedBundles}
           className="flex flex-1"
         />
+        )}
         </div>
       )}
 
       <div className="shrink-0 w-full">
+        {statusFilter !== 'PURCHASES' ? (
         <BulkSelectionBar
           count={bulkSelectionCount}
           onClear={() => startTransition(() => setSelectedIds([]))}
           actions={bulkActions}
         />
+        ) : null}
       </div>
-      </>
-      )}
 
       {/* MODALS */}
       {itemToEdit && (
