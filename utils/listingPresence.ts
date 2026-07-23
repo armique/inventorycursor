@@ -7,7 +7,7 @@ import type { InventoryItem } from '../types';
 import { scoreListingTitleMatch } from './ebayListingMatch';
 import { nameSimilarity } from './inventorySoldComps';
 import type { EbayMyListing } from '../services/ebayService';
-import { isListingWatchCandidate } from './listingWatch';
+import { isListingPresenceEligible, isListingWatchCandidate } from './listingWatch';
 import { roundMoney } from '../services/financialAggregation';
 
 export const KA_PROFILE_URL_KEY = 'kleinanzeigen_seller_profile_url_v1';
@@ -136,8 +136,9 @@ function clearMaybeSoldChannel(
 }
 
 /**
- * Apply eBay active listings → listedOnEbay / liveEbayListPrice for watchlist only.
- * If a previously listed item vanishes → maybeSoldHint.
+ * Match eBay active listings against all eligible in-stock items.
+ * Auto-marks matches as saleReady. Only clears / maybe-sold for items that were
+ * previously listed or already on the Ready watchlist (never mass-unlists stock).
  */
 export function applyEbayPresenceToItems(
   items: InventoryItem[],
@@ -153,7 +154,7 @@ export function applyEbayPresenceToItems(
   const syncedAt = new Date().toISOString();
 
   const next = items.map((item) => {
-    if (!isListingWatchCandidate(item)) return item;
+    if (!isListingPresenceEligible(item)) return item;
 
     const m = bestTitleMatch(item.name, titles, { sku: item.ebaySku });
     if (m) {
@@ -163,6 +164,7 @@ export function applyEbayPresenceToItems(
       const cleared = clearMaybeSoldChannel(item.maybeSoldHint, 'ebay');
       return {
         ...item,
+        saleReady: true,
         listedOnEbay: true,
         listedViaParent: false,
         ebayListingId: m.hit.listingId || item.ebayListingId,
@@ -174,6 +176,9 @@ export function applyEbayPresenceToItems(
         maybeSoldDismissedAt: cleared ? item.maybeSoldDismissedAt : undefined,
       };
     }
+
+    // Don't touch non-watch items that never matched — avoid wiping whole inventory.
+    if (!isListingWatchCandidate(item)) return item;
 
     const wasListed =
       item.listedOnEbay === true ||
@@ -200,7 +205,7 @@ export function applyEbayPresenceToItems(
     };
   });
 
-  // Children of matched kits (even if not personally on watchlist) get via-parent flags.
+  // Children of matched kits get via-parent flags.
   return next.map((item) => {
     if (!item.parentContainerId) return item;
     if (!parentMatched.has(item.parentContainerId)) {
@@ -223,7 +228,8 @@ export function applyEbayPresenceToItems(
 }
 
 /**
- * Apply KA title/price snapshot → listedOnKleinanzeigen / liveKleinListPrice for watchlist only.
+ * Match KA title/price snapshot against all eligible in-stock items.
+ * Auto-marks matches as saleReady. Only clears / maybe-sold for watchlist items.
  */
 export function applyKaPresenceToItems(
   items: InventoryItem[],
@@ -233,7 +239,7 @@ export function applyKaPresenceToItems(
   const syncedAt = new Date().toISOString();
 
   const next = items.map((item) => {
-    if (!isListingWatchCandidate(item)) return item;
+    if (!isListingPresenceEligible(item)) return item;
 
     const m = bestKaTitleMatch(item.name, titles);
     if (m) {
@@ -242,6 +248,7 @@ export function applyKaPresenceToItems(
       const cleared = clearMaybeSoldChannel(item.maybeSoldHint, 'kleinanzeigen');
       return {
         ...item,
+        saleReady: true,
         listedOnKleinanzeigen: true,
         listedViaParent: false,
         kleinanzeigenListingUrl: m.hit.url || item.kleinanzeigenListingUrl,
@@ -253,6 +260,8 @@ export function applyKaPresenceToItems(
         maybeSoldDismissedAt: cleared ? item.maybeSoldDismissedAt : undefined,
       };
     }
+
+    if (!isListingWatchCandidate(item)) return item;
 
     const wasListed =
       item.listedOnKleinanzeigen === true ||

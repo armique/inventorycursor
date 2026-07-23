@@ -13,7 +13,7 @@ import {
   saveKaListingTitles,
   type ListingTitleHit,
 } from './listingPresence';
-import { computePriceChangeHint, isListingWatchCandidate } from './listingWatch';
+import { computePriceChangeHint, isListingPresenceEligible, isListingWatchCandidate } from './listingWatch';
 
 export type ListingPresenceSyncResult = {
   items: InventoryItem[];
@@ -22,6 +22,7 @@ export type ListingPresenceSyncResult = {
   ebayTitleCount: number;
   kaTitleCount: number;
   watchCount: number;
+  eligibleCount: number;
   priceHints: number;
   maybeSoldCount: number;
   kaError?: string;
@@ -39,6 +40,7 @@ export async function syncListingPresence(
   let kaTitleCount = 0;
   let kaError: string | undefined;
   let ebayError: string | undefined;
+  const eligibleCount = items.filter(isListingPresenceEligible).length;
   const watchCount = items.filter(isListingWatchCandidate).length;
 
   if (!opts?.skipEbay) {
@@ -47,7 +49,7 @@ export async function syncListingPresence(
       ebayTitleCount = listings.length;
       next = applyEbayPresenceToItems(next, listings);
       ebayMatched = next.filter(
-        (i) => isListingWatchCandidate(i) && i.listedOnEbay && !i.listedViaParent
+        (i) => isListingPresenceEligible(i) && i.listedOnEbay && !i.listedViaParent
       ).length;
       markPresenceMeta({
         ebaySyncedAt: new Date().toISOString(),
@@ -83,7 +85,8 @@ export async function syncListingPresence(
       kaTitleCount = titles.length;
       next = applyKaPresenceToItems(next, titles);
       kaMatched = next.filter(
-        (i) => isListingWatchCandidate(i) && i.listedOnKleinanzeigen && !i.listedViaParent
+        (i) =>
+          isListingPresenceEligible(i) && i.listedOnKleinanzeigen && !i.listedViaParent
       ).length;
       markPresenceMeta({
         kaSyncedAt: new Date().toISOString(),
@@ -103,7 +106,8 @@ export async function syncListingPresence(
     kaMatched,
     ebayTitleCount,
     kaTitleCount,
-    watchCount,
+    watchCount: next.filter(isListingWatchCandidate).length,
+    eligibleCount,
     priceHints,
     maybeSoldCount,
     kaError: kaError || undefined,

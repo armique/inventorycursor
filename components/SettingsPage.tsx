@@ -825,7 +825,7 @@ const SettingsPage: React.FC<Props> = ({
                          <strong>Kleinanzeigen</strong> — paste your public profile / Bestandsliste URL in “Listing presence”, then Refresh.
                       </li>
                       <li>
-                         In Inventory, mark items <strong>Ready</strong> under the name so only prepared stock is watched.
+                         Sync matches listings to <strong>all in-stock</strong> items by name (auto-marks matches Ready). Use Ready for delisting / maybe-sold watch.
                       </li>
                       <li>
                          After sync: missing listings show KA/EB muted; vanished ads get a <strong>mark sold?</strong> nudge; price gaps show Lower → hints.
@@ -930,7 +930,7 @@ const SettingsPage: React.FC<Props> = ({
                    <h4 className="text-sm font-black uppercase tracking-widest text-slate-500">Listing presence (KA + eBay)</h4>
                    <p className="text-sm text-slate-500">
                       Paste your <strong>Kleinanzeigen Bestandsliste / profile link</strong> here. eBay uses the username above.
-                      Sync only checks your <strong>sale-ready</strong> watchlist (+ already linked). If a watched listing disappears, we flag <strong>Maybe sold</strong>.
+                      Sync matches titles against all eligible in-stock items and fills KA/EB under the name. If a <strong>Ready</strong> listing later disappears, we flag <strong>Maybe sold</strong>.
                    </p>
                    <div className="space-y-2">
                       <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Kleinanzeigen profile URL</label>
@@ -973,8 +973,15 @@ const SettingsPage: React.FC<Props> = ({
                                   kaTitlesOverride: pasted.length ? pasted : undefined,
                                });
                                onRestoreItems(result.items);
+                               const hint =
+                                 result.kaTitleCount > 0 && result.kaMatched === 0
+                                   ? ' · No KA title matched inventory names — check names or paste titles with prices'
+                                   : result.eligibleCount === 0
+                                     ? ' · No eligible in-stock items to match'
+                                     : '';
                                setListingPresenceMsg(
-                                  `Watch ${result.watchCount} · eBay ${result.ebayMatched}/${result.ebayTitleCount} · KA ${result.kaMatched}/${result.kaTitleCount} · ${result.priceHints} price hints · ${result.maybeSoldCount} maybe sold` +
+                                  `Eligible ${result.eligibleCount} · Ready ${result.watchCount} · eBay ${result.ebayMatched}/${result.ebayTitleCount} · KA ${result.kaMatched}/${result.kaTitleCount} · ${result.priceHints} price hints · ${result.maybeSoldCount} maybe sold` +
+                                    hint +
                                     (result.ebayError ? ` · eBay: ${result.ebayError}` : '') +
                                     (result.kaError ? ` · KA: ${result.kaError}` : '')
                                );

@@ -44,7 +44,6 @@ import { loadFlipFees } from '../utils/flipCoach';
 import {
   computePriceChangeHint,
   hasPriceChangeHintFast,
-  isListingWatchCandidate,
   isMaybeSoldCandidate,
   isSaleReadyUnlisted,
   isSaleReadyWatch,
@@ -3138,8 +3137,8 @@ const InventoryList: React.FC<Props> = ({
                            type="button"
                            title={
                              item.saleReady
-                               ? 'Sale ready — watched by listing/price sync. Click to unwatch.'
-                               : 'Mark sale ready when photos/specs are done. Only ready items are checked for listings & live prices.'
+                               ? 'Sale ready — watched for delisting / maybe-sold. Click to unwatch.'
+                               : 'Mark sale ready when photos/specs are done. Listing sync also auto-marks matches Ready.'
                            }
                            onClick={() =>
                              onUpdate(
@@ -3156,8 +3155,7 @@ const InventoryList: React.FC<Props> = ({
                          >
                            Ready
                          </button>
-                         {isListingWatchCandidate(item) &&
-                           (() => {
+                         {(() => {
                              const kaOk = Boolean(item.listedOnKleinanzeigen);
                              const ebOk = Boolean(item.listedOnEbay);
                              const viaKit = Boolean(item.listedViaParent);
@@ -3179,7 +3177,7 @@ const InventoryList: React.FC<Props> = ({
                                    title={
                                      kaOk
                                        ? `Listed on Kleinanzeigen${kaLive}${syncHint}`
-                                       : `Not posted on Kleinanzeigen${syncHint}`
+                                       : `Not posted on Kleinanzeigen${syncHint || ' · run Listings sync in Settings'}`
                                    }
                                    onClick={() => {
                                      if (item.kleinanzeigenListingUrl) {
@@ -3218,7 +3216,7 @@ const InventoryList: React.FC<Props> = ({
                                    title={
                                      ebOk
                                        ? `Listed on eBay${ebLive}${syncHint}`
-                                       : `Not posted on eBay${syncHint}`
+                                       : `Not posted on eBay${syncHint || ' · run Listings sync in Settings'}`
                                    }
                                    onClick={() => {
                                      if (item.ebayListingId) {

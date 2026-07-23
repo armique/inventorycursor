@@ -1,6 +1,6 @@
 /**
- * Listing watchlist: only sale-ready / already-linked items get presence + price sync.
- * Keeps defective and unprepared stock out of the parser noise.
+ * Listing watchlist helpers: Ready / already-linked items get delisting + price hints.
+ * Presence matching runs against all eligible in-stock items.
  */
 
 import type { InventoryItem } from '../types';
@@ -17,7 +17,8 @@ import { roundMoney } from '../services/financialAggregation';
 export const PRICE_HINT_MIN_EUR = 5;
 export const PRICE_HINT_MIN_PCT = 0.05;
 
-export function isListingWatchCandidate(item: InventoryItem): boolean {
+/** Eligible for listing match (in stock, sellable) — broader than the Ready watchlist. */
+export function isListingPresenceEligible(item: InventoryItem): boolean {
   if (item.isDraft || item.isDefective) return false;
   if (
     item.status !== ItemStatus.IN_STOCK &&
@@ -25,10 +26,14 @@ export function isListingWatchCandidate(item: InventoryItem): boolean {
   ) {
     return false;
   }
-  // Composition parts are tracked via the parent kit listing.
   if (item.status === ItemStatus.IN_COMPOSITION || item.parentContainerId) {
     return false;
   }
+  return true;
+}
+
+export function isListingWatchCandidate(item: InventoryItem): boolean {
+  if (!isListingPresenceEligible(item)) return false;
 
   if (item.saleReady) return true;
   if (item.workflowStage === 'Ready' || item.workflowStage === 'Listed') return true;
