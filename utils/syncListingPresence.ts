@@ -23,6 +23,7 @@ export type ListingPresenceSyncResult = {
   kaTitleCount: number;
   watchCount: number;
   priceHints: number;
+  maybeSoldCount: number;
   kaError?: string;
   ebayError?: string;
 };
@@ -92,6 +93,9 @@ export async function syncListingPresence(
   }
 
   const priceHints = next.filter((i) => computePriceChangeHint(i)).length;
+  const maybeSoldCount = next.filter(
+    (i) => i.maybeSoldHint && !i.maybeSoldDismissedAt
+  ).length;
 
   return {
     items: next,
@@ -101,6 +105,7 @@ export async function syncListingPresence(
     kaTitleCount,
     watchCount,
     priceHints,
+    maybeSoldCount,
     kaError: kaError || undefined,
     ebayError,
   };

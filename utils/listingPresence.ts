@@ -115,8 +115,29 @@ function findListingPrice(
   return p != null && p > 0 ? roundMoney(p) : undefined;
 }
 
+function mergeMaybeSold(
+  prev: InventoryItem['maybeSoldHint'],
+  channel: 'ebay' | 'kleinanzeigen'
+): InventoryItem['maybeSoldHint'] {
+  if (!prev) return channel;
+  if (prev === 'both') return 'both';
+  if (prev === channel) return channel;
+  return 'both';
+}
+
+function clearMaybeSoldChannel(
+  prev: InventoryItem['maybeSoldHint'],
+  channel: 'ebay' | 'kleinanzeigen'
+): InventoryItem['maybeSoldHint'] | undefined {
+  if (!prev) return undefined;
+  if (prev === channel) return undefined;
+  if (prev === 'both') return channel === 'ebay' ? 'kleinanzeigen' : 'ebay';
+  return prev;
+}
+
 /**
  * Apply eBay active listings → listedOnEbay / liveEbayListPrice for watchlist only.
+ * If a previously listed item vanishes → maybeSoldHint.
  */
 export function applyEbayPresenceToItems(
   items: InventoryItem[],
@@ -139,6 +160,7 @@ export function applyEbayPresenceToItems(
       if (item.isPC || item.isBundle) parentMatched.add(item.id);
       const live =
         m.hit.price ?? findListingPrice(listings, m.hit.listingId || item.ebayListingId);
+      const cleared = clearMaybeSoldChannel(item.maybeSoldHint, 'ebay');
       return {
         ...item,
         listedOnEbay: true,
@@ -147,6 +169,25 @@ export function applyEbayPresenceToItems(
         liveEbayListPrice: live ?? item.liveEbayListPrice,
         liveListingPriceSyncedAt: live != null ? syncedAt : item.liveListingPriceSyncedAt,
         listingPresenceSyncedAt: syncedAt,
+        maybeSoldHint: cleared,
+        listingDisappearedAt: cleared ? item.listingDisappearedAt : undefined,
+        maybeSoldDismissedAt: cleared ? item.maybeSoldDismissedAt : undefined,
+      };
+    }
+
+    const wasListed =
+      item.listedOnEbay === true ||
+      Boolean(item.ebayListingId) ||
+      item.liveEbayListPrice != null;
+    if (wasListed && !item.maybeSoldDismissedAt) {
+      return {
+        ...item,
+        listedOnEbay: false,
+        listedViaParent: false,
+        liveEbayListPrice: undefined,
+        listingPresenceSyncedAt: syncedAt,
+        maybeSoldHint: mergeMaybeSold(item.maybeSoldHint, 'ebay'),
+        listingDisappearedAt: item.listingDisappearedAt || syncedAt,
       };
     }
 
@@ -174,6 +215,7 @@ export function applyEbayPresenceToItems(
         listedViaParent: true,
         listedOnEbay: true,
         listingPresenceSyncedAt: syncedAt,
+        maybeSoldHint: clearMaybeSoldChannel(item.maybeSoldHint, 'ebay'),
       };
     }
     return item;
@@ -197,6 +239,7 @@ export function applyKaPresenceToItems(
     if (m) {
       if (item.isPC || item.isBundle) parentMatched.add(item.id);
       const live = m.hit.price != null && m.hit.price > 0 ? roundMoney(m.hit.price) : undefined;
+      const cleared = clearMaybeSoldChannel(item.maybeSoldHint, 'kleinanzeigen');
       return {
         ...item,
         listedOnKleinanzeigen: true,
@@ -205,6 +248,24 @@ export function applyKaPresenceToItems(
         liveKleinListPrice: live ?? item.liveKleinListPrice,
         liveListingPriceSyncedAt: live != null ? syncedAt : item.liveListingPriceSyncedAt,
         listingPresenceSyncedAt: syncedAt,
+        maybeSoldHint: cleared,
+        listingDisappearedAt: cleared ? item.listingDisappearedAt : undefined,
+        maybeSoldDismissedAt: cleared ? item.maybeSoldDismissedAt : undefined,
+      };
+    }
+
+    const wasListed =
+      item.listedOnKleinanzeigen === true ||
+      Boolean(item.kleinanzeigenListingUrl) ||
+      item.liveKleinListPrice != null;
+    if (wasListed && !item.maybeSoldDismissedAt) {
+      return {
+        ...item,
+        listedOnKleinanzeigen: false,
+        liveKleinListPrice: undefined,
+        listingPresenceSyncedAt: syncedAt,
+        maybeSoldHint: mergeMaybeSold(item.maybeSoldHint, 'kleinanzeigen'),
+        listingDisappearedAt: item.listingDisappearedAt || syncedAt,
       };
     }
 
@@ -225,6 +286,7 @@ export function applyKaPresenceToItems(
         listedViaParent: true,
         listedOnKleinanzeigen: true,
         listingPresenceSyncedAt: syncedAt,
+        maybeSoldHint: clearMaybeSoldChannel(item.maybeSoldHint, 'kleinanzeigen'),
       };
     }
     return item;

@@ -5,7 +5,7 @@ import { formatEUR, parseLocaleMoney, parseLocaleNumber } from '../utils/formatM
 import { toLocalCalendarDateKey, todayLocalDateKey } from '../utils/calendarDate';
 import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSortKey, buildTimeGaugeSortKeyMap } from '../utils/inventoryTimeGauge';
 import { createPortal } from 'react-dom';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { 
   Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks,   Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone,   Camera, Gift, User, Images, Scissors, GripVertical
 } from 'lucide-react';
@@ -44,7 +44,10 @@ import {
   computePriceChangeHint,
   hasPriceChangeHintFast,
   isListingWatchCandidate,
+  isMaybeSoldCandidate,
   isSaleReadyUnlisted,
+  isSaleReadyWatch,
+  maybeSoldLabel,
 } from '../utils/listingWatch';
 import {
   enqueueProductCardBackgroundJob,
@@ -450,8 +453,10 @@ type SmartPreset =
   | 'no_specs'
   | 'defective'
   | 'aging'
+  | 'sale_ready'
   | 'sale_ready_unlisted'
   | 'price_change'
+  | 'maybe_sold'
   | null;
 
 type InventoryListFilterParams = {
@@ -529,8 +534,10 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
     if (smartPreset === 'presence_unknown' && getItemPresenceCycleState(item) !== 'unknown') return false;
     if (smartPreset === 'no_specs' && item.specs && Object.keys(item.specs).length > 0) return false;
     if (smartPreset === 'defective' && !item.isDefective) return false;
+    if (smartPreset === 'sale_ready' && !isSaleReadyWatch(item)) return false;
     if (smartPreset === 'sale_ready_unlisted' && !isSaleReadyUnlisted(item)) return false;
     if (smartPreset === 'price_change' && !hasPriceChangeHintFast(item)) return false;
+    if (smartPreset === 'maybe_sold' && !isMaybeSoldCandidate(item)) return false;
     if (smartPreset === 'aging') {
       const key = item.buyDate || '';
       if (!key) return false;
@@ -3214,6 +3221,41 @@ const InventoryList: React.FC<Props> = ({
                            </button>
                          );
                        })()}
+                       {isMaybeSoldCandidate(item) && (
+                         <div className="flex items-center gap-1 flex-wrap">
+                           <button
+                             type="button"
+                             className="text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded border bg-rose-50 text-rose-900 border-rose-200"
+                             title="Listing vanished from your seller profile while still In Stock"
+                             onClick={() => {
+                               addRecentItemId(item.id);
+                               setItemToSell(item);
+                             }}
+                           >
+                             {maybeSoldLabel(item.maybeSoldHint)}
+                           </button>
+                           <button
+                             type="button"
+                             className="text-[9px] font-bold uppercase text-slate-500 hover:text-slate-800"
+                             title="Dismiss nudge"
+                             onClick={() =>
+                               onUpdate(
+                                 [
+                                   {
+                                     ...item,
+                                     maybeSoldDismissedAt: new Date().toISOString(),
+                                     maybeSoldHint: undefined,
+                                   },
+                                 ],
+                                 undefined,
+                                 { skipActionLog: true }
+                               )
+                             }
+                           >
+                             Dismiss
+                           </button>
+                         </div>
+                       )}
                      </div>
                    )}
                    <div
@@ -4153,6 +4195,32 @@ const InventoryList: React.FC<Props> = ({
     };
     return [
       { id: 'photos', label: 'Add photos', icon: <Camera size={16} />, onClick: () => openAddPhotosModal(deferredSelectedIds), variant: 'primary' },
+      {
+        id: 'sale_ready',
+        label: 'Mark Ready',
+        icon: <ListChecks size={16} />,
+        onClick: () => {
+          const updated = deferredSelectedIds
+            .map((id) => itemsById.get(id))
+            .filter((i): i is InventoryItem => Boolean(i))
+            .filter(
+              (i) =>
+                (i.status === ItemStatus.IN_STOCK || i.status === ItemStatus.ORDERED) &&
+                !i.isDefective &&
+                !i.parentContainerId
+            )
+            .map((i) => ({ ...i, saleReady: true }));
+          if (!updated.length) {
+            setToast('Select in-stock items (not defective / not in a kit)');
+            setTimeout(() => setToast(null), 2000);
+            return;
+          }
+          onUpdate(updated, undefined, { skipActionLog: true });
+          setToast(`Marked ${updated.length} Ready for listing watch`);
+          setTimeout(() => setToast(null), 2200);
+        },
+        variant: 'primary',
+      },
       { id: 'compose', label: 'Compose', icon: <Monitor size={16} />, onClick: openComposeChooser, variant: 'primary' },
       { id: 'category', label: 'Set category', icon: <Layers size={16} />, onClick: () => setShowBulkCategoryEdit(true), variant: 'primary' },
       { id: 'publish', label: 'Publish store', icon: <Globe size={16} />, onClick: () => handleBulkStoreVisible(true), variant: 'emerald' },
@@ -4190,6 +4258,8 @@ const InventoryList: React.FC<Props> = ({
     handleBulkStoreVisible,
     handleBulkGenerateDescriptions,
     openAddPhotosModal,
+    onUpdate,
+    businessSettings,
   ]);
 
   const bulkSelectionCount = deferredSelectedIds.length;
@@ -4810,7 +4880,9 @@ const InventoryList: React.FC<Props> = ({
                    ['no_specs', 'No specs'],
                    ['defective', 'Defekt'],
                    ['aging', '>90d'],
+                   ['sale_ready', 'Sale ready'],
                    ['sale_ready_unlisted', 'Ready · not listed'],
+                   ['maybe_sold', 'Maybe sold'],
                    ['price_change', 'Change price'],
                  ] as const
                ).map(([id, label]) => (
@@ -4823,11 +4895,22 @@ const InventoryList: React.FC<Props> = ({
                        ? 'bg-amber-500 text-white border-amber-500'
                        : 'bg-white text-slate-500 border-slate-200 hover:border-amber-300'
                    }`}
-                   title={`Smart filter: ${label}`}
+                   title={
+                     id === 'sale_ready'
+                       ? 'Sale-ready watchlist. Combine with Time (This week / Month / …) to track items added in a period.'
+                       : `Smart filter: ${label}`
+                   }
                  >
                    {label}
                  </button>
                ))}
+               <Link
+                 to="/panel/settings?tab=EBAY"
+                 className="px-2 py-1 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-800 text-[9px] font-black uppercase tracking-wide hover:bg-indigo-100"
+                 title="Paste KA profile URL + eBay username, then Refresh listing presence"
+               >
+                 Listings sync
+               </Link>
                <button
                  type="button"
                  onClick={() => setShowAISpecsModal(true)}
@@ -5089,7 +5172,9 @@ const InventoryList: React.FC<Props> = ({
                 ['no_specs', 'No specs'],
                 ['defective', 'Defekt'],
                 ['aging', '>90d'],
+                ['sale_ready', 'Sale ready'],
                 ['sale_ready_unlisted', 'Ready · not listed'],
+                ['maybe_sold', 'Maybe sold'],
                 ['price_change', 'Change price'],
               ] as const
             ).map(([id, label]) => (
@@ -5104,6 +5189,12 @@ const InventoryList: React.FC<Props> = ({
                 {label}
               </button>
             ))}
+            <Link
+              to="/panel/settings?tab=EBAY"
+              className="px-3 py-2 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-800 text-[11px] font-black uppercase"
+            >
+              Listings sync
+            </Link>
           </div>
           <button
             type="button"

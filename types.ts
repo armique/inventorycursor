@@ -201,6 +201,15 @@ export interface InventoryItem {
   liveKleinListPrice?: number;
   /** When live marketplace prices were last written. */
   liveListingPriceSyncedAt?: string;
+  /**
+   * Listing vanished from your profile while item is still In Stock —
+   * suggest marking sold (you may have forgotten).
+   */
+  maybeSoldHint?: 'ebay' | 'kleinanzeigen' | 'both';
+  /** When the listing first disappeared during sync. */
+  listingDisappearedAt?: string;
+  /** User dismissed the maybe-sold nudge. */
+  maybeSoldDismissedAt?: string;
 
   // Trade related
   tradedForIds?: string[]; // IDs of items received in exchange

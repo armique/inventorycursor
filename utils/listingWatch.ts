@@ -158,3 +158,24 @@ export function isSaleReadyUnlisted(item: InventoryItem): boolean {
   if (item.parentContainerId) return false;
   return !item.listedOnEbay && !item.listedOnKleinanzeigen;
 }
+
+export function isMaybeSoldCandidate(item: InventoryItem): boolean {
+  if (item.isDefective || item.isDraft) return false;
+  if (item.status !== ItemStatus.IN_STOCK && item.status !== ItemStatus.ORDERED) return false;
+  if (item.maybeSoldDismissedAt) return false;
+  return Boolean(item.maybeSoldHint);
+}
+
+export function isSaleReadyWatch(item: InventoryItem): boolean {
+  if (item.isDefective || item.isDraft) return false;
+  if (item.status !== ItemStatus.IN_STOCK && item.status !== ItemStatus.ORDERED) return false;
+  if (item.parentContainerId) return false;
+  return Boolean(item.saleReady || item.workflowStage === 'Ready' || item.workflowStage === 'Listed');
+}
+
+export function maybeSoldLabel(hint?: InventoryItem['maybeSoldHint']): string {
+  if (hint === 'ebay') return 'Gone from eBay — mark sold?';
+  if (hint === 'kleinanzeigen') return 'Gone from KA — mark sold?';
+  if (hint === 'both') return 'Gone from KA + eBay — mark sold?';
+  return '';
+}

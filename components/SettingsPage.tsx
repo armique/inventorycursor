@@ -86,7 +86,7 @@ interface Props {
 
 const SETTINGS_TABS = [
   { id: 'BUSINESS', label: 'Business', icon: <Building2 size={18}/> },
-  { id: 'EBAY', label: 'eBay API', icon: <ShoppingBag size={18}/> },
+  { id: 'EBAY', label: 'Listings sync', icon: <ShoppingBag size={18}/> },
   { id: 'CLOUD', label: 'Cloud Sync', icon: <Cloud size={18}/> },
   { id: 'AI', label: 'AI', icon: <Sparkles size={18}/> },
   { id: 'FINANZAMT', label: 'Finanzamt', icon: <FileSpreadsheet size={18}/> },
@@ -152,7 +152,7 @@ const SettingsPage: React.FC<Props> = ({
   const [searchParams] = useSearchParams();
   const tabFromUrl = searchParams.get('tab')?.toUpperCase();
   const initialTab =
-    tabFromUrl === 'EBAY' || tabFromUrl === 'EBAY API'
+    tabFromUrl === 'EBAY' || tabFromUrl === 'EBAY API' || tabFromUrl === 'LISTINGS'
       ? 'EBAY'
       : (SETTINGS_TABS.find((t) => t.id === tabFromUrl)?.id ?? 'BUSINESS');
   const [activeTab, setActiveTab] = useState<typeof SETTINGS_TABS[number]['id']>(initialTab);
@@ -198,7 +198,7 @@ const SettingsPage: React.FC<Props> = ({
 
   useEffect(() => {
     const tab = searchParams.get('tab')?.toUpperCase();
-    if (tab === 'EBAY' || tab === 'EBAY API') setActiveTab('EBAY');
+    if (tab === 'EBAY' || tab === 'EBAY API' || tab === 'LISTINGS') setActiveTab('EBAY');
   }, [searchParams]);
   const [githubSyncLoading, setGitHubSyncLoading] = useState(false);
   const [githubCommits, setGitHubCommits] = useState<BackupCommit[]>([]);
@@ -815,6 +815,27 @@ const SettingsPage: React.FC<Props> = ({
 
           {activeTab === 'EBAY' && (
              <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
+                <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-5 space-y-2">
+                   <h3 className="text-lg font-black text-indigo-950">Where to paste your seller profiles</h3>
+                   <ol className="text-sm text-indigo-900/90 space-y-1.5 list-decimal list-inside font-medium">
+                      <li>
+                         <strong>eBay</strong> — enter your seller username below (public store). Optional OAuth token for private listings / orders.
+                      </li>
+                      <li>
+                         <strong>Kleinanzeigen</strong> — paste your public profile / Bestandsliste URL in “Listing presence”, then Refresh.
+                      </li>
+                      <li>
+                         In Inventory, mark items <strong>Ready</strong> under the name so only prepared stock is watched.
+                      </li>
+                      <li>
+                         After sync: missing listings show KA/EB muted; vanished ads get a <strong>mark sold?</strong> nudge; price gaps show Lower → hints.
+                      </li>
+                   </ol>
+                   <p className="text-xs text-indigo-800/80">
+                      Tip: open Inventory → filter “Ready · not listed” or “Maybe sold”. Use time filters (This week / Month / …) with “Sale ready” to watch items you added in a period.
+                   </p>
+                </div>
+
                 <h3 className="text-xl font-black text-slate-900 flex items-center gap-2"><ShoppingBag size={24}/> eBay sync (optional)</h3>
                 <p className="text-sm text-slate-500">
                    Import photos from your public eBay seller store (Browse API). Order sync still uses an optional OAuth token. Most sellers mark sales with the eBay order screenshot parser in the sale dialog instead — no API setup required.
@@ -908,23 +929,25 @@ const SettingsPage: React.FC<Props> = ({
                 <div className="border-t border-slate-100 pt-6 space-y-4">
                    <h4 className="text-sm font-black uppercase tracking-widest text-slate-500">Listing presence (KA + eBay)</h4>
                    <p className="text-sm text-slate-500">
-                      Sync only checks your <strong>sale-ready</strong> watchlist (and items already linked) — not the whole inventory.
-                      Mark items Ready under the name when photos/specs are done. Defective / unprepared stock is ignored.
-                      Live listing prices are stored so inventory can hint when you should change the ask.
+                      Paste your <strong>Kleinanzeigen Bestandsliste / profile link</strong> here. eBay uses the username above.
+                      Sync only checks your <strong>sale-ready</strong> watchlist (+ already linked). If a watched listing disappears, we flag <strong>Maybe sold</strong>.
                    </p>
                    <div className="space-y-2">
                       <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Kleinanzeigen profile URL</label>
                       <input
                          type="url"
                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm outline-none focus:border-slate-900"
-                         placeholder="https://www.kleinanzeigen.de/s-bestandsliste.html?…"
+                         placeholder="https://www.kleinanzeigen.de/s-bestandsliste.html?userId=…"
                          value={kaProfileUrl}
                          onChange={(e) => setKaProfileUrl(e.target.value)}
                       />
+                      <p className="text-[11px] text-slate-500">
+                         Open your KA profile → copy the browser URL (often contains <code className="bg-slate-100 px-1 rounded">s-bestandsliste</code>).
+                      </p>
                    </div>
                    <div className="space-y-2">
                       <label className="text-[10px] font-black uppercase text-slate-400 ml-1">
-                         Paste KA titles (fallback if profile fetch is blocked)
+                         Paste KA titles + prices (fallback if profile fetch is blocked)
                       </label>
                       <textarea
                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs outline-none focus:border-slate-900 min-h-[88px]"
@@ -951,7 +974,7 @@ const SettingsPage: React.FC<Props> = ({
                                });
                                onRestoreItems(result.items);
                                setListingPresenceMsg(
-                                  `Watch ${result.watchCount} · eBay ${result.ebayMatched}/${result.ebayTitleCount} · KA ${result.kaMatched}/${result.kaTitleCount} · ${result.priceHints} price hints` +
+                                  `Watch ${result.watchCount} · eBay ${result.ebayMatched}/${result.ebayTitleCount} · KA ${result.kaMatched}/${result.kaTitleCount} · ${result.priceHints} price hints · ${result.maybeSoldCount} maybe sold` +
                                     (result.ebayError ? ` · eBay: ${result.ebayError}` : '') +
                                     (result.kaError ? ` · KA: ${result.kaError}` : '')
                                );
