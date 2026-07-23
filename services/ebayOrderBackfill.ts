@@ -148,3 +148,57 @@ export async function backfillEbayOrders(
 
   return { ordersFetched, added, merged, cancelled: false };
 }
+
+/**
+ * Lightweight live pull for Mark-as-sold: fetch the last N days of orders once,
+ * merge into the local/cloud cache, and return counts. Prefer this over a full
+ * multi-year backfill when opening SaleModal.
+ */
+export async function refreshRecentEbayOrders(days = 21): Promise<BackfillResult & { from: string; to: string }> {
+  const to = toDateOnly(new Date());
+  const fromDate = new Date();
+  fromDate.setUTCDate(fromDate.getUTCDate() - Math.max(1, days));
+  const from = toDateOnly(fromDate);
+
+  try {
+    const orders = await listEbayOrders(from, to);
+    const records = orders.map(ebaySummaryToRecord);
+    const result = upsertEbayOrders(records);
+
+    const existing = loadEbayOrderIndex().meta.apiBackfill;
+    if (existing?.fromDate) {
+      setApiBackfillMeta({
+        fromDate: existing.fromDate < from ? existing.fromDate : from,
+        toDate: !existing.toDate || to > existing.toDate ? to : existing.toDate,
+        completedThroughDate: to,
+        lastRunAt: new Date().toISOString(),
+        isComplete: existing.isComplete ?? false,
+      });
+    }
+
+    if (result.changed.length) {
+      void pushOrderIndexToCloud(result.changed).catch(() => {
+        /* cloud mirror is best-effort during sale flow */
+      });
+    }
+
+    return {
+      ordersFetched: orders.length,
+      added: result.added,
+      merged: result.merged,
+      cancelled: false,
+      from,
+      to,
+    };
+  } catch (e: unknown) {
+    return {
+      ordersFetched: 0,
+      added: 0,
+      merged: 0,
+      cancelled: false,
+      error: (e as Error)?.message || 'Failed to refresh recent orders',
+      from,
+      to,
+    };
+  }
+}

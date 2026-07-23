@@ -1,10 +1,11 @@
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { X, Euro, CheckCircle2, ChevronDown, Upload, ImagePlus, Loader2, Truck, Receipt } from 'lucide-react';
 import { parseEbayOrderFromImageInput } from '../services/ebayOrderScreenshotAI';
 import { mapKleinanzeigenPaymentMethod, parseKleinanzeigenChatFromImageInput } from '../services/kleinanzeigenChatScreenshotAI';
-import { fetchEbayOrder } from '../services/ebayService';
+import { fetchEbayOrder, hasEbayToken } from '../services/ebayService';
 import { findEbayOrderById, loadEbayOrderIndex } from '../services/ebayOrderIndex';
+import { refreshRecentEbayOrders } from '../services/ebayOrderBackfill';
 import { customerFromEbayOrder } from '../utils/ebayOrderBuyerData';
 import { ebayScreenshotSaleFields } from '../utils/ebayScreenshotSaleFields';
 import { findMatchingOrdersForItem, type EbayOrderMatch } from '../utils/ebayOrderMatch';
@@ -84,19 +85,29 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
   const [kaChatParseError, setKaChatParseError] = useState<string | null>(null);
   const [orderIdLookupLoading, setOrderIdLookupLoading] = useState(false);
   const [orderIdLookupMessage, setOrderIdLookupMessage] = useState<string | null>(null);
+  const [orderMatchSuggestions, setOrderMatchSuggestions] = useState<EbayOrderMatch[]>([]);
+  const [orderRefreshLoading, setOrderRefreshLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const didLiveOrderFetchRef = useRef(false);
+  const ebayOrderIdRef = useRef(ebayOrderId);
+  ebayOrderIdRef.current = ebayOrderId;
 
-  const orderMatchSuggestions = useMemo(() => {
-    if (platformSold !== 'ebay.de') return [] as EbayOrderMatch[];
+  const rematchOrderSuggestions = useCallback((): EbayOrderMatch[] => {
     try {
       const { orders } = loadEbayOrderIndex();
-      if (!orders.length) return [];
-      return findMatchingOrdersForItem(item, orders, 35).slice(0, 6);
+      if (!orders.length) {
+        setOrderMatchSuggestions([]);
+        return [];
+      }
+      const matches = findMatchingOrdersForItem(item, orders, 35).slice(0, 6);
+      setOrderMatchSuggestions(matches);
+      return matches;
     } catch {
+      setOrderMatchSuggestions([]);
       return [];
     }
-  }, [platformSold, item]);
+  }, [item]);
 
   const applySuggestedOrder = useCallback((match: EbayOrderMatch) => {
     const payout = getLinePayout(match.order, match.lineItem);
@@ -133,6 +144,61 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
       `Filled from order history · ${match.matchKind === 'title' ? `title score ${match.matchScore}` : match.matchKind}`
     );
   }, [item.ebaySku, item.ebayListingId]);
+
+  const applySuggestedOrderRef = useRef(applySuggestedOrder);
+  applySuggestedOrderRef.current = applySuggestedOrder;
+
+  // Cache matches immediately; once per modal, live-fetch recent eBay orders then re-match / auto-fill.
+  useEffect(() => {
+    if (platformSold !== 'ebay.de') {
+      setOrderMatchSuggestions([]);
+      return;
+    }
+
+    rematchOrderSuggestions();
+
+    if (didLiveOrderFetchRef.current || !hasEbayToken()) return;
+    didLiveOrderFetchRef.current = true;
+
+    let cancelled = false;
+    (async () => {
+      setOrderRefreshLoading(true);
+      try {
+        const result = await refreshRecentEbayOrders(21);
+        if (cancelled) return;
+        const matches = rematchOrderSuggestions();
+        if (result.error) {
+          setOrderIdLookupMessage(result.error);
+          return;
+        }
+        const best = matches[0];
+        const canAutoFill =
+          !!best &&
+          (best.matchKind === 'listingId' || best.matchKind === 'sku') &&
+          !ebayOrderIdRef.current.trim();
+        if (canAutoFill) {
+          applySuggestedOrderRef.current(best);
+          setOrderIdLookupMessage(
+            `Auto-filled from live orders · ${best.matchKind} · ${result.ordersFetched} recent fetched`
+          );
+        } else if (result.ordersFetched > 0 || matches.length > 0) {
+          setOrderIdLookupMessage(
+            `Updated from eBay · ${result.ordersFetched} recent order(s) · ${matches.length} suggestion(s)`
+          );
+        }
+      } catch (e: unknown) {
+        if (!cancelled) {
+          setOrderIdLookupMessage((e as Error)?.message || 'Could not refresh recent eBay orders.');
+        }
+      } finally {
+        if (!cancelled) setOrderRefreshLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [platformSold, rematchOrderSuggestions]);
 
   const applyEbayOrderBuyerFields = useCallback(
     (fields: {
@@ -836,11 +902,18 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
                   <p className="text-[9px] font-black uppercase tracking-wider text-indigo-800">
                     Suggested from order history
                   </p>
+                  {orderRefreshLoading && (
+                    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-indigo-600 ml-auto">
+                      <Loader2 size={10} className="animate-spin" />
+                      Fetching…
+                    </span>
+                  )}
                 </div>
                 {orderMatchSuggestions.length === 0 ? (
                   <p className="text-[10px] text-indigo-900/70 leading-snug">
-                    No close matches in the cached order index. Refresh orders in{' '}
-                    <span className="font-bold">eBay Tools → Sales sync</span>, or paste an Order ID below and click Load.
+                    {orderRefreshLoading
+                      ? 'Checking recent eBay orders…'
+                      : 'No close matches yet. Paste an Order ID below and click Load, or wait for Fetching to finish.'}
                   </p>
                 ) : (
                   <div className="space-y-1.5 max-h-44 overflow-y-auto pr-0.5">
