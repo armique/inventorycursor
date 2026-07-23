@@ -1296,6 +1296,111 @@ export async function clearEbayOrdersCloud(): Promise<void> {
   if (count > 0) await batch.commit();
 }
 
+// --- EBAY PURCHASE INDEX (buyer history archive, survives eBay's ~90-day API window) ---
+
+const EBAY_PURCHASES_COLLECTION = "ebayPurchases";
+const EBAY_PURCHASES_META_DOC_ID = "_meta";
+
+function sanitizePurchaseDocId(lineKey: string): string {
+  const cleaned = lineKey.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 300);
+  return cleaned || "unknown";
+}
+
+export interface EbayPurchaseCloudMeta {
+  updatedAt?: string;
+  count?: number;
+  apiBackfill?: {
+    fromDate: string;
+    toDate: string;
+    completedThroughDate?: string;
+    lastRunAt: string;
+    fetched?: number;
+  };
+}
+
+/** One-time fetch of every cached eBay purchase (+ meta). Returns null if signed out / cloud disabled. */
+export async function fetchEbayPurchasesFromCloud(): Promise<{
+  purchases: Record<string, unknown>[];
+  meta: EbayPurchaseCloudMeta | null;
+} | null> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) return null;
+  try {
+    const colRef = collection(ctx.db, "users", user.uid, EBAY_PURCHASES_COLLECTION);
+    const snap = await getDocs(colRef);
+    const purchases: Record<string, unknown>[] = [];
+    let meta: EbayPurchaseCloudMeta | null = null;
+    snap.forEach((d) => {
+      if (d.id === EBAY_PURCHASES_META_DOC_ID) {
+        meta = d.data() as EbayPurchaseCloudMeta;
+      } else {
+        purchases.push(d.data() as Record<string, unknown>);
+      }
+    });
+    return { purchases, meta };
+  } catch (err) {
+    console.error("fetchEbayPurchasesFromCloud failed:", err);
+    return null;
+  }
+}
+
+/** Upload new/changed purchase lines (one doc per lineKey) and merge meta. */
+export async function writeEbayPurchasesToCloud(
+  purchases: (Record<string, unknown> & { lineKey: string })[],
+  metaPatch?: EbayPurchaseCloudMeta
+): Promise<void> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) throw new Error("Not signed in");
+  const colRef = collection(ctx.db, "users", user.uid, EBAY_PURCHASES_COLLECTION);
+
+  const BATCH_MAX = 450;
+  let batch = writeBatch(ctx.db);
+  let count = 0;
+  for (const row of purchases) {
+    const id = sanitizePurchaseDocId(String(row.lineKey));
+    batch.set(doc(colRef, id), stripUndefined(row));
+    count++;
+    if (count >= BATCH_MAX) {
+      await batch.commit();
+      batch = writeBatch(ctx.db);
+      count = 0;
+    }
+  }
+  if (metaPatch) {
+    batch.set(
+      doc(colRef, EBAY_PURCHASES_META_DOC_ID),
+      stripUndefined({ ...metaPatch, updatedAt: new Date().toISOString() }),
+      { merge: true }
+    );
+    count++;
+  }
+  if (count > 0) await batch.commit();
+}
+
+/** Delete every cached eBay purchase doc (and meta) for this user. */
+export async function clearEbayPurchasesCloud(): Promise<void> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) return;
+  const colRef = collection(ctx.db, "users", user.uid, EBAY_PURCHASES_COLLECTION);
+  const snap = await getDocs(colRef);
+  const BATCH_MAX = 450;
+  let batch = writeBatch(ctx.db);
+  let count = 0;
+  for (const d of snap.docs) {
+    batch.delete(d.ref);
+    count++;
+    if (count >= BATCH_MAX) {
+      await batch.commit();
+      batch = writeBatch(ctx.db);
+      count = 0;
+    }
+  }
+  if (count > 0) await batch.commit();
+}
+
 // --- AI product card gallery (users/{uid}/productCardGallery/{id}) ---
 
 const PRODUCT_CARD_GALLERY_COLLECTION = "productCardGallery";

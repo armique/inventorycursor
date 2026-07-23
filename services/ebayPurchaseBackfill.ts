@@ -1,9 +1,11 @@
 /**
- * Backfill eBay buyer purchases via Trading API (chunked by date).
+ * Backfill / incremental sync of eBay buyer purchases into local + cloud library.
  */
 
 import { listEbayPurchases, type EbayPurchaseSummary } from './ebayService';
 import {
+  getSuggestedPurchaseFetchRange,
+  pushPurchaseIndexToCloud,
   setPurchaseBackfillMeta,
   upsertEbayPurchases,
   type EbayPurchaseRecord,
@@ -25,6 +27,9 @@ export interface PurchaseBackfillResult {
   added: number;
   merged: number;
   cancelled: boolean;
+  from: string;
+  to: string;
+  isIncremental: boolean;
   error?: string;
 }
 
@@ -46,7 +51,9 @@ function buildChunks(fromDate: string, toDate: string): { from: string; to: stri
   return chunks;
 }
 
-function summaryToRecord(p: EbayPurchaseSummary): Omit<EbayPurchaseRecord, 'importedAt' | 'disposition' | 'sources'> {
+function summaryToRecord(
+  p: EbayPurchaseSummary
+): Omit<EbayPurchaseRecord, 'importedAt' | 'disposition' | 'sources' | 'purchaseType' | 'purchaseTypeLocked'> {
   return {
     lineKey: p.lineKey,
     orderId: p.orderId,
@@ -65,16 +72,26 @@ export async function backfillEbayPurchases(
   fromDate: string,
   toDate: string,
   onProgress?: (p: PurchaseBackfillProgress) => void,
-  shouldCancel?: () => boolean
+  shouldCancel?: () => boolean,
+  options?: { isIncremental?: boolean }
 ): Promise<PurchaseBackfillResult> {
   const chunks = buildChunks(fromDate, toDate);
   let fetchedTotal = 0;
   let addedTotal = 0;
   let mergedTotal = 0;
+  const isIncremental = Boolean(options?.isIncremental);
 
   for (let i = 0; i < chunks.length; i++) {
     if (shouldCancel?.()) {
-      return { fetched: fetchedTotal, added: addedTotal, merged: mergedTotal, cancelled: true };
+      return {
+        fetched: fetchedTotal,
+        added: addedTotal,
+        merged: mergedTotal,
+        cancelled: true,
+        from: fromDate,
+        to: toDate,
+        isIncremental,
+      };
     }
     const chunk = chunks[i];
     onProgress?.({
@@ -88,9 +105,19 @@ export async function backfillEbayPurchases(
     try {
       const batch = await listEbayPurchases(chunk.from, chunk.to);
       fetchedTotal += batch.length;
-      const { added, merged } = upsertEbayPurchases(batch.map(summaryToRecord), 'api');
+      const { added, merged, changed } = upsertEbayPurchases(batch.map(summaryToRecord), 'api');
       addedTotal += added;
       mergedTotal += merged;
+      setPurchaseBackfillMeta({
+        fromDate,
+        toDate,
+        completedThroughDate: chunk.to,
+        lastRunAt: new Date().toISOString(),
+        fetched: fetchedTotal,
+      });
+      if (changed.length) {
+        await pushPurchaseIndexToCloud(changed);
+      }
       onProgress?.({
         chunkIndex: i + 1,
         chunkCount: chunks.length,
@@ -104,6 +131,9 @@ export async function backfillEbayPurchases(
         added: addedTotal,
         merged: mergedTotal,
         cancelled: false,
+        from: fromDate,
+        to: toDate,
+        isIncremental,
         error: e instanceof Error ? e.message : String(e),
       };
     }
@@ -113,6 +143,33 @@ export async function backfillEbayPurchases(
     }
   }
 
-  setPurchaseBackfillMeta(fromDate, toDate, fetchedTotal);
-  return { fetched: fetchedTotal, added: addedTotal, merged: mergedTotal, cancelled: false };
+  setPurchaseBackfillMeta({
+    fromDate,
+    toDate,
+    completedThroughDate: toDate,
+    lastRunAt: new Date().toISOString(),
+    fetched: fetchedTotal,
+  });
+
+  return {
+    fetched: fetchedTotal,
+    added: addedTotal,
+    merged: mergedTotal,
+    cancelled: false,
+    from: fromDate,
+    to: toDate,
+    isIncremental,
+  };
+}
+
+/** Fetch only new purchases since last successful sync (clamped to eBay’s 90-day window). */
+export async function syncNewEbayPurchases(
+  onProgress?: (p: PurchaseBackfillProgress) => void,
+  shouldCancel?: () => boolean
+): Promise<PurchaseBackfillResult> {
+  const today = toDateOnly(new Date());
+  const range = getSuggestedPurchaseFetchRange(today);
+  return backfillEbayPurchases(range.from, range.to, onProgress, shouldCancel, {
+    isIncremental: range.isIncremental,
+  });
 }

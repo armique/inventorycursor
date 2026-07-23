@@ -240,6 +240,14 @@ export async function collectFirestoreFreeQuotaSnapshot(options?: {
     } catch {
       /* optional */
     }
+
+    try {
+      const purchases = await sumCollectionDocBytes(['users', user.uid, 'ebayPurchases']);
+      firestoreBytes += purchases.bytes;
+      syncDocs += purchases.docs;
+    } catch {
+      /* optional */
+    }
   } else {
     firestoreNote = 'Sign in to measure your Firestore documents.';
   }

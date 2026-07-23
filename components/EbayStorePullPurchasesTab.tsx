@@ -16,13 +16,24 @@ import {
 } from 'lucide-react';
 import type { Expense, InventoryItem } from '../types';
 import { hasEbayToken } from '../services/ebayService';
-import { backfillEbayPurchases, type PurchaseBackfillProgress } from '../services/ebayPurchaseBackfill';
 import {
+  backfillEbayPurchases,
+  syncNewEbayPurchases,
+  type PurchaseBackfillProgress,
+} from '../services/ebayPurchaseBackfill';
+import {
+  EBAY_PURCHASE_API_MAX_DAYS,
+  getPurchaseTypeCounts,
+  getSuggestedPurchaseFetchRange,
   loadEbayPurchaseIndex,
+  pullPurchaseIndexFromCloud,
   setPurchaseDisposition,
+  setPurchaseType,
   type EbayPurchaseDisposition,
   type EbayPurchaseRecord,
+  type EbayPurchaseType,
 } from '../services/ebayPurchaseIndex';
+import { isCloudEnabled } from '../services/firebaseService';
 import {
   addFilamentSpool,
   findSpoolByEbayLineKey,
@@ -37,6 +48,10 @@ import {
   guessFilamentWeightKg,
   looksLikeFilamentPurchase,
 } from '../utils/filamentTitleDetect';
+import {
+  PURCHASE_TYPE_LABELS,
+  PURCHASE_TYPE_ORDER,
+} from '../utils/purchaseTypeDetect';
 import { formatEUR } from '../utils/formatMoney';
 import { matchesEbayToolSearch } from '../utils/ebayToolSearch';
 import EbayToolProgressBar from './EbayToolProgressBar';
@@ -72,7 +87,7 @@ const DISPOSITION_STYLE: Record<EbayPurchaseDisposition, string> = {
 const COLORS = ['Black', 'White', 'Grey', 'Red', 'Blue', 'Green', 'Custom'];
 
 /** eBay Trading GetOrders CreateTime window max (~90 days). */
-const EBAY_PURCHASE_MAX_DAYS = 90;
+const EBAY_PURCHASE_MAX_DAYS = EBAY_PURCHASE_API_MAX_DAYS;
 
 type PurchaseRangePreset = 'this_week' | 'last_week' | 'last_month' | 'last_3_months';
 
@@ -153,17 +168,22 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
   }, [indexVersion]);
 
   const [filter, setFilter] = useState<'all' | 'pending' | 'filament'>('pending');
+  const [typeFilter, setTypeFilter] = useState<EbayPurchaseType | 'all'>('all');
   const [search, setSearch] = useState('');
   const [backfilling, setBackfilling] = useState(false);
   const [backfillProgress, setBackfillProgress] = useState<PurchaseBackfillProgress | null>(null);
   const [backfillError, setBackfillError] = useState<string | null>(null);
   const [backfillMessage, setBackfillMessage] = useState<string | null>(null);
+  const [cloudMessage, setCloudMessage] = useState<string | null>(null);
   const cancelRef = useRef({ cancelled: false });
-  const initialRange = rangeForPreset('last_3_months');
-  const [fromDate, setFromDate] = useState(initialRange.from);
-  const [toDate, setToDate] = useState(initialRange.to);
-  const [rangePreset, setRangePreset] = useState<PurchaseRangePreset | null>('last_3_months');
+  const suggested = getSuggestedPurchaseFetchRange(todayISO());
+  const [fromDate, setFromDate] = useState(suggested.from);
+  const [toDate, setToDate] = useState(suggested.to);
+  const [rangePreset, setRangePreset] = useState<PurchaseRangePreset | null>(
+    suggested.isIncremental ? null : 'last_3_months'
+  );
   const [tokenReady, setTokenReady] = useState(() => hasEbayToken());
+  const [cloudReady] = useState(() => isCloudEnabled());
   const [expandedFilament, setExpandedFilament] = useState<string | null>(null);
   const [filamentForms, setFilamentForms] = useState<
     Record<string, { type: string; color: string; colorCustom: string; weightKg: string }>
@@ -189,10 +209,43 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
     };
   }, []);
 
+  // Hydrate local library from Firestore so history past eBay’s 90-day window stays available.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!isCloudEnabled()) return;
+      setCloudMessage('Loading purchase library from cloud…');
+      const result = await pullPurchaseIndexFromCloud();
+      if (cancelled) return;
+      if (result.error) {
+        setCloudMessage(`Cloud: ${result.error}`);
+      } else if (result.skipped) {
+        setCloudMessage(null);
+      } else {
+        setCloudMessage(
+          result.pulled > 0
+            ? `Cloud library synced · ${result.pulled} purchase line(s)`
+            : 'Cloud library up to date'
+        );
+        refresh();
+        const next = getSuggestedPurchaseFetchRange(todayISO());
+        setFromDate(next.from);
+        setToDate(next.to);
+        setRangePreset(next.isIncremental ? null : 'last_3_months');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [refresh]);
+
+  const typeCounts = useMemo(() => getPurchaseTypeCounts(purchases), [purchases]);
+
   const filtered = useMemo(() => {
     let rows = purchases;
     if (filter === 'pending') rows = purchases.filter((p) => p.disposition === 'pending');
     else if (filter === 'filament') rows = purchases.filter((p) => looksLikeFilamentPurchase(p.title));
+    if (typeFilter !== 'all') rows = rows.filter((p) => (p.purchaseType || 'unclassified') === typeFilter);
     return rows.filter((p) =>
       matchesEbayToolSearch(search, [
         p.title,
@@ -202,32 +255,25 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
         p.itemId,
         p.note,
         p.creationDate,
+        p.purchaseType,
       ])
     );
-  }, [purchases, filter, search]);
+  }, [purchases, filter, typeFilter, search]);
 
   const filteredBeforeSearch = useMemo(() => {
-    if (filter === 'pending') return purchases.filter((p) => p.disposition === 'pending');
-    if (filter === 'filament') return purchases.filter((p) => looksLikeFilamentPurchase(p.title));
-    return purchases;
-  }, [purchases, filter]);
+    let rows = purchases;
+    if (filter === 'pending') rows = purchases.filter((p) => p.disposition === 'pending');
+    else if (filter === 'filament') rows = purchases.filter((p) => looksLikeFilamentPurchase(p.title));
+    if (typeFilter !== 'all') rows = rows.filter((p) => (p.purchaseType || 'unclassified') === typeFilter);
+    return rows;
+  }, [purchases, filter, typeFilter]);
 
   const pendingCount = purchases.filter((p) => p.disposition === 'pending').length;
   const filamentHints = purchases.filter((p) => p.disposition === 'pending' && looksLikeFilamentPurchase(p.title)).length;
 
-  const runBackfill = async () => {
+  const runBackfill = async (mode: 'range' | 'incremental') => {
     if (!tokenReady) {
       setBackfillError('Add your eBay user token in Settings first.');
-      return;
-    }
-    if (!fromDate || !toDate || fromDate > toDate) {
-      setBackfillError('Pick a valid From / To date range.');
-      return;
-    }
-    if (daysBetweenInclusive(fromDate, toDate) > EBAY_PURCHASE_MAX_DAYS) {
-      setBackfillError(
-        `eBay only allows ~${EBAY_PURCHASE_MAX_DAYS} days per purchase fetch. Use a pill range or shorten From/To.`
-      );
       return;
     }
     setBackfilling(true);
@@ -235,13 +281,51 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
     setBackfillMessage(null);
     cancelRef.current.cancelled = false;
     try {
-      const result = await backfillEbayPurchases(fromDate, toDate, setBackfillProgress, () => cancelRef.current.cancelled);
+      const result =
+        mode === 'incremental'
+          ? await syncNewEbayPurchases(setBackfillProgress, () => cancelRef.current.cancelled)
+          : await (async () => {
+              if (!fromDate || !toDate || fromDate > toDate) {
+                return {
+                  fetched: 0,
+                  added: 0,
+                  merged: 0,
+                  cancelled: false,
+                  from: fromDate,
+                  to: toDate,
+                  isIncremental: false,
+                  error: 'Pick a valid From / To date range.',
+                };
+              }
+              if (daysBetweenInclusive(fromDate, toDate) > EBAY_PURCHASE_MAX_DAYS) {
+                return {
+                  fetched: 0,
+                  added: 0,
+                  merged: 0,
+                  cancelled: false,
+                  from: fromDate,
+                  to: toDate,
+                  isIncremental: false,
+                  error: `eBay only allows ~${EBAY_PURCHASE_MAX_DAYS} days per purchase fetch. Use a pill range or Sync new.`,
+                };
+              }
+              return backfillEbayPurchases(fromDate, toDate, setBackfillProgress, () => cancelRef.current.cancelled, {
+                isIncremental: false,
+              });
+            })();
+
       if (result.error) setBackfillError(result.error);
       else if (result.cancelled) setBackfillMessage('Fetch cancelled.');
-      else
+      else {
+        const kind = result.isIncremental ? 'Incremental sync' : 'Range fetch';
         setBackfillMessage(
-          `Fetched ${result.fetched} purchase line(s) — ${result.added} new, ${result.merged} updated in cache.`
+          `${kind} ${result.from} → ${result.to}: ${result.fetched} line(s) · ${result.added} new · ${result.merged} updated · saved to library${cloudReady ? ' + cloud' : ''}.`
         );
+        const next = getSuggestedPurchaseFetchRange(todayISO());
+        setFromDate(next.from);
+        setToDate(next.to);
+        setRangePreset(null);
+      }
       refresh();
     } catch (e) {
       setBackfillError(e instanceof Error ? e.message : String(e));
@@ -359,9 +443,10 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
               eBay purchases (buyer history)
             </h2>
             <p className="text-xs text-slate-500 mt-1 max-w-2xl leading-relaxed">
-              Fetches what <strong>you bought</strong> on eBay via Trading API (max ~{EBAY_PURCHASE_MAX_DAYS}{' '}
-              days per request). Classify each line: filament stock (links expense + spool), business expense,
-              personal, or skip. Amazon still needs manual entry on{' '}
+              Durable purchase library: each sync saves lines locally
+              {cloudReady ? ' and to your cloud account' : ''} so they remain after eBay’s ~{EBAY_PURCHASE_MAX_DAYS}-day
+              API window. Prefer <strong>Sync new</strong> (incremental). Classify by type in the library below.
+              Amazon still needs manual entry on{' '}
               <Link to="/panel/3d-print" className="text-indigo-600 font-bold hover:underline">
                 3D Print → Filament stock
               </Link>
@@ -419,6 +504,16 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
           </div>
 
           <div className="flex flex-wrap gap-3 items-end">
+            <button
+              type="button"
+              disabled={backfilling || !tokenReady}
+              onClick={() => void runBackfill('incremental')}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-black uppercase disabled:opacity-50 shadow-sm shadow-indigo-200"
+              title="Only fetch purchases since the last successful sync (within eBay’s 90-day limit)"
+            >
+              {backfilling ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              Sync new purchases
+            </button>
             <label className="space-y-1">
               <span className="text-[10px] font-black uppercase text-slate-500">From</span>
               <input
@@ -448,11 +543,10 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
             <button
               type="button"
               disabled={backfilling || !tokenReady || rangeTooWide}
-              onClick={() => void runBackfill()}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-black uppercase disabled:opacity-50"
+              onClick={() => void runBackfill('range')}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-indigo-700 border border-indigo-200 text-xs font-black uppercase disabled:opacity-50"
             >
-              {backfilling ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-              Fetch purchases
+              Fetch range
             </button>
             {backfilling && (
               <button
@@ -483,9 +577,10 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
         {backfillProgress && (
           <EbayToolProgressBar
             label={`Fetching ${backfillProgress.rangeLabel}…`}
-            current={backfillProgress.chunkIndex}
+            done={backfillProgress.chunkIndex}
             total={backfillProgress.chunkCount}
             detail={`${backfillProgress.fetchedTotal} lines so far`}
+            tone="indigo"
           />
         )}
         {backfillError && (
@@ -496,11 +591,50 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
             <CheckCircle2 size={16} className="shrink-0" /> {backfillMessage}
           </div>
         )}
+        {cloudMessage && (
+          <div className="text-[11px] font-bold text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+            {cloudMessage}
+          </div>
+        )}
         {meta.apiBackfill?.lastRunAt && (
           <p className="text-[11px] text-slate-400">
-            Last API run: {meta.apiBackfill.lastRunAt.split('T')[0]} ({meta.apiBackfill.fromDate} → {meta.apiBackfill.toDate})
+            Last API run: {meta.apiBackfill.lastRunAt.split('T')[0]} ({meta.apiBackfill.fromDate} →{' '}
+            {meta.apiBackfill.toDate}
+            {meta.apiBackfill.completedThroughDate
+              ? ` · through ${meta.apiBackfill.completedThroughDate}`
+              : ''}
+            )
           </p>
         )}
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Library · purchase types</p>
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={() => setTypeFilter('all')}
+            className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase border ${
+              typeFilter === 'all' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200'
+            }`}
+          >
+            All types · {purchases.length}
+          </button>
+          {PURCHASE_TYPE_ORDER.filter((t) => (typeCounts[t] || 0) > 0).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTypeFilter(t)}
+              className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase border ${
+                typeFilter === t
+                  ? 'bg-indigo-600 text-white border-indigo-600'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'
+              }`}
+            >
+              {PURCHASE_TYPE_LABELS[t]} · {typeCounts[t]}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -513,7 +647,7 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
               filter === f ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200'
             }`}
           >
-            {f === 'pending' ? 'Pending only' : f === 'filament' ? 'Likely filament' : 'All cached'}
+            {f === 'pending' ? 'Pending only' : f === 'filament' ? 'Likely filament' : 'All statuses'}
           </button>
         ))}
       </div>
@@ -551,6 +685,24 @@ const EbayStorePullPurchasesTab: React.FC<Props> = ({ onAddExpense }) => {
                       <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${DISPOSITION_STYLE[p.disposition]}`}>
                         {DISPOSITION_LABELS[p.disposition]}
                       </span>
+                      <label className="inline-flex items-center gap-1">
+                        <span className="sr-only">Purchase type</span>
+                        <select
+                          value={p.purchaseType || 'unclassified'}
+                          onChange={(e) => {
+                            setPurchaseType(p.lineKey, e.target.value as EbayPurchaseType);
+                            refresh();
+                          }}
+                          className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full border border-indigo-200 bg-indigo-50 text-indigo-900 max-w-[9rem]"
+                          title="Library purchase type"
+                        >
+                          {PURCHASE_TYPE_ORDER.map((t) => (
+                            <option key={t} value={t}>
+                              {PURCHASE_TYPE_LABELS[t]}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                       {likelyFilament && p.disposition === 'pending' && (
                         <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-indigo-600 text-white inline-flex items-center gap-0.5">
                           <Sparkles size={10} /> Filament?
