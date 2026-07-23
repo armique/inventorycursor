@@ -49,6 +49,7 @@ import {
   isSaleReadyWatch,
   maybeSoldLabel,
 } from '../utils/listingWatch';
+import { teachKaListingFromManualLink } from '../utils/listingPresence';
 import {
   enqueueProductCardBackgroundJob,
   isItemProductCardJobActive,
@@ -3188,12 +3189,33 @@ const InventoryList: React.FC<Props> = ({
                                        );
                                        return;
                                      }
+                                     const turningOn = !item.listedOnKleinanzeigen;
+                                     if (!turningOn) {
+                                       onUpdate(
+                                         [
+                                           {
+                                             ...item,
+                                             listedOnKleinanzeigen: false,
+                                             listedViaParent: false,
+                                           },
+                                         ],
+                                         undefined,
+                                         { skipActionLog: true }
+                                       );
+                                       return;
+                                     }
+                                     const hit = teachKaListingFromManualLink(item);
                                      onUpdate(
                                        [
                                          {
                                            ...item,
-                                           listedOnKleinanzeigen: !item.listedOnKleinanzeigen,
+                                           listedOnKleinanzeigen: true,
                                            listedViaParent: false,
+                                           saleReady: true,
+                                           kleinanzeigenListingUrl:
+                                             hit?.url || item.kleinanzeigenListingUrl,
+                                           liveKleinListPrice:
+                                             hit?.price ?? item.liveKleinListPrice,
                                          },
                                        ],
                                        undefined,

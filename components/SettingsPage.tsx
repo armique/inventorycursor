@@ -930,7 +930,7 @@ const SettingsPage: React.FC<Props> = ({
                    <h4 className="text-sm font-black uppercase tracking-widest text-slate-500">Listing presence (KA + eBay)</h4>
                    <p className="text-sm text-slate-500">
                       Paste your <strong>Kleinanzeigen Bestandsliste / profile link</strong> here. eBay uses the username above.
-                      Sync matches titles against all eligible in-stock items and fills KA/EB under the name. If a <strong>Ready</strong> listing later disappears, we flag <strong>Maybe sold</strong>.
+                      Sync fuzzy-matches titles to inventory (names need not be identical) and remembers manual KA links for next time. If a <strong>Ready</strong> listing later disappears, we flag <strong>Maybe sold</strong>.
                    </p>
                    <div className="space-y-2">
                       <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Kleinanzeigen profile URL</label>
