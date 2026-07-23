@@ -61,6 +61,11 @@ function pocketProfit(item: InventoryItem): number | null {
 export const MIN_SUGGEST_MARGIN = 0.3;
 /** Default cost-based target markup (middle of the 40–50% band). */
 export const TARGET_SUGGEST_MARGIN = 0.45;
+/**
+ * Hard ceiling vs buy. Sold comps / child sums above this (e.g. €140 on a €48 kit)
+ * are rejected and replaced with the ~45% cost target.
+ */
+export const MAX_SUGGEST_MARGIN = 0.6;
 
 /** Bundle/PC cost: parent buy, or sum of parts when parent buy is empty. */
 export function effectiveSuggestionBuy(
@@ -73,17 +78,23 @@ export function effectiveSuggestionBuy(
   return Math.max(own, childSum);
 }
 
-/** Clean listing prices (e.g. €35 / €40 / €50) — always rounds up so margin isn’t cut. */
+/** Clean listing prices (e.g. €35 / €40 / €50) — rounds up, with tiny float slack. */
 export function roundListPriceUp(euro: number): number {
   if (!(euro > 0) || !Number.isFinite(euro)) return 0;
-  if (euro < 15) return Math.ceil(euro);
-  if (euro < 100) return Math.ceil(euro / 5) * 5;
-  if (euro < 500) return Math.ceil(euro / 5) * 5;
-  return Math.ceil(euro / 10) * 10;
+  if (euro < 15) return Math.ceil(euro - 1e-9);
+  const step = euro < 500 ? 5 : 10;
+  const floored = Math.floor(euro / step + 1e-9) * step;
+  // Treat values within €0.05 of a step as already clean (float noise from buy × 1.45).
+  if (euro - floored < 0.05) return floored;
+  return Math.ceil(euro / step - 1e-9) * step;
 }
 
 function minPocketForBuy(buy: number): number {
   return buy > 0 ? roundMoney(buy * (1 + MIN_SUGGEST_MARGIN)) : 0;
+}
+
+function maxPocketForBuy(buy: number): number {
+  return buy > 0 ? roundMoney(buy * (1 + MAX_SUGGEST_MARGIN)) : Number.POSITIVE_INFINITY;
 }
 
 function withRoundedLists(
@@ -122,8 +133,8 @@ function costBasedSuggestion(buy: number, feePct: number): SuggestedEbayPrice | 
 }
 
 /**
- * Enforce ≥30% margin vs buy, reject wild comps, then round to clean list prices.
- * Thin / below-margin comps fall back to buy × 1.45 (≈45% target).
+ * Enforce 30–60% margin band vs buy. Below 30% or above 60% → cost-based ~45%.
+ * Also reject wildly high comps via sanitizePocketAgainstBuy.
  */
 export function finalizeSuggestionAgainstBuy(
   raw: SuggestedEbayPrice,
@@ -138,6 +149,7 @@ export function finalizeSuggestionAgainstBuy(
   let compCount = raw.compCount;
   const fee = Number.isFinite(raw.feePct) ? raw.feePct : feePct;
   const minPocket = minPocketForBuy(buy);
+  const maxPocket = maxPocketForBuy(buy);
 
   if (compCount > 0 && buy > 0) {
     const sane = sanitizePocketAgainstBuy(pocket, buy, compCount);
@@ -147,11 +159,16 @@ export function finalizeSuggestionAgainstBuy(
     pocket = sane.pocket;
   }
 
-  // Below 30% margin (or eBay net below min): comps too cheap → cost-based target.
   const ebayPocket = pocketFromEbayListPrice(raw.ebayList, fee);
+  // Outside the 30–60% band on pocket/KA → ~45% cost target.
+  // Do not cap eBay list the same way: EB is intentionally higher to cover fees.
   if (
     buy > 0 &&
-    (pocket < minPocket || raw.kleinList < minPocket || ebayPocket < minPocket)
+    (pocket < minPocket ||
+      pocket > maxPocket ||
+      raw.kleinList < minPocket ||
+      raw.kleinList > maxPocket ||
+      ebayPocket < minPocket)
   ) {
     return costBasedSuggestion(buy, fee);
   }
@@ -252,8 +269,9 @@ export function resolveSuggestedEbayList(
     return costBasedSuggestion(buy, feePct);
   }
 
-  // Containers: comps on bundle/PC name, else sum children
-  if ((item.isPC || item.isBundle) && name.length >= 3) {
+  // Containers: only use title comps when there are no parts yet.
+  // Long "PC Bundle · …" titles often match richer sold kits and inflate the chip.
+  if ((item.isPC || item.isBundle) && name.length >= 3 && children.length === 0) {
     const suggestion = suggestChannelPrices(allItems, name, fees, {
       category: item.category,
       subCategory: item.subCategory,
@@ -271,7 +289,6 @@ export function resolveSuggestedEbayList(
         buy,
         feePct
       );
-      // Only keep name-comps when they clear cost; otherwise try children / cost.
       if (finalized && finalized.compCount > 0) return finalized;
     }
   }

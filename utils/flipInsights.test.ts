@@ -45,6 +45,27 @@ describe('flipInsights', () => {
     expect(s?.kleinList).toBeLessThan(s!.ebayList);
   });
 
+  it('rejects fat comps on a cheap bundle and falls back to ~45%', () => {
+    const bundle = item({
+      id: 'kit',
+      name: 'PC Bundle · MSI B450M · Ryzen 3 3100 · 16GB',
+      buyPrice: 48.29,
+      isBundle: true,
+      category: 'Bundle',
+      suggestedEbayListPrice: 195,
+      suggestedKleinListPrice: 140,
+      suggestedPocketTarget: 140,
+      suggestedFeePct: 25,
+      suggestedCompCount: 4,
+    });
+    const s = resolveSuggestedEbayList(bundle, [bundle], fees);
+    expect(s).not.toBeNull();
+    // 48.29 × 1.45 ≈ 70.02 → KA €70, EB 70/0.75 ≈ 93.33 → €95
+    expect(s!.kleinList).toBe(70);
+    expect(s!.ebayList).toBe(95);
+    expect(s!.kleinList).toBeLessThanOrEqual(48.29 * 1.6 + 1);
+  });
+
   it('rejects thin-margin bundle comps and falls back to ~45% rounded lists', () => {
     const bundle = item({
       id: 'bundle',

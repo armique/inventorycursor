@@ -40,9 +40,13 @@ const crazy = sanitizePocketAgainstBuy(185, 2.6, 3);
 assert.equal(crazy.clamped, true);
 assert.ok(crazy.pocket < 10);
 
-const ok = sanitizePocketAgainstBuy(120, 70, 3);
+const ok = sanitizePocketAgainstBuy(100, 70, 3);
 assert.equal(ok.clamped, false);
-assert.equal(ok.pocket, 120);
+assert.equal(ok.pocket, 100);
+
+const tooRich = sanitizePocketAgainstBuy(140, 48.29, 3);
+assert.equal(tooRich.clamped, true);
+assert.ok(tooRich.pocket < 80);
 
 function item(partial: Partial<InventoryItem> & Pick<InventoryItem, 'id' | 'name'>): InventoryItem {
   return {

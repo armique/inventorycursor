@@ -245,8 +245,8 @@ function emptySuggestion(feePct: number, note: string): ChannelPriceSuggestion {
 }
 
 /**
- * Reject wild comps (e.g. Quadro 2000 priced like a modern GPU).
- * Cheap parts: cap ~4× buy; normal stock: ~3.5–5×; always allow +€40 absolute.
+ * Reject comps that sit far above your buy (e.g. €140 ask on a €48 kit).
+ * Cap ≈ buy × 1.6 (60% margin); always allow a small absolute cushion for cheap parts.
  */
 export function sanitizePocketAgainstBuy(
   pocket: number,
@@ -256,11 +256,10 @@ export function sanitizePocketAgainstBuy(
   if (!(buy > 0) || !(pocket > 0) || compCount <= 0) {
     return { pocket: roundMoney(Math.max(0, pocket)), clamped: false };
   }
-  const multiple = buy < 20 ? 4 : buy < 80 ? 3.5 : 5;
-  const cap = Math.max(buy * multiple, buy + 40);
+  const cap = Math.max(buy * 1.6, buy + 8);
   if (pocket <= cap) return { pocket: roundMoney(pocket), clamped: false };
-  // Comps look wrong — soft list from cost, not fantasy retail.
-  return { pocket: roundMoney(buy * 1.35), clamped: true };
+  // Comps look too rich — soft list from cost (~45%), not fantasy retail.
+  return { pocket: roundMoney(buy * 1.45), clamped: true };
 }
 
 export type BuyFocusRow = {
