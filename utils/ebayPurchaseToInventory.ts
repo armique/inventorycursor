@@ -16,6 +16,7 @@ import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
 import { filterSpecsToEssentialKeys, resolveEssentialSpecKeys } from '../services/essentialSpecFields';
 import { detectItemCategory } from './itemCategoryDetect';
 import { cleanEbayListingTitle } from './ebayBulkSyncPlan';
+import { applyStorageKindToParsedItem } from './ensureStorageKindInName';
 import { formatEUR } from './formatMoney';
 import { formatPlatformBoughtLabel } from './purchaseSource';
 
@@ -147,6 +148,20 @@ export async function enrichPurchaseForInventory(
   // Final pass: never keep marketplace fluff in the inventory name.
   name = cleanEbayListingTitle(name) || name;
 
+  // SSDs: keep NVMe vs normal SSD (or HDD) visible in the name.
+  const storageFixed = applyStorageKindToParsedItem({
+    name,
+    category,
+    subCategory,
+    specs,
+    sourceText: purchase.title,
+  });
+  name = storageFixed.name;
+  specs = storageFixed.specs;
+  if (specsAiSuggested && Object.keys(specs).length > 0) {
+    specsAiSuggested = { ...specsAiSuggested, ...specs };
+  }
+
   return {
     name,
     category,
@@ -187,7 +202,7 @@ export async function parseAndSavePurchaseSpecs(
 
 /** Lightweight InventoryItem for rendering purchases in the same UI as stock rows. */
 export function purchaseToPreviewItem(purchase: EbayPurchaseRecord): InventoryItem {
-  const draft: PurchaseInventoryDraft = purchase.inventoryDraft
+  let draft: PurchaseInventoryDraft = purchase.inventoryDraft
     ? {
         name: purchase.inventoryDraft.name,
         category: purchase.inventoryDraft.category,
@@ -205,6 +220,14 @@ export function purchaseToPreviewItem(purchase: EbayPurchaseRecord): InventoryIt
         categorySource: 'preview',
         specs: {},
       };
+  const storageFixed = applyStorageKindToParsedItem({
+    name: draft.name,
+    category: draft.category,
+    subCategory: draft.subCategory,
+    specs: draft.specs,
+    sourceText: purchase.title,
+  });
+  draft = { ...draft, name: storageFixed.name, specs: storageFixed.specs };
   return buildInventoryItemFromPurchase(purchase, draft, {
     itemId: `purchase-preview-${purchase.lineKey}`,
   });

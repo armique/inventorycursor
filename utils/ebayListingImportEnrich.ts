@@ -3,6 +3,7 @@ import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
 import { filterSpecsToEssentialKeys, resolveEssentialSpecKeys } from '../services/essentialSpecFields';
 import { detectItemCategory } from './itemCategoryDetect';
 import { cleanEbayListingTitle } from './ebayBulkSyncPlan';
+import { applyStorageKindToParsedItem } from './ensureStorageKindInName';
 
 export interface EbayOrphanListingDraft {
   listing: EbayMyListing;
@@ -66,6 +67,19 @@ export async function enrichOrphanListingDraft(
     enrichError = enrichError
       ? enrichError
       : 'No AI provider configured — name and category only.';
+  }
+
+  const storageFixed = applyStorageKindToParsedItem({
+    name: parsedName,
+    category,
+    subCategory,
+    specs,
+    sourceText: listing.title,
+  });
+  parsedName = storageFixed.name;
+  specs = storageFixed.specs;
+  if (specsAiSuggested && Object.keys(specs).length > 0) {
+    specsAiSuggested = { ...specsAiSuggested, ...specs };
   }
 
   return {

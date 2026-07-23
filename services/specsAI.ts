@@ -10,6 +10,7 @@ import { correctRamSpecsFromPartNumber } from './ramPartNumberCorrection';
 import { filterSpecsToEssentialKeys } from './essentialSpecFields';
 import { loadAISettings } from './aiSettings';
 import { ItemStatus } from '../types';
+import { applyStorageKindToParsedItem } from '../utils/ensureStorageKindInName';
 
 const getEnv = (key: string): string => {
   try {
@@ -162,7 +163,8 @@ Return a valid JSON object with this exact structure (no markdown, no code fence
 
 Rules: specs values can be string or number. Only include keys allowed above.
 
-standardizedName: short product name only — brand + model + key size/capacity (e.g. "Samsung 980 Pro 1TB", "Corsair Vengeance 16GB DDR4").
+standardizedName: short product name only — brand + model + key size/capacity (e.g. "Samsung 980 Pro 1TB NVMe", "Crucial BX500 480GB SSD", "Corsair Vengeance 16GB DDR4").
+STORAGE (SSD/HDD): Always end the name with the drive kind — "NVMe" for NVMe/M.2/PCIe SSDs, "SSD" for normal/SATA/2.5" SSDs, "HDD" for hard disks. Set Drive Type accordingly (NVMe SSD / SATA SSD / HDD).
 Do NOT include marketplace fluff: funktionsfähig, gebraucht, Zustand, OVP, Versand, getestet, Garantie, Sofortkauf, "wie neu", etc.
 
 GRAPHICS CARDS (GPUs): For the "VRAM" field, use the exact frame-buffer memory of that GPU model only (e.g. RTX 5070 has 12GB VRAM). Do not use system RAM, total memory across unrelated devices, or another GPU tier. If the product name includes a GB figure next to the chip name (e.g. "RTX 5070 12GB"), that GB value is the VRAM.
@@ -387,9 +389,17 @@ export async function generateItemSpecs(
         afterGpu,
         rawCategory
       );
+      const storageFixed = applyStorageKindToParsedItem({
+        name: raw.standardizedName || name,
+        category: rawCategory,
+        subCategory: rawCategory,
+        specs: corrected,
+        sourceText: name,
+      });
       return {
         ...raw,
-        specs: filterSpecsToEssentialKeys(corrected, knownKeys),
+        standardizedName: storageFixed.name,
+        specs: filterSpecsToEssentialKeys(storageFixed.specs, knownKeys),
       };
     } catch (e) {
       lastError = e instanceof Error ? e : new Error(String(e));
