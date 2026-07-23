@@ -128,6 +128,85 @@ const EMPTY_COMPAT_COUNT_MAP = new Map<string, number>();
 
 type ColumnId = 'select' | 'item' | 'presence' | 'parseSpecs' | 'category' | 'status' | 'buyPrice' | 'sellPrice' | 'storePrice' | 'profit' | 'buyDate' | 'timeGauge' | 'sellDate' | 'salePlatform' | 'actions';
 type TimeFilter = 'ALL' | 'THIS_WEEK' | 'LAST_WEEK' | 'THIS_MONTH' | 'LAST_MONTH' | 'LAST_30' | 'LAST_90' | 'THIS_YEAR' | 'LAST_YEAR';
+
+const READY_PERIOD_OPTIONS: { id: Exclude<TimeFilter, 'ALL'>; label: string }[] = [
+  { id: 'THIS_WEEK', label: 'This week' },
+  { id: 'LAST_WEEK', label: 'Last week' },
+  { id: 'THIS_MONTH', label: 'This month' },
+  { id: 'LAST_MONTH', label: 'Last month' },
+  { id: 'LAST_30', label: 'Last 30 days' },
+  { id: 'LAST_90', label: 'Last 90 days' },
+];
+
+function getTimeFilterDateRange(timeFilter: TimeFilter, nowInput = new Date()): { start: Date; end: Date } {
+  const now = new Date(nowInput);
+  now.setHours(23, 59, 59, 999);
+  let start = new Date(0);
+  let end = new Date(now);
+
+  switch (timeFilter) {
+    case 'THIS_WEEK': {
+      const day = now.getDay() || 7;
+      if (day !== 1) now.setHours(-24 * (day - 1));
+      start = new Date(now);
+      start.setHours(0, 0, 0, 0);
+      break;
+    }
+    case 'LAST_WEEK':
+      start = new Date(now);
+      start.setDate(now.getDate() - 7 - (now.getDay() || 7) + 1);
+      start.setHours(0, 0, 0, 0);
+      end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      end.setHours(23, 59, 59, 999);
+      break;
+    case 'THIS_MONTH':
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      break;
+    case 'LAST_MONTH':
+      start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      end = new Date(now.getFullYear(), now.getMonth(), 0);
+      end.setHours(23, 59, 59, 999);
+      break;
+    case 'LAST_30':
+      start = new Date(now);
+      start.setDate(now.getDate() - 30);
+      start.setHours(0, 0, 0, 0);
+      break;
+    case 'LAST_90':
+      start = new Date(now);
+      start.setDate(now.getDate() - 90);
+      start.setHours(0, 0, 0, 0);
+      break;
+    case 'THIS_YEAR':
+      start = new Date(now.getFullYear(), 0, 1);
+      break;
+    case 'LAST_YEAR':
+      start = new Date(now.getFullYear() - 1, 0, 1);
+      end = new Date(now.getFullYear() - 1, 11, 31);
+      end.setHours(23, 59, 59, 999);
+      break;
+    default:
+      break;
+  }
+  return { start, end };
+}
+
+function itemBuyDateInRange(item: InventoryItem, range: { start: Date; end: Date }): boolean {
+  if (!item.buyDate) return false;
+  const itemDate = new Date(item.buyDate);
+  if (Number.isNaN(itemDate.getTime())) return false;
+  return itemDate >= range.start && itemDate <= range.end;
+}
+
+function isMarkReadyEligible(item: InventoryItem): boolean {
+  return (
+    (item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) &&
+    !item.isDefective &&
+    !item.isDraft &&
+    !item.parentContainerId
+  );
+}
 type StatusFilter = 'ACTIVE' | 'SOLD' | 'DRAFTS' | 'ALL';
 
 type QuickCategoryPin = {
@@ -847,6 +926,8 @@ const InventoryList: React.FC<Props> = ({
     localStorage.setItem('panel_list_density', listDensity);
   }, [listDensity, persistenceKey]);
   const [smartPreset, setSmartPreset] = useState<SmartPreset>(null);
+  const [showReadyPeriodMenu, setShowReadyPeriodMenu] = useState(false);
+  const readyPeriodMenuRef = useRef<HTMLDivElement | null>(null);
   const [showAISpecsModal, setShowAISpecsModal] = useState(false);
   const [showBulkAddPhotosModal, setShowBulkAddPhotosModal] = useState(false);
   const [addPhotosTargetIds, setAddPhotosTargetIds] = useState<string[]>([]);
@@ -857,6 +938,24 @@ const InventoryList: React.FC<Props> = ({
     countLocalProductCardsByItemId()
   );
   const [aiCardRegenConfirmId, setAiCardRegenConfirmId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!showReadyPeriodMenu) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!readyPeriodMenuRef.current?.contains(e.target as Node)) {
+        setShowReadyPeriodMenu(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowReadyPeriodMenu(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [showReadyPeriodMenu]);
 
   const refreshAiCardCounts = useCallback(() => {
     setItemAiCardCounts(countLocalProductCardsByItemId());
@@ -1587,57 +1686,42 @@ const InventoryList: React.FC<Props> = ({
   }, [effectiveColumnWidths]);
 
   // Calculate Date Range based on filter
-  const dateRange = useMemo(() => {
-    const now = new Date();
-    now.setHours(23, 59, 59, 999);
-    
-    let start = new Date(0); // Epoch
-    let end = new Date(now);
+  const dateRange = useMemo(() => getTimeFilterDateRange(timeFilter), [timeFilter]);
 
-    switch (timeFilter) {
-      case 'THIS_WEEK':
-        const day = now.getDay() || 7; 
-        if (day !== 1) now.setHours(-24 * (day - 1));
-        start = new Date(now);
-        start.setHours(0,0,0,0);
-        break;
-      case 'LAST_WEEK':
-        start = new Date(now);
-        start.setDate(now.getDate() - 7 - (now.getDay() || 7) + 1);
-        start.setHours(0,0,0,0);
-        end = new Date(start);
-        end.setDate(start.getDate() + 6);
-        end.setHours(23,59,59,999);
-        break;
-      case 'THIS_MONTH':
-        start = new Date(now.getFullYear(), now.getMonth(), 1);
-        break;
-      case 'LAST_MONTH':
-        start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        end = new Date(now.getFullYear(), now.getMonth(), 0);
-        end.setHours(23, 59, 59, 999);
-        break;
-      case 'LAST_30':
-        start = new Date(now);
-        start.setDate(now.getDate() - 30);
-        break;
-      case 'LAST_90':
-        start = new Date(now);
-        start.setDate(now.getDate() - 90);
-        break;
-      case 'THIS_YEAR':
-        start = new Date(now.getFullYear(), 0, 1);
-        break;
-      case 'LAST_YEAR':
-        start = new Date(now.getFullYear() - 1, 0, 1);
-        end = new Date(now.getFullYear() - 1, 11, 31);
-        end.setHours(23, 59, 59, 999);
-        break;
-      default:
-        break;
+  const markReadyForPeriod = useCallback(
+    (period: Exclude<TimeFilter, 'ALL'>) => {
+      const range = getTimeFilterDateRange(period);
+      const updated = items
+        .filter(isMarkReadyEligible)
+        .filter((i) => !i.saleReady)
+        .filter((i) => itemBuyDateInRange(i, range))
+        .map((i) => ({ ...i, saleReady: true }));
+      if (!updated.length) {
+        setToast(`No not-ready stock in ${READY_PERIOD_OPTIONS.find((o) => o.id === period)?.label || period}`);
+        setTimeout(() => setToast(null), 2200);
+        setShowReadyPeriodMenu(false);
+        return;
+      }
+      onUpdate(updated, undefined, { skipActionLog: true });
+      setTimeFilter(period);
+      setSmartPreset('sale_ready');
+      setShowReadyPeriodMenu(false);
+      setToast(`Marked ${updated.length} Ready · ${READY_PERIOD_OPTIONS.find((o) => o.id === period)?.label}`);
+      setTimeout(() => setToast(null), 2800);
+    },
+    [items, onUpdate]
+  );
+
+  const readyPeriodCounts = useMemo(() => {
+    const counts: Partial<Record<Exclude<TimeFilter, 'ALL'>, number>> = {};
+    for (const opt of READY_PERIOD_OPTIONS) {
+      const range = getTimeFilterDateRange(opt.id);
+      counts[opt.id] = items.filter(
+        (i) => isMarkReadyEligible(i) && !i.saleReady && itemBuyDateInRange(i, range)
+      ).length;
     }
-    return { start, end };
-  }, [timeFilter]);
+    return counts;
+  }, [items]);
 
   const isQuickCategoryPinActive = useCallback(
     (pin: QuickCategoryPin) => {
@@ -4999,6 +5083,42 @@ const InventoryList: React.FC<Props> = ({
                    {label}
                  </button>
                ))}
+               <div className="relative" ref={readyPeriodMenuRef}>
+                 <button
+                   type="button"
+                   onClick={() => setShowReadyPeriodMenu((v) => !v)}
+                   className="px-2 py-1 rounded-lg border border-violet-200 bg-violet-50 text-violet-800 text-[9px] font-black uppercase tracking-wide hover:bg-violet-100 inline-flex items-center gap-1"
+                   title="Mark all in-stock items from a buy period as Ready for listing watch — no multi-select needed"
+                 >
+                   <ListChecks size={12} />
+                   Ready by period
+                   <ChevronDown size={12} />
+                 </button>
+                 {showReadyPeriodMenu && (
+                   <div className="absolute left-0 top-full mt-1 z-40 min-w-[200px] rounded-xl border border-slate-200 bg-white shadow-lg py-1">
+                     <p className="px-3 py-1.5 text-[9px] font-black uppercase tracking-wide text-slate-400">
+                       Mark Ready · by buy date
+                     </p>
+                     {READY_PERIOD_OPTIONS.map((opt) => {
+                       const n = readyPeriodCounts[opt.id] ?? 0;
+                       return (
+                         <button
+                           key={opt.id}
+                           type="button"
+                           disabled={n === 0}
+                           onClick={() => markReadyForPeriod(opt.id)}
+                           className="w-full text-left px-3 py-2 text-xs font-bold text-slate-700 hover:bg-violet-50 disabled:opacity-40 disabled:hover:bg-white flex items-center justify-between gap-3"
+                         >
+                           <span>{opt.label}</span>
+                           <span className="text-[10px] font-black text-violet-600 tabular-nums">
+                             {n}
+                           </span>
+                         </button>
+                       );
+                     })}
+                   </div>
+                 )}
+               </div>
                <Link
                  to="/panel/settings?tab=EBAY"
                  className="px-2 py-1 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-800 text-[9px] font-black uppercase tracking-wide hover:bg-indigo-100"
@@ -5258,6 +5378,31 @@ const InventoryList: React.FC<Props> = ({
               <option value="THIS_YEAR">This year</option>
               <option value="LAST_YEAR">Last year</option>
             </select>
+          </div>
+          <div className="space-y-2">
+            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+              Mark Ready by buy date
+            </p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {READY_PERIOD_OPTIONS.map((opt) => {
+                const n = readyPeriodCounts[opt.id] ?? 0;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    disabled={n === 0}
+                    onClick={() => {
+                      markReadyForPeriod(opt.id);
+                      setShowMobileFiltersSheet(false);
+                    }}
+                    className="px-3 py-2.5 rounded-xl border border-violet-200 bg-violet-50 text-violet-900 text-[11px] font-black uppercase disabled:opacity-40 flex items-center justify-between gap-2"
+                  >
+                    <span className="truncate">{opt.label}</span>
+                    <span className="tabular-nums text-violet-600">{n}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <div className="flex flex-wrap gap-1.5">
             {(
