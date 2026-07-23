@@ -12,6 +12,7 @@ import {
   X,
   Edit2,
   Layers,
+  Scissors,
 } from 'lucide-react';
 import type { InventoryItem } from '../types';
 import { ItemStatus } from '../types';
@@ -20,6 +21,7 @@ import { getItemUserPhotoCount } from '../utils/imageImport';
 import ItemThumbnail from './ItemThumbnail';
 import { MobileSheetShell } from './MobileBottomSheets';
 import ItemAccessoryToggles from './ItemAccessoryToggles';
+import { canSplitItem } from '../utils/splitParts';
 
 export interface MobileStockCardActions {
   onEdit: (item: InventoryItem) => void;
@@ -27,6 +29,8 @@ export interface MobileStockCardActions {
   onPhotos: (item: InventoryItem) => void;
   /** Quick Bundle / add parts — same as desktop Flags “+”. */
   onQuickBundle?: (item: InventoryItem) => void;
+  /** Split a single item into sellable parts (AIO → fans, radiator…). */
+  onSplitParts?: (item: InventoryItem) => void;
   onTrade?: (item: InventoryItem) => void;
   onGift?: (item: InventoryItem) => void;
   onDuplicate?: (item: InventoryItem) => void;
@@ -64,6 +68,9 @@ export const MobileStockCard: React.FC<{
     item.status === ItemStatus.TRADED ||
     item.status === ItemStatus.GIFTED;
   const canQuickBundle = Boolean(actions.onQuickBundle) && !soldLike;
+  /** Containers use Unbundle; Split is for single stock SKUs. */
+  const canSplit =
+    Boolean(actions.onSplitParts) && inStock && canSplitItem(item, item.isPC || item.isBundle ? 1 : 0);
 
   const quickBundleLabel = item.isPC
     ? 'Add parts to this PC'
@@ -221,6 +228,14 @@ export const MobileStockCard: React.FC<{
                   label: quickBundleLabel,
                   icon: item.isPC || item.isBundle ? <Plus size={16} /> : <Layers size={16} />,
                   run: () => actions.onQuickBundle?.(item),
+                }
+              : null,
+            canSplit
+              ? {
+                  key: 'split',
+                  label: 'Split into parts',
+                  icon: <Scissors size={16} />,
+                  run: () => actions.onSplitParts?.(item),
                 }
               : null,
             {

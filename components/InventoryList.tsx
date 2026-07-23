@@ -7,7 +7,7 @@ import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSort
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks,   Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone, Camera, Gift, User, Wand2, Images
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks,   Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone, Camera, Gift, User, Wand2, Images, Scissors
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, TaxMode, BulkImportRecord } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
@@ -62,6 +62,8 @@ import CrossPostingModal from './CrossPostingModal';
 import RetroBundleModal from './RetroBundleModal';
 import ComposeTypeModal, { type ComposeType } from './ComposeTypeModal';
 import QuickBundleAddModal from './QuickBundleAddModal';
+import SplitPartsModal from './SplitPartsModal';
+import { canSplitItem } from '../utils/splitParts';
 import EditItemModal from './EditItemModal';
 import ItemForm from './ItemForm';
 import ItemThumbnail from './ItemThumbnail';
@@ -1163,6 +1165,7 @@ const InventoryList: React.FC<Props> = ({
   const [showRetroBundle, setShowRetroBundle] = useState(false);
   const [showComposeType, setShowComposeType] = useState(false);
   const [quickBundleSeed, setQuickBundleSeed] = useState<InventoryItem | null>(null);
+  const [splitPartsSeed, setSplitPartsSeed] = useState<InventoryItem | null>(null);
   const quickBundleSeedRef = useRef<InventoryItem | null>(null);
   useEffect(() => {
     quickBundleSeedRef.current = quickBundleSeed;
@@ -3299,18 +3302,35 @@ const InventoryList: React.FC<Props> = ({
                                 </div>
                               </button>
                               {!isSoldContainerRow && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleRemoveFromContainer(child, item);
-                                  }}
-                                  className="shrink-0 p-1 rounded-md text-red-500 hover:bg-red-50 hover:text-red-700 transition-colors"
-                                  title="Remove from container — back to active inventory"
-                                  aria-label={`Remove ${child.name} from container`}
-                                >
-                                  <Trash2 size={12} strokeWidth={2.25} />
-                                </button>
+                                <div className="flex items-center gap-0.5 shrink-0">
+                                  {child.status === ItemStatus.IN_COMPOSITION && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        addRecentItemId(child.id);
+                                        setItemToSell(child);
+                                      }}
+                                      className="shrink-0 p-1 rounded-md text-emerald-600 hover:bg-emerald-50 hover:text-emerald-800 transition-colors"
+                                      title="Mark this part sold — leaves the group"
+                                      aria-label={`Mark ${child.name} sold`}
+                                    >
+                                      <ShoppingBag size={12} strokeWidth={2.25} />
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRemoveFromContainer(child, item);
+                                    }}
+                                    className="shrink-0 p-1 rounded-md text-red-500 hover:bg-red-50 hover:text-red-700 transition-colors"
+                                    title="Remove from container — back to active inventory"
+                                    aria-label={`Remove ${child.name} from container`}
+                                  >
+                                    <Trash2 size={12} strokeWidth={2.25} />
+                                  </button>
+                                </div>
                               )}
                             </div>
                             );
@@ -3731,6 +3751,19 @@ const InventoryList: React.FC<Props> = ({
               </button>
               {(item.isPC || item.isBundle) && (
                  <button onClick={(e) => { e.stopPropagation(); setBundleToDismantle(item); }} className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-md shrink-0" title="Unbundle / Dismantle"><Unlink size={14}/></button>
+              )}
+              {canSplitItem(item, (item.isPC || item.isBundle) ? getChildren(item, items).length : 0) && (
+                 <button
+                   type="button"
+                   onClick={(e) => {
+                     e.stopPropagation();
+                     setSplitPartsSeed(item);
+                   }}
+                   className="p-1.5 text-violet-600 hover:bg-violet-50 rounded-md shrink-0"
+                   title="Split into parts (OVP, fans, radiator…)"
+                 >
+                   <Scissors size={14}/>
+                 </button>
               )}
               {item.status === ItemStatus.IN_STOCK && <button onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToSell(item); }} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md shrink-0" title="Mark Sold"><ShoppingBag size={14}/></button>}
               {item.status === ItemStatus.IN_STOCK && <button onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToTrade(item); }} className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-md shrink-0" title="Trade"><ArrowRightLeft size={14}/></button>}
@@ -5058,6 +5091,12 @@ const InventoryList: React.FC<Props> = ({
                       parentOfItem && !it.isPC && !it.isBundle ? parentOfItem : it;
                     openQuickBundlePanel(seed);
                   },
+                  onSplitParts: (it) => {
+                    const childCount =
+                      it.isPC || it.isBundle ? getChildren(it, items).length : 0;
+                    if (!canSplitItem(it, childCount)) return;
+                    setSplitPartsSeed(it);
+                  },
                   onTrade: (it) => {
                     addRecentItemId(it.id);
                     setItemToTrade(it);
@@ -5103,6 +5142,31 @@ const InventoryList: React.FC<Props> = ({
             />
           </div>
         </div>
+      )}
+
+      {splitPartsSeed && (
+        <SplitPartsModal
+          item={splitPartsSeed}
+          items={items}
+          onClose={() => setSplitPartsSeed(null)}
+          onApply={(updates) => {
+            onUpdate(updates);
+            const parent = updates.find((u) => u.isBundle || u.isPC);
+            if (parent) {
+              setScrollTargetItemId(parent.id);
+              setCollapsedBundles((prev) => {
+                const next = new Set(prev);
+                next.delete(parent.id);
+                return next;
+              });
+            }
+            setToast(
+              `Split into ${(parent?.componentIds || []).length || Math.max(0, updates.length - 1)} parts`
+            );
+            setTimeout(() => setToast(null), 2400);
+            setSplitPartsSeed(null);
+          }}
+        />
       )}
 
       {/* Table scrolls in remaining height; bulk bar is a separate row below (never overlays rows) */}
@@ -5643,6 +5707,63 @@ const InventoryList: React.FC<Props> = ({
             taxMode={businessSettings.taxMode}
             mode="sell"
             onSave={(updated, splitOff) => { 
+               // Selling one nested part: detach from parent, leave remaining parts in the group.
+               const soldFromComposition =
+                 itemToSell &&
+                 !(updated.isPC || updated.isBundle) &&
+                 (itemToSell.status === ItemStatus.IN_COMPOSITION ||
+                   Boolean(itemToSell.parentContainerId));
+               const compositionParentId =
+                 itemToSell?.parentContainerId ||
+                 (soldFromComposition
+                   ? items.find(
+                       (i) =>
+                         (i.isPC || i.isBundle) &&
+                         (i.componentIds || []).includes(itemToSell!.id)
+                     )?.id
+                   : undefined);
+
+               if (soldFromComposition && compositionParentId) {
+                 const parent = items.find((i) => i.id === compositionParentId);
+                 const soldChild: InventoryItem = {
+                   ...updated,
+                   status: ItemStatus.SOLD,
+                   parentContainerId: undefined,
+                 };
+                 if (parent && (parent.isPC || parent.isBundle)) {
+                   const remainingChildren = items.filter(
+                     (i) =>
+                       i.id !== soldChild.id &&
+                       (((parent.componentIds || []).includes(i.id) ||
+                         i.parentContainerId === parent.id) &&
+                         !i.isPC &&
+                         !i.isBundle)
+                   );
+                   const buyTotal =
+                     Math.round(
+                       remainingChildren.reduce((s, i) => s + Number(i.buyPrice || 0), 0) * 100
+                     ) / 100;
+                   const updatedParent: InventoryItem = {
+                     ...parent,
+                     componentIds: remainingChildren.map((c) => c.id),
+                     buyPrice: buyTotal,
+                     comment2: remainingChildren
+                       .map((i) => `- ${i.name}${i.isDefective ? ' [defekt]' : ''}`)
+                       .join('\n')
+                       .slice(0, 2000),
+                   };
+                   onUpdate([updatedParent, soldChild]);
+                   setToast(
+                     `Sold “${soldChild.name}” · left group · container now €${formatEUR(buyTotal)}`
+                   );
+                   setTimeout(() => setToast(null), 2600);
+                 } else {
+                   onUpdate([soldChild]);
+                 }
+                 setItemToSell(null);
+                 return;
+               }
+
                // When selling a PC or bundle, also stamp all child components
                // with the container's sale date. Child items keep their original buyDate.
                const childComponents =
