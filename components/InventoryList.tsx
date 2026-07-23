@@ -3215,161 +3215,26 @@ const InventoryList: React.FC<Props> = ({
                      !item.isDefective &&
                      !item.parentContainerId && (
                      <div
-                       className="flex flex-col gap-0.5 mt-0.5"
+                       className="mt-0.5 max-w-full"
                        onClick={(e) => e.stopPropagation()}
                      >
-                       <div className="flex items-center gap-1 flex-wrap">
-                         <button
-                           type="button"
-                           title={
-                             item.saleReady
-                               ? 'Sale ready — watched for delisting / maybe-sold. Click to unwatch.'
-                               : 'Mark sale ready when photos/specs are done. Listing sync also auto-marks matches Ready.'
-                           }
-                           onClick={() =>
-                             onUpdate(
-                               [{ ...item, saleReady: !item.saleReady }],
-                               undefined,
-                               { skipActionLog: true }
-                             )
-                           }
-                           className={`inline-flex items-center px-1 py-0 rounded text-[8px] font-black uppercase tracking-wide border ${
-                             item.saleReady
-                               ? 'bg-violet-50 text-violet-800 border-violet-200'
-                               : 'bg-slate-50 text-slate-400 border-slate-200'
-                           }`}
-                         >
-                           Ready
-                         </button>
-                         {(() => {
-                             const kaOk = Boolean(item.listedOnKleinanzeigen);
-                             const ebOk = Boolean(item.listedOnEbay);
-                             const viaKit = Boolean(item.listedViaParent);
-                             const syncHint = item.listingPresenceSyncedAt
-                               ? ` · synced ${item.listingPresenceSyncedAt.slice(0, 16).replace('T', ' ')}`
-                               : '';
-                             const kaLive =
-                               item.liveKleinListPrice != null
-                                 ? ` · live €${Math.round(item.liveKleinListPrice)}`
-                                 : '';
-                             const ebLive =
-                               item.liveEbayListPrice != null
-                                 ? ` · live €${Math.round(item.liveEbayListPrice)}`
-                                 : '';
-                             return (
-                               <>
-                                 <button
-                                   type="button"
-                                   title={
-                                     kaOk
-                                       ? `Listed on Kleinanzeigen${kaLive}${syncHint}`
-                                       : `Not posted on Kleinanzeigen${syncHint || ' · run Listings sync in Settings'}`
-                                   }
-                                   onClick={() => {
-                                     if (item.kleinanzeigenListingUrl) {
-                                       window.open(
-                                         item.kleinanzeigenListingUrl,
-                                         '_blank',
-                                         'noopener,noreferrer'
-                                       );
-                                       return;
-                                     }
-                                     const turningOn = !item.listedOnKleinanzeigen;
-                                     if (!turningOn) {
-                                       onUpdate(
-                                         [
-                                           {
-                                             ...item,
-                                             listedOnKleinanzeigen: false,
-                                             listedViaParent: false,
-                                           },
-                                         ],
-                                         undefined,
-                                         { skipActionLog: true }
-                                       );
-                                       return;
-                                     }
-                                     const hit = teachKaListingFromManualLink(item);
-                                     onUpdate(
-                                       [
-                                         {
-                                           ...item,
-                                           listedOnKleinanzeigen: true,
-                                           listedViaParent: false,
-                                           saleReady: true,
-                                           kleinanzeigenListingUrl:
-                                             hit?.url || item.kleinanzeigenListingUrl,
-                                           liveKleinListPrice:
-                                             hit?.price ?? item.liveKleinListPrice,
-                                         },
-                                       ],
-                                       undefined,
-                                       { skipActionLog: true }
-                                     );
-                                   }}
-                                   className={`inline-flex items-center px-1 py-0 rounded text-[8px] font-black uppercase tracking-wide border ${
-                                     kaOk
-                                       ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                       : 'bg-slate-50 text-slate-400 border-slate-200 line-through decoration-slate-300'
-                                   }`}
-                                 >
-                                   KA
-                                   {item.liveKleinListPrice != null && kaOk
-                                     ? ` €${Math.round(item.liveKleinListPrice)}`
-                                     : ''}
-                                 </button>
-                                 <button
-                                   type="button"
-                                   title={
-                                     ebOk
-                                       ? `Listed on eBay${ebLive}${syncHint}`
-                                       : `Not posted on eBay${syncHint || ' · run Listings sync in Settings'}`
-                                   }
-                                   onClick={() => {
-                                     if (item.ebayListingId) {
-                                       window.open(
-                                         `https://www.ebay.de/itm/${item.ebayListingId}`,
-                                         '_blank',
-                                         'noopener,noreferrer'
-                                       );
-                                       return;
-                                     }
-                                     onUpdate(
-                                       [
-                                         {
-                                           ...item,
-                                           listedOnEbay: !item.listedOnEbay,
-                                           listedViaParent: false,
-                                         },
-                                       ],
-                                       undefined,
-                                       { skipActionLog: true }
-                                     );
-                                   }}
-                                   className={`inline-flex items-center px-1 py-0 rounded text-[8px] font-black uppercase tracking-wide border ${
-                                     ebOk
-                                       ? 'bg-sky-50 text-sky-800 border-sky-200'
-                                       : 'bg-slate-50 text-slate-400 border-slate-200 line-through decoration-slate-300'
-                                   }`}
-                                 >
-                                   EB
-                                   {item.liveEbayListPrice != null && ebOk
-                                     ? ` €${Math.round(item.liveEbayListPrice)}`
-                                     : ''}
-                                 </button>
-                                 {viaKit && (kaOk || ebOk) && (
-                                   <span className="text-[8px] font-bold text-violet-600 uppercase">
-                                     via kit
-                                   </span>
-                                 )}
-                               </>
-                             );
-                           })()}
-                       </div>
                        {(() => {
+                         const kaOk = Boolean(item.listedOnKleinanzeigen);
+                         const ebOk = Boolean(item.listedOnEbay);
+                         const viaKit = Boolean(item.listedViaParent);
+                         const syncHint = item.listingPresenceSyncedAt
+                           ? ` · synced ${item.listingPresenceSyncedAt.slice(0, 16).replace('T', ' ')}`
+                           : '';
+                         const kaLive =
+                           item.liveKleinListPrice != null
+                             ? ` · live €${Math.round(item.liveKleinListPrice)}`
+                             : '';
+                         const ebLive =
+                           item.liveEbayListPrice != null
+                             ? ` · live €${Math.round(item.liveEbayListPrice)}`
+                             : '';
                          const sugg = suggestedEbayById.get(item.id) || null;
                          const analyzer = computePriceAnalyzer(item, sugg, items);
-                         if (!analyzer) return null;
                          const actionClass = (action: PriceAnalyzerAction) => {
                            if (action === 'drop')
                              return 'bg-amber-50 text-amber-950 border-amber-300';
@@ -3379,7 +3244,22 @@ const InventoryList: React.FC<Props> = ({
                              return 'bg-emerald-50 text-emerald-900 border-emerald-200';
                            return 'bg-slate-50 text-slate-700 border-slate-200';
                          };
+                         const shortChannelLabel = (ch: {
+                           action: PriceAnalyzerAction;
+                           channel: string;
+                           suggest: number;
+                           live?: number;
+                         }) => {
+                           if (ch.action === 'drop')
+                             return `↓${ch.channel} €${Math.round(ch.live || 0)}→€${Math.round(ch.suggest)}`;
+                           if (ch.action === 'raise')
+                             return `↑${ch.channel} €${Math.round(ch.live || 0)}→€${Math.round(ch.suggest)}`;
+                           if (ch.action === 'ok')
+                             return `OK ${ch.channel} €${Math.round(ch.live || ch.suggest)}`;
+                           return `${ch.channel} €${Math.round(ch.suggest)}`;
+                         };
                          const saveSuggest = () => {
+                           if (!analyzer) return;
                            const fresh =
                              resolveSuggestedEbayList(
                                item,
@@ -3399,87 +3279,210 @@ const InventoryList: React.FC<Props> = ({
                            setTimeout(() => setToast(null), 2600);
                          };
                          return (
-                           <div
-                             className="flex flex-col gap-0.5 mt-0.5 max-w-full"
-                             title={`Age-aware price from buy €${formatEUR(analyzer.buy || item.buyPrice || 0)}. Floor 30%; age target decays 60%→30%. Ceiling rises when you sell similar items at high margin or when buy is a cheap split. ${analyzer.marginReason ? `Now: ${analyzer.marginReason}.` : ''} Click a chip to save the target.`}
-                           >
-                             <div className="flex items-center gap-1 flex-wrap text-[9px] font-bold text-slate-500">
-                               <span className="uppercase tracking-wide text-slate-600">
-                                 {analyzer.ageLabel}
-                               </span>
-                               {analyzer.buy > 0 && (
-                                 <span className="text-slate-400">
-                                   · buy €{formatEUR(analyzer.buy)}
+                           <>
+                             <div
+                               className="flex items-center gap-1 flex-wrap leading-none"
+                               title={
+                                 analyzer
+                                   ? `Age-aware price from buy €${formatEUR(analyzer.buy || item.buyPrice || 0)}. Floor 30%; age target decays 60%→30%. ${analyzer.marginReason ? `Now: ${analyzer.marginReason}.` : ''} Click price chips to save.`
+                                   : undefined
+                               }
+                             >
+                               <button
+                                 type="button"
+                                 title={
+                                   item.saleReady
+                                     ? 'Sale ready — watched for delisting / maybe-sold. Click to unwatch.'
+                                     : 'Mark sale ready when photos/specs are done.'
+                                 }
+                                 onClick={() =>
+                                   onUpdate(
+                                     [{ ...item, saleReady: !item.saleReady }],
+                                     undefined,
+                                     { skipActionLog: true }
+                                   )
+                                 }
+                                 className={`inline-flex items-center px-1 py-0 rounded text-[8px] font-black uppercase tracking-wide border ${
+                                   item.saleReady
+                                     ? 'bg-violet-50 text-violet-800 border-violet-200'
+                                     : 'bg-slate-50 text-slate-400 border-slate-200'
+                                 }`}
+                               >
+                                 Ready
+                               </button>
+                               <button
+                                 type="button"
+                                 title={
+                                   kaOk
+                                     ? `Listed on Kleinanzeigen${kaLive}${syncHint}`
+                                     : `Not posted on Kleinanzeigen${syncHint || ' · run Listings sync in Settings'}`
+                                 }
+                                 onClick={() => {
+                                   if (item.kleinanzeigenListingUrl) {
+                                     window.open(
+                                       item.kleinanzeigenListingUrl,
+                                       '_blank',
+                                       'noopener,noreferrer'
+                                     );
+                                     return;
+                                   }
+                                   const turningOn = !item.listedOnKleinanzeigen;
+                                   if (!turningOn) {
+                                     onUpdate(
+                                       [
+                                         {
+                                           ...item,
+                                           listedOnKleinanzeigen: false,
+                                           listedViaParent: false,
+                                         },
+                                       ],
+                                       undefined,
+                                       { skipActionLog: true }
+                                     );
+                                     return;
+                                   }
+                                   const hit = teachKaListingFromManualLink(item);
+                                   onUpdate(
+                                     [
+                                       {
+                                         ...item,
+                                         listedOnKleinanzeigen: true,
+                                         listedViaParent: false,
+                                         saleReady: true,
+                                         kleinanzeigenListingUrl:
+                                           hit?.url || item.kleinanzeigenListingUrl,
+                                         liveKleinListPrice:
+                                           hit?.price ?? item.liveKleinListPrice,
+                                       },
+                                     ],
+                                     undefined,
+                                     { skipActionLog: true }
+                                   );
+                                 }}
+                                 className={`inline-flex items-center px-1 py-0 rounded text-[8px] font-black uppercase tracking-wide border ${
+                                   kaOk
+                                     ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                     : 'bg-slate-50 text-slate-400 border-slate-200 line-through decoration-slate-300'
+                                 }`}
+                               >
+                                 KA
+                                 {item.liveKleinListPrice != null && kaOk
+                                   ? ` €${Math.round(item.liveKleinListPrice)}`
+                                   : ''}
+                               </button>
+                               <button
+                                 type="button"
+                                 title={
+                                   ebOk
+                                     ? `Listed on eBay${ebLive}${syncHint}`
+                                     : `Not posted on eBay${syncHint || ' · run Listings sync in Settings'}`
+                                 }
+                                 onClick={() => {
+                                   if (item.ebayListingId) {
+                                     window.open(
+                                       `https://www.ebay.de/itm/${item.ebayListingId}`,
+                                       '_blank',
+                                       'noopener,noreferrer'
+                                     );
+                                     return;
+                                   }
+                                   onUpdate(
+                                     [
+                                       {
+                                         ...item,
+                                         listedOnEbay: !item.listedOnEbay,
+                                         listedViaParent: false,
+                                       },
+                                     ],
+                                     undefined,
+                                     { skipActionLog: true }
+                                   );
+                                 }}
+                                 className={`inline-flex items-center px-1 py-0 rounded text-[8px] font-black uppercase tracking-wide border ${
+                                   ebOk
+                                     ? 'bg-sky-50 text-sky-800 border-sky-200'
+                                     : 'bg-slate-50 text-slate-400 border-slate-200 line-through decoration-slate-300'
+                                 }`}
+                               >
+                                 EB
+                                 {item.liveEbayListPrice != null && ebOk
+                                   ? ` €${Math.round(item.liveEbayListPrice)}`
+                                   : ''}
+                               </button>
+                               {viaKit && (kaOk || ebOk) && (
+                                 <span className="text-[8px] font-bold text-violet-600 uppercase">
+                                   via kit
                                  </span>
                                )}
-                               {analyzer.marginReason && (
-                                 <span className="text-violet-600 font-black uppercase tracking-wide">
-                                   · {analyzer.marginReason}
-                                 </span>
+                               {analyzer && (
+                                 <>
+                                   <span className="text-[8px] font-bold text-slate-500 tabular-nums">
+                                     d{analyzer.daysHeld} · {analyzer.targetMarginPct}%
+                                     {analyzer.buy > 0
+                                       ? ` · €${formatEUR(analyzer.buy)}`
+                                       : ''}
+                                   </span>
+                                   {analyzer.minKlein > 0 && analyzer.minEbay > 0 && (
+                                     <span
+                                       className="inline-flex items-center px-1 py-0 rounded border border-rose-200 bg-rose-50 text-[8px] font-black uppercase text-rose-900 tabular-nums"
+                                       title={`Hard floor ${analyzer.minMarginPct}%: KA €${formatEUR(analyzer.minKlein)} · EB €${formatEUR(analyzer.minEbay)}`}
+                                     >
+                                       min €{Math.round(analyzer.minKlein)}/€
+                                       {Math.round(analyzer.minEbay)}
+                                     </span>
+                                   )}
+                                   {analyzer.channels.map((ch) => (
+                                     <button
+                                       key={ch.channel}
+                                       type="button"
+                                       onClick={saveSuggest}
+                                       title={ch.label}
+                                       className={`inline-flex items-center px-1 py-0 rounded border text-[8px] font-black uppercase tracking-wide tabular-nums ${actionClass(ch.action)}`}
+                                     >
+                                       {shortChannelLabel(ch)}
+                                     </button>
+                                   ))}
+                                 </>
                                )}
                              </div>
-                             {analyzer.minKlein > 0 && analyzer.minEbay > 0 && (
-                               <div
-                                 className="inline-flex items-center gap-1 flex-wrap self-start px-1.5 py-0.5 rounded border border-rose-200 bg-rose-50 text-[9px] font-black uppercase tracking-wide text-rose-900"
-                                 title={`Hard floor: ${analyzer.minMarginPct}% pocket vs buy. KA has no fees; eBay list is higher so you still net the same after fees. Never list below these.`}
-                               >
-                                 <span>Min {analyzer.minMarginPct}%</span>
-                                 <span className="text-rose-300">·</span>
-                                 <span>KA €{formatEUR(analyzer.minKlein)}</span>
-                                 <span className="text-rose-300">·</span>
-                                 <span>EB €{formatEUR(analyzer.minEbay)}</span>
+                             {isMaybeSoldCandidate(item) && (
+                               <div className="flex items-center gap-1 flex-wrap mt-0.5">
+                                 <button
+                                   type="button"
+                                   className="text-[8px] font-black uppercase tracking-wide px-1 py-0 rounded border bg-rose-50 text-rose-900 border-rose-200"
+                                   title="Listing vanished from your seller profile while still In Stock"
+                                   onClick={() => {
+                                     addRecentItemId(item.id);
+                                     setItemToSell(item);
+                                   }}
+                                 >
+                                   {maybeSoldLabel(item.maybeSoldHint)}
+                                 </button>
+                                 <button
+                                   type="button"
+                                   className="text-[8px] font-bold uppercase text-slate-500 hover:text-slate-800"
+                                   title="Dismiss nudge"
+                                   onClick={() =>
+                                     onUpdate(
+                                       [
+                                         {
+                                           ...item,
+                                           maybeSoldDismissedAt: new Date().toISOString(),
+                                           maybeSoldHint: undefined,
+                                         },
+                                       ],
+                                       undefined,
+                                       { skipActionLog: true }
+                                     )
+                                   }
+                                 >
+                                   Dismiss
+                                 </button>
                                </div>
                              )}
-                             <div className="flex items-center gap-1 flex-wrap">
-                               {analyzer.channels.map((ch) => (
-                                 <button
-                                   key={ch.channel}
-                                   type="button"
-                                   onClick={saveSuggest}
-                                   className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[9px] font-black uppercase tracking-wide ${actionClass(ch.action)}`}
-                                 >
-                                   {ch.label}
-                                 </button>
-                               ))}
-                             </div>
-                           </div>
+                           </>
                          );
                        })()}
-                       {isMaybeSoldCandidate(item) && (
-                         <div className="flex items-center gap-1 flex-wrap">
-                           <button
-                             type="button"
-                             className="text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded border bg-rose-50 text-rose-900 border-rose-200"
-                             title="Listing vanished from your seller profile while still In Stock"
-                             onClick={() => {
-                               addRecentItemId(item.id);
-                               setItemToSell(item);
-                             }}
-                           >
-                             {maybeSoldLabel(item.maybeSoldHint)}
-                           </button>
-                           <button
-                             type="button"
-                             className="text-[9px] font-bold uppercase text-slate-500 hover:text-slate-800"
-                             title="Dismiss nudge"
-                             onClick={() =>
-                               onUpdate(
-                                 [
-                                   {
-                                     ...item,
-                                     maybeSoldDismissedAt: new Date().toISOString(),
-                                     maybeSoldHint: undefined,
-                                   },
-                                 ],
-                                 undefined,
-                                 { skipActionLog: true }
-                               )
-                             }
-                           >
-                             Dismiss
-                           </button>
-                         </div>
-                       )}
                      </div>
                    )}
                    <div

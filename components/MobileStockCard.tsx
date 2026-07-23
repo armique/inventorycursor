@@ -178,26 +178,37 @@ export const MobileStockCard: React.FC<{
                   return 'bg-slate-50 text-slate-700 border-slate-200';
                 };
                 return (
-                  <div className="mt-1 flex flex-col gap-0.5" onClick={(e) => e.stopPropagation()}>
-                    <span className="text-[9px] font-bold uppercase tracking-wide text-slate-500">
-                      {analyzer.ageLabel}
+                  <div
+                    className="mt-1 flex items-center gap-1 flex-wrap leading-none"
+                    onClick={(e) => e.stopPropagation()}
+                    title={analyzer.ageLabel}
+                  >
+                    <span className="text-[8px] font-bold text-slate-500 tabular-nums">
+                      d{analyzer.daysHeld} · {analyzer.targetMarginPct}%
                     </span>
                     {analyzer.minKlein > 0 && analyzer.minEbay > 0 && (
-                      <span className="inline-flex self-start px-1.5 py-0.5 rounded border border-rose-200 bg-rose-50 text-[9px] font-black uppercase text-rose-900">
-                        Min {analyzer.minMarginPct}% · KA €{formatEUR(analyzer.minKlein)} · EB €
-                        {formatEUR(analyzer.minEbay)}
+                      <span className="inline-flex px-1 py-0 rounded border border-rose-200 bg-rose-50 text-[8px] font-black uppercase text-rose-900 tabular-nums">
+                        min €{Math.round(analyzer.minKlein)}/€{Math.round(analyzer.minEbay)}
                       </span>
                     )}
-                    <div className="flex flex-wrap gap-1">
-                      {analyzer.channels.map((ch) => (
+                    {analyzer.channels.map((ch) => {
+                      const label =
+                        ch.action === 'drop'
+                          ? `↓${ch.channel} €${Math.round(ch.live || 0)}→€${Math.round(ch.suggest)}`
+                          : ch.action === 'raise'
+                            ? `↑${ch.channel} €${Math.round(ch.live || 0)}→€${Math.round(ch.suggest)}`
+                            : ch.action === 'ok'
+                              ? `OK ${ch.channel} €${Math.round(ch.live || ch.suggest)}`
+                              : `${ch.channel} €${Math.round(ch.suggest)}`;
+                      return (
                         <span
                           key={ch.channel}
-                          className={`inline-flex px-1.5 py-0.5 rounded border text-[9px] font-black uppercase ${cls(ch.action)}`}
+                          className={`inline-flex px-1 py-0 rounded border text-[8px] font-black uppercase tabular-nums ${cls(ch.action)}`}
                         >
-                          {ch.label}
+                          {label}
                         </span>
-                      ))}
-                    </div>
+                      );
+                    })}
                   </div>
                 );
               })()}
