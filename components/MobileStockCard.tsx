@@ -13,6 +13,9 @@ import {
   Edit2,
   Layers,
   Scissors,
+  Loader2,
+  PackageCheck,
+  Sparkles,
 } from 'lucide-react';
 import type { InventoryItem } from '../types';
 import { ItemStatus } from '../types';
@@ -39,6 +42,17 @@ export interface MobileStockCardActions {
   onPatchAccessory?: (item: InventoryItem, patch: Partial<InventoryItem>) => void;
 }
 
+export interface MobilePurchaseActions {
+  onParseSpecs: () => void;
+  onConfirmReceived: () => void;
+  parsing?: boolean;
+  confirming?: boolean;
+  hasParsedSpecs?: boolean;
+  /** Already linked to Active — show Open instead of Confirm. */
+  received?: boolean;
+  onOpenActive?: () => void;
+}
+
 /** Dense phone stock row — fits several items on screen without a tall action strip. */
 export const MobileStockCard: React.FC<{
   item: InventoryItem;
@@ -50,6 +64,8 @@ export const MobileStockCard: React.FC<{
   selected?: boolean;
   onToggleSelect?: () => void;
   actions: MobileStockCardActions;
+  /** When set, row acts like inventory but Parse/Confirm replace Sell/More. */
+  purchaseActions?: MobilePurchaseActions;
 }> = ({
   item,
   profit,
@@ -59,6 +75,7 @@ export const MobileStockCard: React.FC<{
   selected,
   onToggleSelect,
   actions,
+  purchaseActions,
 }) => {
   const [moreOpen, setMoreOpen] = React.useState(false);
   const photoCount = getItemUserPhotoCount(item);
@@ -157,6 +174,19 @@ export const MobileStockCard: React.FC<{
                   ? ` · ${item.subCategory || item.category}`
                   : ''}
               </p>
+              {item.specs && Object.keys(item.specs).length > 0 && (
+                <p
+                  className="mt-0.5 text-[10px] text-slate-500 font-medium leading-snug truncate"
+                  title={Object.entries(item.specs)
+                    .map(([k, v]) => `${k}: ${v}`)
+                    .join(' • ')}
+                >
+                  {Object.entries(item.specs)
+                    .slice(0, 4)
+                    .map(([k, v]) => `${k}: ${v}`)
+                    .join(' · ')}
+                </p>
+              )}
               {(() => {
                 const hasSugg =
                   suggestedKleinList != null &&
@@ -219,7 +249,7 @@ export const MobileStockCard: React.FC<{
                 );
               })()}
             </button>
-            {actions.onPatchAccessory && (
+            {actions.onPatchAccessory && !purchaseActions && (
               <ItemAccessoryToggles
                 item={item}
                 mini
@@ -229,6 +259,58 @@ export const MobileStockCard: React.FC<{
           </div>
 
           <div className="flex items-center gap-0.5 shrink-0">
+            {purchaseActions ? (
+              purchaseActions.received ? (
+                <button
+                  type="button"
+                  onClick={() => purchaseActions.onOpenActive?.()}
+                  className="h-9 px-2.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-[10px] font-black uppercase inline-flex items-center"
+                >
+                  Open
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => purchaseActions.onParseSpecs()}
+                    disabled={purchaseActions.parsing || purchaseActions.confirming}
+                    className="h-9 px-2 rounded-lg bg-violet-600 text-white text-[10px] font-black uppercase inline-flex items-center gap-1 disabled:opacity-50"
+                    title={purchaseActions.hasParsedSpecs ? 'Re-parse specs' : 'Parse specs'}
+                  >
+                    {purchaseActions.parsing ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      <Sparkles size={12} />
+                    )}
+                    {purchaseActions.parsing ? '…' : 'Specs'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => purchaseActions.onConfirmReceived()}
+                    disabled={purchaseActions.parsing || purchaseActions.confirming}
+                    className="h-9 px-2 rounded-lg bg-emerald-600 text-white text-[10px] font-black uppercase inline-flex items-center gap-1 disabled:opacity-50"
+                    title="Confirm received → Active"
+                  >
+                    {purchaseActions.confirming ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      <PackageCheck size={12} />
+                    )}
+                    {purchaseActions.confirming ? '…' : 'Confirm'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => actions.onEdit(item)}
+                    className="h-9 w-9 rounded-lg bg-slate-900 text-white inline-flex items-center justify-center"
+                    title="Edit draft"
+                    aria-label="Edit draft"
+                  >
+                    <Edit2 size={14} />
+                  </button>
+                </>
+              )
+            ) : (
+              <>
             {canQuickBundle ? (
               <button
                 type="button"
@@ -268,10 +350,13 @@ export const MobileStockCard: React.FC<{
             >
               <MoreHorizontal size={16} />
             </button>
+              </>
+            )}
           </div>
         </div>
       </article>
 
+      {!purchaseActions && (
       <MobileSheetShell
         open={moreOpen}
         title={item.name}
@@ -399,6 +484,7 @@ export const MobileStockCard: React.FC<{
           </button>
         </div>
       </MobileSheetShell>
+      )}
     </>
   );
 };

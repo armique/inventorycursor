@@ -14,7 +14,6 @@ import {
   Sparkles,
 } from 'lucide-react';
 import type { InventoryItem } from '../types';
-import { ItemStatus } from '../types';
 import { hasEbayToken } from '../services/ebayService';
 import {
   getSuggestedPurchaseFetchRange,
@@ -34,6 +33,7 @@ import { formatEUR } from '../utils/formatMoney';
 import { formatPlatformBoughtLabel } from '../utils/purchaseSource';
 import { matchesEbayToolSearch } from '../utils/ebayToolSearch';
 import ItemThumbnail from './ItemThumbnail';
+import MobileStockCard from './MobileStockCard';
 import EbayToolProgressBar, { type EbayToolProgress } from './EbayToolProgressBar';
 
 export type PurchaseViewFilter = 'pending' | 'received' | 'all';
@@ -44,6 +44,8 @@ export type UseInventoryPurchasesArgs = {
   categoryFields: Record<string, string[]>;
   onUpdate: (items: InventoryItem[]) => void;
   onOpenItem?: (id: string) => void;
+  /** Open purchase as editable inventory-style draft (same Edit modal). */
+  onOpenPurchaseDraft?: (item: InventoryItem) => void;
   searchTerm?: string;
 };
 
@@ -57,6 +59,7 @@ export function useInventoryPurchases({
   categoryFields,
   onUpdate,
   onOpenItem,
+  onOpenPurchaseDraft,
   searchTerm = '',
 }: UseInventoryPurchasesArgs) {
   const [version, setVersion] = useState(0);
@@ -343,62 +346,34 @@ export function useInventoryPurchases({
       : rows.map((p) => {
           const preview = purchaseToPreviewItem(p);
           const hasSpecs = purchaseHasParsedSpecs(p);
+          const linked = linkedItem(p);
+          const received = p.disposition === 'inventory' && Boolean(linked || p.inventoryItemId);
           return (
-            <article
+            <MobileStockCard
               key={p.lineKey}
-              className={`rounded-xl border bg-white px-2.5 py-2 ${
-                p.disposition === 'pending'
-                  ? 'border-amber-200/80'
-                  : p.disposition === 'inventory'
-                    ? 'border-emerald-200/80'
-                    : 'border-slate-100'
-              }`}
-            >
-              <div className="flex gap-2 items-center">
-                <ItemThumbnail
-                  item={preview}
-                  className="w-11 h-11 rounded-lg object-cover border border-slate-100 shrink-0"
-                  size={44}
-                />
-                <div className="min-w-0 flex-1 py-0.5">
-                  <p className="font-bold text-[13px] leading-tight text-slate-900 line-clamp-1">
-                    {preview.name}
-                  </p>
-                  <p className="mt-0.5 text-[11px] font-semibold text-slate-500 truncate">
-                    €{formatEUR(preview.buyPrice)}
-                    {preview.buyDate ? ` · ${preview.buyDate}` : ''}
-                    {preview.subCategory || preview.category
-                      ? ` · ${preview.subCategory || preview.category}`
-                      : ''}
-                    {` · ${formatPlatformBoughtLabel(preview.platformBought) || 'eBay'}`}
-                    {preview.ebayOrderId ? ` · #${preview.ebayOrderId}` : ''}
-                  </p>
-                  <div className="mt-1 flex flex-wrap items-center gap-1">
-                    <span
-                      className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded border ${
-                        p.disposition === 'pending'
-                          ? 'bg-amber-50 text-amber-900 border-amber-200'
-                          : p.disposition === 'inventory'
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                            : 'bg-slate-50 text-slate-500 border-slate-200'
-                      }`}
-                    >
-                      {p.disposition === 'inventory'
-                        ? 'Received'
-                        : p.disposition === 'pending'
-                          ? ItemStatus.ORDERED
-                          : p.disposition}
-                    </span>
-                    {hasSpecs && (
-                      <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded border bg-violet-50 text-violet-800 border-violet-200 inline-flex items-center gap-0.5">
-                        <Sparkles size={9} /> Specs
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <div className="mt-2 pt-2 border-t border-slate-100">{actionButtons(p)}</div>
-            </article>
+              item={preview}
+              actions={{
+                onEdit: (it) => {
+                  if (received && linked) onOpenItem?.(linked.id);
+                  else onOpenPurchaseDraft?.(it);
+                },
+                onSell: () => undefined,
+                onPhotos: () => {
+                  setMessage('Confirm received first — then add photos on Active.');
+                },
+              }}
+              purchaseActions={{
+                onParseSpecs: () => void parseSpecs(p),
+                onConfirmReceived: () => void confirmReceived(p),
+                parsing: parsingKey === p.lineKey,
+                confirming: receivingKey === p.lineKey,
+                hasParsedSpecs: hasSpecs,
+                received,
+                onOpenActive: () => {
+                  if (linked) onOpenItem?.(linked.id);
+                },
+              }}
+            />
           );
         });
 
@@ -425,10 +400,16 @@ export function useInventoryPurchases({
                 {rows.map((p) => {
                   const preview = purchaseToPreviewItem(p);
                   const hasSpecs = purchaseHasParsedSpecs(p);
+                  const linked = linkedItem(p);
+                  const received = p.disposition === 'inventory' && Boolean(linked || p.inventoryItemId);
                   return (
                     <tr
                       key={p.lineKey}
-                      className="border-b border-slate-100 hover:bg-slate-50/80 align-middle"
+                      className="border-b border-slate-100 hover:bg-slate-50/80 align-middle cursor-pointer"
+                      onClick={() => {
+                        if (received && linked) onOpenItem?.(linked.id);
+                        else onOpenPurchaseDraft?.(preview);
+                      }}
                     >
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-2.5 min-w-0">
@@ -439,10 +420,24 @@ export function useInventoryPurchases({
                           />
                           <div className="min-w-0">
                             <p className="text-sm font-bold text-slate-900 truncate">{preview.name}</p>
-                            <p className="text-[11px] text-slate-400 truncate">
-                              {preview.vendor || 'eBay'}
-                              {preview.ebayOrderId ? ` · order ${preview.ebayOrderId}` : ''}
-                            </p>
+                            {preview.specs && Object.keys(preview.specs).length > 0 ? (
+                              <p
+                                className="text-[10px] text-slate-500 font-medium mt-0.5 leading-snug truncate"
+                                title={Object.entries(preview.specs)
+                                  .map(([k, v]) => `${k}: ${v}`)
+                                  .join(' • ')}
+                              >
+                                {Object.entries(preview.specs)
+                                  .slice(0, 4)
+                                  .map(([k, v]) => `${k}: ${v}`)
+                                  .join(' · ')}
+                              </p>
+                            ) : (
+                              <p className="text-[11px] text-slate-400 truncate">
+                                {preview.vendor || 'eBay'}
+                                {preview.ebayOrderId ? ` · order ${preview.ebayOrderId}` : ''}
+                              </p>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -482,7 +477,12 @@ export function useInventoryPurchases({
                       <td className="px-3 py-2 text-xs font-semibold text-slate-600 whitespace-nowrap">
                         {formatPlatformBoughtLabel(preview.platformBought) || 'eBay'}
                       </td>
-                      <td className="px-3 py-2 text-right">{actionButtons(p)}</td>
+                      <td
+                        className="px-3 py-2 text-right"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {actionButtons(p)}
+                      </td>
                     </tr>
                   );
                 })}
@@ -502,6 +502,7 @@ export function useInventoryPurchases({
     chrome,
     mobileList,
     desktopList,
+    refresh,
   };
 }
 

@@ -105,6 +105,10 @@ import { resolveTradeReceivedItems, resolveTradeSourceItem } from '../utils/trad
 import { formatPlatformBoughtLabel } from '../utils/purchaseSource';
 import TradeLinkBadge from './TradeLinkBadge';
 import { useInventoryPurchases } from './InventoryPurchasesPanel';
+import {
+  isPurchasePreviewId,
+  savePurchaseDraftFromPreviewItem,
+} from '../utils/ebayPurchaseToInventory';
 
 interface Props {
   items: InventoryItem[];
@@ -4540,6 +4544,9 @@ const InventoryList: React.FC<Props> = ({
       setStatusFilter('ACTIVE');
       navigate(`/panel/edit/${id}`);
     },
+    onOpenPurchaseDraft: (item) => {
+      setItemToEdit(item);
+    },
   });
 
   const listCountLabel =
@@ -5943,6 +5950,15 @@ const InventoryList: React.FC<Props> = ({
             onSave={(updatedList) => {
                // Persist patches while Listing Studio stays open.
                const updated = updatedList[0];
+               if (updated && isPurchasePreviewId(updated.id)) {
+                 if (savePurchaseDraftFromPreviewItem(updated)) {
+                   purchasesView.refresh();
+                   setItemToEdit(updated);
+                   setToast('Purchase draft saved — Confirm received to add to Active');
+                   setTimeout(() => setToast(null), 2200);
+                 }
+                 return;
+               }
                onUpdate(updatedList, undefined, {
                  flushCloud:
                    !!updated &&

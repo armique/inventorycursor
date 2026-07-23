@@ -7,6 +7,7 @@
 import type { InventoryItem } from '../types';
 import { ItemStatus } from '../types';
 import {
+  loadEbayPurchaseIndex,
   setPurchaseInventoryDraft,
   type EbayPurchaseInventoryDraft,
   type EbayPurchaseRecord,
@@ -29,6 +30,17 @@ export interface PurchaseInventoryDraft {
   specsAiSuggested?: Record<string, string | number>;
   vendor?: string;
   enrichError?: string;
+}
+
+export const PURCHASE_PREVIEW_ID_PREFIX = 'purchase-preview-';
+
+export function isPurchasePreviewId(id: string | undefined | null): boolean {
+  return Boolean(id && String(id).startsWith(PURCHASE_PREVIEW_ID_PREFIX));
+}
+
+export function purchaseLineKeyFromPreviewId(id: string): string | null {
+  if (!isPurchasePreviewId(id)) return null;
+  return String(id).slice(PURCHASE_PREVIEW_ID_PREFIX.length) || null;
 }
 
 /** Human-readable buy summary for comments / purchase UI. */
@@ -229,14 +241,15 @@ export function purchaseToPreviewItem(purchase: EbayPurchaseRecord): InventoryIt
   });
   draft = { ...draft, name: storageFixed.name, specs: storageFixed.specs };
   return buildInventoryItemFromPurchase(purchase, draft, {
-    itemId: `purchase-preview-${purchase.lineKey}`,
+    itemId: `${PURCHASE_PREVIEW_ID_PREFIX}${purchase.lineKey}`,
+    asOrdered: purchase.disposition === 'pending',
   });
 }
 
 export function buildInventoryItemFromPurchase(
   purchase: EbayPurchaseRecord,
   draft: PurchaseInventoryDraft,
-  options?: { itemId?: string; receiveDate?: string }
+  options?: { itemId?: string; receiveDate?: string; asOrdered?: boolean }
 ): InventoryItem {
   const id = options?.itemId || `item-${Date.now()}-ebay-buy`;
   const today = options?.receiveDate || new Date().toISOString().split('T')[0];
@@ -279,7 +292,7 @@ export function buildInventoryItemFromPurchase(
     subCategory: draft.subCategory,
     buyPrice,
     buyDate,
-    status: ItemStatus.IN_STOCK,
+    status: options?.asOrdered ? ItemStatus.ORDERED : ItemStatus.IN_STOCK,
     vendor: sellerVendor,
     platformBought: 'ebay.de',
     buyPaymentType: 'ebay.de',
@@ -293,6 +306,30 @@ export function buildInventoryItemFromPurchase(
     comment1,
     comment2,
   };
+}
+
+/** Persist Edit-modal changes onto the purchase draft (not Active inventory yet). */
+export function savePurchaseDraftFromPreviewItem(item: InventoryItem): boolean {
+  const lineKey = purchaseLineKeyFromPreviewId(item.id);
+  if (!lineKey) return false;
+  const purchase = loadEbayPurchaseIndex().purchases.find((p) => p.lineKey === lineKey);
+  if (!purchase || purchase.disposition !== 'pending') return false;
+  const draft: EbayPurchaseInventoryDraft = {
+    name: item.name.trim() || purchase.title,
+    category: item.category || 'Misc',
+    subCategory: item.subCategory || 'Spare Parts',
+    categorySource: purchase.inventoryDraft?.categorySource || 'manual',
+    specs: item.specs || {},
+    specsAiSuggested: item.specsAiSuggested,
+    // InventoryItem.vendor is the seller line; keep AI brand on the draft when present.
+    vendor: item.vendor?.startsWith('eBay:')
+      ? purchase.inventoryDraft?.vendor
+      : item.vendor || purchase.inventoryDraft?.vendor,
+    enrichError: purchase.inventoryDraft?.enrichError,
+    parsedAt: new Date().toISOString(),
+  };
+  setPurchaseInventoryDraft(lineKey, draft);
+  return true;
 }
 
 /**
