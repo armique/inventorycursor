@@ -58,6 +58,44 @@ export function titleContainsModel(titleNorm: string, model: string): boolean {
   return titleCompact.includes(modelCompact);
 }
 
+/**
+ * Product-type tokens that must agree when present on the inventory name.
+ * Prevents "Corsair H150i LCD" from preferring a full H150i AIO cooler over an LCD upgrade kit.
+ */
+const PRODUCT_HINT_TOKENS = new Set([
+  'lcd',
+  'oled',
+  'display',
+  'aio',
+  'cooler',
+  'kuhler',
+  'upgrade',
+  'kit',
+  'pump',
+  'radiator',
+  'gpu',
+  'cpu',
+  'ram',
+  'ssd',
+  'hdd',
+  'nvme',
+  'mobo',
+  'motherboard',
+  'psu',
+  'case',
+  'fan',
+]);
+
+function productHintsIn(text: string): string[] {
+  return [...new Set(tokenize(text).filter((t) => PRODUCT_HINT_TOKENS.has(t)))];
+}
+
+/** Item product hints that do not appear in the listing title. */
+export function missingProductHints(itemName: string, listingTitle: string): string[] {
+  const titleNorm = normalizeListingText(listingTitle);
+  return productHintsIn(itemName).filter((h) => !titleNorm.includes(h));
+}
+
 /** Score how well an eBay listing title matches an inventory item name (higher = better). */
 export function scoreListingTitleMatch(
   itemName: string,
@@ -74,22 +112,29 @@ export function scoreListingTitleMatch(
   if (!itemTokens.length || !titleNorm) return 0;
 
   const itemNorm = normalizeListingText(itemName);
+  const missingHints = missingProductHints(itemName, listingTitle);
+  const matchedHints = productHintsIn(itemName).filter((h) => titleNorm.includes(h));
+
   if (titleNorm.includes(itemNorm) || itemNorm.includes(titleNorm)) {
-    return 500 + itemTokens.length * 10;
+    return 500 + itemTokens.length * 10 + matchedHints.length * 15;
   }
 
   const itemCompact = itemNorm.replace(/\s/g, '');
   const titleCompact = titleNorm.replace(/\s/g, '');
-  if (itemCompact.length >= 5 && titleCompact.includes(itemCompact)) {
+  if (itemCompact.length >= 5 && titleCompact.includes(itemCompact) && missingHints.length === 0) {
     return 420 + itemCompact.length;
   }
-  if (titleCompact.length >= 5 && itemCompact.includes(titleCompact)) {
+  if (titleCompact.length >= 5 && itemCompact.includes(titleCompact) && missingHints.length === 0) {
     return 400 + titleCompact.length;
   }
 
-  for (const model of extractModelTokens(itemName)) {
-    if (titleContainsModel(titleNorm, model)) {
-      return 380 + Math.min(model.length * 8, 80);
+  // Model/SKU fragment match is strong only when product-type hints also agree
+  // (e.g. don't treat an H150i AIO as the LCD display upgrade kit).
+  if (missingHints.length === 0) {
+    for (const model of extractModelTokens(itemName)) {
+      if (titleContainsModel(titleNorm, model)) {
+        return 380 + Math.min(model.length * 8, 80) + matchedHints.length * 20;
+      }
     }
   }
 
@@ -100,7 +145,17 @@ export function scoreListingTitleMatch(
   }
   if (matched === 0) return 0;
 
-  return Math.round(matched * 20 + (matched / allTokens.length) * 80);
+  let score = matched * 20 + (matched / allTokens.length) * 80;
+  // Shared product-type words (lcd, display, kit…) are stronger signal than bare brand.
+  score += matchedHints.length * 35;
+  // Conflicting product type (item says LCD, title has no LCD) — downrank sharply.
+  score -= missingHints.length * 55;
+  // Extra boost when title carries lcd/display/upgrade alongside a shared brand token.
+  if (matchedHints.includes('lcd') || matchedHints.includes('display')) {
+    score += 25;
+  }
+
+  return Math.max(0, Math.round(score));
 }
 
 export function matchEbayListingsForItem(

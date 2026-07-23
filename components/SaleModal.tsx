@@ -174,8 +174,12 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
         const best = matches[0];
         const canAutoFill =
           !!best &&
-          (best.matchKind === 'listingId' || best.matchKind === 'sku') &&
-          !ebayOrderIdRef.current.trim();
+          !ebayOrderIdRef.current.trim() &&
+          (best.matchKind === 'listingId' ||
+            best.matchKind === 'sku' ||
+            (best.matchKind === 'title' &&
+              best.matchScore >= 180 &&
+              (best.orderAgeDays == null || best.orderAgeDays <= 7)));
         if (canAutoFill) {
           applySuggestedOrderRef.current(best);
           setOrderIdLookupMessage(
@@ -936,21 +940,28 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
                             <p className="text-[11px] font-bold text-slate-900 line-clamp-2 leading-snug">
                               {match.lineItem.title}
                             </p>
-                            <span
-                              className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full shrink-0 ${
-                                match.matchKind === 'listingId'
-                                  ? 'bg-emerald-50 text-emerald-700'
+                            <div className="flex flex-col items-end gap-0.5 shrink-0">
+                              {match.orderAgeDays != null && match.orderAgeDays <= 7 && (
+                                <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-700">
+                                  {match.orderAgeDays <= 1 ? 'Today' : `${match.orderAgeDays}d ago`}
+                                </span>
+                              )}
+                              <span
+                                className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full ${
+                                  match.matchKind === 'listingId'
+                                    ? 'bg-emerald-50 text-emerald-700'
+                                    : match.matchKind === 'sku'
+                                      ? 'bg-sky-50 text-sky-700'
+                                      : 'bg-amber-50 text-amber-800'
+                                }`}
+                              >
+                                {match.matchKind === 'listingId'
+                                  ? 'Listing'
                                   : match.matchKind === 'sku'
-                                    ? 'bg-sky-50 text-sky-700'
-                                    : 'bg-amber-50 text-amber-800'
-                              }`}
-                            >
-                              {match.matchKind === 'listingId'
-                                ? 'Listing'
-                                : match.matchKind === 'sku'
-                                  ? 'SKU'
-                                  : `Name ${match.matchScore}`}
-                            </span>
+                                    ? 'SKU'
+                                    : `Name ${Math.round(match.matchScore)}`}
+                              </span>
+                            </div>
                           </div>
                           <p className="text-[10px] text-slate-500 mt-0.5 tabular-nums">
                             {match.order.orderId} · {match.order.creationDate || 'no date'} ·{' '}
