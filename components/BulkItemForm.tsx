@@ -37,6 +37,7 @@ import {
 } from '../utils/bulkTextParse';
 import { filesToDataUrls, prepareInventoryImagesForStorage } from '../utils/imageImport';
 import { persistSaleProofImage, urlNeedsPhotoArchive } from '../services/inventoryImageStorage';
+import KleinanzeigenBuyChatProofFields from './KleinanzeigenBuyChatProofFields';
 import {
   buildBulkImportLabel,
   createBulkImportRecord,
@@ -645,15 +646,6 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
     setItems((prev) => prev.map((i) => (i.id === id ? { ...i, manualCost: n } : i)));
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => setChatImage(reader.result as string);
-      reader.readAsDataURL(file);
-    }
-  };
-
   const normalizeImageList = (urls: (string | undefined | null)[]): string[] => {
     const seen = new Set<string>();
     const out: string[] = [];
@@ -892,6 +884,30 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
     navigate('/panel/inventory');
   };
 
+  const persistBulkChatProof = async (patch: {
+    kleinanzeigenBuyChatUrl?: string;
+    kleinanzeigenBuyChatImage?: string;
+    kleinanzeigenSellerProfileUrl?: string;
+  }) => {
+    setChatUrl(patch.kleinanzeigenBuyChatUrl || '');
+    setChatImage(patch.kleinanzeigenBuyChatImage || '');
+    setSellerProfileUrl(patch.kleinanzeigenSellerProfileUrl || '');
+  };
+
+  const renderSellerChatProofFields = () => (
+    <KleinanzeigenBuyChatProofFields
+      itemId="bulk-draft"
+      compact
+      chatUrl={chatUrl}
+      chatImage={chatImage}
+      sellerProfileUrl={sellerProfileUrl}
+      onChatUrlChange={setChatUrl}
+      onChatImageChange={setChatImage}
+      onSellerProfileUrlChange={setSellerProfileUrl}
+      onPersist={persistBulkChatProof}
+    />
+  );
+
   return (
     <div className="max-w-[1600px] mx-auto h-[calc(100dvh-5.5rem)] md:h-[calc(100vh-100px)] flex flex-col animate-in fade-in">
       {/* HEADER */}
@@ -985,6 +1001,19 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
            </div>
         </div>
       </header>
+
+      {platform === 'kleinanzeigen.de' && (
+        <div className="lg:hidden shrink-0 mx-3 sm:mx-4 mb-3 rounded-2xl border border-emerald-100 bg-emerald-50/50 px-3 py-3 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <MessageCircle size={12} className="text-emerald-700" />
+            <h4 className="font-black text-[10px] uppercase tracking-widest text-emerald-800">
+              Seller / chat proof
+            </h4>
+            <span className="text-[9px] font-bold text-emerald-700/70">Applies to every row</span>
+          </div>
+          {renderSellerChatProofFields()}
+        </div>
+      )}
 
       <div className="flex flex-1 flex-col lg:flex-row gap-3 lg:gap-6 overflow-y-auto lg:overflow-hidden px-3 sm:px-4 pb-[max(5.5rem,calc(4rem+env(safe-area-inset-bottom)))] lg:pb-4">
          
@@ -1216,75 +1245,17 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                </div>
             )}
 
-            {/* Optional proof — platform & payment are in the header */}
-            <div className="bg-slate-50 p-6 rounded-[2.5rem] border border-slate-200 space-y-4">
-               <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 flex items-center gap-2"><Globe size={12}/> Optional purchase proof</h3>
+            {/* Shared item photos for this import */}
+            <div className="bg-slate-50 p-4 sm:p-6 rounded-[1.75rem] sm:rounded-[2.5rem] border border-slate-200 space-y-4">
+               <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 flex items-center gap-2"><Globe size={12}/> Item photos</h3>
                <p className="text-[10px] text-slate-500 font-medium leading-snug">
-                 Source and payment are set in the top bar (same as single-item add). Add a chat link or screenshot if you bought on Kleinanzeigen.
+                 Optional photos applied to every imported row. Seller chat proof lives in the Items panel when
+                 Bought on = Kleinanzeigen.
                </p>
-               
-               {platform === 'kleinanzeigen.de' && (
-                  <div className="pt-2 border-t border-slate-200/50 space-y-3">
-                     <div className="flex gap-2">
-                        <input 
-                           placeholder="Chat URL (kleinanzeigen.de/…)"
-                           className="flex-1 p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
-                           value={chatUrl}
-                           onChange={e => setChatUrl(e.target.value)}
-                        />
-                        <label className="p-2 bg-white border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100" title="Upload chat screenshot">
-                           <Upload size={14} className="text-slate-400"/>
-                           <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload}/>
-                        </label>
-                     </div>
-                     <input
-                        type="url"
-                        placeholder="Seller profile URL (kleinanzeigen.de/s-bestandsliste…)"
-                        className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
-                        value={sellerProfileUrl}
-                        onChange={(e) => setSellerProfileUrl(e.target.value)}
-                     />
-                     <input
-                        type="text"
-                        placeholder="Or paste chat screenshot URL (imgur, etc.)"
-                        className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
-                        value={chatImage.startsWith('data:') ? '' : chatImage}
-                        onChange={(e) => setChatImage(e.target.value.trim())}
-                     />
-                     {chatImage && (
-                        <div className="flex items-center gap-2 text-[10px] text-emerald-600 bg-emerald-50 p-2 rounded-xl border border-emerald-100">
-                           <CheckCircle2 size={12}/>
-                           <span className="font-bold">
-                             {chatImage.startsWith('data:')
-                               ? 'Screenshot attached'
-                               : 'Screenshot URL set'}
-                           </span>
-                           {(chatImage.startsWith('data:') || /^https?:\/\//i.test(chatImage)) && (
-                             <a
-                               href={chatImage}
-                               target="_blank"
-                               rel="noreferrer"
-                               className="ml-auto w-8 h-8 rounded-lg overflow-hidden border border-emerald-200 shrink-0"
-                               onClick={(e) => e.stopPropagation()}
-                             >
-                               <img src={chatImage} alt="" className="w-full h-full object-cover" />
-                             </a>
-                           )}
-                           <button
-                             type="button"
-                             onClick={() => setChatImage('')}
-                             className="text-[9px] font-black uppercase text-emerald-800 hover:underline"
-                           >
-                             Clear
-                           </button>
-                        </div>
-                     )}
-                  </div>
-               )}
 
-               <div className="pt-2 border-t border-slate-200/50 space-y-2">
+               <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <p className="text-[9px] font-bold uppercase text-slate-400">Item photos (for all imported items)</p>
+                    <p className="text-[9px] font-bold uppercase text-slate-400">Photos (for all imported items)</p>
                     <label className="inline-flex items-center gap-1 px-2 py-1 bg-white border border-slate-200 rounded-lg cursor-pointer text-[10px] font-bold text-slate-600 hover:bg-slate-50">
                       <Upload size={12} /> Add
                       <input type="file" accept="image/*" multiple className="hidden" onChange={handleItemImageUpload} />
@@ -1363,6 +1334,21 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                   </button>
                </div>
             </div>
+
+            {platform === 'kleinanzeigen.de' && (
+              <div className="hidden lg:block shrink-0 border-b border-emerald-100 bg-emerald-50/40 px-3 sm:px-4 py-3 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <MessageCircle size={12} className="text-emerald-700" />
+                  <h4 className="font-black text-[10px] uppercase tracking-widest text-emerald-800">
+                    Seller / chat proof
+                  </h4>
+                  <span className="text-[9px] font-bold text-emerald-700/70">
+                    Applies to every row
+                  </span>
+                </div>
+                {renderSellerChatProofFields()}
+              </div>
+            )}
 
             <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2">
                {items.length === 0 ? (
