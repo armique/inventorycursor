@@ -18,6 +18,7 @@ import type { InventoryItem } from '../types';
 import { ItemStatus } from '../types';
 import { formatEUR } from '../utils/formatMoney';
 import { getItemUserPhotoCount } from '../utils/imageImport';
+import { computePriceAnalyzer } from '../utils/listingWatch';
 import ItemThumbnail from './ItemThumbnail';
 import { MobileSheetShell } from './MobileBottomSheets';
 import ItemAccessoryToggles from './ItemAccessoryToggles';
@@ -140,16 +141,6 @@ export const MobileStockCard: React.FC<{
                 )}
                 €{formatEUR(item.buyPrice)}
                 {item.sellPrice != null ? ` · aim €${formatEUR(item.sellPrice)}` : ''}
-                {suggestedKleinList != null && suggestedKleinList > 0 ? (
-                  <span className="text-emerald-700 font-bold"> · KA €{formatEUR(suggestedKleinList)}</span>
-                ) : null}
-                {suggestedEbayList != null && suggestedEbayList > 0 ? (
-                  <span className="text-sky-700 font-bold">
-                    {' '}
-                    · EB €{formatEUR(suggestedEbayList)}
-                    {suggestedFeePct != null ? ` (−${suggestedFeePct}%)` : ''}
-                  </span>
-                ) : null}
                 {profit != null ? (
                   <span className={profit >= 0 ? ' text-emerald-600' : ' text-rose-600'}>
                     {' '}
@@ -160,6 +151,50 @@ export const MobileStockCard: React.FC<{
                   ? ` · ${item.subCategory || item.category}`
                   : ''}
               </p>
+              {(() => {
+                const hasSugg =
+                  suggestedKleinList != null &&
+                  suggestedKleinList > 0 &&
+                  suggestedEbayList != null &&
+                  suggestedEbayList > 0;
+                const analyzer = computePriceAnalyzer(
+                  item,
+                  hasSugg
+                    ? {
+                        ebayList: suggestedEbayList!,
+                        kleinList: suggestedKleinList!,
+                        pocketTarget: suggestedKleinList!,
+                        feePct: suggestedFeePct || 0,
+                        compCount: 0,
+                        fromSnapshot: false,
+                      }
+                    : null
+                );
+                if (!analyzer) return null;
+                const cls = (action: string) => {
+                  if (action === 'drop') return 'bg-amber-50 text-amber-950 border-amber-300';
+                  if (action === 'raise') return 'bg-sky-50 text-sky-950 border-sky-300';
+                  if (action === 'ok') return 'bg-emerald-50 text-emerald-900 border-emerald-200';
+                  return 'bg-slate-50 text-slate-700 border-slate-200';
+                };
+                return (
+                  <div className="mt-1 flex flex-col gap-0.5" onClick={(e) => e.stopPropagation()}>
+                    <span className="text-[9px] font-bold uppercase tracking-wide text-slate-500">
+                      {analyzer.ageLabel}
+                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      {analyzer.channels.map((ch) => (
+                        <span
+                          key={ch.channel}
+                          className={`inline-flex px-1.5 py-0.5 rounded border text-[9px] font-black uppercase ${cls(ch.action)}`}
+                        >
+                          {ch.label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </button>
             {actions.onPatchAccessory && (
               <ItemAccessoryToggles

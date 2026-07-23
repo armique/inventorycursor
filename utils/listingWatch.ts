@@ -1,6 +1,7 @@
 /**
  * Listing watchlist helpers: Ready / already-linked items get delisting + price hints.
  * Presence matching runs against all eligible in-stock items.
+ * Price analyzer: age + buy → suggest; live ask → drop / raise.
  */
 
 import type { InventoryItem } from '../types';
@@ -53,6 +54,31 @@ export type PriceChangeHint = {
   label: string;
 };
 
+export type PriceAnalyzerAction = 'drop' | 'raise' | 'ok' | 'list';
+
+export type PriceAnalyzerChannel = {
+  channel: 'KA' | 'EB';
+  suggest: number;
+  live?: number;
+  action: PriceAnalyzerAction;
+  deltaEur: number;
+  /** Short chip text, e.g. "DROP €130 → €80" */
+  label: string;
+};
+
+export type PriceAnalyzer = {
+  daysHeld: number;
+  targetMarginPct: number;
+  buy: number;
+  /** "Day 6 · 45% target" */
+  ageLabel: string;
+  kleinSuggest: number;
+  ebaySuggest: number;
+  channels: PriceAnalyzerChannel[];
+  /** Most urgent channel (drop/raise preferred over ok/list). */
+  primary: PriceAnalyzerChannel | null;
+};
+
 function gapSignificant(live: number, suggest: number): boolean {
   if (!(live > 0) || !(suggest > 0)) return false;
   const delta = Math.abs(live - suggest);
@@ -61,20 +87,21 @@ function gapSignificant(live: number, suggest: number): boolean {
 }
 
 /** Cheap suggest pair without comps / sales-pool scans (safe for filters + row paint). */
-function cheapSuggestLists(item: InventoryItem): {
+export function cheapSuggestLists(item: InventoryItem): {
   klein: number;
   ebay: number;
   targetMargin: number;
   daysHeld: number;
+  buy: number;
 } | null {
   const daysHeld = daysHeldFromBuyDate(item.buyDate);
   const targetMargin = targetMarginForDaysHeld(daysHeld);
+  const buy = Number(item.buyPrice) || 0;
   const storedKlein = Number(item.suggestedKleinListPrice) || 0;
   const storedEbay = Number(item.suggestedEbayListPrice) || 0;
   if (storedKlein > 0 && storedEbay > 0) {
-    return { klein: storedKlein, ebay: storedEbay, targetMargin, daysHeld };
+    return { klein: storedKlein, ebay: storedEbay, targetMargin, daysHeld, buy };
   }
-  const buy = Number(item.buyPrice) || 0;
   if (!(buy > 0)) return null;
   const pocket = roundMoney(buy * (1 + targetMargin));
   const feePct = totalEbayFeePct(loadFlipFees());
@@ -84,6 +111,120 @@ function cheapSuggestLists(item: InventoryItem): {
     ebay: lists.ebay,
     targetMargin,
     daysHeld,
+    buy,
+  };
+}
+
+function channelFromLive(
+  channel: 'KA' | 'EB',
+  suggest: number,
+  live: number,
+  listed: boolean
+): PriceAnalyzerChannel {
+  if (!listed || !(live > 0)) {
+    return {
+      channel,
+      suggest,
+      action: 'list',
+      deltaEur: 0,
+      label: `List ${channel} €${Math.round(suggest)}`,
+    };
+  }
+  if (!gapSignificant(live, suggest)) {
+    return {
+      channel,
+      suggest,
+      live,
+      action: 'ok',
+      deltaEur: 0,
+      label: `OK ${channel} €${Math.round(live)}`,
+    };
+  }
+  const deltaEur = roundMoney(live - suggest);
+  if (deltaEur > 0) {
+    return {
+      channel,
+      suggest,
+      live,
+      action: 'drop',
+      deltaEur,
+      label: `DROP ${channel} €${Math.round(live)} → €${Math.round(suggest)}`,
+    };
+  }
+  return {
+    channel,
+    suggest,
+    live,
+    action: 'raise',
+    deltaEur,
+    label: `RAISE ${channel} €${Math.round(live)} → €${Math.round(suggest)}`,
+  };
+}
+
+function actionRank(a: PriceAnalyzerAction): number {
+  if (a === 'drop') return 3;
+  if (a === 'raise') return 2;
+  if (a === 'list') return 1;
+  return 0;
+}
+
+/**
+ * Age + buy → suggested KA/EB; compare to live asks when listed.
+ * Cheap enough for every inventory row (no comps scan).
+ */
+export function computePriceAnalyzer(
+  item: InventoryItem,
+  suggestion?: SuggestedEbayPrice | null
+): PriceAnalyzer | null {
+  if (!isListingPresenceEligible(item)) return null;
+
+  let klein: number;
+  let ebay: number;
+  let targetMargin: number;
+  let daysHeld: number;
+  let buy: number;
+
+  if (suggestion && suggestion.kleinList > 0 && suggestion.ebayList > 0) {
+    klein = suggestion.kleinList;
+    ebay = suggestion.ebayList;
+    daysHeld = suggestion.daysHeld ?? daysHeldFromBuyDate(item.buyDate);
+    targetMargin =
+      suggestion.targetMargin ?? targetMarginForDaysHeld(daysHeld);
+    buy = Number(item.buyPrice) || 0;
+  } else {
+    const cheap = cheapSuggestLists(item);
+    if (!cheap) return null;
+    klein = cheap.klein;
+    ebay = cheap.ebay;
+    targetMargin = cheap.targetMargin;
+    daysHeld = cheap.daysHeld;
+    buy = cheap.buy;
+  }
+
+  const targetMarginPct = Math.round(targetMargin * 100);
+  const kaLive = Number(item.liveKleinListPrice) || 0;
+  const ebLive = Number(item.liveEbayListPrice) || 0;
+  const channels: PriceAnalyzerChannel[] = [
+    channelFromLive('KA', klein, kaLive, Boolean(item.listedOnKleinanzeigen)),
+    channelFromLive('EB', ebay, ebLive, Boolean(item.listedOnEbay)),
+  ];
+
+  const primary =
+    [...channels].sort((a, b) => {
+      const rd = actionRank(b.action) - actionRank(a.action);
+      if (rd) return rd;
+      return Math.abs(b.deltaEur) - Math.abs(a.deltaEur);
+    })[0] || null;
+
+  return {
+    daysHeld,
+    targetMarginPct,
+    buy,
+    ageLabel: `Day ${daysHeld} · ${targetMarginPct}% target`,
+    kleinSuggest: klein,
+    ebaySuggest: ebay,
+    channels,
+    primary,
   };
 }
 
@@ -96,58 +237,31 @@ export function computePriceChangeHint(
   suggestion?: SuggestedEbayPrice | null
 ): PriceChangeHint | null {
   if (!isListingWatchCandidate(item)) return null;
+  const analyzer = computePriceAnalyzer(item, suggestion);
+  if (!analyzer) return null;
+  const moves = analyzer.channels.filter(
+    (c) => c.action === 'drop' || c.action === 'raise'
+  );
+  if (!moves.length) return null;
 
-  let klein: number;
-  let ebay: number;
-  let targetPct: number;
-
-  if (suggestion && suggestion.kleinList > 0 && suggestion.ebayList > 0) {
-    klein = suggestion.kleinList;
-    ebay = suggestion.ebayList;
-    targetPct = Math.round(
-      (suggestion.targetMargin ??
-        targetMarginForDaysHeld(suggestion.daysHeld ?? daysHeldFromBuyDate(item.buyDate))) *
-        100
-    );
-  } else {
-    const cheap = cheapSuggestLists(item);
-    if (!cheap) return null;
-    klein = cheap.klein;
-    ebay = cheap.ebay;
-    targetPct = Math.round(cheap.targetMargin * 100);
-  }
-
-  const kaLive = item.listedOnKleinanzeigen ? Number(item.liveKleinListPrice) || 0 : 0;
-  const ebLive = item.listedOnEbay ? Number(item.liveEbayListPrice) || 0 : 0;
-
-  const hints: Array<{ channel: 'KA' | 'EB'; live: number; suggest: number }> = [];
-  if (kaLive > 0 && gapSignificant(kaLive, klein)) {
-    hints.push({ channel: 'KA', live: kaLive, suggest: klein });
-  }
-  if (ebLive > 0 && gapSignificant(ebLive, ebay)) {
-    hints.push({ channel: 'EB', live: ebLive, suggest: ebay });
-  }
-  if (!hints.length) return null;
-
-  const over = hints.filter((h) => h.live > h.suggest);
-  const pick = (over.length ? over : hints).sort(
-    (a, b) => Math.abs(b.live - b.suggest) - Math.abs(a.live - a.suggest)
+  const over = moves.filter((h) => h.action === 'drop');
+  const pick = (over.length ? over : moves).sort(
+    (a, b) => Math.abs(b.deltaEur) - Math.abs(a.deltaEur)
   )[0];
 
-  const deltaEur = Math.round((pick.live - pick.suggest) * 100) / 100;
-  const deltaPct = Math.round(((pick.live - pick.suggest) / pick.suggest) * 1000) / 10;
-  const action =
-    deltaEur > 0
-      ? `Lower ${pick.channel} €${Math.round(pick.live)} → €${Math.round(pick.suggest)}`
-      : `Raise ${pick.channel} €${Math.round(pick.live)} → €${Math.round(pick.suggest)}`;
+  const deltaEur = pick.deltaEur;
+  const deltaPct =
+    pick.suggest > 0
+      ? Math.round((deltaEur / pick.suggest) * 1000) / 10
+      : 0;
 
   return {
-    channel: hints.length > 1 ? 'both' : pick.channel,
-    live: pick.live,
+    channel: moves.length > 1 ? 'both' : pick.channel,
+    live: pick.live || 0,
     suggest: pick.suggest,
     deltaEur,
     deltaPct,
-    label: `${action} · ${targetPct}% target`,
+    label: `${pick.label} · ${analyzer.targetMarginPct}% target`,
   };
 }
 

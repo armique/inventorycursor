@@ -42,12 +42,13 @@ import {
 } from '../utils/flipInsights';
 import { loadFlipFees } from '../utils/flipCoach';
 import {
-  computePriceChangeHint,
+  computePriceAnalyzer,
   hasPriceChangeHintFast,
   isMaybeSoldCandidate,
   isSaleReadyUnlisted,
   isSaleReadyWatch,
   maybeSoldLabel,
+  type PriceAnalyzerAction,
 } from '../utils/listingWatch';
 import { teachKaListingFromManualLink } from '../utils/listingPresence';
 import {
@@ -3367,37 +3368,64 @@ const InventoryList: React.FC<Props> = ({
                        </div>
                        {(() => {
                          const sugg = suggestedEbayById.get(item.id) || null;
-                         const hint = computePriceChangeHint(item, sugg);
-                         if (!hint) return null;
+                         const analyzer = computePriceAnalyzer(item, sugg);
+                         if (!analyzer) return null;
+                         const actionClass = (action: PriceAnalyzerAction) => {
+                           if (action === 'drop')
+                             return 'bg-amber-50 text-amber-950 border-amber-300';
+                           if (action === 'raise')
+                             return 'bg-sky-50 text-sky-950 border-sky-300';
+                           if (action === 'ok')
+                             return 'bg-emerald-50 text-emerald-900 border-emerald-200';
+                           return 'bg-slate-50 text-slate-700 border-slate-200';
+                         };
+                         const saveSuggest = () => {
+                           const fresh =
+                             resolveSuggestedEbayList(
+                               item,
+                               items,
+                               loadFlipFees(),
+                               childItems
+                             ) || sugg;
+                           if (!fresh) return;
+                           onUpdate(
+                             [{ ...item, ...suggestionPatchFromPrice(fresh) }],
+                             undefined,
+                             { skipActionLog: true }
+                           );
+                           setToast(
+                             `Saved price target · Day ${fresh.daysHeld ?? analyzer.daysHeld} · ${Math.round((fresh.targetMargin ?? analyzer.targetMarginPct / 100) * 100)}% · KA €${formatEUR(fresh.kleinList)} · EB €${formatEUR(fresh.ebayList)}`
+                           );
+                           setTimeout(() => setToast(null), 2600);
+                         };
                          return (
-                           <button
-                             type="button"
-                             className={`self-start text-left text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded border ${
-                               hint.deltaEur > 0
-                                 ? 'bg-amber-50 text-amber-900 border-amber-200'
-                                 : 'bg-sky-50 text-sky-900 border-sky-200'
-                             }`}
-                             title="Live listing price vs age-aware suggest. Click to refresh & save suggest snapshot."
-                             onClick={() => {
-                               const fresh =
-                                 resolveSuggestedEbayList(
-                                   item,
-                                   items,
-                                   loadFlipFees(),
-                                   childItems
-                                 ) || sugg;
-                               if (!fresh) return;
-                               onUpdate(
-                                 [{ ...item, ...suggestionPatchFromPrice(fresh) }],
-                                 undefined,
-                                 { skipActionLog: true }
-                               );
-                               setToast(`Saved suggest · ${hint.label}`);
-                               setTimeout(() => setToast(null), 2200);
-                             }}
+                           <div
+                             className="flex flex-col gap-0.5 mt-0.5 max-w-full"
+                             title={`Age-aware price from buy €${formatEUR(analyzer.buy || item.buyPrice || 0)}. Margin starts 60% and drops 5pp every 2 days to 30%. Click a chip to save the target.`}
                            >
-                             {hint.label}
-                           </button>
+                             <div className="flex items-center gap-1 flex-wrap text-[9px] font-bold text-slate-500">
+                               <span className="uppercase tracking-wide text-slate-600">
+                                 {analyzer.ageLabel}
+                               </span>
+                               {analyzer.buy > 0 && (
+                                 <span className="text-slate-400">
+                                   · buy €{formatEUR(analyzer.buy)}
+                                 </span>
+                               )}
+                             </div>
+                             <div className="flex items-center gap-1 flex-wrap">
+                               {analyzer.channels.map((ch) => (
+                                 <button
+                                   key={ch.channel}
+                                   type="button"
+                                   onClick={saveSuggest}
+                                   className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[9px] font-black uppercase tracking-wide ${actionClass(ch.action)}`}
+                                 >
+                                   {ch.label}
+                                 </button>
+                               ))}
+                             </div>
+                           </div>
                          );
                        })()}
                        {isMaybeSoldCandidate(item) && (
@@ -3451,46 +3479,6 @@ const InventoryList: React.FC<Props> = ({
                          })
                        }
                      />
-                     {(item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) &&
-                       (() => {
-                         // Never resolve comps per row paint — map is precomputed; click refreshes.
-                         const sugg = suggestedEbayById.get(item.id);
-                         if (!sugg || !(sugg.kleinList > 0) || !(sugg.ebayList > 0)) return null;
-                         return (
-                           <button
-                             type="button"
-                             onClick={(e) => {
-                               e.stopPropagation();
-                               const fresh = resolveSuggestedEbayList(
-                                 item,
-                                 items,
-                                 loadFlipFees(),
-                                 childItems
-                               );
-                               if (!fresh || !(fresh.kleinList > 0) || !(fresh.ebayList > 0)) return;
-                               onUpdate(
-                                 [{ ...item, ...suggestionPatchFromPrice(fresh) }],
-                                 undefined,
-                                 { skipActionLog: true }
-                               );
-                               setToast(
-                                 `Saved suggest · KA €${formatEUR(fresh.kleinList)} (0% fees) · eBay €${formatEUR(fresh.ebayList)} (~${fresh.feePct}% fees)`
-                               );
-                               setTimeout(() => setToast(null), 2200);
-                             }}
-                             className="inline-flex items-center gap-1 text-[11px] font-black uppercase px-2 py-0.5 rounded-md border border-slate-300 bg-white text-slate-800 shadow-sm hover:bg-slate-50"
-                             title={`Kleinanzeigen €${formatEUR(sugg.kleinList)} (no fees) · eBay €${formatEUR(sugg.ebayList)} (~${sugg.feePct}% fees)${
-                               sugg.compCount
-                                 ? ` · ${sugg.compCount} sold comps`
-                                 : ` · age target ${Math.round((sugg.targetMargin ?? 0.45) * 100)}% margin (day ${sugg.daysHeld ?? 0})`
-                             }. Click to refresh & save snapshot.`}
-                           >
-                             <span className="text-emerald-700">KA €{formatEUR(sugg.kleinList)}</span>
-                             <span className="text-slate-300">·</span>
-                             <span className="text-sky-700">EB €{formatEUR(sugg.ebayList)}</span>
-                           </button>
-                         );
-                       })()}
                    </div>
                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                       {hasUserPhotos ? (

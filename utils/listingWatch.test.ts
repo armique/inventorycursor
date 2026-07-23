@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ItemStatus, type InventoryItem } from '../types';
 import {
+  computePriceAnalyzer,
   computePriceChangeHint,
   isListingWatchCandidate,
   isSaleReadyUnlisted,
@@ -59,7 +60,23 @@ describe('listingWatch', () => {
     });
     expect(hint).not.toBeNull();
     expect(hint!.deltaEur).toBeGreaterThan(0);
-    expect(hint!.label.toLowerCase()).toContain('lower');
+    expect(hint!.label.toLowerCase()).toContain('drop');
+  });
+
+  it('analyzer shows DROP / List from age + buy', () => {
+    const row = item({
+      id: '1',
+      name: 'PC Bundle',
+      buyPrice: 48,
+      buyDate: new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10),
+      listedOnKleinanzeigen: true,
+      liveKleinListPrice: 130,
+    });
+    const a = computePriceAnalyzer(row);
+    expect(a).not.toBeNull();
+    expect(a!.daysHeld).toBeGreaterThanOrEqual(5);
+    expect(a!.channels.some((c) => c.channel === 'KA' && c.action === 'drop')).toBe(true);
+    expect(a!.channels.some((c) => c.channel === 'EB' && c.action === 'list')).toBe(true);
   });
 });
 
