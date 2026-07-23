@@ -14,7 +14,7 @@ import {
   totalEbayFeePct,
   type FlipFeeSettings,
 } from './flipCoach';
-import { getCachedSaleEvents } from './itemSalesPool';
+import { getCachedSaleEvents, findPoolComps } from './itemSalesPool';
 import { productModelKeys } from './inventorySoldComps';
 import { resolveSalePlatform } from './salePlatform';
 
@@ -26,10 +26,14 @@ export type SuggestedEbayPrice = {
   compCount: number;
   /** true when value came from a stored snapshot on the item */
   fromSnapshot: boolean;
-  /** Age-aware pure margin target used for this suggestion (0.30–0.60). */
+  /** Pure margin target used for this suggestion (age floor, may rise with learned sells). */
   targetMargin?: number;
   /** Days held from buyDate when suggestion was computed. */
   daysHeld?: number;
+  /** Dynamic ceiling vs buy (default 60%; higher when comps / cheap splits prove it). */
+  maxMargin?: number;
+  /** Short note for UI/tooltips. */
+  marginReason?: string;
 };
 
 export function suggestionPatchFromPrice(
@@ -70,10 +74,12 @@ export const MIN_SUGGEST_MARGIN = 0.3;
  */
 export const TARGET_SUGGEST_MARGIN = 0.45;
 /**
- * Hard ceiling vs buy. Sold comps / child sums above this (e.g. €140 on a €48 kit)
- * are rejected and replaced with the age-aware cost target.
+ * Hard ceiling vs buy for “normal” stock. Learned comps / cheap splits may go higher
+ * (see ABSOLUTE_MAX_SUGGEST_MARGIN + resolveSuggestionMarginBand).
  */
 export const MAX_SUGGEST_MARGIN = 0.6;
+/** Absolute ceiling when sold history shows 100%+ margins on cheap/split stock. */
+export const ABSOLUTE_MAX_SUGGEST_MARGIN = 2.5;
 
 /**
  * Pure pocket margin vs buy: 60% at day 0, −5 pp every 2 days, floor 30%.
@@ -84,6 +90,117 @@ export function targetMarginForDaysHeld(daysHeld: number): number {
   const steps = Math.floor(d / 2);
   const raw = Math.max(MIN_SUGGEST_MARGIN, MAX_SUGGEST_MARGIN - 0.05 * steps);
   return Math.round(raw * 100) / 100;
+}
+
+export type SuggestionMarginBand = {
+  targetMargin: number;
+  maxMargin: number;
+  reason?: string;
+};
+
+/** Split leftovers / kit children often carry below-market buy costs. */
+export function isCheapAcquisitionItem(item: InventoryItem): boolean {
+  if (item.id?.startsWith('split-')) return true;
+  if (item.parentContainerId) return true;
+  return false;
+}
+
+function medianOf(nums: number[]): number {
+  if (!nums.length) return 0;
+  const sorted = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
+ * Age floor + learned sold margins + cheap/split buy boost.
+ * Kits without sold history stay capped at 60% (avoids fat marketplace comps on €48 bundles).
+ */
+export function resolveSuggestionMarginBand(
+  item: InventoryItem,
+  buy: number,
+  daysHeld: number,
+  allItems?: InventoryItem[]
+): SuggestionMarginBand {
+  const ageFloor = targetMarginForDaysHeld(daysHeld);
+  let targetMargin = ageFloor;
+  let maxMargin = MAX_SUGGEST_MARGIN;
+  let reason: string | undefined;
+
+  const isKit = Boolean(item.isPC || item.isBundle);
+  const cheapAcq = isCheapAcquisitionItem(item) || (buy > 0 && buy < 20 && !isKit);
+
+  if (cheapAcq) {
+    // Split / bargain parts routinely clear 100%+ — open the band before comps load.
+    targetMargin = Math.max(targetMargin, Math.min(1.0, ageFloor + 0.35));
+    maxMargin = Math.max(maxMargin, 1.5);
+    reason = 'cheap/split acquisition';
+  }
+
+  if (allItems?.length && buy > 0 && !(isKit && !cheapAcq)) {
+    try {
+      const events = getCachedSaleEvents(allItems);
+      const hits = findPoolComps(events, item.name, {
+        category: item.category,
+        subCategory: item.subCategory,
+        limit: 14,
+      });
+      const margins = hits
+        .map((h) => h.event.marginPct / 100)
+        .filter(
+          (m) =>
+            Number.isFinite(m) &&
+            m >= MIN_SUGGEST_MARGIN &&
+            m <= ABSOLUTE_MAX_SUGGEST_MARGIN
+        );
+      if (margins.length >= 1) {
+        const p50 = medianOf(margins);
+        const sorted = [...margins].sort((a, b) => a - b);
+        const p75 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.75))];
+        const buys = hits.map((h) => h.event.buyPrice).filter((b) => b > 0);
+        const medianBuy = medianOf(buys);
+        const cheaperThanUsual = medianBuy > 0 && buy < medianBuy * 0.65;
+
+        let learnedTarget = Math.max(ageFloor, p50);
+        let learnedMax = Math.max(MAX_SUGGEST_MARGIN, p75 * 1.08, learnedTarget + 0.2);
+
+        if (cheaperThanUsual) {
+          learnedTarget = Math.min(ABSOLUTE_MAX_SUGGEST_MARGIN, learnedTarget + 0.25);
+          learnedMax = Math.min(ABSOLUTE_MAX_SUGGEST_MARGIN, learnedMax + 0.4);
+          reason = 'sold comps + cheaper buy than usual';
+        } else {
+          reason =
+            margins.length >= 2
+              ? `sold comps (~${Math.round(p50 * 100)}% median margin)`
+              : reason || `sold comps (~${Math.round(p50 * 100)}% margin)`;
+        }
+
+        targetMargin = Math.max(targetMargin, learnedTarget);
+        maxMargin = Math.max(maxMargin, learnedMax);
+      }
+    } catch {
+      /* pool optional */
+    }
+  }
+
+  // Whole kits without learned comps: keep the old conservative 60% ceiling.
+  if (isKit && !reason?.includes('sold comps')) {
+    targetMargin = Math.min(Math.max(targetMargin, ageFloor), MAX_SUGGEST_MARGIN);
+    maxMargin = MAX_SUGGEST_MARGIN;
+    reason = reason?.includes('cheap') ? reason : undefined;
+  }
+
+  targetMargin = Math.min(ABSOLUTE_MAX_SUGGEST_MARGIN, Math.max(MIN_SUGGEST_MARGIN, targetMargin));
+  maxMargin = Math.min(
+    ABSOLUTE_MAX_SUGGEST_MARGIN,
+    Math.max(maxMargin, targetMargin, MAX_SUGGEST_MARGIN)
+  );
+
+  return {
+    targetMargin: Math.round(targetMargin * 100) / 100,
+    maxMargin: Math.round(maxMargin * 100) / 100,
+    reason,
+  };
 }
 
 /** Whole days since buyDate (0 if missing/invalid). */
@@ -120,8 +237,8 @@ function minPocketForBuy(buy: number, margin = MIN_SUGGEST_MARGIN): number {
   return buy > 0 ? roundMoney(buy * (1 + margin)) : 0;
 }
 
-function maxPocketForBuy(buy: number): number {
-  return buy > 0 ? roundMoney(buy * (1 + MAX_SUGGEST_MARGIN)) : Number.POSITIVE_INFINITY;
+function maxPocketForBuy(buy: number, maxMargin = MAX_SUGGEST_MARGIN): number {
+  return buy > 0 ? roundMoney(buy * (1 + maxMargin)) : Number.POSITIVE_INFINITY;
 }
 
 function withRoundedLists(
@@ -146,10 +263,13 @@ function costBasedSuggestion(
   buy: number,
   feePct: number,
   targetMargin: number = TARGET_SUGGEST_MARGIN,
-  daysHeld = 0
+  daysHeld = 0,
+  maxMargin: number = MAX_SUGGEST_MARGIN,
+  marginReason?: string
 ): SuggestedEbayPrice | null {
   if (!(buy > 0)) return null;
-  const margin = Math.max(MIN_SUGGEST_MARGIN, Math.min(MAX_SUGGEST_MARGIN, targetMargin));
+  const ceiling = Math.max(MAX_SUGGEST_MARGIN, maxMargin);
+  const margin = Math.max(MIN_SUGGEST_MARGIN, Math.min(ceiling, targetMargin));
   const pocket = roundMoney(buy * (1 + margin));
   const lists = listPricesForPocket(pocket, feePct);
   return withRoundedLists(
@@ -162,45 +282,47 @@ function costBasedSuggestion(
       fromSnapshot: false,
       targetMargin: margin,
       daysHeld,
+      maxMargin: ceiling,
+      marginReason,
     },
     feePct
   );
 }
 
 /**
- * Enforce age-aware margin band vs buy: [ageTarget … 60%], never below 30%.
- * Outside band or crazy comps → cost-based at age target.
+ * Enforce margin band vs buy: [target … max], never below 30%.
+ * Outside band → cost-based at target. Max rises when sold comps / cheap splits prove 100%+.
  */
 export function finalizeSuggestionAgainstBuy(
   raw: SuggestedEbayPrice,
   buy: number,
   feePct: number,
-  daysHeld = 0
+  daysHeld = 0,
+  band?: SuggestionMarginBand
 ): SuggestedEbayPrice | null {
-  const targetMargin = targetMarginForDaysHeld(daysHeld);
+  const targetMargin = band?.targetMargin ?? targetMarginForDaysHeld(daysHeld);
+  const maxMargin = band?.maxMargin ?? MAX_SUGGEST_MARGIN;
+  const marginReason = band?.reason;
   if (!(raw.ebayList > 0) || !(raw.kleinList > 0)) {
-    return costBasedSuggestion(buy, feePct, targetMargin, daysHeld);
+    return costBasedSuggestion(buy, feePct, targetMargin, daysHeld, maxMargin, marginReason);
   }
 
   let pocket = roundMoney(Math.max(0, raw.pocketTarget || raw.kleinList));
   let compCount = raw.compCount;
   const fee = Number.isFinite(raw.feePct) ? raw.feePct : feePct;
-  // Comps must clear the age target (starts 60%, decays to 30%), not just the absolute floor.
   const minPocket = minPocketForBuy(buy, targetMargin);
-  const maxPocket = maxPocketForBuy(buy);
+  const maxPocket = maxPocketForBuy(buy, maxMargin);
   const hardFloor = minPocketForBuy(buy, MIN_SUGGEST_MARGIN);
 
   if (compCount > 0 && buy > 0) {
-    const sane = sanitizePocketAgainstBuy(pocket, buy, compCount, targetMargin);
+    const sane = sanitizePocketAgainstBuy(pocket, buy, compCount, targetMargin, maxMargin);
     if (sane.clamped) {
-      return costBasedSuggestion(buy, fee, targetMargin, daysHeld);
+      return costBasedSuggestion(buy, fee, targetMargin, daysHeld, maxMargin, marginReason);
     }
     pocket = sane.pocket;
   }
 
   const ebayPocket = pocketFromEbayListPrice(raw.ebayList, fee);
-  // Outside [ageTarget … 60%] on pocket/KA → age-aware cost target.
-  // Absolute floor: never keep comps below 30%.
   if (
     buy > 0 &&
     (pocket < minPocket ||
@@ -210,7 +332,7 @@ export function finalizeSuggestionAgainstBuy(
       raw.kleinList > maxPocket ||
       ebayPocket < minPocket)
   ) {
-    return costBasedSuggestion(buy, fee, targetMargin, daysHeld);
+    return costBasedSuggestion(buy, fee, targetMargin, daysHeld, maxMargin, marginReason);
   }
 
   if (compCount > 0 && pocket !== raw.pocketTarget) {
@@ -225,6 +347,8 @@ export function finalizeSuggestionAgainstBuy(
         fromSnapshot: false,
         targetMargin,
         daysHeld,
+        maxMargin,
+        marginReason,
       },
       fee
     );
@@ -240,6 +364,8 @@ export function finalizeSuggestionAgainstBuy(
       fromSnapshot: raw.fromSnapshot,
       targetMargin,
       daysHeld,
+      maxMargin,
+      marginReason,
     },
     fee
   );
@@ -260,7 +386,8 @@ export function resolveSuggestedEbayList(
   const feePct = totalEbayFeePct(fees);
   const buy = effectiveSuggestionBuy(item, children);
   const daysHeld = daysHeldFromBuyDate(item.buyDate);
-  const targetMargin = targetMarginForDaysHeld(daysHeld);
+  const band = resolveSuggestionMarginBand(item, buy, daysHeld, allItems);
+  const { targetMargin, maxMargin, reason: marginReason } = band;
 
   if (
     item.suggestedEbayListPrice != null &&
@@ -287,7 +414,8 @@ export function resolveSuggestedEbayList(
       },
       buy,
       fee,
-      daysHeld
+      daysHeld,
+      band
     );
     if (fromSnap) return fromSnap;
   }
@@ -310,11 +438,12 @@ export function resolveSuggestedEbayList(
         },
         buy,
         feePct,
-        daysHeld
+        daysHeld,
+        band
       );
       if (finalized) return finalized;
     }
-    return costBasedSuggestion(buy, feePct, targetMargin, daysHeld);
+    return costBasedSuggestion(buy, feePct, targetMargin, daysHeld, maxMargin, marginReason);
   }
 
   // Containers: only use title comps when there are no parts yet.
@@ -336,7 +465,8 @@ export function resolveSuggestedEbayList(
         },
         buy,
         feePct,
-        daysHeld
+        daysHeld,
+        band
       );
       if (finalized && finalized.compCount > 0) return finalized;
     }
@@ -369,13 +499,14 @@ export function resolveSuggestedEbayList(
         },
         buy,
         feePct,
-        daysHeld
+        daysHeld,
+        band
       );
       if (finalized) return finalized;
     }
   }
 
-  return costBasedSuggestion(buy, feePct, targetMargin, daysHeld);
+  return costBasedSuggestion(buy, feePct, targetMargin, daysHeld, maxMargin, marginReason);
 }
 
 /** Build a map of suggested eBay € for in-stock rows (capped for UI performance). */
@@ -431,7 +562,8 @@ function resolveSuggestedFromSnapshotOrCost(
   const feePct = totalEbayFeePct(fees);
   const buy = effectiveSuggestionBuy(item, children);
   const daysHeld = daysHeldFromBuyDate(item.buyDate);
-  const targetMargin = targetMarginForDaysHeld(daysHeld);
+  const band = resolveSuggestionMarginBand(item, buy, daysHeld);
+  const { targetMargin, maxMargin, reason: marginReason } = band;
 
   if (
     item.suggestedEbayListPrice != null &&
@@ -457,7 +589,8 @@ function resolveSuggestedFromSnapshotOrCost(
       },
       buy,
       fee,
-      daysHeld
+      daysHeld,
+      band
     );
   }
 
@@ -486,12 +619,13 @@ function resolveSuggestedFromSnapshotOrCost(
         },
         buy,
         feePct,
-        daysHeld
+        daysHeld,
+        band
       );
     }
   }
 
-  return costBasedSuggestion(buy, feePct, targetMargin, daysHeld);
+  return costBasedSuggestion(buy, feePct, targetMargin, daysHeld, maxMargin, marginReason);
 }
 
 export type FlipSaleRecord = {

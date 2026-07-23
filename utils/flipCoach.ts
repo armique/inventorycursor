@@ -294,22 +294,24 @@ function emptySuggestion(feePct: number, note: string): ChannelPriceSuggestion {
 }
 
 /**
- * Reject comps that sit far above your buy (e.g. €140 ask on a €48 kit).
- * Cap ≈ buy × 1.6 (60% margin); always allow a small absolute cushion for cheap parts.
- * When clamped, soft list uses age-aware targetMargin (default 45%).
+ * Reject comps that sit far above your buy.
+ * Cap defaults to buy × 1.6 (60% margin); pass a higher maxMargin when sold history
+ * or cheap/split acquisition supports bigger markups (e.g. 100%+).
  */
 export function sanitizePocketAgainstBuy(
   pocket: number,
   buy: number,
   compCount: number,
-  targetMargin = 0.45
+  targetMargin = 0.45,
+  maxMargin = 0.6
 ): { pocket: number; clamped: boolean } {
   if (!(buy > 0) || !(pocket > 0) || compCount <= 0) {
     return { pocket: roundMoney(Math.max(0, pocket)), clamped: false };
   }
-  const cap = Math.max(buy * 1.6, buy + 8);
+  const capMargin = Math.max(0.6, maxMargin);
+  const cap = Math.max(buy * (1 + capMargin), buy + 8);
   if (pocket <= cap) return { pocket: roundMoney(pocket), clamped: false };
-  const margin = Math.max(0.3, Math.min(0.6, targetMargin));
+  const margin = Math.max(0.3, Math.min(capMargin, targetMargin));
   return { pocket: roundMoney(buy * (1 + margin)), clamped: true };
 }
 

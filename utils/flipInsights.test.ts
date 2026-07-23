@@ -4,12 +4,14 @@ import {
   buildFlipSaleRecords,
   computeBuyFirstProducts,
   resolveSuggestedEbayList,
+  resolveSuggestionMarginBand,
   roundListPriceUp,
   summarizeFlipInsights,
   targetMarginForDaysHeld,
   daysHeldFromBuyDate,
 } from './flipInsights';
 import type { FlipFeeSettings } from './flipCoach';
+import { rebuildItemSalesPool } from './itemSalesPool';
 
 const fees: FlipFeeSettings = { ebayFeePct: 12.5, ebayAdsPct: 12.5 };
 
@@ -90,6 +92,38 @@ describe('flipInsights', () => {
     expect(s!.kleinList).toBe(80);
     expect(s!.ebayList).toBe(110);
     expect(s!.targetMargin).toBe(0.6);
+  });
+
+  it('raises target for cheap split parts and learns 100%+ sold margins', () => {
+    const sold = item({
+      id: 'split-sold-ram',
+      name: 'Kingston 8GB DDR4 2666',
+      buyPrice: 8,
+      status: ItemStatus.SOLD,
+      sellPrice: 20,
+      feeAmount: 0,
+      buyDate: daysAgoIso(20),
+      sellDate: todayIso(),
+      category: 'Components',
+      subCategory: 'RAM',
+    });
+    const stock = item({
+      id: 'split-stock-ram',
+      name: 'Kingston 8GB DDR4 2666MHz',
+      buyPrice: 7,
+      buyDate: todayIso(),
+      category: 'Components',
+      subCategory: 'RAM',
+    });
+    rebuildItemSalesPool([sold, stock]);
+    const band = resolveSuggestionMarginBand(stock, 7, 0, [sold, stock]);
+    expect(band.maxMargin).toBeGreaterThanOrEqual(1);
+    expect(band.targetMargin).toBeGreaterThanOrEqual(0.9);
+
+    const s = resolveSuggestedEbayList(stock, [sold, stock], fees);
+    expect(s).not.toBeNull();
+    expect(s!.kleinList).toBeGreaterThanOrEqual(14);
+    expect(s!.targetMargin).toBeGreaterThanOrEqual(0.9);
   });
 
   it('rejects thin-margin comps and falls back to age target (day 6 = 45%)', () => {

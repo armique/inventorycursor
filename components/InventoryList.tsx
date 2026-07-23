@@ -3368,7 +3368,7 @@ const InventoryList: React.FC<Props> = ({
                        </div>
                        {(() => {
                          const sugg = suggestedEbayById.get(item.id) || null;
-                         const analyzer = computePriceAnalyzer(item, sugg);
+                         const analyzer = computePriceAnalyzer(item, sugg, items);
                          if (!analyzer) return null;
                          const actionClass = (action: PriceAnalyzerAction) => {
                            if (action === 'drop')
@@ -3401,7 +3401,7 @@ const InventoryList: React.FC<Props> = ({
                          return (
                            <div
                              className="flex flex-col gap-0.5 mt-0.5 max-w-full"
-                             title={`Age-aware price from buy €${formatEUR(analyzer.buy || item.buyPrice || 0)}. Margin starts 60% and drops 5pp every 2 days to 30%. Click a chip to save the target.`}
+                             title={`Age-aware price from buy €${formatEUR(analyzer.buy || item.buyPrice || 0)}. Floor 30%; age target decays 60%→30%. Ceiling rises when you sell similar items at high margin or when buy is a cheap split. ${analyzer.marginReason ? `Now: ${analyzer.marginReason}.` : ''} Click a chip to save the target.`}
                            >
                              <div className="flex items-center gap-1 flex-wrap text-[9px] font-bold text-slate-500">
                                <span className="uppercase tracking-wide text-slate-600">
@@ -3410,6 +3410,11 @@ const InventoryList: React.FC<Props> = ({
                                {analyzer.buy > 0 && (
                                  <span className="text-slate-400">
                                    · buy €{formatEUR(analyzer.buy)}
+                                 </span>
+                               )}
+                               {analyzer.marginReason && (
+                                 <span className="text-violet-600 font-black uppercase tracking-wide">
+                                   · {analyzer.marginReason}
                                  </span>
                                )}
                              </div>

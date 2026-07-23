@@ -9,8 +9,8 @@ import { ItemStatus } from '../types';
 import {
   daysHeldFromBuyDate,
   MIN_SUGGEST_MARGIN,
+  resolveSuggestionMarginBand,
   roundListPriceUp,
-  targetMarginForDaysHeld,
   type SuggestedEbayPrice,
 } from './flipInsights';
 import { listPricesForPocket, loadFlipFees, totalEbayFeePct } from './flipCoach';
@@ -82,6 +82,8 @@ export type PriceAnalyzer = {
   minEbay: number;
   /** "Min 30% · KA €63 · EB €84" */
   minLabel: string;
+  maxMarginPct: number;
+  marginReason?: string;
   channels: PriceAnalyzerChannel[];
   /** Most urgent channel (drop/raise preferred over ok/list). */
   primary: PriceAnalyzerChannel | null;
@@ -95,31 +97,46 @@ function gapSignificant(live: number, suggest: number): boolean {
 }
 
 /** Cheap suggest pair without comps / sales-pool scans (safe for filters + row paint). */
-export function cheapSuggestLists(item: InventoryItem): {
+export function cheapSuggestLists(
+  item: InventoryItem,
+  allItems?: InventoryItem[]
+): {
   klein: number;
   ebay: number;
   targetMargin: number;
   daysHeld: number;
   buy: number;
+  maxMargin: number;
+  marginReason?: string;
 } | null {
   const daysHeld = daysHeldFromBuyDate(item.buyDate);
-  const targetMargin = targetMarginForDaysHeld(daysHeld);
   const buy = Number(item.buyPrice) || 0;
+  const band = resolveSuggestionMarginBand(item, buy, daysHeld, allItems);
   const storedKlein = Number(item.suggestedKleinListPrice) || 0;
   const storedEbay = Number(item.suggestedEbayListPrice) || 0;
   if (storedKlein > 0 && storedEbay > 0) {
-    return { klein: storedKlein, ebay: storedEbay, targetMargin, daysHeld, buy };
+    return {
+      klein: storedKlein,
+      ebay: storedEbay,
+      targetMargin: band.targetMargin,
+      daysHeld,
+      buy,
+      maxMargin: band.maxMargin,
+      marginReason: band.reason,
+    };
   }
   if (!(buy > 0)) return null;
-  const pocket = roundMoney(buy * (1 + targetMargin));
+  const pocket = roundMoney(buy * (1 + band.targetMargin));
   const feePct = totalEbayFeePct(loadFlipFees());
   const lists = listPricesForPocket(pocket, feePct);
   return {
     klein: lists.kleinanzeigen,
     ebay: lists.ebay,
-    targetMargin,
+    targetMargin: band.targetMargin,
     daysHeld,
     buy,
+    maxMargin: band.maxMargin,
+    marginReason: band.reason,
   };
 }
 
@@ -202,7 +219,8 @@ function actionRank(a: PriceAnalyzerAction): number {
  */
 export function computePriceAnalyzer(
   item: InventoryItem,
-  suggestion?: SuggestedEbayPrice | null
+  suggestion?: SuggestedEbayPrice | null,
+  allItems?: InventoryItem[]
 ): PriceAnalyzer | null {
   if (!isListingPresenceEligible(item)) return null;
 
@@ -211,25 +229,33 @@ export function computePriceAnalyzer(
   let targetMargin: number;
   let daysHeld: number;
   let buy: number;
+  let maxMargin: number;
+  let marginReason: string | undefined;
 
   if (suggestion && suggestion.kleinList > 0 && suggestion.ebayList > 0) {
     klein = suggestion.kleinList;
     ebay = suggestion.ebayList;
     daysHeld = suggestion.daysHeld ?? daysHeldFromBuyDate(item.buyDate);
-    targetMargin =
-      suggestion.targetMargin ?? targetMarginForDaysHeld(daysHeld);
     buy = Number(item.buyPrice) || 0;
+    const band = resolveSuggestionMarginBand(item, buy, daysHeld, allItems);
+    targetMargin =
+      suggestion.targetMargin ?? band.targetMargin;
+    maxMargin = suggestion.maxMargin ?? band.maxMargin;
+    marginReason = suggestion.marginReason ?? band.reason;
   } else {
-    const cheap = cheapSuggestLists(item);
+    const cheap = cheapSuggestLists(item, allItems);
     if (!cheap) return null;
     klein = cheap.klein;
     ebay = cheap.ebay;
     targetMargin = cheap.targetMargin;
     daysHeld = cheap.daysHeld;
     buy = cheap.buy;
+    maxMargin = cheap.maxMargin;
+    marginReason = cheap.marginReason;
   }
 
   const targetMarginPct = Math.round(targetMargin * 100);
+  const maxMarginPct = Math.round(maxMargin * 100);
   const floor = minMarginListPrices(buy > 0 ? buy : Number(item.buyPrice) || 0);
   const minMarginPct = floor?.marginPct ?? Math.round(MIN_SUGGEST_MARGIN * 100);
   const minKlein = floor?.klein ?? 0;
@@ -248,11 +274,16 @@ export function computePriceAnalyzer(
       return Math.abs(b.deltaEur) - Math.abs(a.deltaEur);
     })[0] || null;
 
+  const ageLabel =
+    maxMarginPct > targetMarginPct
+      ? `Day ${daysHeld} · ${targetMarginPct}% target (cap ${maxMarginPct}%)`
+      : `Day ${daysHeld} · ${targetMarginPct}% target`;
+
   return {
     daysHeld,
     targetMarginPct,
     buy,
-    ageLabel: `Day ${daysHeld} · ${targetMarginPct}% target`,
+    ageLabel,
     kleinSuggest: klein,
     ebaySuggest: ebay,
     minMarginPct,
@@ -262,6 +293,8 @@ export function computePriceAnalyzer(
       minKlein > 0 && minEbay > 0
         ? `Min ${minMarginPct}% · KA €${Math.round(minKlein)} · EB €${Math.round(minEbay)}`
         : `Min ${minMarginPct}%`,
+    maxMarginPct,
+    marginReason,
     channels,
     primary,
   };
