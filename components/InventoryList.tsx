@@ -4998,7 +4998,11 @@ const InventoryList: React.FC<Props> = ({
                type="search"
                enterKeyHint="search"
                className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-slate-900/15"
-               placeholder={statusFilter === 'PURCHASES' ? 'Search purchases…' : 'Search stock…'}
+               placeholder={
+                 statusFilter === 'PURCHASES'
+                   ? 'Search purchases…'
+                   : 'Search stock, seller profile…'
+               }
                value={searchTerm}
                onChange={(e) => setSearchTerm(e.target.value)}
                onFocus={() => setSearchSuggestionsOpen(true)}
@@ -5161,7 +5165,11 @@ const InventoryList: React.FC<Props> = ({
                   ref={searchInputRef}
                   type="text"
                   className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-slate-900/20"
-                  placeholder={statusFilter === 'PURCHASES' ? 'Search purchases…' : 'Search...'}
+                  placeholder={
+                    statusFilter === 'PURCHASES'
+                      ? 'Search purchases…'
+                      : 'Search name, seller profile URL…'
+                  }
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   onFocus={() => setSearchSuggestionsOpen(true)}

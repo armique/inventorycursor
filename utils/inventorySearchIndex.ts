@@ -2,12 +2,30 @@ import type { InventoryItem } from '../types';
 
 export type SearchHit = { item: InventoryItem; score: number };
 
+/** Split query into AND-tokens; URL punctuation so pasted profile links match by userId. */
 function tokenize(q: string): string[] {
   return q
     .toLowerCase()
-    .split(/[\s,;/]+/)
+    .split(/[\s,;/?&=]+/)
     .map((t) => t.trim())
-    .filter(Boolean);
+    .filter((t) => t.length > 0 && t !== 'https:' && t !== 'http:');
+}
+
+/** Kleinanzeigen seller list URLs look like …/s-bestandsliste.html?userId=12345678 */
+export function extractKleinanzeigenUserId(url: string): string | null {
+  const m = (url || '').match(/[?&]userId=(\d+)/i);
+  return m?.[1] ?? null;
+}
+
+function profileHaystackParts(item: InventoryItem): string[] {
+  const url = (item.kleinanzeigenSellerProfileUrl || '').trim();
+  if (!url) return [];
+  const parts = [url];
+  const userId = extractKleinanzeigenUserId(url);
+  if (userId) {
+    parts.push(userId, `userid=${userId}`);
+  }
+  return parts;
 }
 
 function haystack(item: InventoryItem): string {
@@ -25,13 +43,14 @@ function haystack(item: InventoryItem): string {
     item.customer?.name,
     item.customer?.email,
     specs,
+    ...profileHaystackParts(item),
   ]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
 }
 
-/** True when every query token appears in the item name/specs haystack (AND match). */
+/** True when every query token appears in the item name/specs/profile haystack (AND match). */
 export function matchesInventorySearch(item: InventoryItem, rawQuery: string): boolean {
   const query = rawQuery.trim().toLowerCase();
   if (query.length < 2) return true;
@@ -50,9 +69,13 @@ export function searchInventory(items: InventoryItem[], query: string, limit = 8
   for (const item of items) {
     if (!matchesInventorySearch(item, query)) continue;
     const text = haystack(item);
+    const profileUrl = (item.kleinanzeigenSellerProfileUrl || '').toLowerCase();
+    const profileUserId = extractKleinanzeigenUserId(item.kleinanzeigenSellerProfileUrl || '');
     let score = 0;
     for (const t of tokens) {
       if (item.name.toLowerCase().includes(t)) score += 4;
+      if (profileUserId && t === profileUserId) score += 6;
+      else if (profileUrl && profileUrl.includes(t)) score += 3;
       if (text.includes(t)) score += 1;
     }
     hits.push({ item, score });
