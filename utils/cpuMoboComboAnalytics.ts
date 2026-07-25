@@ -86,23 +86,131 @@ function prettySocket(normalized: string): string {
   return normalized;
 }
 
-function shortPartLabel(item: InventoryItem): string {
-  const series = getSpec(item, 'Series');
-  const model = getSpec(item, 'Model');
-  const chipset = getSpec(item, 'Chipset');
-  if (isMotherboardItem(item) && chipset) {
-    return String(chipset).trim();
-  }
+/** Score how “display-ready” a label looks (spaces + proper case beat compact keys). */
+function labelQuality(label: string): number {
+  const s = (label || '').trim();
+  if (!s) return -1;
+  let score = 0;
+  if (/\s/.test(s)) score += 4;
+  if (/[A-Z]/.test(s) && /[a-z]/.test(s)) score += 3;
+  else if (/[A-Z]/.test(s)) score += 2;
+  if (!/^[a-z0-9]+$/.test(s)) score += 2;
+  if (/^(Core|Ryzen|Xeon|Threadripper|Pentium|Celeron)\b/i.test(s)) score += 3;
+  if (/^[ABHXZ]\d{2,3}/i.test(s)) score += 2;
+  // Penalize compacted model keys like i74790 / ryzen33200g
+  if (/^(i[3579]\d{3,5}k?|ryzen[3579]\d{3,4}[a-z]{0,3})$/i.test(s)) score -= 8;
+  score += Math.min(s.length, 40) / 40;
+  return score;
+}
+
+function preferNicerLabel(current: string, candidate: string): string {
+  return labelQuality(candidate) > labelQuality(current) ? candidate.trim() : current.trim();
+}
+
+/** Chipset-only display: B450, Z790, H97 (no brand prefixes). */
+export function formatChipsetDisplay(raw: string | number | undefined | null): string | null {
+  if (raw === undefined || raw === null) return null;
+  const text = String(raw).trim();
+  if (!text) return null;
+  const stripped = text.replace(/^(Intel|AMD|Asus|ASUS|ASRock|MSI|Gigabyte|Biostar|Maxsun)\s+/i, '');
+  const m = stripped.match(/\b([ABHXZ])\s*-?\s*(\d{2,3})([A-Za-z]?)\b/i);
+  if (!m) return null;
+  const letter = m[1]!.toUpperCase();
+  const nums = m[2]!;
+  const suffix = (m[3] || '').toUpperCase();
+  // Keep common board suffixes (M/I) when present; drop lone marketing "P" on old Z97P-style
+  if (suffix === 'P' && nums.length === 2) return `${letter}${nums}`;
+  return `${letter}${nums}${suffix}`;
+}
+
+/** Human CPU label: "Core i7-4790K", "Ryzen 5 5600". */
+export function formatCpuDisplayLabel(item: InventoryItem): string {
+  const fromName = extractPrettyCpu(item.name || '');
+  if (fromName) return fromName;
+
+  const series = String(getSpec(item, 'Series') || '').trim();
+  const model = String(getSpec(item, 'Model') || '').trim();
   if (series || model) {
-    return [series, model].filter(Boolean).map(String).join(' ').trim();
+    const joined = [series, model].filter(Boolean).join(' ').trim();
+    const fromSpecs = extractPrettyCpu(joined) || extractPrettyCpu(`${series} ${model}`);
+    if (fromSpecs) return fromSpecs;
+    if (joined && labelQuality(joined) >= 3) return tidySpaces(joined);
   }
-  const keys = productModelKeys(item.name || '');
-  if (keys.length) {
-    // Prefer longest concrete key for display-ish use
-    const best = [...keys].sort((a, b) => b.length - a.length)[0];
-    return best;
+
+  return tidyPartFallback(item.name || 'CPU');
+}
+
+/** Human motherboard/chipset label: "B550", "Z790". */
+export function formatMoboDisplayLabel(item: InventoryItem): string {
+  const chip = formatChipsetDisplay(getSpec(item, 'Chipset'));
+  if (chip) return chip;
+  const fromName = formatChipsetDisplay(item.name);
+  if (fromName) return fromName;
+  const model = formatChipsetDisplay(getSpec(item, 'Model'));
+  if (model) return model;
+  return tidyPartFallback(item.name || 'Motherboard');
+}
+
+function tidySpaces(s: string): string {
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+function tidyPartFallback(name: string): string {
+  let s = tidySpaces(name);
+  s = s.replace(/\b(NEW|NEU|OVP|Defekt|Defective|ohne\s*K[uü]hler)\b/gi, '');
+  s = s.replace(/\b(Motherboard|Mainboard|CPU|Prozessor|Processor)\b/gi, '');
+  s = tidySpaces(s);
+  // Title-case short leftovers if all lowercase compact-ish
+  if (/^[a-z0-9\s\-]+$/.test(s) && s.length <= 28) {
+    s = s.replace(/\b([a-z])/g, (c) => c.toUpperCase());
   }
-  return (item.name || 'Unknown').replace(/\s+/g, ' ').trim().slice(0, 52);
+  return s.slice(0, 56) || 'Unknown';
+}
+
+function extractPrettyCpu(text: string): string | null {
+  if (!text) return null;
+  const t = text;
+
+  const thread = t.match(/\b(?:AMD\s+)?Threadripper\s*(\d{4}[A-Za-z]?)\b/i);
+  if (thread) return `Threadripper ${thread[1]!.toUpperCase()}`;
+
+  const xeon = t.match(/\bXeon\s+([A-Z0-9-]{3,})\b/i);
+  if (xeon) return `Xeon ${xeon[1]!.toUpperCase()}`;
+
+  const ryzen = t.match(/\b(?:AMD\s+)?Ryzen\s*([3579])\s*[-\s]?\s*(\d{3,4}[A-Za-z]{0,3})\b/i);
+  if (ryzen) {
+    const model = ryzen[2]!.toUpperCase();
+    return `Ryzen ${ryzen[1]} ${model}`;
+  }
+
+  const core = t.match(/\b(?:Intel\s+)?(?:Core\s+)?(i[3579])[\s-]?(\d{3,5})([Kk]?)\b/i);
+  if (core) {
+    const gen = core[1]!.toLowerCase();
+    const num = core[2]!;
+    const k = core[3] ? 'K' : '';
+    return `Core ${gen}-${num}${k}`;
+  }
+
+  const pentium = t.match(/\bPentium\s+([A-Z0-9-]{2,})\b/i);
+  if (pentium) return `Pentium ${pentium[1]!.toUpperCase()}`;
+
+  const celeron = t.match(/\bCeleron\s+([A-Z0-9-]{2,})\b/i);
+  if (celeron) return `Celeron ${celeron[1]!.toUpperCase()}`;
+
+  // Compact blobs: ryzen55600g / i74790k
+  const compact = t.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const cRyzen = compact.match(/ryzen([3579])(\d{3,4}[a-z]{0,3})/);
+  if (cRyzen) return `Ryzen ${cRyzen[1]} ${cRyzen[2]!.toUpperCase()}`;
+  const cIntel = compact.match(/(i[3579])(\d{3,5})(k?)/);
+  if (cIntel) return `Core ${cIntel[1]}-${cIntel[2]}${cIntel[3] ? 'K' : ''}`;
+
+  return null;
+}
+
+function shortPartLabel(item: InventoryItem): string {
+  if (isMotherboardItem(item)) return formatMoboDisplayLabel(item);
+  if (isProcessorItem(item)) return formatCpuDisplayLabel(item);
+  return tidyPartFallback(item.name || 'Part');
 }
 
 function partStableKey(item: InventoryItem, role: 'cpu' | 'mobo'): string {
@@ -309,6 +417,8 @@ export function analyzeCpuMoboCombos(
     const bucket = soldBuckets.get(id.key);
     if (bucket) {
       bucket.samples.push(sample);
+      bucket.cpuLabel = preferNicerLabel(bucket.cpuLabel, id.cpuLabel);
+      bucket.moboLabel = preferNicerLabel(bucket.moboLabel, id.moboLabel);
     } else {
       soldBuckets.set(id.key, {
         socket: id.socket,

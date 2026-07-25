@@ -4,7 +4,12 @@
  */
 import assert from 'node:assert/strict';
 import { ItemStatus, type InventoryItem } from '../types';
-import { analyzeCpuMoboCombos } from '../utils/cpuMoboComboAnalytics';
+import {
+  analyzeCpuMoboCombos,
+  formatChipsetDisplay,
+  formatCpuDisplayLabel,
+  formatMoboDisplayLabel,
+} from '../utils/cpuMoboComboAnalytics';
 
 function base(partial: Partial<InventoryItem> & Pick<InventoryItem, 'id' | 'name'>): InventoryItem {
   return {
@@ -148,10 +153,44 @@ assert.ok(am4, 'AM4 combo present');
 assert.equal(am4!.soldCount, 2);
 assert.equal(am4!.inStockCount, 1);
 assert.ok(am4!.avgDaysToSell != null && am4!.avgDaysToSell > 0);
+assert.match(am4!.cpuLabel, /Ryzen 5 5600/i);
+assert.equal(am4!.moboLabel, 'B550');
 
 const intel = result.rows.find((r) => /LGA\s?1700/i.test(r.socket));
 assert.ok(intel, 'LGA 1700 combo present');
 assert.equal(intel!.soldCount, 1);
+assert.match(intel!.cpuLabel, /Core i5-12400/i);
+assert.equal(intel!.moboLabel, 'B660');
+
+// Compact name → pretty display
+assert.equal(
+  formatCpuDisplayLabel(
+    base({ id: 'x', name: 'CPU ryzen33200g tray', subCategory: 'Processors' })
+  ),
+  'Ryzen 3 3200G'
+);
+assert.equal(
+  formatCpuDisplayLabel(base({ id: 'y', name: 'Intel i74790', subCategory: 'Processors' })),
+  'Core i7-4790'
+);
+assert.equal(
+  formatCpuDisplayLabel(base({ id: 'z', name: 'i712700k', subCategory: 'Processors' })),
+  'Core i7-12700K'
+);
+assert.equal(formatChipsetDisplay('Intel H97'), 'H97');
+assert.equal(formatChipsetDisplay('z790'), 'Z790');
+assert.equal(formatChipsetDisplay('Asus Z-97P'), 'Z97');
+assert.equal(
+  formatMoboDisplayLabel(
+    base({
+      id: 'm',
+      name: 'Random board',
+      subCategory: 'Motherboards',
+      specs: { Chipset: 'AMD B450' },
+    })
+  ),
+  'B450'
+);
 
 assert.ok(result.fastest, 'fastest combo set');
 assert.ok(result.topProfit, 'top profit set');
