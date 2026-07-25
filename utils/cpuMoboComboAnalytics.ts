@@ -647,6 +647,49 @@ function socketsCompatible(comboSocket: string, partSocket: string): boolean {
   return comboSocket === partSocket;
 }
 
+function fingerprint(s: string): string {
+  return (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/** Loose match: stable key, display label, model-token overlap, or chipset. */
+function partMatchesComboRole(
+  item: InventoryItem,
+  role: 'cpu' | 'mobo',
+  row: CpuMoboComboRow
+): boolean {
+  const socketKey = row.socketKey || parseComboKeyParts(row.comboKey).socketKey;
+  if (!socketsCompatible(socketKey, partSocketKey(item))) return false;
+
+  const wantKey = role === 'cpu' ? row.cpuPartKey : row.moboPartKey;
+  const haveKey = partStableKey(item, role);
+  if (wantKey && haveKey && wantKey === haveKey) return true;
+
+  const wantLabel = role === 'cpu' ? row.cpuLabel : row.moboLabel;
+  const haveLabel = role === 'cpu' ? formatCpuDisplayLabel(item) : formatMoboDisplayLabel(item);
+  const a = fingerprint(haveLabel);
+  const b = fingerprint(wantLabel);
+  if (a && b && (a === b || (a.length >= 4 && b.includes(a)) || (b.length >= 4 && a.includes(b)))) {
+    return true;
+  }
+
+  if (role === 'cpu') {
+    const itemKeys = productModelKeys(item.name || '');
+    const labelKeys = productModelKeys(wantLabel);
+    if (itemKeys.some((k) => labelKeys.includes(k) || b.includes(k))) return true;
+    if (b.length >= 5 && fingerprint(item.name || '').includes(b)) return true;
+  }
+
+  if (role === 'mobo') {
+    const chip =
+      formatChipsetDisplay(getSpec(item, 'Chipset')) ||
+      formatChipsetDisplay(item.name) ||
+      formatChipsetDisplay(getSpec(item, 'Model'));
+    if (chip && fingerprint(chip) === b) return true;
+  }
+
+  return false;
+}
+
 export type ComboRebuyNeed = 'cpu' | 'mobo' | 'both' | 'assemble';
 
 export interface ComboRebuySuggestion {
@@ -670,6 +713,14 @@ export interface ComboRebuySuggestion {
   searchQuery: string;
 }
 
+export interface ComboRebuyAnalysis {
+  suggestions: ComboRebuySuggestion[];
+  freeCpuTotal: number;
+  freeMoboTotal: number;
+  profitableCombos: number;
+  combosWithNoStock: number;
+}
+
 /**
  * Compare top-performing sold combos with free (unassigned) CPU/board stock
  * and suggest what to rebuy — or assemble — next.
@@ -679,24 +730,23 @@ export function suggestComboRebuys(
   comboRows: CpuMoboComboRow[],
   opts?: { limit?: number; minAvgProfit?: number }
 ): ComboRebuySuggestion[] {
-  const limit = opts?.limit ?? 8;
-  const minAvgProfit = opts?.minAvgProfit ?? 5;
+  return analyzeComboRebuys(items, comboRows, opts).suggestions;
+}
 
-  type Tagged = { partKey: string; socketKey: string; used: boolean };
-  const cpuPool: Tagged[] = items
-    .filter((i) => isFreeActivePart(i) && isProcessorItem(i))
-    .map((item) => ({
-      partKey: partStableKey(item, 'cpu'),
-      socketKey: partSocketKey(item),
-      used: false,
-    }));
-  const moboPool: Tagged[] = items
-    .filter((i) => isFreeActivePart(i) && isMotherboardItem(i))
-    .map((item) => ({
-      partKey: partStableKey(item, 'mobo'),
-      socketKey: partSocketKey(item),
-      used: false,
-    }));
+export function analyzeComboRebuys(
+  items: InventoryItem[],
+  comboRows: CpuMoboComboRow[],
+  opts?: { limit?: number; minAvgProfit?: number }
+): ComboRebuyAnalysis {
+  const limit = opts?.limit ?? 8;
+  const minAvgProfit = opts?.minAvgProfit ?? 0;
+
+  const freeCpus = items.filter((i) => isFreeActivePart(i) && isProcessorItem(i));
+  const freeMobos = items.filter((i) => isFreeActivePart(i) && isMotherboardItem(i));
+
+  type Tagged = { item: InventoryItem; used: boolean };
+  const cpuPool: Tagged[] = freeCpus.map((item) => ({ item, used: false }));
+  const moboPool: Tagged[] = freeMobos.map((item) => ({ item, used: false }));
 
   const ranked = [...comboRows]
     .filter((r) => r.avgProfit >= minAvgProfit)
@@ -706,26 +756,22 @@ export function suggestComboRebuys(
       return eb - ea || b.avgProfit - a.avgProfit || b.soldCount - a.soldCount;
     });
 
-  const matchPool = (pool: Tagged[], partKey: string, socketKey: string) =>
-    pool.filter(
-      (p) => !p.used && p.partKey === partKey && socketsCompatible(socketKey, p.socketKey)
-    );
+  const matchPool = (pool: Tagged[], row: CpuMoboComboRow, role: 'cpu' | 'mobo') =>
+    pool.filter((p) => !p.used && partMatchesComboRole(p.item, role, row));
 
   const markUsed = (hits: Tagged[], n: number) => {
     for (let i = 0; i < n && i < hits.length; i++) hits[i]!.used = true;
   };
 
   const out: ComboRebuySuggestion[] = [];
+  const combosWithNoStock = ranked.filter((r) => r.inStockCount === 0).length;
 
-  for (const row of ranked) {
-    if (out.length >= limit * 2) break; // gather then trim by score
+  for (let rankIndex = 0; rankIndex < ranked.length; rankIndex++) {
+    const row = ranked[rankIndex]!;
+    if (out.length >= limit * 2) break;
 
-    const socketKey = row.socketKey || parseComboKeyParts(row.comboKey).socketKey;
-    const cpuPartKey = row.cpuPartKey || parseComboKeyParts(row.comboKey).cpuPartKey;
-    const moboPartKey = row.moboPartKey || parseComboKeyParts(row.comboKey).moboPartKey;
-
-    const cpuHits = matchPool(cpuPool, cpuPartKey, socketKey);
-    const moboHits = matchPool(moboPool, moboPartKey, socketKey);
+    const cpuHits = matchPool(cpuPool, row, 'cpu');
+    const moboHits = matchPool(moboPool, row, 'mobo');
     const freeCpuCount = cpuHits.length;
     const freeMoboCount = moboHits.length;
     const pairsPossible = Math.min(freeCpuCount, freeMoboCount);
@@ -766,14 +812,13 @@ export function suggestComboRebuys(
       markUsed(cpuHits, freeCpuCount);
       markUsed(moboHits, freeMoboCount);
     } else if (kits === 0 && freeCpuCount === 0 && freeMoboCount === 0) {
-      const rankIndex = ranked.indexOf(row);
-      if (rankIndex > 5) continue;
-      if (row.avgProfit < 15) continue;
+      if (rankIndex > 11) continue;
+      if (row.avgProfit < 1) continue;
       need = 'both';
       title = `Restock ${row.cpuLabel} + ${row.moboLabel}`;
       reason = `Strong seller (${row.soldCount}×, ~€${Math.round(row.avgProfit)} avg${row.avgDaysToSell != null ? `, ${Math.round(row.avgDaysToSell)}d` : ''}) and you have none in stock.`;
       searchQuery = `${row.cpuLabel} ${row.moboLabel}`;
-      score += 5;
+      score += 8 + Math.max(0, 6 - rankIndex);
     } else {
       continue;
     }
@@ -799,5 +844,11 @@ export function suggestComboRebuys(
     });
   }
 
-  return out.sort((a, b) => b.score - a.score).slice(0, limit);
+  return {
+    suggestions: out.sort((a, b) => b.score - a.score).slice(0, limit),
+    freeCpuTotal: freeCpus.length,
+    freeMoboTotal: freeMobos.length,
+    profitableCombos: ranked.length,
+    combosWithNoStock,
+  };
 }

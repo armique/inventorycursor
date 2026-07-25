@@ -20,7 +20,7 @@ import type { BusinessSettings, InventoryItem, ItemUpdateOptions } from '../type
 import { formatEUR } from '../utils/formatMoney';
 import {
   analyzeCpuMoboCombos,
-  suggestComboRebuys,
+  analyzeComboRebuys,
   type ComboDateRange,
   type ComboKindFilter,
   type ComboRebuyNeed,
@@ -102,10 +102,11 @@ const ComboLabPage: React.FC<Props> = ({ items, businessSettings, onUpdate }) =>
     });
   }, [summary.rows, query]);
 
-  const rebuySuggestions = useMemo(
-    () => suggestComboRebuys(items, summary.rows, { limit: 6 }),
+  const rebuyAnalysis = useMemo(
+    () => analyzeComboRebuys(items, summary.rows, { limit: 8 }),
     [items, summary.rows]
   );
+  const rebuySuggestions = rebuyAnalysis.suggestions;
 
   const markChildRole = (childId: string, role: 'cpu' | 'mobo') => {
     if (!onUpdate) return;
@@ -207,6 +208,72 @@ const ComboLabPage: React.FC<Props> = ({ items, businessSettings, onUpdate }) =>
         />
       </div>
 
+      <section className="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-3 space-y-2.5">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <h2 className="text-xs font-black uppercase tracking-widest text-amber-900 flex items-center gap-1.5">
+                <Lightbulb size={14} /> Rebuy / build next
+              </h2>
+              <p className="text-[11px] font-semibold text-amber-800/80 mt-0.5">
+                Based on your sold combo stats vs free CPUs and boards in active stock
+              </p>
+            </div>
+            <Link
+              to="/panel/builder"
+              className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-amber-900 hover:underline shrink-0"
+            >
+              <Wrench size={12} /> Builder
+            </Link>
+          </div>
+          {rebuySuggestions.length === 0 ? (
+            <p className="text-[11px] font-semibold text-amber-900/80 rounded-lg border border-amber-100 bg-white/80 px-3 py-2.5">
+              No rebuy tips right now.
+              {` ${rebuyAnalysis.freeCpuTotal} free CPU${rebuyAnalysis.freeCpuTotal === 1 ? '' : 's'}, ${rebuyAnalysis.freeMoboTotal} free board${rebuyAnalysis.freeMoboTotal === 1 ? '' : 's'}`}
+              {rebuyAnalysis.combosWithNoStock > 0
+                ? `, ${rebuyAnalysis.combosWithNoStock} profitable combo${rebuyAnalysis.combosWithNoStock === 1 ? '' : 's'} with 0 kits in stock`
+                : ''}
+              . Tips appear when you have orphan parts for a proven combo, both parts loose to assemble, or a top combo with nothing in stock.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {rebuySuggestions.map((s) => (
+                <li
+                  key={`${s.comboKey}-${s.need}`}
+                  className="rounded-lg border border-amber-100 bg-white p-2.5 flex flex-wrap gap-2 items-start"
+                >
+                  <NeedBadge need={s.need} />
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <p className="text-sm font-black text-slate-900 leading-snug">{s.title}</p>
+                    <p className="text-[11px] font-semibold text-slate-600 leading-snug">{s.reason}</p>
+                    <p className="text-[10px] font-bold text-slate-400">
+                      {s.socket} · {s.soldCount}× sold · avg €{formatEUR(s.avgProfit)}
+                      {s.eurPerDay != null ? ` · €${formatEUR(s.eurPerDay)}/d` : ''}
+                      {s.avgDaysToSell != null ? ` · ${Math.round(s.avgDaysToSell)}d` : ''}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 shrink-0">
+                    {s.need === 'assemble' ? (
+                      <Link
+                        to="/panel/builder"
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-[10px] font-black uppercase"
+                      >
+                        <Wrench size={12} /> Assemble
+                      </Link>
+                    ) : (
+                      <Link
+                        to={`/panel/inventory?q=${encodeURIComponent(s.searchQuery.slice(0, 48))}`}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-amber-950 text-[10px] font-black uppercase"
+                      >
+                        <ShoppingCart size={12} /> Check stock
+                      </Link>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
       <section className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <Kpi
           icon={<Zap size={14} className="text-amber-600" />}
@@ -233,63 +300,6 @@ const ComboLabPage: React.FC<Props> = ({ items, businessSettings, onUpdate }) =>
           sub={summary.mostSold?.label}
         />
       </section>
-
-      {rebuySuggestions.length > 0 && (
-        <section className="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-3 space-y-2.5">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div className="min-w-0">
-              <h2 className="text-xs font-black uppercase tracking-widest text-amber-900 flex items-center gap-1.5">
-                <Lightbulb size={14} /> Rebuy / build next
-              </h2>
-              <p className="text-[11px] font-semibold text-amber-800/80 mt-0.5">
-                Based on your sold combo stats vs free CPUs and boards in active stock
-              </p>
-            </div>
-            <Link
-              to="/panel/builder"
-              className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-amber-900 hover:underline shrink-0"
-            >
-              <Wrench size={12} /> Builder
-            </Link>
-          </div>
-          <ul className="space-y-2">
-            {rebuySuggestions.map((s) => (
-              <li
-                key={`${s.comboKey}-${s.need}`}
-                className="rounded-lg border border-amber-100 bg-white p-2.5 flex flex-wrap gap-2 items-start"
-              >
-                <NeedBadge need={s.need} />
-                <div className="min-w-0 flex-1 space-y-0.5">
-                  <p className="text-sm font-black text-slate-900 leading-snug">{s.title}</p>
-                  <p className="text-[11px] font-semibold text-slate-600 leading-snug">{s.reason}</p>
-                  <p className="text-[10px] font-bold text-slate-400">
-                    {s.socket} · {s.soldCount}× sold · avg €{formatEUR(s.avgProfit)}
-                    {s.eurPerDay != null ? ` · €${formatEUR(s.eurPerDay)}/d` : ''}
-                    {s.avgDaysToSell != null ? ` · ${Math.round(s.avgDaysToSell)}d` : ''}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-1.5 shrink-0">
-                  {s.need === 'assemble' ? (
-                    <Link
-                      to="/panel/builder"
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-[10px] font-black uppercase"
-                    >
-                      <Wrench size={12} /> Assemble
-                    </Link>
-                  ) : (
-                    <Link
-                      to={`/panel/inventory?q=${encodeURIComponent(s.searchQuery.slice(0, 48))}`}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-amber-950 text-[10px] font-black uppercase"
-                    >
-                      <ShoppingCart size={12} /> Check stock
-                    </Link>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
 
       <section className="rounded-xl border border-slate-200 bg-white p-3 flex flex-wrap gap-4 text-[11px] font-semibold text-slate-600">
         <span>
