@@ -67,6 +67,7 @@ export interface CpuMoboComboRow {
 export interface CpuMoboComboSummary {
   soldKitsWithCpuMobo: number;
   skippedMissingPair: number;
+  skippedKits: SkippedComboKit[];
   uniqueCombos: number;
   avgDaysToSell: number | null;
   totalProfit: number;
@@ -75,6 +76,68 @@ export interface CpuMoboComboSummary {
   topEurPerDay: CpuMoboComboRow | null;
   mostSold: CpuMoboComboRow | null;
   rows: CpuMoboComboRow[];
+}
+
+export type SkippedComboReason = 'no_components' | 'missing_cpu' | 'missing_mobo' | 'missing_both';
+
+export interface SkippedComboChild {
+  id: string;
+  name: string;
+  category: string;
+  subCategory: string;
+  detectedAs: 'cpu' | 'mobo' | 'other';
+}
+
+export interface SkippedComboKit {
+  containerId: string;
+  containerName: string;
+  kind: ContainerKind | null;
+  sellDate: string | null;
+  reason: SkippedComboReason;
+  reasonLabel: string;
+  children: SkippedComboChild[];
+}
+
+function skippedReasonLabel(reason: SkippedComboReason): string {
+  switch (reason) {
+    case 'no_components':
+      return 'No components linked';
+    case 'missing_cpu':
+      return 'Has board, missing CPU';
+    case 'missing_mobo':
+      return 'Has CPU, missing board';
+    case 'missing_both':
+      return 'No CPU or board detected';
+  }
+}
+
+function describeSkippedKit(container: InventoryItem, items: InventoryItem[]): SkippedComboKit {
+  const kind = getContainerKind(container);
+  const children = getChildren(container, items);
+  const childRows: SkippedComboChild[] = children.map((c) => ({
+    id: c.id,
+    name: c.name,
+    category: c.category || '',
+    subCategory: c.subCategory || '',
+    detectedAs: isProcessorItem(c) ? 'cpu' : isMotherboardItem(c) ? 'mobo' : 'other',
+  }));
+  const hasCpu = childRows.some((c) => c.detectedAs === 'cpu');
+  const hasMobo = childRows.some((c) => c.detectedAs === 'mobo');
+  let reason: SkippedComboReason;
+  if (children.length === 0) reason = 'no_components';
+  else if (!hasCpu && !hasMobo) reason = 'missing_both';
+  else if (!hasCpu) reason = 'missing_cpu';
+  else reason = 'missing_mobo';
+
+  return {
+    containerId: container.id,
+    containerName: container.name,
+    kind,
+    sellDate: sellDateIso(container, children),
+    reason,
+    reasonLabel: skippedReasonLabel(reason),
+    children: childRows,
+  };
 }
 
 function normalizeSocket(raw: string | number | undefined | null): string {
@@ -384,6 +447,7 @@ export function analyzeCpuMoboCombos(
   >();
 
   let skippedMissingPair = 0;
+  const skippedKits: SkippedComboKit[] = [];
   let soldKitsWithCpuMobo = 0;
 
   for (const item of items) {
@@ -391,7 +455,14 @@ export function analyzeCpuMoboCombos(
     if (!isRealizedDisposal(item)) continue;
     const id = extractComboIdentity(item, items);
     if (!id) {
+      // Still respect kind/date filters so the skip list matches the current view.
+      const kitKind = getContainerKind(item);
+      if (kindFilter !== 'ALL' && kitKind !== kindFilter) continue;
+      const kids = getChildren(item, items);
+      const sellMs = sellDateMs(item, kids);
+      if (!inDateRange(sellMs, dateRange, now)) continue;
       skippedMissingPair += 1;
+      skippedKits.push(describeSkippedKit(item, items));
       continue;
     }
     if (kindFilter !== 'ALL' && id.kind !== kindFilter) continue;
@@ -541,6 +612,9 @@ export function analyzeCpuMoboCombos(
   return {
     soldKitsWithCpuMobo,
     skippedMissingPair,
+    skippedKits: skippedKits.sort(
+      (a, b) => (Date.parse(b.sellDate || '') || 0) - (Date.parse(a.sellDate || '') || 0)
+    ),
     uniqueCombos: sorted.length,
     avgDaysToSell: allDays.length
       ? allDays.reduce((a, b) => a + b, 0) / allDays.length

@@ -9,12 +9,14 @@ import {
   Flame,
   Gauge,
   Lightbulb,
+  Pencil,
   ShoppingCart,
   Trophy,
   Wrench,
+  X,
   Zap,
 } from 'lucide-react';
-import type { BusinessSettings, InventoryItem } from '../types';
+import type { BusinessSettings, InventoryItem, ItemUpdateOptions } from '../types';
 import { formatEUR } from '../utils/formatMoney';
 import {
   analyzeCpuMoboCombos,
@@ -24,12 +26,14 @@ import {
   type ComboRebuyNeed,
   type ComboSortMode,
   type CpuMoboComboRow,
+  type SkippedComboKit,
 } from '../utils/cpuMoboComboAnalytics';
 import { getContainerKindLabel } from '../utils/containerMembership';
 
 interface Props {
   items: InventoryItem[];
   businessSettings: BusinessSettings;
+  onUpdate?: (items: InventoryItem[], deleteIds?: string[], options?: ItemUpdateOptions) => void;
 }
 
 const DATE_OPTIONS: { id: ComboDateRange; label: string }[] = [
@@ -65,13 +69,16 @@ function pctLabel(n: number | null | undefined): string {
   return `${Math.round(n)}%`;
 }
 
-const ComboLabPage: React.FC<Props> = ({ items, businessSettings }) => {
+const ComboLabPage: React.FC<Props> = ({ items, businessSettings, onUpdate }) => {
   const [dateRange, setDateRange] = useState<ComboDateRange>('ALL');
   const [kind, setKind] = useState<ComboKindFilter>('ALL');
   const [sort, setSort] = useState<ComboSortMode>('eurPerDay');
   const [minSold, setMinSold] = useState(1);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const [showSkipped, setShowSkipped] = useState(false);
+  const [expandedSkippedId, setExpandedSkippedId] = useState<string | null>(null);
+  const [actionToast, setActionToast] = useState<string | null>(null);
 
   const taxMode = businessSettings.taxMode || 'SmallBusiness';
 
@@ -99,6 +106,24 @@ const ComboLabPage: React.FC<Props> = ({ items, businessSettings }) => {
     () => suggestComboRebuys(items, summary.rows, { limit: 6 }),
     [items, summary.rows]
   );
+
+  const markChildRole = (childId: string, role: 'cpu' | 'mobo') => {
+    if (!onUpdate) return;
+    const child = items.find((i) => i.id === childId);
+    if (!child) return;
+    const patch: InventoryItem = {
+      ...child,
+      category: 'Components',
+      subCategory: role === 'cpu' ? 'Processors' : 'Motherboards',
+    };
+    onUpdate([patch], undefined, { flushCloud: true });
+    setActionToast(
+      role === 'cpu'
+        ? `Marked “${child.name}” as Processor — combo list will refresh`
+        : `Marked “${child.name}” as Motherboard — combo list will refresh`
+    );
+    window.setTimeout(() => setActionToast(null), 2800);
+  };
 
   return (
     <div className="w-full px-3 sm:px-4 md:px-5 pb-24 md:pb-6 animate-in fade-in space-y-3">
@@ -282,11 +307,40 @@ const ComboLabPage: React.FC<Props> = ({ items, businessSettings }) => {
           <strong className="text-emerald-700">€{formatEUR(summary.totalProfit)}</strong>
         </span>
         {summary.skippedMissingPair > 0 && (
-          <span className="text-slate-400">
+          <button
+            type="button"
+            onClick={() => {
+              setShowSkipped((v) => !v);
+              if (showSkipped) setExpandedSkippedId(null);
+            }}
+            className={`inline-flex items-center gap-1 underline-offset-2 hover:underline ${
+              showSkipped ? 'text-amber-800 font-bold' : 'text-slate-400 hover:text-slate-600'
+            }`}
+          >
             {summary.skippedMissingPair} sold kits skipped (no CPU+board pair)
-          </span>
+            {showSkipped ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          </button>
         )}
       </section>
+
+      {actionToast && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-900">
+          {actionToast}
+        </div>
+      )}
+
+      {showSkipped && summary.skippedKits.length > 0 && (
+        <SkippedKitsPanel
+          kits={summary.skippedKits}
+          expandedId={expandedSkippedId}
+          onToggle={(id) => setExpandedSkippedId((cur) => (cur === id ? null : id))}
+          onClose={() => {
+            setShowSkipped(false);
+            setExpandedSkippedId(null);
+          }}
+          onMarkRole={onUpdate ? markChildRole : undefined}
+        />
+      )}
 
       {filteredRows.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-10 text-center">
@@ -396,6 +450,146 @@ const ComboLabPage: React.FC<Props> = ({ items, businessSettings }) => {
     </div>
   );
 };
+
+function SkippedKitsPanel({
+  kits,
+  expandedId,
+  onToggle,
+  onClose,
+  onMarkRole,
+}: {
+  kits: SkippedComboKit[];
+  expandedId: string | null;
+  onToggle: (id: string) => void;
+  onClose: () => void;
+  onMarkRole?: (childId: string, role: 'cpu' | 'mobo') => void;
+}) {
+  return (
+    <section className="rounded-xl border border-amber-200 bg-amber-50/60 overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-amber-200/80">
+        <div className="min-w-0">
+          <h2 className="text-xs font-black uppercase tracking-widest text-amber-950">
+            Skipped sold kits
+          </h2>
+          <p className="text-[11px] font-semibold text-amber-900/70">
+            No detected CPU+board pair. If a part was miscategorized, mark it below.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-1.5 rounded-lg text-amber-800 hover:bg-amber-100"
+          aria-label="Close skipped list"
+        >
+          <X size={16} />
+        </button>
+      </div>
+      <ul className="divide-y divide-amber-100 max-h-[28rem] overflow-y-auto bg-white/80">
+        {kits.map((kit) => {
+          const open = expandedId === kit.containerId;
+          return (
+            <li key={kit.containerId}>
+              <button
+                type="button"
+                onClick={() => onToggle(kit.containerId)}
+                className="w-full text-left px-3 py-2.5 flex items-start gap-2 hover:bg-amber-50/80"
+              >
+                {open ? (
+                  <ChevronDown size={16} className="text-slate-400 mt-0.5 shrink-0" />
+                ) : (
+                  <ChevronRight size={16} className="text-slate-400 mt-0.5 shrink-0" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold text-slate-900 truncate">{kit.containerName}</p>
+                  <p className="text-[11px] font-semibold text-slate-500">
+                    {kit.kind ? getContainerKindLabel(kit.kind) : 'Kit'}
+                    {kit.sellDate ? ` · sold ${kit.sellDate}` : ''}
+                    {` · ${kit.children.length} part${kit.children.length === 1 ? '' : 's'}`}
+                  </p>
+                </div>
+                <span className="shrink-0 px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase border bg-amber-50 text-amber-900 border-amber-200">
+                  {kit.reasonLabel}
+                </span>
+              </button>
+              {open && (
+                <div className="px-3 pb-3 pl-9 space-y-2 bg-slate-50/80">
+                  <div className="flex flex-wrap gap-1.5">
+                    <Link
+                      to={`/panel/edit/${encodeURIComponent(kit.containerId)}`}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900 text-white text-[10px] font-black uppercase"
+                    >
+                      <Pencil size={11} /> Edit kit
+                    </Link>
+                    <Link
+                      to={`/panel/inventory?q=${encodeURIComponent(kit.containerName.slice(0, 40))}`}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-700 text-[10px] font-black uppercase"
+                    >
+                      <ExternalLink size={11} /> Inventory
+                    </Link>
+                  </div>
+                  {kit.children.length === 0 ? (
+                    <p className="text-[11px] font-semibold text-slate-500">
+                      No linked components — open the kit and attach CPU + motherboard parts.
+                    </p>
+                  ) : (
+                    <ul className="space-y-1.5">
+                      {kit.children.map((child) => (
+                        <li
+                          key={child.id}
+                          className="rounded-lg border border-slate-200 bg-white p-2 flex flex-wrap gap-2 items-start"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold text-slate-800 truncate">{child.name}</p>
+                            <p className="text-[10px] font-semibold text-slate-400">
+                              {child.category}
+                              {child.subCategory ? ` / ${child.subCategory}` : ''}
+                              {' · '}
+                              {child.detectedAs === 'cpu'
+                                ? 'detected as CPU'
+                                : child.detectedAs === 'mobo'
+                                  ? 'detected as board'
+                                  : 'not detected as CPU/board'}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            <Link
+                              to={`/panel/edit/${encodeURIComponent(child.id)}`}
+                              className="px-1.5 py-1 rounded-md border border-slate-200 text-[9px] font-black uppercase text-slate-600 hover:bg-slate-50"
+                            >
+                              Edit
+                            </Link>
+                            {onMarkRole && child.detectedAs !== 'cpu' && (
+                              <button
+                                type="button"
+                                onClick={() => onMarkRole(child.id, 'cpu')}
+                                className="px-1.5 py-1 rounded-md border border-sky-200 bg-sky-50 text-[9px] font-black uppercase text-sky-800 hover:bg-sky-100"
+                              >
+                                Mark as CPU
+                              </button>
+                            )}
+                            {onMarkRole && child.detectedAs !== 'mobo' && (
+                              <button
+                                type="button"
+                                onClick={() => onMarkRole(child.id, 'mobo')}
+                                className="px-1.5 py-1 rounded-md border border-violet-200 bg-violet-50 text-[9px] font-black uppercase text-violet-800 hover:bg-violet-100"
+                              >
+                                Mark as board
+                              </button>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
 
 function NeedBadge({ need }: { need: ComboRebuyNeed }) {
   const map: Record<ComboRebuyNeed, { label: string; cls: string }> = {

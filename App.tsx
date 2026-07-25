@@ -1775,7 +1775,13 @@ const App: React.FC = () => {
           <Route path="sold-pulse" element={<SoldPulsePage items={items} />} />
           <Route
             path="combo-lab"
-            element={<ComboLabPage items={items} businessSettings={businessSettings} />}
+            element={
+              <ComboLabPage
+                items={items}
+                businessSettings={businessSettings}
+                onUpdate={handleUpdate}
+              />
+            }
           />
           <Route path="add" element={<ItemForm onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="add-bulk" element={<BulkItemForm onSave={handleUpdate} onBulkImportComplete={handleBulkImportComplete} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
