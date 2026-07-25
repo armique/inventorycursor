@@ -40,8 +40,12 @@ export interface CpuMoboComboSample {
 export interface CpuMoboComboRow {
   comboKey: string;
   socket: string;
+  /** Normalized socket key used in comboKey (e.g. AM4, LGA1700). */
+  socketKey: string;
   cpuLabel: string;
   moboLabel: string;
+  cpuPartKey: string;
+  moboPartKey: string;
   label: string;
   soldCount: number;
   avgDaysToSell: number | null;
@@ -236,6 +240,15 @@ function resolveSocket(cpu: InventoryItem, mobo: InventoryItem): string {
 
 function comboKey(socket: string, cpu: InventoryItem, mobo: InventoryItem): string {
   return `${socket || 'NOSOCKET'}::${partStableKey(cpu, 'cpu')}::${partStableKey(mobo, 'mobo')}`;
+}
+
+function parseComboKeyParts(key: string): {
+  socketKey: string;
+  cpuPartKey: string;
+  moboPartKey: string;
+} {
+  const [socketKey = '', cpuPartKey = '', moboPartKey = ''] = key.split('::');
+  return { socketKey, cpuPartKey, moboPartKey };
 }
 
 function median(nums: number[]): number | null {
@@ -468,8 +481,11 @@ export function analyzeCpuMoboCombos(
     rows.push({
       comboKey: key,
       socket: socketLabel,
+      socketKey: bucket.socket || 'NOSOCKET',
       cpuLabel: bucket.cpuLabel,
       moboLabel: bucket.moboLabel,
+      cpuPartKey: parseComboKeyParts(key).cpuPartKey,
+      moboPartKey: parseComboKeyParts(key).moboPartKey,
       label: `${socketLabel} · ${bucket.cpuLabel} · ${bucket.moboLabel}`,
       soldCount: bucket.samples.length,
       avgDaysToSell: avgDays,
@@ -536,4 +552,178 @@ export function analyzeCpuMoboCombos(
     mostSold: byVol[0] || null,
     rows: sorted,
   };
+}
+
+function isFreeActivePart(item: InventoryItem): boolean {
+  if (item.isPC || item.isBundle) return false;
+  if (item.isDefective) return false;
+  if (item.status !== ItemStatus.IN_STOCK && item.status !== ItemStatus.ORDERED) return false;
+  if (item.parentContainerId) return false;
+  if (item.status === ItemStatus.IN_COMPOSITION) return false;
+  return true;
+}
+
+function partSocketKey(item: InventoryItem): string {
+  return normalizeSocket(getSpec(item, 'Socket'));
+}
+
+function socketsCompatible(comboSocket: string, partSocket: string): boolean {
+  if (!comboSocket || comboSocket === 'NOSOCKET') return true;
+  if (!partSocket) return true;
+  return comboSocket === partSocket;
+}
+
+export type ComboRebuyNeed = 'cpu' | 'mobo' | 'both' | 'assemble';
+
+export interface ComboRebuySuggestion {
+  comboKey: string;
+  label: string;
+  socket: string;
+  cpuLabel: string;
+  moboLabel: string;
+  need: ComboRebuyNeed;
+  title: string;
+  reason: string;
+  avgProfit: number;
+  eurPerDay: number | null;
+  avgDaysToSell: number | null;
+  soldCount: number;
+  freeCpuCount: number;
+  freeMoboCount: number;
+  inStockKits: number;
+  /** Higher = more urgent / profitable opportunity. */
+  score: number;
+  searchQuery: string;
+}
+
+/**
+ * Compare top-performing sold combos with free (unassigned) CPU/board stock
+ * and suggest what to rebuy — or assemble — next.
+ */
+export function suggestComboRebuys(
+  items: InventoryItem[],
+  comboRows: CpuMoboComboRow[],
+  opts?: { limit?: number; minAvgProfit?: number }
+): ComboRebuySuggestion[] {
+  const limit = opts?.limit ?? 8;
+  const minAvgProfit = opts?.minAvgProfit ?? 5;
+
+  type Tagged = { partKey: string; socketKey: string; used: boolean };
+  const cpuPool: Tagged[] = items
+    .filter((i) => isFreeActivePart(i) && isProcessorItem(i))
+    .map((item) => ({
+      partKey: partStableKey(item, 'cpu'),
+      socketKey: partSocketKey(item),
+      used: false,
+    }));
+  const moboPool: Tagged[] = items
+    .filter((i) => isFreeActivePart(i) && isMotherboardItem(i))
+    .map((item) => ({
+      partKey: partStableKey(item, 'mobo'),
+      socketKey: partSocketKey(item),
+      used: false,
+    }));
+
+  const ranked = [...comboRows]
+    .filter((r) => r.avgProfit >= minAvgProfit)
+    .sort((a, b) => {
+      const ea = a.eurPerDay ?? a.avgProfit / Math.max(a.avgDaysToSell || 30, 1);
+      const eb = b.eurPerDay ?? b.avgProfit / Math.max(b.avgDaysToSell || 30, 1);
+      return eb - ea || b.avgProfit - a.avgProfit || b.soldCount - a.soldCount;
+    });
+
+  const matchPool = (pool: Tagged[], partKey: string, socketKey: string) =>
+    pool.filter(
+      (p) => !p.used && p.partKey === partKey && socketsCompatible(socketKey, p.socketKey)
+    );
+
+  const markUsed = (hits: Tagged[], n: number) => {
+    for (let i = 0; i < n && i < hits.length; i++) hits[i]!.used = true;
+  };
+
+  const out: ComboRebuySuggestion[] = [];
+
+  for (const row of ranked) {
+    if (out.length >= limit * 2) break; // gather then trim by score
+
+    const socketKey = row.socketKey || parseComboKeyParts(row.comboKey).socketKey;
+    const cpuPartKey = row.cpuPartKey || parseComboKeyParts(row.comboKey).cpuPartKey;
+    const moboPartKey = row.moboPartKey || parseComboKeyParts(row.comboKey).moboPartKey;
+
+    const cpuHits = matchPool(cpuPool, cpuPartKey, socketKey);
+    const moboHits = matchPool(moboPool, moboPartKey, socketKey);
+    const freeCpuCount = cpuHits.length;
+    const freeMoboCount = moboHits.length;
+    const pairsPossible = Math.min(freeCpuCount, freeMoboCount);
+    const kits = row.inStockCount;
+
+    const velocity = row.eurPerDay ?? row.avgProfit / Math.max(row.avgDaysToSell || 30, 1);
+    let score = velocity * (1 + Math.log10(1 + row.soldCount)) + row.avgProfit / 100;
+
+    let need: ComboRebuyNeed | null = null;
+    let title = '';
+    let reason = '';
+    let searchQuery = '';
+
+    if (pairsPossible > 0 && kits === 0) {
+      need = 'assemble';
+      title = `Build ${row.cpuLabel} + ${row.moboLabel}`;
+      reason = `You already have ${pairsPossible} matching CPU/board pair${pairsPossible === 1 ? '' : 's'} loose in stock. This combo averaged €${Math.round(row.avgProfit)} profit${row.avgDaysToSell != null ? ` in ~${Math.round(row.avgDaysToSell)}d` : ''}.`;
+      searchQuery = row.cpuLabel;
+      score += 40;
+      markUsed(cpuHits, pairsPossible);
+      markUsed(moboHits, pairsPossible);
+    } else if (freeCpuCount > freeMoboCount) {
+      const orphans = freeCpuCount - freeMoboCount;
+      need = 'mobo';
+      title = `Rebuy ${row.moboLabel}`;
+      reason = `You have ${freeCpuCount}× ${row.cpuLabel} free but only ${freeMoboCount} matching ${row.moboLabel}. Past kits ~€${Math.round(row.avgProfit)} avg${row.eurPerDay != null ? ` (€${row.eurPerDay.toFixed(1)}/day)` : ''}.`;
+      searchQuery = `${row.socket !== 'Unknown' ? row.socket + ' ' : ''}${row.moboLabel}`.trim();
+      score += 25 + orphans * 5;
+      markUsed(cpuHits, freeCpuCount);
+      markUsed(moboHits, freeMoboCount);
+    } else if (freeMoboCount > freeCpuCount) {
+      const orphans = freeMoboCount - freeCpuCount;
+      need = 'cpu';
+      title = `Rebuy ${row.cpuLabel}`;
+      reason = `You have ${freeMoboCount}× ${row.moboLabel} free but only ${freeCpuCount} matching ${row.cpuLabel}. Past kits ~€${Math.round(row.avgProfit)} avg${row.eurPerDay != null ? ` (€${row.eurPerDay.toFixed(1)}/day)` : ''}.`;
+      searchQuery = row.cpuLabel;
+      score += 25 + orphans * 5;
+      markUsed(cpuHits, freeCpuCount);
+      markUsed(moboHits, freeMoboCount);
+    } else if (kits === 0 && freeCpuCount === 0 && freeMoboCount === 0) {
+      const rankIndex = ranked.indexOf(row);
+      if (rankIndex > 5) continue;
+      if (row.avgProfit < 15) continue;
+      need = 'both';
+      title = `Restock ${row.cpuLabel} + ${row.moboLabel}`;
+      reason = `Strong seller (${row.soldCount}×, ~€${Math.round(row.avgProfit)} avg${row.avgDaysToSell != null ? `, ${Math.round(row.avgDaysToSell)}d` : ''}) and you have none in stock.`;
+      searchQuery = `${row.cpuLabel} ${row.moboLabel}`;
+      score += 5;
+    } else {
+      continue;
+    }
+
+    out.push({
+      comboKey: row.comboKey,
+      label: row.label,
+      socket: row.socket,
+      cpuLabel: row.cpuLabel,
+      moboLabel: row.moboLabel,
+      need,
+      title,
+      reason,
+      avgProfit: row.avgProfit,
+      eurPerDay: row.eurPerDay,
+      avgDaysToSell: row.avgDaysToSell,
+      soldCount: row.soldCount,
+      freeCpuCount,
+      freeMoboCount,
+      inStockKits: kits,
+      score,
+      searchQuery,
+    });
+  }
+
+  return out.sort((a, b) => b.score - a.score).slice(0, limit);
 }

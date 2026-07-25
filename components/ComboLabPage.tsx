@@ -8,15 +8,20 @@ import {
   ExternalLink,
   Flame,
   Gauge,
+  Lightbulb,
+  ShoppingCart,
   Trophy,
+  Wrench,
   Zap,
 } from 'lucide-react';
 import type { BusinessSettings, InventoryItem } from '../types';
 import { formatEUR } from '../utils/formatMoney';
 import {
   analyzeCpuMoboCombos,
+  suggestComboRebuys,
   type ComboDateRange,
   type ComboKindFilter,
+  type ComboRebuyNeed,
   type ComboSortMode,
   type CpuMoboComboRow,
 } from '../utils/cpuMoboComboAnalytics';
@@ -89,6 +94,11 @@ const ComboLabPage: React.FC<Props> = ({ items, businessSettings }) => {
       return hay.includes(q);
     });
   }, [summary.rows, query]);
+
+  const rebuySuggestions = useMemo(
+    () => suggestComboRebuys(items, summary.rows, { limit: 6 }),
+    [items, summary.rows]
+  );
 
   return (
     <div className="w-full px-3 sm:px-4 md:px-5 pb-24 md:pb-6 animate-in fade-in space-y-3">
@@ -198,6 +208,63 @@ const ComboLabPage: React.FC<Props> = ({ items, businessSettings }) => {
           sub={summary.mostSold?.label}
         />
       </section>
+
+      {rebuySuggestions.length > 0 && (
+        <section className="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-3 space-y-2.5">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <h2 className="text-xs font-black uppercase tracking-widest text-amber-900 flex items-center gap-1.5">
+                <Lightbulb size={14} /> Rebuy / build next
+              </h2>
+              <p className="text-[11px] font-semibold text-amber-800/80 mt-0.5">
+                Based on your sold combo stats vs free CPUs and boards in active stock
+              </p>
+            </div>
+            <Link
+              to="/panel/builder"
+              className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-amber-900 hover:underline shrink-0"
+            >
+              <Wrench size={12} /> Builder
+            </Link>
+          </div>
+          <ul className="space-y-2">
+            {rebuySuggestions.map((s) => (
+              <li
+                key={`${s.comboKey}-${s.need}`}
+                className="rounded-lg border border-amber-100 bg-white p-2.5 flex flex-wrap gap-2 items-start"
+              >
+                <NeedBadge need={s.need} />
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <p className="text-sm font-black text-slate-900 leading-snug">{s.title}</p>
+                  <p className="text-[11px] font-semibold text-slate-600 leading-snug">{s.reason}</p>
+                  <p className="text-[10px] font-bold text-slate-400">
+                    {s.socket} · {s.soldCount}× sold · avg €{formatEUR(s.avgProfit)}
+                    {s.eurPerDay != null ? ` · €${formatEUR(s.eurPerDay)}/d` : ''}
+                    {s.avgDaysToSell != null ? ` · ${Math.round(s.avgDaysToSell)}d` : ''}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-1.5 shrink-0">
+                  {s.need === 'assemble' ? (
+                    <Link
+                      to="/panel/builder"
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-[10px] font-black uppercase"
+                    >
+                      <Wrench size={12} /> Assemble
+                    </Link>
+                  ) : (
+                    <Link
+                      to={`/panel/inventory?q=${encodeURIComponent(s.searchQuery.slice(0, 48))}`}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-amber-950 text-[10px] font-black uppercase"
+                    >
+                      <ShoppingCart size={12} /> Check stock
+                    </Link>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="rounded-xl border border-slate-200 bg-white p-3 flex flex-wrap gap-4 text-[11px] font-semibold text-slate-600">
         <span>
@@ -329,6 +396,23 @@ const ComboLabPage: React.FC<Props> = ({ items, businessSettings }) => {
     </div>
   );
 };
+
+function NeedBadge({ need }: { need: ComboRebuyNeed }) {
+  const map: Record<ComboRebuyNeed, { label: string; cls: string }> = {
+    assemble: { label: 'Assemble', cls: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
+    cpu: { label: 'Need CPU', cls: 'bg-sky-50 text-sky-800 border-sky-200' },
+    mobo: { label: 'Need board', cls: 'bg-violet-50 text-violet-800 border-violet-200' },
+    both: { label: 'Restock', cls: 'bg-rose-50 text-rose-800 border-rose-200' },
+  };
+  const m = map[need];
+  return (
+    <span
+      className={`inline-flex px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase border shrink-0 ${m.cls}`}
+    >
+      {m.label}
+    </span>
+  );
+}
 
 function Kpi({
   icon,

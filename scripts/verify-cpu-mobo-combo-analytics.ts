@@ -9,6 +9,7 @@ import {
   formatChipsetDisplay,
   formatCpuDisplayLabel,
   formatMoboDisplayLabel,
+  suggestComboRebuys,
 } from '../utils/cpuMoboComboAnalytics';
 
 function base(partial: Partial<InventoryItem> & Pick<InventoryItem, 'id' | 'name'>): InventoryItem {
@@ -141,6 +142,15 @@ const items: InventoryItem[] = [
   kitStock,
   cpuA,
   moboA,
+  // Orphan CPU for same AM4 combo → should suggest rebuy B550
+  base({
+    id: 'cpu-orphan-5600',
+    name: 'AMD Ryzen 5 5600',
+    subCategory: 'Processors',
+    buyPrice: 80,
+    status: ItemStatus.IN_STOCK,
+    specs: { Socket: 'AM4', Series: 'Ryzen 5', Model: '5600' },
+  }),
 ];
 
 const result = analyzeCpuMoboCombos(items, 'SmallBusiness', { sort: 'eurPerDay' });
@@ -195,6 +205,15 @@ assert.equal(
 assert.ok(result.fastest, 'fastest combo set');
 assert.ok(result.topProfit, 'top profit set');
 
+const suggestions = suggestComboRebuys(items, result.rows, { limit: 8 });
+assert.ok(suggestions.length >= 1, 'expected at least one rebuy/assemble suggestion');
+const needMobo = suggestions.find((s) => s.need === 'mobo' && /B550/i.test(s.moboLabel));
+assert.ok(needMobo, 'orphan Ryzen 5 5600 should suggest rebuying B550');
+const restockIntel = suggestions.find(
+  (s) => s.need === 'both' && /12400/i.test(s.cpuLabel)
+);
+assert.ok(restockIntel, 'sold Intel combo with no stock should suggest restock both');
+
 console.log('verify-cpu-mobo-combo-analytics: all checks passed');
 console.log(
   '  combos=',
@@ -204,5 +223,7 @@ console.log(
   'fastest=',
   result.fastest?.label,
   '€/d=',
-  result.topEurPerDay?.eurPerDay?.toFixed?.(1)
+  result.topEurPerDay?.eurPerDay?.toFixed?.(1),
+  'suggestions=',
+  suggestions.map((s) => s.need).join(',')
 );
