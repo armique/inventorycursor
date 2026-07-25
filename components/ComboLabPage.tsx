@@ -24,6 +24,7 @@ import {
   type ComboDateRange,
   type ComboKindFilter,
   type ComboRebuyNeed,
+  type ComboRebuySuggestion,
   type ComboSortMode,
   type CpuMoboComboRow,
   type SkippedComboKit,
@@ -208,72 +209,6 @@ const ComboLabPage: React.FC<Props> = ({ items, businessSettings, onUpdate }) =>
         />
       </div>
 
-      <section className="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-3 space-y-2.5">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div className="min-w-0">
-              <h2 className="text-xs font-black uppercase tracking-widest text-amber-900 flex items-center gap-1.5">
-                <Lightbulb size={14} /> Rebuy / build next
-              </h2>
-              <p className="text-[11px] font-semibold text-amber-800/80 mt-0.5">
-                Based on your sold combo stats vs free CPUs and boards in active stock
-              </p>
-            </div>
-            <Link
-              to="/panel/builder"
-              className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-amber-900 hover:underline shrink-0"
-            >
-              <Wrench size={12} /> Builder
-            </Link>
-          </div>
-          {rebuySuggestions.length === 0 ? (
-            <p className="text-[11px] font-semibold text-amber-900/80 rounded-lg border border-amber-100 bg-white/80 px-3 py-2.5">
-              No rebuy tips right now.
-              {` ${rebuyAnalysis.freeCpuTotal} free CPU${rebuyAnalysis.freeCpuTotal === 1 ? '' : 's'}, ${rebuyAnalysis.freeMoboTotal} free board${rebuyAnalysis.freeMoboTotal === 1 ? '' : 's'}`}
-              {rebuyAnalysis.combosWithNoStock > 0
-                ? `, ${rebuyAnalysis.combosWithNoStock} profitable combo${rebuyAnalysis.combosWithNoStock === 1 ? '' : 's'} with 0 kits in stock`
-                : ''}
-              . Tips appear when you have orphan parts for a proven combo, both parts loose to assemble, or a top combo with nothing in stock.
-            </p>
-          ) : (
-            <ul className="space-y-2">
-              {rebuySuggestions.map((s) => (
-                <li
-                  key={`${s.comboKey}-${s.need}`}
-                  className="rounded-lg border border-amber-100 bg-white p-2.5 flex flex-wrap gap-2 items-start"
-                >
-                  <NeedBadge need={s.need} />
-                  <div className="min-w-0 flex-1 space-y-0.5">
-                    <p className="text-sm font-black text-slate-900 leading-snug">{s.title}</p>
-                    <p className="text-[11px] font-semibold text-slate-600 leading-snug">{s.reason}</p>
-                    <p className="text-[10px] font-bold text-slate-400">
-                      {s.socket} · {s.soldCount}× sold · avg €{formatEUR(s.avgProfit)}
-                      {s.eurPerDay != null ? ` · €${formatEUR(s.eurPerDay)}/d` : ''}
-                      {s.avgDaysToSell != null ? ` · ${Math.round(s.avgDaysToSell)}d` : ''}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5 shrink-0">
-                    {s.need === 'assemble' ? (
-                      <Link
-                        to="/panel/builder"
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-[10px] font-black uppercase"
-                      >
-                        <Wrench size={12} /> Assemble
-                      </Link>
-                    ) : (
-                      <Link
-                        to={`/panel/inventory?q=${encodeURIComponent(s.searchQuery.slice(0, 48))}`}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-amber-950 text-[10px] font-black uppercase"
-                      >
-                        <ShoppingCart size={12} /> Check stock
-                      </Link>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
       <section className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <Kpi
           icon={<Zap size={14} className="text-amber-600" />}
@@ -352,111 +287,124 @@ const ComboLabPage: React.FC<Props> = ({ items, businessSettings, onUpdate }) =>
         />
       )}
 
-      {filteredRows.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-10 text-center">
-          <Cpu size={36} className="mx-auto mb-3 text-slate-300" />
-          <p className="font-bold text-slate-500">No CPU + motherboard combos yet</p>
-          <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
-            Sold PCs and bundles need both a processor and a motherboard as components. Build kits
-            in Builder, then sell them — results show up here.
-          </p>
-          <Link
-            to="/panel/builder"
-            className="inline-flex mt-4 px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold"
-          >
-            Open Builder
-          </Link>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {/* Desktop table */}
-          <div className="hidden md:block rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-400">
-                <tr>
-                  <th className="px-3 py-2 w-8" />
-                  <th className="px-3 py-2">Combo</th>
-                  <th className="px-3 py-2 text-right">Sold</th>
-                  <th className="px-3 py-2 text-right">Avg days</th>
-                  <th className="px-3 py-2 text-right">Avg profit</th>
-                  <th className="px-3 py-2 text-right">Margin</th>
-                  <th className="px-3 py-2 text-right">€/day</th>
-                  <th className="px-3 py-2 text-right">In stock</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {filteredRows.map((row) => (
-                  <ComboTableRows
-                    key={row.comboKey}
-                    row={row}
-                    expanded={expandedKey === row.comboKey}
-                    onToggle={() =>
-                      setExpandedKey((cur) => (cur === row.comboKey ? null : row.comboKey))
-                    }
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
+      <div className="flex flex-col xl:flex-row gap-3 items-start">
+        <div className="min-w-0 flex-1 w-full space-y-2">
+          {filteredRows.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-10 text-center">
+              <Cpu size={36} className="mx-auto mb-3 text-slate-300" />
+              <p className="font-bold text-slate-500">No CPU + motherboard combos yet</p>
+              <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+                Sold PCs and bundles need both a processor and a motherboard as components. Build
+                kits in Builder, then sell them — results show up here.
+              </p>
+              <Link
+                to="/panel/builder"
+                className="inline-flex mt-4 px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold"
+              >
+                Open Builder
+              </Link>
+            </div>
+          ) : (
+            <>
+              {/* Desktop table — compact for sidebar */}
+              <div className="hidden md:block rounded-xl border border-slate-200 bg-white overflow-x-auto shadow-sm">
+                <table className="w-full text-left text-sm table-fixed min-w-[520px]">
+                  <thead className="bg-slate-50 border-b border-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    <tr>
+                      <th className="px-2 py-2 w-7" />
+                      <th className="px-2 py-2">Combo</th>
+                      <th className="px-2 py-2 text-right w-12">Sold</th>
+                      <th className="px-2 py-2 text-right w-16">Days</th>
+                      <th className="px-2 py-2 text-right w-[4.5rem]">Profit</th>
+                      <th className="px-2 py-2 text-right w-14 hidden lg:table-cell">Margin</th>
+                      <th className="px-2 py-2 text-right w-14">€/d</th>
+                      <th className="px-2 py-2 text-right w-12 hidden 2xl:table-cell">Stock</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {filteredRows.map((row) => (
+                      <ComboTableRows
+                        key={row.comboKey}
+                        row={row}
+                        expanded={expandedKey === row.comboKey}
+                        onToggle={() =>
+                          setExpandedKey((cur) => (cur === row.comboKey ? null : row.comboKey))
+                        }
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
-          {/* Mobile cards */}
-          <div className="md:hidden space-y-2">
-            {filteredRows.map((row) => {
-              const open = expandedKey === row.comboKey;
-              return (
-                <div
-                  key={row.comboKey}
-                  className="rounded-xl border border-slate-200 bg-white overflow-hidden"
-                >
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setExpandedKey((cur) => (cur === row.comboKey ? null : row.comboKey))
-                    }
-                    className="w-full text-left p-3 space-y-1.5"
-                  >
-                    <div className="flex items-start gap-2">
-                      {open ? (
-                        <ChevronDown size={16} className="text-slate-400 mt-0.5 shrink-0" />
-                      ) : (
-                        <ChevronRight size={16} className="text-slate-400 mt-0.5 shrink-0" />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[10px] font-black uppercase text-indigo-700">
-                          {row.socket}
-                        </p>
-                        <p className="font-bold text-slate-900 text-sm leading-snug">
-                          {row.cpuLabel}
-                        </p>
-                        <p className="text-xs font-semibold text-slate-500">{row.moboLabel}</p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-sm font-black text-emerald-700">
-                          €{formatEUR(row.avgProfit)}
-                        </p>
-                        <p className="text-[10px] font-bold text-slate-400">
-                          {daysLabel(row.avgDaysToSell)} · {row.soldCount}×
-                        </p>
-                      </div>
+              {/* Mobile cards */}
+              <div className="md:hidden space-y-2">
+                {filteredRows.map((row) => {
+                  const open = expandedKey === row.comboKey;
+                  return (
+                    <div
+                      key={row.comboKey}
+                      className="rounded-xl border border-slate-200 bg-white overflow-hidden"
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedKey((cur) => (cur === row.comboKey ? null : row.comboKey))
+                        }
+                        className="w-full text-left p-3 space-y-1.5"
+                      >
+                        <div className="flex items-start gap-2">
+                          {open ? (
+                            <ChevronDown size={16} className="text-slate-400 mt-0.5 shrink-0" />
+                          ) : (
+                            <ChevronRight size={16} className="text-slate-400 mt-0.5 shrink-0" />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[10px] font-black uppercase text-indigo-700">
+                              {row.socket}
+                            </p>
+                            <p className="font-bold text-slate-900 text-sm leading-snug">
+                              {row.cpuLabel}
+                            </p>
+                            <p className="text-xs font-semibold text-slate-500">{row.moboLabel}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-sm font-black text-emerald-700">
+                              €{formatEUR(row.avgProfit)}
+                            </p>
+                            <p className="text-[10px] font-bold text-slate-400">
+                              {daysLabel(row.avgDaysToSell)} · {row.soldCount}×
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 pl-6">
+                          <Pill>{pctLabel(row.avgMarginPct)} margin</Pill>
+                          <Pill>
+                            €{formatEUR(row.eurPerDay ?? 0)}
+                            /d
+                          </Pill>
+                          {row.inStockCount > 0 && (
+                            <Pill tone="amber">{row.inStockCount} in stock</Pill>
+                          )}
+                        </div>
+                      </button>
+                      {open && <SampleList row={row} />}
                     </div>
-                    <div className="flex flex-wrap gap-1.5 pl-6">
-                      <Pill>{pctLabel(row.avgMarginPct)} margin</Pill>
-                      <Pill>
-                        €{formatEUR(row.eurPerDay ?? 0)}
-                        /d
-                      </Pill>
-                      {row.inStockCount > 0 && (
-                        <Pill tone="amber">{row.inStockCount} in stock</Pill>
-                      )}
-                    </div>
-                  </button>
-                  {open && <SampleList row={row} />}
-                </div>
-              );
-            })}
-          </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </div>
-      )}
+
+        <aside className="w-full xl:w-[22rem] xl:shrink-0 xl:sticky xl:top-3">
+          <RebuySidebar
+            suggestions={rebuySuggestions}
+            freeCpuTotal={rebuyAnalysis.freeCpuTotal}
+            freeMoboTotal={rebuyAnalysis.freeMoboTotal}
+            combosWithNoStock={rebuyAnalysis.combosWithNoStock}
+          />
+        </aside>
+      </div>
     </div>
   );
 };
@@ -618,6 +566,87 @@ function NeedBadge({ need }: { need: ComboRebuyNeed }) {
   );
 }
 
+function RebuySidebar({
+  suggestions,
+  freeCpuTotal,
+  freeMoboTotal,
+  combosWithNoStock,
+}: {
+  suggestions: ComboRebuySuggestion[];
+  freeCpuTotal: number;
+  freeMoboTotal: number;
+  combosWithNoStock: number;
+}) {
+  return (
+    <section className="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-3 space-y-2.5 shadow-sm max-h-[min(70vh,42rem)] xl:max-h-[calc(100vh-6rem)] flex flex-col">
+      <div className="flex flex-wrap items-start justify-between gap-2 shrink-0">
+        <div className="min-w-0">
+          <h2 className="text-xs font-black uppercase tracking-widest text-amber-900 flex items-center gap-1.5">
+            <Lightbulb size={14} /> Rebuy / build next
+          </h2>
+          <p className="text-[10px] font-semibold text-amber-800/80 mt-0.5">
+            Sold combo stats vs free CPU/board stock
+          </p>
+        </div>
+        <Link
+          to="/panel/builder"
+          className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-amber-900 hover:underline shrink-0"
+        >
+          <Wrench size={12} /> Builder
+        </Link>
+      </div>
+      {suggestions.length === 0 ? (
+        <p className="text-[11px] font-semibold text-amber-900/80 rounded-lg border border-amber-100 bg-white/80 px-3 py-2.5">
+          No rebuy tips right now.
+          {` ${freeCpuTotal} free CPU${freeCpuTotal === 1 ? '' : 's'}, ${freeMoboTotal} free board${freeMoboTotal === 1 ? '' : 's'}`}
+          {combosWithNoStock > 0
+            ? `, ${combosWithNoStock} profitable combo${combosWithNoStock === 1 ? '' : 's'} with 0 kits in stock`
+            : ''}
+          .
+        </p>
+      ) : (
+        <ul className="space-y-2 overflow-y-auto min-h-0 pr-0.5 custom-scrollbar">
+          {suggestions.map((s) => (
+            <li
+              key={`${s.comboKey}-${s.need}`}
+              className="rounded-lg border border-amber-100 bg-white p-2.5 space-y-1.5"
+            >
+              <div className="flex items-start gap-1.5">
+                <NeedBadge need={s.need} />
+                <p className="text-[13px] font-black text-slate-900 leading-snug min-w-0 flex-1">
+                  {s.title}
+                </p>
+              </div>
+              <p className="text-[11px] font-semibold text-slate-600 leading-snug">{s.reason}</p>
+              <p className="text-[10px] font-bold text-slate-400">
+                {s.socket} · {s.soldCount}× · €{formatEUR(s.avgProfit)}
+                {s.eurPerDay != null ? ` · €${formatEUR(s.eurPerDay)}/d` : ''}
+              </p>
+              <div className="pt-0.5">
+                {s.need === 'assemble' ? (
+                  <Link
+                    to="/panel/builder"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-[10px] font-black uppercase"
+                  >
+                    <Wrench size={12} /> Assemble
+                  </Link>
+                ) : (
+                  <Link
+                    to={`/panel/inventory?q=${encodeURIComponent(s.searchQuery.slice(0, 48))}`}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-amber-950 text-[10px] font-black uppercase"
+                  >
+                    <ShoppingCart size={12} /> Check stock
+                  </Link>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 function Kpi({
   icon,
   label,
@@ -670,47 +699,47 @@ function ComboTableRows({
   return (
     <>
       <tr className="hover:bg-slate-50/80">
-        <td className="px-2 py-2">
+        <td className="px-1.5 py-1.5">
           <button
             type="button"
             onClick={onToggle}
             className="p-1 rounded text-slate-400 hover:text-slate-700"
             aria-label={expanded ? 'Collapse' : 'Expand'}
           >
-            {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </button>
         </td>
-        <td className="px-3 py-2 min-w-0">
-          <p className="text-[10px] font-black uppercase text-indigo-700">{row.socket}</p>
-          <p className="font-bold text-slate-900 truncate">
+        <td className="px-2 py-1.5 min-w-0">
+          <p className="text-[9px] font-black uppercase text-indigo-700">{row.socket}</p>
+          <p className="font-bold text-slate-900 text-[13px] leading-snug truncate" title={`${row.cpuLabel} + ${row.moboLabel}`}>
             {row.cpuLabel} <span className="text-slate-300 font-normal">+</span> {row.moboLabel}
           </p>
-          <p className="text-[10px] text-slate-400 font-semibold">
+          <p className="text-[9px] text-slate-400 font-semibold truncate">
             {row.kinds.map(getContainerKindLabel).join(' · ')}
           </p>
         </td>
-        <td className="px-3 py-2 text-right font-black text-slate-800">{row.soldCount}</td>
-        <td className="px-3 py-2 text-right font-bold text-slate-700">
+        <td className="px-2 py-1.5 text-right font-black text-slate-800 text-xs">{row.soldCount}</td>
+        <td className="px-2 py-1.5 text-right font-bold text-slate-700 text-xs">
           {daysLabel(row.avgDaysToSell)}
           {row.medianDaysToSell != null && (
-            <span className="block text-[10px] font-semibold text-slate-400">
+            <span className="block text-[9px] font-semibold text-slate-400">
               med {daysLabel(row.medianDaysToSell)}
             </span>
           )}
         </td>
-        <td className="px-3 py-2 text-right font-black text-emerald-700">
+        <td className="px-2 py-1.5 text-right font-black text-emerald-700 text-xs">
           €{formatEUR(row.avgProfit)}
-          <span className="block text-[10px] font-semibold text-slate-400">
+          <span className="block text-[9px] font-semibold text-slate-400">
             tot €{formatEUR(row.totalProfit)}
           </span>
         </td>
-        <td className="px-3 py-2 text-right font-bold text-slate-700">
+        <td className="px-2 py-1.5 text-right font-bold text-slate-700 text-xs hidden lg:table-cell">
           {pctLabel(row.avgMarginPct)}
         </td>
-        <td className="px-3 py-2 text-right font-black text-amber-700">
+        <td className="px-2 py-1.5 text-right font-black text-amber-700 text-xs">
           {row.eurPerDay != null ? `€${formatEUR(row.eurPerDay)}` : '—'}
         </td>
-        <td className="px-3 py-2 text-right font-bold text-slate-600">
+        <td className="px-2 py-1.5 text-right font-bold text-slate-600 text-xs hidden 2xl:table-cell">
           {row.inStockCount > 0 ? row.inStockCount : '—'}
         </td>
       </tr>
