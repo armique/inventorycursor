@@ -77,8 +77,11 @@ const ComboLabPage: React.FC<Props> = ({ items, businessSettings, onUpdate }) =>
   const [minSold, setMinSold] = useState(1);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [query, setQuery] = useState('');
-  const [showSkipped, setShowSkipped] = useState(false);
+  const [statsPanel, setStatsPanel] = useState<'sold' | 'combos' | 'flip' | 'profit' | 'skipped' | null>(
+    null
+  );
   const [expandedSkippedId, setExpandedSkippedId] = useState<string | null>(null);
+  const [expandedStatKitId, setExpandedStatKitId] = useState<string | null>(null);
   const [actionToast, setActionToast] = useState<string | null>(null);
 
   const taxMode = businessSettings.taxMode || 'SmallBusiness';
@@ -108,6 +111,67 @@ const ComboLabPage: React.FC<Props> = ({ items, businessSettings, onUpdate }) =>
     [items, summary.rows]
   );
   const rebuySuggestions = rebuyAnalysis.suggestions;
+
+  const includedKits = useMemo(() => {
+    const out: Array<{
+      containerId: string;
+      containerName: string;
+      kind: string;
+      sellDate: string | null;
+      daysToSell: number | null;
+      profit: number;
+      sellPrice: number;
+      comboLabel: string;
+      comboKey: string;
+      cpuLabel: string;
+      moboLabel: string;
+    }> = [];
+    for (const row of summary.rows) {
+      for (const s of row.samples) {
+        out.push({
+          containerId: s.containerId,
+          containerName: s.containerName,
+          kind: getContainerKindLabel(s.kind),
+          sellDate: s.sellDate,
+          daysToSell: s.daysToSell,
+          profit: s.profit,
+          sellPrice: s.sellPrice,
+          comboLabel: row.label,
+          comboKey: row.comboKey,
+          cpuLabel: row.cpuLabel,
+          moboLabel: row.moboLabel,
+        });
+      }
+    }
+    return out;
+  }, [summary.rows]);
+
+  const kitsBySellDate = useMemo(
+    () =>
+      [...includedKits].sort(
+        (a, b) => (Date.parse(b.sellDate || '') || 0) - (Date.parse(a.sellDate || '') || 0)
+      ),
+    [includedKits]
+  );
+
+  const kitsByDays = useMemo(
+    () =>
+      [...includedKits].sort(
+        (a, b) => (a.daysToSell ?? 9999) - (b.daysToSell ?? 9999) || b.profit - a.profit
+      ),
+    [includedKits]
+  );
+
+  const kitsByProfit = useMemo(
+    () => [...includedKits].sort((a, b) => b.profit - a.profit),
+    [includedKits]
+  );
+
+  const toggleStatsPanel = (panel: typeof statsPanel) => {
+    setStatsPanel((cur) => (cur === panel ? null : panel));
+    setExpandedSkippedId(null);
+    setExpandedStatKitId(null);
+  };
 
   const markChildRole = (childId: string, role: 'cpu' | 'mobo') => {
     if (!onUpdate) return;
@@ -236,34 +300,59 @@ const ComboLabPage: React.FC<Props> = ({ items, businessSettings, onUpdate }) =>
         />
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-3 flex flex-wrap gap-4 text-[11px] font-semibold text-slate-600">
-        <span>
+      <section className="rounded-xl border border-slate-200 bg-white p-3 flex flex-wrap gap-3 text-[11px] font-semibold text-slate-600">
+        <button
+          type="button"
+          onClick={() => toggleStatsPanel('sold')}
+          className={`inline-flex items-center gap-1 underline-offset-2 hover:underline ${
+            statsPanel === 'sold' ? 'text-indigo-800 font-bold' : 'hover:text-slate-800'
+          }`}
+        >
           <strong className="text-slate-900">{summary.soldKitsWithCpuMobo}</strong> sold kits with
           CPU+board
-        </span>
-        <span>
+          {statsPanel === 'sold' ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </button>
+        <button
+          type="button"
+          onClick={() => toggleStatsPanel('combos')}
+          className={`inline-flex items-center gap-1 underline-offset-2 hover:underline ${
+            statsPanel === 'combos' ? 'text-indigo-800 font-bold' : 'hover:text-slate-800'
+          }`}
+        >
           <strong className="text-slate-900">{summary.uniqueCombos}</strong> unique combos
-        </span>
-        <span>
+          {statsPanel === 'combos' ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </button>
+        <button
+          type="button"
+          onClick={() => toggleStatsPanel('flip')}
+          className={`inline-flex items-center gap-1 underline-offset-2 hover:underline ${
+            statsPanel === 'flip' ? 'text-indigo-800 font-bold' : 'hover:text-slate-800'
+          }`}
+        >
           Avg flip <strong className="text-slate-900">{daysLabel(summary.avgDaysToSell)}</strong>
-        </span>
-        <span>
+          {statsPanel === 'flip' ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </button>
+        <button
+          type="button"
+          onClick={() => toggleStatsPanel('profit')}
+          className={`inline-flex items-center gap-1 underline-offset-2 hover:underline ${
+            statsPanel === 'profit' ? 'text-indigo-800 font-bold' : 'hover:text-slate-800'
+          }`}
+        >
           Total profit{' '}
           <strong className="text-emerald-700">€{formatEUR(summary.totalProfit)}</strong>
-        </span>
+          {statsPanel === 'profit' ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </button>
         {summary.skippedMissingPair > 0 && (
           <button
             type="button"
-            onClick={() => {
-              setShowSkipped((v) => !v);
-              if (showSkipped) setExpandedSkippedId(null);
-            }}
+            onClick={() => toggleStatsPanel('skipped')}
             className={`inline-flex items-center gap-1 underline-offset-2 hover:underline ${
-              showSkipped ? 'text-amber-800 font-bold' : 'text-slate-400 hover:text-slate-600'
+              statsPanel === 'skipped' ? 'text-amber-800 font-bold' : 'text-slate-400 hover:text-slate-600'
             }`}
           >
             {summary.skippedMissingPair} sold kits skipped (no CPU+board pair)
-            {showSkipped ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            {statsPanel === 'skipped' ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
           </button>
         )}
       </section>
@@ -274,13 +363,75 @@ const ComboLabPage: React.FC<Props> = ({ items, businessSettings, onUpdate }) =>
         </div>
       )}
 
-      {showSkipped && summary.skippedKits.length > 0 && (
+      {statsPanel === 'sold' && (
+        <IncludedKitsPanel
+          title="Sold kits with CPU+board"
+          subtitle="Kits included in Combo Lab stats for the current filters."
+          kits={kitsBySellDate}
+          expandedId={expandedStatKitId}
+          onToggle={(id) => setExpandedStatKitId((cur) => (cur === id ? null : id))}
+          onClose={() => setStatsPanel(null)}
+          onFocusCombo={(comboKey, cpuLabel) => {
+            setQuery(cpuLabel);
+            setExpandedKey(comboKey);
+            setStatsPanel(null);
+          }}
+        />
+      )}
+
+      {statsPanel === 'flip' && (
+        <IncludedKitsPanel
+          title="Sold kits by flip speed"
+          subtitle={`Average flip ${daysLabel(summary.avgDaysToSell)} — fastest first.`}
+          kits={kitsByDays}
+          expandedId={expandedStatKitId}
+          onToggle={(id) => setExpandedStatKitId((cur) => (cur === id ? null : id))}
+          onClose={() => setStatsPanel(null)}
+          onFocusCombo={(comboKey, cpuLabel) => {
+            setQuery(cpuLabel);
+            setExpandedKey(comboKey);
+            setStatsPanel(null);
+          }}
+        />
+      )}
+
+      {statsPanel === 'profit' && (
+        <IncludedKitsPanel
+          title="Sold kits by profit"
+          subtitle={`Total €${formatEUR(summary.totalProfit)} — highest profit first.`}
+          kits={kitsByProfit}
+          expandedId={expandedStatKitId}
+          onToggle={(id) => setExpandedStatKitId((cur) => (cur === id ? null : id))}
+          onClose={() => setStatsPanel(null)}
+          onFocusCombo={(comboKey, cpuLabel) => {
+            setQuery(cpuLabel);
+            setExpandedKey(comboKey);
+            setStatsPanel(null);
+          }}
+        />
+      )}
+
+      {statsPanel === 'combos' && (
+        <UniqueCombosPanel
+          rows={summary.rows}
+          expandedId={expandedStatKitId}
+          onToggle={(id) => setExpandedStatKitId((cur) => (cur === id ? null : id))}
+          onClose={() => setStatsPanel(null)}
+          onFocusCombo={(comboKey, cpuLabel) => {
+            setQuery(cpuLabel);
+            setExpandedKey(comboKey);
+            setStatsPanel(null);
+          }}
+        />
+      )}
+
+      {statsPanel === 'skipped' && summary.skippedKits.length > 0 && (
         <SkippedKitsPanel
           kits={summary.skippedKits}
           expandedId={expandedSkippedId}
           onToggle={(id) => setExpandedSkippedId((cur) => (cur === id ? null : id))}
           onClose={() => {
-            setShowSkipped(false);
+            setStatsPanel(null);
             setExpandedSkippedId(null);
           }}
           onMarkRole={onUpdate ? markChildRole : undefined}
@@ -408,6 +559,226 @@ const ComboLabPage: React.FC<Props> = ({ items, businessSettings, onUpdate }) =>
     </div>
   );
 };
+
+function IncludedKitsPanel({
+  title,
+  subtitle,
+  kits,
+  expandedId,
+  onToggle,
+  onClose,
+  onFocusCombo,
+}: {
+  title: string;
+  subtitle: string;
+  kits: Array<{
+    containerId: string;
+    containerName: string;
+    kind: string;
+    sellDate: string | null;
+    daysToSell: number | null;
+    profit: number;
+    sellPrice: number;
+    comboLabel: string;
+    comboKey: string;
+    cpuLabel: string;
+    moboLabel: string;
+  }>;
+  expandedId: string | null;
+  onToggle: (id: string) => void;
+  onClose: () => void;
+  onFocusCombo: (comboKey: string, cpuLabel: string) => void;
+}) {
+  return (
+    <section className="rounded-xl border border-indigo-200 bg-indigo-50/50 overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-indigo-200/80">
+        <div className="min-w-0">
+          <h2 className="text-xs font-black uppercase tracking-widest text-indigo-950">{title}</h2>
+          <p className="text-[11px] font-semibold text-indigo-900/70">{subtitle}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-1.5 rounded-lg text-indigo-800 hover:bg-indigo-100"
+          aria-label="Close list"
+        >
+          <X size={16} />
+        </button>
+      </div>
+      {kits.length === 0 ? (
+        <p className="px-3 py-4 text-xs font-semibold text-slate-500">No kits in this view.</p>
+      ) : (
+        <ul className="divide-y divide-indigo-100 max-h-[28rem] overflow-y-auto bg-white/80">
+          {kits.map((kit) => {
+            const open = expandedId === kit.containerId;
+            return (
+              <li key={kit.containerId}>
+                <button
+                  type="button"
+                  onClick={() => onToggle(kit.containerId)}
+                  className="w-full text-left px-3 py-2.5 flex items-start gap-2 hover:bg-indigo-50/80"
+                >
+                  {open ? (
+                    <ChevronDown size={16} className="text-slate-400 mt-0.5 shrink-0" />
+                  ) : (
+                    <ChevronRight size={16} className="text-slate-400 mt-0.5 shrink-0" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-slate-900 truncate">{kit.containerName}</p>
+                    <p className="text-[11px] font-semibold text-slate-500 truncate">
+                      {kit.comboLabel}
+                      {kit.sellDate ? ` · ${kit.sellDate}` : ''}
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-xs font-black text-emerald-700">€{formatEUR(kit.profit)}</p>
+                    <p className="text-[10px] font-bold text-slate-400">
+                      {daysLabel(kit.daysToSell)}
+                    </p>
+                  </div>
+                </button>
+                {open && (
+                  <div className="px-3 pb-3 pl-9 space-y-2 bg-slate-50/80">
+                    <p className="text-[11px] font-semibold text-slate-600">
+                      {kit.kind} · {kit.cpuLabel} + {kit.moboLabel}
+                      {kit.sellPrice ? ` · sold €${formatEUR(kit.sellPrice)}` : ''}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      <Link
+                        to={`/panel/edit/${encodeURIComponent(kit.containerId)}`}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900 text-white text-[10px] font-black uppercase"
+                      >
+                        <Pencil size={11} /> Edit kit
+                      </Link>
+                      <Link
+                        to={`/panel/inventory?q=${encodeURIComponent(kit.containerName.slice(0, 40))}`}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-700 text-[10px] font-black uppercase"
+                      >
+                        <ExternalLink size={11} /> Inventory
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => onFocusCombo(kit.comboKey, kit.cpuLabel)}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-900 text-[10px] font-black uppercase"
+                      >
+                        Show in table
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function UniqueCombosPanel({
+  rows,
+  expandedId,
+  onToggle,
+  onClose,
+  onFocusCombo,
+}: {
+  rows: CpuMoboComboRow[];
+  expandedId: string | null;
+  onToggle: (id: string) => void;
+  onClose: () => void;
+  onFocusCombo: (comboKey: string, cpuLabel: string) => void;
+}) {
+  return (
+    <section className="rounded-xl border border-violet-200 bg-violet-50/50 overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-violet-200/80">
+        <div className="min-w-0">
+          <h2 className="text-xs font-black uppercase tracking-widest text-violet-950">
+            Unique combos
+          </h2>
+          <p className="text-[11px] font-semibold text-violet-900/70">
+            Each CPU + board pair counted in the current filters.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-1.5 rounded-lg text-violet-800 hover:bg-violet-100"
+          aria-label="Close list"
+        >
+          <X size={16} />
+        </button>
+      </div>
+      <ul className="divide-y divide-violet-100 max-h-[28rem] overflow-y-auto bg-white/80">
+        {rows.map((row) => {
+          const open = expandedId === row.comboKey;
+          return (
+            <li key={row.comboKey}>
+              <button
+                type="button"
+                onClick={() => onToggle(row.comboKey)}
+                className="w-full text-left px-3 py-2.5 flex items-start gap-2 hover:bg-violet-50/80"
+              >
+                {open ? (
+                  <ChevronDown size={16} className="text-slate-400 mt-0.5 shrink-0" />
+                ) : (
+                  <ChevronRight size={16} className="text-slate-400 mt-0.5 shrink-0" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-black uppercase text-indigo-700">{row.socket}</p>
+                  <p className="text-sm font-bold text-slate-900 truncate">
+                    {row.cpuLabel} + {row.moboLabel}
+                  </p>
+                  <p className="text-[11px] font-semibold text-slate-500">
+                    {row.soldCount}× sold · avg {daysLabel(row.avgDaysToSell)}
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-xs font-black text-emerald-700">€{formatEUR(row.avgProfit)}</p>
+                  <p className="text-[10px] font-bold text-amber-700">
+                    {row.eurPerDay != null ? `€${formatEUR(row.eurPerDay)}/d` : '—'}
+                  </p>
+                </div>
+              </button>
+              {open && (
+                <div className="px-3 pb-3 pl-9 space-y-2 bg-slate-50/80">
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => onFocusCombo(row.comboKey, row.cpuLabel)}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900 text-white text-[10px] font-black uppercase"
+                    >
+                      Show in table
+                    </button>
+                  </div>
+                  <ul className="space-y-1">
+                    {row.samples.map((s) => (
+                      <li
+                        key={s.containerId}
+                        className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px]"
+                      >
+                        <span className="font-bold text-slate-800 truncate flex-1 min-w-[8rem]">
+                          {s.containerName}
+                        </span>
+                        <span className="text-slate-500">{daysLabel(s.daysToSell)}</span>
+                        <span className="font-black text-emerald-700">€{formatEUR(s.profit)}</span>
+                        <Link
+                          to={`/panel/edit/${encodeURIComponent(s.containerId)}`}
+                          className="font-black uppercase text-indigo-700 hover:underline"
+                        >
+                          Edit
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
 
 function SkippedKitsPanel({
   kits,
