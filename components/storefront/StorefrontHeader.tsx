@@ -26,42 +26,38 @@ const StorefrontHeader: React.FC<Props> = ({
   onCategoryClick,
 }) => (
   <header
-    className={`sticky top-0 z-50 border-b backdrop-blur-xl ${
-      darkMode ? 'bg-zinc-950/80 border-zinc-800' : 'bg-white/80 border-zinc-200/70'
+    className={`fixed inset-x-0 top-0 z-50 border-b backdrop-blur-xl ${
+      darkMode
+        ? 'border-white/10 bg-zinc-950/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
+        : 'border-zinc-200/60 bg-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]'
     }`}
   >
-    <div className={`hidden sm:block text-[11px] ${darkMode ? 'bg-zinc-900 text-zinc-400' : 'bg-zinc-950 text-zinc-300'}`}>
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 h-8 flex items-center justify-center">
-        <span>{texts.tagline}</span>
-      </div>
-    </div>
-
-    <div className="mx-auto max-w-7xl px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-      <button
-        type="button"
-        onClick={onHome}
-        className="flex items-center gap-2.5 group min-w-0"
-      >
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shadow-sm shrink-0">
-          <span className="text-white font-black text-sm tracking-tight">AT</span>
-        </div>
-        <div className="min-w-0 text-left hidden sm:block">
-          <p className={`font-bold text-base tracking-tight truncate ${darkMode ? 'text-white' : 'text-zinc-900'}`}>
-            {texts.title}
-          </p>
-        </div>
+    <div className="mx-auto flex h-14 max-w-[1400px] items-center justify-between gap-4 px-4 sm:h-16 sm:px-6">
+      <button type="button" onClick={onHome} className="group flex min-w-0 items-center gap-3">
+        <span
+          className={`flex h-8 w-8 items-center justify-center rounded-lg text-[11px] font-black tracking-tight transition-transform duration-300 group-active:scale-[0.96] ${
+            darkMode ? 'bg-white text-zinc-950' : 'bg-zinc-900 text-white'
+          }`}
+          style={{ transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)' }}
+        >
+          AT
+        </span>
+        <span className={`hidden truncate font-display text-sm font-semibold tracking-tight sm:block ${darkMode ? 'text-white' : 'text-zinc-900'}`}>
+          {texts.title}
+        </span>
       </button>
 
       {categories.length > 0 && onCategoryClick && (
-        <nav className="hidden lg:flex items-center gap-5 flex-1 justify-center">
+        <nav className="hidden flex-1 items-center justify-center gap-6 lg:flex">
           {categories.slice(0, 6).map((c) => (
             <button
               key={c}
               type="button"
               onClick={() => onCategoryClick(c)}
-              className={`text-[13px] font-medium whitespace-nowrap transition-colors ${
-                darkMode ? 'text-zinc-300 hover:text-brand-400' : 'text-zinc-600 hover:text-brand-600'
+              className={`whitespace-nowrap text-[13px] font-medium transition-colors duration-300 ${
+                darkMode ? 'text-zinc-400 hover:text-white' : 'text-zinc-500 hover:text-zinc-900'
               }`}
+              style={{ transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)' }}
             >
               {c}
             </button>
@@ -69,20 +65,20 @@ const StorefrontHeader: React.FC<Props> = ({
         </nav>
       )}
 
-      <nav className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+      <nav className="flex shrink-0 items-center gap-1.5 sm:gap-2">
         {wishlistCount > 0 && (
           <span
-            className={`hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${
-              darkMode ? 'bg-zinc-800 text-rose-400' : 'bg-rose-50 text-rose-600'
+            className={`hidden items-center gap-1.5 px-2 py-1 font-mono text-[11px] tabular-nums sm:inline-flex ${
+              darkMode ? 'text-rose-300' : 'text-rose-600'
             }`}
             title={texts.wishlist}
           >
-            <Heart size={12} className="fill-current" />
+            <Heart size={12} strokeWidth={1.75} className="fill-current" />
             {wishlistCount}
           </span>
         )}
 
-        <div className={`flex rounded-lg overflow-hidden border ${darkMode ? 'border-zinc-700' : 'border-zinc-200'}`}>
+        <div className={`flex overflow-hidden rounded-lg border ${darkMode ? 'border-zinc-700' : 'border-zinc-200'}`}>
           <button
             type="button"
             onClick={() => onLangChange('de')}
@@ -118,12 +114,12 @@ const StorefrontHeader: React.FC<Props> = ({
         <button
           type="button"
           onClick={onDarkModeToggle}
-          className={`p-2 rounded-xl transition-colors ${
+          className={`rounded-lg p-2 transition-colors active:scale-[0.96] ${
             darkMode ? 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200' : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800'
           }`}
           aria-label={darkMode ? 'Light mode' : 'Dark mode'}
         >
-          {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+          {darkMode ? <Sun size={18} strokeWidth={1.75} /> : <Moon size={18} strokeWidth={1.75} />}
         </button>
       </nav>
     </div>

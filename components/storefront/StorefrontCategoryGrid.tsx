@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ArrowUpRight } from 'lucide-react';
 import type { StorefrontTexts } from './storefrontTexts';
 import { getCategoryIcon } from '../categoryIcons';
 
@@ -17,40 +17,78 @@ interface Props {
   subheadingOverride?: string;
 }
 
-const StorefrontCategoryGrid: React.FC<Props> = ({ texts, darkMode, categories, onSelect, headingOverride, subheadingOverride }) => {
+const StorefrontCategoryGrid: React.FC<Props> = ({
+  texts,
+  darkMode,
+  categories,
+  onSelect,
+  headingOverride,
+  subheadingOverride,
+}) => {
   if (categories.length === 0) return null;
 
   return (
-    <section className="mx-auto max-w-7xl w-full px-4 sm:px-6 py-14 sm:py-20">
-      <div className="text-center mb-10">
-        <h2 className={`text-2xl sm:text-3xl font-bold tracking-tight ${darkMode ? 'text-white' : 'text-zinc-900'}`}>
+    <section className="mx-auto w-full max-w-[1400px] px-4 py-16 sm:px-6 sm:py-24">
+      <div className="mb-10 grid gap-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] md:items-end">
+        <h2 className={`font-display text-3xl font-semibold tracking-tight sm:text-4xl ${darkMode ? 'text-white' : 'text-zinc-900'}`}>
           {headingOverride || texts.categoriesHeading}
         </h2>
-        <p className={`mt-2 text-sm ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>{subheadingOverride || texts.categoriesSub}</p>
+        <p className={`max-w-[42ch] text-sm leading-relaxed md:justify-self-end md:text-right ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>
+          {subheadingOverride || texts.categoriesSub}
+        </p>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-        {categories.map(({ name, count }) => {
+
+      <div
+        className={`grid grid-cols-1 gap-px overflow-hidden rounded-2xl border sm:grid-cols-2 lg:grid-cols-[1.45fr_1fr_1fr] ${
+          darkMode ? 'border-zinc-800 bg-zinc-800' : 'border-zinc-200 bg-zinc-200'
+        }`}
+      >
+        {categories.map(({ name, count }, index) => {
           const Icon = getCategoryIcon(name);
+          const featured = index === 0;
           return (
             <button
               key={name}
               type="button"
               onClick={() => onSelect(name)}
-              className={`group text-left rounded-2xl p-6 min-h-[170px] flex flex-col gap-3 transition-transform duration-200 ${
-                darkMode
-                  ? 'bg-zinc-900 hover:-translate-y-1'
-                  : 'bg-[#f5f5f7] hover:-translate-y-1'
-              }`}
+              style={{
+                animationDelay: `${Math.min(index, 8) * 70}ms`,
+                transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)',
+              }}
+              className={`group storefront-stagger flex min-h-[9.5rem] flex-col justify-between p-6 text-left transition-colors duration-300 ${
+                featured ? 'sm:col-span-2 lg:col-span-1 lg:row-span-2 lg:min-h-[21rem]' : ''
+              } ${darkMode ? 'bg-zinc-900 hover:bg-zinc-900/80' : 'bg-white hover:bg-zinc-50'}`}
             >
-              <Icon size={40} strokeWidth={1.5} className={darkMode ? 'text-brand-400' : 'text-brand-600'} />
-              <h3 className={`font-semibold text-lg ${darkMode ? 'text-white' : 'text-zinc-900'}`}>{name}</h3>
-              <p className={`text-xs flex-1 ${darkMode ? 'text-zinc-500' : 'text-zinc-500'}`}>
-                {count} {texts.itemsCount}
-              </p>
-              <span className={`inline-flex items-center gap-1 text-sm font-medium ${darkMode ? 'text-brand-400' : 'text-brand-600'}`}>
-                {texts.shopNow}
-                <ChevronRight size={14} className="transition-transform group-hover:translate-x-0.5" />
-              </span>
+              <Icon
+                size={featured ? 36 : 28}
+                strokeWidth={1.5}
+                className={`transition-transform duration-500 ease-out group-hover:-translate-y-0.5 ${
+                  darkMode ? 'text-brand-400' : 'text-brand-600'
+                }`}
+              />
+              <div>
+                <h3
+                  className={`font-display font-semibold tracking-tight ${
+                    featured ? 'text-xl sm:text-2xl' : 'text-lg'
+                  } ${darkMode ? 'text-white' : 'text-zinc-900'}`}
+                >
+                  {name}
+                </h3>
+                <p className={`mt-1 font-mono text-xs tabular-nums ${darkMode ? 'text-zinc-500' : 'text-zinc-500'}`}>
+                  {count} {texts.itemsCount}
+                </p>
+                <span
+                  className={`mt-4 inline-flex items-center gap-1 text-sm font-medium ${
+                    darkMode ? 'text-zinc-300' : 'text-zinc-700'
+                  }`}
+                >
+                  {texts.shopNow}
+                  <ArrowUpRight
+                    size={14}
+                    className="transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
+                  />
+                </span>
+              </div>
             </button>
           );
         })}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageCircle, Sparkles } from 'lucide-react';
+import { MessageCircle } from 'lucide-react';
 import { formatEUR } from '../../utils/formatMoney';
 import type { StorefrontTexts } from './storefrontTexts';
 import type { StorefrontPromoAd } from '../../services/firebaseService';
@@ -30,40 +30,46 @@ interface Props {
 }
 
 const StorefrontPromoBand: React.FC<Props> = ({ ad, texts, darkMode, onContact }) => (
-  <div className={`${darkMode ? 'bg-zinc-900' : 'bg-zinc-950'} text-white`}>
-    <div className="mx-auto max-w-7xl w-full px-4 sm:px-6 py-14 sm:py-16 grid grid-cols-1 lg:grid-cols-[0.95fr_1.05fr] gap-10 items-center">
+  <div className={`relative overflow-hidden text-white ${darkMode ? 'bg-zinc-950' : 'bg-zinc-950'}`}>
+    <div
+      className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_70%_60%_at_85%_40%,rgba(10,132,255,0.22),transparent_60%)]"
+      aria-hidden="true"
+    />
+    <div className="relative mx-auto grid w-full max-w-[1400px] grid-cols-1 items-center gap-10 px-4 py-16 sm:px-6 sm:py-20 lg:grid-cols-[1.1fr_0.9fr]">
       <div>
-        <span className="inline-flex items-center gap-1.5 bg-brand-500 text-white text-[11px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg mb-5">
-          <Sparkles size={12} />
+        <p className="mb-4 font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-brand-400">
           {texts.adTag}
-        </span>
-        <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold leading-tight tracking-tight">
+        </p>
+        <h2 className="font-display text-3xl font-semibold leading-[1.05] tracking-tight sm:text-4xl lg:text-5xl">
           {ad.name}
         </h2>
-        {ad.specLine && <p className="mt-2.5 text-sm text-zinc-400">{ad.specLine}</p>}
-        <div className="mt-5 flex items-baseline gap-3 flex-wrap">
-          <span className="text-3xl font-bold tracking-tight">{formatEUR(ad.price)} €</span>
+        {ad.specLine && <p className="mt-3 max-w-[42ch] text-sm leading-relaxed text-zinc-400">{ad.specLine}</p>}
+        <div className="mt-6 flex flex-wrap items-baseline gap-3">
+          <span className="font-mono text-3xl font-semibold tabular-nums tracking-tight">{formatEUR(ad.price)} €</span>
         </div>
-        <p className="mt-3 text-sm font-medium text-zinc-400">{texts.adNote}</p>
+        <p className="mt-3 text-sm text-zinc-500">{texts.adNote}</p>
         <div className="mt-8">
           <button
             type="button"
             onClick={onContact}
-            className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-brand-500 text-white text-sm font-bold hover:bg-brand-600 transition-colors"
+            className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-6 py-3 text-sm font-semibold text-white transition-transform duration-300 hover:bg-brand-700 active:scale-[0.98]"
+            style={{ transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)' }}
           >
-            <MessageCircle size={16} />
+            <MessageCircle size={16} strokeWidth={1.75} />
             {ad.ctaLabel || texts.adCta}
           </button>
         </div>
       </div>
-      <div className="flex justify-center">
-        <div className="w-full max-w-sm aspect-[3/4] rounded-3xl bg-white/5 border border-white/10 flex items-center justify-center p-8 overflow-hidden">
-          {ad.imageUrl ? (
-            <img src={ad.imageUrl} alt={ad.name} className="w-full h-full object-contain" />
-          ) : (
-            <TowerArt />
-          )}
-        </div>
+      <div className="relative flex min-h-[16rem] items-center justify-center lg:min-h-[22rem]">
+        {ad.imageUrl ? (
+          <img
+            src={ad.imageUrl}
+            alt={ad.name}
+            className="max-h-[22rem] w-full object-contain drop-shadow-[0_30px_50px_rgba(0,0,0,0.45)]"
+          />
+        ) : (
+          <TowerArt />
+        )}
       </div>
     </div>
   </div>

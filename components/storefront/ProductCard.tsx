@@ -55,7 +55,7 @@ const ProductCard: React.FC<Props> = ({
     <div className="flex items-baseline gap-2 flex-wrap">
       {pd.hasPrice ? (
         <>
-          <span className={`text-lg font-bold tracking-tight ${darkMode ? 'text-white' : 'text-zinc-900'}`}>
+          <span className={`font-mono text-lg font-semibold tabular-nums tracking-tight ${darkMode ? 'text-white' : 'text-zinc-900'}`}>
             {formatEUR(Number(pd.value))} €
           </span>
           {pd.sale && item.sellPrice != null && item.sellPrice > pd.value && (
@@ -139,9 +139,10 @@ const ProductCard: React.FC<Props> = ({
     <button
       type="button"
       onClick={(e) => { e.stopPropagation(); onContact(); }}
-      className="w-full py-2.5 rounded-full bg-brand-600 text-white text-xs font-bold hover:bg-brand-700 transition-colors inline-flex items-center justify-center gap-1.5"
+      className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-zinc-900 py-2.5 text-xs font-bold text-white transition-transform duration-300 hover:bg-zinc-800 active:scale-[0.98] dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100"
+      style={{ transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)' }}
     >
-      <MessageCircle size={14} />
+      <MessageCircle size={14} strokeWidth={1.75} />
       {texts.contact}
     </button>
   );
@@ -150,7 +151,8 @@ const ProductCard: React.FC<Props> = ({
     return (
       <article
         onClick={onDetailsClick}
-        className={`group flex gap-4 rounded-2xl border p-4 cursor-pointer transition-all duration-300 hover:shadow-card-hover ${cardShell}`}
+        className={`group flex cursor-pointer gap-4 rounded-2xl border p-4 transition-colors duration-300 ${cardShell}`}
+        style={{ transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)' }}
       >
         {imageBox}
         <div className="flex flex-col flex-1 min-w-0 justify-center">
@@ -172,11 +174,12 @@ const ProductCard: React.FC<Props> = ({
   return (
     <article
       onClick={onDetailsClick}
-      className={`group flex flex-col rounded-2xl border p-5 cursor-pointer transition-all duration-300 hover:shadow-card-hover hover:-translate-y-0.5 h-full ${cardShell}`}
+      className={`group flex h-full cursor-pointer flex-col rounded-2xl border p-5 transition-colors duration-300 ${cardShell}`}
+      style={{ transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)' }}
     >
       {tag}
       {imageBox}
-      <h2 className={`font-semibold mt-4 line-clamp-2 text-base leading-snug ${darkMode ? 'text-white' : 'text-zinc-900'}`}>
+      <h2 className={`mt-4 line-clamp-2 font-display text-base font-semibold leading-snug tracking-tight ${darkMode ? 'text-white' : 'text-zinc-900'}`}>
         {item.name}
       </h2>
       <p className={`text-xs mt-1 ${darkMode ? 'text-zinc-500' : 'text-zinc-500'}`}>

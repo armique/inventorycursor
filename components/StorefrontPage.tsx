@@ -174,6 +174,13 @@ const StorefrontPage: React.FC = () => {
 
   const items = useMemo(() => (catalog?.items ?? []).filter((i) => i.storeVisible !== false), [catalog]);
   const saleCount = useMemo(() => items.filter((i) => i.storeOnSale).length, [items]);
+  const featuredHeroImage = useMemo(() => {
+    const preferred =
+      items.find((i) => i.storeOnSale && catalogItemImageList(i).some(isUsableProductImageUrl)) ||
+      items.find((i) => catalogItemImageList(i).some(isUsableProductImageUrl));
+    if (!preferred) return null;
+    return catalogItemImageList(preferred).find(isUsableProductImageUrl) || null;
+  }, [items]);
 
   useEffect(() => {
     if (!catalogLoaded) return;
@@ -364,6 +371,7 @@ const StorefrontPage: React.FC = () => {
             ctaSaleLabelOverride={storefrontConfig.hero.ctaSaleLabel}
             liveResults={liveSearchResults}
             onSelectResult={handleOpenDetails}
+            featuredImageUrl={featuredHeroImage}
           />
         );
       case 'categoryGrid':
@@ -390,15 +398,15 @@ const StorefrontPage: React.FC = () => {
         ) : null;
       case 'bestSellers':
         return (
-          <div id="bestsellers" key="bestSellers" className="mx-auto max-w-7xl w-full px-4 sm:px-6 py-8 sm:py-10 flex gap-8 flex-1">
-            <StorefrontFiltersSidebar {...filterProps} className="hidden lg:block w-64 shrink-0 self-start" />
+          <div id="bestsellers" key="bestSellers" className="mx-auto flex w-full max-w-[1400px] flex-1 gap-8 px-4 py-10 sm:px-6 sm:py-14">
+            <StorefrontFiltersSidebar {...filterProps} className="hidden w-64 shrink-0 self-start lg:block" />
 
-            <main className="flex-1 min-w-0">
-              <div className="mb-6">
-                <h2 className={`text-xl sm:text-2xl font-bold tracking-tight ${darkMode ? 'text-white' : 'text-zinc-900'}`}>
+            <main className="min-w-0 flex-1">
+              <div className="mb-8 grid gap-2 md:grid-cols-[1.2fr_0.8fr] md:items-end">
+                <h2 className={`font-display text-2xl font-semibold tracking-tight sm:text-3xl ${darkMode ? 'text-white' : 'text-zinc-900'}`}>
                   {storefrontConfig.bestSellers.heading || TEXTS.bestsellersHeading}
                 </h2>
-                <p className={`text-sm mt-1 ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                <p className={`text-sm md:text-right ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>
                   {storefrontConfig.bestSellers.subheading || TEXTS.bestsellersSub}
                 </p>
               </div>
@@ -489,7 +497,7 @@ const StorefrontPage: React.FC = () => {
                 }`}>
                   <p className={`font-semibold ${darkMode ? 'text-zinc-300' : 'text-zinc-700'}`}>{TEXTS.noItems}</p>
                   <p className={`text-sm mt-2 ${darkMode ? 'text-zinc-500' : 'text-zinc-500'}`}>{TEXTS.resetHint}</p>
-                  <button type="button" onClick={handleClearFilters} className="mt-6 px-5 py-2.5 rounded-full bg-brand-600 text-white text-sm font-bold hover:bg-brand-700">
+                  <button type="button" onClick={handleClearFilters} className="mt-6 rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-bold text-white transition-transform hover:bg-brand-700 active:scale-[0.98]">
                     {TEXTS.clearFilters}
                   </button>
                 </div>
@@ -562,15 +570,20 @@ const StorefrontPage: React.FC = () => {
 
   return (
     <div
-      className={`min-h-screen flex flex-col antialiased storefront-page ${
-        darkMode ? 'bg-zinc-950 text-zinc-100' : 'bg-zinc-50 text-zinc-900'
+      className={`storefront-page flex min-h-[100dvh] flex-col font-sans antialiased ${
+        darkMode ? 'bg-zinc-950 text-zinc-100' : 'bg-[#f7f7f8] text-zinc-900'
       }`}
-      style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" }}
     >
       <style>{`
         @keyframes storefrontFadeIn {
-          from { opacity: 0; transform: scale(0.98); }
-          to { opacity: 1; transform: scale(1); }
+          from { opacity: 0; transform: translateY(12px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .storefront-stagger {
+          animation: storefrontFadeIn 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
+        }
+        .storefront-page {
+          font-feature-settings: "ss01" on, "cv11" on;
         }
       `}</style>
 
@@ -602,8 +615,9 @@ const StorefrontPage: React.FC = () => {
         <button
           type="button"
           onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          className="fixed bottom-6 right-6 z-40 w-11 h-11 rounded-full bg-brand-600 text-white shadow-lg shadow-brand-600/30 hover:bg-brand-700 hover:scale-105 transition-all flex items-center justify-center"
+          className="fixed bottom-6 right-6 z-40 flex h-11 w-11 items-center justify-center rounded-xl bg-zinc-900 text-white shadow-[0_12px_28px_-12px_rgba(0,0,0,0.45)] transition-transform duration-300 hover:bg-zinc-800 active:scale-[0.96] dark:bg-white dark:text-zinc-900"
           aria-label={TEXTS.backToTop}
+          style={{ transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)' }}
         >
           <ArrowUp size={18} />
         </button>
