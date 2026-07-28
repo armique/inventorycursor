@@ -649,6 +649,37 @@ function matchesRamCapacity(haystack, targetGb) {
   return parseRamCapacityTargets(haystack).some(gb => Math.abs(gb - wanted) <= tol);
 }
 
+/**
+ * The TOTAL kit capacity a RAM listing is selling — prefers a parsed "NxM" multiplication
+ * (2x16GB -> 32, 4x32GB -> 128) over a bare capacity mention, because titles routinely state
+ * both the per-stick and total size ("32GB (2x16GB)") and only the multiplied total answers
+ * "how much RAM do I get", which is what a capacity-scoped search like "DDR4 32GB" means.
+ */
+function parseRamTotalCapacityGb(haystack) {
+  const text = String(haystack || '');
+  let total = null;
+  for (const match of text.matchAll(/\b(\d+)\s*[x×]\s*(\d+)\s*(?:gb|g)?\b/gi)) {
+    const sticks = Number(match[1]);
+    const each = Number(match[2]);
+    if (sticks > 0 && each > 0) {
+      const candidate = sticks * each;
+      total = total == null ? candidate : Math.max(total, candidate);
+    }
+  }
+  if (total != null) return total;
+  return parseCapacityGb(text);
+}
+
+/** Unconditional (not opt-in) — used to require the query's requested total capacity. */
+function matchesRamTotalCapacity(haystack, targetGb) {
+  const wanted = Number(targetGb);
+  if (!Number.isFinite(wanted) || wanted <= 0) return true;
+  const total = parseRamTotalCapacityGb(haystack);
+  if (total == null) return true; // couldn't parse a capacity — let other rules judge it
+  const tol = Math.max(1, Math.round(wanted * 0.06));
+  return Math.abs(total - wanted) <= tol;
+}
+
 function capacityIncludeDefs(searchQuery = '', categoryId = '') {
   if (isStorageSearch(searchQuery, categoryId)) return storageIncludeDefs();
   if (isRamSearch(searchQuery, categoryId)) return ramIncludeDefs();
@@ -826,7 +857,8 @@ function isPcBareboneIncomplete(haystack) {
   return true;
 }
 
-function hasPcComputeSignal(haystack) {
+/** A specific CPU model/brand is named — narrower than hasPcComputeSignal (no RAM/DDR fallback). */
+function hasCpuIdentity(haystack) {
   return /\b(core\s*i[3579]\b|ryzen|pentium|celeron|athlon|xeon|apple m[1-4]\b|snapdragon|intel\s*(n\d{2,4}|j\d{4}|atom))\b/.test(haystack)
     // Bare "i7-13700H" / "i5 8400" / "i9-14900HX" — real listings very often drop the
     // "Core" prefix entirely, especially laptop/mainboard ads (mobile CPU suffix H/HX/U).
@@ -834,7 +866,11 @@ function hasPcComputeSignal(haystack) {
     // "i7 12th gen" — generation wording instead of a model number.
     || /\bi[3579]\b[^.]{0,15}\bgen(eration)?\b/.test(haystack)
     // Bare Ryzen model "R7 7840HS" without the word "Ryzen" (same drop-the-brand pattern).
-    || /\br[3579][- ]?\d{4}[a-z]{0,2}\b/.test(haystack)
+    || /\br[3579][- ]?\d{4}[a-z]{0,2}\b/.test(haystack);
+}
+
+function hasPcComputeSignal(haystack) {
+  return hasCpuIdentity(haystack)
     || /\b(cpu|prozessor|soc)\b/.test(haystack)
     || /\b\d+\s*gb\b.{0,12}\b(ram|ddr\d?)\b/.test(haystack)
     || /\b(ddr[345]|ddr\d)\b/.test(haystack);
@@ -891,6 +927,14 @@ function classifyLotType(haystack) {
   }
   if (looksLikeCompletePc(haystack)) {
     return 'whole_pc';
+  }
+  // Neither explicit bundle wording nor a recognizable whole-PC signal, but a specific GPU
+  // model AND a specific CPU model are both named — an assembled rig sold as one lot without
+  // "PC"/"bundle" wording ("Gaming Setup R7 5800X RTX3060 32gb DDR4 RAM"). Checked last so
+  // explicit bundle/whole-PC wording above always wins (e.g. "Gaming PC RTX 5070 Ryzen
+  // 7800X3D" must stay whole_pc, not fall into this generic donor_bundle inference).
+  if (hasGpuIdentity(haystack) && hasCpuIdentity(haystack)) {
+    return 'donor_bundle';
   }
   return 'component';
 }
@@ -1053,6 +1097,12 @@ function looksLikeLaptopRam(haystack) {
   return false;
 }
 
+/** Registered/ECC server memory — a different physical/electrical class from consumer DIMMs. */
+function looksLikeServerRam(haystack) {
+  return /\b(rdimm|lrdimm|fbdimm|registered dimm|reg ?ecc|ecc ?reg)\b/.test(haystack)
+    || (/\becc\b/.test(haystack) && /\b(server|workstation|xeon|epyc)\b/.test(haystack));
+}
+
 function isDesktopDimmRam(haystack) {
   if (looksLikeLaptopRam(haystack)) return false;
   return /\b(udimm|dimm|desktop|pc ram|pc arbeitsspeicher|fuer desktop|for desktop|dimm only)\b/.test(haystack)
@@ -1076,6 +1126,7 @@ function ramSearchIntent(searchQuery = '') {
     ddr4: listingHasDdrGen(q, 4),
     ddr3: listingHasDdrGen(q, 3),
     sodimm: /\b(so-?dimm|sodimm|laptop|notebook)\b/.test(q),
+    server: /\b(rdimm|lrdimm|fbdimm|registered|server|workstation|xeon|epyc)\b/.test(q),
   };
 }
 
@@ -1084,6 +1135,17 @@ function failsRamHardRules(haystack, searchQuery = '') {
   // SODIMM/DIMM adapters, converters, risers — not actual RAM sticks.
   if (/\badapt(?:e|o)r\b/.test(haystack)) return true;
   if (want.sodimm && !looksLikeLaptopRam(haystack)) return true;
+  // Symmetric case: a plain desktop search ("DDR4 32GB", no sodimm/laptop/notebook wording)
+  // must not surface laptop SO-DIMM either. Previously this direction only existed as the
+  // opt-in 'desktop-dimm' smart filter, which the buy-helper bridge never enables — nothing
+  // is watching the pills for an unattended background price check.
+  if (!want.sodimm && looksLikeLaptopRam(haystack)) return true;
+  // Same asymmetry for server RAM: registered/ECC memory needs a server/workstation board
+  // and isn't a substitute for consumer desktop DIMMs, so it must not surface under a plain
+  // "DDR4 32GB" search either. Conversely, an explicit RDIMM/server search must not accept
+  // consumer unbuffered memory.
+  if (!want.server && looksLikeServerRam(haystack)) return true;
+  if (want.server && !looksLikeServerRam(haystack)) return true;
   if (want.ddr5) {
     if (!listingHasDdrGen(haystack, 5)) return true;
     if (listingHasDdrGen(haystack, 4) || listingHasDdrGen(haystack, 3)) return true;
@@ -1095,6 +1157,11 @@ function failsRamHardRules(haystack, searchQuery = '') {
   if (want.ddr3) {
     if (!listingHasDdrGen(haystack, 3)) return true;
   }
+  // A capacity mentioned in the search itself ("DDR4 32GB") means "this total kit size" —
+  // reject kits whose actual total (from an "NxM" multiplication when present) doesn't match,
+  // e.g. a 2x32GB=64GB kit or a 4x32GB=128GB kit surfacing under a "32GB" search.
+  const targetCapacityGb = parseCapacityGb(searchQuery);
+  if (targetCapacityGb != null && !matchesRamTotalCapacity(haystack, targetCapacityGb)) return true;
   return false;
 }
 
@@ -4546,6 +4613,10 @@ module.exports = {
   buildBuyHelperQuoteQuery,
   loadClassifierConfig,
   normalizeListingText,
+  isRamSearch,
+  failsRamHardRules,
+  matchesRamTotalCapacity,
+  isBlockedListing,
 };
 
 if (require.main === module) {

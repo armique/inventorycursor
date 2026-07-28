@@ -183,6 +183,23 @@ const mustPass: Case[] = [
     note: 'Re-asserts the existing must-pass case still holds after the accessory/compute-signal changes above.',
     source: 'real',
   },
+  // Found via a live "DDR4 32GB" buy-helper quote: SODIMM laptop RAM, 64/128GB multi-kits,
+  // and an unlabeled GPU+CPU rig all matched under a plain desktop-capacity search. These
+  // three are handled by failsRamHardRules() (search-time hard rule, verified in
+  // verify-buy-helper-ram-hard-rules.ts) rather than classifyLotType, so they're not
+  // repeated here — this file only covers the new GPU+CPU co-mention classifier rule.
+  {
+    title: 'Gaming Setup R7 5800X RTX3060 WQHD 32gb DDR4 RAM',
+    expected: 'donor_bundle',
+    note: 'No "PC"/"bundle" wording at all, but a specific GPU model (RTX3060) and CPU model (R7 5800X) are both named — an assembled rig, not standalone RAM.',
+    source: 'real',
+  },
+  {
+    title: 'Gaming PC RTX 5070 Ryzen 7800X3D',
+    expected: 'whole_pc',
+    note: 'Also matches the new GPU+CPU co-mention rule, but explicit "Gaming PC" wording must still win (checked first) — re-asserts the very first must-pass case is unaffected.',
+    source: 'synthetic',
+  },
 ];
 
 function run(cases: Case[]): Array<Case & { actual: string; pass: boolean }> {

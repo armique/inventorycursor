@@ -2933,9 +2933,15 @@ const InventoryList: React.FC<Props> = ({
      setSelectedIds([]);
   };
 
-  const renderCell = (item: InventoryItem, id: ColumnId, isSelected: boolean) => {
+  const renderCell = (item: InventoryItem, id: ColumnId, isSelected: boolean, itemFlexWidth?: number | null) => {
     const width = effectiveColumnWidths[id] || columnWidths[id] || DEFAULT_WIDTHS[id];
-    const style = { width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px` };
+    // The item/name column is the one meant to grow into any leftover space on wide screens
+    // instead of leaving it in a separate blank filler column. itemFlexWidth is computed by
+    // InventoryListTablePane from its own measured container width (see there for why: neither
+    // an unset width nor width:100% survives table-layout:fixed reliably once sibling columns'
+    // widths already exceed the container — both silently collapsed this column to 0).
+    const width_ = id === 'item' && itemFlexWidth != null ? itemFlexWidth : width;
+    const style = { width: `${width_}px`, minWidth: `${width_}px`, maxWidth: `${width_}px` };
     const dense = listDensity === 'compact';
     const iconBtn = dense ? 'h-6 w-6' : 'h-7 w-7';
     const thumbPx = dense ? 32 : 36;
@@ -4455,10 +4461,8 @@ const InventoryList: React.FC<Props> = ({
   const renderCellRef = useRef(renderCell);
   renderCellRef.current = renderCell;
   const renderRowCells = useCallback(
-    (item: InventoryItem, isSelected: boolean) => [
-      ...visibleColumns.map((colId) => renderCellRef.current(item, colId, isSelected)),
-      <td key="__filler" aria-hidden="true" className="p-0" />,
-    ],
+    (item: InventoryItem, isSelected: boolean, itemFlexWidth?: number | null) =>
+      visibleColumns.map((colId) => renderCellRef.current(item, colId, isSelected, itemFlexWidth)),
     [visibleColumns, effectiveColumnWidths]
   );
 
@@ -6217,6 +6221,7 @@ const InventoryList: React.FC<Props> = ({
             scrollRef={activeTableRef}
             visibleColumns={visibleColumns}
             columnWidths={effectiveColumnWidths}
+            manualWidthColumns={manualWidthColumns}
             listDensity={listDensity}
             sortConfig={sortConfig}
             handleHeaderSort={handleHeaderSort}
@@ -6256,6 +6261,7 @@ const InventoryList: React.FC<Props> = ({
             scrollRef={soldTableRef}
             visibleColumns={visibleColumns}
             columnWidths={effectiveColumnWidths}
+            manualWidthColumns={manualWidthColumns}
             listDensity={listDensity}
             sortConfig={sortConfig}
             handleHeaderSort={handleHeaderSort}
@@ -6289,6 +6295,7 @@ const InventoryList: React.FC<Props> = ({
           scrollRef={tableContainerRef}
           visibleColumns={visibleColumns}
           columnWidths={effectiveColumnWidths}
+          manualWidthColumns={manualWidthColumns}
           listDensity={listDensity}
           sortConfig={sortConfig}
           handleHeaderSort={handleHeaderSort}
@@ -7068,13 +7075,14 @@ type InventoryTableBodyProps = {
   sortedItems: InventoryItem[];
   selectedIdSet: Set<string>;
   visibleColumns: ColumnId[];
-  renderRowCells: (item: InventoryItem, isSelected: boolean) => React.ReactNode;
+  renderRowCells: (item: InventoryItem, isSelected: boolean, itemFlexWidth?: number | null) => React.ReactNode;
   getRowActivityKey: (item: InventoryItem) => string;
   highlightedItemId: string | null;
   scrollElement: HTMLDivElement | null;
   rowHeightEstimate: number;
   bulkBarSpacer: boolean;
   collapsedBundles: Set<string>;
+  itemFlexWidth?: number | null;
 };
 
 const InventoryTableBody = React.memo(function InventoryTableBody({
@@ -7088,6 +7096,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
   rowHeightEstimate,
   bulkBarSpacer,
   collapsedBundles,
+  itemFlexWidth,
 }: InventoryTableBodyProps) {
   const useVirtual = sortedItems.length > INVENTORY_VIRTUAL_THRESHOLD;
 
@@ -7153,6 +7162,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
             isSelected={selectedIdSet.has(item.id)}
             visibleColumns={visibleColumns}
             renderRowCells={renderRowCells}
+            itemFlexWidth={itemFlexWidth}
             rowActivityKey={getRowActivityKey(item)}
             highlighted={highlightedItemId === item.id}
           />
@@ -7189,6 +7199,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
             isSelected={selectedIdSet.has(item.id)}
             visibleColumns={visibleColumns}
             renderRowCells={renderRowCells}
+            itemFlexWidth={itemFlexWidth}
             rowActivityKey={getRowActivityKey(item)}
             highlighted={highlightedItemId === item.id}
             virtualIndex={virtualRow.index}
@@ -7214,16 +7225,17 @@ type InventoryTableRowProps = {
   item: InventoryItem;
   isSelected: boolean;
   visibleColumns: ColumnId[];
-  renderRowCells: (item: InventoryItem, isSelected: boolean) => React.ReactNode;
+  renderRowCells: (item: InventoryItem, isSelected: boolean, itemFlexWidth?: number | null) => React.ReactNode;
   /** Bumps when inline edit / AI spinners / Flags + panel / collapse affect this row so memo does not skip updates. */
   rowActivityKey: string;
   highlighted?: boolean;
   virtualIndex?: number;
   measureRef?: (node: Element | null) => void;
+  itemFlexWidth?: number | null;
 };
 
 const InventoryTableRow = React.memo(
-  function InventoryTableRow({ item, isSelected, renderRowCells, highlighted, virtualIndex, measureRef }: InventoryTableRowProps) {
+  function InventoryTableRow({ item, isSelected, renderRowCells, highlighted, virtualIndex, measureRef, itemFlexWidth }: InventoryTableRowProps) {
     return (
       <tr
         ref={measureRef}
@@ -7232,7 +7244,7 @@ const InventoryTableRow = React.memo(
         data-container={isInventoryContainer(item) ? (item.isPC ? 'pc' : 'bundle') : undefined}
         className={containerRowClassName(item, isSelected, Boolean(highlighted))}
       >
-        {renderRowCells(item, isSelected)}
+        {renderRowCells(item, isSelected, itemFlexWidth)}
       </tr>
     );
   },
@@ -7242,7 +7254,8 @@ const InventoryTableRow = React.memo(
     prev.visibleColumns === next.visibleColumns &&
     prev.rowActivityKey === next.rowActivityKey &&
     prev.highlighted === next.highlighted &&
-    prev.renderRowCells === next.renderRowCells
+    prev.renderRowCells === next.renderRowCells &&
+    prev.itemFlexWidth === next.itemFlexWidth
 );
 
 type SoldFinancialBarProps = {
@@ -7352,6 +7365,7 @@ type InventoryListTablePaneProps = {
   scrollRef: React.RefObject<HTMLDivElement | null>;
   visibleColumns: ColumnId[];
   columnWidths: Record<string, number>;
+  manualWidthColumns: Set<ColumnId>;
   listDensity: 'comfortable' | 'compact';
   sortConfig: SortConfig;
   handleHeaderSort: (columnId: ColumnId) => void;
@@ -7364,7 +7378,7 @@ type InventoryListTablePaneProps = {
   onColumnDragEnd: () => void;
   onSelectAll: () => void;
   selectedIdSet: Set<string>;
-  renderRowCells: (item: InventoryItem, isSelected: boolean) => React.ReactNode;
+  renderRowCells: (item: InventoryItem, isSelected: boolean, itemFlexWidth?: number | null) => React.ReactNode;
   getRowActivityKey: (item: InventoryItem) => string;
   highlightedItemId: string | null;
   rowHeightEstimate: number;
@@ -7382,6 +7396,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
   scrollRef,
   visibleColumns,
   columnWidths,
+  manualWidthColumns,
   listDensity,
   sortConfig,
   handleHeaderSort,
@@ -7415,6 +7430,45 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
     [scrollRef]
   );
 
+  // Measured so the item/name column can be given an explicit pixel width that fills any
+  // leftover space on wide screens. Neither an unset width nor width:100% survives
+  // table-layout:fixed reliably once the OTHER columns' widths already exceed the container —
+  // both silently collapsed this column to 0 instead of respecting its min-width floor.
+  const [containerWidth, setContainerWidth] = useState(0);
+  // Synchronous measurement on mount/pane-switch so the column has its final width for the
+  // very first paint, rather than waiting on ResizeObserver's first (async) callback.
+  useLayoutEffect(() => {
+    // clientWidth (not getBoundingClientRect) excludes the vertical scrollbar's own gutter —
+    // using the latter here briefly overshoots by the scrollbar's width whenever the row count
+    // needs one, since at this first synchronous pass the table hasn't overflowed vertically
+    // yet to reserve that gutter (ResizeObserver's contentRect, once it fires, always excludes
+    // it correctly; this fallback needs to match that from the very first paint).
+    if (scrollElement) setContainerWidth(scrollElement.clientWidth);
+  }, [scrollElement]);
+  useEffect(() => {
+    if (!scrollElement) return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w != null) setContainerWidth(w);
+    });
+    ro.observe(scrollElement);
+    return () => ro.disconnect();
+  }, [scrollElement]);
+
+  const itemFlexWidth = useMemo(() => {
+    if (manualWidthColumns.has('item') || !containerWidth) return null;
+    const floor = columnWidths['item'] || DEFAULT_WIDTHS['item'];
+    const othersWidth = visibleColumns
+      .filter((id) => id !== 'item')
+      .reduce((sum, id) => sum + (columnWidths[id] || DEFAULT_WIDTHS[id]), 0);
+    // Reserve a scrollbar-gutter margin: at first measurement the vertical scrollbar may not
+    // have reserved its own space yet (it appears once row content overflows), so an unpadded
+    // computation can overshoot the *eventual* client width by the scrollbar's own thickness —
+    // trading a few px of width for never causing an unwanted horizontal scrollbar to appear.
+    const scrollbarGutter = 20;
+    return Math.max(floor, containerWidth - othersWidth - scrollbarGutter);
+  }, [containerWidth, visibleColumns, columnWidths, manualWidthColumns]);
+
   const timeGaugeTitle =
     paneStatus === 'SOLD' ? 'Sale speed' : paneStatus === 'ACTIVE' ? 'Stock age' : 'Hold / sale';
   const paneSelectedCount = paneItems.filter((i) => selectedIdSet.has(i.id)).length;
@@ -7443,7 +7497,10 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
           <thead className="sticky top-0 z-10 bg-white">
             <tr className="bg-slate-50/80 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-widest backdrop-blur-sm">
               {visibleColumns.map((colId) => {
-                const w = columnWidths[colId] || DEFAULT_WIDTHS[colId];
+                const rawW = columnWidths[colId] || DEFAULT_WIDTHS[colId];
+                // Mirrors renderCell's item-column treatment: an explicit pixel width computed
+                // from the measured container (itemFlexWidth), not just the stored/default one.
+                const w = colId === 'item' && itemFlexWidth != null ? itemFlexWidth : rawW;
                 const sortable = !['actions', 'select', 'parseSpecs'].includes(colId);
                 const canDrag = colId !== 'select';
                 const isDragging = draggingColumnId === colId;
@@ -7554,9 +7611,9 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
                   </th>
                 );
               })}
-              {/* Flexible filler — table-fixed locks column widths to the sum of their explicit
-                  widths, leaving dead space on wide screens; this unwidth'd column soaks it up. */}
-              <th aria-hidden="true" className="p-0 bg-slate-50/80" />
+              {/* No separate filler column: the item/name column above is left unwidth'd by
+                  default (see itemFlexWidth above) and soaks up any leftover space itself,
+                  so wide screens show more of the name instead of a blank strip. */}
             </tr>
           </thead>
           <InventoryTableBody
@@ -7564,6 +7621,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
             selectedIdSet={selectedIdSet}
             visibleColumns={visibleColumns}
             renderRowCells={renderRowCells}
+            itemFlexWidth={itemFlexWidth}
             getRowActivityKey={getRowActivityKey}
             highlightedItemId={highlightedItemId}
             scrollElement={scrollElement}
