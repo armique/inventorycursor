@@ -9,6 +9,9 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from "firebase/app";
 import {
   getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   doc,
   getDoc,
   setDoc,
@@ -47,6 +50,8 @@ import {
   ref as storageRef,
   uploadBytes,
   getDownloadURL,
+  listAll,
+  deleteObject,
   connectStorageEmulator,
   type FirebaseStorage,
 } from "firebase/storage";
@@ -126,7 +131,19 @@ function init(): { db: Firestore; auth: Auth; storage: FirebaseStorage } | null 
 
   try {
     app = getApps().length ? getApp() : initializeApp(config);
-    db = getFirestore(app);
+    try {
+      // Persist Firestore's local cache to IndexedDB so a reconnect (reopening the app,
+      // switching tabs, coming back online) resumes from disk instead of re-reading every
+      // synced collection from the server — the multi-device "always synced" goal burns
+      // through the free-tier read quota fast without this. Falls back to memory-only
+      // (previous behavior) when IndexedDB isn't available (e.g. some private-browsing modes).
+      db = initializeFirestore(app, {
+        localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+      });
+    } catch (persistErr) {
+      console.warn("[firebase] Persistent local cache unavailable, falling back to memory-only:", persistErr);
+      db = getFirestore(app);
+    }
     auth = getAuth(app);
     // Force correct bucket (Firebase default is now .firebasestorage.app, not .appspot.com)
     const bucket = config.projectId === "inventorycursor-e9000"
@@ -1713,4 +1730,53 @@ export async function deleteProductCardGalleryEntry(id: string): Promise<void> {
   const user = ctx?.auth?.currentUser;
   if (!ctx?.db || !user || !id) return;
   await deleteDoc(doc(ctx.db, "users", user.uid, PRODUCT_CARD_GALLERY_COLLECTION, id));
+}
+
+// --- AUTOMATED SNAPSHOT BACKUPS ---
+// Stored in Firebase Storage (5 GB free), deliberately NOT Firestore: a daily full-inventory
+// copy would burn document writes and stored-bytes against the much tighter Firestore free tier.
+
+const BACKUP_PREFIX = "backups";
+
+/** Upload one backup snapshot. `fileName` should already carry its date (see backupService). */
+export async function uploadBackupSnapshot(fileName: string, blob: Blob): Promise<void> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.storage || !user) throw new Error("Not signed in or Firebase Storage not configured.");
+  const safe = fileName.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+  await uploadBytes(storageRef(ctx.storage, `${BACKUP_PREFIX}/${user.uid}/${safe}`), blob);
+}
+
+/** File names of existing backups, newest-sorting last. Empty when signed out or none yet. */
+export async function listBackupSnapshotNames(): Promise<string[]> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.storage || !user) return [];
+  try {
+    const res = await listAll(storageRef(ctx.storage, `${BACKUP_PREFIX}/${user.uid}`));
+    return res.items.map((i) => i.name).sort();
+  } catch (err) {
+    console.warn("listBackupSnapshotNames failed:", err);
+    return [];
+  }
+}
+
+export async function deleteBackupSnapshot(fileName: string): Promise<void> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.storage || !user || !fileName) return;
+  await deleteObject(storageRef(ctx.storage, `${BACKUP_PREFIX}/${user.uid}/${fileName}`));
+}
+
+/** Download URL for one backup, so the user can restore/inspect it manually. */
+export async function getBackupSnapshotUrl(fileName: string): Promise<string | null> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.storage || !user || !fileName) return null;
+  try {
+    return await getDownloadURL(storageRef(ctx.storage, `${BACKUP_PREFIX}/${user.uid}/${fileName}`));
+  } catch (err) {
+    console.warn("getBackupSnapshotUrl failed:", err);
+    return null;
+  }
 }

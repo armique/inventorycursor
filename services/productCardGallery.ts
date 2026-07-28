@@ -9,6 +9,7 @@ import {
   compressBlobToJpeg,
   dataUrlFromBlob,
 } from '../utils/imageCompress';
+import { shouldSkipCloudRefetch, markCloudRefetchDone } from '../utils/cloudFetchThrottle';
 import {
   deleteProductCardGalleryEntry,
   fetchProductCardGalleryEntries,
@@ -504,9 +505,19 @@ export function countLocalProductCardsByItemId(): Record<string, number> {
   return out;
 }
 
-/** Merge local + cloud gallery into per-item card counts. */
+const COUNTS_THROTTLE_ID = 'productCardCounts';
+const COUNTS_THROTTLE_MS = 5 * 60 * 1000;
+
+/** Merge local + cloud gallery into per-item card counts. Cloud read is throttled — this backs
+ * a passive badge count (re-run on every Inventory page mount), not a page the user opened to
+ * see fresh data, so a few minutes of staleness is the right tradeoff against re-scanning the
+ * whole gallery collection on every visit. */
 export async function countProductCardsByItemId(): Promise<Record<string, number>> {
+  if (shouldSkipCloudRefetch(COUNTS_THROTTLE_ID, COUNTS_THROTTLE_MS)) {
+    return countLocalProductCardsByItemId();
+  }
   const entries = await listProductCardGallery();
+  markCloudRefetchDone(COUNTS_THROTTLE_ID);
   const out: Record<string, number> = {};
   for (const e of entries) {
     const id = (e.itemId || '').trim();

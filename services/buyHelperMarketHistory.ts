@@ -10,6 +10,7 @@
 import { type MarketQuoteBucket, fetchBuyHelperQuote } from './marketApi';
 import type { BuyHelperItem, BuyHelperCategory } from '../utils/buyHelper';
 import { fetchBuyHelperPricesFromCloud, writeBuyHelperPricesToCloud } from './firebaseService';
+import { shouldSkipCloudRefetch, markCloudRefetchDone } from '../utils/cloudFetchThrottle';
 
 export type MarketSnapshot = {
   timestamp: string; // ISO 8601
@@ -63,6 +64,27 @@ export async function fetchMarketSnapshot(item: BuyHelperItem): Promise<MarketSn
   };
 }
 
+const PRICE_HISTORY_CACHE_KEY = 'dein_buy_helper_price_histories_cache_v1';
+const PRICE_HISTORY_THROTTLE_ID = 'buyHelperPriceHistories';
+const PRICE_HISTORY_THROTTLE_MS = 5 * 60 * 1000;
+
+function readPriceHistoryCache(): Record<string, BuyHelperPriceHistory> | null {
+  try {
+    const raw = localStorage.getItem(PRICE_HISTORY_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, BuyHelperPriceHistory>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writePriceHistoryCache(histories: Record<string, BuyHelperPriceHistory>): void {
+  try {
+    localStorage.setItem(PRICE_HISTORY_CACHE_KEY, JSON.stringify(histories));
+  } catch {
+    /* ignore quota errors — cache is best-effort */
+  }
+}
+
 /**
  * Fetch a fresh snapshot for every tracked item, append it to that item's history,
  * prune to 30 days, and persist all of them in one batched write.
@@ -98,13 +120,28 @@ export async function fetchAndStoreBuyHelperMarkets(
 
   if (updated.length) {
     await writeBuyHelperPricesToCloud(updated as unknown as (Record<string, unknown> & { itemId: string })[]);
+    // Keep the local cache current so the next load (even within the throttle window) reflects
+    // this fetch instead of serving up-to-5-minute-old data right after an explicit refresh.
+    const merged = { ...(readPriceHistoryCache() ?? existingHistories) };
+    for (const h of updated) merged[h.itemId] = h;
+    writePriceHistoryCache(merged);
+    markCloudRefetchDone(PRICE_HISTORY_THROTTLE_ID);
   }
 
   return { success: updated.length, errors };
 }
 
-/** Load every stored price history, keyed by Buy Helper item id. */
+/** Load every stored price history, keyed by Buy Helper item id. Cloud read is throttled —
+ * this collection-wide fetch fires on every Buy Helper page mount, so a few minutes of
+ * staleness against a local cache is the right tradeoff over re-scanning it every visit. */
 export async function loadBuyHelperPriceHistories(): Promise<Record<string, BuyHelperPriceHistory>> {
+  if (shouldSkipCloudRefetch(PRICE_HISTORY_THROTTLE_ID, PRICE_HISTORY_THROTTLE_MS)) {
+    const cached = readPriceHistoryCache();
+    if (cached) return cached;
+  }
   const raw = await fetchBuyHelperPricesFromCloud();
-  return (raw as Record<string, BuyHelperPriceHistory>) ?? {};
+  const result = (raw as Record<string, BuyHelperPriceHistory>) ?? {};
+  markCloudRefetchDone(PRICE_HISTORY_THROTTLE_ID);
+  writePriceHistoryCache(result);
+  return result;
 }

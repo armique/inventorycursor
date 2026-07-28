@@ -49,6 +49,7 @@ import {
   saveGamificationStateLocal,
   type GamificationState,
 } from './utils/gamification';
+import { runDailyBackupIfDue } from './services/backupService';
 import { pullOrderIndexFromCloud } from './services/ebayOrderIndex';
 import { pullPurchaseIndexFromCloud } from './services/ebayPurchaseIndex';
 import { pullListingIndexFromCloud } from './services/ebayListingIndex';
@@ -373,6 +374,7 @@ const App: React.FC = () => {
     ensureFreshMonth(ensureFreshDay(loadGamificationStateLocal())),
   );
   const gamificationPulledRef = useRef(false);
+  const dailyBackupRanRef = useRef(false);
   const gamificationWriteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const updateGamification = useCallback((updater: (prev: GamificationState) => GamificationState) => {
     setGamificationState((prev) => {
@@ -931,6 +933,45 @@ const App: React.FC = () => {
       })
       .catch((e) => console.warn('Gamification cloud pull failed:', e));
   }, [authUser]);
+
+  // Daily off-site snapshot to Firebase Storage. Runs once per local calendar day, built from
+  // the already-loaded app state (zero extra Firestore reads) and deferred well past first paint
+  // so it never competes with boot or the initial cloud sync.
+  useEffect(() => {
+    if (!isCloudEnabled() || !authUser || appState !== 'READY') return;
+    if (dailyBackupRanRef.current || items.length === 0) return;
+    dailyBackupRanRef.current = true;
+    const t = setTimeout(() => {
+      const snap = getSyncSnapshot();
+      scheduleBackgroundWork(async () => {
+        try {
+          const result = await runDailyBackupIfDue({
+            inventory: snap.items,
+            trash: snap.trash,
+            expenses: snap.expenses,
+            recurringExpenses: snap.recurringExpenses,
+            categories: snap.categories,
+            categoryFields: snap.categoryFields,
+            settings: snap.businessSettings,
+            goals: { monthly: snap.monthlyGoal },
+            dashboard: snap.dashboardPrefs,
+            actionHistory: snap.actionHistory,
+            bulkImports: snap.bulkImports,
+          });
+          if (result.ran) {
+            console.info(
+              `[backup] Saved ${result.fileName} (${Math.round(result.bytes / 1024)} KB)` +
+                (result.deleted.length ? `, pruned ${result.deleted.length} old snapshot(s)` : ''),
+            );
+          }
+        } catch (e) {
+          // Never surface as a blocking error — the next boot retries.
+          console.warn('[backup] Daily snapshot failed:', e);
+        }
+      });
+    }, 8000);
+    return () => clearTimeout(t);
+  }, [authUser, appState, items.length, getSyncSnapshot]);
 
   // Publish store catalog once when panel has items and auth (ensures storefront gets data)
   useEffect(() => {

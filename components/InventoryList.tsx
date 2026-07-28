@@ -4455,8 +4455,10 @@ const InventoryList: React.FC<Props> = ({
   const renderCellRef = useRef(renderCell);
   renderCellRef.current = renderCell;
   const renderRowCells = useCallback(
-    (item: InventoryItem, isSelected: boolean) =>
-      visibleColumns.map((colId) => renderCellRef.current(item, colId, isSelected)),
+    (item: InventoryItem, isSelected: boolean) => [
+      ...visibleColumns.map((colId) => renderCellRef.current(item, colId, isSelected)),
+      <td key="__filler" aria-hidden="true" className="p-0" />,
+    ],
     [visibleColumns, effectiveColumnWidths]
   );
 
@@ -7131,7 +7133,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
     return (
       <tbody className="divide-y divide-slate-50">
         <tr>
-          <td colSpan={visibleColumns.length} className="p-20 text-center opacity-40">
+          <td colSpan={visibleColumns.length + 1} className="p-20 text-center opacity-40">
             <Package size={48} className="mx-auto mb-4 text-slate-300" />
             <p className="font-bold text-slate-400">No matches found</p>
             <p className="text-sm text-slate-400 mt-1">Try clearing search or category filters</p>
@@ -7157,7 +7159,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
         ))}
         {bulkBarSpacer && (
           <tr aria-hidden="true" className="pointer-events-none border-0">
-            <td colSpan={visibleColumns.length} className="!p-0 !border-0 h-24 lg:h-28" />
+            <td colSpan={visibleColumns.length + 1} className="!p-0 !border-0 h-24 lg:h-28" />
           </tr>
         )}
       </tbody>
@@ -7175,7 +7177,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
     <tbody className="divide-y divide-slate-50">
       {topSpacer > 0 && (
         <tr aria-hidden="true" className="pointer-events-none border-0">
-          <td colSpan={visibleColumns.length} className="!p-0 !border-0" style={{ height: `${topSpacer}px` }} />
+          <td colSpan={visibleColumns.length + 1} className="!p-0 !border-0" style={{ height: `${topSpacer}px` }} />
         </tr>
       )}
       {virtualItems.map((virtualRow) => {
@@ -7196,12 +7198,12 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
       })}
       {bottomSpacer > 0 && (
         <tr aria-hidden="true" className="pointer-events-none border-0">
-          <td colSpan={visibleColumns.length} className="!p-0 !border-0" style={{ height: `${bottomSpacer}px` }} />
+          <td colSpan={visibleColumns.length + 1} className="!p-0 !border-0" style={{ height: `${bottomSpacer}px` }} />
         </tr>
       )}
       {bulkBarSpacer && (
         <tr aria-hidden="true" className="pointer-events-none border-0">
-          <td colSpan={visibleColumns.length} className="!p-0 !border-0 h-24 lg:h-28" />
+          <td colSpan={visibleColumns.length + 1} className="!p-0 !border-0 h-24 lg:h-28" />
         </tr>
       )}
     </tbody>
@@ -7552,6 +7554,9 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
                   </th>
                 );
               })}
+              {/* Flexible filler — table-fixed locks column widths to the sum of their explicit
+                  widths, leaving dead space on wide screens; this unwidth'd column soaks it up. */}
+              <th aria-hidden="true" className="p-0 bg-slate-50/80" />
             </tr>
           </thead>
           <InventoryTableBody
