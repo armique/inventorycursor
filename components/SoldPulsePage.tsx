@@ -1,42 +1,55 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Activity,
-  Check,
-  CircleHelp,
-  ClipboardCopy,
   ExternalLink,
   Loader2,
   Plus,
+  RefreshCw,
+  ShoppingCart,
   Sparkles,
-  Target,
+  TrendingUp,
   Trash2,
 } from 'lucide-react';
 import type { InventoryItem } from '../types';
-import { formatEUR } from '../utils/formatMoney';
-import { computeBuyFocus } from '../utils/flipCoach';
+import { formatEURPrefix } from '../utils/formatMoney';
+import { buildEbaySoldUrl } from '../utils/ebaySoldPulse';
 import {
-  buildEbaySoldUrl,
-  buildSoldPulseChecklist,
-  copyTextToClipboard,
-  daysSince,
-  extractPricesFromPaste,
-  markSoldPulseChecked,
-  removeSoldPulseItem,
-  seedSoldPulsePresetsIfEmpty,
-  sortWatchlistForCheck,
-  upsertSoldPulseItem,
-  type SoldPulseCategory,
-  type SoldPulseLinkKind,
-  type SoldPulseWatchItem,
-} from '../utils/ebaySoldPulse';
-import { canUseSoldPulseAi, summarizePastedSoldComps } from '../services/soldPulseAI';
+  analyzeBuyHelperItem,
+  inventoryCompsForQuery,
+  loadBuyHelperFees,
+  loadBuyHelperItems,
+  removeBuyHelperItem,
+  saveBuyHelperVatPct,
+  seedBuyHelperIfEmpty,
+  sortBuyHelperItems,
+  suggestBuyHelperTargets,
+  suggestBuyHelperTargetsFromMarket,
+  summarizeInventoryComps,
+  upsertBuyHelperItem,
+  type BuyHelperCategory,
+  type BuyHelperFees,
+  type BuyHelperItem,
+  DEFAULT_DESIRED_MARGIN_PCT,
+} from '../utils/buyHelper';
+import { saveFlipFees, totalEbayFeePct } from '../utils/flipCoach';
+import { canUseBuyHelperAi, generateBuyHelperWithAi } from '../services/buyHelperAI';
+import { fetchBuyHelperQuote, type MarketBuyHelperQuote, type MarketQuoteBucket } from '../services/marketApi';
+import { resolveMarketPrices, type ResolvedMarketPrices } from '../services/marketPriceSource';
+import {
+  fetchAndStoreBuyHelperMarkets,
+  loadBuyHelperPriceHistories,
+  type BuyHelperPriceHistory,
+} from '../services/buyHelperMarketHistory';
+import { analyzePriceHistory } from '../services/buyHelperMarketAnalysis';
 
 interface Props {
   items: InventoryItem[];
 }
 
-const CATEGORIES: SoldPulseCategory[] = [
+type BuyHelperEditorTab = 'overview' | 'market' | 'analysis' | 'history';
+
+const CATEGORIES: BuyHelperCategory[] = [
   'GPU',
   'CPU',
   'RAM',
@@ -48,434 +61,895 @@ const CATEGORIES: SoldPulseCategory[] = [
   'Other',
 ];
 
+function parseEuro(raw: string): number | undefined {
+  const n = Number(String(raw).replace(',', '.').replace(/[^\d.-]/g, ''));
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : undefined;
+}
+
+const MarketBucketCard: React.FC<{ label: string; bucket: MarketQuoteBucket; used: boolean }> = ({ label, bucket, used }) => (
+  <div className={`rounded-xl border px-3 py-2 text-xs ${used ? 'border-emerald-300 bg-emerald-50' : 'border-slate-100 bg-white'}`}>
+    <p className="font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
+      {label}
+      {used && <span className="text-emerald-700">used</span>}
+    </p>
+    {bucket && bucket.count > 0 && bucket.median != null ? (
+      <>
+        <p className="font-bold text-slate-900 mt-1">{formatEURPrefix(bucket.median)} median</p>
+        <p className="text-slate-500">
+          {bucket.low != null ? formatEURPrefix(bucket.low) : '—'}–{bucket.high != null ? formatEURPrefix(bucket.high) : '—'} · n={bucket.count}
+        </p>
+      </>
+    ) : (
+      <p className="text-slate-400 mt-1">no data</p>
+    )}
+  </div>
+);
+
 /**
- * Monitor what’s selling on eBay.de for PC parts — real sold links + your notes.
- * AI only helps summarize prices you paste (never invents sold comps).
+ * Buy Helper (Sold Pulse rewrite): track parts to buy with editable
+ * buy / KA / eBay / margin, using sold inventory comps (incl. bundles).
  */
 const SoldPulsePage: React.FC<Props> = ({ items }) => {
-  const [watchlist, setWatchlist] = useState<SoldPulseWatchItem[]>(() => seedSoldPulsePresetsIfEmpty());
-  const [newQuery, setNewQuery] = useState('');
-  const [newCategory, setNewCategory] = useState<SoldPulseCategory>('GPU');
+  const [fees, setFees] = useState<BuyHelperFees>(() => loadBuyHelperFees());
+  const [list, setList] = useState<BuyHelperItem[]>(() => []);
+  const [ready, setReady] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [newQuery, setNewQuery] = useState('');
+  const [newCategory, setNewCategory] = useState<BuyHelperCategory>('GPU');
+  const [filter, setFilter] = useState<'ALL' | 'BUY' | BuyHelperCategory>('ALL');
   const [paste, setPaste] = useState('');
-  const [low, setLow] = useState('');
-  const [median, setMedian] = useState('');
-  const [high, setHigh] = useState('');
-  const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [filterCat, setFilterCat] = useState<SoldPulseCategory | 'ALL'>('ALL');
 
-  const buyFocus = useMemo(() => computeBuyFocus(items, 6), [items]);
-  const aiOk = canUseSoldPulseAi();
+  // Live market check (Buy Helper -> market/ bridge)
+  const [marketBusy, setMarketBusy] = useState(false);
+  const [marketError, setMarketError] = useState<string | null>(null);
+  const [marketQuote, setMarketQuote] = useState<MarketBuyHelperQuote | null>(null);
+  const [marketResolved, setMarketResolved] = useState<ResolvedMarketPrices | null>(null);
 
-  const sorted = useMemo(() => {
-    const base = sortWatchlistForCheck(watchlist);
-    if (filterCat === 'ALL') return base;
-    return base.filter((x) => x.category === filterCat);
-  }, [watchlist, filterCat]);
+  // Market history (30-day snapshots per tracked part)
+  const [priceHistories, setPriceHistories] = useState<Record<string, BuyHelperPriceHistory>>({});
+  const [historyBusy, setHistoryBusy] = useState(false);
 
-  const active = watchlist.find((x) => x.id === activeId) || null;
-  const pastePriceCount = useMemo(() => extractPricesFromPaste(paste).length, [paste]);
+  // UI tabs
+  const [buyHelperTab, setBuyHelperTab] = useState<BuyHelperEditorTab>('overview');
 
-  const openItem = (item: SoldPulseWatchItem) => {
+  // Draft editors for active item
+  const [draftQuery, setDraftQuery] = useState('');
+  const [draftCategory, setDraftCategory] = useState<BuyHelperCategory>('GPU');
+  const [draftBuy, setDraftBuy] = useState('');
+  const [draftKa, setDraftKa] = useState('');
+  const [draftEbay, setDraftEbay] = useState('');
+  const [draftMargin, setDraftMargin] = useState(String(DEFAULT_DESIRED_MARGIN_PCT));
+  const [draftNote, setDraftNote] = useState('');
+
+  useEffect(() => {
+    const seeded = seedBuyHelperIfEmpty(items);
+    setList(seeded.length ? seeded : loadBuyHelperItems());
+    setReady(true);
+    // Seed once on mount; tracked list lives in localStorage afterward.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    void loadBuyHelperPriceHistories()
+      .then(setPriceHistories)
+      .catch(() => setPriceHistories({}));
+  }, [ready]);
+
+  const ranked = useMemo(() => sortBuyHelperItems(list, fees), [list, fees]);
+
+  const visible = useMemo(() => {
+    if (filter === 'ALL') return ranked;
+    if (filter === 'BUY') return ranked.filter((x) => x.analysis.verdict === 'BUY');
+    return ranked.filter((x) => x.category === filter);
+  }, [ranked, filter]);
+
+  const active = list.find((x) => x.id === activeId) || null;
+
+  const draftAsItem: BuyHelperItem | null = active
+    ? {
+        ...active,
+        query: draftQuery.trim() || active.query,
+        category: draftCategory,
+        buyPrice: parseEuro(draftBuy),
+        sellKa: parseEuro(draftKa),
+        sellEbay: parseEuro(draftEbay),
+        desiredMarginPct: Number(draftMargin) || DEFAULT_DESIRED_MARGIN_PCT,
+        note: draftNote.trim() || undefined,
+      }
+    : null;
+
+  const activeAnalysis = draftAsItem ? analyzeBuyHelperItem(draftAsItem, fees) : null;
+
+  const invHits = useMemo(
+    () => (active ? inventoryCompsForQuery(items, active.query, { category: active.category }) : []),
+    [items, active],
+  );
+  const invSummary = useMemo(() => summarizeInventoryComps(invHits), [invHits]);
+
+  const activeHistory = active ? priceHistories[active.id] ?? null : null;
+  const marketAnalysis = useMemo(() => analyzePriceHistory(activeHistory), [activeHistory]);
+
+  const openItem = (item: BuyHelperItem) => {
     setActiveId(item.id);
+    setDraftQuery(item.query);
+    setDraftCategory(item.category);
+    setDraftBuy(item.buyPrice != null ? String(item.buyPrice) : '');
+    setDraftKa(item.sellKa != null ? String(item.sellKa) : '');
+    setDraftEbay(item.sellEbay != null ? String(item.sellEbay) : '');
+    setDraftMargin(String(item.desiredMarginPct ?? DEFAULT_DESIRED_MARGIN_PCT));
+    setDraftNote(item.note || '');
     setPaste('');
-    setLow(item.low != null ? String(item.low) : '');
-    setMedian(item.median != null ? String(item.median) : '');
-    setHigh(item.high != null ? String(item.high) : '');
-    setNote(item.note || '');
     setMessage(null);
+    setError(null);
+    setMarketQuote(null);
+    setMarketResolved(null);
+    setMarketError(null);
+    setBuyHelperTab('overview');
+  };
+
+  useEffect(() => {
+    if (!ready || activeId) return;
+    const first = ranked[0];
+    if (first) openItem(first);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, list.length]);
+
+  const persistFees = (next: BuyHelperFees) => {
+    setFees(next);
+    saveFlipFees({ ebayFeePct: next.ebayFeePct, ebayAdsPct: next.ebayAdsPct });
+    saveBuyHelperVatPct(next.vatOnProfitPct);
+  };
+
+  const saveActive = (patch?: Partial<BuyHelperItem>) => {
+    if (!active) return;
+    const nextItem: BuyHelperItem = {
+      ...active,
+      query: draftQuery.trim() || active.query,
+      category: draftCategory,
+      buyPrice: parseEuro(draftBuy),
+      sellKa: parseEuro(draftKa),
+      sellEbay: parseEuro(draftEbay),
+      desiredMarginPct: Number(draftMargin) || DEFAULT_DESIRED_MARGIN_PCT,
+      note: draftNote.trim() || undefined,
+      ...patch,
+    };
+    const next = upsertBuyHelperItem(list, nextItem);
+    setList(next);
+    setMessage('Saved.');
     setError(null);
   };
 
   const addItem = () => {
     const q = newQuery.trim();
     if (!q) return;
-    const next = upsertSoldPulseItem(watchlist, { query: q, category: newCategory });
-    setWatchlist(next);
+    const suggested = suggestBuyHelperTargets(items, q, fees, {
+      category: newCategory,
+      desiredMarginPct: DEFAULT_DESIRED_MARGIN_PCT,
+    });
+    const next = upsertBuyHelperItem(list, {
+      query: q,
+      category: newCategory,
+      desiredMarginPct: DEFAULT_DESIRED_MARGIN_PCT,
+      ...suggested,
+    });
+    setList(next);
     setNewQuery('');
     const created = next.find((x) => x.query.toLowerCase() === q.toLowerCase());
     if (created) openItem(created);
   };
 
-  const savePrices = (id: string) => {
-    const parse = (s: string) => {
-      const n = Number(String(s).replace(',', '.'));
-      return Number.isFinite(n) && n > 0 ? n : undefined;
-    };
-    const next = markSoldPulseChecked(watchlist, id, {
-      low: parse(low),
-      median: parse(median),
-      high: parse(high),
-      note: note.trim() || undefined,
-    });
-    setWatchlist(next);
-    setMessage('Saved. Marked as checked just now.');
+  const removeActive = () => {
+    if (!active) return;
+    const next = removeBuyHelperItem(list, active.id);
+    setList(next);
+    setActiveId(next[0]?.id ?? null);
+    if (next[0]) openItem(next[0]);
+    else {
+      setDraftQuery('');
+      setDraftBuy('');
+      setDraftKa('');
+      setDraftEbay('');
+    }
   };
 
-  const runAiOnPaste = async () => {
+  const fillFromInventory = () => {
+    if (!active) return;
+    const suggested = suggestBuyHelperTargets(items, draftQuery.trim() || active.query, fees, {
+      category: draftCategory,
+      desiredMarginPct: Number(draftMargin) || DEFAULT_DESIRED_MARGIN_PCT,
+    });
+    if (suggested.buyPrice != null) setDraftBuy(String(suggested.buyPrice));
+    if (suggested.sellKa != null) setDraftKa(String(suggested.sellKa));
+    if (suggested.sellEbay != null) setDraftEbay(String(suggested.sellEbay));
+    if (suggested.desiredMarginPct != null) setDraftMargin(String(suggested.desiredMarginPct));
+    if (suggested.note) setDraftNote(suggested.note);
+    const next = upsertBuyHelperItem(list, {
+      ...active,
+      query: draftQuery.trim() || active.query,
+      category: draftCategory,
+      ...suggested,
+    });
+    setList(next);
+    setMessage(suggested.inventoryCompCount ? `Filled from ${suggested.inventoryCompCount} inventory comps.` : 'No comps — check note.');
+  };
+
+  const checkMarket = async () => {
+    if (!active) return;
+    const q = draftQuery.trim() || active.query;
+    setMarketBusy(true);
+    setMarketError(null);
+    setMessage(null);
+    setError(null);
+    try {
+      const quote = await fetchBuyHelperQuote(q);
+      const resolved = resolveMarketPrices(quote);
+      setMarketQuote(quote);
+      setMarketResolved(resolved);
+      const suggested = suggestBuyHelperTargetsFromMarket(resolved, items, q, fees, {
+        category: draftCategory,
+        desiredMarginPct: Number(draftMargin) || DEFAULT_DESIRED_MARGIN_PCT,
+      });
+      if (suggested.buyPrice != null) setDraftBuy(String(suggested.buyPrice));
+      if (suggested.sellKa != null) setDraftKa(String(suggested.sellKa));
+      if (suggested.sellEbay != null) setDraftEbay(String(suggested.sellEbay));
+      if (suggested.desiredMarginPct != null) setDraftMargin(String(suggested.desiredMarginPct));
+      if (suggested.note) setDraftNote(suggested.note);
+      const next = upsertBuyHelperItem(list, {
+        ...active,
+        query: q,
+        category: draftCategory,
+        ...suggested,
+      });
+      setList(next);
+      setMessage(
+        resolved.ebay || resolved.ka
+          ? 'Filled from live market data — see breakdown below.'
+          : 'No live/sold market data found — filled from inventory instead.',
+      );
+    } catch (err) {
+      setMarketError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setMarketBusy(false);
+    }
+  };
+
+  const refreshMarketHistory = async () => {
+    if (list.length === 0) {
+      setMessage('No tracked items to refresh.');
+      return;
+    }
+    setHistoryBusy(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const result = await fetchAndStoreBuyHelperMarkets(list, priceHistories);
+      setPriceHistories(await loadBuyHelperPriceHistories());
+      setMessage(
+        `Updated ${result.success} of ${list.length} parts.` +
+          (result.errors.length ? ` ${result.errors.length} without data.` : ''),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setHistoryBusy(false);
+    }
+  };
+
+  const runAiGenerate = async () => {
     if (!active) return;
     setBusy(true);
     setError(null);
     setMessage(null);
     try {
-      const summary = await summarizePastedSoldComps(active.query, paste);
-      setLow(String(summary.low));
-      setMedian(String(summary.median));
-      setHigh(String(summary.high));
-      const warn = summary.warnings.length ? ` ⚠ ${summary.warnings.join(' · ')}` : '';
-      setMessage(
-        `${summary.usedAi ? 'AI filtered your paste' : 'Local math from paste'}: median €${formatEUR(summary.median)} (${summary.count} prices). ${summary.advice}${warn}`
-      );
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not read paste');
+      const result = await generateBuyHelperWithAi({
+        query: draftQuery.trim() || active.query,
+        fees,
+        inventoryPocketMedian: invSummary?.pocketMedian,
+        inventoryCompCount: invSummary?.count,
+        inventoryLow: invSummary?.low,
+        inventoryHigh: invSummary?.high,
+        pastedText: paste,
+        current: {
+          desiredMarginPct: Number(draftMargin) || DEFAULT_DESIRED_MARGIN_PCT,
+        },
+      });
+      setDraftBuy(String(result.buyPrice));
+      setDraftKa(String(result.sellKa));
+      setDraftEbay(String(result.sellEbay));
+      setDraftMargin(String(result.desiredMarginPct));
+      setDraftNote(result.advice);
+      const next = upsertBuyHelperItem(list, {
+        ...active,
+        query: draftQuery.trim() || active.query,
+        category: draftCategory,
+        buyPrice: result.buyPrice,
+        sellKa: result.sellKa,
+        sellEbay: result.sellEbay,
+        desiredMarginPct: result.desiredMarginPct,
+        marketLow: result.marketLow,
+        marketMedian: result.marketMedian,
+        marketHigh: result.marketHigh,
+        inventoryCompCount: invSummary?.count,
+        note: result.advice,
+        lastCheckedAt: new Date().toISOString(),
+      });
+      setList(next);
+      setMessage(result.usedAi ? 'AI filled buy/sell/margin (grounded in your comps).' : 'Filled from inventory/paste math.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
   };
 
-  const openCleanSearch = async (kind: SoldPulseLinkKind = 'used_bin') => {
-    if (!active) return;
-    const url = buildEbaySoldUrl(active.query, kind);
-    const checklist = buildSoldPulseChecklist(active.query, kind);
-    const copied = await copyTextToClipboard(checklist);
-    window.open(url, '_blank', 'noopener,noreferrer');
-    setMessage(
-      copied
-        ? 'Opened clean sold search. Checklist + URL copied — paste into Notepad if you want, then copy 15–30 sold rows back here.'
-        : 'Opened clean sold search. (Clipboard copy failed — use the link buttons if needed.)'
+  const feeTotal = totalEbayFeePct(fees);
+
+  if (!ready) {
+    return (
+      <div className="flex items-center justify-center min-h-[240px] text-slate-400 gap-2">
+        <Loader2 className="animate-spin" size={20} />
+        <span className="text-sm font-bold">Loading buy helper…</span>
+      </div>
     );
-  };
+  }
 
   return (
-    <div className="max-w-5xl mx-auto space-y-5 pb-24 md:pb-10 animate-in fade-in">
-      <header className="space-y-2">
-        <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-          <Activity size={26} className="text-rose-600" /> eBay Sold Pulse
-        </h1>
-        <p className="text-sm text-slate-600 max-w-2xl leading-relaxed">
-          Watch what PC parts are really selling for on eBay.de. You open filtered sold links, then save the
-          prices you trust. AI can help clean a paste — it does <strong>not</strong> invent sold prices.
-        </p>
-        <div className="flex flex-wrap gap-2 text-xs">
-          <Link
-            to="/panel/flip-coach"
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-900 text-white font-bold"
+    <div className="h-[calc(100vh-6.5rem)] min-h-[560px] max-w-[1600px] mx-auto flex flex-col animate-in fade-in">
+      <header className="shrink-0 flex flex-wrap items-start justify-between gap-3 pb-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="p-2.5 rounded-xl bg-emerald-100 text-emerald-700 shrink-0">
+            <ShoppingCart size={22} />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-xl font-black text-slate-900 tracking-tight truncate">Buy Helper</h1>
+            <p className="text-xs text-slate-500 truncate">
+              Track parts · editable buy / KA / eBay / margin · inventory comps (incl. sold bundles)
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold">
+          <label className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-slate-200 bg-white">
+            eBay fee %
+            <input
+              type="number"
+              step="0.1"
+              className="w-14 border-0 bg-transparent text-right outline-none"
+              value={fees.ebayFeePct}
+              onChange={(e) => persistFees({ ...fees, ebayFeePct: Number(e.target.value) || 0 })}
+            />
+          </label>
+          <label className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-slate-200 bg-white">
+            Ads %
+            <input
+              type="number"
+              step="0.1"
+              className="w-14 border-0 bg-transparent text-right outline-none"
+              value={fees.ebayAdsPct}
+              onChange={(e) => persistFees({ ...fees, ebayAdsPct: Number(e.target.value) || 0 })}
+            />
+          </label>
+          <label className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-slate-200 bg-white">
+            VAT on profit %
+            <input
+              type="number"
+              step="0.1"
+              className="w-14 border-0 bg-transparent text-right outline-none"
+              value={fees.vatOnProfitPct}
+              onChange={(e) => persistFees({ ...fees, vatOnProfitPct: Number(e.target.value) || 0 })}
+            />
+          </label>
+          <span className="px-2 py-1.5 rounded-lg bg-slate-900 text-white">
+            eBay cut {feeTotal}% + VAT {fees.vatOnProfitPct}%
+          </span>
+          <button
+            type="button"
+            disabled={historyBusy}
+            onClick={() => void refreshMarketHistory()}
+            className="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-sky-200 bg-sky-50 text-sky-900 disabled:opacity-50"
+            title="Fetch eBay sold + live and Kleinanzeigen for every tracked part and append to 30-day history"
           >
-            <Target size={12} /> Flip Coach (your fees)
+            {historyBusy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+            Refresh all
+          </button>
+          <Link to="/panel/flip-coach" className="px-2 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">
+            Flip Coach
           </Link>
         </div>
       </header>
 
-      <section className="rounded-2xl border border-sky-100 bg-sky-50/60 p-4 space-y-2">
-        <h2 className="text-sm font-black uppercase tracking-widest text-sky-900 flex items-center gap-2">
-          <CircleHelp size={16} /> How to use (2 minutes)
-        </h2>
-        <ol className="text-sm text-slate-700 space-y-1 list-decimal pl-5 leading-relaxed">
-          <li>
-            Open <strong>Used + Buy It Now (clean)</strong> — 240 results/page, newest sold first, Defekt/bundles
-            excluded.
-          </li>
-          <li>
-            Scroll about <strong>one month</strong> of “Verkauft …” dates. Select a big block of titles + prices
-            (aim <strong>15–30 €</strong> amounts), copy, paste here → <strong>Read paste</strong>.
-          </li>
-          <li>Save low / median / high. That median is your monthly working-parts market — not 2–3 cherry picks.</li>
-        </ol>
-        <p className="text-[11px] text-slate-600 leading-relaxed">
-          eBay does not offer a true “last 30 days only” sold filter. You get the month by scrolling recent sold
-          and pasting enough rows. The app cannot scrape eBay for you.
-        </p>
-      </section>
-
-      {/* Add */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
-        <h2 className="text-xs font-black uppercase tracking-widest text-slate-400">Add to watchlist</h2>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <input
-            value={newQuery}
-            onChange={(e) => setNewQuery(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && addItem()}
-            placeholder="e.g. RTX 3060 Ti"
-            className="flex-1 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-sm outline-none focus:border-rose-400"
-          />
-          <select
-            value={newCategory}
-            onChange={(e) => setNewCategory(e.target.value as SoldPulseCategory)}
-            className="px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-sm"
-          >
-            {CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={addItem}
-            className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-rose-600 text-white text-xs font-black uppercase"
-          >
-            <Plus size={14} /> Add
-          </button>
-        </div>
-      </section>
-
-      {/* Your flip categories */}
-      {buyFocus.length > 0 && (
-        <section className="rounded-2xl border border-violet-100 bg-violet-50/40 p-4 space-y-2">
-          <h2 className="text-xs font-black uppercase tracking-widest text-violet-800">
-            From your sales — worth watching
-          </h2>
-          <div className="flex flex-wrap gap-2">
-            {buyFocus.map((row) => (
-              <button
-                key={row.category}
-                type="button"
-                onClick={() => {
-                  setNewQuery(row.category);
-                  setNewCategory(
-                    (CATEGORIES.includes(row.category as SoldPulseCategory)
-                      ? row.category
-                      : 'Other') as SoldPulseCategory
-                  );
-                }}
-                className="px-2.5 py-1.5 rounded-lg bg-white border border-violet-100 text-[11px] font-bold text-violet-900"
-                title={`Avg profit €${formatEUR(row.avgPocketProfit)} · ~${row.avgDaysToSell}d`}
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] gap-3">
+        {/* Tracked list */}
+        <aside className="min-h-0 flex flex-col rounded-2xl border border-slate-200 bg-white overflow-hidden">
+          <div className="p-3 border-b border-slate-100 space-y-2">
+            <div className="flex gap-2">
+              <input
+                value={newQuery}
+                onChange={(e) => setNewQuery(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addItem()}
+                placeholder="Add part e.g. RTX 3060 12GB"
+                className="flex-1 min-w-0 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold"
+              />
+              <select
+                value={newCategory}
+                onChange={(e) => setNewCategory(e.target.value as BuyHelperCategory)}
+                className="rounded-xl border border-slate-200 px-2 py-2 text-xs font-bold"
               >
-                {row.category} · €{formatEUR(row.avgPocketProfit)} · {row.avgDaysToSell}d
+                {CATEGORIES.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={addItem}
+                className="px-3 py-2 rounded-xl bg-slate-900 text-white"
+                title="Add tracked item"
+              >
+                <Plus size={16} />
               </button>
-            ))}
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {(['ALL', 'BUY', ...CATEGORIES] as const).map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setFilter(f)}
+                  className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider ${
+                    filter === f ? 'bg-slate-900 text-white' : 'bg-slate-50 text-slate-500 border border-slate-200'
+                  }`}
+                >
+                  {f === 'BUY' ? 'Buy now' : f}
+                </button>
+              ))}
+            </div>
           </div>
-        </section>
-      )}
-
-      {/* Filter */}
-      <div className="flex flex-wrap gap-1.5">
-        {(['ALL', ...CATEGORIES] as const).map((c) => (
-          <button
-            key={c}
-            type="button"
-            onClick={() => setFilterCat(c)}
-            className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase ${
-              filterCat === c ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'
-            }`}
-          >
-            {c}
-          </button>
-        ))}
-      </div>
-
-      <div className="grid lg:grid-cols-5 gap-4">
-        {/* List */}
-        <div className="lg:col-span-2 space-y-2">
-          {sorted.map((item) => {
-            const age = daysSince(item.lastCheckedAt);
-            const selected = item.id === activeId;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => openItem(item)}
-                className={`w-full text-left p-3 rounded-xl border transition-all ${
-                  selected
-                    ? 'border-rose-300 bg-rose-50/50 shadow-sm'
-                    : 'border-slate-100 bg-white hover:border-slate-200'
-                }`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-sm font-black text-slate-900 truncate">{item.query}</p>
-                    <p className="text-[10px] font-bold uppercase text-slate-400 mt-0.5">
-                      {item.category}
-                      {age == null ? ' · never checked' : age === 0 ? ' · checked today' : ` · ${age}d ago`}
-                    </p>
-                  </div>
-                  {item.median != null && (
-                    <span className="shrink-0 text-xs font-black text-emerald-700">
-                      €{formatEUR(item.median)}
+          <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1">
+            {visible.map((item) => {
+              const isActive = item.id === activeId;
+              const v = item.analysis.verdict;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => openItem(item)}
+                  className={`w-full text-left rounded-xl px-3 py-2.5 border transition-colors ${
+                    isActive ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-100 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-sm font-bold truncate">{item.query}</span>
+                    <span
+                      className={`shrink-0 text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${
+                        v === 'BUY'
+                          ? 'bg-emerald-500 text-white'
+                          : v === 'SKIP'
+                            ? 'bg-rose-500 text-white'
+                            : isActive
+                              ? 'bg-white/20 text-white'
+                              : 'bg-amber-100 text-amber-800'
+                      }`}
+                    >
+                      {v}
                     </span>
-                  )}
-                </div>
-              </button>
-            );
-          })}
-          {sorted.length === 0 && (
-            <p className="text-sm text-slate-500 p-4">No items in this filter. Add a PC part above.</p>
-          )}
-        </div>
+                  </div>
+                  <p className={`text-[10px] font-semibold mt-0.5 ${isActive ? 'text-slate-300' : 'text-slate-500'}`}>
+                    Buy {item.buyPrice != null ? formatEURPrefix(item.buyPrice) : '—'}
+                    {' · '}KA {item.sellKa != null ? formatEURPrefix(item.sellKa) : '—'}
+                    {' · '}eBay {item.sellEbay != null ? formatEURPrefix(item.sellEbay) : '—'}
+                  </p>
+                </button>
+              );
+            })}
+            {!visible.length && (
+              <p className="text-sm text-slate-500 text-center py-8 font-semibold">No tracked items yet.</p>
+            )}
+          </div>
+        </aside>
 
-        {/* Detail */}
-        <div className="lg:col-span-3 rounded-2xl border border-slate-200 bg-white p-4 space-y-4 min-h-[20rem]">
+        {/* Editor */}
+        <section className="min-h-0 flex flex-col rounded-2xl border border-slate-200 bg-white overflow-hidden">
           {!active ? (
-            <p className="text-sm text-slate-500">Pick a part on the left to open sold links and save prices.</p>
+            <div className="flex-1 flex items-center justify-center text-slate-400 text-sm font-bold">
+              Select or add a tracked item
+            </div>
           ) : (
             <>
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <h3 className="text-lg font-black text-slate-900">{active.query}</h3>
-                  <p className="text-xs text-slate-500">{active.category}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setWatchlist(removeSoldPulseItem(watchlist, active.id));
-                    setActiveId(null);
-                  }}
-                  className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50"
-                  title="Remove from watchlist"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => void openCleanSearch('used_bin')}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-600 text-white text-[10px] font-black uppercase hover:bg-rose-700"
-                >
-                  <ClipboardCopy size={12} /> Open clean + copy checklist
-                </button>
-                <a
-                  href={buildEbaySoldUrl(active.query, 'used_bin')}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase"
-                >
-                  <ExternalLink size={12} /> Used + Buy It Now (clean)
-                </a>
-                <a
-                  href={buildEbaySoldUrl(active.query, 'used_all')}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-slate-700 text-[10px] font-black uppercase"
-                >
-                  Used + auctions (clean)
-                </a>
-                <a
-                  href={buildEbaySoldUrl(active.query, 'for_parts')}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 text-[10px] font-black uppercase"
-                >
-                  For parts / Defekt
-                </a>
-              </div>
-              <p className="text-[11px] text-slate-500 leading-relaxed">
-                <strong>Open clean + copy checklist</strong> opens the filtered sold page and copies the month-sample
-                steps + URL. Clean links auto-add <strong>-defekt -bastler -bundle</strong> (etc.). Defekt link does
-                not.
-              </p>
-              <p className="text-[11px] text-slate-500 leading-relaxed bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
-                AI still only reads what you paste (15–30 € prices from ~last month). No live eBay scrape in the app —
-                and we won’t ship a proxy scraper outside it either (eBay ToS / ban risk).
-              </p>
-
-              <div className="grid grid-cols-3 gap-2">
-                <label className="space-y-1">
-                  <span className="text-[9px] font-black uppercase text-slate-400">Low €</span>
-                  <input
-                    value={low}
-                    onChange={(e) => setLow(e.target.value)}
-                    inputMode="decimal"
-                    className="w-full px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold outline-none"
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-[9px] font-black uppercase text-slate-400">Median €</span>
-                  <input
-                    value={median}
-                    onChange={(e) => setMedian(e.target.value)}
-                    inputMode="decimal"
-                    className="w-full px-2.5 py-2 rounded-xl border border-emerald-200 bg-emerald-50/50 text-sm font-bold outline-none"
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-[9px] font-black uppercase text-slate-400">High €</span>
-                  <input
-                    value={high}
-                    onChange={(e) => setHigh(e.target.value)}
-                    inputMode="decimal"
-                    className="w-full px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold outline-none"
-                  />
-                </label>
-              </div>
-
-              <label className="block space-y-1">
-                <span className="text-[9px] font-black uppercase text-slate-400">Note</span>
+              <div className="shrink-0 flex flex-wrap items-center gap-2 px-4 py-3 border-b border-slate-100 bg-slate-50/80">
+                <Activity size={16} className="text-slate-400" />
                 <input
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  placeholder="e.g. ignore 8GB versions / lots"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm font-medium outline-none"
+                  value={draftQuery}
+                  onChange={(e) => setDraftQuery(e.target.value)}
+                  className="flex-1 min-w-[10rem] bg-transparent text-lg font-black text-slate-900 outline-none"
                 />
-              </label>
+                <select
+                  value={draftCategory}
+                  onChange={(e) => setDraftCategory(e.target.value as BuyHelperCategory)}
+                  className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-bold bg-white"
+                >
+                  {CATEGORIES.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+                <a
+                  href={buildEbaySoldUrl(draftQuery || active.query, 'used_bin')}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase tracking-wider text-slate-600"
+                >
+                  eBay sold <ExternalLink size={12} />
+                </a>
+                <button
+                  type="button"
+                  onClick={removeActive}
+                  className="p-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50"
+                  title="Remove tracked item"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
 
-              <div className="space-y-2">
-                <label className="block space-y-1">
-                  <span className="text-[9px] font-black uppercase text-slate-400">
-                    Paste last-month sold rows from eBay (15–30 prices)
-                  </span>
+              <div className="shrink-0 flex gap-1 px-4 py-2 border-b border-slate-100 bg-slate-50/50">
+                {(
+                  [
+                    ['overview', 'Overview'],
+                    ['market', 'Market'],
+                    ['analysis', 'Analysis'],
+                    ['history', 'History'],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setBuyHelperTab(id)}
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors ${
+                      buyHelperTab === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <div className={`flex-1 min-h-0 overflow-y-auto p-4 space-y-4 ${buyHelperTab === 'overview' ? '' : 'hidden'}`}>
+                {activeAnalysis && (
+                  <div
+                    className={`rounded-2xl border px-4 py-3 ${
+                      activeAnalysis.verdict === 'BUY'
+                        ? 'border-emerald-200 bg-emerald-50'
+                        : activeAnalysis.verdict === 'SKIP'
+                          ? 'border-rose-200 bg-rose-50'
+                          : 'border-amber-200 bg-amber-50'
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-black uppercase tracking-widest">{activeAnalysis.verdict}</span>
+                      {activeAnalysis.suggestedMaxBuy != null && (
+                        <span className="text-sm font-black text-slate-900">
+                          Max buy ~{formatEURPrefix(activeAnalysis.suggestedMaxBuy)}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-slate-700 mt-1 font-semibold">{activeAnalysis.verdictReason}</p>
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {activeAnalysis.ka && (
+                        <div className="rounded-xl bg-white/80 border border-black/5 px-3 py-2 text-xs">
+                          <p className="font-black uppercase tracking-wider text-slate-400">Kleinanzeigen</p>
+                          <p className="font-bold text-slate-900 mt-1">
+                            List {formatEURPrefix(activeAnalysis.ka.list)} → net {formatEURPrefix(activeAnalysis.ka.netProfit)} ({activeAnalysis.ka.marginPct}%)
+                          </p>
+                          <p className="text-slate-500">
+                            After VAT {formatEURPrefix(activeAnalysis.ka.vat)} on profit · no platform fees
+                          </p>
+                        </div>
+                      )}
+                      {activeAnalysis.ebay && (
+                        <div className="rounded-xl bg-white/80 border border-black/5 px-3 py-2 text-xs">
+                          <p className="font-black uppercase tracking-wider text-slate-400">eBay.de</p>
+                          <p className="font-bold text-slate-900 mt-1">
+                            List {formatEURPrefix(activeAnalysis.ebay.list)} → pocket {formatEURPrefix(activeAnalysis.ebay.pocket)} → net {formatEURPrefix(activeAnalysis.ebay.netProfit)} ({activeAnalysis.ebay.marginPct}%)
+                          </p>
+                          <p className="text-slate-500">
+                            −{feeTotal}% fees/ads, then −{fees.vatOnProfitPct}% VAT on profit
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <label className="block">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Buy max €</span>
+                    <input
+                      value={draftBuy}
+                      onChange={(e) => setDraftBuy(e.target.value)}
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold"
+                      inputMode="decimal"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Sell KA €</span>
+                    <input
+                      value={draftKa}
+                      onChange={(e) => setDraftKa(e.target.value)}
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold"
+                      inputMode="decimal"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Sell eBay €</span>
+                    <input
+                      value={draftEbay}
+                      onChange={(e) => setDraftEbay(e.target.value)}
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold"
+                      inputMode="decimal"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Desired net margin %</span>
+                    <input
+                      value={draftMargin}
+                      onChange={(e) => setDraftMargin(e.target.value)}
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold"
+                      inputMode="decimal"
+                    />
+                  </label>
+                </div>
+
+                <label className="block">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Note</span>
+                  <textarea
+                    value={draftNote}
+                    onChange={(e) => setDraftNote(e.target.value)}
+                    rows={2}
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold resize-y"
+                  />
+                </label>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => saveActive()}
+                    className="px-4 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-black uppercase tracking-wider"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    disabled={marketBusy || busy}
+                    onClick={fillFromInventory}
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-black uppercase tracking-wider text-slate-700 disabled:opacity-50"
+                  >
+                    <RefreshCw size={14} /> From inventory
+                  </button>
+                  <button
+                    type="button"
+                    disabled={marketBusy || busy}
+                    onClick={() => void checkMarket()}
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-sky-200 bg-sky-50 text-sky-900 text-xs font-black uppercase tracking-wider disabled:opacity-50"
+                  >
+                    {marketBusy ? <Loader2 size={14} className="animate-spin" /> : <TrendingUp size={14} />}
+                    Check market
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || marketBusy}
+                    onClick={() => void runAiGenerate()}
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-violet-200 bg-violet-50 text-violet-900 text-xs font-black uppercase tracking-wider disabled:opacity-50"
+                  >
+                    {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                    {canUseBuyHelperAi() ? 'AI generate' : 'Generate'}
+                  </button>
+                </div>
+
+                {(message || error || marketError) && (
+                  <p className={`text-xs font-bold ${error || marketError ? 'text-rose-600' : 'text-emerald-700'}`}>
+                    {error || marketError || message}
+                  </p>
+                )}
+
+                {marketQuote && (
+                  <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                    <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between gap-2">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                        Live market check for "{marketQuote.query}"
+                      </p>
+                      <span className="text-[10px] text-slate-400 font-semibold">
+                        {new Date(marketQuote.checkedAt).toLocaleTimeString()}
+                      </span>
+                    </div>
+                    {!marketResolved?.ebay && !marketResolved?.ka ? (
+                      <p className="p-4 text-sm font-semibold text-amber-800 bg-amber-50">
+                        No live or sold market data found for this query — buy/sell targets above were filled from
+                        your inventory comps instead (see note).
+                      </p>
+                    ) : (
+                      <div className="p-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <MarketBucketCard label="eBay sold" bucket={marketQuote.ebaySold} used={marketResolved?.ebay?.source === 'ebay-sold'} />
+                        <MarketBucketCard label="eBay live" bucket={marketQuote.ebayLive} used={marketResolved?.ebay?.source === 'ebay-live'} />
+                        <MarketBucketCard label="Kleinanzeigen live" bucket={marketQuote.kaLive} used={marketResolved?.ka?.source === 'ka-live'} />
+                      </div>
+                    )}
+                    {marketQuote.errors && Object.keys(marketQuote.errors).length > 0 && (
+                      <p className="px-4 pb-3 text-[10px] text-slate-400 font-semibold">
+                        {Object.entries(marketQuote.errors).map(([src, msg]) => `${src}: ${msg}`).join(' · ')}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                  <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between gap-2">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                      Your sold comps {invSummary ? `(${invSummary.count})` : ''}
+                    </p>
+                    {invSummary && invSummary.bundleAttributed > 0 && (
+                      <span className="text-[10px] font-bold text-emerald-700">
+                        {invSummary.bundleAttributed} from sold bundles
+                      </span>
+                    )}
+                  </div>
+                  {!invSummary ? (
+                    <p className="p-4 text-sm text-slate-500 font-semibold">
+                      No matching sold parts yet. Bundle sales are split by buy-weight so individual GPUs/CPUs still count.
+                    </p>
+                  ) : (
+                    <div className="p-3 space-y-2">
+                      <p className="text-xs font-bold text-slate-600 px-1">
+                        Pocket band {formatEURPrefix(invSummary.low)} – {formatEURPrefix(invSummary.high)}
+                        {' · '}median {formatEURPrefix(invSummary.median)}
+                      </p>
+                      {invSummary.samples.map((s, i) => (
+                        <div key={`${s.name}-${s.soldAt}-${i}`} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 px-3 py-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-slate-900 truncate">{s.name}</p>
+                            <p className="text-[10px] text-slate-500 font-semibold">
+                              {s.platform} · {s.source === 'bundle_attribution' ? 'from bundle' : s.source}
+                              {s.soldAt ? ` · ${s.soldAt.slice(0, 10)}` : ''}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0 text-xs font-bold">
+                            <p className="text-slate-900">{formatEURPrefix(s.pocket)} pocket</p>
+                            <p className="text-slate-400">buy {formatEURPrefix(s.buyPrice)}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 p-3 space-y-2">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    Optional: paste eBay sold rows to refine market
+                  </p>
                   <textarea
                     value={paste}
                     onChange={(e) => setPaste(e.target.value)}
-                    rows={8}
-                    placeholder={
-                      'Scroll the clean sold page (~1 month of “Verkauft” dates).\n' +
-                      'Copy a large block of titles + € prices, paste here, then Read paste.'
-                    }
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-medium outline-none resize-y min-h-[8rem]"
+                    rows={4}
+                    placeholder="Paste titles + € prices from eBay sold search…"
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold resize-y"
                   />
-                </label>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={busy || !paste.trim()}
-                    onClick={() => void runAiOnPaste()}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-violet-200 bg-violet-50 text-violet-800 text-[10px] font-black uppercase disabled:opacity-50"
-                  >
-                    {busy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                    {aiOk ? 'Read paste (AI + local)' : 'Read paste (local only)'}
-                  </button>
-                  <span
-                    className={`text-[10px] font-bold ${
-                      pastePriceCount >= 15
-                        ? 'text-emerald-700'
-                        : pastePriceCount >= 8
-                          ? 'text-amber-700'
-                          : 'text-slate-400'
-                    }`}
-                  >
-                    {pastePriceCount} € prices detected
-                    {pastePriceCount > 0 && pastePriceCount < 15 ? ' · add more for a monthly read' : ''}
-                    {pastePriceCount >= 15 ? ' · good monthly sample' : ''}
-                  </span>
                 </div>
               </div>
 
-              {message && (
-                <p className="text-[11px] font-medium text-emerald-900 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2">
-                  {message}
-                </p>
-              )}
-              {error && (
-                <p className="text-[11px] font-bold text-amber-900 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
-                  {error}
-                </p>
-              )}
+              {/* Market tab — latest snapshot per channel */}
+              <div className={`flex-1 min-h-0 overflow-y-auto p-4 space-y-3 ${buyHelperTab === 'market' ? '' : 'hidden'}`}>
+                {(() => {
+                  const hist = activeHistory;
+                  const latest = hist?.history[hist.history.length - 1];
+                  if (!hist || !latest) {
+                    return (
+                      <p className="text-sm font-semibold text-slate-500">
+                        No stored market snapshots yet. Press "Refresh all" in the header to fetch eBay sold + live and
+                        Kleinanzeigen for every tracked part.
+                      </p>
+                    );
+                  }
+                  return (
+                    <>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                        Latest snapshot · {new Date(latest.timestamp).toLocaleString()}
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <MarketBucketCard label="eBay sold" bucket={latest.ebaySold} used={false} />
+                        <MarketBucketCard label="eBay live" bucket={latest.ebayLive} used={false} />
+                        <MarketBucketCard label="Kleinanzeigen live" bucket={latest.kaLive} used={false} />
+                      </div>
+                      <p className="text-[10px] font-semibold text-slate-400">
+                        {hist.history.length} snapshot{hist.history.length === 1 ? '' : 's'} stored (last 30 days).
+                      </p>
+                    </>
+                  );
+                })()}
+              </div>
 
-              <button
-                type="button"
-                onClick={() => savePrices(active.id)}
-                className="w-full inline-flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 text-white text-xs font-black uppercase"
-              >
-                <Check size={14} /> Save prices + mark checked
-              </button>
+              {/* Analysis tab — percentiles, trend, volatility, velocity */}
+              <div className={`flex-1 min-h-0 overflow-y-auto p-4 space-y-3 ${buyHelperTab === 'analysis' ? '' : 'hidden'}`}>
+                {!marketAnalysis || (!marketAnalysis.ebaySold && !marketAnalysis.ebayLive && !marketAnalysis.kaLive) ? (
+                  <p className="text-sm font-semibold text-slate-500">
+                    No history to analyse yet. Refresh a few times over several days to build a trend.
+                  </p>
+                ) : (
+                  ([
+                    ['eBay sold', marketAnalysis.ebaySold],
+                    ['eBay live', marketAnalysis.ebayLive],
+                    ['Kleinanzeigen live', marketAnalysis.kaLive],
+                  ] as const).map(([label, signal]) =>
+                    !signal ? null : (
+                      <div key={label} className="rounded-2xl border border-slate-200 overflow-hidden">
+                        <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between gap-2">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</p>
+                          <span className="text-[10px] font-black">
+                            {signal.trend === 'up' ? '↑ rising' : signal.trend === 'down' ? '↓ falling' : '→ flat'}
+                          </span>
+                        </div>
+                        <div className="p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                          <div>
+                            <p className="font-black uppercase tracking-wider text-slate-400">Median</p>
+                            <p className="font-bold text-slate-900">{formatEURPrefix(signal.median)}</p>
+                          </div>
+                          <div>
+                            <p className="font-black uppercase tracking-wider text-slate-400">Band</p>
+                            <p className="font-bold text-slate-900">
+                              {formatEURPrefix(signal.low)}–{formatEURPrefix(signal.high)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="font-black uppercase tracking-wider text-slate-400">Volatility</p>
+                            <p className="font-bold text-slate-900">{signal.volatility}%</p>
+                          </div>
+                          <div>
+                            <p className="font-black uppercase tracking-wider text-slate-400">Listings 30d</p>
+                            <p className="font-bold text-slate-900">{signal.count30d}</p>
+                          </div>
+                        </div>
+                        <div className="px-3 pb-3 flex flex-wrap gap-3 text-[10px] font-bold text-slate-500">
+                          <span>P10 {formatEURPrefix(signal.p10)}</span>
+                          <span>P25 {formatEURPrefix(signal.p25)}</span>
+                          <span>P75 {formatEURPrefix(signal.p75)}</span>
+                          <span>P90 {formatEURPrefix(signal.p90)}</span>
+                          <span>σ {signal.stdDev}</span>
+                          {signal.source === 'ebay-sold' && signal.velocity > 0 && (
+                            <span title="Sold listings per snapshot in the last 7 days vs the 30-day average. 100% = same pace.">
+                              pace {signal.velocity}% of 30d avg
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ),
+                  )
+                )}
+              </div>
+
+              {/* History tab — snapshot log */}
+              <div className={`flex-1 min-h-0 overflow-y-auto p-4 space-y-2 ${buyHelperTab === 'history' ? '' : 'hidden'}`}>
+                {(() => {
+                  if (!activeHistory?.history.length) {
+                    return <p className="text-sm font-semibold text-slate-500">No snapshots stored yet.</p>;
+                  }
+                  return [...activeHistory.history].reverse().map((snap) => (
+                    <div
+                      key={snap.timestamp}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 px-3 py-2 text-xs"
+                    >
+                      <span className="font-bold text-slate-600 shrink-0">
+                        {new Date(snap.timestamp).toLocaleDateString()}
+                      </span>
+                      <span className="font-semibold text-slate-500 text-right">
+                        sold {snap.ebaySold?.median != null ? formatEURPrefix(snap.ebaySold.median) : '—'}
+                        {' · '}live {snap.ebayLive?.median != null ? formatEURPrefix(snap.ebayLive.median) : '—'}
+                        {' · '}KA {snap.kaLive?.median != null ? formatEURPrefix(snap.kaLive.median) : '—'}
+                      </span>
+                    </div>
+                  ));
+                })()}
+              </div>
             </>
           )}
-        </div>
+        </section>
       </div>
     </div>
   );

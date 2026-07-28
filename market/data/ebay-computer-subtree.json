@@ -1,0 +1,2486 @@
+{
+  "categoryTreeId": "77",
+  "categoryTreeVersion": "135",
+  "categorySubtreeNode": {
+    "category": {
+      "categoryId": "58058",
+      "categoryName": "Computer, Tablets & Netzwerk"
+    },
+    "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=0",
+    "childCategoryTreeNodes": [
+      {
+        "category": {
+          "categoryId": "162",
+          "categoryName": "Sonstige"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=58058",
+        "categoryTreeNodeLevel": 2,
+        "leafCategoryTreeNode": true
+      },
+      {
+        "category": {
+          "categoryId": "165",
+          "categoryName": "Laufwerke & Speichermedien"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=58058",
+        "childCategoryTreeNodes": [
+          {
+            "category": {
+              "categoryId": "167",
+              "categoryName": "Sonstige"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=165",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "169",
+              "categoryName": "Floppy-, Zip- & Jaz-Laufwerke"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=165",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "31509",
+              "categoryName": "CD-, DVD- & Blu-ray-Kopierer"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=165",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "39976",
+              "categoryName": "Band-/Datenkassettenlaufwerke"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=165",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "51071",
+              "categoryName": "USB-Sticks"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=165",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "80133",
+              "categoryName": "Leermedien & Zubehör"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=165",
+            "childCategoryTreeNodes": [
+              {
+                "category": {
+                  "categoryId": "11161",
+                  "categoryName": "Sonstige"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=80133",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "73329",
+                  "categoryName": "Datenkassetten"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=80133",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "80135",
+                  "categoryName": "CDs, DVDs & Blu-rays"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=80133",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "80136",
+                  "categoryName": "Floppy-, Zip- & Jaz-Disketten"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=80133",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "175664",
+                  "categoryName": "Disc-Reparatur & -Reinigung"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=80133",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "175665",
+                  "categoryName": "Tonkopf- & Linsenreiniger"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=80133",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "175666",
+                  "categoryName": "Medientaschen, Hüllen & Etuis"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=80133",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              }
+            ],
+            "categoryTreeNodeLevel": 3
+          },
+          {
+            "category": {
+              "categoryId": "131542",
+              "categoryName": "CD-, DVD- & Blu-ray-Laufwerke"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=165",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "158816",
+              "categoryName": "Einbaurahmen für Festplatten"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=165",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "158817",
+              "categoryName": "Festplattengehäuse & Docks"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=165",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "175671",
+              "categoryName": "Festplatten-Kopierstationen"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=165",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "182085",
+              "categoryName": "Festplatten (HDD, SSD & NAS)"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=165",
+            "childCategoryTreeNodes": [
+              {
+                "category": {
+                  "categoryId": "56083",
+                  "categoryName": "Interne Festplatten"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182085",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "106273",
+                  "categoryName": "Netzgebundener Speicher"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182085",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "131553",
+                  "categoryName": "Externe Festplatten"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182085",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "175669",
+                  "categoryName": "Solid State Drives (SSD)"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182085",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "175670",
+                  "categoryName": "Sonstige"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182085",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              }
+            ],
+            "categoryTreeNodeLevel": 3
+          }
+        ],
+        "categoryTreeNodeLevel": 2
+      },
+      {
+        "category": {
+          "categoryId": "3516",
+          "categoryName": "Handbücher & Anleitungen"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=58058",
+        "categoryTreeNodeLevel": 2,
+        "leafCategoryTreeNode": true
+      },
+      {
+        "category": {
+          "categoryId": "3676",
+          "categoryName": "Tastaturen, Mäuse & Pointing"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=58058",
+        "childCategoryTreeNodes": [
+          {
+            "category": {
+              "categoryId": "170",
+              "categoryName": "Sonstige"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=3676",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "3680",
+              "categoryName": "Grafiktabletts/Boards & Stifte"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=3676",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "23160",
+              "categoryName": "Mäuse, Trackballs & Touchpads"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=3676",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "33963",
+              "categoryName": "Tastaturen & Keypads"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=3676",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "47779",
+              "categoryName": "Tastatur- & Maus-Sets"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=3676",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "51086",
+              "categoryName": "Fernbedienungen & Zeigegeräte"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=3676",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          }
+        ],
+        "categoryTreeNodeLevel": 2
+      },
+      {
+        "category": {
+          "categoryId": "11176",
+          "categoryName": "Heimnetzwerke & Zubehör"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=58058",
+        "childCategoryTreeNodes": [
+          {
+            "category": {
+              "categoryId": "11183",
+              "categoryName": "Kabelgebundene Router"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11176",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "44995",
+              "categoryName": "Drahtlose Router"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11176",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "44996",
+              "categoryName": "Sonstige"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11176",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "44999",
+              "categoryName": "USB-Bluetooth-Adapter/-Dongles"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11176",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "45002",
+              "categoryName": "USB-WLAN-Adapter/-Dongles"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11176",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "58297",
+              "categoryName": "Modems"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11176",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "61816",
+              "categoryName": "Repeater, Extender & Antennen"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11176",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "61840",
+              "categoryName": "VoIP-Heimtelefone"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11176",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "67262",
+              "categoryName": "PowerLAN-Netzwerke"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11176",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "99269",
+              "categoryName": "VoIP-Telefonadapter"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11176",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "101270",
+              "categoryName": "Modem-Router-Kombinationen"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11176",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "175709",
+              "categoryName": "Wireless Access Points"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11176",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "175710",
+              "categoryName": "Mobile Breitbandgeräte"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11176",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          }
+        ],
+        "categoryTreeNodeLevel": 2
+      },
+      {
+        "category": {
+          "categoryId": "11189",
+          "categoryName": "Computer-Klassiker & Zubehör"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=58058",
+        "childCategoryTreeNodes": [
+          {
+            "category": {
+              "categoryId": "4193",
+              "categoryName": "Sonstige"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11189",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "14906",
+              "categoryName": "Handbücher & Merchandising"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11189",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "162075",
+              "categoryName": "Computer-Klassiker"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11189",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "175690",
+              "categoryName": "Teile & Zubehör"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11189",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          }
+        ],
+        "categoryTreeNodeLevel": 2
+      },
+      {
+        "category": {
+          "categoryId": "18793",
+          "categoryName": "Software"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=58058",
+        "childCategoryTreeNodes": [
+          {
+            "category": {
+              "categoryId": "182",
+              "categoryName": "Sonstige"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=18793",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "185",
+              "categoryName": "Web & Desktop Publishing"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=18793",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "3768",
+              "categoryName": "Büro & Business"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=18793",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "3783",
+              "categoryName": "Bildung, Sprachen & Wissen"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=18793",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "11226",
+              "categoryName": "Betriebssysteme"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=18793",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "41859",
+              "categoryName": "Bild, Video & Audio"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=18793",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "80015",
+              "categoryName": "Hobbys & Freizeit"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=18793",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "80356",
+              "categoryName": "Server, Entwicklung & DBMS"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=18793",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "158906",
+              "categoryName": "Finanzen, Steuer & Recht"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=18793",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "158911",
+              "categoryName": "Hilfsprogramme/Tools & Treiber"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=18793",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "175689",
+              "categoryName": "Antivirus & Sicherheit"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=18793",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          }
+        ],
+        "categoryTreeNodeLevel": 2
+      },
+      {
+        "category": {
+          "categoryId": "31530",
+          "categoryName": "Notebook- & Desktop-Zubehör"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=58058",
+        "childCategoryTreeNodes": [
+          {
+            "category": {
+              "categoryId": "3702",
+              "categoryName": "Lautsprecher"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=31530",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "3709",
+              "categoryName": "Notebook-Dockingstationen"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=31530",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "4616",
+              "categoryName": "Webcams"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=31530",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "14295",
+              "categoryName": "Notebook-Akkus"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=31530",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "23895",
+              "categoryName": "Mauspads & Handgelenkauflagen"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=31530",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "31510",
+              "categoryName": "Notebook-Netzteile/-Ladegeräte"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=31530",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "31519",
+              "categoryName": "Notebook-Koffer & -Taschen"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=31530",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "31529",
+              "categoryName": "Diebstahlschutz"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=31530",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "31534",
+              "categoryName": "Sonstige"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=31530",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "42190",
+              "categoryName": "Notebook-Steckkarten"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=31530",
+            "childCategoryTreeNodes": [
+              {
+                "category": {
+                  "categoryId": "42196",
+                  "categoryName": "Notebook-Netzwerkkarten"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=42190",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "42323",
+                  "categoryName": "Notebook-Porterweiterungskarte"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=42190",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "74953",
+                  "categoryName": "Notebook-Modemkarten"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=42190",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "96913",
+                  "categoryName": "Sonstige"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=42190",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              }
+            ],
+            "categoryTreeNodeLevel": 3
+          },
+          {
+            "category": {
+              "categoryId": "51082",
+              "categoryName": "Speicherkartenleser & Adapter"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=31530",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "67870",
+              "categoryName": "USB-Licht & -Gadgets"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=31530",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "75518",
+              "categoryName": "Externe Soundkarten"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=31530",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "80183",
+              "categoryName": "Headsets"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=31530",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "96915",
+              "categoryName": "Notebook-Kühlpads"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=31530",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "116309",
+              "categoryName": "Mikrofone"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=31530",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "116346",
+              "categoryName": "Ständer, Halter & Autohalterungen"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=31530",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "158837",
+              "categoryName": "Tastaturschutz"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=31530",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "158846",
+              "categoryName": "Bildschirmschutz"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=31530",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "170597",
+              "categoryName": "Blickschutzfilter"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=31530",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "175677",
+              "categoryName": "Case-Modding/Sticker/Aufkleber"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=31530",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "175678",
+              "categoryName": "Reinigungsgeräte & -sets"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=31530",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "175679",
+              "categoryName": "TV-Tuner & Videoaufnahmegeräte"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=31530",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "175680",
+              "categoryName": "Festplattentaschen"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=31530",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          }
+        ],
+        "categoryTreeNodeLevel": 2
+      },
+      {
+        "category": {
+          "categoryId": "86722",
+          "categoryName": "Stromschutz & Stromverteilung"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=58058",
+        "childCategoryTreeNodes": [
+          {
+            "category": {
+              "categoryId": "20315",
+              "categoryName": "Sonstige"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=86722",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "48479",
+              "categoryName": "USV-Batterien & -Komponenten"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=86722",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "86723",
+              "categoryName": "Leistungsverteiler (PDU)"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=86722",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "96907",
+              "categoryName": "Überspannschutz & Mehrfachstecker"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=86722",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "99265",
+              "categoryName": "USVs"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=86722",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "175687",
+              "categoryName": "Wechselrichter"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=86722",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          }
+        ],
+        "categoryTreeNodeLevel": 2
+      },
+      {
+        "category": {
+          "categoryId": "162497",
+          "categoryName": "Monitore, Projektoren & Zubehör"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=58058",
+        "childCategoryTreeNodes": [
+          {
+            "category": {
+              "categoryId": "25321",
+              "categoryName": "Projektoren"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=162497",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "51052",
+              "categoryName": "Monitor-Halterungen & -Ständer"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=162497",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "80053",
+              "categoryName": "Monitore"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=162497",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "99231",
+              "categoryName": "Projektor-Teile"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=162497",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "158845",
+              "categoryName": "Monitor-Netzteile"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=162497",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "168068",
+              "categoryName": "Monitor-Ersatzteile"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=162497",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "175688",
+              "categoryName": "Sonstige"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=162497",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "260137",
+              "categoryName": "Projektor-Zubehör"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=162497",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          }
+        ],
+        "categoryTreeNodeLevel": 2
+      },
+      {
+        "category": {
+          "categoryId": "171485",
+          "categoryName": "Tablets & eBook-Reader"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=58058",
+        "categoryTreeNodeLevel": 2,
+        "leafCategoryTreeNode": true
+      },
+      {
+        "category": {
+          "categoryId": "171957",
+          "categoryName": "Desktops & All-in-One-PCs"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=58058",
+        "childCategoryTreeNodes": [
+          {
+            "category": {
+              "categoryId": "179",
+              "categoryName": "PC Desktops & All-in-Ones"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=171957",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "111418",
+              "categoryName": "Apple Desktops & All-in-Ones"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=171957",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          }
+        ],
+        "categoryTreeNodeLevel": 2
+      },
+      {
+        "category": {
+          "categoryId": "171961",
+          "categoryName": "Drucker, Scanner & Zubehör"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=58058",
+        "childCategoryTreeNodes": [
+          {
+            "category": {
+              "categoryId": "1245",
+              "categoryName": "Drucker"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=171961",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "11195",
+              "categoryName": "Tinte, Toner & Papier"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=171961",
+            "childCategoryTreeNodes": [
+              {
+                "category": {
+                  "categoryId": "11202",
+                  "categoryName": "Farbbänder"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11195",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "16191",
+                  "categoryName": "Tintenpatronen"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11195",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "16204",
+                  "categoryName": "Tonerkassetten"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11195",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "73452",
+                  "categoryName": "Drucker-Fotopapier"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11195",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "86728",
+                  "categoryName": "Druckerpapier"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11195",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "99319",
+                  "categoryName": "Nachfülltinte & Sets"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11195",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "156545",
+                  "categoryName": "Leere Tintenpatronen"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11195",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "175682",
+                  "categoryName": "Nachfülltoner & Sets"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11195",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "175705",
+                  "categoryName": "Sonstige"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=11195",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              }
+            ],
+            "categoryTreeNodeLevel": 3
+          },
+          {
+            "category": {
+              "categoryId": "11205",
+              "categoryName": "Scanner"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=171961",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "182086",
+              "categoryName": "Teile & Zubehör"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=171961",
+            "childCategoryTreeNodes": [
+              {
+                "category": {
+                  "categoryId": "11197",
+                  "categoryName": "Einzüge & Kassetten"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182086",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "16211",
+                  "categoryName": "Druckerspeicher"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182086",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "51288",
+                  "categoryName": "Laser-Trommeln"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182086",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "51328",
+                  "categoryName": "Druckköpfe"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182086",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "101356",
+                  "categoryName": "Netzteile"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182086",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "170599",
+                  "categoryName": "Sonstige"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182086",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "170601",
+                  "categoryName": "Scanner-Teile"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182086",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "175685",
+                  "categoryName": "Reinigungs- & Reparaturkits"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182086",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "175686",
+                  "categoryName": "Fixiereinheiten"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182086",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "182087",
+                  "categoryName": "Drucker-Duplexeinheiten"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182086",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              }
+            ],
+            "categoryTreeNodeLevel": 3
+          }
+        ],
+        "categoryTreeNodeLevel": 2
+      },
+      {
+        "category": {
+          "categoryId": "175672",
+          "categoryName": "Notebooks & Netbooks"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=58058",
+        "childCategoryTreeNodes": [
+          {
+            "category": {
+              "categoryId": "177",
+              "categoryName": "PC Notebooks & Netbooks"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175672",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "111422",
+              "categoryName": "Apple Notebooks"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175672",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          }
+        ],
+        "categoryTreeNodeLevel": 2
+      },
+      {
+        "category": {
+          "categoryId": "175673",
+          "categoryName": "Computer-Komponenten & -Teile"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=58058",
+        "childCategoryTreeNodes": [
+          {
+            "category": {
+              "categoryId": "164",
+              "categoryName": "CPUs/Prozessoren"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "1244",
+              "categoryName": "Mainboards"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "3761",
+              "categoryName": "Videoaufnahme & TV-Karten"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "16145",
+              "categoryName": "Sonstige"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "27386",
+              "categoryName": "Grafik-/Videokarten"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "42000",
+              "categoryName": "Lüfter, Kühlkörper & Kühlung"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+            "childCategoryTreeNodes": [
+              {
+                "category": {
+                  "categoryId": "3673",
+                  "categoryName": "Sonstige"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=42000",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "46322",
+                  "categoryName": "Wärmeleitpasten & Zubehör"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=42000",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "80151",
+                  "categoryName": "Videokarten- & GPU-Kühlung"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=42000",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "131486",
+                  "categoryName": "CPU-Lüfter & Kühlkörper"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=42000",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "131487",
+                  "categoryName": "Gehäuselüfter"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=42000",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "131494",
+                  "categoryName": "Festplattenkühlung"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=42000",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "131495",
+                  "categoryName": "Lüftergitter & Filter"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=42000",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "131502",
+                  "categoryName": "Speicher- & Chipsatz-Kühlung"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=42000",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "131503",
+                  "categoryName": "Wasserkühlung"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=42000",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "170078",
+                  "categoryName": "Lüfter, Kühlkörperhalter & Zubehör"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=42000",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              }
+            ],
+            "categoryTreeNodeLevel": 3
+          },
+          {
+            "category": {
+              "categoryId": "42017",
+              "categoryName": "Netzteile"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "44980",
+              "categoryName": "Interne Soundkarten"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "131511",
+              "categoryName": "Mainboard & CPU-Kombination"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "168059",
+              "categoryName": "Netzteile-Tester"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "170083",
+              "categoryName": "Arbeitsspeicher (RAM)"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "175674",
+              "categoryName": "Computergehäuse & Zubehör"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+            "childCategoryTreeNodes": [
+              {
+                "category": {
+                  "categoryId": "42014",
+                  "categoryName": "Computergehäuse"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175674",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "51064",
+                  "categoryName": "Gehäuseteile & Zubehör"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175674",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              }
+            ],
+            "categoryTreeNodeLevel": 3
+          },
+          {
+            "category": {
+              "categoryId": "182088",
+              "categoryName": "Schnittstellen-/Steckkarten"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+            "childCategoryTreeNodes": [
+              {
+                "category": {
+                  "categoryId": "20318",
+                  "categoryName": "Netzwerkkarten"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182088",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "44940",
+                  "categoryName": "Modemkarten"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182088",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "90715",
+                  "categoryName": "Festplatten- & RAID-Controller"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182088",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "90718",
+                  "categoryName": "Port-Erweiterungskarten"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182088",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "90719",
+                  "categoryName": "Sonstige"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182088",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              }
+            ],
+            "categoryTreeNodeLevel": 3
+          },
+          {
+            "category": {
+              "categoryId": "182089",
+              "categoryName": "Notebook-Ersatzteile"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+            "childCategoryTreeNodes": [
+              {
+                "category": {
+                  "categoryId": "31568",
+                  "categoryName": "Notebook-Tastaturen"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182089",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "31569",
+                  "categoryName": "Notebook-Displays/LCD-Displays"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182089",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "168061",
+                  "categoryName": "Sonstige"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182089",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "175676",
+                  "categoryName": "Notebook-Gehäuse & -Touchpads"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182089",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              }
+            ],
+            "categoryTreeNodeLevel": 3
+          },
+          {
+            "category": {
+              "categoryId": "182090",
+              "categoryName": "Mainboard-Komponenten & Zubehör"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+            "childCategoryTreeNodes": [
+              {
+                "category": {
+                  "categoryId": "168060",
+                  "categoryName": "Mainboard-Diagnosekarten"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182090",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "170080",
+                  "categoryName": "Mainboard-Backplates"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182090",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "170082",
+                  "categoryName": "Sonstige"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182090",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "175668",
+                  "categoryName": "Mainboard-Komponenten"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182090",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              }
+            ],
+            "categoryTreeNodeLevel": 3
+          }
+        ],
+        "categoryTreeNodeLevel": 2
+      },
+      {
+        "category": {
+          "categoryId": "175698",
+          "categoryName": "Firmennetzwerke & Server"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=58058",
+        "childCategoryTreeNodes": [
+          {
+            "category": {
+              "categoryId": "11175",
+              "categoryName": "Sonstige"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175698",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "51167",
+              "categoryName": "Load Balancer"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175698",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "51168",
+              "categoryName": "Firewall- & VPN-Geräte"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175698",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "51197",
+              "categoryName": "Racks, Rahmen & Patchpanels"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175698",
+            "childCategoryTreeNodes": [
+              {
+                "category": {
+                  "categoryId": "44992",
+                  "categoryName": "Patchpanels"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=51197",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "51199",
+                  "categoryName": "Rackmontage-Schränke & -Rahmen"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=51197",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "64061",
+                  "categoryName": "Rackmontage-Gehäuse & -Rahmen"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=51197",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "80216",
+                  "categoryName": "Sonstige"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=51197",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              }
+            ],
+            "categoryTreeNodeLevel": 3
+          },
+          {
+            "category": {
+              "categoryId": "51240",
+              "categoryName": "Server-Komponenten"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175698",
+            "childCategoryTreeNodes": [
+              {
+                "category": {
+                  "categoryId": "11210",
+                  "categoryName": "Server-Speicher (RAM)"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=51240",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "56088",
+                  "categoryName": "Server-CPUs/-Prozessoren"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=51240",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "56090",
+                  "categoryName": "Server-Netzteile"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=51240",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "56091",
+                  "categoryName": "Festplatten- & RAID-Controller"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=51240",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "56092",
+                  "categoryName": "Sonstige"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=51240",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "71509",
+                  "categoryName": "Server-Boards"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=51240",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "168074",
+                  "categoryName": "Server-Lüfter & -Kühlsysteme"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=51240",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              }
+            ],
+            "categoryTreeNodeLevel": 3
+          },
+          {
+            "category": {
+              "categoryId": "61839",
+              "categoryName": "VoIP-Business-Telefone"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175698",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "80225",
+              "categoryName": "CSUs/DSUs"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175698",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "86720",
+              "categoryName": "Richtantennen"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175698",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "175699",
+              "categoryName": "Firmen-Router"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175698",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "175700",
+              "categoryName": "Server, Clients & Terminals"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175698",
+            "childCategoryTreeNodes": [
+              {
+                "category": {
+                  "categoryId": "11211",
+                  "categoryName": "Computerserver"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175700",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "64052",
+                  "categoryName": "Druckserver"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175700",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "175701",
+                  "categoryName": "Terminalserver"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175700",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "175702",
+                  "categoryName": "Thin Clients"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175700",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "175703",
+                  "categoryName": "Sonstige"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175700",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "184657",
+                  "categoryName": "Server-Kabel & -Adapter"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175700",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "184658",
+                  "categoryName": "Serverrahmen"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175700",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "184659",
+                  "categoryName": "Server-Befestigungsmaterial"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175700",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              }
+            ],
+            "categoryTreeNodeLevel": 3
+          },
+          {
+            "category": {
+              "categoryId": "182091",
+              "categoryName": "Switches & Hubs"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175698",
+            "childCategoryTreeNodes": [
+              {
+                "category": {
+                  "categoryId": "11180",
+                  "categoryName": "Netzwerk-Hubs"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182091",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "51268",
+                  "categoryName": "Netzwerk-Switches"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182091",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "58319",
+                  "categoryName": "Switch-Module"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182091",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "58320",
+                  "categoryName": "Switch-Netzteile"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182091",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "58321",
+                  "categoryName": "Sonstige"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182091",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              }
+            ],
+            "categoryTreeNodeLevel": 3
+          },
+          {
+            "category": {
+              "categoryId": "182092",
+              "categoryName": "Komponenten für Firmen-Router"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175698",
+            "childCategoryTreeNodes": [
+              {
+                "category": {
+                  "categoryId": "67286",
+                  "categoryName": "Router-Module/-Karten/-Adapter"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182092",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "67287",
+                  "categoryName": "Router-Netzteile"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182092",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "67292",
+                  "categoryName": "Routerspeicher"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182092",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "175704",
+                  "categoryName": "Sonstige"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182092",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              }
+            ],
+            "categoryTreeNodeLevel": 3
+          },
+          {
+            "category": {
+              "categoryId": "182093",
+              "categoryName": "Netzwerkspeicher-Disk-Arrays"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175698",
+            "childCategoryTreeNodes": [
+              {
+                "category": {
+                  "categoryId": "11209",
+                  "categoryName": "Sonstige"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182093",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "58317",
+                  "categoryName": "SAN-Disk-Arrays"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182093",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "58322",
+                  "categoryName": "Disk-Array-Komponenten"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182093",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "64069",
+                  "categoryName": "NAS-Disk-Arrays"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182093",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              }
+            ],
+            "categoryTreeNodeLevel": 3
+          }
+        ],
+        "categoryTreeNodeLevel": 2
+      },
+      {
+        "category": {
+          "categoryId": "176970",
+          "categoryName": "Tablet & eBook-Zubehör"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=58058",
+        "childCategoryTreeNodes": [
+          {
+            "category": {
+              "categoryId": "176971",
+              "categoryName": "Zubehörpakete"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=176970",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "176972",
+              "categoryName": "A/V-Kabel & Adapter"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=176970",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "176973",
+              "categoryName": "Taschen & Hüllen"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=176970",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "176974",
+              "categoryName": "Ladegeräte & Datenkabel"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=176970",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "176975",
+              "categoryName": "Tastaturen"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=176970",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "176976",
+              "categoryName": "Speicherkartenadapter"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=176970",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "176977",
+              "categoryName": "Ständer & Halterungen"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=176970",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "176978",
+              "categoryName": "Leselampen"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=176970",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "176979",
+              "categoryName": "Bildschirmschutzfolien"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=176970",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "176980",
+              "categoryName": "Aufkleber & Sticker"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=176970",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "176981",
+              "categoryName": "Stifte"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=176970",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "176982",
+              "categoryName": "Sonstige"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=176970",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          }
+        ],
+        "categoryTreeNodeLevel": 2
+      },
+      {
+        "category": {
+          "categoryId": "180235",
+          "categoryName": "Tablet- & eBook-Teile"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=58058",
+        "categoryTreeNodeLevel": 2,
+        "leafCategoryTreeNode": true
+      },
+      {
+        "category": {
+          "categoryId": "182094",
+          "categoryName": "Kabel & Steckverbinder"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=58058",
+        "childCategoryTreeNodes": [
+          {
+            "category": {
+              "categoryId": "3668",
+              "categoryName": "Sonstige"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182094",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "20311",
+              "categoryName": "Netzwerkkabel & Adapter"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182094",
+            "childCategoryTreeNodes": [
+              {
+                "category": {
+                  "categoryId": "64035",
+                  "categoryName": "Ethernetkabel (RJ-45/8P8C)"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=20311",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "64043",
+                  "categoryName": "Glasfaserkabel"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=20311",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "67276",
+                  "categoryName": "Splitter, Koppler & Adapter"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=20311",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "67279",
+                  "categoryName": "Stecker, Buchsen & Abdeckplatten"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=20311",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "67857",
+                  "categoryName": "DSL/Telefonkabel (RJ-11)"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=20311",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "101282",
+                  "categoryName": "Sonstige"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=20311",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              },
+              {
+                "category": {
+                  "categoryId": "175681",
+                  "categoryName": "Koaxialkabel"
+                },
+                "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=20311",
+                "categoryTreeNodeLevel": 4,
+                "leafCategoryTreeNode": true
+              }
+            ],
+            "categoryTreeNodeLevel": 3
+          },
+          {
+            "category": {
+              "categoryId": "31492",
+              "categoryName": "Audiokabel & -Adapter"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182094",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "31493",
+              "categoryName": "FireWire-Kabel & -Adapter"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182094",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "44932",
+              "categoryName": "USB-Kabel, -Hubs & -Adapter"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182094",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "51169",
+              "categoryName": "Kabelwerkzeuge"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182094",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "58300",
+              "categoryName": "Kabeltester"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182094",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "67858",
+              "categoryName": "Kabelbinder & Kabelmanager"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182094",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "74941",
+              "categoryName": "Festplattenkabel & -Adapter"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182094",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "116848",
+              "categoryName": "Parallel, Seriell & PS/2"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182094",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "158840",
+              "categoryName": "Monitor-/AV-Kabel & -Adapter"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182094",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "182095",
+              "categoryName": "KVM-Kabel"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182094",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "182096",
+              "categoryName": "KVM-Switches"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182094",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "182097",
+              "categoryName": "Netzkabel & Steckverbinder"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182094",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          }
+        ],
+        "categoryTreeNodeLevel": 2
+      },
+      {
+        "category": {
+          "categoryId": "183062",
+          "categoryName": "3D-Drucker & Zubehör"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=58058",
+        "childCategoryTreeNodes": [
+          {
+            "category": {
+              "categoryId": "183063",
+              "categoryName": "3D-Drucker"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=183062",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "183064",
+              "categoryName": "3D-Scanner"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=183062",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "183065",
+              "categoryName": "3D-Drucker Verbrauchsmaterial"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=183062",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "183066",
+              "categoryName": "3D-Drucker Teile"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=183062",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "260315",
+              "categoryName": "3D-Drucker Zubehör"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=183062",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "260316",
+              "categoryName": "3D-Scanner Zubehör"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=183062",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "260317",
+              "categoryName": "3D-Scanner Teile"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=183062",
+            "categoryTreeNodeLevel": 3,
+            "leafCategoryTreeNode": true
+          }
+        ],
+        "categoryTreeNodeLevel": 2
+      }
+    ],
+    "categoryTreeNodeLevel": 1
+  }
+}

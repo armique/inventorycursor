@@ -1,0 +1,379 @@
+{
+  "categoryTreeId": "77",
+  "categoryTreeVersion": "135",
+  "categorySubtreeNode": {
+    "category": {
+      "categoryId": "175673",
+      "categoryName": "Computer-Komponenten & -Teile"
+    },
+    "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=58058",
+    "childCategoryTreeNodes": [
+      {
+        "category": {
+          "categoryId": "164",
+          "categoryName": "CPUs/Prozessoren"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+        "categoryTreeNodeLevel": 3,
+        "leafCategoryTreeNode": true
+      },
+      {
+        "category": {
+          "categoryId": "1244",
+          "categoryName": "Mainboards"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+        "categoryTreeNodeLevel": 3,
+        "leafCategoryTreeNode": true
+      },
+      {
+        "category": {
+          "categoryId": "3761",
+          "categoryName": "Videoaufnahme & TV-Karten"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+        "categoryTreeNodeLevel": 3,
+        "leafCategoryTreeNode": true
+      },
+      {
+        "category": {
+          "categoryId": "16145",
+          "categoryName": "Sonstige"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+        "categoryTreeNodeLevel": 3,
+        "leafCategoryTreeNode": true
+      },
+      {
+        "category": {
+          "categoryId": "27386",
+          "categoryName": "Grafik-/Videokarten"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+        "categoryTreeNodeLevel": 3,
+        "leafCategoryTreeNode": true
+      },
+      {
+        "category": {
+          "categoryId": "42000",
+          "categoryName": "Lüfter, Kühlkörper & Kühlung"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+        "childCategoryTreeNodes": [
+          {
+            "category": {
+              "categoryId": "3673",
+              "categoryName": "Sonstige"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=42000",
+            "categoryTreeNodeLevel": 4,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "46322",
+              "categoryName": "Wärmeleitpasten & Zubehör"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=42000",
+            "categoryTreeNodeLevel": 4,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "80151",
+              "categoryName": "Videokarten- & GPU-Kühlung"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=42000",
+            "categoryTreeNodeLevel": 4,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "131486",
+              "categoryName": "CPU-Lüfter & Kühlkörper"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=42000",
+            "categoryTreeNodeLevel": 4,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "131487",
+              "categoryName": "Gehäuselüfter"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=42000",
+            "categoryTreeNodeLevel": 4,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "131494",
+              "categoryName": "Festplattenkühlung"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=42000",
+            "categoryTreeNodeLevel": 4,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "131495",
+              "categoryName": "Lüftergitter & Filter"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=42000",
+            "categoryTreeNodeLevel": 4,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "131502",
+              "categoryName": "Speicher- & Chipsatz-Kühlung"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=42000",
+            "categoryTreeNodeLevel": 4,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "131503",
+              "categoryName": "Wasserkühlung"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=42000",
+            "categoryTreeNodeLevel": 4,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "170078",
+              "categoryName": "Lüfter, Kühlkörperhalter & Zubehör"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=42000",
+            "categoryTreeNodeLevel": 4,
+            "leafCategoryTreeNode": true
+          }
+        ],
+        "categoryTreeNodeLevel": 3
+      },
+      {
+        "category": {
+          "categoryId": "42017",
+          "categoryName": "Netzteile"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+        "categoryTreeNodeLevel": 3,
+        "leafCategoryTreeNode": true
+      },
+      {
+        "category": {
+          "categoryId": "44980",
+          "categoryName": "Interne Soundkarten"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+        "categoryTreeNodeLevel": 3,
+        "leafCategoryTreeNode": true
+      },
+      {
+        "category": {
+          "categoryId": "131511",
+          "categoryName": "Mainboard & CPU-Kombination"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+        "categoryTreeNodeLevel": 3,
+        "leafCategoryTreeNode": true
+      },
+      {
+        "category": {
+          "categoryId": "168059",
+          "categoryName": "Netzteile-Tester"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+        "categoryTreeNodeLevel": 3,
+        "leafCategoryTreeNode": true
+      },
+      {
+        "category": {
+          "categoryId": "170083",
+          "categoryName": "Arbeitsspeicher (RAM)"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+        "categoryTreeNodeLevel": 3,
+        "leafCategoryTreeNode": true
+      },
+      {
+        "category": {
+          "categoryId": "175674",
+          "categoryName": "Computergehäuse & Zubehör"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+        "childCategoryTreeNodes": [
+          {
+            "category": {
+              "categoryId": "42014",
+              "categoryName": "Computergehäuse"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175674",
+            "categoryTreeNodeLevel": 4,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "51064",
+              "categoryName": "Gehäuseteile & Zubehör"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175674",
+            "categoryTreeNodeLevel": 4,
+            "leafCategoryTreeNode": true
+          }
+        ],
+        "categoryTreeNodeLevel": 3
+      },
+      {
+        "category": {
+          "categoryId": "182088",
+          "categoryName": "Schnittstellen-/Steckkarten"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+        "childCategoryTreeNodes": [
+          {
+            "category": {
+              "categoryId": "20318",
+              "categoryName": "Netzwerkkarten"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182088",
+            "categoryTreeNodeLevel": 4,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "44940",
+              "categoryName": "Modemkarten"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182088",
+            "categoryTreeNodeLevel": 4,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "90715",
+              "categoryName": "Festplatten- & RAID-Controller"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182088",
+            "categoryTreeNodeLevel": 4,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "90718",
+              "categoryName": "Port-Erweiterungskarten"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182088",
+            "categoryTreeNodeLevel": 4,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "90719",
+              "categoryName": "Sonstige"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182088",
+            "categoryTreeNodeLevel": 4,
+            "leafCategoryTreeNode": true
+          }
+        ],
+        "categoryTreeNodeLevel": 3
+      },
+      {
+        "category": {
+          "categoryId": "182089",
+          "categoryName": "Notebook-Ersatzteile"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+        "childCategoryTreeNodes": [
+          {
+            "category": {
+              "categoryId": "31568",
+              "categoryName": "Notebook-Tastaturen"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182089",
+            "categoryTreeNodeLevel": 4,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "31569",
+              "categoryName": "Notebook-Displays/LCD-Displays"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182089",
+            "categoryTreeNodeLevel": 4,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "168061",
+              "categoryName": "Sonstige"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182089",
+            "categoryTreeNodeLevel": 4,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "175676",
+              "categoryName": "Notebook-Gehäuse & -Touchpads"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182089",
+            "categoryTreeNodeLevel": 4,
+            "leafCategoryTreeNode": true
+          }
+        ],
+        "categoryTreeNodeLevel": 3
+      },
+      {
+        "category": {
+          "categoryId": "182090",
+          "categoryName": "Mainboard-Komponenten & Zubehör"
+        },
+        "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=175673",
+        "childCategoryTreeNodes": [
+          {
+            "category": {
+              "categoryId": "168060",
+              "categoryName": "Mainboard-Diagnosekarten"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182090",
+            "categoryTreeNodeLevel": 4,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "170080",
+              "categoryName": "Mainboard-Backplates"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182090",
+            "categoryTreeNodeLevel": 4,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "170082",
+              "categoryName": "Sonstige"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182090",
+            "categoryTreeNodeLevel": 4,
+            "leafCategoryTreeNode": true
+          },
+          {
+            "category": {
+              "categoryId": "175668",
+              "categoryName": "Mainboard-Komponenten"
+            },
+            "parentCategoryTreeNodeHref": "https://api.ebay.com/commerce/taxonomy/v1/category_tree/77/get_category_subtree?category_id=182090",
+            "categoryTreeNodeLevel": 4,
+            "leafCategoryTreeNode": true
+          }
+        ],
+        "categoryTreeNodeLevel": 3
+      }
+    ],
+    "categoryTreeNodeLevel": 2
+  }
+}

@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>Dealwatch | eBay.de</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,500;6..72,600;6..72,700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="#top" aria-label="Dealwatch home">
+          <span class="brand-mark">D</span><span>dealwatch</span>
+        </a>
+        <nav aria-label="Main navigation">
+          <a class="nav-item active" href="#results" data-nav="results">Matches <span id="resultCount" class="count">0</span></a>
+          <a class="nav-item" href="#filters" data-nav="filters">Searches <span id="filterCount" class="count">1</span></a>
+          <a class="nav-item" href="#watchlist" data-nav="watchlist">Watchlist <span id="watchCount" class="count">0</span></a>
+          <a class="nav-item" href="#ka-purchases" data-nav="ka-purchases">KA buys <span id="kaPurchaseCount" class="count">0</span></a>
+          <a class="nav-item" href="#ka-sales" data-nav="ka-sales">KA sales <span id="kaSaleCount" class="count">0</span></a>
+          <a class="nav-item" href="#trash" data-nav="trash">Trash <span id="trashCount" class="count">0</span></a>
+          <a class="nav-item" href="./explore.html">Free search</a>
+          <a class="nav-item" href="./compare.html">Parts compare</a>
+        </nav>
+
+        <div class="tracked-block">
+          <div class="tracked-heading">
+            <span>Tracked searches</span>
+            <button id="addSearchButton" class="text-button" type="button">+ New</button>
+          </div>
+          <button id="sidebarNewMatches" class="sidebar-new-matches" type="button" hidden>
+            New matches <span id="sidebarNewCount" class="search-unread">0</span>
+          </button>
+          <div id="searchList" class="search-list"></div>
+        </div>
+
+        <div class="sidebar-footer">
+          <p>Marketplace</p>
+          <strong>Kleinanzeigen / eBay.de</strong>
+          <span>Germany</span>
+        </div>
+      </aside>
+
+      <main id="top">
+        <section id="results" class="results-section" aria-labelledby="results-title">
+          <div class="filter-workspace">
+            <aside class="scan-rail" aria-label="Scan status">
+              <button class="menu-button" type="button" aria-label="Open menu">Menu</button>
+              <div id="connectionStatus" class="connection"><i></i> Loading…</div>
+              <span id="lastScan" class="scan-rail-meta">Last scan: —</span>
+              <div class="scan-rail-metrics" aria-label="Search stats">
+                <div><span>Lots</span><strong id="metricMatches">—</strong></div>
+                <div><span>Best</span><strong id="metricBest">—</strong></div>
+                <div><span>Rejected</span><strong id="metricRejected">—</strong></div>
+              </div>
+              <div class="scan-rail-actions">
+                <button id="alertButton" class="quiet-button" type="button">Alerts: on</button>
+                <a id="soldHistoryButton" class="text-button" href="#" target="_blank" rel="noreferrer">Sold</a>
+                <button id="loadSoldButton" class="secondary-button" type="button">Sold comps</button>
+                <button id="scanButton" class="primary-button" type="button">Scan</button>
+              </div>
+            </aside>
+
+            <form id="filters" class="filter-bar" aria-labelledby="filters-title">
+              <input id="searchName" class="visually-hidden" value="GTX 1080 under €80" maxlength="80" aria-label="Filter name" tabindex="-1" />
+              <span id="filters-title" class="visually-hidden">Search filters</span>
+
+              <div class="filter-bar-row filter-bar-search-row">
+                <div class="marketplace-switch" role="group" aria-label="Marketplace">
+                  <button type="button" class="marketplace-btn is-active" id="marketEbay" data-marketplace="ebay" aria-pressed="true">eBay.de</button>
+                  <button type="button" class="marketplace-btn" id="marketKa" data-marketplace="kleinanzeigen" aria-pressed="false">Kleinanzeigen</button>
+                </div>
+                <label class="filter-field ebay-search-field">
+                  <span id="marketplaceSearchLabel">eBay.de search</span>
+                  <input id="ebayQuery" type="search" maxlength="100" placeholder="Search like on ebay.de · e.g. Samsung 970 EVO 1TB" autocomplete="off" />
+                </label>
+                <div class="ebay-search-actions">
+                  <label class="ebay-scope" id="ebayScopeWrap">
+                    <input id="ebayScopeAll" type="checkbox" />
+                    <span>All eBay.de</span>
+                  </label>
+                  <button id="ebaySearchButton" class="primary-button" type="button">Search</button>
+                </div>
+              </div>
+
+              <div class="filter-bar-row filter-bar-controls">
+                <div class="filter-field price-field">
+                  <span>Price <strong id="priceRangeLabel">€1–€80</strong></span>
+                  <div class="price-row">
+                    <div class="range-slider compact" data-range="price">
+                      <div class="range-track"><i id="priceRangeFill"></i></div>
+                      <input id="minPrice" type="range" min="1" max="500" step="1" value="1" aria-label="Minimum price" />
+                      <input id="maxPrice" type="range" min="1" max="500" step="1" value="80" aria-label="Maximum price" />
+                    </div>
+                    <div class="price-mini-inputs">
+                      <input id="minPriceInput" type="number" min="1" max="5000" value="1" aria-label="Min price" />
+                      <span>–</span>
+                      <input id="maxPriceInput" type="number" min="1" max="5000" value="80" required aria-label="Max price" />
+                    </div>
+                    <div class="price-presets" role="group" aria-label="Quick max price">
+                      <button type="button" class="price-preset" data-max="10">€10</button>
+                      <button type="button" class="price-preset" data-max="30">€30</button>
+                      <button type="button" class="price-preset" data-max="50">€50</button>
+                      <button type="button" class="price-preset" data-max="100">€100</button>
+                      <button type="button" class="price-preset" data-max="150">€150</button>
+                      <button type="button" class="price-preset" data-max="200">€200</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="ka-distance-fields" id="kaDistanceFields" hidden>
+                  <label class="filter-field ka-location-field">
+                    <span>PLZ / Ort</span>
+                    <input id="kaLocationLabel" type="text" maxlength="80" placeholder="e.g. 89367 Waldstetten" list="kaLocationSuggestions" autocomplete="off" />
+                    <datalist id="kaLocationSuggestions"></datalist>
+                    <input id="kaLocationId" type="hidden" value="" />
+                  </label>
+                  <label class="filter-field ka-radius-field">
+                    <span>Distance</span>
+                    <select id="kaRadius" aria-label="Search radius">
+                      <option value="0">Whole place</option>
+                      <option value="5">+5 km</option>
+                      <option value="10">+10 km</option>
+                      <option value="20">+20 km</option>
+                      <option value="30">+30 km</option>
+                      <option value="50">+50 km</option>
+                      <option value="60">+60 km</option>
+                      <option value="100">+100 km</option>
+                      <option value="150">+150 km</option>
+                      <option value="200">+200 km</option>
+                    </select>
+                  </label>
+                  <label class="filter-field ka-category-field">
+                    <span>KA category</span>
+                    <select id="kaCategory" aria-label="Kleinanzeigen category">
+                      <option value="all">All categories</option>
+                      <option value="elektronik">Elektronik</option>
+                      <option value="pc-zubehoer">PC-Zubehör & Software</option>
+                      <option value="pcs">PCs</option>
+                      <option value="konsolen">Konsolen</option>
+                    </select>
+                  </label>
+                  <label class="ebay-scope ka-shipping-scope">
+                    <input id="kaShippingOnly" type="checkbox" />
+                    <span>Versand möglich</span>
+                  </label>
+                </div>
+
+                <label class="filter-field feedback-field">
+                  <span>Fb <strong id="feedbackLabel">90%</strong></span>
+                  <input id="minFeedback" class="single-range" type="range" min="0" max="100" step="1" value="90" aria-label="Minimum seller feedback" />
+                </label>
+
+                <div class="filter-field condition-field">
+                  <span>Condition</span>
+                  <div class="chip-toggle" role="group" aria-label="Condition">
+                    <label class="chip"><input type="radio" name="condition" id="conditionAny" value="any" checked /><span>All</span></label>
+                    <label class="chip"><input type="radio" name="condition" id="conditionUsed" value="used" /><span>Used</span></label>
+                  </div>
+                  <select id="condition" hidden>
+                    <option value="any" selected>All except defekt</option>
+                    <option value="used">Used only</option>
+                  </select>
+                </div>
+
+                <div class="filter-bar-actions">
+                  <button class="secondary-button" type="submit">Save</button>
+                  <button id="addSearchFromForm" class="text-button" type="button">New</button>
+                  <button id="deleteSearchButton" class="text-button danger" type="button">Trash</button>
+                  <span id="formNotice" role="status"></span>
+                </div>
+              </div>
+
+              <p id="categoryPathLabel" class="category-path-label" hidden></p>
+
+              <div id="capacityIncludeBlock" class="filter-bar-smart" hidden>
+                <span class="input-label">In</span>
+                <div id="smartIncludeList" class="smart-pill-row"></div>
+              </div>
+              <div class="filter-bar-smart">
+                <span class="input-label">Out</span>
+                <div id="smartExcludeList" class="smart-pill-row"></div>
+              </div>
+            </form>
+          </div>
+
+          <div class="section-heading results-toolbar">
+            <div class="results-title-row">
+              <h2 id="results-title">Matching offers <span id="matchingCount" class="results-count">0</span></h2>
+              <p id="dataNote" class="demo-note results-note">Connecting to eBay.de…</p>
+            </div>
+            <div class="results-controls">
+              <div class="view-toggle" role="group" aria-label="View mode">
+                <button id="viewList" class="view-button" type="button" data-view="list" aria-pressed="false">List</button>
+                <button id="viewCompact" class="view-button" type="button" data-view="compact" aria-pressed="false">Compact</button>
+                <button id="viewTiles" class="view-button active" type="button" data-view="tiles" aria-pressed="true">Tiles</button>
+                <button id="viewLarge" class="view-button" type="button" data-view="large" aria-pressed="false">Large</button>
+              </div>
+              <div class="sort-control">
+                <label for="sort">Sort</label>
+                <select id="sort">
+                  <option value="deal">Best deals first</option>
+                  <option value="offer">Best Offer first</option>
+                  <option value="price">Cheapest first</option>
+                  <option value="ending">Ending soon</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div id="listingGrid" class="listing-grid view-tiles"></div>
+          <div id="emptyState" class="empty-state" hidden>
+            <h3>No matching lots</h3>
+            <p id="emptyStateCopy">Raise the budget or loosen one of the filters.</p>
+          </div>
+          <div id="suggestBlock" class="suggest-block" hidden>
+            <div class="suggest-head">
+              <div>
+                <p class="eyebrow">Nearby matches</p>
+                <h3 id="suggestTitle">Closest lots above your budget</h3>
+                <p id="suggestCopy" class="demo-note"></p>
+              </div>
+              <button id="suggestRaiseBudget" class="secondary-button" type="button" hidden>Raise budget</button>
+            </div>
+            <div id="suggestGrid" class="listing-grid view-tiles"></div>
+          </div>
+        </section>
+
+        <section id="sold" class="results-section" aria-labelledby="sold-title">
+          <div class="section-heading results-toolbar">
+            <div class="results-title-row">
+              <h2 id="sold-title">Sold comps</h2>
+              <div class="metrics" aria-label="Sold stats">
+                <div><span>Kept</span><strong id="soldMatches">—</strong></div>
+                <div><span>Median</span><strong id="soldMedian">—</strong></div>
+                <div><span>Rejected</span><strong id="soldRejected">—</strong></div>
+              </div>
+            </div>
+          </div>
+          <p id="soldNote" class="demo-note">Load sold comps to pull recent eBay.de sales through the same junk filters.</p>
+          <div id="soldGrid" class="listing-grid view-tiles"></div>
+          <div id="soldEmpty" class="empty-state" hidden><h3>No sold comps yet</h3><p>Click Load sold comps after setting your filter.</p></div>
+        </section>
+
+        <section id="watchlist" class="results-section" aria-labelledby="watchlist-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Watchlist</p>
+              <h2 id="watchlist-title">Saved lots</h2>
+            </div>
+          </div>
+          <p class="demo-note">Save interesting lots with the Watch button on a card.</p>
+          <div id="watchlistGrid" class="listing-grid view-tiles"></div>
+          <div id="watchEmpty" class="empty-state"><h3>Watchlist is empty</h3><p>Add a lot from the search results.</p></div>
+        </section>
+
+        <section id="ka-purchases" class="results-section" aria-labelledby="ka-purchases-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Kleinanzeigen</p>
+              <h2 id="ka-purchases-title">Confirmed purchases</h2>
+            </div>
+            <button id="refreshKaPurchasesButton" class="text-button" type="button">Refresh</button>
+          </div>
+          <p class="demo-note">Only deals you <strong>confirmed</strong> in the local Chrome extension are stored here.</p>
+          <p id="kaPurchaseNote" class="demo-note"></p>
+          <div id="kaPurchaseList" class="ka-purchase-list"></div>
+          <div id="kaPurchaseEmpty" class="empty-state"><h3>No purchases yet</h3><p>Scan chats in the extension, tick suggestions, then Confirm import.</p></div>
+        </section>
+
+        <section id="ka-sales" class="results-section" aria-labelledby="ka-sales-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Kleinanzeigen</p>
+              <h2 id="ka-sales-title">Confirmed sales</h2>
+            </div>
+            <button id="refreshKaSalesButton" class="text-button" type="button">Refresh</button>
+          </div>
+          <p class="demo-note">Direkt kaufen, PayPal, bank transfer, and chat deals you confirmed as sold.</p>
+          <p id="kaSaleNote" class="demo-note"></p>
+          <div id="kaSaleList" class="ka-purchase-list"></div>
+          <div id="kaSaleEmpty" class="empty-state"><h3>No sales yet</h3><p>Scan chats in the extension, tick suggested sales, then Confirm import.</p></div>
+        </section>
+
+        <section id="trash" class="results-section" aria-labelledby="trash-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Deleted filters</p>
+              <h2 id="trash-title">Trash</h2>
+            </div>
+          </div>
+          <p class="demo-note">Deleted filters can be restored or permanently removed.</p>
+          <div id="trashList" class="trash-list"></div>
+          <div id="trashEmpty" class="empty-state" hidden><h3>Trash is empty</h3><p>Deleted filters will appear here.</p></div>
+        </section>
+      </main>
+    </div>
+
+    <template id="listingTemplate">
+      <article class="listing-card">
+        <div class="listing-image">
+          <img alt="" hidden />
+          <span class="listing-fallback">GPU</span>
+          <span class="new-badge" hidden>New</span>
+          <span class="offer-badge" hidden>Best Offer</span>
+        </div>
+        <div class="listing-main">
+          <div class="listing-topline">
+            <span class="deal-label"></span>
+            <span class="listing-timing">
+              <span class="listed-at" hidden></span>
+              <span class="time-left"></span>
+            </span>
+          </div>
+          <h3 class="listing-title"></h3>
+          <p class="meta-line"><span class="seller"></span><span class="meta-sep"> · </span><span class="condition"></span></p>
+          <p class="offer-hint" hidden>Accepts offers</p>
+          <div class="price-line"><strong class="total-price"></strong><span class="shipping"></span></div>
+        </div>
+        <div class="card-actions">
+          <button class="send-offer-button" type="button" hidden>Offer</button>
+          <button class="message-button" type="button">Message</button>
+          <button class="offer-sent-toggle" type="button" aria-pressed="false">Offer sent</button>
+          <a class="offer-link" target="_blank" rel="noreferrer">eBay</a>
+          <button class="watch-button" type="button">Watch</button>
+        </div>
+      </article>
+    </template>
+
+    <dialog id="messageDialog" class="offer-dialog message-dialog">
+      <form id="messageForm" class="offer-dialog-form">
+        <p class="eyebrow" id="messageDialogEyebrow">Message seller</p>
+        <h3 id="messageDialogHeading">Chat from your browser</h3>
+        <p id="messageDialogTitle" class="offer-dialog-title"></p>
+        <label>Message
+          <textarea id="messageBody" rows="5" maxlength="2000" required></textarea>
+        </label>
+        <div class="offer-quick" role="group" aria-label="Quick message templates">
+          <button type="button" class="message-template-button" data-template="ask">Still available?</button>
+          <button type="button" class="message-template-button" data-template="price">Price offer</button>
+          <button type="button" class="message-template-button" data-template="pickup" data-requires-pickup="1">Pickup</button>
+          <button type="button" class="message-template-button" data-template="ship" data-requires-pickup-only="1">Shipping?</button>
+        </div>
+        <div id="messageOfferSection" class="message-offer-section" hidden>
+          <div class="message-offer-head">
+            <span class="message-offer-title">Offer amount</span>
+            <strong id="messageOfferAmountLabel" class="message-offer-amount">—</strong>
+          </div>
+          <label class="message-offer-slider-wrap" for="messageOfferSlider">
+            <span class="message-offer-ends" aria-hidden="true">
+              <span>Aggressive</span>
+              <span>Mild (−10%)</span>
+            </span>
+            <input id="messageOfferSlider" type="range" min="1" max="100" step="1" value="50" aria-label="Price offer amount" />
+          </label>
+          <p class="message-offer-hint">Max offer is at least 10% under the listing price. Drag to rewrite the message.</p>
+        </div>
+        <div id="messageCashSection" class="message-cash-section">
+          <p class="message-cash-label">Cash pickup ≤50 km · Waldstetten · aggressive → mild</p>
+          <div class="offer-quick message-cash-quick" role="group" aria-label="Cash pickup offers">
+            <button type="button" class="message-template-button message-cash-button" data-template="cash" data-discount="40" data-requires-pickup="1">−40%</button>
+            <button type="button" class="message-template-button message-cash-button" data-template="cash" data-discount="30" data-requires-pickup="1">−30%</button>
+            <button type="button" class="message-template-button message-cash-button" data-template="cash" data-discount="20" data-requires-pickup="1">−20%</button>
+            <button type="button" class="message-template-button message-cash-button" data-template="cash" data-discount="10" data-requires-pickup="1">−10%</button>
+            <button type="button" class="message-template-button message-cash-button" data-template="cash" data-discount="0" data-requires-pickup="1">Ask</button>
+          </div>
+        </div>
+        <p id="messagePickupNote" class="demo-note" hidden>Pickup / cash templates only for listings within ~50 km of <strong>89367 Waldstetten</strong>.</p>
+        <p id="messageShipNote" class="demo-note" hidden>Shipping? only appears when the ad says <strong>Nur Abholung</strong> / pick up only.</p>
+        <p class="demo-note">Uses your saved login in this browser. Copies the text, then opens the listing so you can paste into <strong>Nachricht schreiben</strong> / Contact seller.</p>
+        <div class="form-actions">
+          <button id="cancelMessageButton" class="text-button" type="button">Cancel</button>
+          <button class="primary-button" type="submit">Copy &amp; open chat</button>
+        </div>
+        <p id="messageDialogNote" class="form-actions" role="status"></p>
+      </form>
+    </dialog>
+
+    <dialog id="offerDialog" class="offer-dialog">
+      <form id="offerForm" class="offer-dialog-form">
+        <p class="eyebrow">Best Offer</p>
+        <h3>Send offer on eBay</h3>
+        <p id="offerDialogTitle" class="offer-dialog-title"></p>
+        <label>Your offer, €
+          <input id="offerAmount" type="number" min="1" step="0.01" required />
+        </label>
+        <div class="offer-quick" role="group" aria-label="Quick offer amounts">
+          <button type="button" class="offer-quick-button" data-discount="20">−20%</button>
+          <button type="button" class="offer-quick-button" data-discount="30">−30%</button>
+          <button type="button" class="offer-quick-button" data-discount="40">−40%</button>
+          <button type="button" class="offer-quick-button" data-discount="0">Ask</button>
+        </div>
+        <p class="demo-note">Opens the listing in a popup. Click <strong>Preisvorschlag</strong> on eBay — your amount is copied ready to paste.</p>
+        <div class="form-actions">
+          <button id="cancelOfferButton" class="text-button" type="button">Cancel</button>
+          <button class="primary-button" type="submit">Open eBay popup</button>
+        </div>
+        <p id="offerDialogNote" class="form-actions" role="status"></p>
+      </form>
+    </dialog>
+
+    <dialog id="wizardDialog" class="wizard-dialog">
+      <form id="wizardForm" class="wizard-form">
+        <div class="wizard-head">
+          <div>
+            <p class="eyebrow">New filter</p>
+            <h3 id="wizardTitle">Pick a category</h3>
+            <p id="wizardSubtitle" class="wizard-subtitle">eBay.de PC parts · step by step</p>
+          </div>
+          <button id="wizardCloseButton" class="text-button" type="button">Close</button>
+        </div>
+
+        <ol id="wizardSteps" class="wizard-steps" aria-label="Wizard steps">
+          <li class="is-active" data-step="1">Category</li>
+          <li data-step="2">Details</li>
+        </ol>
+
+        <div id="wizardStepCategory" class="wizard-pane">
+          <label class="wizard-search">
+            <span class="visually-hidden">Search categories</span>
+            <input id="wizardCategorySearch" type="search" placeholder="Quick search · storage, GPU, RAM, SSD…" autocomplete="off" />
+          </label>
+          <nav id="wizardBreadcrumb" class="wizard-breadcrumb" aria-label="Category path"></nav>
+          <div id="wizardCategoryList" class="wizard-category-list" role="list"></div>
+          <p id="wizardCategoryNote" class="demo-note">Loading eBay categories…</p>
+          <div class="wizard-actions">
+            <button id="wizardRefreshCats" class="text-button" type="button">Refresh from eBay</button>
+            <button id="wizardUseCategory" class="secondary-button" type="button" hidden>Use this category</button>
+            <button id="wizardNextDetails" class="primary-button" type="button" disabled>Continue</button>
+          </div>
+        </div>
+
+        <div id="wizardStepDetails" class="wizard-pane" hidden>
+          <p id="wizardSelectedCategory" class="wizard-selected-cat"></p>
+          <label>eBay.de keywords
+            <input id="wizardSearch" maxlength="100" required placeholder="Required · e.g. GTX 1080 or Samsung 970 EVO" autocomplete="off" />
+            <span class="input-hint">Same keywords you’d type on ebay.de</span>
+          </label>
+          <label>Filter name
+            <input id="wizardName" maxlength="80" required />
+          </label>
+          <div class="wizard-inline">
+            <label>Min €
+              <input id="wizardMinPrice" type="number" min="1" max="5000" value="1" required />
+            </label>
+            <label>Max €
+              <input id="wizardMaxPrice" type="number" min="1" max="5000" value="100" required />
+            </label>
+            <label>Feedback %
+              <input id="wizardFeedback" type="number" min="0" max="100" value="90" required />
+            </label>
+          </div>
+          <div class="chip-toggle" role="group" aria-label="Condition">
+            <label class="chip"><input type="radio" name="wizardCondition" value="any" checked /><span>All except defekt</span></label>
+            <label class="chip"><input type="radio" name="wizardCondition" value="used" /><span>Used only</span></label>
+          </div>
+          <div class="wizard-actions">
+            <button id="wizardBackCategory" class="text-button" type="button">Back</button>
+            <button class="primary-button" type="submit">Create filter</button>
+          </div>
+          <p id="wizardNotice" role="status"></p>
+        </div>
+      </form>
+    </dialog>
+
+    <template id="trashItemTemplate">
+      <article class="trash-card">
+        <div>
+          <h3 class="trash-name"></h3>
+          <p class="trash-meta"></p>
+        </div>
+        <div class="trash-actions">
+          <button class="secondary-button restore-button" type="button">Restore</button>
+          <button class="text-button danger purge-button" type="button">Delete forever</button>
+        </div>
+      </article>
+    </template>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

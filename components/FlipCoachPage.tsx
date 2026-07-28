@@ -125,7 +125,7 @@ const FlipCoachPage: React.FC<Props> = ({ items }) => {
           to="/panel/sold-pulse"
           className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase text-rose-700 hover:text-rose-900 shrink-0"
         >
-          <Activity size={13} /> Sold Pulse
+          <Activity size={13} /> Buy Helper
         </Link>
       </header>
 

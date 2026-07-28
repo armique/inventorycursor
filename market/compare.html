@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>Parts Compare | Dealwatch</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,500;6..72,600;6..72,700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./compare.css" />
+  </head>
+  <body class="compare-page">
+    <div class="compare-atmosphere" aria-hidden="true">
+      <span class="orb orb-a"></span>
+      <span class="orb orb-b"></span>
+      <span class="orb orb-c"></span>
+      <span class="grid-fade"></span>
+    </div>
+
+    <header class="compare-topbar">
+      <div class="compare-topbar-inner">
+        <a class="brand" href="./index.html" aria-label="Dealwatch home">
+          <span class="brand-mark">D</span><span>dealwatch</span>
+        </a>
+        <nav class="compare-nav" aria-label="Compare navigation">
+          <a href="./index.html">Deals</a>
+          <a href="./explore.html">Free search</a>
+          <a class="is-active" href="./compare.html">Parts compare</a>
+        </nav>
+
+        <div class="part-switch" role="tablist" aria-label="Part category">
+          <button type="button" class="part-switch-btn is-active" role="tab" aria-selected="true" data-category="gpu" id="tabGpu">
+            <span class="part-switch-icon" aria-hidden="true">▣</span>
+            <span class="part-switch-copy">
+              <strong>GPU</strong>
+              <small id="gpuCount">—</small>
+            </span>
+          </button>
+          <button type="button" class="part-switch-btn" role="tab" aria-selected="false" data-category="cpu" id="tabCpu">
+            <span class="part-switch-icon" aria-hidden="true">◈</span>
+            <span class="part-switch-copy">
+              <strong>CPU</strong>
+              <small id="cpuCount">—</small>
+            </span>
+          </button>
+          <button type="button" class="part-switch-btn" role="tab" aria-selected="false" data-category="ssd" id="tabSsd">
+            <span class="part-switch-icon" aria-hidden="true">▤</span>
+            <span class="part-switch-copy">
+              <strong>SSD</strong>
+              <small id="ssdCount">—</small>
+            </span>
+          </button>
+          <button type="button" class="part-switch-btn" role="tab" aria-selected="false" data-category="hdd" id="tabHdd">
+            <span class="part-switch-icon" aria-hidden="true">▦</span>
+            <span class="part-switch-copy">
+              <strong>HDD</strong>
+              <small id="hddCount">—</small>
+            </span>
+          </button>
+        </div>
+
+        <div class="topbar-actions">
+          <label class="rail-field" id="scoreMetricWrap" hidden>
+            <span>Score</span>
+            <select id="scoreSelect" aria-label="Performance score for bars and pairwise">
+              <option value="relativeMulti">Multi-thread</option>
+              <option value="relativeSingle">Single-thread</option>
+            </select>
+          </label>
+          <div class="display-mode" role="group" aria-label="Display width">
+            <button type="button" class="display-mode-btn" data-display="comfort" title="Comfort width (~1280px)">Comfort</button>
+            <button type="button" class="display-mode-btn" data-display="wide" title="Wide (~1760px)">Wide</button>
+            <button type="button" class="display-mode-btn" data-display="full" title="Full monitor width">Full</button>
+          </div>
+          <button id="shareCompare" class="quiet-button" type="button" title="Copy share link">Share</button>
+          <button id="swapCompare" class="quiet-button" type="button" title="Swap left/right" hidden>Swap</button>
+          <div class="rank-sort" id="rankSortWrap" role="group" aria-label="Sort by rank" hidden>
+            <button type="button" class="rank-sort-btn" id="sortRankLtr" title="Best on the left · rank 1 → last" aria-pressed="false">#1 →</button>
+            <button type="button" class="rank-sort-btn" id="sortRankRtl" title="Best on the right · last → rank 1" aria-pressed="false">← #1</button>
+          </div>
+          <button id="togglePicker" class="primary-button rail-add" type="button" aria-expanded="false" aria-controls="pickerDrawer">
+            + Add
+          </button>
+          <button id="presetLadder" class="quiet-button" type="button">Ladder</button>
+          <button id="clearCompare" class="text-button" type="button">Clear</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="compare-shell">
+      <section class="compare-results" id="compareResults" hidden>
+        <div class="compare-heading">
+          <h1 id="compareTitle">Pick parts to duel</h1>
+          <p class="compare-lead" id="compareLead"></p>
+        </div>
+
+        <div id="insightStrip" class="insight-strip" hidden></div>
+        <div class="duel-stage">
+          <div id="duelCards" class="duel-cards" aria-live="polite"></div>
+          <div id="duelAddMount" class="duel-add-mount" hidden></div>
+        </div>
+
+        <div class="contestant-deck" id="quickAddBar">
+          <div class="contestant-deck-head">
+            <div>
+              <p class="contestant-deck-label">Contestants</p>
+              <p class="contestant-deck-hint" id="contestantHint">Tap cards to pick a focused duel</p>
+            </div>
+            <div class="contestant-deck-actions" id="deepCompareActions" hidden>
+              <button type="button" class="text-button" id="clearDeepPick">Clear</button>
+              <button type="button" class="deep-compare-btn" id="runDeepCompare">
+                <span class="deep-compare-btn-pulse" aria-hidden="true"></span>
+                <span class="deep-compare-btn-label">Deep compare</span>
+              </button>
+            </div>
+          </div>
+          <div class="contestant-cards" id="quickAddSelected" aria-label="Selected contestants"></div>
+        </div>
+
+        <div id="speedVerdict" class="speed-verdict" hidden></div>
+        <div id="metricDuels" class="metric-duels"></div>
+
+        <details class="compare-details" id="specsDetails" open>
+          <summary>Full specs table</summary>
+          <div class="compare-table-wrap">
+            <table id="compareTable" class="compare-table">
+              <thead></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="demo-note stage-footnote" id="specsNote"></p>
+        </details>
+
+        <details class="compare-details" id="matrixDetails">
+          <summary>Pairwise matrix</summary>
+          <p class="demo-note" id="matrixNote"></p>
+          <div id="pairwiseGrid" class="pairwise-grid"></div>
+        </details>
+      </section>
+
+      <section class="compare-empty" id="compareEmpty">
+        <div class="compare-empty-inner">
+          <div class="empty-art" aria-hidden="true">
+            <svg viewBox="0 0 280 120" class="empty-duel-svg">
+              <rect x="12" y="28" width="100" height="64" rx="12" fill="#0f7a66" opacity=".18"/>
+              <rect x="168" y="28" width="100" height="64" rx="12" fill="#2a6f9e" opacity=".18"/>
+              <circle cx="140" cy="60" r="18" fill="#142027"/>
+              <text x="140" y="65" text-anchor="middle" fill="#fff" font-size="11" font-weight="700" font-family="IBM Plex Sans, sans-serif">VS</text>
+            </svg>
+          </div>
+          <p class="eyebrow">Ready when you are</p>
+          <h2 id="emptyTitle">Add at least two parts</h2>
+          <p id="emptyLead">Start with a sample ladder to see generational jumps.</p>
+          <div class="compare-empty-actions">
+            <button id="presetLadderEmpty" class="primary-button" type="button">Load 4070 vs 5070</button>
+            <button id="openPickerEmpty" class="quiet-button" type="button">Browse parts</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <aside class="picker-drawer" id="pickerDrawer" aria-hidden="true">
+      <div class="picker-drawer-head">
+        <div>
+          <p class="eyebrow" id="searchLabel">Add a GPU</p>
+          <h2 id="pickerTitle">Browse catalog</h2>
+        </div>
+        <button type="button" class="quiet-button" id="closePicker">Close</button>
+      </div>
+      <label class="compare-search-field">
+        <span class="visually-hidden">Search parts</span>
+        <input id="partSearch" type="search" placeholder="Search · e.g. 3070, 1080 Ti, 4090" autocomplete="off" />
+      </label>
+      <div class="series-filters" id="seriesFilters" role="group" aria-label="Filter by series"></div>
+      <div id="partPickerList" class="gpu-picker-list"></div>
+    </aside>
+    <div class="picker-backdrop" id="pickerBackdrop" hidden></div>
+
+    <div class="deep-dive" id="deepDive" hidden>
+      <div class="deep-dive-backdrop" id="deepDiveBackdrop"></div>
+      <section class="deep-dive-panel" role="dialog" aria-modal="true" aria-labelledby="deepDiveTitle" tabindex="-1">
+        <header class="deep-dive-head">
+          <div>
+            <p class="contestant-deck-label">Deep analysis</p>
+            <h2 id="deepDiveTitle">Head-to-head</h2>
+          </div>
+          <div class="deep-dive-head-actions">
+            <button type="button" class="quiet-button" id="deepDiveIsolate" hidden>Use as lineup</button>
+            <button type="button" class="quiet-button" id="closeDeepDive">Close</button>
+          </div>
+        </header>
+        <div class="deep-dive-body" id="deepDiveBody"></div>
+      </section>
+    </div>
+
+    <p class="compare-meta-float" id="compareMeta">Loading databases…</p>
+
+    <script src="./compare.js"></script>
+  </body>
+</html>

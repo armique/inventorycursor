@@ -1,0 +1,10 @@
+{
+  "name": "dealwatch-ebay",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "start": "node server.js",
+    "generate:storage": "node scripts/generate-storage-specs.js",
+    "generate:storage:refresh": "node scripts/generate-storage-specs.js --download"
+  }
+}

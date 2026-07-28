@@ -1,0 +1,7 @@
+{
+  "soldMedianOutlier": {
+    "iqrMultiplier": 1.5,
+    "minPriceRatioOfMedian": 0.4,
+    "ambiguousAccessoryKeywords": ["ovp", "karton", "verpackung", "originalverpackung", "box"]
+  }
+}

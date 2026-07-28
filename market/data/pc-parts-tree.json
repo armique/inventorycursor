@@ -1,0 +1,252 @@
+{
+  "id": "175673",
+  "name": "Computer-Komponenten & -Teile",
+  "leaf": false,
+  "children": [
+    {
+      "id": "164",
+      "name": "CPUs/Prozessoren",
+      "leaf": true,
+      "children": []
+    },
+    {
+      "id": "1244",
+      "name": "Mainboards",
+      "leaf": true,
+      "children": []
+    },
+    {
+      "id": "3761",
+      "name": "Videoaufnahme & TV-Karten",
+      "leaf": true,
+      "children": []
+    },
+    {
+      "id": "16145",
+      "name": "Sonstige",
+      "leaf": true,
+      "children": []
+    },
+    {
+      "id": "27386",
+      "name": "Grafik-/Videokarten",
+      "leaf": true,
+      "children": []
+    },
+    {
+      "id": "42000",
+      "name": "Lüfter, Kühlkörper & Kühlung",
+      "leaf": false,
+      "children": [
+        {
+          "id": "3673",
+          "name": "Sonstige",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "46322",
+          "name": "Wärmeleitpasten & Zubehör",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "80151",
+          "name": "Videokarten- & GPU-Kühlung",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "131486",
+          "name": "CPU-Lüfter & Kühlkörper",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "131487",
+          "name": "Gehäuselüfter",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "131494",
+          "name": "Festplattenkühlung",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "131495",
+          "name": "Lüftergitter & Filter",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "131502",
+          "name": "Speicher- & Chipsatz-Kühlung",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "131503",
+          "name": "Wasserkühlung",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "170078",
+          "name": "Lüfter, Kühlkörperhalter & Zubehör",
+          "leaf": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "42017",
+      "name": "Netzteile",
+      "leaf": true,
+      "children": []
+    },
+    {
+      "id": "44980",
+      "name": "Interne Soundkarten",
+      "leaf": true,
+      "children": []
+    },
+    {
+      "id": "131511",
+      "name": "Mainboard & CPU-Kombination",
+      "leaf": true,
+      "children": []
+    },
+    {
+      "id": "168059",
+      "name": "Netzteile-Tester",
+      "leaf": true,
+      "children": []
+    },
+    {
+      "id": "170083",
+      "name": "Arbeitsspeicher (RAM)",
+      "leaf": true,
+      "children": []
+    },
+    {
+      "id": "175674",
+      "name": "Computergehäuse & Zubehör",
+      "leaf": false,
+      "children": [
+        {
+          "id": "42014",
+          "name": "Computergehäuse",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "51064",
+          "name": "Gehäuseteile & Zubehör",
+          "leaf": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "182088",
+      "name": "Schnittstellen-/Steckkarten",
+      "leaf": false,
+      "children": [
+        {
+          "id": "20318",
+          "name": "Netzwerkkarten",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "44940",
+          "name": "Modemkarten",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "90715",
+          "name": "Festplatten- & RAID-Controller",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "90718",
+          "name": "Port-Erweiterungskarten",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "90719",
+          "name": "Sonstige",
+          "leaf": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "182089",
+      "name": "Notebook-Ersatzteile",
+      "leaf": false,
+      "children": [
+        {
+          "id": "31568",
+          "name": "Notebook-Tastaturen",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "31569",
+          "name": "Notebook-Displays/LCD-Displays",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "168061",
+          "name": "Sonstige",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "175676",
+          "name": "Notebook-Gehäuse & -Touchpads",
+          "leaf": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "182090",
+      "name": "Mainboard-Komponenten & Zubehör",
+      "leaf": false,
+      "children": [
+        {
+          "id": "168060",
+          "name": "Mainboard-Diagnosekarten",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "170080",
+          "name": "Mainboard-Backplates",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "170082",
+          "name": "Sonstige",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "175668",
+          "name": "Mainboard-Komponenten",
+          "leaf": true,
+          "children": []
+        }
+      ]
+    }
+  ]
+}

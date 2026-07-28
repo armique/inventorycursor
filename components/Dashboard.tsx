@@ -8,7 +8,7 @@ import {
   TrendingUp, Target, Package, TrendingDown, Trophy, Star, Crown, Zap,
   Edit3, Check, CalendarDays, ArrowRight, CheckCircle2, Plus, X, Activity, AlertCircle,
   Settings2, ChevronUp, ChevronDown, ChevronRight, Download, Sparkles, BarChart3, LayoutDashboard,
-  Gift, ArrowRightLeft, Layers, History,
+  Gift, ArrowRightLeft, Layers, History, Radar,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import ItemLink from './ItemLink';
@@ -28,7 +28,7 @@ import { toLocalCalendarDateKey, yearMonthKeyFromDate, currentLocalYearMonth } f
 import { countSalesByPlatform, formatItemSalePlatform, groupSalesByPlatform, PLATFORM_GROUP_LABEL, buildPlatformReconciliation, buildEbayTagFixUpdates, sumRevenueByPlatform, countOrdersByPlatform, groupItemsByMarketplaceOrder, countMissingExplicitSalePlatform, type PlatformGroupKey } from '../utils/salePlatform';
 
 const DashboardAnalyticsPanel = lazy(() => import('./DashboardAnalyticsPanel'));
-
+const MarketWorkspace = lazy(() => import('./market/MarketWorkspace'));
 interface Props {
   items: InventoryItem[];
   expenses?: Expense[];
@@ -88,7 +88,7 @@ const QUICK_FILTERS: { value: string; label: string }[] = [
   { value: 'ALL', label: 'All' },
 ];
 
-type DashboardMainTab = 'overview' | 'charts';
+type DashboardMainTab = 'overview' | 'charts' | 'market';
 
 function exportPeriodSalesCsv(sold: InventoryItem[], label: string) {
   const headers = ['Name', 'Category', 'Platform', 'eBayOrderId', 'SellDate', 'SellPrice', 'BuyPrice', 'Fees', 'Profit'];
@@ -889,9 +889,13 @@ const Dashboard: React.FC<Props> = ({
 
   return (
     <>
-    <div className="h-full min-h-0 w-full overflow-y-auto space-y-3 sm:space-y-4 lg:space-y-6 xl:space-y-7 animate-in fade-in pb-8 lg:pb-10 xl:px-1">
+    <div className={`h-full min-h-0 w-full animate-in fade-in ${
+      mainTab === 'market'
+        ? 'flex flex-col overflow-hidden pb-2'
+        : 'overflow-y-auto space-y-3 sm:space-y-4 lg:space-y-6 xl:space-y-7 pb-8 lg:pb-10 xl:px-1'
+    }`}>
       {/* Header + period filters */}
-      <header className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      <header className={`flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between ${mainTab === 'market' ? 'shrink-0 mb-3' : ''}`}>
         <div className="min-w-0">
           <h1 className="text-xl sm:text-2xl lg:text-3xl xl:text-4xl font-black text-slate-900 tracking-tight">Dashboard</h1>
           <p className="text-xs sm:text-sm lg:text-base text-slate-500 truncate mt-0.5">
@@ -966,8 +970,8 @@ const Dashboard: React.FC<Props> = ({
         </div>
       </header>
 
-      {/* Overview vs charts */}
-      <div className="flex rounded-xl lg:rounded-2xl border border-slate-200 bg-white p-1 lg:p-1.5 w-full sm:w-auto">
+      {/* Overview vs charts vs market */}
+      <div className={`flex rounded-xl lg:rounded-2xl border border-slate-200 bg-white p-1 lg:p-1.5 w-full sm:w-auto ${mainTab === 'market' ? 'shrink-0 mb-3' : ''}`}>
         <button
           type="button"
           onClick={() => setMainTab('overview')}
@@ -987,6 +991,16 @@ const Dashboard: React.FC<Props> = ({
         >
           <BarChart3 size={16} className="lg:w-[18px] lg:h-[18px] shrink-0" />
           Charts
+        </button>
+        <button
+          type="button"
+          onClick={() => setMainTab('market')}
+          className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 lg:px-6 py-2.5 lg:py-3 rounded-lg lg:rounded-xl text-xs lg:text-sm font-black uppercase tracking-wide transition-all min-h-[44px] ${
+            mainTab === 'market' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          <Radar size={16} className="lg:w-[18px] lg:h-[18px] shrink-0" />
+          Market
         </button>
       </div>
 
@@ -1591,6 +1605,21 @@ const Dashboard: React.FC<Props> = ({
         />
       </Suspense>
       </>
+      )}
+
+      {mainTab === 'market' && (
+        <div className="flex-1 min-h-[min(70vh,720px)] flex flex-col min-w-0">
+          <Suspense
+            fallback={
+              <div className="flex-1 flex items-center justify-center text-slate-400 gap-2">
+                <Sparkles className="animate-pulse" size={18} />
+                <span className="text-sm font-bold">Loading market…</span>
+              </div>
+            }
+          >
+            <MarketWorkspace embedded />
+          </Suspense>
+        </div>
       )}
     </div>
 

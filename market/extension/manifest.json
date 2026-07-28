@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Dealwatch KA Deals",
+  "version": "1.8.1",
+  "description": "Suggest buys & sells from your Kleinanzeigen chats. Confirm before importing into local Dealwatch.",
+  "permissions": ["storage", "scripting", "tabs"],
+  "host_permissions": [
+    "https://www.kleinanzeigen.de/*",
+    "https://gateway.kleinanzeigen.de/*",
+    "http://localhost:3000/*",
+    "http://127.0.0.1:3000/*",
+    "http://localhost:3300/*",
+    "http://127.0.0.1:3300/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Dealwatch KA Purchases"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.kleinanzeigen.de/*"],
+      "js": ["inject-hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": ["https://www.kleinanzeigen.de/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ]
+}

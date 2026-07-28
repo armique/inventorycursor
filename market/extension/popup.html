@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dealwatch KA Deals</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <p class="eyebrow">Dealwatch</p>
+      <h1>KA chat deals</h1>
+      <p class="sub">Suggests buys &amp; sells from your chats. Confirm before import.</p>
+    </header>
+
+    <label class="field">
+      Dealwatch URL
+      <input id="dealwatchUrl" type="url" value="http://localhost:3000" />
+    </label>
+
+    <div class="period" role="group" aria-label="Time range">
+      <button type="button" class="period-btn is-active" data-period="today">Today</button>
+      <button type="button" class="period-btn" data-period="yesterday">Yesterday</button>
+      <button type="button" class="period-btn" data-period="week">This week</button>
+    </div>
+
+    <div class="actions">
+      <button id="scanButton" class="primary" type="button">Scan chats</button>
+      <button id="confirmButton" class="secondary" type="button" disabled>Confirm import</button>
+    </div>
+
+    <p id="status" class="status" role="status">Scan uses Nachrichten API data (fast). Results stay if you close the popup.</p>
+
+    <section id="buySection" class="suggest-section" hidden>
+      <div class="suggest-head">
+        <h2>Suggested purchases</h2>
+        <button type="button" class="textish" data-select="buys" data-mode="all">All</button>
+        <button type="button" class="textish" data-select="buys" data-mode="none">None</button>
+      </div>
+      <div id="buyResults" class="results"></div>
+    </section>
+
+    <section id="sellSection" class="suggest-section" hidden>
+      <div class="suggest-head">
+        <h2>Suggested sales</h2>
+        <button type="button" class="textish" data-select="sells" data-mode="all">All</button>
+        <button type="button" class="textish" data-select="sells" data-mode="none">None</button>
+      </div>
+      <div id="sellResults" class="results"></div>
+    </section>
+
+    <p class="hint">Load unpacked from <code>extension/</code> · Developer mode on <code>chrome://extensions</code></p>
+    <script src="popup.js"></script>
+  </body>
+</html>

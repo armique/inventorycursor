@@ -1,0 +1,1264 @@
+{
+  "marketplace": "EBAY_DE",
+  "rootId": "58058",
+  "rootName": "Computer, Tablets & Netzwerk",
+  "updatedAt": "2026-07-23T11:18:08.477Z",
+  "categories": [
+    {
+      "id": "175673",
+      "name": "Computer-Komponenten & -Teile",
+      "leaf": false,
+      "children": [
+        {
+          "id": "164",
+          "name": "CPUs/Prozessoren",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "1244",
+          "name": "Mainboards",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "3761",
+          "name": "Videoaufnahme & TV-Karten",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "16145",
+          "name": "Sonstige",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "27386",
+          "name": "Grafik-/Videokarten",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "42000",
+          "name": "Lüfter, Kühlkörper & Kühlung",
+          "leaf": false,
+          "children": [
+            {
+              "id": "3673",
+              "name": "Sonstige",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "46322",
+              "name": "Wärmeleitpasten & Zubehör",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "80151",
+              "name": "Videokarten- & GPU-Kühlung",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "131486",
+              "name": "CPU-Lüfter & Kühlkörper",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "131487",
+              "name": "Gehäuselüfter",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "131494",
+              "name": "Festplattenkühlung",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "131495",
+              "name": "Lüftergitter & Filter",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "131502",
+              "name": "Speicher- & Chipsatz-Kühlung",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "131503",
+              "name": "Wasserkühlung",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "170078",
+              "name": "Lüfter, Kühlkörperhalter & Zubehör",
+              "leaf": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "42017",
+          "name": "Netzteile",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "44980",
+          "name": "Interne Soundkarten",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "131511",
+          "name": "Mainboard & CPU-Kombination",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "168059",
+          "name": "Netzteile-Tester",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "170083",
+          "name": "Arbeitsspeicher (RAM)",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "175674",
+          "name": "Computergehäuse & Zubehör",
+          "leaf": false,
+          "children": [
+            {
+              "id": "42014",
+              "name": "Computergehäuse",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "51064",
+              "name": "Gehäuseteile & Zubehör",
+              "leaf": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "182088",
+          "name": "Schnittstellen-/Steckkarten",
+          "leaf": false,
+          "children": [
+            {
+              "id": "20318",
+              "name": "Netzwerkkarten",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "44940",
+              "name": "Modemkarten",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "90715",
+              "name": "Festplatten- & RAID-Controller",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "90718",
+              "name": "Port-Erweiterungskarten",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "90719",
+              "name": "Sonstige",
+              "leaf": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "182089",
+          "name": "Notebook-Ersatzteile",
+          "leaf": false,
+          "children": [
+            {
+              "id": "31568",
+              "name": "Notebook-Tastaturen",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "31569",
+              "name": "Notebook-Displays/LCD-Displays",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "168061",
+              "name": "Sonstige",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "175676",
+              "name": "Notebook-Gehäuse & -Touchpads",
+              "leaf": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "182090",
+          "name": "Mainboard-Komponenten & Zubehör",
+          "leaf": false,
+          "children": [
+            {
+              "id": "168060",
+              "name": "Mainboard-Diagnosekarten",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "170080",
+              "name": "Mainboard-Backplates",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "170082",
+              "name": "Sonstige",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "175668",
+              "name": "Mainboard-Komponenten",
+              "leaf": true,
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "171957",
+      "name": "Desktops & All-in-One-PCs",
+      "leaf": false,
+      "children": [
+        {
+          "id": "179",
+          "name": "PC Desktops & All-in-Ones",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "111418",
+          "name": "Apple Desktops & All-in-Ones",
+          "leaf": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "175698",
+      "name": "Firmennetzwerke & Server",
+      "leaf": false,
+      "children": [
+        {
+          "id": "11175",
+          "name": "Sonstige",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "51167",
+          "name": "Load Balancer",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "51168",
+          "name": "Firewall- & VPN-Geräte",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "51197",
+          "name": "Racks, Rahmen & Patchpanels",
+          "leaf": false,
+          "children": [
+            {
+              "id": "44992",
+              "name": "Patchpanels",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "51199",
+              "name": "Rackmontage-Schränke & -Rahmen",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "64061",
+              "name": "Rackmontage-Gehäuse & -Rahmen",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "80216",
+              "name": "Sonstige",
+              "leaf": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "51240",
+          "name": "Server-Komponenten",
+          "leaf": false,
+          "children": [
+            {
+              "id": "11210",
+              "name": "Server-Speicher (RAM)",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "56088",
+              "name": "Server-CPUs/-Prozessoren",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "56090",
+              "name": "Server-Netzteile",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "56091",
+              "name": "Festplatten- & RAID-Controller",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "56092",
+              "name": "Sonstige",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "71509",
+              "name": "Server-Boards",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "168074",
+              "name": "Server-Lüfter & -Kühlsysteme",
+              "leaf": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "61839",
+          "name": "VoIP-Business-Telefone",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "80225",
+          "name": "CSUs/DSUs",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "86720",
+          "name": "Richtantennen",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "175699",
+          "name": "Firmen-Router",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "175700",
+          "name": "Server, Clients & Terminals",
+          "leaf": false,
+          "children": [
+            {
+              "id": "11211",
+              "name": "Computerserver",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "64052",
+              "name": "Druckserver",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "175701",
+              "name": "Terminalserver",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "175702",
+              "name": "Thin Clients",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "175703",
+              "name": "Sonstige",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "184657",
+              "name": "Server-Kabel & -Adapter",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "184658",
+              "name": "Serverrahmen",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "184659",
+              "name": "Server-Befestigungsmaterial",
+              "leaf": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "182091",
+          "name": "Switches & Hubs",
+          "leaf": false,
+          "children": [
+            {
+              "id": "11180",
+              "name": "Netzwerk-Hubs",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "51268",
+              "name": "Netzwerk-Switches",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "58319",
+              "name": "Switch-Module",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "58320",
+              "name": "Switch-Netzteile",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "58321",
+              "name": "Sonstige",
+              "leaf": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "182092",
+          "name": "Komponenten für Firmen-Router",
+          "leaf": false,
+          "children": [
+            {
+              "id": "67286",
+              "name": "Router-Module/-Karten/-Adapter",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "67287",
+              "name": "Router-Netzteile",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "67292",
+              "name": "Routerspeicher",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "175704",
+              "name": "Sonstige",
+              "leaf": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "182093",
+          "name": "Netzwerkspeicher-Disk-Arrays",
+          "leaf": false,
+          "children": [
+            {
+              "id": "11209",
+              "name": "Sonstige",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "58317",
+              "name": "SAN-Disk-Arrays",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "58322",
+              "name": "Disk-Array-Komponenten",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "64069",
+              "name": "NAS-Disk-Arrays",
+              "leaf": true,
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "11176",
+      "name": "Heimnetzwerke & Zubehör",
+      "leaf": false,
+      "children": [
+        {
+          "id": "11183",
+          "name": "Kabelgebundene Router",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "44995",
+          "name": "Drahtlose Router",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "44996",
+          "name": "Sonstige",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "44999",
+          "name": "USB-Bluetooth-Adapter/-Dongles",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "45002",
+          "name": "USB-WLAN-Adapter/-Dongles",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "58297",
+          "name": "Modems",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "61816",
+          "name": "Repeater, Extender & Antennen",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "61840",
+          "name": "VoIP-Heimtelefone",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "67262",
+          "name": "PowerLAN-Netzwerke",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "99269",
+          "name": "VoIP-Telefonadapter",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "101270",
+          "name": "Modem-Router-Kombinationen",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "175709",
+          "name": "Wireless Access Points",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "175710",
+          "name": "Mobile Breitbandgeräte",
+          "leaf": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "182094",
+      "name": "Kabel & Steckverbinder",
+      "leaf": false,
+      "children": [
+        {
+          "id": "3668",
+          "name": "Sonstige",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "20311",
+          "name": "Netzwerkkabel & Adapter",
+          "leaf": false,
+          "children": [
+            {
+              "id": "64035",
+              "name": "Ethernetkabel (RJ-45/8P8C)",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "64043",
+              "name": "Glasfaserkabel",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "67276",
+              "name": "Splitter, Koppler & Adapter",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "67279",
+              "name": "Stecker, Buchsen & Abdeckplatten",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "67857",
+              "name": "DSL/Telefonkabel (RJ-11)",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "101282",
+              "name": "Sonstige",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "175681",
+              "name": "Koaxialkabel",
+              "leaf": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "31492",
+          "name": "Audiokabel & -Adapter",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "31493",
+          "name": "FireWire-Kabel & -Adapter",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "44932",
+          "name": "USB-Kabel, -Hubs & -Adapter",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "51169",
+          "name": "Kabelwerkzeuge",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "58300",
+          "name": "Kabeltester",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "67858",
+          "name": "Kabelbinder & Kabelmanager",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "74941",
+          "name": "Festplattenkabel & -Adapter",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "116848",
+          "name": "Parallel, Seriell & PS/2",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "158840",
+          "name": "Monitor-/AV-Kabel & -Adapter",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "182095",
+          "name": "KVM-Kabel",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "182096",
+          "name": "KVM-Switches",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "182097",
+          "name": "Netzkabel & Steckverbinder",
+          "leaf": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "165",
+      "name": "Laufwerke & Speichermedien",
+      "leaf": false,
+      "children": [
+        {
+          "id": "167",
+          "name": "Sonstige",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "169",
+          "name": "Floppy-, Zip- & Jaz-Laufwerke",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "31509",
+          "name": "CD-, DVD- & Blu-ray-Kopierer",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "39976",
+          "name": "Band-/Datenkassettenlaufwerke",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "51071",
+          "name": "USB-Sticks",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "80133",
+          "name": "Leermedien & Zubehör",
+          "leaf": false,
+          "children": [
+            {
+              "id": "11161",
+              "name": "Sonstige",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "73329",
+              "name": "Datenkassetten",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "80135",
+              "name": "CDs, DVDs & Blu-rays",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "80136",
+              "name": "Floppy-, Zip- & Jaz-Disketten",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "175664",
+              "name": "Disc-Reparatur & -Reinigung",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "175665",
+              "name": "Tonkopf- & Linsenreiniger",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "175666",
+              "name": "Medientaschen, Hüllen & Etuis",
+              "leaf": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "131542",
+          "name": "CD-, DVD- & Blu-ray-Laufwerke",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "158816",
+          "name": "Einbaurahmen für Festplatten",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "158817",
+          "name": "Festplattengehäuse & Docks",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "175671",
+          "name": "Festplatten-Kopierstationen",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "182085",
+          "name": "Festplatten (HDD, SSD & NAS)",
+          "leaf": false,
+          "children": [
+            {
+              "id": "56083",
+              "name": "Interne Festplatten",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "106273",
+              "name": "Netzgebundener Speicher",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "131553",
+              "name": "Externe Festplatten",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "175669",
+              "name": "Solid State Drives (SSD)",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "175670",
+              "name": "Sonstige",
+              "leaf": true,
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "162497",
+      "name": "Monitore, Projektoren & Zubehör",
+      "leaf": false,
+      "children": [
+        {
+          "id": "25321",
+          "name": "Projektoren",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "51052",
+          "name": "Monitor-Halterungen & -Ständer",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "80053",
+          "name": "Monitore",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "99231",
+          "name": "Projektor-Teile",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "158845",
+          "name": "Monitor-Netzteile",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "168068",
+          "name": "Monitor-Ersatzteile",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "175688",
+          "name": "Sonstige",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "260137",
+          "name": "Projektor-Zubehör",
+          "leaf": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "31530",
+      "name": "Notebook- & Desktop-Zubehör",
+      "leaf": false,
+      "children": [
+        {
+          "id": "3702",
+          "name": "Lautsprecher",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "3709",
+          "name": "Notebook-Dockingstationen",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "4616",
+          "name": "Webcams",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "14295",
+          "name": "Notebook-Akkus",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "23895",
+          "name": "Mauspads & Handgelenkauflagen",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "31510",
+          "name": "Notebook-Netzteile/-Ladegeräte",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "31519",
+          "name": "Notebook-Koffer & -Taschen",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "31529",
+          "name": "Diebstahlschutz",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "31534",
+          "name": "Sonstige",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "42190",
+          "name": "Notebook-Steckkarten",
+          "leaf": false,
+          "children": [
+            {
+              "id": "42196",
+              "name": "Notebook-Netzwerkkarten",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "42323",
+              "name": "Notebook-Porterweiterungskarte",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "74953",
+              "name": "Notebook-Modemkarten",
+              "leaf": true,
+              "children": []
+            },
+            {
+              "id": "96913",
+              "name": "Sonstige",
+              "leaf": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "51082",
+          "name": "Speicherkartenleser & Adapter",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "67870",
+          "name": "USB-Licht & -Gadgets",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "75518",
+          "name": "Externe Soundkarten",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "80183",
+          "name": "Headsets",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "96915",
+          "name": "Notebook-Kühlpads",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "116309",
+          "name": "Mikrofone",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "116346",
+          "name": "Ständer, Halter & Autohalterungen",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "158837",
+          "name": "Tastaturschutz",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "158846",
+          "name": "Bildschirmschutz",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "170597",
+          "name": "Blickschutzfilter",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "175677",
+          "name": "Case-Modding/Sticker/Aufkleber",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "175678",
+          "name": "Reinigungsgeräte & -sets",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "175679",
+          "name": "TV-Tuner & Videoaufnahmegeräte",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "175680",
+          "name": "Festplattentaschen",
+          "leaf": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "175672",
+      "name": "Notebooks & Netbooks",
+      "leaf": false,
+      "children": [
+        {
+          "id": "177",
+          "name": "PC Notebooks & Netbooks",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "111422",
+          "name": "Apple Notebooks",
+          "leaf": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "86722",
+      "name": "Stromschutz & Stromverteilung",
+      "leaf": false,
+      "children": [
+        {
+          "id": "20315",
+          "name": "Sonstige",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "48479",
+          "name": "USV-Batterien & -Komponenten",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "86723",
+          "name": "Leistungsverteiler (PDU)",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "96907",
+          "name": "Überspannschutz & Mehrfachstecker",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "99265",
+          "name": "USVs",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "175687",
+          "name": "Wechselrichter",
+          "leaf": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "3676",
+      "name": "Tastaturen, Mäuse & Pointing",
+      "leaf": false,
+      "children": [
+        {
+          "id": "170",
+          "name": "Sonstige",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "3680",
+          "name": "Grafiktabletts/Boards & Stifte",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "23160",
+          "name": "Mäuse, Trackballs & Touchpads",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "33963",
+          "name": "Tastaturen & Keypads",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "47779",
+          "name": "Tastatur- & Maus-Sets",
+          "leaf": true,
+          "children": []
+        },
+        {
+          "id": "51086",
+          "name": "Fernbedienungen & Zeigegeräte",
+          "leaf": true,
+          "children": []
+        }
+      ]
+    }
+  ]
+}
