@@ -2,10 +2,17 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { viteApiDevPlugin } from './vite-api-dev-plugin';
+import { viteMarketDevPlugin } from './vite-market-dev-plugin';
 
-export default defineConfig({
-  plugins: [react(), viteApiDevPlugin()],
+export default defineConfig(({ mode }) => ({
+  plugins: [react(), viteMarketDevPlugin(), viteApiDevPlugin()],
   base: '/',
+  define: {
+    // `npm run dev:emulator` (vite --mode emulator) points Firebase at the local
+    // emulator suite. Any other mode — including every production build — inlines
+    // false, so the emulator branch is dropped from the bundle.
+    'import.meta.env.VITE_FIREBASE_EMULATOR': JSON.stringify(mode === 'emulator'),
+  },
   build: {
     outDir: 'dist',
     rollupOptions: {
@@ -21,4 +28,4 @@ export default defineConfig({
     },
     chunkSizeWarningLimit: 600,
   },
-});
+}));

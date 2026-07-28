@@ -105,6 +105,7 @@ export type SoldContainerDisplayTotals = {
   sellPrice: number | null;
   profit: number | null;
   feeAmount: number;
+  shippingAmount: number;
 };
 
 /**
@@ -121,21 +122,36 @@ export function getItemDisplayFeeAmount(item: InventoryItem, items: InventoryIte
   return roundMoney(Number(item.feeAmount) || 0);
 }
 
+/**
+ * Shipping you paid out of pocket on the sale (buyer's paid amount already includes it).
+ * For sold bundles/PCs with proportional children, sums child shipping amounts.
+ */
+export function getItemDisplayShippingAmount(item: InventoryItem, items: InventoryItem[]): number {
+  if ((item.isPC || item.isBundle) && isRealizedDisposal(item)) {
+    const children = getChildren(item, items);
+    if (children.length > 0 && isSoldWithProportionalChildren(item, items)) {
+      return roundMoney(children.reduce((s, c) => s + getSellerShippingDeduction(c), 0));
+    }
+  }
+  return getSellerShippingDeduction(item);
+}
+
 /** Aggregated sell price + profit for a sold bundle/PC row in the inventory list. */
 export function getSoldContainerDisplayTotals(
   container: InventoryItem,
   items: InventoryItem[],
   taxMode: TaxMode
 ): SoldContainerDisplayTotals {
-  if (!isRealizedDisposal(container)) return { sellPrice: null, profit: null, feeAmount: 0 };
+  if (!isRealizedDisposal(container)) return { sellPrice: null, profit: null, feeAmount: 0, shippingAmount: 0 };
   const children = getChildren(container, items);
   if (children.length === 0) {
     const sellPrice = Number(container.sellPrice) || 0;
-    if (!sellPrice) return { sellPrice: null, profit: null, feeAmount: 0 };
+    if (!sellPrice) return { sellPrice: null, profit: null, feeAmount: 0, shippingAmount: 0 };
     return {
       sellPrice: roundMoney(sellPrice),
       profit: roundMoney(computeItemProfitBeforeOverhead(container, taxMode)),
       feeAmount: getItemDisplayFeeAmount(container, items),
+      shippingAmount: getItemDisplayShippingAmount(container, items),
     };
   }
   if (isSoldWithProportionalChildren(container, items)) {
@@ -145,6 +161,7 @@ export function getSoldContainerDisplayTotals(
       sellPrice: roundMoney(sellPrice),
       profit: roundMoney(profit),
       feeAmount: getItemDisplayFeeAmount(container, items),
+      shippingAmount: getItemDisplayShippingAmount(container, items),
     };
   }
   const parentSell = Number(container.sellPrice) || 0;
@@ -153,9 +170,10 @@ export function getSoldContainerDisplayTotals(
       sellPrice: roundMoney(parentSell),
       profit: roundMoney(computeItemProfitBeforeOverhead(container, taxMode)),
       feeAmount: getItemDisplayFeeAmount(container, items),
+      shippingAmount: getItemDisplayShippingAmount(container, items),
     };
   }
-  return { sellPrice: null, profit: null, feeAmount: 0 };
+  return { sellPrice: null, profit: null, feeAmount: 0, shippingAmount: 0 };
 }
 
 /** Sold / traded revenue & profit: same rows as Finanzamt ware sheet. */

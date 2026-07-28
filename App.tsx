@@ -31,6 +31,8 @@ const PhonePhotoUploadPage = lazy(() => import('./components/PhonePhotoUploadPag
 const FlipCoachPage = lazy(() => import('./components/FlipCoachPage'));
 const SoldPulsePage = lazy(() => import('./components/SoldPulsePage'));
 const ComboLabPage = lazy(() => import('./components/ComboLabPage'));
+const EstDealwatchPage = lazy(() => import('./components/EstDealwatchPage'));
+const ReinvestAssistantPage = lazy(() => import('./components/ReinvestAssistantPage'));
 import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense, DashboardPreferences, ActionHistoryEntry, TaxMode, ItemUpdateOptions, BulkImportRecord } from './types';
 import {
   loadDashboardPreferencesFromLocalStorage,
@@ -38,7 +40,15 @@ import {
   normalizeDashboardPreferences,
   getDefaultDashboardPreferences,
 } from './services/dashboardPreferences';
-import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchFromCloud } from './services/firebaseService';
+import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchFromCloud, fetchGamificationState, writeGamificationState } from './services/firebaseService';
+import {
+  defaultGamificationState,
+  ensureFreshDay,
+  ensureFreshMonth,
+  loadGamificationStateLocal,
+  saveGamificationStateLocal,
+  type GamificationState,
+} from './utils/gamification';
 import { pullOrderIndexFromCloud } from './services/ebayOrderIndex';
 import { pullPurchaseIndexFromCloud } from './services/ebayPurchaseIndex';
 import { pullListingIndexFromCloud } from './services/ebayListingIndex';
@@ -359,6 +369,24 @@ const App: React.FC = () => {
   });
 
   const [dashboardPrefs, setDashboardPrefs] = useState<DashboardPreferences>(() => loadDashboardPreferencesFromLocalStorage());
+  const [gamification, setGamificationState] = useState<GamificationState>(() =>
+    ensureFreshMonth(ensureFreshDay(loadGamificationStateLocal())),
+  );
+  const gamificationPulledRef = useRef(false);
+  const gamificationWriteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const updateGamification = useCallback((updater: (prev: GamificationState) => GamificationState) => {
+    setGamificationState((prev) => {
+      const next = ensureFreshMonth(ensureFreshDay(updater(ensureFreshDay(prev))));
+      saveGamificationStateLocal(next);
+      if (gamificationWriteTimer.current) clearTimeout(gamificationWriteTimer.current);
+      gamificationWriteTimer.current = setTimeout(() => {
+        writeGamificationState(next as unknown as Record<string, unknown>).catch((e) =>
+          console.warn('Gamification cloud write failed:', e),
+        );
+      }, 1500);
+      return next;
+    });
+  }, []);
   const dashboardPrefsRef = useRef(dashboardPrefs);
   const actionHistoryRef = useRef<ActionHistoryEntry[]>(loadActionHistoryFromStorage());
   const bulkImportsRef = useRef<BulkImportRecord[]>(loadBulkImportsFromStorage());
@@ -887,6 +915,21 @@ const App: React.FC = () => {
     void pullOrderIndexFromCloud().catch((e) => console.warn('eBay order index cloud pull failed:', e));
     void pullPurchaseIndexFromCloud().catch((e) => console.warn('eBay purchase index cloud pull failed:', e));
     void pullListingIndexFromCloud().catch((e) => console.warn('eBay listing index cloud pull failed:', e));
+  }, [authUser]);
+
+  // Hydrate Reinvest gamification state (bank, quests, achievements) from its own doc — same
+  // pull-on-boot pattern as the eBay indexes above, kept out of the main syncPack blob.
+  useEffect(() => {
+    if (!authUser || !isCloudEnabled() || gamificationPulledRef.current) return;
+    gamificationPulledRef.current = true;
+    void fetchGamificationState()
+      .then((remote) => {
+        if (!remote) return;
+        setGamificationState(
+          ensureFreshMonth(ensureFreshDay({ ...defaultGamificationState(), ...remote } as GamificationState)),
+        );
+      })
+      .catch((e) => console.warn('Gamification cloud pull failed:', e));
   }, [authUser]);
 
   // Publish store catalog once when panel has items and auth (ensures storefront gets data)
@@ -1726,6 +1769,8 @@ const App: React.FC = () => {
                 expenses={expenses}
                 businessSettings={businessSettings}
                 onUpdateItems={handleUpdate}
+                gamification={gamification}
+                updateGamification={updateGamification}
               />
               <SettingsModalHost
                 items={items}
@@ -1773,6 +1818,19 @@ const App: React.FC = () => {
           <Route path="inventory" element={<InventoryList key="inventory-main" items={items} totalCount={items.length} onUpdate={handleUpdate} onDelete={handleDelete} onUndo={handleUndo} onRedo={handleRedo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} pageTitle="Inventory" allowedStatuses={ALL_STATUSES} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} persistenceKey="inventory_main" onPublishStoreCatalog={publishStoreCatalogNow} bulkImports={bulkImports} onUpdateBulkImport={handleUpdateBulkImport} onDeleteBulkImport={handleDeleteBulkImport} />} />
           <Route path="flip-coach" element={<FlipCoachPage items={items} />} />
           <Route path="sold-pulse" element={<SoldPulsePage items={items} />} />
+          <Route path="est" element={<EstDealwatchPage />} />
+          <Route
+            path="reinvest"
+            element={
+              <ReinvestAssistantPage
+                items={items}
+                expenses={expenses}
+                taxMode={businessSettings.taxMode}
+                gamification={gamification}
+                updateGamification={updateGamification}
+              />
+            }
+          />
           <Route
             path="combo-lab"
             element={

@@ -4,18 +4,28 @@ import {
   Package, PlusCircle, Settings, RefreshCw, Trash2, CloudUpload, LayoutDashboard,
   Layers, Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe,
   Printer, LayoutTemplate, PackageSearch, Monitor, Boxes, ChevronDown, Plus, Images,
-  Target, Activity, CircuitBoard,
+  Target, Activity, CircuitBoard, Radar, Coins,
 } from 'lucide-react';
 import PanelBreadcrumbs from './PanelBreadcrumbs';
 import { usePanelLocale } from '../context/PanelLocaleContext';
 import { useSettingsModal } from '../context/SettingsModalContext';
 import { usePanelKeyboardShortcuts } from '../hooks/usePanelKeyboardShortcuts';
-import { signInWithGoogle, logOut, completeGoogleRedirectSignIn, getAuthErrorMessage } from '../services/firebaseService';
+import {
+  signInWithGoogle,
+  logOut,
+  completeGoogleRedirectSignIn,
+  getAuthErrorMessage,
+  isUsingFirebaseEmulator,
+  signInEmulatorWithEmail,
+} from '../services/firebaseService';
 import QuotaMonitor from './QuotaMonitor';
 import FirestoreQuotaWidget from './FirestoreQuotaWidget';
 import GlobalSearch from './GlobalSearch';
 import { InventoryItem, Expense, BusinessSettings } from '../types';
 import { cloudSyncBadgeLabel, cloudSyncBadgeTitle } from '../utils/cloudSyncStatus';
+import { defaultGamificationState, type GamificationState } from '../utils/gamification';
+import { useGamificationEvents } from '../hooks/useGamificationEvents';
+import GamificationEventLayer from './gamification/GamificationEventLayer';
 
 interface SyncState {
   status: 'idle' | 'pending' | 'syncing' | 'success' | 'error';
@@ -38,14 +48,17 @@ interface PanelLayoutProps {
   expenses?: Expense[];
   businessSettings?: BusinessSettings;
   onUpdateItems?: (items: InventoryItem[], deleteIds?: string[]) => void;
+  gamification?: GamificationState;
+  updateGamification?: (updater: (prev: GamificationState) => GamificationState) => void;
 }
 
-const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, authReady = false, isAdmin = false, syncState = { status: 'idle', lastSynced: null }, onForcePush, backupBannerDismissed = true, onDismissBackupBanner, items = [], expenses = [], businessSettings = { companyName: '', ownerName: '', address: '', taxMode: 'SmallBusiness' }, onUpdateItems }) => {
+const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, authReady = false, isAdmin = false, syncState = { status: 'idle', lastSynced: null }, onForcePush, backupBannerDismissed = true, onDismissBackupBanner, items = [], expenses = [], businessSettings = { companyName: '', ownerName: '', address: '', taxMode: 'SmallBusiness' }, onUpdateItems, gamification, updateGamification }) => {
   const location = useLocation();
   const { locale, setLocale } = usePanelLocale();
   const { openSettings } = useSettingsModal();
   usePanelKeyboardShortcuts();
   const [signingIn, setSigningIn] = React.useState(false);
+  const [emulatorEmail, setEmulatorEmail] = React.useState('abelyanarmen@gmail.com');
   const [addMenuOpen, setAddMenuOpen] = React.useState(true);
   const [moreNavOpen, setMoreNavOpen] = React.useState(false);
 
@@ -70,9 +83,23 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     };
   }, []);
 
-  /** Inventory/trash use internal scroll + docked bulk bar; eBay tools use full-width workspace layout. */
+  const gamificationState = gamification ?? defaultGamificationState();
+  const updateGamificationState = updateGamification ?? (() => {});
+  const {
+    current: gamificationEvent,
+    dismiss: dismissGamificationEvent,
+    resolveDealClosed: resolveGamificationDealClosed,
+  } = useGamificationEvents({
+    items,
+    expenses,
+    taxMode: businessSettings.taxMode,
+    gamification: gamificationState,
+    updateGamification: updateGamificationState,
+  });
+
+  /** Inventory/trash use internal scroll + docked bulk bar; eBay tools / EST use full-width workspace layout. */
   const isDockedPanelPage =
-    /^\/panel\/(inventory|trash|ebay-store-pull)(\/|$)/.test(location.pathname);
+    /^\/panel\/(inventory|trash|ebay-store-pull|est)(\/|$)/.test(location.pathname);
 
   const requireAuth = isCloudEnabled && authReady && !authUser;
 
@@ -134,6 +161,39 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             {signingIn ? <Loader2 size={18} className="animate-spin" /> : null}
             Sign in with Google
           </button>
+          {isUsingFirebaseEmulator() && (
+            <div className="mt-4 pt-4 border-t border-dashed border-slate-200 text-left">
+              <p className="text-[10px] font-black uppercase tracking-widest text-amber-600 mb-2">
+                Emulator dev sign-in — not present in production builds
+              </p>
+              <div className="flex gap-2">
+                <input
+                  value={emulatorEmail}
+                  onChange={(e) => setEmulatorEmail(e.target.value)}
+                  placeholder="email@example.com"
+                  className="flex-1 min-w-0 rounded-lg border border-slate-200 px-2.5 py-2 text-xs font-semibold"
+                />
+                <button
+                  type="button"
+                  disabled={signingIn || !emulatorEmail.trim()}
+                  onClick={async () => {
+                    setSigningIn(true);
+                    try {
+                      await signInEmulatorWithEmail(emulatorEmail.trim());
+                    } catch (e) {
+                      console.error(e);
+                      alert(getAuthErrorMessage(e));
+                    } finally {
+                      setSigningIn(false);
+                    }
+                  }}
+                  className="shrink-0 px-3 py-2 rounded-lg bg-amber-500 text-white text-xs font-black uppercase tracking-wider hover:bg-amber-600 disabled:opacity-50"
+                >
+                  Emulator sign-in
+                </button>
+              </div>
+            </div>
+          )}
           <a href="/" className="block mt-4 text-sm text-slate-500 hover:text-slate-700">← Back to store</a>
         </div>
       </div>
@@ -144,7 +204,9 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     { to: '/panel/dashboard', icon: <LayoutDashboard size={18} />, label: 'Dashboard' },
     { to: '/panel/inventory', icon: <Package size={18} />, label: 'Inventory' },
     { to: '/panel/flip-coach', icon: <Target size={18} />, label: 'Flip Coach' },
-    { to: '/panel/sold-pulse', icon: <Activity size={18} />, label: 'Sold Pulse' },
+    { to: '/panel/sold-pulse', icon: <Activity size={18} />, label: 'Buy Helper' },
+    { to: '/panel/est', icon: <Radar size={18} />, label: 'Market' },
+    { to: '/panel/reinvest', icon: <Coins size={18} />, label: 'Reinvest' },
     { to: '/panel/combo-lab', icon: <CircuitBoard size={18} />, label: 'Combo Lab' },
     { to: '/panel/add-bulk', icon: <Layers size={18} />, label: 'Bulk Entry' },
     { to: '/panel/bulk-imports', icon: <History size={18} />, label: 'Bulk imports' },
@@ -314,7 +376,8 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
       >
         {/* Mobile global search — skip on Stock (has its own search) */}
         {!location.pathname.startsWith('/panel/inventory') &&
-          !location.pathname.startsWith('/panel/edit') && (
+          !location.pathname.startsWith('/panel/edit') &&
+          !location.pathname.startsWith('/panel/est') && (
           <div className="md:hidden mb-4">
             <GlobalSearch items={items} expenses={expenses} businessSettings={businessSettings} />
           </div>
@@ -479,6 +542,12 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             })}
         </div>
       </nav>
+
+      <GamificationEventLayer
+        event={gamificationEvent}
+        onDismiss={dismissGamificationEvent}
+        onResolveDealClosed={resolveGamificationDealClosed}
+      />
     </div>
   );
 };

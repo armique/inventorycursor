@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { 
   ArrowLeft, Save, Trash2, Calendar, Globe, CreditCard,
   ShoppingBag, Calculator, Layers, Box, ChevronDown, 
@@ -138,8 +138,14 @@ function normalizeRamSpecsForSave(specs: Record<string, string | number>): Recor
 const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onAddCategory, categoryFields = {}, onClose, isModal = false }) => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const isPcBuilderMode = searchParams.get('mode') === 'pc_builder';
+
+  /** Optional partial prefill from Reinvest Assistant's "Confirm purchase" button — never a full
+   * InventoryItem, so it merges over defaults instead of replacing them like `initialData`. */
+  const reinvestPrefill = (location.state as { reinvestPrefill?: Partial<InventoryItem> } | null)
+    ?.reinvestPrefill;
 
   const [formData, setFormData] = useState<Partial<InventoryItem>>(initialData || {
     name: '',
@@ -151,7 +157,8 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     buyPaymentType: defaultBuyPaymentForPlatform('kleinanzeigen.de'),
     platformBought: 'kleinanzeigen.de',
     specs: {},
-    vendor: ''
+    vendor: '',
+    ...reinvestPrefill,
   });
 
   // Mirrors formData so async callbacks (photo search) can read the truly-latest state after an
@@ -165,7 +172,9 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   const getPhotoItemId = () =>
     formDataRef.current.id || initialData?.id || id || photoItemIdRef.current;
 
-  const [configStep, setConfigStep] = useState<'CATEGORY' | 'DETAILS' | 'DONE'>('CATEGORY');
+  const [configStep, setConfigStep] = useState<'CATEGORY' | 'DETAILS' | 'DONE'>(
+    !initialData && reinvestPrefill?.category ? 'DONE' : 'CATEGORY'
+  );
   const [generatingSpecs, setGeneratingSpecs] = useState(false);
   const [generatingTitle, setGeneratingTitle] = useState(false);
   const [showSpecs, setShowSpecs] = useState(true);
@@ -238,11 +247,14 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       if (existing) {
         hydrate(existing);
       }
+    } else if (reinvestPrefill) {
+       setFormData((prev) => ({ ...prev, ...reinvestPrefill }));
+       if (reinvestPrefill.category) setConfigStep('DONE');
     } else {
        // New item default
        setConfigStep('CATEGORY');
     }
-  }, [id, items, initialData]);
+  }, [id, items, initialData, reinvestPrefill]);
 
   useEffect(() => {
     const bp = formData.buyPrice;

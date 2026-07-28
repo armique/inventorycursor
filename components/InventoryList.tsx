@@ -8,11 +8,11 @@ import { createPortal } from 'react-dom';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useSettingsModal } from '../context/SettingsModalContext';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks,   Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone,   Camera, Gift, User, Images, Scissors, GripVertical, RefreshCw
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks,   Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone,   Camera, Gift, User, Images, Scissors, GripVertical, RefreshCw, Calculator
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, TaxMode, BulkImportRecord } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
-import { computeItemProfitBeforeOverhead, getChildren, getItemDisplayFeeAmount, getSoldContainerDisplayTotals, shouldHideContainerChildInList, containerOrChildMatchesSearch } from '../services/financialAggregation';
+import { computeItemProfitBeforeOverhead, getChildren, getItemDisplayFeeAmount, getItemDisplayShippingAmount, getSoldContainerDisplayTotals, shouldHideContainerChildInList, containerOrChildMatchesSearch } from '../services/financialAggregation';
 import { itemMatchesSalePlatformFilter, isMissingExplicitSalePlatform, MISSING_PLATFORM_FILTER, SALE_PLATFORM_OPTIONS, formatItemSalePlatform, formatSalePlatformLabel } from '../utils/salePlatform';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { getCompatibleItemsForItem } from '../services/compatibility';
@@ -80,6 +80,7 @@ import TradeModal from './TradeModal';
 import GiftModal from './GiftModal';
 import CrossPostingModal from './CrossPostingModal';
 import RetroBundleModal from './RetroBundleModal';
+import ReinvestBundleRecalcModal from './ReinvestBundleRecalcModal';
 import ComposeTypeModal, { type ComposeType } from './ComposeTypeModal';
 import QuickBundleAddModal from './QuickBundleAddModal';
 import SplitPartsModal from './SplitPartsModal';
@@ -1509,6 +1510,7 @@ const InventoryList: React.FC<Props> = ({
   const [bulkGenerateDescriptions, setBulkGenerateDescriptions] = useState(false);
   const [bulkGenerateProgress, setBulkGenerateProgress] = useState<string | null>(null);
   const [showRetroBundle, setShowRetroBundle] = useState(false);
+  const [recalcTarget, setRecalcTarget] = useState<InventoryItem | null>(null);
   const [showComposeType, setShowComposeType] = useState(false);
   const [quickBundleSeed, setQuickBundleSeed] = useState<InventoryItem | null>(null);
   const [splitPartsSeed, setSplitPartsSeed] = useState<InventoryItem | null>(null);
@@ -2816,6 +2818,20 @@ const InventoryList: React.FC<Props> = ({
      setSelectedIds([]);
   };
 
+  const handleApplyRecalc = (updates: Array<{ itemId: string; newSellPrice: number }>) => {
+    const byId = new Map(updates.map((u) => [u.itemId, u.newSellPrice]));
+    const updatedItems = items
+      .filter((i) => byId.has(i.id))
+      .map((i) => {
+        const newSellPrice = byId.get(i.id)!;
+        const buyPrice = Number(i.buyPrice) || 0;
+        const fee = Number(i.feeAmount) || 0;
+        return { ...i, sellPrice: newSellPrice, profit: newSellPrice - buyPrice - fee };
+      });
+    onUpdate(updatedItems);
+    setRecalcTarget(null);
+  };
+
   const handleBulkEditSales = (platform: Platform, payment: PaymentType) => {
      const updates = items.filter(i => selectedIds.includes(i.id)).map(i => ({
         ...i,
@@ -3266,6 +3282,9 @@ const InventoryList: React.FC<Props> = ({
               )}
               {canSplitItem(item, (item.isPC || item.isBundle) ? getChildren(item, items).length : 0) && (
                 <button type="button" onClick={(e) => { e.stopPropagation(); setSplitPartsSeed(item); }} className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100`} title="Split into parts"><Scissors size={13} strokeWidth={2.25} /></button>
+              )}
+              {(item.isPC || item.isBundle) && isRealizedDisposal(item) && getChildren(item, items).length > 0 && (
+                <button type="button" onClick={(e) => { e.stopPropagation(); setRecalcTarget(item); }} className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100`} title="Recalculate component prices"><Calculator size={13} strokeWidth={2.25} /></button>
               )}
               {item.status === ItemStatus.IN_STOCK && (
                 <button type="button" onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToSell(item); }} className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100`} title="Mark Sold"><ShoppingBag size={13} strokeWidth={2.25} /></button>
@@ -4115,16 +4134,17 @@ const InventoryList: React.FC<Props> = ({
             : null;
         const displaySellPrice = soldContainerSell ?? item.sellPrice;
         const feeAmt = getItemDisplayFeeAmount(item, items);
+        const shipAmt = getItemDisplayShippingAmount(item, items);
         return (
-          <td 
-            key={id} 
-            className="text-left font-bold text-slate-600 cursor-pointer hover:bg-blue-50/30 transition-colors" 
+          <td
+            key={id}
+            className="text-left font-bold text-slate-600 cursor-pointer hover:bg-blue-50/30 transition-colors"
             style={style}
             title={
               soldContainerSell != null
                 ? 'Bundle total sell price (sum of components)'
-                : feeAmt > 0
-                  ? `Sold amount before marketplace fees. Fees −€${formatEUR(feeAmt)} are deducted in Margin (sell − buy − fees).`
+                : feeAmt > 0 || shipAmt > 0
+                  ? `Sold amount before marketplace fees/shipping. ${feeAmt > 0 ? `Fees −€${formatEUR(feeAmt)}` : ''}${feeAmt > 0 && shipAmt > 0 ? ' and ' : ''}${shipAmt > 0 ? `Shipping you paid −€${formatEUR(shipAmt)}` : ''} are deducted in Margin (sell − buy − fees − shipping).`
                   : 'Double click to edit'
             }
             onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, 'sellPrice', item.sellPrice || 0); }}
@@ -4147,6 +4167,11 @@ const InventoryList: React.FC<Props> = ({
                 {feeAmt > 0 && (
                   <span className="text-[9px] font-bold text-amber-700 tabular-nums whitespace-nowrap">
                     −€{formatEUR(feeAmt)} fees
+                  </span>
+                )}
+                {shipAmt > 0 && (
+                  <span className="text-[9px] font-bold text-sky-700 tabular-nums whitespace-nowrap">
+                    −€{formatEUR(shipAmt)} shipping
                   </span>
                 )}
               </div>
@@ -4193,9 +4218,10 @@ const InventoryList: React.FC<Props> = ({
             : null;
         const displayProfit = soldContainerProfit ?? profitForDisplay(item);
         const feeAmt = getItemDisplayFeeAmount(item, items);
+        const shipAmt = getItemDisplayShippingAmount(item, items);
         const feeHint =
-          feeAmt > 0
-            ? `Profit = sell − buy − fees (€${formatEUR(feeAmt)} marketplace fees).`
+          feeAmt > 0 || shipAmt > 0
+            ? `Profit = sell − buy − fees − shipping.${feeAmt > 0 ? ` €${formatEUR(feeAmt)} marketplace fees.` : ''}${shipAmt > 0 ? ` €${formatEUR(shipAmt)} shipping you paid.` : ''}`
             : 'Profit = sell − buy − fees (when recorded).';
         if (item.isPC || item.isBundle) {
           if (soldContainerProfit != null) {
@@ -4211,6 +4237,11 @@ const InventoryList: React.FC<Props> = ({
                   {feeAmt > 0 && (
                     <span className="text-[9px] font-bold text-amber-700 tabular-nums whitespace-nowrap">
                       −€{formatEUR(feeAmt)} fees
+                    </span>
+                  )}
+                  {shipAmt > 0 && (
+                    <span className="text-[9px] font-bold text-sky-700 tabular-nums whitespace-nowrap">
+                      −€{formatEUR(shipAmt)} shipping
                     </span>
                   )}
                 </div>
@@ -4236,6 +4267,11 @@ const InventoryList: React.FC<Props> = ({
                 {feeAmt > 0 && (
                   <span className="text-[9px] font-bold text-amber-700 tabular-nums whitespace-nowrap">
                     −€{formatEUR(feeAmt)} fees
+                  </span>
+                )}
+                {shipAmt > 0 && (
+                  <span className="text-[9px] font-bold text-sky-700 tabular-nums whitespace-nowrap">
+                    −€{formatEUR(shipAmt)} shipping
                   </span>
                 )}
               </div>
@@ -6398,6 +6434,15 @@ const InventoryList: React.FC<Props> = ({
             items={items.filter(i => selectedIds.includes(i.id))}
             onConfirm={handleCreateRetroBundle}
             onClose={() => setShowRetroBundle(false)}
+        />
+      )}
+
+      {recalcTarget && (
+        <ReinvestBundleRecalcModal
+          container={recalcTarget}
+          allItems={items}
+          onApply={handleApplyRecalc}
+          onClose={() => setRecalcTarget(null)}
         />
       )}
 

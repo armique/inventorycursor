@@ -31,18 +31,23 @@ import {
   signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
   setPersistence,
   browserLocalPersistence,
+  connectAuthEmulator,
   User,
   Auth,
 } from "firebase/auth";
+import { connectFirestoreEmulator } from "firebase/firestore";
 import {
   getStorage,
   ref as storageRef,
   uploadBytes,
   getDownloadURL,
+  connectStorageEmulator,
   type FirebaseStorage,
 } from "firebase/storage";
 import { yieldToMain } from "./backgroundPersistence";
@@ -104,6 +109,15 @@ let db: Firestore | null = null;
 let auth: Auth | null = null;
 let storage: FirebaseStorage | null = null;
 
+/**
+ * True only for a local dev server started with VITE_FIREBASE_EMULATOR=1.
+ * `import.meta.env.DEV` is statically false in a production build, so Vite drops
+ * the emulator branch entirely — a deployed bundle can never point at localhost.
+ */
+export function isUsingFirebaseEmulator(): boolean {
+  return Boolean(import.meta.env.DEV && import.meta.env.VITE_FIREBASE_EMULATOR);
+}
+
 function init(): { db: Firestore; auth: Auth; storage: FirebaseStorage } | null {
   if (db && auth && storage) return { db, auth, storage };
 
@@ -119,6 +133,16 @@ function init(): { db: Firestore; auth: Auth; storage: FirebaseStorage } | null 
       ? "inventorycursor-e9000.firebasestorage.app"
       : config.storageBucket;
     storage = bucket ? getStorage(app, bucket) : getStorage(app);
+
+    if (isUsingFirebaseEmulator()) {
+      // Must run before any read/write on each handle. The SDK throws if a handle
+      // was already used against production, so this stays inside the same init().
+      connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
+      connectFirestoreEmulator(db, "127.0.0.1", 8080);
+      connectStorageEmulator(storage, "127.0.0.1", 9199);
+      console.info("[firebase] Using local emulators — no production data is touched.");
+    }
+
     return db && auth && storage ? { db, auth, storage } : null;
   } catch (err) {
     console.error("Firebase init error:", err);
@@ -170,6 +194,14 @@ export async function signInWithGoogle(): Promise<User | null> {
   if (!ctx?.auth) throw new Error("Firebase not configured. Check Settings.");
   await setPersistence(ctx.auth, browserLocalPersistence);
   const provider = new GoogleAuthProvider();
+  if (isUsingFirebaseEmulator()) {
+    // The Auth Emulator's popup flow relays the result back via window.opener
+    // postMessage, which only exists when the popup was truly opened by window.open()
+    // from a live app tab. Automated/embedded browser contexts break that chain
+    // ("No matching frame"), so skip straight to full-page redirect here.
+    await signInWithRedirect(ctx.auth, provider);
+    return null;
+  }
   try {
     const result = await signInWithPopup(ctx.auth, provider);
     return result.user;
@@ -183,6 +215,35 @@ export async function signInWithGoogle(): Promise<User | null> {
     ) {
       await signInWithRedirect(ctx.auth, provider);
       return null;
+    }
+    throw err;
+  }
+}
+
+/**
+ * Emulator-only quick sign-in: no OAuth dance, no password that means anything.
+ * The Auth Emulator accepts any password for email/password accounts and never talks
+ * to real Google, so this just gives the local emulator user a stable identity to sign
+ * back into. `isUsingFirebaseEmulator()` (checked here AND by the only caller, the
+ * dev-only panel below) is compiled to `false` outside `vite --mode emulator`, so this
+ * function — and the block that renders its button — never reach a production bundle.
+ */
+export async function signInEmulatorWithEmail(email: string): Promise<User> {
+  if (!isUsingFirebaseEmulator()) {
+    throw new Error("Emulator sign-in only works when running against the local Firebase emulator.");
+  }
+  const ctx = init();
+  if (!ctx?.auth) throw new Error("Firebase not configured.");
+  await setPersistence(ctx.auth, browserLocalPersistence);
+  const EMULATOR_PASSWORD = "emulator-local-only"; // meaningless outside the local emulator's throwaway store
+  try {
+    const result = await signInWithEmailAndPassword(ctx.auth, email, EMULATOR_PASSWORD);
+    return result.user;
+  } catch (err) {
+    const code = (err as { code?: string })?.code || '';
+    if (code === 'auth/user-not-found' || code === 'auth/invalid-credential' || code === 'auth/invalid-login-credentials') {
+      const result = await createUserWithEmailAndPassword(ctx.auth, email, EMULATOR_PASSWORD);
+      return result.user;
     }
     throw err;
   }
@@ -1294,6 +1355,89 @@ export async function clearEbayOrdersCloud(): Promise<void> {
     }
   }
   if (count > 0) await batch.commit();
+}
+
+// --- BUY HELPER MARKET PRICE HISTORY (30-day eBay sold/live + Kleinanzeigen snapshots per tracked part) ---
+
+const BUY_HELPER_PRICES_COLLECTION = "buyHelperPrices";
+
+function sanitizeBuyHelperDocId(itemId: string): string {
+  const cleaned = itemId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 300);
+  return cleaned || "unknown";
+}
+
+/** One-time fetch of every stored Buy Helper price history, keyed by itemId. */
+export async function fetchBuyHelperPricesFromCloud(): Promise<Record<string, unknown> | null> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) return null;
+  try {
+    const colRef = collection(ctx.db, "users", user.uid, BUY_HELPER_PRICES_COLLECTION);
+    const snap = await getDocs(colRef);
+    const out: Record<string, unknown> = {};
+    snap.forEach((d) => {
+      out[d.id] = d.data();
+    });
+    return out;
+  } catch (err) {
+    console.error("fetchBuyHelperPricesFromCloud failed:", err);
+    return null;
+  }
+}
+
+/** Upsert Buy Helper price histories (one doc per tracked item, batched). Requires auth. */
+export async function writeBuyHelperPricesToCloud(
+  histories: (Record<string, unknown> & { itemId: string })[]
+): Promise<void> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) throw new Error("Not signed in");
+  const colRef = collection(ctx.db, "users", user.uid, BUY_HELPER_PRICES_COLLECTION);
+
+  const BATCH_MAX = 450;
+  let batch = writeBatch(ctx.db);
+  let count = 0;
+  for (const history of histories) {
+    batch.set(doc(colRef, sanitizeBuyHelperDocId(String(history.itemId))), stripUndefined(history));
+    count++;
+    if (count >= BATCH_MAX) {
+      await batch.commit();
+      batch = writeBatch(ctx.db);
+      count = 0;
+    }
+  }
+  if (count > 0) await batch.commit();
+}
+
+// --- REINVEST GAMIFICATION (bank ledger, quests, achievements) — one doc per user, pull-on-boot
+// like buyHelperPrices, kept out of the syncPack blob since it changes on its own cadence. ---
+
+const GAMIFICATION_COLLECTION = "gamification";
+const GAMIFICATION_DOC_ID = "state";
+
+/** One-time fetch of the gamification state doc. Returns null when signed out or never written. */
+export async function fetchGamificationState(): Promise<Record<string, unknown> | null> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) return null;
+  try {
+    const snap = await getDoc(doc(ctx.db, "users", user.uid, GAMIFICATION_COLLECTION, GAMIFICATION_DOC_ID));
+    return snap.exists() ? (snap.data() as Record<string, unknown>) : null;
+  } catch (err) {
+    console.error("fetchGamificationState failed:", err);
+    return null;
+  }
+}
+
+/** Upsert the gamification state doc. Requires auth. */
+export async function writeGamificationState(state: Record<string, unknown>): Promise<void> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) throw new Error("Not signed in");
+  await setDoc(
+    doc(ctx.db, "users", user.uid, GAMIFICATION_COLLECTION, GAMIFICATION_DOC_ID),
+    stripUndefined({ ...state, updatedAt: new Date().toISOString() }),
+  );
 }
 
 // --- EBAY PURCHASE INDEX (buyer history archive, survives eBay's ~90-day API window) ---
