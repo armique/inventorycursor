@@ -829,6 +829,32 @@ const InventoryList: React.FC<Props> = ({
     return defaultVal;
   };
 
+  const defaultSortForTab = (tab: StatusFilter): SortConfig => {
+    if (tab === 'SOLD') return { key: 'sellDate', direction: 'desc' };
+    if (tab === 'ACTIVE') return { key: 'buyDate', direction: 'desc' };
+    return { key: 'buyDate', direction: 'desc' };
+  };
+
+  const readPersistedSortForTab = (tab: StatusFilter): SortConfig | null => {
+    const perTab = localStorage.getItem(`${persistenceKey}_sort_${tab}`);
+    if (perTab) {
+      try {
+        return JSON.parse(perTab) as SortConfig;
+      } catch {
+        /* ignore */
+      }
+    }
+    const legacy = localStorage.getItem(`${persistenceKey}_sort_config`);
+    if (legacy) {
+      try {
+        return JSON.parse(legacy) as SortConfig;
+      } catch {
+        /* ignore */
+      }
+    }
+    return null;
+  };
+
   const [searchTerm, setSearchTerm] = useState(() => {
     const q = searchParams.get('q');
     return q != null ? q : loadState<string>('search', '');
@@ -895,37 +921,22 @@ const InventoryList: React.FC<Props> = ({
     });
   }, []);
 
-  // Sort State — Active defaults to buyDate (acquired, newest first); Sold forces sellDate.
+  // Sort — persisted per status tab; tab defaults only apply when switching tabs (not on every render).
   const [sortConfig, setSortConfig] = useState<SortConfig>(() => {
-     const savedStatus = loadState<StatusFilter>('status_filter', 'ACTIVE');
-     const saved = localStorage.getItem(`${persistenceKey}_sort_config`);
-     if (savedStatus === 'SOLD') {
-       return { key: 'sellDate', direction: 'desc' };
-     }
-     if (savedStatus === 'ACTIVE') {
-       return { key: 'buyDate', direction: 'desc' };
-     }
-     return saved ? JSON.parse(saved) : { key: 'buyDate', direction: 'desc' };
+    const tab = loadState<StatusFilter>('status_filter', 'ACTIVE');
+    return readPersistedSortForTab(tab) ?? defaultSortForTab(tab);
   });
 
-  // Tab defaults: Active = date acquired newest first; Sold = sell date newest first.
+  const prevStatusForSortRef = useRef(statusFilter);
   useEffect(() => {
-    if (splitView) return;
-    if (statusFilter === 'SOLD') {
-      setSortConfig((prev) =>
-        prev.key === 'sellDate' && prev.direction === 'desc'
-          ? prev
-          : { key: 'sellDate', direction: 'desc' }
-      );
+    if (splitView) {
+      prevStatusForSortRef.current = statusFilter;
       return;
     }
-    if (statusFilter === 'ACTIVE') {
-      setSortConfig((prev) =>
-        prev.key === 'buyDate' && prev.direction === 'desc'
-          ? prev
-          : { key: 'buyDate', direction: 'desc' }
-      );
-    }
+    if (prevStatusForSortRef.current === statusFilter) return;
+    prevStatusForSortRef.current = statusFilter;
+    const restored = readPersistedSortForTab(statusFilter);
+    setSortConfig(restored ?? defaultSortForTab(statusFilter));
   }, [statusFilter, splitView]);
   
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
@@ -1372,6 +1383,7 @@ const InventoryList: React.FC<Props> = ({
       localStorage.setItem(`${k}_category_filter`, JSON.stringify(categoryFilter));
       localStorage.setItem(`${k}_subcategory_filter`, JSON.stringify(subCategoryFilter));
       localStorage.setItem(`${k}_sort_config`, JSON.stringify(sortConfig));
+      localStorage.setItem(`${k}_sort_${statusFilter}`, JSON.stringify(sortConfig));
       localStorage.setItem(`${k}_widths`, JSON.stringify(columnWidths));
       localStorage.setItem(`${k}_manual_width_cols`, JSON.stringify(Array.from(manualWidthColumns)));
       localStorage.setItem(`${k}_sale_platform`, JSON.stringify(salePlatformFilter));
