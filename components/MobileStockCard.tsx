@@ -224,11 +224,11 @@ export const MobileStockCard: React.FC<{
                     : null
                 );
                 if (!analyzer) return null;
-                const cls = (action: string) => {
+                const cls = (channel: 'KA' | 'EB', action: string) => {
                   if (action === 'drop') return 'bg-amber-50 text-amber-950 border-amber-300';
                   if (action === 'raise') return 'bg-sky-50 text-sky-950 border-sky-300';
-                  if (action === 'ok') return 'bg-emerald-50 text-emerald-900 border-emerald-200';
-                  return 'bg-slate-50 text-slate-700 border-slate-200';
+                  if (channel === 'KA') return 'bg-emerald-100 text-emerald-800 border-emerald-300';
+                  return 'bg-teal-100 text-teal-800 border-teal-300';
                 };
                 return (
                   <div
@@ -256,7 +256,7 @@ export const MobileStockCard: React.FC<{
                       return (
                         <span
                           key={ch.channel}
-                          className={`inline-flex px-1.5 py-0.5 rounded border text-[11px] font-black uppercase tabular-nums ${cls(ch.action)}`}
+                          className={`inline-flex px-1.5 py-0.5 rounded border text-[11px] font-black uppercase tabular-nums ${cls(ch.channel, ch.action)}`}
                         >
                           {label}
                         </span>

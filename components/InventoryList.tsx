@@ -3609,14 +3609,18 @@ const InventoryList: React.FC<Props> = ({
                              : '';
                          const sugg = suggestedEbayById.get(item.id) || null;
                          const analyzer = computePriceAnalyzer(item, sugg, items);
-                         const actionClass = (action: PriceAnalyzerAction) => {
+                         const channelBadgeClass = (
+                           channel: 'KA' | 'EB',
+                           action: PriceAnalyzerAction,
+                         ) => {
                            if (action === 'drop')
                              return 'bg-amber-50 text-amber-950 border-amber-300';
                            if (action === 'raise')
                              return 'bg-sky-50 text-sky-950 border-sky-300';
-                           if (action === 'ok')
-                             return 'bg-emerald-50 text-emerald-900 border-emerald-200';
-                           return 'bg-slate-50 text-slate-700 border-slate-200';
+                           // Recommended sell + OK: KA green, eBay teal/turquoise
+                           if (channel === 'KA')
+                             return 'bg-emerald-100 text-emerald-800 border-emerald-300';
+                           return 'bg-teal-100 text-teal-800 border-teal-300';
                          };
                          const shortChannelLabel = (ch: {
                            action: PriceAnalyzerAction;
@@ -3811,7 +3815,7 @@ const InventoryList: React.FC<Props> = ({
                                        type="button"
                                        onClick={saveSuggest}
                                        title={ch.label}
-                                       className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[11px] font-black uppercase tracking-wide tabular-nums ${actionClass(ch.action)}`}
+                                       className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[11px] font-black uppercase tracking-wide tabular-nums ${channelBadgeClass(ch.channel, ch.action)}`}
                                      >
                                        {shortChannelLabel(ch)}
                                      </button>
