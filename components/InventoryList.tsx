@@ -4126,9 +4126,9 @@ const InventoryList: React.FC<Props> = ({
                                   )}
                                   {isSoldContainerRow && (
                                     <>
-                                      <span className="text-slate-700">€{formatEUR(child.sellPrice || 0)}</span>
-                                      <span className="text-slate-400">/</span>
                                       <span className="text-slate-500">€{formatEUR(child.buyPrice || 0)}</span>
+                                      <span className="text-slate-400">/</span>
+                                      <span className="text-slate-700">€{formatEUR(child.sellPrice || 0)}</span>
                                       {childProfit != null && (
                                         <span
                                           className={`${
