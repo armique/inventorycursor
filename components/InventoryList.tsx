@@ -2383,13 +2383,11 @@ const InventoryList: React.FC<Props> = ({
   }, []);
 
   const toggleSelect = useCallback((id: string) => {
-    startTransition(() => {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-        return [...next];
-      });
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return [...next];
     });
   }, []);
 
@@ -6411,7 +6409,8 @@ const InventoryList: React.FC<Props> = ({
         [data-bulk-batch] tbody > tr > td:first-child { box-shadow: inset 3px 0 0 #8b5cf6; }
       `}</style>
       {splitView && statusFilter !== 'PURCHASES' ? (
-        <div className="hidden lg:flex flex-1 min-h-0 gap-2 flex-col lg:flex-row">
+        <div className="hidden lg:flex flex-1 min-h-0 min-w-0 flex-col relative">
+        <div className="flex flex-1 min-h-0 gap-2 flex-col lg:flex-row min-h-0">
           <InventoryListTablePane
             key="split-active"
             paneItems={sortedActiveItems}
@@ -6438,7 +6437,7 @@ const InventoryList: React.FC<Props> = ({
             highlightedItemId={highlightedItemId}
             aiStates={itemAiStates}
             rowHeightEstimate={rowHeightEstimate}
-            bulkBarSpacer={selectedIds.length > 0}
+            reserveBulkBarPadding={selectedIds.length > 0}
             collapsedBundles={collapsedBundles}
             bulkBatchActive={bulkBatchActive}
           />
@@ -6479,13 +6478,25 @@ const InventoryList: React.FC<Props> = ({
             highlightedItemId={highlightedItemId}
             aiStates={itemAiStates}
             rowHeightEstimate={rowHeightEstimate}
-            bulkBarSpacer={selectedIds.length > 0}
+            reserveBulkBarPadding={selectedIds.length > 0}
             collapsedBundles={collapsedBundles}
             bulkBatchActive={bulkBatchActive}
           />
         </div>
+        {selectedIds.length > 0 && (
+          <div className="absolute inset-x-0 bottom-0 z-30">
+            <BulkSelectionBar
+              count={bulkSelectionCount}
+              totalBuy={bulkSelectedTotals.buy}
+              totalSell={bulkSelectedTotals.sell}
+              onClear={() => startTransition(() => setSelectedIds([]))}
+              actions={bulkActions}
+            />
+          </div>
+        )}
+        </div>
       ) : (
-        <div className="hidden lg:flex flex-1 min-h-0 min-w-0 flex-col">
+        <div className="hidden lg:flex flex-1 min-h-0 min-w-0 flex-col relative">
         {statusFilter === 'PURCHASES' ? (
           purchasesView.desktopList
         ) : (
@@ -6514,16 +6525,27 @@ const InventoryList: React.FC<Props> = ({
           highlightedItemId={highlightedItemId}
           aiStates={itemAiStates}
           rowHeightEstimate={rowHeightEstimate}
-          bulkBarSpacer={selectedIds.length > 0}
+          reserveBulkBarPadding={selectedIds.length > 0}
           collapsedBundles={collapsedBundles}
           className="flex flex-1"
           bulkBatchActive={bulkBatchActive}
         />
         )}
+        {statusFilter !== 'PURCHASES' && selectedIds.length > 0 && (
+          <div className="absolute inset-x-0 bottom-0 z-30">
+            <BulkSelectionBar
+              count={bulkSelectionCount}
+              totalBuy={bulkSelectedTotals.buy}
+              totalSell={bulkSelectedTotals.sell}
+              onClear={() => startTransition(() => setSelectedIds([]))}
+              actions={bulkActions}
+            />
+          </div>
+        )}
         </div>
       )}
 
-      <div className="shrink-0 w-full">
+      <div className="lg:hidden shrink-0 w-full">
         {statusFilter !== 'PURCHASES' ? (
         <BulkSelectionBar
           count={bulkSelectionCount}
@@ -7289,7 +7311,6 @@ type InventoryTableBodyProps = {
   aiStates: Map<string, ItemAiState>;
   scrollElement: HTMLDivElement | null;
   rowHeightEstimate: number;
-  bulkBarSpacer: boolean;
   collapsedBundles: Set<string>;
   itemFlexWidth?: number | null;
 };
@@ -7304,7 +7325,6 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
   aiStates,
   scrollElement,
   rowHeightEstimate,
-  bulkBarSpacer,
   collapsedBundles,
   itemFlexWidth,
 }: InventoryTableBodyProps) {
@@ -7378,11 +7398,6 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
             aiUnreviewed={hasUnreviewedAi(item, aiStates.get(item.id))}
           />
         ))}
-        {bulkBarSpacer && (
-          <tr aria-hidden="true" className="pointer-events-none border-0">
-            <td colSpan={visibleColumns.length} className="!p-0 !border-0 h-24 lg:h-28" />
-          </tr>
-        )}
       </tbody>
     );
   }
@@ -7422,11 +7437,6 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
       {bottomSpacer > 0 && (
         <tr aria-hidden="true" className="pointer-events-none border-0">
           <td colSpan={visibleColumns.length} className="!p-0 !border-0" style={{ height: `${bottomSpacer}px` }} />
-        </tr>
-      )}
-      {bulkBarSpacer && (
-        <tr aria-hidden="true" className="pointer-events-none border-0">
-          <td colSpan={visibleColumns.length} className="!p-0 !border-0 h-24 lg:h-28" />
         </tr>
       )}
     </tbody>
@@ -7598,7 +7608,8 @@ type InventoryListTablePaneProps = {
   highlightedItemId: string | null;
   aiStates: Map<string, ItemAiState>;
   rowHeightEstimate: number;
-  bulkBarSpacer: boolean;
+  /** Extra scroll padding so last rows stay above the docked bulk bar (desktop overlay). */
+  reserveBulkBarPadding?: boolean;
   collapsedBundles: Set<string>;
   className?: string;
   bulkBatchActive?: boolean;
@@ -7612,7 +7623,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
   scrollRef,
   visibleColumns,
   columnWidths,
-  manualWidthColumns,
+  manualWidthColumns: _manualWidthColumns,
   listDensity,
   sortConfig,
   handleHeaderSort,
@@ -7630,7 +7641,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
   highlightedItemId,
   aiStates,
   rowHeightEstimate,
-  bulkBarSpacer,
+  reserveBulkBarPadding = false,
   collapsedBundles,
   className = 'flex flex-1',
   bulkBatchActive = false,
@@ -7673,10 +7684,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
   }, [scrollElement]);
 
   const itemFlexWidth = useMemo(() => {
-    // SOLD should always consume full pane width; otherwise persisted manual item width
-    // can leave a large dead strip on the right side of the table.
-    const allowAutoItemFlex = paneStatus === 'SOLD' || !manualWidthColumns.has('item');
-    if (!allowAutoItemFlex || !containerWidth) return null;
+    if (!containerWidth || !visibleColumns.includes('item')) return null;
     const floor = columnWidths['item'] || DEFAULT_WIDTHS['item'];
     const othersWidth = visibleColumns
       .filter((id) => id !== 'item')
@@ -7687,7 +7695,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
     // trading a few px of width for never causing an unwanted horizontal scrollbar to appear.
     const scrollbarGutter = 20;
     return Math.max(floor, containerWidth - othersWidth - scrollbarGutter);
-  }, [containerWidth, visibleColumns, columnWidths, manualWidthColumns, paneStatus]);
+  }, [containerWidth, visibleColumns, columnWidths]);
 
   const timeGaugeTitle =
     paneStatus === 'SOLD' ? 'Sale speed' : paneStatus === 'ACTIVE' ? 'Stock age' : 'Hold / sale';
@@ -7707,7 +7715,12 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
           {paneExtra}
         </div>
       )}
-      <div ref={attachScrollRef} className="flex-1 min-h-0 overflow-x-auto overflow-y-auto custom-scrollbar pb-3">
+      <div
+        ref={attachScrollRef}
+        className={`flex-1 min-h-0 overflow-x-auto overflow-y-auto custom-scrollbar ${
+          reserveBulkBarPadding ? 'pb-[4.75rem]' : 'pb-3'
+        }`}
+      >
         <table
           className="w-full text-left border-collapse min-w-[1160px] table-fixed"
           data-inventory-table
@@ -7847,7 +7860,6 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
             aiStates={aiStates}
             scrollElement={scrollElement}
             rowHeightEstimate={rowHeightEstimate}
-            bulkBarSpacer={bulkBarSpacer}
             collapsedBundles={collapsedBundles}
           />
         </table>
