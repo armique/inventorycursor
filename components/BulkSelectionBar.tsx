@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp, X } from 'lucide-react';
+import { formatEUR } from '../utils/formatMoney';
 
 export type BulkActionVariant =
   | 'primary'
@@ -21,6 +22,10 @@ export interface BulkAction {
 
 interface Props {
   count: number;
+  /** Sum of buyPrice for selected rows (inventory cost basis). */
+  totalBuy?: number;
+  /** Sum of sellPrice when present (e.g. sold selection). */
+  totalSell?: number;
   onClear: () => void;
   actions: BulkAction[];
   onExpandedChange?: (expanded: boolean) => void;
@@ -38,7 +43,14 @@ const variantClass: Record<BulkActionVariant, string> = {
 /**
  * Docked bulk-action footer (in document flow). Sits below the scrollable list so rows are never covered.
  */
-const BulkSelectionBar: React.FC<Props> = ({ count, onClear, actions, onExpandedChange }) => {
+const BulkSelectionBar: React.FC<Props> = ({
+  count,
+  totalBuy = 0,
+  totalSell = 0,
+  onClear,
+  actions,
+  onExpandedChange,
+}) => {
   const [expanded, setExpanded] = useState(false);
   const visible = actions.filter((a) => !a.hidden);
   const hasSelection = count > 0;
@@ -73,6 +85,11 @@ const BulkSelectionBar: React.FC<Props> = ({ count, onClear, actions, onExpanded
     return null;
   }
 
+  const costLine =
+    totalSell > 0 && totalSell !== totalBuy
+      ? `€${formatEUR(totalBuy)} cost · €${formatEUR(totalSell)} sell`
+      : `€${formatEUR(totalBuy)} total cost`;
+
   return (
     <div
       className="shrink-0 w-full border-t border-slate-800 bg-slate-900 overflow-hidden pb-safe animate-in slide-in-from-bottom-2 duration-200"
@@ -82,9 +99,12 @@ const BulkSelectionBar: React.FC<Props> = ({ count, onClear, actions, onExpanded
       {/* Mobile / tablet: compact bar + expandable action sheet */}
       <div className="lg:hidden">
         <div className="flex items-center gap-3 px-4 py-3 min-h-[56px]">
-          <div className="shrink-0">
+          <div className="shrink-0 min-w-0">
             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Selected</p>
-            <p className="text-xl font-black text-white tabular-nums">{count}</p>
+            <p className="text-xl font-black text-white tabular-nums leading-tight">{count}</p>
+            <p className="text-[10px] font-bold text-emerald-400/90 tabular-nums truncate max-w-[140px] sm:max-w-none">
+              {costLine}
+            </p>
           </div>
           <button
             type="button"
@@ -112,9 +132,10 @@ const BulkSelectionBar: React.FC<Props> = ({ count, onClear, actions, onExpanded
 
       {/* Desktop: full-width docked toolbar */}
       <div className="hidden lg:flex items-center gap-4 px-4 py-3 min-h-[72px]">
-        <div className="flex flex-col shrink-0 pl-2">
+        <div className="flex flex-col shrink-0 pl-2 min-w-[120px]">
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Selected</p>
-          <p className="text-xl font-black text-white tabular-nums">{count}</p>
+          <p className="text-xl font-black text-white tabular-nums leading-tight">{count}</p>
+          <p className="text-[11px] font-bold text-emerald-400/90 tabular-nums mt-0.5">{costLine}</p>
         </div>
         <div className="h-10 w-px bg-slate-700 shrink-0" />
         <div className="flex gap-2 overflow-x-auto overscroll-x-contain custom-scrollbar min-w-0 flex-1 py-1">

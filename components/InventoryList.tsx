@@ -4878,6 +4878,20 @@ const InventoryList: React.FC<Props> = ({
 
   const bulkSelectionCount = deferredSelectedIds.length;
 
+  const bulkSelectedTotals = useMemo(() => {
+    let buy = 0;
+    let sell = 0;
+    for (const id of deferredSelectedIds) {
+      const item = itemsById.get(id);
+      if (!item) continue;
+      buy += Number(item.buyPrice) || 0;
+      if (item.sellPrice != null) {
+        sell += Number(item.sellPrice) || 0;
+      }
+    }
+    return { buy, sell };
+  }, [deferredSelectedIds, itemsById]);
+
   const purchasesView = useInventoryPurchases({
     items,
     categories,
@@ -6513,6 +6527,8 @@ const InventoryList: React.FC<Props> = ({
         {statusFilter !== 'PURCHASES' ? (
         <BulkSelectionBar
           count={bulkSelectionCount}
+          totalBuy={bulkSelectedTotals.buy}
+          totalSell={bulkSelectedTotals.sell}
           onClear={() => startTransition(() => setSelectedIds([]))}
           actions={bulkActions}
         />
@@ -7336,7 +7352,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
     return (
       <tbody className="divide-y divide-slate-50">
         <tr>
-          <td colSpan={visibleColumns.length + 1} className="p-20 text-center opacity-40">
+          <td colSpan={visibleColumns.length} className="p-20 text-center opacity-40">
             <Package size={48} className="mx-auto mb-4 text-slate-300" />
             <p className="font-bold text-slate-400">No matches found</p>
             <p className="text-sm text-slate-400 mt-1">Try clearing search or category filters</p>
@@ -7364,7 +7380,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
         ))}
         {bulkBarSpacer && (
           <tr aria-hidden="true" className="pointer-events-none border-0">
-            <td colSpan={visibleColumns.length + 1} className="!p-0 !border-0 h-24 lg:h-28" />
+            <td colSpan={visibleColumns.length} className="!p-0 !border-0 h-24 lg:h-28" />
           </tr>
         )}
       </tbody>
@@ -7382,7 +7398,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
     <tbody className="divide-y divide-slate-50">
       {topSpacer > 0 && (
         <tr aria-hidden="true" className="pointer-events-none border-0">
-          <td colSpan={visibleColumns.length + 1} className="!p-0 !border-0" style={{ height: `${topSpacer}px` }} />
+          <td colSpan={visibleColumns.length} className="!p-0 !border-0" style={{ height: `${topSpacer}px` }} />
         </tr>
       )}
       {virtualItems.map((virtualRow) => {
@@ -7405,12 +7421,12 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
       })}
       {bottomSpacer > 0 && (
         <tr aria-hidden="true" className="pointer-events-none border-0">
-          <td colSpan={visibleColumns.length + 1} className="!p-0 !border-0" style={{ height: `${bottomSpacer}px` }} />
+          <td colSpan={visibleColumns.length} className="!p-0 !border-0" style={{ height: `${bottomSpacer}px` }} />
         </tr>
       )}
       {bulkBarSpacer && (
         <tr aria-hidden="true" className="pointer-events-none border-0">
-          <td colSpan={visibleColumns.length + 1} className="!p-0 !border-0 h-24 lg:h-28" />
+          <td colSpan={visibleColumns.length} className="!p-0 !border-0 h-24 lg:h-28" />
         </tr>
       )}
     </tbody>
