@@ -5,6 +5,7 @@ import { formatEUR } from '../utils/formatMoney';
 import { buildContainerTitle } from '../utils/buildTitle';
 import { buildRetroContainerAndComponents } from '../utils/retroSoldCompose';
 import {
+  ignoreEqualSplitGroupId,
   suggestEqualSplitSoldGroups,
   type EqualSplitSoldGroup,
 } from '../utils/suggestEqualSplitSoldGroups';
@@ -27,6 +28,8 @@ type Props = {
   items: InventoryItem[];
   onApply: (updates: InventoryItem[]) => void;
   onClose: () => void;
+  /** Fired when a group is permanently marked "not a bundle" (so the Sold banner can refresh). */
+  onIgnored?: () => void;
 };
 
 function toDraft(g: EqualSplitSoldGroup, byId: Map<string, InventoryItem>): DraftGroup {
@@ -44,7 +47,7 @@ function toDraft(g: EqualSplitSoldGroup, byId: Map<string, InventoryItem>): Draf
   };
 }
 
-const SoldEqualSplitGroupsModal: React.FC<Props> = ({ items, onApply, onClose }) => {
+const SoldEqualSplitGroupsModal: React.FC<Props> = ({ items, onApply, onClose, onIgnored }) => {
   const byId = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
   const seedGroups = useMemo(() => suggestEqualSplitSoldGroups(items), [items]);
 
@@ -84,6 +87,14 @@ const SoldEqualSplitGroupsModal: React.FC<Props> = ({ items, onApply, onClose })
     setDismissedIds((prev) => new Set(prev).add(active.id));
     const rest = visibleDrafts.filter((d) => d.id !== active.id);
     setActiveId(rest[0]?.id ?? null);
+  };
+
+  /** Permanently mark as not a bundle — hidden from future suggestions. */
+  const markNotABundle = () => {
+    if (!active) return;
+    ignoreEqualSplitGroupId(active.id);
+    onIgnored?.();
+    dismissActive();
   };
 
   const removePart = (itemId: string) => {
@@ -355,10 +366,19 @@ const SoldEqualSplitGroupsModal: React.FC<Props> = ({ items, onApply, onClose })
                   <footer className="shrink-0 border-t border-slate-100 px-4 sm:px-5 py-3 flex flex-wrap items-center gap-2 bg-white">
                     <button
                       type="button"
-                      onClick={dismissActive}
-                      className="px-3 py-2.5 rounded-xl text-[12px] font-bold text-slate-500 hover:bg-slate-50"
+                      onClick={markNotABundle}
+                      className="px-3 py-2.5 rounded-xl text-[12px] font-bold text-slate-600 border border-slate-200 hover:bg-slate-50"
+                      title="Hide this suggestion permanently — these sales were not a bundle/PC"
                     >
-                      Skip group
+                      Not a bundle
+                    </button>
+                    <button
+                      type="button"
+                      onClick={dismissActive}
+                      className="px-3 py-2.5 rounded-xl text-[12px] font-bold text-slate-400 hover:bg-slate-50"
+                      title="Skip for now — may show again next time"
+                    >
+                      Skip for now
                     </button>
                     <div className="flex-1" />
                     <button

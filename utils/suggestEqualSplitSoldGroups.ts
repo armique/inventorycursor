@@ -3,6 +3,8 @@ import { isRealizedDisposal } from './itemDisposition';
 import { toLocalCalendarDateKey } from './calendarDate';
 import type { RetroComposeKind } from './retroSoldCompose';
 
+const IGNORED_EQUAL_SPLIT_KEY = 'inventory_ignored_equal_split_groups_v1';
+
 export type EqualSplitSoldGroup = {
   id: string;
   sellDate: string;
@@ -17,6 +19,40 @@ export type EqualSplitSoldGroup = {
 
 function round2(n: number): number {
   return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+/** Stable id for a date+price bucket (also used as ignore key). */
+export function equalSplitGroupId(sellDate: string, equalSellPrice: number): string {
+  return `eqsplit-${sellDate}-${round2(equalSellPrice).toFixed(2)}`;
+}
+
+export function loadIgnoredEqualSplitGroupIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(IGNORED_EQUAL_SPLIT_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw) as unknown;
+    if (!Array.isArray(arr)) return new Set();
+    return new Set(arr.filter((x): x is string => typeof x === 'string'));
+  } catch {
+    return new Set();
+  }
+}
+
+function persistIgnoredEqualSplitGroupIds(ids: Set<string>): void {
+  localStorage.setItem(IGNORED_EQUAL_SPLIT_KEY, JSON.stringify([...ids]));
+}
+
+/** Permanently hide a suggested equal-split group ("not a bundle"). */
+export function ignoreEqualSplitGroupId(groupId: string): void {
+  const next = loadIgnoredEqualSplitGroupIds();
+  next.add(groupId);
+  persistIgnoredEqualSplitGroupIds(next);
+}
+
+export function unignoreEqualSplitGroupId(groupId: string): void {
+  const next = loadIgnoredEqualSplitGroupIds();
+  if (!next.delete(groupId)) return;
+  persistIgnoredEqualSplitGroupIds(next);
 }
 
 function isStandaloneSoldCandidate(item: InventoryItem): boolean {
@@ -53,8 +89,13 @@ function suggestKindFromParts(parts: InventoryItem[]): RetroComposeKind {
 /**
  * Find historical sold rows that look like even-split PC/bundle sales:
  * same calendar sell date + identical sell price, 2+ standalone items.
+ * Groups marked "not a bundle" (ignored) are omitted unless includeIgnored is set.
  */
-export function suggestEqualSplitSoldGroups(items: InventoryItem[]): EqualSplitSoldGroup[] {
+export function suggestEqualSplitSoldGroups(
+  items: InventoryItem[],
+  options?: { includeIgnored?: boolean }
+): EqualSplitSoldGroup[] {
+  const ignored = options?.includeIgnored ? new Set<string>() : loadIgnoredEqualSplitGroupIds();
   const buckets = new Map<string, InventoryItem[]>();
 
   for (const item of items) {
@@ -73,11 +114,13 @@ export function suggestEqualSplitSoldGroups(items: InventoryItem[]): EqualSplitS
     if (members.length < 2) continue;
     const [day, priceStr] = key.split('|');
     const equalSellPrice = Number(priceStr);
+    const id = equalSplitGroupId(day!, equalSellPrice);
+    if (ignored.has(id)) continue;
     const sorted = [...members].sort(
       (a, b) => Number(b.buyPrice || 0) - Number(a.buyPrice || 0) || a.name.localeCompare(b.name)
     );
     groups.push({
-      id: `eqsplit-${day}-${priceStr}`,
+      id,
       sellDate: day!,
       equalSellPrice,
       totalSell: round2(equalSellPrice * sorted.length),

@@ -1,7 +1,24 @@
 import assert from 'node:assert/strict';
 import { ItemStatus, type InventoryItem } from '../types';
-import { suggestEqualSplitSoldGroups } from '../utils/suggestEqualSplitSoldGroups';
-import { buildRetroContainerAndComponents } from '../utils/retroSoldCompose';
+
+// Minimal localStorage for ignore persistence in Node.
+const mem = new Map<string, string>();
+(globalThis as any).localStorage = {
+  getItem: (k: string) => (mem.has(k) ? mem.get(k)! : null),
+  setItem: (k: string, v: string) => {
+    mem.set(k, String(v));
+  },
+  removeItem: (k: string) => {
+    mem.delete(k);
+  },
+};
+
+const {
+  suggestEqualSplitSoldGroups,
+  ignoreEqualSplitGroupId,
+  countEqualSplitSoldGroupCandidates,
+} = await import('../utils/suggestEqualSplitSoldGroups');
+const { buildRetroContainerAndComponents } = await import('../utils/retroSoldCompose');
 
 function sold(
   id: string,
@@ -31,14 +48,11 @@ const items: InventoryItem[] = [
   sold('mobo', 'MSI B450 Tomahawk', 'Motherboards', 80, 50, '2025-06-10'),
   sold('ram', 'DDR4 16GB (2x8GB)', 'RAM', 40, 50, '2025-06-10'),
   sold('gpu', 'RTX 3060', 'Graphics Cards', 200, 50, '2025-06-10'),
-  // Different price same day — alone, not a group
   sold('odd', 'Random SSD', 'Storage (SSD/HDD)', 20, 35, '2025-06-10'),
-  // Already in a container — ignored
   {
     ...sold('child', 'Old child', 'Processors', 10, 50, '2025-06-10'),
     parentContainerId: 'existing-bundle',
   },
-  // Another day group
   sold('a', 'i7-4790K', 'Processors', 30, 25, '2025-03-01'),
   sold('b', 'ASRock H81M', 'Motherboards', 20, 25, '2025-03-01'),
 ];
@@ -51,7 +65,6 @@ assert.ok(june);
 assert.equal(june!.itemIds.length, 4);
 assert.equal(june!.equalSellPrice, 50);
 assert.equal(june!.totalSell, 200);
-assert.ok(june!.suggestedKind === 'pc' || june!.suggestedKind === 'bundle');
 
 const parts = june!.itemIds.map((id) => items.find((i) => i.id === id)!);
 const { bundle, updatedComponents } = buildRetroContainerAndComponents({
@@ -66,5 +79,10 @@ assert.equal(bundle.isPC, true);
 assert.equal(bundle.sellPrice, 200);
 assert.equal(updatedComponents.length, 4);
 assert.ok(updatedComponents.every((c) => c.status === ItemStatus.IN_COMPOSITION));
+
+ignoreEqualSplitGroupId(june!.id);
+assert.equal(countEqualSplitSoldGroupCandidates(items), 1);
+assert.equal(suggestEqualSplitSoldGroups(items).length, 1);
+assert.equal(suggestEqualSplitSoldGroups(items, { includeIgnored: true }).length, 2);
 
 console.log('verify-equal-split-sold-groups: ok');

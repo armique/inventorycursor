@@ -1565,6 +1565,7 @@ const InventoryList: React.FC<Props> = ({
   const [bulkGenerateProgress, setBulkGenerateProgress] = useState<string | null>(null);
   const [showRetroBundle, setShowRetroBundle] = useState(false);
   const [showEqualSplitGroups, setShowEqualSplitGroups] = useState(false);
+  const [equalSplitIgnoreRev, setEqualSplitIgnoreRev] = useState(0);
   const [recalcTarget, setRecalcTarget] = useState<InventoryItem | null>(null);
   const [showComposeType, setShowComposeType] = useState(false);
   const [quickBundleSeed, setQuickBundleSeed] = useState<InventoryItem | null>(null);
@@ -2927,7 +2928,7 @@ const InventoryList: React.FC<Props> = ({
 
   const equalSplitGroupCount = useMemo(
     () => countEqualSplitSoldGroupCandidates(items),
-    [items]
+    [items, equalSplitIgnoreRev]
   );
 
   const handleApplyRecalc = (updates: Array<{ itemId: string; newSellPrice: number }>) => {
@@ -6774,7 +6775,11 @@ const InventoryList: React.FC<Props> = ({
               setTimeout(() => setToast(null), 2400);
             }
           }}
-          onClose={() => setShowEqualSplitGroups(false)}
+          onIgnored={() => setEqualSplitIgnoreRev((n) => n + 1)}
+          onClose={() => {
+            setEqualSplitIgnoreRev((n) => n + 1);
+            setShowEqualSplitGroups(false);
+          }}
         />
       )}
 
