@@ -83,12 +83,13 @@ const ReinvestCheatSheet: React.FC<Props> = ({ variants, bundles, fees }) => {
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white shadow-card overflow-hidden">
-        <div className="hidden sm:grid grid-cols-[1fr_auto_auto_auto_auto] gap-3 px-3 py-2 bg-slate-50 border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-400">
+        <div className="hidden sm:grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-3 px-3 py-2 bg-slate-50 border-b border-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-400">
           <span>Item</span>
           <span>Buy ≤</span>
-          <span>Sell ~</span>
+          <span>KA</span>
+          <span>eBay</span>
           <span>Days</span>
-          <span>Conf.</span>
+          <span />
         </div>
         {!rows.length ? (
           <p className="p-4 text-xs font-semibold text-slate-400">No matches.</p>
@@ -101,13 +102,17 @@ const ReinvestCheatSheet: React.FC<Props> = ({ variants, bundles, fees }) => {
                 <button
                   type="button"
                   onClick={() => setExpandedKey(isOpen ? null : row.key)}
-                  className="w-full grid grid-cols-2 sm:grid-cols-[1fr_auto_auto_auto_auto] gap-2 sm:gap-3 items-center px-3 py-2.5 text-left hover:bg-slate-50"
+                  className="w-full grid grid-cols-2 sm:grid-cols-[1fr_auto_auto_auto_auto_auto] gap-2 sm:gap-3 items-center px-3 py-2.5 text-left hover:bg-slate-50"
                 >
                   <span className="col-span-2 sm:col-span-1 min-w-0 flex items-center gap-2">
                     <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${CONFIDENCE_DOT[row.confidence]}`} />
                     <span className="min-w-0">
                       <span className="block text-xs font-bold text-slate-800 truncate">{row.label}</span>
-                      <span className="block text-[10px] text-slate-400 font-semibold truncate">{row.category}</span>
+                      <span className="block text-[10px] text-slate-400 font-semibold truncate">
+                        {row.verdict === 'restock' ? 'Restock · ' : ''}
+                        {row.category}
+                        {row.profitPerDay > 0 ? ` · ${formatEURPrefix(row.profitPerDay)}/day` : ''}
+                      </span>
                     </span>
                     <span
                       title={whyText(row)}
@@ -119,19 +124,18 @@ const ReinvestCheatSheet: React.FC<Props> = ({ variants, bundles, fees }) => {
                   <span className="text-xs font-black text-slate-900">
                     {pricing.suggestedMaxBuy != null ? formatEURPrefix(pricing.suggestedMaxBuy) : '—'}
                   </span>
-                  <span className="text-xs font-bold text-slate-600 flex items-center gap-1 flex-wrap">
-                    {row.sellKaCount > 0 && (
-                      <span className="px-1.5 py-0.5 rounded bg-slate-100 text-[9px] font-black">
-                        K {formatEURPrefix(pricing.sellKa)}
-                      </span>
+                  <span className="text-xs font-bold text-slate-700">
+                    {pricing.sellKa > 0 ? formatEURPrefix(pricing.sellKa) : '—'}
+                    {pricing.sellKaSource === 'derived' && (
+                      <span className="block text-[9px] font-semibold text-slate-400">derived</span>
                     )}
-                    {row.sellEbayCount > 0 && (
-                      <span className="px-1.5 py-0.5 rounded bg-slate-100 text-[9px] font-black">
-                        eBay {formatEURPrefix(pricing.sellEbay)}
+                  </span>
+                  <span className="text-xs font-bold text-slate-700">
+                    {pricing.sellEbay > 0 ? formatEURPrefix(pricing.sellEbay) : '—'}
+                    {pricing.sellEbay > 0 && (
+                      <span className="block text-[9px] font-semibold text-slate-400">
+                        −{pricing.ebayFeePct}% → {formatEURPrefix(pricing.pocketEbay)}
                       </span>
-                    )}
-                    {!row.sellKaCount && !row.sellEbayCount && (
-                      <span className="text-slate-400">{formatEURPrefix(pricing.sellKa || pricing.sellEbay)}</span>
                     )}
                   </span>
                   <span className="text-xs font-semibold text-slate-500">{Math.round(row.avgDaysToSell)}d</span>

@@ -15,13 +15,14 @@ import {
 import type { Expense, InventoryItem, TaxMode } from '../types';
 import { buildReinvestData, type ReinvestGroup, type AnchorBundleGroup } from '../utils/reinvestAnalysis';
 import { loadBuyHelperFees, type BuyHelperFees } from '../utils/buyHelper';
-import { saveFlipFees, type FlipFeeSettings } from '../utils/flipCoach';
+import { saveFlipFees, totalEbayFeePct, type FlipFeeSettings } from '../utils/flipCoach';
 import { loadReinvestMarginOverrides } from '../utils/reinvestSettings';
 import { canUseReinvestAI, generateReinvestHypotheses, hypothesisToGroup } from '../services/reinvestAI';
 import { markQuestDone, type GamificationState } from '../utils/gamification';
 import { formatEURPrefix } from '../utils/formatMoney';
 import ReinvestCard from './reinvest/ReinvestCard';
 import ReinvestCheatSheet from './reinvest/ReinvestCheatSheet';
+import ReinvestBestSellers from './reinvest/ReinvestBestSellers';
 import ReinvestStockedStrip from './reinvest/ReinvestStockedStrip';
 import ReinvestSkipList from './reinvest/ReinvestSkipList';
 import ReinvestGameTab from './reinvest/ReinvestGameTab';
@@ -139,11 +140,11 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-black text-slate-900 flex items-center gap-2">
-            <Coins size={20} className="text-brand-500" /> Reinvest
+            <Coins size={20} className="text-brand-500" /> Reinvest Advisor
           </h1>
           <p className="text-xs text-slate-400 font-semibold flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            Live — priced from your own sales
+            What to restock · buy ceiling · KA &amp; eBay sell (−{totalEbayFeePct(fees)}% eBay fees)
           </p>
         </div>
         <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1">
@@ -259,6 +260,16 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
                     className="w-16 px-2 py-1 rounded-lg border border-slate-200 font-bold text-xs"
                   />
                 </label>
+                <p className="text-[10px] font-black text-slate-700">
+                  Total eBay cut: {totalEbayFeePct(fees)}%
+                </p>
+                <button
+                  type="button"
+                  onClick={() => updateFees({ ebayFeePct: 12.5, ebayAdsPct: 12.5 })}
+                  className="w-full py-1.5 rounded-lg bg-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-600 hover:bg-slate-200"
+                >
+                  Reset to 25%
+                </button>
                 <p className="text-[10px] text-slate-400 font-semibold">Shared with Flip Coach / Buy Helper.</p>
               </div>
             )}
@@ -309,6 +320,12 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
             </p>
           )}
 
+          <ReinvestBestSellers
+            groups={[...data.variants, ...data.bundles]}
+            fees={fees}
+            limit={5}
+          />
+
           {nothingToShow && (
             <p className="text-sm text-slate-400 font-semibold p-6 text-center">
               {data.variants.length
@@ -320,7 +337,7 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
           {restock.length > 0 && (
             <div>
               <h2 className="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-2">
-                Buy now · fastest and most profitable first
+                Restock now · buy ceiling + KA / eBay sell prices
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {restock.map((g) => (

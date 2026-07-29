@@ -169,14 +169,45 @@ const ReinvestCard: React.FC<Props> = ({
         )}
       </div>
 
-      <div className="mt-3">
+      <div className="mt-3 space-y-2.5">
+        {group.verdict === 'restock' && (
+          <p className="text-[10px] font-black uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-1 inline-block">
+            Restock · sells well
+          </p>
+        )}
         <p className="text-xl font-black text-slate-900">
-          Buy up to {calc.suggestedMaxBuy != null ? formatEURPrefix(calc.suggestedMaxBuy) : '—'}
+          Buy ≤ {calc.suggestedMaxBuy != null ? formatEURPrefix(calc.suggestedMaxBuy) : '—'}
         </p>
-        <p className="text-xs text-slate-500 font-semibold flex items-center gap-1.5 mt-0.5">
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-lg bg-slate-50 border border-slate-100 px-2.5 py-2">
+            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Sell on KA</p>
+            <p className="text-sm font-black text-slate-900">
+              {calc.sellKa > 0 ? formatEURPrefix(calc.sellKa) : '—'}
+            </p>
+            {calc.sellKaSource === 'derived' && (
+              <p className="text-[9px] font-semibold text-slate-400">from eBay pocket</p>
+            )}
+          </div>
+          <div className="rounded-lg bg-slate-50 border border-slate-100 px-2.5 py-2">
+            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">
+              Sell on eBay · {calc.ebayFeePct}% fees
+            </p>
+            <p className="text-sm font-black text-slate-900">
+              {calc.sellEbay > 0 ? formatEURPrefix(calc.sellEbay) : '—'}
+            </p>
+            {calc.pocketEbay > 0 && (
+              <p className="text-[9px] font-semibold text-slate-500">
+                → {formatEURPrefix(calc.pocketEbay)} pocket
+                {calc.sellEbaySource === 'derived' ? ' · matched to KA' : ''}
+              </p>
+            )}
+          </div>
+        </div>
+        <p className="text-xs text-slate-500 font-semibold flex items-center gap-1.5">
           <TrendIcon size={13} className={trendColor} />~
-          {formatEURPrefix(group.overallSellMedian ?? calc.sellKa ?? calc.sellEbay)} · ~{Math.round(group.avgDaysToSell)}d
+          {Math.round(group.avgDaysToSell)}d
           {group.profitPerDay > 0 && <> · {formatEURPrefix(group.profitPerDay)}/day</>}
+          {group.soldCount > 0 && <> · {group.soldCount} sold</>}
         </p>
       </div>
 
@@ -244,24 +275,34 @@ const ReinvestCard: React.FC<Props> = ({
             </div>
           )}
 
-          {(group.sellKaCount > 0 || group.sellEbayCount > 0) && (
-            <table className="w-full text-[11px]">
-              <tbody>
-                <tr>
-                  <td className="text-slate-400 font-semibold py-0.5">Kleinanzeigen</td>
-                  <td className="text-right font-bold text-slate-700 py-0.5">
-                    {group.sellKaCount > 0 ? `${group.sellKaCount} sold · avg ${formatEURPrefix(group.sellKaMedian!)}` : 'no data'}
-                  </td>
-                </tr>
-                <tr>
-                  <td className="text-slate-400 font-semibold py-0.5">eBay.de</td>
-                  <td className="text-right font-bold text-slate-700 py-0.5">
-                    {group.sellEbayCount > 0 ? `${group.sellEbayCount} sold · avg ${formatEURPrefix(group.sellEbayMedian!)}` : 'no data'}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          )}
+          <p className="text-[11px] font-semibold text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
+            {calc.advice}
+          </p>
+
+          <table className="w-full text-[11px]">
+            <tbody>
+              <tr>
+                <td className="text-slate-400 font-semibold py-0.5">Kleinanzeigen history</td>
+                <td className="text-right font-bold text-slate-700 py-0.5">
+                  {group.sellKaCount > 0
+                    ? `${group.sellKaCount} sold · avg ${formatEURPrefix(group.sellKaMedian!)}`
+                    : calc.sellKaSource === 'derived'
+                      ? `suggested ${formatEURPrefix(calc.sellKa)}`
+                      : 'no data'}
+                </td>
+              </tr>
+              <tr>
+                <td className="text-slate-400 font-semibold py-0.5">eBay history (list)</td>
+                <td className="text-right font-bold text-slate-700 py-0.5">
+                  {group.sellEbayCount > 0
+                    ? `${group.sellEbayCount} sold · avg ${formatEURPrefix(group.sellEbayMedian!)}`
+                    : calc.sellEbaySource === 'derived'
+                      ? `suggested ${formatEURPrefix(calc.sellEbay)} after ${calc.ebayFeePct}% fees`
+                      : 'no data'}
+                </td>
+              </tr>
+            </tbody>
+          </table>
 
           <div>
             <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">
@@ -279,17 +320,23 @@ const ReinvestCard: React.FC<Props> = ({
             />
             <div className="grid grid-cols-2 gap-2 text-[11px] mt-2">
               <div className="rounded-lg bg-slate-50 px-2 py-1.5">
-                <p className="font-black text-slate-400 uppercase tracking-wider text-[9px]">Kleinanzeigen</p>
+                <p className="font-black text-slate-400 uppercase tracking-wider text-[9px]">
+                  KA @ {calc.sellKa > 0 ? formatEURPrefix(calc.sellKa) : '—'}
+                </p>
                 {calc.ka ? (
-                  <p className="font-bold text-slate-800">+{formatEURPrefix(calc.ka.netProfit)} profit</p>
+                  <p className="font-bold text-slate-800">+{formatEURPrefix(calc.ka.netProfit)} net</p>
                 ) : (
                   <p className="text-slate-400">no data</p>
                 )}
               </div>
               <div className="rounded-lg bg-slate-50 px-2 py-1.5">
-                <p className="font-black text-slate-400 uppercase tracking-wider text-[9px]">eBay.de</p>
+                <p className="font-black text-slate-400 uppercase tracking-wider text-[9px]">
+                  eBay @ {calc.sellEbay > 0 ? formatEURPrefix(calc.sellEbay) : '—'}
+                </p>
                 {calc.ebay ? (
-                  <p className="font-bold text-slate-800">+{formatEURPrefix(calc.ebay.netProfit)} profit</p>
+                  <p className="font-bold text-slate-800">
+                    +{formatEURPrefix(calc.ebay.netProfit)} net · {formatEURPrefix(calc.ebay.pocket)} pocket
+                  </p>
                 ) : (
                   <p className="text-slate-400">no data</p>
                 )}
