@@ -80,6 +80,7 @@ import TradeModal from './TradeModal';
 import GiftModal from './GiftModal';
 import CrossPostingModal from './CrossPostingModal';
 import RetroBundleModal from './RetroBundleModal';
+import SoldEqualSplitGroupsModal from './SoldEqualSplitGroupsModal';
 import ReinvestBundleRecalcModal from './ReinvestBundleRecalcModal';
 import ComposeTypeModal, { type ComposeType } from './ComposeTypeModal';
 import QuickBundleAddModal from './QuickBundleAddModal';
@@ -102,6 +103,7 @@ import { findMatchingOrdersForItem, type EbayOrderMatch } from '../utils/ebayOrd
 import { applyEbayOrderMatchToItem } from '../utils/applyEbayOrderMatch';
 import ContainerMembershipBadge from './ContainerMembershipBadge';
 import { buildContainerTitle } from '../utils/buildTitle';
+import { countEqualSplitSoldGroupCandidates } from '../utils/suggestEqualSplitSoldGroups';
 import { pickSpecsAiNameVendorUpdates } from '../utils/applySpecsAiResult';
 import {
   buildContainersById,
@@ -1562,6 +1564,7 @@ const InventoryList: React.FC<Props> = ({
   const [bulkGenerateDescriptions, setBulkGenerateDescriptions] = useState(false);
   const [bulkGenerateProgress, setBulkGenerateProgress] = useState<string | null>(null);
   const [showRetroBundle, setShowRetroBundle] = useState(false);
+  const [showEqualSplitGroups, setShowEqualSplitGroups] = useState(false);
   const [recalcTarget, setRecalcTarget] = useState<InventoryItem | null>(null);
   const [showComposeType, setShowComposeType] = useState(false);
   const [quickBundleSeed, setQuickBundleSeed] = useState<InventoryItem | null>(null);
@@ -2921,6 +2924,11 @@ const InventoryList: React.FC<Props> = ({
        }
      });
   };
+
+  const equalSplitGroupCount = useMemo(
+    () => countEqualSplitSoldGroupCandidates(items),
+    [items]
+  );
 
   const handleApplyRecalc = (updates: Array<{ itemId: string; newSellPrice: number }>) => {
     const byId = new Map(updates.map((u) => [u.itemId, u.newSellPrice]));
@@ -5998,6 +6006,23 @@ const InventoryList: React.FC<Props> = ({
             </div>
          )}
 
+         {(statusFilter === 'SOLD' || splitView) && equalSplitGroupCount > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 px-2 py-1 rounded-lg border border-indigo-200 bg-indigo-50 text-[10px] text-indigo-950">
+              <Layers size={12} className="text-indigo-600 shrink-0" />
+              <span>
+                <strong>{equalSplitGroupCount}</strong> possible historical bundle
+                {equalSplitGroupCount === 1 ? '' : 's'} (same sell date + price)
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowEqualSplitGroups(true)}
+                className="ml-auto px-1.5 py-0.5 rounded bg-indigo-200/80 font-bold hover:bg-indigo-300/80"
+              >
+                Review
+              </button>
+            </div>
+         )}
+
          {(statusFilter === 'SOLD' || splitView) && missingPlatformSoldCount > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 px-2 py-1 rounded-lg border border-amber-200 bg-amber-50 text-[10px] text-amber-950">
               <AlertTriangle size={12} className="text-amber-600 shrink-0" />
@@ -6729,6 +6754,27 @@ const InventoryList: React.FC<Props> = ({
             allItems={items}
             onConfirm={handleCreateRetroBundle}
             onClose={() => setShowRetroBundle(false)}
+        />
+      )}
+
+      {showEqualSplitGroups && (
+        <SoldEqualSplitGroupsModal
+          items={items}
+          onApply={(updates) => {
+            const parent = updates.find((u) => u.isBundle || u.isPC);
+            onUpdate(updates);
+            if (parent) {
+              setScrollTargetItemId(parent.id);
+              setCollapsedBundles((prev) => {
+                const next = new Set(prev);
+                next.delete(parent.id);
+                return next;
+              });
+              setToast(`Grouped as ${parent.isPC ? 'PC' : 'Bundle'}: ${parent.name}`);
+              setTimeout(() => setToast(null), 2400);
+            }
+          }}
+          onClose={() => setShowEqualSplitGroups(false)}
         />
       )}
 

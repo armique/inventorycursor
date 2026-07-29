@@ -17,7 +17,7 @@ export function buildRetroContainerAndComponents(args: {
   useSmartDistribution: boolean;
 }): { bundle: InventoryItem; updatedComponents: InventoryItem[] } {
   const { items, allItems, kind, bundleName, sellDate, useSmartDistribution } = args;
-  const bundleId = `bundle-${Date.now()}`;
+  const bundleId = `bundle-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const totalBuy = round2(items.reduce((sum, i) => sum + Number(i.buyPrice || 0), 0));
   const totalSell = round2(items.reduce((sum, i) => sum + Number(i.sellPrice || 0), 0));
   const totalFees = round2(items.reduce((sum, i) => sum + Number(i.feeAmount || 0), 0));
