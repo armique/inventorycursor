@@ -116,6 +116,7 @@ export function toInboxEntryFromEbay(record: EbayPurchaseRecord): InboxEntry {
     // eBay gives ids, not URLs — the order/profile links are derived from them.
     sourceLinks: resolveSourceLinks({
       externalOrderId: record.orderId,
+      ebayItemId: record.itemId || undefined,
       ebayUsername: record.sellerUsername,
     }),
     // eBay always exposes the seller username up front.

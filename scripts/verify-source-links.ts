@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict';
 import { ItemStatus, type InventoryItem } from '../types';
 import {
+  buildEbayItemUrl,
   buildEbayOrderUrl,
   buildEbayProfileUrl,
   hasNoSourceLink,
@@ -80,16 +81,20 @@ const KA_PROFILE = 'https://www.kleinanzeigen.de/s-bestandsliste.html?userId=42'
     buildEbayOrderUrl('01-14946-82253'),
     'https://www.ebay.de/mesh/ord/details?orderid=01-14946-82253'
   );
+  assert.equal(buildEbayItemUrl('276603456789'), 'https://www.ebay.de/itm/276603456789');
   assert.equal(buildEbayProfileUrl('cpu_dealer'), 'https://www.ebay.de/usr/cpu_dealer');
   assert.equal(buildEbayOrderUrl(''), undefined);
+  assert.equal(buildEbayItemUrl(''), undefined);
   assert.equal(buildEbayProfileUrl(undefined), undefined);
 
-  const links = resolveItemSourceLinks(item({ ebayOrderId: '01-14946-82253', ebayUsername: 'cpu_dealer' }));
-  assert.equal(links.order?.url, 'https://www.ebay.de/mesh/ord/details?orderid=01-14946-82253');
+  const links = resolveItemSourceLinks(
+    item({ ebayOrderId: '01-14946-82253', ebayListingId: '276603456789', ebayUsername: 'cpu_dealer' })
+  );
+  assert.equal(links.order?.url, 'https://www.ebay.de/itm/276603456789');
   assert.equal(links.profile?.url, 'https://www.ebay.de/usr/cpu_dealer');
   assert.equal(links.externalOrderId, '01-14946-82253');
   assert.equal(links.chat, undefined, 'eBay has no per-order chat URL');
-  assert.match(links.order?.title || '', /built from the order number/);
+  assert.match(links.order?.title || '', /built from the item id|built from the order number/);
 }
 
 // --- non-http values are ignored rather than rendered as broken links ---

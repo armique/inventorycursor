@@ -43,6 +43,13 @@ export function buildEbayOrderUrl(orderId?: string): string | undefined {
   return `https://www.ebay.de/mesh/ord/details?orderid=${encodeURIComponent(id)}`;
 }
 
+/** eBay listing page by item id (works for buyer-side history too). */
+export function buildEbayItemUrl(itemId?: string): string | undefined {
+  const id = itemId?.trim();
+  if (!id) return undefined;
+  return `https://www.ebay.de/itm/${encodeURIComponent(id)}`;
+}
+
 /** eBay member profile page. */
 export function buildEbayProfileUrl(username?: string): string | undefined {
   const name = username?.trim();
@@ -67,6 +74,8 @@ function link(
 /** Shape both items and inbox transactions can be read through. */
 export interface SourceLinkSubject extends SourceLinks {
   ebayOrderId?: string;
+  ebayItemId?: string;
+  ebayListingId?: string;
   ebayUsername?: string;
   kleinanzeigenChatUrl?: string;
   kleinanzeigenBuyChatUrl?: string;
@@ -89,6 +98,12 @@ export function resolveSourceLinks(subject: SourceLinkSubject): ResolvedSourceLi
   const order =
     link('order', subject.sourceOrderUrl, 'Order', 'Open the order / listing') ||
     link('order', subject.kleinanzeigenListingUrl, 'Listing', 'Open the Kleinanzeigen listing') ||
+    link(
+      'order',
+      buildEbayItemUrl(subject.ebayItemId || subject.ebayListingId),
+      'Listing',
+      'Open the eBay listing (built from the item id)'
+    ) ||
     link(
       'order',
       buildEbayOrderUrl(subject.externalOrderId || subject.ebayOrderId),
