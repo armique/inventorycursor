@@ -409,6 +409,8 @@ function clampAutoColumnWidth(colId: ColumnId, w: number): number {
             : 52;
   const absoluteMax = ['buyPrice', 'sellPrice', 'storePrice', 'profit'].includes(colId)
     ? 1600
+    : colId === 'presence'
+      ? PRESENCE_COL_WIDTH + 80
     : colId === 'actions'
       ? 960
       : 720;
@@ -2912,6 +2914,12 @@ const InventoryList: React.FC<Props> = ({
        next.delete(bundle.id);
        return next;
      });
+     // Clear any horizontal scroll leftover from the modal / selection bar layout swap.
+     requestAnimationFrame(() => {
+       for (const ref of [tableContainerRef, activeTableRef, soldTableRef]) {
+         if (ref.current) ref.current.scrollLeft = 0;
+       }
+     });
   };
 
   const handleApplyRecalc = (updates: Array<{ itemId: string; newSellPrice: number }>) => {
@@ -3029,21 +3037,14 @@ const InventoryList: React.FC<Props> = ({
      setSelectedIds([]);
   };
 
-  const renderCell = (item: InventoryItem, id: ColumnId, isSelected: boolean, itemFlexWidth?: number | null) => {
+  const renderCell = (item: InventoryItem, id: ColumnId, isSelected: boolean, _itemFlexWidth?: number | null) => {
     const width = effectiveColumnWidths[id] || columnWidths[id] || DEFAULT_WIDTHS[id];
-    // The item/name column is the one meant to grow into any leftover space on wide screens
-    // instead of leaving it in a separate blank filler column. itemFlexWidth is computed by
-    // InventoryListTablePane from its own measured container width (see there for why: neither
-    // an unset width nor width:100% survives table-layout:fixed reliably once sibling columns'
-    // widths already exceed the container — both silently collapsed this column to 0).
-    const width_ = id === 'item' && itemFlexWidth != null ? itemFlexWidth : width;
-    // Item column must be able to grow into leftover viewport space — locking maxWidth
-    // equal to width leaves a permanent dead strip on the right once sibling auto-widths change
-    // (e.g. after composing a sold bundle that widens Flags / price columns).
+    // Item soaks leftover viewport space via CSS (no explicit px width). Fixed width/maxWidth
+    // here left a dead strip on the right after sold-bundle compose when auto column widths changed.
     const style =
       id === 'item'
-        ? { width: `${width_}px`, minWidth: `${width_}px`, maxWidth: 'none' as const }
-        : { width: `${width_}px`, minWidth: `${width_}px`, maxWidth: `${width_}px` };
+        ? { minWidth: `${DEFAULT_WIDTHS.item}px`, width: 'auto' as const, maxWidth: 'none' as const }
+        : { width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px` };
     const dense = listDensity === 'compact';
     const iconBtn = dense ? 'h-6 w-6' : 'h-7 w-7';
     const thumbPx = dense ? 32 : 36;
@@ -3061,7 +3062,7 @@ const InventoryList: React.FC<Props> = ({
         return (
           <td key={id} className="inv-col-icons border-r border-slate-100/90 align-middle" style={style} onClick={(e) => e.stopPropagation()}>
             <div
-              className={`flex flex-wrap ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-start shrink-0`}
+              className={`flex flex-wrap ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-start min-w-0 max-w-full`}
             >
               {/* Physical presence: present → lost → defective → unknown */}
               {(() => {
@@ -7714,50 +7715,18 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
     [scrollRef]
   );
 
-  // Measured so the item/name column can be given an explicit pixel width that fills any
-  // leftover space on wide screens. Neither an unset width nor width:100% survives
-  // table-layout:fixed reliably once the OTHER columns' widths already exceed the container —
-  // both silently collapsed this column to 0 instead of respecting its min-width floor.
-  const [containerWidth, setContainerWidth] = useState(0);
-  // Synchronous measurement on mount/pane-switch so the column has its final width for the
-  // very first paint, rather than waiting on ResizeObserver's first (async) callback.
-  useLayoutEffect(() => {
-    // clientWidth (not getBoundingClientRect) excludes the vertical scrollbar's own gutter —
-    // using the latter here briefly overshoots by the scrollbar's width whenever the row count
-    // needs one, since at this first synchronous pass the table hasn't overflowed vertically
-    // yet to reserve that gutter (ResizeObserver's contentRect, once it fires, always excludes
-    // it correctly; this fallback needs to match that from the very first paint).
-    if (scrollElement) setContainerWidth(scrollElement.clientWidth);
-  }, [scrollElement]);
-  useEffect(() => {
-    if (!scrollElement) return;
-    const ro = new ResizeObserver((entries) => {
-      const w = entries[0]?.contentRect.width;
-      if (w != null) setContainerWidth(w);
-    });
-    ro.observe(scrollElement);
-    return () => ro.disconnect();
-  }, [scrollElement]);
-
-  const itemFlexWidth = useMemo(() => {
-    if (!containerWidth || !visibleColumns.includes('item')) return null;
-    const floor = columnWidths['item'] || DEFAULT_WIDTHS['item'];
-    const othersWidth = visibleColumns
-      .filter((id) => id !== 'item')
-      .reduce((sum, id) => sum + (columnWidths[id] || DEFAULT_WIDTHS[id]), 0);
-    // clientWidth / contentRect already exclude the vertical scrollbar; only keep a tiny
-    // epsilon so rounding never trips an unwanted horizontal scrollbar.
-    const epsilon = 2;
-    return Math.max(floor, containerWidth - othersWidth - epsilon);
-  }, [containerWidth, visibleColumns, columnWidths]);
-
-  // After list data / column-width changes (sold-bundle compose, expand), re-read the pane
-  // width so the item column can re-soak leftover space instead of leaving a dead strip.
-  useLayoutEffect(() => {
-    if (!scrollElement) return;
-    const w = scrollElement.clientWidth;
-    if (w > 0) setContainerWidth(w);
-  }, [scrollElement, paneItems.length, columnWidths, visibleColumns]);
+  // Fixed sibling columns + a flexible item column. Table min-width = siblings + item floor so
+  // item never collapses to 0 when siblings are wide; leftover viewport space always goes to item
+  // (no fragile px math — that left a dead strip after sold-bundle auto-width changes).
+  const itemFloor = columnWidths['item'] || DEFAULT_WIDTHS['item'];
+  const othersWidth = useMemo(
+    () =>
+      visibleColumns
+        .filter((id) => id !== 'item')
+        .reduce((sum, id) => sum + (columnWidths[id] || DEFAULT_WIDTHS[id]), 0),
+    [visibleColumns, columnWidths]
+  );
+  const tableMinWidth = othersWidth + itemFloor;
 
   const timeGaugeTitle =
     paneStatus === 'SOLD' ? 'Sale speed' : paneStatus === 'ACTIVE' ? 'Stock age' : 'Hold / sale';
@@ -7783,26 +7752,38 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
         style={{ overflowAnchor: 'none' }}
       >
         <table
-          className="w-full text-left border-collapse min-w-[1160px] table-fixed"
+          className="w-full text-left border-collapse table-fixed"
+          style={{ minWidth: tableMinWidth, width: '100%' }}
           data-inventory-table
           data-density={listDensity}
           {...(bulkBatchActive ? { 'data-bulk-batch': '' } : {})}
         >
+          <colgroup>
+            {visibleColumns.map((colId) =>
+              colId === 'item' ? (
+                <col key={colId} style={{ minWidth: itemFloor }} />
+              ) : (
+                <col
+                  key={colId}
+                  style={{
+                    width: columnWidths[colId] || DEFAULT_WIDTHS[colId],
+                  }}
+                />
+              )
+            )}
+          </colgroup>
           <thead className="sticky top-0 z-10 bg-white">
             <tr className="bg-slate-50/80 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-widest backdrop-blur-sm">
               {visibleColumns.map((colId) => {
                 const rawW = columnWidths[colId] || DEFAULT_WIDTHS[colId];
-                // Mirrors renderCell's item-column treatment: an explicit pixel width computed
-                // from the measured container (itemFlexWidth), not just the stored/default one.
-                const w = colId === 'item' && itemFlexWidth != null ? itemFlexWidth : rawW;
                 const sortable = !['actions', 'select', 'parseSpecs'].includes(colId);
                 const canDrag = colId !== 'select';
                 const isDragging = draggingColumnId === colId;
                 const isDragOver = dragOverColumnId === colId && draggingColumnId !== colId;
                 const thStyle =
                   colId === 'item'
-                    ? { width: w, minWidth: w, maxWidth: 'none' as const }
-                    : { width: w, minWidth: w, maxWidth: w };
+                    ? { minWidth: itemFloor }
+                    : { width: rawW, minWidth: rawW, maxWidth: rawW };
                 return (
                   <th
                     key={colId}
@@ -7909,9 +7890,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
                   </th>
                 );
               })}
-              {/* No separate filler column: the item/name column above is left unwidth'd by
-                  default (see itemFlexWidth above) and soaks up any leftover space itself,
-                  so wide screens show more of the name instead of a blank strip. */}
+              {/* Item column has no fixed width (see colgroup) so it soaks leftover viewport space. */}
             </tr>
           </thead>
           <InventoryTableBody
@@ -7919,7 +7898,6 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
             selectedIdSet={selectedIdSet}
             visibleColumns={visibleColumns}
             renderRowCells={renderRowCells}
-            itemFlexWidth={itemFlexWidth}
             getRowActivityKey={getRowActivityKey}
             highlightedItemId={highlightedItemId}
             aiStates={aiStates}
