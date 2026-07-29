@@ -17,6 +17,11 @@ import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 import { CATEGORY_IMAGES, getSpecOptions } from '../services/hardwareDB';
 import { generateItemSpecs, getSpecsAIProvider, suggestPriceFromSoldListings, type SoldPriceSuggestion } from '../services/specsAI';
 import { pickSpecsAiNameVendorUpdates } from '../utils/applySpecsAiResult';
+import { AiProvenanceNote } from './AiBadge';
+import SourceLinkIcons from './SourceLinkIcons';
+import ProofAttachmentsPanel from './ProofAttachmentsPanel';
+import { resolveItemSourceLinks } from '../utils/sourceLinks';
+import { useItemAiStates } from '../hooks/useAiActions';
 import { getCompatibleItemsForItem } from '../services/compatibility';
 import {
   mergeAiSpecsIntoEssential,
@@ -141,6 +146,8 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const isPcBuilderMode = searchParams.get('mode') === 'pc_builder';
+  const aiStates = useItemAiStates();
+  const itemAiState = id ? aiStates.get(id) : undefined;
 
   /** Optional partial prefill from Reinvest Assistant's "Confirm purchase" button — never a full
    * InventoryItem, so it merges over defaults instead of replacing them like `initialData`. */
@@ -167,6 +174,9 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   useEffect(() => {
     formDataRef.current = formData;
   }, [formData]);
+
+  /** Chat / order / profile links, derived from legacy fields when not stored explicitly. */
+  const sourceLinks = useMemo(() => resolveItemSourceLinks(formData as InventoryItem), [formData]);
 
   const photoItemIdRef = React.useRef(initialData?.id || id || `item-draft-${Date.now()}`);
   const getPhotoItemId = () =>
@@ -1310,6 +1320,36 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
         </header>
       )}
 
+      {id && sourceLinks.list.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+            Source
+          </span>
+          <SourceLinkIcons links={sourceLinks} />
+          {sourceLinks.externalOrderId && (
+            <span className="text-[10px] font-bold text-slate-400">
+              #{sourceLinks.externalOrderId}
+            </span>
+          )}
+        </div>
+      )}
+
+      {id && itemAiState && (
+        <AiProvenanceNote
+          aiState={itemAiState}
+          reviewStatus={formData.aiReviewStatus}
+          className="mb-3"
+          action={
+            <Link
+              to="/panel/ai-actions"
+              className="inline-flex items-center px-2.5 py-1.5 rounded-lg bg-violet-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-violet-500"
+            >
+              Review
+            </Link>
+          }
+        />
+      )}
+
       {compatWarnings.length > 0 && (
         <div className="space-y-1">
           {compatWarnings.map((w, i) => (
@@ -2401,6 +2441,14 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
               </div>
 
               <div className="lg:col-span-5 space-y-4">
+                 <ProofAttachmentsPanel
+                   recordId={getPhotoItemId()}
+                   attachments={formData.proofAttachments}
+                   record={formData as unknown as Record<string, unknown>}
+                   disabled={!id && !initialData?.id}
+                   onChange={(next) => setFormData({ ...formData, proofAttachments: next })}
+                 />
+
                  {/* Category / source / payment */}
                  <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 space-y-3">
                     <h3 className="font-black text-xs uppercase tracking-widest text-slate-400">Purchase Info</h3>

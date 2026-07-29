@@ -5,6 +5,8 @@
 import ExcelJS from 'exceljs';
 import { Expense, InventoryItem, ItemStatus } from '../types';
 import type { DateBounds } from '../utils/exportDateRange';
+import { resolveItemSourceLinks } from '../utils/sourceLinks';
+import { formatProofSummary, formatProofUrlsForExport } from '../utils/proofAttachments';
 import {
   filterExpensesForRange,
   filterInventoryForFinanzamtRange,
@@ -105,6 +107,12 @@ export type FinanzamtWareRow = {
   Einkauf_Lieferant: string;
   Rechnungsnummer: string;
   Kunde_Name: string;
+  /** Direct link back to the chat / order this deal came from. */
+  Quelle_Link: string;
+  /** How many proof files are attached, and of what kind. */
+  Nachweise_Anzahl: string;
+  /** The proof file URLs themselves, so an auditor can open each one. */
+  Nachweise_Links: string;
   Bemerkung: string;
 };
 
@@ -165,6 +173,9 @@ function buildWareRow(
     Kunde_Name: item.customer?.name || '',
     eBay_Bestellnr: item.ebayOrderId || '',
     Korrektur_Nachweis: adjustmentNote,
+    Quelle_Link: resolveItemSourceLinks(item).list.map((l) => l.url).join(' | '),
+    Nachweise_Anzahl: formatProofSummary(item),
+    Nachweise_Links: formatProofUrlsForExport(item),
     Bemerkung: comment,
   };
 }
@@ -383,6 +394,9 @@ const WARE_HEADER_ORDER: (keyof FinanzamtWareRow)[] = [
   'Kunde_Name',
   'eBay_Bestellnr',
   'Korrektur_Nachweis',
+  'Quelle_Link',
+  'Nachweise_Anzahl',
+  'Nachweise_Links',
   'Bemerkung',
 ];
 

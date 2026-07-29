@@ -430,6 +430,33 @@ export async function uploadExpenseAttachment(
   }
 }
 
+/**
+ * Upload a proof file (chat screenshot, payment confirmation, receipt…) for one record.
+ * Stored under the item tree so the existing `items/{uid}/**` Storage rule covers it.
+ */
+export async function uploadProofAttachment(
+  file: Blob,
+  recordId: string,
+  fileName: string
+): Promise<string> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.storage || !user) {
+    throw new Error("Not signed in or Firebase Storage not configured. Please sign in with Google first.");
+  }
+  const safeName = fileName.replace(/[^a-zA-Z0-9.\-_]/g, "_") || "proof";
+  const safeId = recordId.replace(/[^a-zA-Z0-9.\-_]/g, "_") || "generic";
+  const path = `items/${user.uid}/${safeId}/proof/${Date.now()}-${safeName}`;
+  const ref = storageRef(ctx.storage, path);
+
+  const timeoutMs = 90_000;
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error("Proof upload timed out after 90s.")), timeoutMs)
+  );
+  const snapshot = await Promise.race([uploadBytes(ref, file), timeoutPromise]);
+  return Promise.race([getDownloadURL(snapshot.ref), timeoutPromise]);
+}
+
 // --- DATA SHAPE (same as app payload) ---
 
 export interface FirestoreInventoryPayload {
@@ -1560,6 +1587,140 @@ export async function clearEbayPurchasesCloud(): Promise<void> {
     }
   }
   if (count > 0) await batch.commit();
+}
+
+// --- AI ACTION LOG (audit trail of assistant edits, one doc per action) ---
+
+const AI_ACTIONS_COLLECTION = "aiActions";
+
+function sanitizeAiActionDocId(id: string): string {
+  const cleaned = id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 300);
+  return cleaned || "unknown";
+}
+
+/**
+ * One-time fetch of the archived AI action log. Deliberately not a live subscription:
+ * it is only read when the "Done by AI" page opens, to keep Firestore reads low.
+ */
+export async function fetchAiActionsFromCloud(): Promise<Record<string, unknown>[] | null> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) return null;
+  try {
+    const colRef = collection(ctx.db, "users", user.uid, AI_ACTIONS_COLLECTION);
+    const snap = await getDocs(colRef);
+    const actions: Record<string, unknown>[] = [];
+    snap.forEach((d) => actions.push(d.data() as Record<string, unknown>));
+    return actions;
+  } catch (err) {
+    console.error("fetchAiActionsFromCloud failed:", err);
+    return null;
+  }
+}
+
+/** Upload new/changed AI actions (one doc per action id). */
+export async function writeAiActionsToCloud(
+  actions: (Record<string, unknown> & { id: string })[]
+): Promise<void> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) throw new Error("Not signed in");
+  const colRef = collection(ctx.db, "users", user.uid, AI_ACTIONS_COLLECTION);
+
+  const BATCH_MAX = 450;
+  let batch = writeBatch(ctx.db);
+  let count = 0;
+  for (const row of actions) {
+    batch.set(doc(colRef, sanitizeAiActionDocId(String(row.id))), stripUndefined(row));
+    count++;
+    if (count >= BATCH_MAX) {
+      await batch.commit();
+      batch = writeBatch(ctx.db);
+      count = 0;
+    }
+  }
+  if (count > 0) await batch.commit();
+}
+
+/** Delete specific AI action docs (used when trimming the log). */
+export async function deleteAiActionsFromCloud(ids: string[]): Promise<void> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user || ids.length === 0) return;
+  const colRef = collection(ctx.db, "users", user.uid, AI_ACTIONS_COLLECTION);
+  const BATCH_MAX = 450;
+  let batch = writeBatch(ctx.db);
+  let count = 0;
+  for (const id of ids) {
+    batch.delete(doc(colRef, sanitizeAiActionDocId(id)));
+    count++;
+    if (count >= BATCH_MAX) {
+      await batch.commit();
+      batch = writeBatch(ctx.db);
+      count = 0;
+    }
+  }
+  if (count > 0) await batch.commit();
+}
+
+// --- PENDING TRANSACTIONS (non-eBay inbox deals: Kleinanzeigen buys/sells, manual) ---
+
+const PENDING_TRANSACTIONS_COLLECTION = "pendingTransactions";
+
+function sanitizePendingTxDocId(id: string): string {
+  const cleaned = id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 300);
+  return cleaned || "unknown";
+}
+
+export async function fetchPendingTransactionsFromCloud(): Promise<Record<string, unknown>[] | null> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) return null;
+  try {
+    const colRef = collection(ctx.db, "users", user.uid, PENDING_TRANSACTIONS_COLLECTION);
+    const snap = await getDocs(colRef);
+    const rows: Record<string, unknown>[] = [];
+    snap.forEach((d) => rows.push(d.data() as Record<string, unknown>));
+    return rows;
+  } catch (err) {
+    console.error("fetchPendingTransactionsFromCloud failed:", err);
+    return null;
+  }
+}
+
+export async function writePendingTransactionsToCloud(
+  rows: (Record<string, unknown> & { id: string })[]
+): Promise<void> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) throw new Error("Not signed in");
+  const colRef = collection(ctx.db, "users", user.uid, PENDING_TRANSACTIONS_COLLECTION);
+
+  const BATCH_MAX = 450;
+  let batch = writeBatch(ctx.db);
+  let count = 0;
+  for (const row of rows) {
+    batch.set(doc(colRef, sanitizePendingTxDocId(String(row.id))), stripUndefined(row));
+    count++;
+    if (count >= BATCH_MAX) {
+      await batch.commit();
+      batch = writeBatch(ctx.db);
+      count = 0;
+    }
+  }
+  if (count > 0) await batch.commit();
+}
+
+export async function deletePendingTransactionsFromCloud(ids: string[]): Promise<void> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user || ids.length === 0) return;
+  const colRef = collection(ctx.db, "users", user.uid, PENDING_TRANSACTIONS_COLLECTION);
+  const batch = writeBatch(ctx.db);
+  for (const id of ids.slice(0, 450)) {
+    batch.delete(doc(colRef, sanitizePendingTxDocId(id)));
+  }
+  await batch.commit();
 }
 
 // --- EBAY ACTIVE LISTINGS (current store snapshot for sync/import/bundles) ---

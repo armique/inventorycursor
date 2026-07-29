@@ -73,6 +73,9 @@ import { HIERARCHY_CATEGORIES } from '../services/constants';
 import PhoneUploadQrPanel from './PhoneUploadQrPanel';
 import LocalPhotoFolderPanel from './LocalPhotoFolderPanel';
 import KleinanzeigenBuyChatProofFields from './KleinanzeigenBuyChatProofFields';
+import SourceLinkIcons from './SourceLinkIcons';
+import ProofAttachmentsPanel from './ProofAttachmentsPanel';
+import { resolveItemSourceLinks } from '../utils/sourceLinks';
 
 const BUY_PLATFORMS: Platform[] = [
   'kleinanzeigen.de',
@@ -130,6 +133,8 @@ const ListingStudioModal: React.FC<Props> = ({
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const nativePhoto = prefersNativePhotoCapture();
+  /** Chat / order / profile links, derived from legacy fields when not stored explicitly. */
+  const itemSourceLinks = useMemo(() => resolveItemSourceLinks(item), [item]);
 
   const [name, setName] = useState(item.name || '');
   const [specs, setSpecs] = useState<Record<string, string | number>>({ ...(item.specs || {}) });
@@ -961,6 +966,28 @@ const ListingStudioModal: React.FC<Props> = ({
         >
           {/* LEFT — item / specs / trade */}
           <aside className="border-r border-slate-100 overflow-y-auto p-2.5 space-y-2.5 lg:p-3 lg:space-y-3 bg-slate-50/40">
+            {/* Where this deal came from — one click to the chat / order / profile. */}
+            {itemSourceLinks.list.length > 0 && (
+              <section className="flex flex-wrap items-center gap-1.5">
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  Source
+                </h4>
+                <SourceLinkIcons links={itemSourceLinks} />
+                {itemSourceLinks.externalOrderId && (
+                  <span className="text-[10px] font-bold text-slate-400">
+                    #{itemSourceLinks.externalOrderId}
+                  </span>
+                )}
+              </section>
+            )}
+
+            <ProofAttachmentsPanel
+              recordId={item.id}
+              attachments={item.proofAttachments}
+              record={item as unknown as Record<string, unknown>}
+              onChange={(next) => void onUpdateItem({ proofAttachments: next })}
+            />
+
             <section id="studio-item" className="scroll-mt-2">
               <div className="flex items-center justify-between mb-1 gap-2">
                 <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">

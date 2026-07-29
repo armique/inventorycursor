@@ -27,6 +27,8 @@ import { computePriceAnalyzer } from '../utils/listingWatch';
 import ItemThumbnail from './ItemThumbnail';
 import { MobileSheetShell } from './MobileBottomSheets';
 import ItemAccessoryToggles from './ItemAccessoryToggles';
+import AiBadge, { hasUnreviewedAi, isAiTouched } from './AiBadge';
+import type { ItemAiState } from '../services/aiActionLog';
 import { canSplitItem } from '../utils/splitParts';
 
 export interface MobileStockCardActions {
@@ -71,6 +73,8 @@ export const MobileStockCard: React.FC<{
   actions: MobileStockCardActions;
   /** When set, row acts like inventory but Parse/Confirm replace Sell/More. */
   purchaseActions?: MobilePurchaseActions;
+  /** AI provenance for this record — drives the badge and the unreviewed stripe. */
+  aiState?: ItemAiState;
 }> = ({
   item,
   profit,
@@ -81,6 +85,7 @@ export const MobileStockCard: React.FC<{
   onToggleSelect,
   actions,
   purchaseActions,
+  aiState,
 }) => {
   const [moreOpen, setMoreOpen] = React.useState(false);
   const photoCount = getItemUserPhotoCount(item);
@@ -105,13 +110,15 @@ export const MobileStockCard: React.FC<{
     <>
       <article
         className={`rounded-xl border bg-white px-2.5 py-2 ${
-          item.isPC
-            ? 'border-indigo-200 shadow-[inset_3px_0_0_0_#6366f1]'
-            : item.isBundle
-              ? 'border-violet-200 shadow-[inset_3px_0_0_0_#8b5cf6]'
-              : selected
-                ? 'border-slate-900 ring-1 ring-slate-900/10'
-                : 'border-slate-100'
+          hasUnreviewedAi(item, aiState)
+            ? 'border-violet-300 shadow-[inset_4px_0_0_0_#7c3aed]'
+            : item.isPC
+              ? 'border-indigo-200 shadow-[inset_3px_0_0_0_#6366f1]'
+              : item.isBundle
+                ? 'border-violet-200 shadow-[inset_3px_0_0_0_#8b5cf6]'
+                : selected
+                  ? 'border-slate-900 ring-1 ring-slate-900/10'
+                  : 'border-slate-100'
         }`}
       >
         <div className="flex gap-2 items-center">
@@ -154,7 +161,12 @@ export const MobileStockCard: React.FC<{
               onClick={() => actions.onEdit(item)}
               className="w-full text-left"
             >
-              <p className="font-bold text-[13px] leading-tight text-slate-900 line-clamp-1">{item.name}</p>
+              <p className="font-bold text-[13px] leading-tight text-slate-900 line-clamp-1">
+                {item.name}
+                {isAiTouched(item, aiState) && (
+                  <AiBadge aiState={aiState} reviewStatus={item.aiReviewStatus} className="ml-1 align-middle" />
+                )}
+              </p>
               <p className="mt-0.5 text-[11px] font-semibold text-slate-500 truncate">
                 {(item.isPC || item.isBundle) && (
                   <span className={item.isPC ? 'text-indigo-600' : 'text-violet-600'}>

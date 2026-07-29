@@ -4,7 +4,7 @@ import {
   Package, PlusCircle, Settings, RefreshCw, Trash2, CloudUpload, LayoutDashboard,
   Layers, Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe,
   Printer, LayoutTemplate, PackageSearch, Monitor, Boxes, ChevronDown, Plus, Images,
-  Target, Activity, CircuitBoard, Radar, Coins,
+  Target, Activity, CircuitBoard, Radar, Coins, Bot,
 } from 'lucide-react';
 import PanelBreadcrumbs from './PanelBreadcrumbs';
 import { usePanelLocale } from '../context/PanelLocaleContext';
@@ -26,6 +26,9 @@ import { cloudSyncBadgeLabel, cloudSyncBadgeTitle } from '../utils/cloudSyncStat
 import { defaultGamificationState, type GamificationState } from '../utils/gamification';
 import { useGamificationEvents } from '../hooks/useGamificationEvents';
 import GamificationEventLayer from './gamification/GamificationEventLayer';
+import { useAiSession, useUnreviewedAiCount } from '../hooks/useAiActions';
+import { useStaleDealCount } from '../hooks/useInboxAlerts';
+import { endAiSession } from '../services/aiSession';
 
 interface SyncState {
   status: 'idle' | 'pending' | 'syncing' | 'success' | 'error';
@@ -61,6 +64,10 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   const [emulatorEmail, setEmulatorEmail] = React.useState('abelyanarmen@gmail.com');
   const [addMenuOpen, setAddMenuOpen] = React.useState(true);
   const [moreNavOpen, setMoreNavOpen] = React.useState(false);
+  const unreviewedAiCount = useUnreviewedAiCount();
+  const aiSession = useAiSession();
+  /** Deals unresolved for 3+ days — flagged on Inventory, since the Inbox lives there. */
+  const staleDealCount = useStaleDealCount();
 
   React.useEffect(() => {
     void completeGoogleRedirectSignIn().catch(() => {});
@@ -202,7 +209,12 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
 
   const primaryNav = [
     { to: '/panel/dashboard', icon: <LayoutDashboard size={18} />, label: 'Dashboard' },
-    { to: '/panel/inventory', icon: <Package size={18} />, label: 'Inventory' },
+    {
+      to: '/panel/inventory',
+      icon: <Package size={18} />,
+      label: 'Inventory',
+      warnCount: staleDealCount,
+    },
     { to: '/panel/flip-coach', icon: <Target size={18} />, label: 'Flip Coach' },
     { to: '/panel/sold-pulse', icon: <Activity size={18} />, label: 'Buy Helper' },
     { to: '/panel/est', icon: <Radar size={18} />, label: 'Market' },
@@ -217,6 +229,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
       label: 'Parse Bundles',
     },
     { to: '/panel/card-gallery', icon: <Images size={18} />, label: 'Card gallery' },
+    { to: '/panel/ai-actions', icon: <Bot size={18} />, label: 'Done by AI', count: unreviewedAiCount },
     { action: 'settings', icon: <Settings size={18} />, label: 'Settings', alert: !isCloudEnabled },
   ];
 
@@ -308,11 +321,13 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
                 </button>
               );
             }
-            const { to, icon, label, alert } = item as {
+            const { to, icon, label, alert, count, warnCount } = item as {
               to: string;
               icon: React.ReactNode;
               label: string;
               alert?: boolean;
+              count?: number;
+              warnCount?: number;
             };
             const [navPath, navQuery] = to.split('?');
             const isActive = navQuery
@@ -330,6 +345,22 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
                 }`}
               >
                 {icon} {label}
+                {typeof warnCount === 'number' && warnCount > 0 && (
+                  <span
+                    className="ml-auto inline-flex items-center gap-0.5 min-w-[20px] h-5 px-1.5 rounded-full bg-amber-500 text-white text-[10px] font-black tabular-nums"
+                    title={`${warnCount} deal${warnCount === 1 ? '' : 's'} unresolved for 3+ days — open the Inbox tab`}
+                  >
+                    ⚠ {warnCount > 99 ? '99+' : warnCount}
+                  </span>
+                )}
+                {typeof count === 'number' && count > 0 && (
+                  <span
+                    className="ml-auto min-w-[20px] h-5 px-1.5 rounded-full bg-violet-500 text-white text-[10px] font-black flex items-center justify-center tabular-nums"
+                    title={`${count} AI change${count === 1 ? '' : 's'} awaiting review`}
+                  >
+                    {count > 99 ? '99+' : count}
+                  </span>
+                )}
                 {alert && <span className="absolute right-3 top-3 w-2 h-2 bg-red-500 rounded-full animate-pulse" />}
               </Link>
             );
@@ -413,6 +444,32 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
                 <span>{cloudSyncBadgeLabel(syncState)}</span>
               </button>
             )}
+          </div>
+        )}
+        {aiSession && (
+          <div className="mb-3 flex items-center gap-3 px-3 py-2 rounded-xl bg-violet-600 text-white shadow-lg shadow-violet-600/20">
+            <Bot size={18} className="shrink-0 animate-pulse" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-black uppercase tracking-widest">AI mode on</p>
+              <p className="text-[11px] font-semibold text-violet-100 truncate">
+                Every change is tagged and logged to Done by AI
+                {aiSession.context ? ` · ${aiSession.context}` : ''}
+                {aiSession.actionCount > 0 ? ` · ${aiSession.actionCount} logged` : ''}
+              </p>
+            </div>
+            <Link
+              to="/panel/ai-actions"
+              className="shrink-0 px-2.5 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-[10px] font-black uppercase tracking-wider"
+            >
+              Review
+            </Link>
+            <button
+              type="button"
+              onClick={() => endAiSession()}
+              className="shrink-0 px-2.5 py-1.5 rounded-lg bg-white text-violet-700 text-[10px] font-black uppercase tracking-wider hover:bg-violet-50"
+            >
+              Turn off
+            </button>
           </div>
         )}
         {!isCloudEnabled && !backupBannerDismissed && onDismissBackupBanner && (

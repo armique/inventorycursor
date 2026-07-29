@@ -8,7 +8,7 @@ import { createPortal } from 'react-dom';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useSettingsModal } from '../context/SettingsModalContext';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks,   Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone,   Camera, Gift, User, Images, Scissors, GripVertical, RefreshCw, Calculator
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks,   Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone,   Camera, Gift, User, Images, Scissors, GripVertical, RefreshCw, Calculator, Inbox, MessageSquare, ExternalLink
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, TaxMode, BulkImportRecord } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
@@ -113,6 +113,10 @@ import {
 import { resolveTradeReceivedItems, resolveTradeSourceItem } from '../utils/tradeLinks';
 import { formatPlatformBoughtLabel } from '../utils/purchaseSource';
 import TradeLinkBadge from './TradeLinkBadge';
+import AiBadge, { hasUnreviewedAi, isAiTouched } from './AiBadge';
+import { resolveItemSourceLinks } from '../utils/sourceLinks';
+import { useItemAiStates } from '../hooks/useAiActions';
+import type { ItemAiState } from '../services/aiActionLog';
 import { useInventoryPurchases } from './InventoryPurchasesPanel';
 import {
   isPurchasePreviewId,
@@ -226,6 +230,8 @@ function isMarkReadyEligible(item: InventoryItem): boolean {
   );
 }
 type StatusFilter = 'ACTIVE' | 'SOLD' | 'DRAFTS' | 'ALL' | 'PURCHASES';
+/** Provenance filter shown next to Platform / Payment. */
+type SourceFilter = 'ALL' | 'AI' | 'AI_UNREVIEWED' | 'MANUAL';
 
 type QuickCategoryPin = {
   id: string;
@@ -248,10 +254,25 @@ function isInventoryContainer(item: InventoryItem): boolean {
   );
 }
 
-function containerRowClassName(item: InventoryItem, isSelected: boolean, highlighted: boolean): string {
+function containerRowClassName(
+  item: InventoryItem,
+  isSelected: boolean,
+  highlighted: boolean,
+  aiUnreviewed = false
+): string {
   const parts = ['group/row transition-colors'];
   if (highlighted) {
     parts.push('ring-2 ring-amber-400 ring-inset bg-amber-50/40 animate-pulse');
+    return parts.join(' ');
+  }
+  // Unreviewed AI edit — 4px indigo stripe, wins over the container stripes below so the
+  // row is unmistakable until the user approves it.
+  if (aiUnreviewed) {
+    parts.push(
+      isSelected
+        ? 'bg-violet-100/40 hover:bg-violet-100/60 shadow-[inset_4px_0_0_0_#6d28d9]'
+        : 'bg-violet-50/30 hover:bg-violet-50/60 shadow-[inset_4px_0_0_0_#7c3aed]'
+    );
     return parts.join(' ');
   }
   if (isSelected) {
@@ -586,6 +607,9 @@ type InventoryListFilterParams = {
   bulkImportItemIds: Set<string> | null;
   /** Precomputed kit-child ids — avoids O(n²) hide scans. */
   hiddenChildIds?: Set<string>;
+  /** Provenance filter: everything / AI-touched / AI awaiting review / hand-entered only. */
+  sourceFilter: SourceFilter;
+  aiStates: Map<string, ItemAiState>;
 };
 
 function filterAndSortInventoryItems(params: InventoryListFilterParams): InventoryItem[] {
@@ -609,6 +633,8 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
     bulkImportFilterId,
     bulkImportItemIds,
     hiddenChildIds,
+    sourceFilter,
+    aiStates,
   } = params;
 
   const query = searchTerm.trim();
@@ -635,6 +661,14 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
         matchesStatus = true;
       }
       if (!matchesStatus) return false;
+    }
+
+    if (sourceFilter !== 'ALL') {
+      const aiState = aiStates.get(item.id);
+      const touched = isAiTouched(item, aiState);
+      if (sourceFilter === 'AI' && !touched) return false;
+      if (sourceFilter === 'AI_UNREVIEWED' && !hasUnreviewedAi(item, aiState)) return false;
+      if (sourceFilter === 'MANUAL' && touched) return false;
     }
 
     if (smartPreset === 'no_photo' && getItemUserPhotoCount(item) > 0) return false;
@@ -816,6 +850,7 @@ const InventoryList: React.FC<Props> = ({
   // New Filters for Sales
   const [salePlatformFilter, setSalePlatformFilter] = useState<string>(() => loadState<string>('sale_platform', 'ALL'));
   const [salePaymentFilter, setSalePaymentFilter] = useState<string>(() => loadState<string>('sale_payment', 'ALL'));
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(() => loadState<SourceFilter>('source_filter', 'ALL'));
   const [amountFilter, setAmountFilter] = useState<AmountFilterState>(() =>
     loadState<AmountFilterState>('amount_filter', EMPTY_AMOUNT_FILTER)
   );
@@ -1341,6 +1376,7 @@ const InventoryList: React.FC<Props> = ({
       localStorage.setItem(`${k}_manual_width_cols`, JSON.stringify(Array.from(manualWidthColumns)));
       localStorage.setItem(`${k}_sale_platform`, JSON.stringify(salePlatformFilter));
       localStorage.setItem(`${k}_sale_payment`, JSON.stringify(salePaymentFilter));
+      localStorage.setItem(`${k}_source_filter`, JSON.stringify(sourceFilter));
       localStorage.setItem(`${k}_amount_filter`, JSON.stringify(amountFilter));
       localStorage.setItem(`${k}_spec_filters`, JSON.stringify(specFilters));
       localStorage.setItem(`${k}_spec_range_filters`, JSON.stringify(specRangeFilters));
@@ -1355,7 +1391,7 @@ const InventoryList: React.FC<Props> = ({
     };
   }, [
     searchTerm, timeFilter, statusFilter, categoryFilter, subCategoryFilter, sortConfig, columnWidths,
-    manualWidthColumns, salePlatformFilter, salePaymentFilter, amountFilter, specFilters, specRangeFilters, showInComposition,
+    manualWidthColumns, salePlatformFilter, salePaymentFilter, sourceFilter, amountFilter, specFilters, specRangeFilters, showInComposition,
     columnOrder, hiddenColumnIds, splitView, quickCategoryPins, persistenceKey,
   ]);
 
@@ -1485,6 +1521,8 @@ const InventoryList: React.FC<Props> = ({
   };
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  /** AI provenance per item id — drives the badge, the unreviewed stripe and the Source filter. */
+  const itemAiStates = useItemAiStates();
   const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null);
   const [scrollTargetItemId, setScrollTargetItemId] = useState<string | null>(null);
   
@@ -2073,6 +2111,8 @@ const InventoryList: React.FC<Props> = ({
       bulkImportFilterId,
       bulkImportItemIds,
       hiddenChildIds,
+      sourceFilter,
+      aiStates: itemAiStates,
     }),
     [
       items,
@@ -2093,6 +2133,8 @@ const InventoryList: React.FC<Props> = ({
       bulkImportFilterId,
       bulkImportItemIds,
       hiddenChildIds,
+      sourceFilter,
+      itemAiStates,
     ]
   );
 
@@ -3201,6 +3243,31 @@ const InventoryList: React.FC<Props> = ({
                 <Receipt size={13} strokeWidth={2.25} />
               </button>
 
+              {/* One-click jump to the source chat / order — the whole point of the links. */}
+              {(() => {
+                const links = resolveItemSourceLinks(item);
+                const primary = links.chat || links.order || links.profile;
+                if (!primary) return null;
+                return (
+                  <a
+                    href={primary.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors`}
+                    title={`${primary.title} ↗`}
+                  >
+                    {primary.kind === 'chat' ? (
+                      <MessageSquare size={13} strokeWidth={2.25} />
+                    ) : primary.kind === 'order' ? (
+                      <ExternalLink size={13} strokeWidth={2.25} />
+                    ) : (
+                      <User size={13} strokeWidth={2.25} />
+                    )}
+                  </a>
+                );
+              })()}
+
               {/* Quick Bundle / Mixed Bundle / add-to-PC from Flags — any category */}
               {(() => {
                 const parentOfItem = resolveParentContainer(item, containersById, containerByChildId);
@@ -3439,6 +3506,12 @@ const InventoryList: React.FC<Props> = ({
                         >
                           {item.name}
                         </p>
+                      )}
+                      {isAiTouched(item, itemAiStates.get(item.id)) && (
+                        <AiBadge
+                          aiState={itemAiStates.get(item.id)}
+                          reviewStatus={item.aiReviewStatus}
+                        />
                       )}
                    </div>
                    {(item.status === ItemStatus.IN_STOCK ||
@@ -4484,6 +4557,7 @@ const InventoryList: React.FC<Props> = ({
     timeFilter !== 'ALL' ||
     salePlatformFilter !== 'ALL' ||
     salePaymentFilter !== 'ALL' ||
+    sourceFilter !== 'ALL' ||
     isAmountFilterActive(amountFilter) ||
     activeSpecFilterCount > 0;
   const clearAllFilters = () => {
@@ -4493,6 +4567,7 @@ const InventoryList: React.FC<Props> = ({
     setTimeFilter('ALL');
     setSalePlatformFilter('ALL');
     setSalePaymentFilter('ALL');
+    setSourceFilter('ALL');
     setAmountFilter(EMPTY_AMOUNT_FILTER);
     setSpecFilters({});
     setSpecRangeFilters({});
@@ -4540,6 +4615,28 @@ const InventoryList: React.FC<Props> = ({
     };
     tryScroll();
   }, [scrollTargetItemId, sortedItems, sortedActiveItems, sortedSoldItems, splitView]);
+
+  /**
+   * Deep link from "Done by AI" (and anywhere else): /panel/inventory?focus=<itemId>
+   * clears blocking filters, scrolls the row into view and flashes it, then drops the
+   * param so a refresh doesn't re-trigger the jump.
+   */
+  useEffect(() => {
+    const focusId = searchParams.get('focus');
+    if (!focusId) return;
+    const target = items.find((i) => i.id === focusId);
+    if (target) {
+      revealItemInList(target);
+      setSearchTerm('');
+      setSmartPreset(null);
+      setSourceFilter('ALL');
+      setSplitView(false);
+      setScrollTargetItemId(target.id);
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete('focus');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, items, revealItemInList, setSearchParams]);
 
   const toggleSpecFilterValue = useCallback((key: string, val: string | number) => {
     setSpecFilters((prev) => toggleSpecFilterSelection(prev, key, val));
@@ -4762,7 +4859,7 @@ const InventoryList: React.FC<Props> = ({
 
   const listCountLabel =
     statusFilter === 'PURCHASES'
-      ? `${purchasesView.rowCount} purchase${purchasesView.rowCount === 1 ? '' : 's'}`
+      ? `${purchasesView.rowCount} deal${purchasesView.rowCount === 1 ? '' : 's'}`
       : `${sortedItems.length} items`;
 
   return (
@@ -4988,8 +5085,23 @@ const InventoryList: React.FC<Props> = ({
                  className={`flex-1 inline-flex items-center justify-center gap-1 px-1.5 py-2 rounded-md text-[11px] font-black uppercase ${
                    statusFilter === 'PURCHASES' ? 'bg-slate-900 text-white' : 'text-slate-600'
                  }`}
+                 title="Pending eBay and Kleinanzeigen deals — buys and sells"
                >
-                 Purchases
+                 <Inbox size={13} /> Inbox
+                 {purchasesView.openCount > 0 && (
+                   <span
+                     className={`ml-0.5 min-w-[16px] px-1 rounded-full text-white text-[9px] tabular-nums ${
+                       purchasesView.staleCount > 0 ? 'bg-red-500' : 'bg-amber-500'
+                     }`}
+                     title={
+                       purchasesView.staleCount > 0
+                         ? `${purchasesView.staleCount} deal(s) unresolved for 3+ days`
+                         : undefined
+                     }
+                   >
+                     {purchasesView.openCount}
+                   </span>
+                 )}
                </button>
                <select
                  value={statusFilter === 'DRAFTS' || statusFilter === 'ALL' ? statusFilter : ''}
@@ -5154,8 +5266,24 @@ const InventoryList: React.FC<Props> = ({
                     className={`inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black uppercase transition-all ${
                       !splitView && statusFilter === 'PURCHASES' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'
                     }`}
+                    title="Pending eBay and Kleinanzeigen deals — buys and sells"
                   >
-                    Purchases
+                    <Inbox size={12} className="shrink-0" />
+                    Inbox
+                    {purchasesView.openCount > 0 && (
+                      <span
+                        className={`ml-0.5 min-w-[16px] px-1 rounded-full text-white text-[9px] tabular-nums ${
+                          purchasesView.staleCount > 0 ? 'bg-red-500' : 'bg-amber-500'
+                        }`}
+                        title={
+                          purchasesView.staleCount > 0
+                            ? `${purchasesView.staleCount} deal(s) unresolved for 3+ days`
+                            : undefined
+                        }
+                      >
+                        {purchasesView.openCount}
+                      </span>
+                    )}
                   </button>
                 </div>
                 <button
@@ -5337,6 +5465,20 @@ const InventoryList: React.FC<Props> = ({
                <Hourglass size={11} />
                {showInComposition ? 'Orphans: shown' : 'Orphans: hidden'}
             </button>
+            <select
+               value={sourceFilter}
+               onChange={e => setSourceFilter(e.target.value as SourceFilter)}
+               title="Filter by who entered the data"
+               className={`py-1.5 pl-2.5 pr-7 rounded-lg border bg-white text-xs font-semibold outline-none focus:ring-2 focus:ring-slate-900/20 appearance-none bg-no-repeat bg-right min-w-[100px] ${
+                 sourceFilter === 'ALL' ? 'border-slate-200 text-slate-700' : 'border-violet-400 text-violet-700'
+               }`}
+               style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.35rem center' }}
+            >
+               <option value="ALL">Source</option>
+               <option value="AI">AI touched</option>
+               <option value="AI_UNREVIEWED">AI · to review</option>
+               <option value="MANUAL">Manual only</option>
+            </select>
             {(splitView || (statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS')) && (
                <>
                   <select value={salePlatformFilter} onChange={e => setSalePlatformFilter(e.target.value)} className="py-1.5 pl-2.5 pr-7 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-slate-900/20 appearance-none bg-no-repeat bg-right min-w-[100px]" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.35rem center' }}>
@@ -5711,6 +5853,12 @@ const InventoryList: React.FC<Props> = ({
                {timeFilter !== 'ALL' && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 text-xs font-medium">
                      {timeFilter} <button type="button" onClick={() => setTimeFilter('ALL')} className="hover:opacity-80">×</button>
+                  </span>
+               )}
+               {sourceFilter !== 'ALL' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-100 text-violet-800 text-xs font-medium">
+                     {sourceFilter === 'AI' ? 'AI touched' : sourceFilter === 'AI_UNREVIEWED' ? 'AI · to review' : 'Manual only'}
+                     <button type="button" onClick={() => setSourceFilter('ALL')} className="hover:opacity-80">×</button>
                   </span>
                )}
                {statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS' && (salePlatformFilter !== 'ALL' || salePaymentFilter !== 'ALL') && (
@@ -6097,6 +6245,7 @@ const InventoryList: React.FC<Props> = ({
                 suggestedKleinList={suggestedEbayById.get(item.id)?.kleinList}
                 suggestedFeePct={suggestedEbayById.get(item.id)?.feePct}
                 selected={selectedIdSet.has(item.id)}
+                aiState={itemAiStates.get(item.id)}
                 onToggleSelect={() => toggleSelect(item.id)}
                 actions={{
                   onEdit: (it) => handleEditClick(it),
@@ -6237,6 +6386,7 @@ const InventoryList: React.FC<Props> = ({
             renderRowCells={renderRowCells}
             getRowActivityKey={getRowActivityKey}
             highlightedItemId={highlightedItemId}
+            aiStates={itemAiStates}
             rowHeightEstimate={rowHeightEstimate}
             bulkBarSpacer={selectedIds.length > 0}
             collapsedBundles={collapsedBundles}
@@ -6277,6 +6427,7 @@ const InventoryList: React.FC<Props> = ({
             renderRowCells={renderRowCells}
             getRowActivityKey={getRowActivityKey}
             highlightedItemId={highlightedItemId}
+            aiStates={itemAiStates}
             rowHeightEstimate={rowHeightEstimate}
             bulkBarSpacer={selectedIds.length > 0}
             collapsedBundles={collapsedBundles}
@@ -6311,6 +6462,7 @@ const InventoryList: React.FC<Props> = ({
           renderRowCells={renderRowCells}
           getRowActivityKey={getRowActivityKey}
           highlightedItemId={highlightedItemId}
+          aiStates={itemAiStates}
           rowHeightEstimate={rowHeightEstimate}
           bulkBarSpacer={selectedIds.length > 0}
           collapsedBundles={collapsedBundles}
@@ -7078,6 +7230,7 @@ type InventoryTableBodyProps = {
   renderRowCells: (item: InventoryItem, isSelected: boolean, itemFlexWidth?: number | null) => React.ReactNode;
   getRowActivityKey: (item: InventoryItem) => string;
   highlightedItemId: string | null;
+  aiStates: Map<string, ItemAiState>;
   scrollElement: HTMLDivElement | null;
   rowHeightEstimate: number;
   bulkBarSpacer: boolean;
@@ -7092,6 +7245,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
   renderRowCells,
   getRowActivityKey,
   highlightedItemId,
+  aiStates,
   scrollElement,
   rowHeightEstimate,
   bulkBarSpacer,
@@ -7165,6 +7319,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
             itemFlexWidth={itemFlexWidth}
             rowActivityKey={getRowActivityKey(item)}
             highlighted={highlightedItemId === item.id}
+            aiUnreviewed={hasUnreviewedAi(item, aiStates.get(item.id))}
           />
         ))}
         {bulkBarSpacer && (
@@ -7202,6 +7357,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
             itemFlexWidth={itemFlexWidth}
             rowActivityKey={getRowActivityKey(item)}
             highlighted={highlightedItemId === item.id}
+            aiUnreviewed={hasUnreviewedAi(item, aiStates.get(item.id))}
             virtualIndex={virtualRow.index}
             measureRef={rowVirtualizer.measureElement}
           />
@@ -7229,20 +7385,22 @@ type InventoryTableRowProps = {
   /** Bumps when inline edit / AI spinners / Flags + panel / collapse affect this row so memo does not skip updates. */
   rowActivityKey: string;
   highlighted?: boolean;
+  /** At least one AI change on this row is still awaiting review. */
+  aiUnreviewed?: boolean;
   virtualIndex?: number;
   measureRef?: (node: Element | null) => void;
   itemFlexWidth?: number | null;
 };
 
 const InventoryTableRow = React.memo(
-  function InventoryTableRow({ item, isSelected, renderRowCells, highlighted, virtualIndex, measureRef, itemFlexWidth }: InventoryTableRowProps) {
+  function InventoryTableRow({ item, isSelected, renderRowCells, highlighted, aiUnreviewed, virtualIndex, measureRef, itemFlexWidth }: InventoryTableRowProps) {
     return (
       <tr
         ref={measureRef}
         data-index={virtualIndex}
         data-inventory-item-id={item.id}
         data-container={isInventoryContainer(item) ? (item.isPC ? 'pc' : 'bundle') : undefined}
-        className={containerRowClassName(item, isSelected, Boolean(highlighted))}
+        className={containerRowClassName(item, isSelected, Boolean(highlighted), Boolean(aiUnreviewed))}
       >
         {renderRowCells(item, isSelected, itemFlexWidth)}
       </tr>
@@ -7254,6 +7412,7 @@ const InventoryTableRow = React.memo(
     prev.visibleColumns === next.visibleColumns &&
     prev.rowActivityKey === next.rowActivityKey &&
     prev.highlighted === next.highlighted &&
+    prev.aiUnreviewed === next.aiUnreviewed &&
     prev.renderRowCells === next.renderRowCells &&
     prev.itemFlexWidth === next.itemFlexWidth
 );
@@ -7381,6 +7540,7 @@ type InventoryListTablePaneProps = {
   renderRowCells: (item: InventoryItem, isSelected: boolean, itemFlexWidth?: number | null) => React.ReactNode;
   getRowActivityKey: (item: InventoryItem) => string;
   highlightedItemId: string | null;
+  aiStates: Map<string, ItemAiState>;
   rowHeightEstimate: number;
   bulkBarSpacer: boolean;
   collapsedBundles: Set<string>;
@@ -7412,6 +7572,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
   renderRowCells,
   getRowActivityKey,
   highlightedItemId,
+  aiStates,
   rowHeightEstimate,
   bulkBarSpacer,
   collapsedBundles,
@@ -7624,6 +7785,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
             itemFlexWidth={itemFlexWidth}
             getRowActivityKey={getRowActivityKey}
             highlightedItemId={highlightedItemId}
+            aiStates={aiStates}
             scrollElement={scrollElement}
             rowHeightEstimate={rowHeightEstimate}
             bulkBarSpacer={bulkBarSpacer}

@@ -107,7 +107,76 @@ export interface EbaySaleAdjustment {
   buyPriceDelta?: number;
 }
 
-export interface InventoryItem {
+/** Who last touched a record: the user by hand, or the AI assistant (browser automation). */
+export type RecordActor = 'manual' | 'ai';
+
+/**
+ * Review state of the AI's touch on a record.
+ * Absent/undefined = the AI never touched this record.
+ */
+export type AiReviewStatus = 'unreviewed' | 'approved' | 'reverted';
+
+/**
+ * Direct links back to where a deal actually happened.
+ *
+ * The point is one click from a row to the Kleinanzeigen chat or eBay order, so status
+ * ("did I actually receive this?") can be checked without hunting — and so the Finanzamt
+ * paper trail points at a real source.
+ *
+ * Older rows keep using the platform-specific fields (`kleinanzeigenChatUrl`,
+ * `ebayOrderId`, …); `utils/sourceLinks.ts` resolves both shapes into the same three links.
+ */
+export interface SourceLinks {
+  /** Conversation this deal was agreed in (KA `m-nachrichten.html?conversationId=…`). */
+  sourceChatUrl?: string;
+  /** The order or the listing itself. */
+  sourceOrderUrl?: string;
+  /** Seller/buyer profile page. */
+  counterpartyProfileUrl?: string;
+  /** eBay order number (#01-14946-82253) or Kleinanzeigen conversation id. */
+  externalOrderId?: string;
+}
+
+/** What a proof file documents. */
+export type ProofAttachmentType =
+  | 'chat_screenshot'
+  | 'payment_confirmation'
+  | 'shipping_label'
+  | 'receipt'
+  | 'other';
+
+/**
+ * Evidence for the Finanzamt, kept independently of the chat it came from — chats get
+ * deleted, platforms expire links, screenshots don't.
+ *
+ * `fileUrl` is always a Firebase Storage URL, never base64: these live inside the item
+ * document, and inlined images would blow past Firestore's 1 MB limit.
+ */
+export interface ProofAttachment {
+  id: string;
+  type: ProofAttachmentType;
+  fileUrl: string;
+  /** Original file name, for display and export. */
+  fileName?: string;
+  /** ISO datetime */
+  uploadedAt: string;
+  uploadedBy: RecordActor;
+  note?: string;
+}
+
+/** Attribution fields shared by items, bundles and pending inbox transactions. */
+export interface AiAttribution {
+  /** Who originally created the record. */
+  source?: RecordActor;
+  /** Who performed the most recent write. */
+  lastModifiedBy?: RecordActor;
+  /** Set only once the AI has touched the record; null-ish while untouched. */
+  aiReviewStatus?: AiReviewStatus;
+  /** Screenshots / receipts proving the deal (Storage URLs only). */
+  proofAttachments?: ProofAttachment[];
+}
+
+export interface InventoryItem extends AiAttribution, SourceLinks {
   id: string;
   name: string;
   buyPrice: number;
@@ -436,6 +505,59 @@ export interface ActionHistoryEntry {
   tradeReceivedIds?: string[];
 }
 
+/** What the AI did, in machine-readable form (drives the "Done by AI" feed wording). */
+export type AiActionType =
+  | 'item_created'
+  | 'item_updated'
+  | 'marked_sold'
+  | 'marked_received'
+  | 'buyer_info_filled'
+  | 'field_changed'
+  | 'inbox_created'
+  | 'inbox_updated'
+  | 'item_deleted';
+
+/** What kind of record an AI action points at. */
+export type AiActionTargetKind = 'item' | 'inbox';
+
+/** One field-level before/after pair. Values are JSON-safe scalars or short arrays/objects. */
+export interface AiActionDiffEntry {
+  field: string;
+  oldValue: unknown;
+  newValue: unknown;
+}
+
+/**
+ * One recorded AI action. Written to localStorage (`ai_actions_v1`) and mirrored to
+ * Firestore at users/{uid}/aiActions. Retained independently of ActionHistoryEntry so
+ * revert data outlives the (much shorter) action-history window.
+ */
+export interface AiAction {
+  id: string;
+  /** ISO datetime */
+  timestamp: string;
+  actor: 'ai';
+  actionType: AiActionType;
+  targetKind: AiActionTargetKind;
+  /** Item id, or pending-inbox entry key when targetKind === 'inbox'. */
+  itemId: string;
+  /** Name snapshot at action time — keeps the feed readable after renames/deletes. */
+  itemName?: string;
+  /** Full before/after snapshot of the changed fields. */
+  diff: AiActionDiffEntry[];
+  reviewStatus: AiReviewStatus;
+  /** false for actions that cannot be undone (e.g. an email already went out). */
+  reversible: boolean;
+  /** Short human note on where the data came from, e.g. "Kleinanzeigen chat with Felix M., 23.07.2026". */
+  sourceContext?: string;
+  /** Session id from aiSession — groups actions made in one automation run. */
+  sessionId?: string;
+  /** Set when the user approves/reverts, for audit purposes. */
+  reviewedAt?: string;
+  /** Note attached on revert (e.g. which fields were skipped due to conflicts). */
+  reviewNote?: string;
+}
+
 /** How a Bulk Entry session was primarily built before Confirm. */
 export type BulkImportSource = 'manual' | 'paste_as_is' | 'paste_ai' | 'hardware_db' | 'barcode' | 'mixed';
 
@@ -471,4 +593,15 @@ export type ItemUpdateOptions = {
   skipContainerSync?: boolean;
   /** Push to cloud on the fast path (~0.4s) instead of the default debounce. */
   flushCloud?: boolean;
+  /**
+   * Skip AI attribution/diff logging even inside an open AI session.
+   * Used by Revert (which is a manual action) and by internal cascades.
+   */
+  skipAiLog?: boolean;
+  /**
+   * The payload is a complete item, not a partial form submit — don't re-fill missing
+   * fields from the stored copy. Required by Revert, which clears fields on purpose and
+   * would otherwise see them restored by the preserve step.
+   */
+  skipFieldPreserve?: boolean;
 };

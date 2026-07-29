@@ -33,6 +33,7 @@ const SoldPulsePage = lazy(() => import('./components/SoldPulsePage'));
 const ComboLabPage = lazy(() => import('./components/ComboLabPage'));
 const EstDealwatchPage = lazy(() => import('./components/EstDealwatchPage'));
 const ReinvestAssistantPage = lazy(() => import('./components/ReinvestAssistantPage'));
+const AiActionsPage = lazy(() => import('./components/AiActionsPage'));
 import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense, DashboardPreferences, ActionHistoryEntry, TaxMode, ItemUpdateOptions, BulkImportRecord } from './types';
 import {
   loadDashboardPreferencesFromLocalStorage,
@@ -41,6 +42,11 @@ import {
   getDefaultDashboardPreferences,
 } from './services/dashboardPreferences';
 import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchFromCloud, fetchGamificationState, writeGamificationState } from './services/firebaseService';
+import { installAiBridge, isAiSessionActive } from './services/aiSession';
+import { installAiInboxBridge } from './services/aiInboxBridge';
+import { recordAiActions, type NewAiAction } from './services/aiActionLog';
+import { classifyAiAction, diffInventoryItems } from './utils/aiDiff';
+import { hasNoSourceLink, MissingSourceLinkError, requiresSourceChatUrl } from './utils/sourceLinks';
 import {
   defaultGamificationState,
   ensureFreshDay,
@@ -136,7 +142,41 @@ const PRESERVE_FROM_OLD_IF_UPDATE_MISSING: (keyof InventoryItem)[] = [
   'platformBought', 'buyPaymentType', 'kleinanzeigenBuyChatUrl', 'kleinanzeigenBuyChatImage',
   'kleinanzeigenSellerProfileUrl',
   'bulkImportId',
+  'source', 'lastModifiedBy', 'aiReviewStatus',
 ];
+
+/**
+ * Stamp `lastModifiedBy: 'manual'` — but only on records the AI has already touched.
+ * Items the assistant never saw stay untouched so the cloud payload doesn't grow by a
+ * redundant field on every row.
+ */
+function markManualIfAiTouched(u: InventoryItem, current: InventoryItem[]): InventoryItem {
+  const oldItem = current.find((i) => i.id === u.id);
+  const aiTouched = Boolean(
+    oldItem?.source === 'ai' || oldItem?.aiReviewStatus || u.source === 'ai' || u.aiReviewStatus
+  );
+  if (!aiTouched || u.lastModifiedBy === 'manual') return u;
+  return { ...u, lastModifiedBy: 'manual' };
+}
+
+/**
+ * Re-apply fields the caller left out (forms often submit a partial item).
+ * Shared so AI diffing sees exactly the item that will be stored.
+ */
+function applyPreservedFields(oldItem: InventoryItem | undefined, merged: InventoryItem): InventoryItem {
+  if (!oldItem) return merged;
+  const final = { ...merged } as unknown as Record<string, unknown>;
+  const oldRecord = oldItem as unknown as Record<string, unknown>;
+  const mergedRecord = merged as unknown as Record<string, unknown>;
+  for (const k of PRESERVE_FROM_OLD_IF_UPDATE_MISSING) {
+    const oldVal = oldRecord[k as string];
+    const newVal = mergedRecord[k as string];
+    if (oldVal !== undefined && oldVal !== null && (newVal === undefined || newVal === null)) {
+      final[k as string] = oldVal;
+    }
+  }
+  return final as unknown as InventoryItem;
+}
 
 function EbayOAuthCallback() {
   const [searchParams] = useSearchParams();
@@ -425,6 +465,13 @@ const App: React.FC = () => {
   const [authReady, setAuthReady] = useState<boolean>(!isCloudEnabled());
   const isRemoteUpdate = useRef(false);
   const hasUnsavedChanges = useRef(false);
+
+  // Expose window.deinventory.ai so the assistant can open/close an attribution session
+  // and write inbox deals (which have no form of their own to drive).
+  useEffect(() => {
+    installAiBridge();
+    installAiInboxBridge();
+  }, []);
 
   // One-shot: if this device had credentials only in localStorage, push them into cloud settings.
   useEffect(() => {
@@ -1298,24 +1345,75 @@ const App: React.FC = () => {
     ) {
       requestFastCloudFlush();
     }
+
+    /*
+     * AI attribution pass — runs before setItems so the log is written exactly once
+     * (React may invoke a state updater twice in StrictMode). It diffs against the
+     * same merged item that will be stored, so preserved fields never look "cleared".
+     */
+    const preserveMissingFields = !options?.skipFieldPreserve;
+    const attributeToAi = !options?.skipAiLog && isAiSessionActive();
+    const aiStamped = new Map<string, InventoryItem>();
+    const pendingAiActions: NewAiAction[] = [];
+    if (attributeToAi) {
+      for (const u of updatedItems) {
+        const oldItem = current.find((i) => i.id === u.id);
+        const candidate = preserveMissingFields ? applyPreservedFields(oldItem, u) : u;
+        /*
+         * Records the assistant creates must point back at a verifiable source (Finanzamt
+         * paper trail). Only creation is gated — blocking edits too would lock the AI out
+         * of every pre-existing item. eBay orders and bulk-import children are exempt:
+         * they carry ids the order link is derived from, or inherit the batch's proof.
+         * Thrown from an event handler, so the save aborts without unmounting the panel.
+         */
+        if (!oldItem && hasNoSourceLink(candidate) && requiresSourceChatUrl({
+          platform: candidate.platformBought,
+          ebayOrderId: candidate.ebayOrderId,
+          bulkImportId: candidate.bulkImportId,
+        })) {
+          throw new MissingSourceLinkError(`Item “${candidate.name}”`);
+        }
+        const diff = diffInventoryItems(oldItem, candidate);
+        if (oldItem && diff.length === 0) continue;
+        pendingAiActions.push({
+          actionType: classifyAiAction(oldItem, candidate, diff),
+          itemId: u.id,
+          itemName: candidate.name,
+          diff,
+        });
+        aiStamped.set(u.id, {
+          ...u,
+          source: oldItem?.source || (oldItem ? 'manual' : 'ai'),
+          lastModifiedBy: 'ai',
+          aiReviewStatus: 'unreviewed',
+        });
+      }
+      for (const id of deleteIds || []) {
+        const existing = current.find((i) => i.id === id);
+        if (!existing) continue;
+        pendingAiActions.push({
+          actionType: 'item_deleted',
+          itemId: id,
+          itemName: existing.name,
+          diff: [{ field: 'status', oldValue: existing.status, newValue: 'Trash' }],
+        });
+      }
+    }
+    const itemsToApply = attributeToAi
+      ? updatedItems.map((u) => aiStamped.get(u.id) || markManualIfAiTouched(u, current))
+      : updatedItems.map((u) => markManualIfAiTouched(u, current));
+
     setItems(currentItems => {
         let nextItems = [...currentItems];
         const actionEntries: ActionHistoryEntry[] = [];
-        updatedItems.forEach(u => {
+        itemsToApply.forEach(u => {
           const idx = nextItems.findIndex(i => i.id === u.id);
           const oldItem = idx >= 0 ? nextItems[idx] : undefined;
           const merged = appendPriceHistoryIfChanged(oldItem, u);
           // Preserve store and other fields from old item when update doesn't provide them (e.g. rename in inventory form)
-          let final = merged;
-          if (oldItem && idx >= 0) {
-            final = { ...merged } as InventoryItem;
-            for (const k of PRESERVE_FROM_OLD_IF_UPDATE_MISSING) {
-              const oldVal = (oldItem as Record<string, unknown>)[k as string];
-              const newVal = (merged as Record<string, unknown>)[k as string];
-              if (oldVal !== undefined && oldVal !== null && (newVal === undefined || newVal === null))
-                (final as Record<string, unknown>)[k as string] = oldVal;
-            }
-          }
+          const final0 =
+            oldItem && idx >= 0 && preserveMissingFields ? applyPreservedFields(oldItem, merged) : merged;
+          let final = final0;
           const taxMode = businessSettings.taxMode || 'SmallBusiness';
           final = recomputeRealizedProfit(final, taxMode);
           if (final.status === ItemStatus.SOLD || final.status === ItemStatus.TRADED || final.status === ItemStatus.GIFTED) {
@@ -1366,6 +1464,8 @@ const App: React.FC = () => {
         if (actionEntriesMerged.length > 0) addActionEntries(actionEntriesMerged);
         return nextItems;
     });
+
+    if (pendingAiActions.length > 0) recordAiActions(pendingAiActions);
   }, [addActionEntries, businessSettings.taxMode, requestFastCloudFlush]);
 
   const handleRestoreItems = useCallback((updatedItems: InventoryItem[]) => {
@@ -1906,6 +2006,7 @@ const App: React.FC = () => {
             }
           />
           <Route path="invoices" element={<InvoiceManager items={items} businessSettings={businessSettings} />} />
+          <Route path="ai-actions" element={<AiActionsPage items={items} onUpdate={handleUpdate} />} />
           <Route
             path="action-history"
             element={
