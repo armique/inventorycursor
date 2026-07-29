@@ -3617,10 +3617,10 @@ const InventoryList: React.FC<Props> = ({
                              return 'bg-amber-50 text-amber-950 border-amber-300';
                            if (action === 'raise')
                              return 'bg-sky-50 text-sky-950 border-sky-300';
-                           // Recommended sell + OK: KA green, eBay teal/turquoise
+                           // Recommended sell + OK: option 3 — KA green, eBay orange
                            if (channel === 'KA')
-                             return 'bg-emerald-100 text-emerald-800 border-emerald-300';
-                           return 'bg-teal-100 text-teal-800 border-teal-300';
+                             return 'bg-emerald-100 text-emerald-950 border-emerald-400';
+                           return 'bg-orange-100 text-orange-800 border-orange-300';
                          };
                          const shortChannelLabel = (ch: {
                            action: PriceAnalyzerAction;
