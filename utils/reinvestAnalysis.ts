@@ -170,6 +170,20 @@ function collectContainerChildIds(items: InventoryItem[]): Set<string> {
   return ids;
 }
 
+/** Sold/traded/gifted bundle/PC parent by child id — used to attribute redistributed component sales. */
+function collectRealizedContainerByChildId(items: InventoryItem[]): Map<string, InventoryItem> {
+  const map = new Map<string, InventoryItem>();
+  for (const container of items) {
+    if (!container.isBundle && !container.isPC) continue;
+    if (!isRealizedDisposal(container)) continue;
+    if (!((Number(container.sellPrice) || 0) > 0)) continue;
+    for (const child of getChildren(container, items)) {
+      if (!map.has(child.id)) map.set(child.id, container);
+    }
+  }
+  return map;
+}
+
 export function variantKeyForItem(item: Pick<InventoryItem, 'name' | 'category' | 'subCategory'>): string {
   const match = extractPrimaryComponentKey(item.name || '');
   if (match) return match.componentKey;
@@ -254,17 +268,32 @@ type SoldBucket = {
 /** Standalone realized sales (not part of any bundle/PC), grouped by sub-variant. */
 export function groupSalesByVariant(items: InventoryItem[]): Map<string, SoldBucket> {
   const childIds = collectContainerChildIds(items);
+  const soldParentByChildId = collectRealizedContainerByChildId(items);
   const buckets = new Map<string, SoldBucket>();
   for (const item of items) {
     if (item.isBundle || item.isPC) continue;
-    if (childIds.has(item.id)) continue;
-    if (!isRealizedDisposal(item)) continue;
+    const isContainerChild = childIds.has(item.id);
+    const soldParent = isContainerChild ? soldParentByChildId.get(item.id) : undefined;
+    const isAttributedFromSoldContainer = Boolean(soldParent && (Number(item.sellPrice) || 0) > 0);
+    if (isContainerChild && !isAttributedFromSoldContainer) continue;
+    if (!isAttributedFromSoldContainer && !isRealizedDisposal(item)) continue;
     if (!((item.sellPrice || 0) > 0)) continue;
+
+    const soldLikeItem: InventoryItem =
+      isAttributedFromSoldContainer && soldParent
+        ? {
+            ...item,
+            status: ItemStatus.SOLD,
+            sellDate: item.sellDate || soldParent.sellDate,
+            platformSold: item.platformSold || soldParent.platformSold,
+            paymentType: item.paymentType || soldParent.paymentType,
+          }
+        : item;
     const key = variantKeyForItem(item);
     const bucket = buckets.get(key) || { items: [], categories: [], names: [] };
-    bucket.items.push(item);
-    bucket.categories.push(item.subCategory || item.category || 'Other');
-    bucket.names.push(item.name);
+    bucket.items.push(soldLikeItem);
+    bucket.categories.push(soldLikeItem.subCategory || soldLikeItem.category || 'Other');
+    bucket.names.push(soldLikeItem.name);
     buckets.set(key, bucket);
   }
   return buckets;

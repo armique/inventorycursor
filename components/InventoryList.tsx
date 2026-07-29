@@ -4026,6 +4026,7 @@ const InventoryList: React.FC<Props> = ({
                          {childItems.map((child) => {
                             const childHit =
                               searchActiveForNest && matchesInventorySearch(child, searchQuery);
+                            const childProfit = profitForDisplay(child);
                             return (
                             <div
                               key={child.id}
@@ -4056,6 +4057,28 @@ const InventoryList: React.FC<Props> = ({
                                 <span className="text-[10px] font-semibold text-slate-500 shrink-0 tabular-nums flex items-center gap-1">
                                   {!isSoldContainerRow && child.buyPrice != null && (
                                     <span className="text-slate-600">€{formatEUR(child.buyPrice)}</span>
+                                  )}
+                                  {isSoldContainerRow && (
+                                    <>
+                                      <span className="text-slate-700">€{formatEUR(child.sellPrice || 0)}</span>
+                                      <span className="text-slate-400">/</span>
+                                      <span className="text-slate-500">€{formatEUR(child.buyPrice || 0)}</span>
+                                      {childProfit != null && (
+                                        <span
+                                          className={`${
+                                            (childProfit || 0) > 0
+                                              ? 'text-emerald-600'
+                                              : (childProfit || 0) < 0
+                                                ? 'text-red-500'
+                                                : 'text-slate-400'
+                                          }`}
+                                          title="Component margin after fees/shipping when recorded"
+                                        >
+                                          ({(childProfit || 0) > 0 ? '+' : ''}
+                                          {formatEUR(childProfit || 0)})
+                                        </span>
+                                      )}
+                                    </>
                                   )}
                                   <Calendar size={9} className="opacity-60" />
                                   {formatChildListDate(child)}
@@ -4101,6 +4124,15 @@ const InventoryList: React.FC<Props> = ({
                              item.isPC ? 'text-indigo-600/90' : 'text-violet-600/90'
                            }`}>
                              Total cost €{formatEUR(item.buyPrice)} · {childItems.length} parts
+                           </p>
+                         )}
+                         {isSoldContainerRow && (
+                           <p className={`px-2 pt-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                             item.isPC ? 'text-indigo-600/90' : 'text-violet-600/90'
+                           }`}>
+                             Split sell €{formatEUR(childItems.reduce((s, c) => s + (Number(c.sellPrice) || 0), 0))} ·
+                             total cost €{formatEUR(childItems.reduce((s, c) => s + (Number(c.buyPrice) || 0), 0))} ·
+                             {childItems.length} parts
                            </p>
                          )}
                       </div>
