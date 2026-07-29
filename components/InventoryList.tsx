@@ -2906,6 +2906,12 @@ const InventoryList: React.FC<Props> = ({
      onUpdate([bundle, ...updatedComponents]);
      setShowRetroBundle(false);
      setSelectedIds([]);
+     setScrollTargetItemId(bundle.id);
+     setCollapsedBundles((prev) => {
+       const next = new Set(prev);
+       next.delete(bundle.id);
+       return next;
+     });
   };
 
   const handleApplyRecalc = (updates: Array<{ itemId: string; newSellPrice: number }>) => {
@@ -3031,7 +3037,13 @@ const InventoryList: React.FC<Props> = ({
     // an unset width nor width:100% survives table-layout:fixed reliably once sibling columns'
     // widths already exceed the container — both silently collapsed this column to 0).
     const width_ = id === 'item' && itemFlexWidth != null ? itemFlexWidth : width;
-    const style = { width: `${width_}px`, minWidth: `${width_}px`, maxWidth: `${width_}px` };
+    // Item column must be able to grow into leftover viewport space — locking maxWidth
+    // equal to width leaves a permanent dead strip on the right once sibling auto-widths change
+    // (e.g. after composing a sold bundle that widens Flags / price columns).
+    const style =
+      id === 'item'
+        ? { width: `${width_}px`, minWidth: `${width_}px`, maxWidth: 'none' as const }
+        : { width: `${width_}px`, minWidth: `${width_}px`, maxWidth: `${width_}px` };
     const dense = listDensity === 'compact';
     const iconBtn = dense ? 'h-6 w-6' : 'h-7 w-7';
     const thumbPx = dense ? 32 : 36;
@@ -3457,7 +3469,7 @@ const InventoryList: React.FC<Props> = ({
             key={id}
             style={style}
             // Above sticky Actions (z-[18]) / sticky header (z-[40]) so the panel X is clickable
-            className={quickBundleOpenHere ? 'relative z-[45]' : undefined}
+            className={`${quickBundleOpenHere ? 'relative z-[45]' : ''} overflow-hidden min-w-0`.trim()}
             onClick={() => {
               if (quickBundleSeed) return;
               handleRowClick(item, isEditingName);
@@ -4062,7 +4074,7 @@ const InventoryList: React.FC<Props> = ({
                       />
                    )}
                    {isBundleBodyExpanded && (
-                      <div className={`mt-2 ml-0.5 pl-3 border-l-2 rounded-r-lg py-1 space-y-0.5 max-w-full ${
+                  <div className={`mt-2 ml-0.5 pl-3 border-l-2 rounded-r-lg py-1 space-y-0.5 max-w-full min-w-0 overflow-hidden ${
                         item.isPC
                           ? 'border-indigo-300 bg-indigo-50/60'
                           : 'border-violet-300 bg-violet-50/60'
@@ -4074,7 +4086,7 @@ const InventoryList: React.FC<Props> = ({
                             return (
                             <div
                               key={child.id}
-                              className={`flex items-center justify-between gap-1 py-1 px-1.5 rounded-md transition-colors ${
+                              className={`flex items-center justify-between gap-1 py-1 px-1.5 rounded-md transition-colors min-w-0 max-w-full overflow-hidden ${
                                   childHit
                                     ? 'bg-amber-100/80 ring-1 ring-amber-200/80'
                                     : item.isPC
@@ -7733,13 +7745,19 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
     const othersWidth = visibleColumns
       .filter((id) => id !== 'item')
       .reduce((sum, id) => sum + (columnWidths[id] || DEFAULT_WIDTHS[id]), 0);
-    // Reserve a scrollbar-gutter margin: at first measurement the vertical scrollbar may not
-    // have reserved its own space yet (it appears once row content overflows), so an unpadded
-    // computation can overshoot the *eventual* client width by the scrollbar's own thickness —
-    // trading a few px of width for never causing an unwanted horizontal scrollbar to appear.
-    const scrollbarGutter = 20;
-    return Math.max(floor, containerWidth - othersWidth - scrollbarGutter);
+    // clientWidth / contentRect already exclude the vertical scrollbar; only keep a tiny
+    // epsilon so rounding never trips an unwanted horizontal scrollbar.
+    const epsilon = 2;
+    return Math.max(floor, containerWidth - othersWidth - epsilon);
   }, [containerWidth, visibleColumns, columnWidths]);
+
+  // After list data / column-width changes (sold-bundle compose, expand), re-read the pane
+  // width so the item column can re-soak leftover space instead of leaving a dead strip.
+  useLayoutEffect(() => {
+    if (!scrollElement) return;
+    const w = scrollElement.clientWidth;
+    if (w > 0) setContainerWidth(w);
+  }, [scrollElement, paneItems.length, columnWidths, visibleColumns]);
 
   const timeGaugeTitle =
     paneStatus === 'SOLD' ? 'Sale speed' : paneStatus === 'ACTIVE' ? 'Stock age' : 'Hold / sale';
@@ -7781,13 +7799,17 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
                 const canDrag = colId !== 'select';
                 const isDragging = draggingColumnId === colId;
                 const isDragOver = dragOverColumnId === colId && draggingColumnId !== colId;
+                const thStyle =
+                  colId === 'item'
+                    ? { width: w, minWidth: w, maxWidth: 'none' as const }
+                    : { width: w, minWidth: w, maxWidth: w };
                 return (
                   <th
                     key={colId}
                     className={`relative p-0 align-middle bg-slate-50/80 ${
                       isDragging ? 'opacity-50' : ''
                     } ${isDragOver ? 'ring-2 ring-inset ring-blue-400' : ''}`}
-                    style={{ width: w, minWidth: w, maxWidth: w }}
+                    style={thStyle}
                     onDragOver={canDrag ? (e) => onColumnDragOver(e, colId) : undefined}
                     onDrop={canDrag ? (e) => { e.preventDefault(); onColumnDrop(colId); } : undefined}
                   >
