@@ -77,6 +77,10 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
 
   const thinRestock = useMemo(() => data.variants.filter((g) => g.kind === 'hypothesis'), [data.variants]);
   const hypotheses = useMemo(() => [...thinRestock, ...aiHypotheses], [thinRestock, aiHypotheses]);
+  const bundleFocus = useMemo(
+    () => [...data.bundles].sort((a, b) => b.soldCount - a.soldCount || b.profitPerDay - a.profitPerDay).slice(0, 8),
+    [data.bundles],
+  );
 
   const opportunity = useMemo(
     () => restock.reduce((sum, g) => sum + Math.max(0, g.targetStock - g.currentStock) * Math.max(0, g.allInclAvgProfit), 0),
@@ -322,6 +326,26 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
                 {restock.map((g) => (
                   <ReinvestCard
                     key={g.key}
+                    group={g}
+                    fees={fees}
+                    initialMarginPct={marginOverrides[g.key]}
+                    onPurchaseConfirmed={handlePurchaseConfirmed}
+                    onOpenHypothesisSearch={handleHypothesisSearchOpened}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {bundleFocus.length > 0 && (
+            <div>
+              <h2 className="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-2">
+                Bundle intelligence · cpu/platform-driven demand
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {bundleFocus.map((g) => (
+                  <ReinvestCard
+                    key={`bundle-focus-${g.key}`}
                     group={g}
                     fees={fees}
                     initialMarginPct={marginOverrides[g.key]}

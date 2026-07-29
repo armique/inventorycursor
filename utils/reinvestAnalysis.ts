@@ -422,6 +422,47 @@ function componentIdentity(item: InventoryItem): { identity: string; category: s
   return { identity: `raw:${category}:${slug}`, category, isExtracted: false };
 }
 
+function cpuPlatformFromKeys(cpuKey?: string, motherboardKey?: string): string | null {
+  const cpu = (cpuKey || '').toLowerCase();
+  const mobo = (motherboardKey || '').toLowerCase();
+
+  if (mobo.includes('motherboard:b450') || mobo.includes('motherboard:b550') || mobo.includes('motherboard:x470') || mobo.includes('motherboard:x570')) {
+    return 'AMD AM4';
+  }
+  if (mobo.includes('motherboard:b650') || mobo.includes('motherboard:b850') || mobo.includes('motherboard:x670') || mobo.includes('motherboard:x870')) {
+    return 'AMD AM5';
+  }
+  if (mobo.includes('motherboard:z390')) return 'Intel LGA1151';
+  if (mobo.includes('motherboard:h410') || mobo.includes('motherboard:h510') || mobo.includes('motherboard:z490') || mobo.includes('motherboard:z590')) {
+    return 'Intel LGA1200';
+  }
+  if (mobo.includes('motherboard:h610') || mobo.includes('motherboard:h710') || mobo.includes('motherboard:z690') || mobo.includes('motherboard:z790')) {
+    return 'Intel LGA1700';
+  }
+
+  if (cpu.includes('cpu:i3-4') || cpu.includes('cpu:i5-4') || cpu.includes('cpu:i7-4') || cpu.includes('cpu:i9-4')) {
+    return 'Intel LGA1150';
+  }
+  if (cpu.includes('cpu:i3-6') || cpu.includes('cpu:i5-6') || cpu.includes('cpu:i7-6') || cpu.includes('cpu:i9-6') || cpu.includes('cpu:i3-7') || cpu.includes('cpu:i5-7') || cpu.includes('cpu:i7-7') || cpu.includes('cpu:i9-7') || cpu.includes('cpu:i3-8') || cpu.includes('cpu:i5-8') || cpu.includes('cpu:i7-8') || cpu.includes('cpu:i9-8') || cpu.includes('cpu:i3-9') || cpu.includes('cpu:i5-9') || cpu.includes('cpu:i7-9') || cpu.includes('cpu:i9-9')) {
+    return 'Intel LGA1151';
+  }
+  if (cpu.includes('cpu:i3-10') || cpu.includes('cpu:i5-10') || cpu.includes('cpu:i7-10') || cpu.includes('cpu:i9-10') || cpu.includes('cpu:i3-11') || cpu.includes('cpu:i5-11') || cpu.includes('cpu:i7-11') || cpu.includes('cpu:i9-11')) {
+    return 'Intel LGA1200';
+  }
+  if (cpu.includes('cpu:i3-12') || cpu.includes('cpu:i5-12') || cpu.includes('cpu:i7-12') || cpu.includes('cpu:i9-12') || cpu.includes('cpu:i3-13') || cpu.includes('cpu:i5-13') || cpu.includes('cpu:i7-13') || cpu.includes('cpu:i9-13') || cpu.includes('cpu:i3-14') || cpu.includes('cpu:i5-14') || cpu.includes('cpu:i7-14') || cpu.includes('cpu:i9-14')) {
+    return 'Intel LGA1700';
+  }
+  if (cpu.includes('cpu:ryzen1-') || cpu.includes('cpu:ryzen2-') || cpu.includes('cpu:ryzen3-') || cpu.includes('cpu:ryzen4-') || cpu.includes('cpu:ryzen5-')) {
+    return 'AMD AM4';
+  }
+  if (cpu.includes('cpu:ryzen7-') || cpu.includes('cpu:ryzen8-') || cpu.includes('cpu:ryzen9-')) {
+    return 'AMD AM5';
+  }
+  if (cpu.includes('cpu:ryzen-')) return 'AMD Ryzen';
+  if (cpu.startsWith('cpu:i')) return 'Intel Core';
+  return null;
+}
+
 /** Repeating "anchor + varying sibling" bundles (e.g. any motherboard + i7-4790K), scored on
  * the bundle as a single sale, per section 1.1 — never split into per-component numbers. */
 export function findAnchorBundles(items: InventoryItem[], seasonalityReady = false): AnchorBundleGroup[] {
@@ -500,7 +541,58 @@ export function findAnchorBundles(items: InventoryItem[], seasonalityReady = fal
     bundles.push({ ...base, kind: 'bundle', anchorComponentKey: identity, siblingCategory });
   }
 
-  return bundles.sort((a, b) => b.profitPerDay - a.profitPerDay);
+  // CPU-centric bundle groups: these are often the actual buying intent
+  // (e.g. "i7-4790K bundle"), with motherboard being a compatibility carrier.
+  const cpuBuckets = new Map<string, { soldRows: InventoryItem[]; cpuLabel: string; platform: string; anchorKey: string }>();
+  for (const container of containers) {
+    const children = getChildren(container, items);
+    const cpuChild = children.find((c) => extractPrimaryComponentKey(c.name || '')?.category === 'cpu');
+    if (!cpuChild) continue;
+    const cpuMatch = extractPrimaryComponentKey(cpuChild.name || '');
+    const cpuKey = cpuMatch?.componentKey;
+    if (!cpuKey) continue;
+    const moboChild = children.find((c) => extractPrimaryComponentKey(c.name || '')?.category === 'motherboard');
+    const moboKey = moboChild ? extractPrimaryComponentKey(moboChild.name || '')?.componentKey : undefined;
+    const platform = cpuPlatformFromKeys(cpuKey, moboKey || undefined) || 'CPU Bundle';
+    const cpuLabel = prettifyComponentKey(cpuKey) || cpuChild.name;
+    const groupKey = `bundle-cpu:${platform}:${cpuKey}`;
+    const existing = cpuBuckets.get(groupKey) || { soldRows: [], cpuLabel, platform, anchorKey: cpuKey };
+    const totalChildBuy = children.reduce((s, c) => s + (Number(c.buyPrice) || 0), 0);
+    existing.soldRows.push({
+      ...container,
+      buyPrice: roundMoney(totalChildBuy + (Number(container.buyPrice) || 0)),
+      buyDate: container.buyDate || cpuChild.buyDate || container.sellDate || '',
+    } as InventoryItem);
+    cpuBuckets.set(groupKey, existing);
+  }
+
+  for (const [groupKey, bucket] of cpuBuckets) {
+    if (bucket.soldRows.length < 2) continue;
+    const stockByKey = computeActiveInventoryByVariant(items);
+    const currentStock = stockByKey.get(bucket.anchorKey) || 0;
+    const label = `${bucket.platform} bundle · ${bucket.cpuLabel}`;
+    const base = buildGroupFromSales(
+      groupKey,
+      label,
+      'CPU Bundle',
+      bucket.soldRows,
+      currentStock,
+      seasonalityReady,
+    );
+    bundles.push({
+      ...base,
+      kind: 'bundle',
+      anchorComponentKey: bucket.anchorKey,
+      siblingCategory: 'motherboard',
+      reasonNote: `CPU-first bundle group: buyers mostly choose this set for ${bucket.cpuLabel}.`,
+    });
+  }
+  const deduped = new Map<string, AnchorBundleGroup>();
+  for (const b of bundles) {
+    const prev = deduped.get(b.key);
+    if (!prev || b.soldCount > prev.soldCount || b.profitPerDay > prev.profitPerDay) deduped.set(b.key, b);
+  }
+  return [...deduped.values()].sort((a, b) => b.profitPerDay - a.profitPerDay);
 }
 
 /** Categories that show up repeatedly as bundle components (e.g. PSUs riding along in built PCs)
