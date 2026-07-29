@@ -2806,6 +2806,10 @@ const InventoryList: React.FC<Props> = ({
         alert('Select at least 2 sold items to group.');
         return;
       }
+      if (!selectedItemsList.every((i) => isRealizedDisposal(i))) {
+        alert('Sold grouping only works when all selected items are sold/traded/gifted.');
+        return;
+      }
       setShowRetroBundle(true);
       return;
     }
@@ -6586,13 +6590,17 @@ const InventoryList: React.FC<Props> = ({
       <ComposeTypeModal
         open={showComposeType}
         selectedCount={selectedIds.length}
-        allowSold={items.some((i) => selectedIds.includes(i.id) && isRealizedDisposal(i))}
+        allowSold={
+          selectedIds.length > 1 &&
+          items.filter((i) => selectedIds.includes(i.id)).every((i) => isRealizedDisposal(i))
+        }
         onChoose={handleComposeTypeChosen}
         onClose={() => setShowComposeType(false)}
       />
       {showRetroBundle && (
         <RetroBundleModal
             items={items.filter(i => selectedIds.includes(i.id))}
+            allItems={items}
             onConfirm={handleCreateRetroBundle}
             onClose={() => setShowRetroBundle(false)}
         />

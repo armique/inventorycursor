@@ -43,7 +43,7 @@ const OPTIONS: {
   {
     type: 'sold',
     title: 'Sold group',
-    desc: 'Group already-sold items into a retro mixed bundle',
+    desc: 'Group already-sold items, then pick Mixed / Bundle / PC and optional smart price split',
     icon: <History size={22} />,
     accent: 'border-slate-300 hover:border-slate-500 hover:bg-slate-50',
     soldOnly: true,

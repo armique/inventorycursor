@@ -217,6 +217,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     },
     { to: '/panel/flip-coach', icon: <Target size={18} />, label: 'Flip Coach' },
     { to: '/panel/sold-pulse', icon: <Activity size={18} />, label: 'Buy Helper' },
+    { to: '/panel/deal-hunter', icon: <Radar size={18} />, label: 'DealWatch' },
     { to: '/panel/est', icon: <Radar size={18} />, label: 'Market' },
     { to: '/panel/reinvest', icon: <Coins size={18} />, label: 'Reinvest' },
     { to: '/panel/combo-lab', icon: <CircuitBoard size={18} />, label: 'Combo Lab' },

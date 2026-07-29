@@ -1,13 +1,15 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { formatEUR } from '../utils/formatMoney';
 
-import { X, Package, ArrowRight, CheckCircle2, Layers, Calendar, Edit2, Check, HelpCircle } from 'lucide-react';
-import { InventoryItem, ItemStatus } from '../types';
-import { todayLocalDateKey } from '../utils/calendarDate';
+import { X, Package, Layers, Calendar, Edit2, Check, HelpCircle, Monitor, Boxes, Sparkles } from 'lucide-react';
+import type { InventoryItem } from '../types';
+import { buildRetroContainerAndComponents, type RetroComposeKind } from '../utils/retroSoldCompose';
+import { suggestBundleComponentPrices } from '../utils/bundlePriceRecalc';
 
 interface Props {
   items: InventoryItem[];
+  allItems: InventoryItem[];
   onConfirm: (bundle: InventoryItem, updatedComponents: InventoryItem[]) => void;
   onClose: () => void;
 }
@@ -42,8 +44,16 @@ const getSmartBundleName = (items: InventoryItem[]) => {
   return `Bundle: ${topNames}${items.length > 2 ? '...' : ''}`;
 };
 
-const RetroBundleModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
+const KIND_META: Record<RetroComposeKind, { label: string; icon: React.ReactNode }> = {
+  mixed: { label: 'Mixed Bundle', icon: <Boxes size={14} /> },
+  bundle: { label: 'Bundle', icon: <Package size={14} /> },
+  pc: { label: 'PC Build', icon: <Monitor size={14} /> },
+};
+
+const RetroBundleModal: React.FC<Props> = ({ items, allItems, onConfirm, onClose }) => {
   const [bundleName, setBundleName] = useState(() => getSmartBundleName(items));
+  const [kind, setKind] = useState<RetroComposeKind>('mixed');
+  const [useSmartDistribution, setUseSmartDistribution] = useState(true);
   
   // Calculate Totals - Strict Number Casting
   const totalBuy = items.reduce((sum, i) => sum + Number(i.buyPrice || 0), 0);
@@ -54,51 +64,43 @@ const RetroBundleModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
   // Simple Profit (Before Tax)
   const margin = totalSell - totalBuy - totalFees;
   
-  // Platform logic
-  const platform = items[0]?.platformSold || 'Other';
-  const payment = items[0]?.paymentType || 'Other';
-  
   // Smart Date Logic
   const uniqueSellDates = Array.from(new Set(items.map(i => i.sellDate).filter(Boolean)));
   const initialSellDate = uniqueSellDates.length === 1 ? (uniqueSellDates[0] as string) : new Date().toISOString().split('T')[0];
 
   const [sellDate, setSellDate] = useState(initialSellDate);
+  const suggestionPreview = useMemo(() => {
+    if (!useSmartDistribution || totalSell <= 0) return [];
+    const probe = {
+      id: 'retro-probe',
+      name: 'retro',
+      category: kind === 'pc' ? 'PC' : kind === 'bundle' ? 'Bundle' : 'Mixed Bundle',
+      status: 'Sold',
+      buyPrice: totalBuy,
+      buyDate: sellDate,
+      sellPrice: totalSell,
+      componentIds: items.map((i) => i.id),
+      comment1: '',
+      comment2: '',
+      isBundle: true,
+      isPC: kind === 'pc',
+    } as unknown as InventoryItem;
+    return suggestBundleComponentPrices(probe, allItems);
+  }, [useSmartDistribution, totalSell, kind, totalBuy, sellDate, items, allItems]);
 
   // Edit Modes
   const [isEditingSellDate, setIsEditingSellDate] = useState(false);
 
   const handleConfirm = () => {
-    const bundleId = `bundle-${Date.now()}`;
-    
-    const newBundle: InventoryItem = {
-      id: bundleId,
-      name: bundleName,
-      category: 'Mixed Bundle',
-      status: ItemStatus.SOLD, 
-      buyPrice: totalBuy,
-      buyDate: todayLocalDateKey(),
-      sellPrice: totalSell,
-      profit: margin, // Note: This is pre-tax profit. Dashboard calculates tax dynamically.
-      feeAmount: totalFees,
-      hasFee: hasFees,
-      sellDate: sellDate,
-      platformSold: platform,
-      paymentType: payment,
-      isBundle: true,
-      isPC: false,
-      componentIds: items.map(i => i.id),
-      comment1: `Retroactive Mixed Bundle of ${items.length} items.`,
-      comment2: '',
-      vendor: 'Mixed Bundle'
-    };
-
-    const updatedComponents = items.map(i => ({
-      ...i,
-      status: ItemStatus.IN_COMPOSITION,
-      parentContainerId: bundleId
-    }));
-
-    onConfirm(newBundle, updatedComponents);
+    const next = buildRetroContainerAndComponents({
+      items,
+      allItems,
+      kind,
+      bundleName,
+      sellDate,
+      useSmartDistribution,
+    });
+    onConfirm(next.bundle, next.updatedComponents);
   };
 
   return (
@@ -111,7 +113,7 @@ const RetroBundleModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
               <Layers size={24} />
             </div>
             <div>
-              <h2 className="text-xl font-black text-slate-900 tracking-tight">Group into Bundle</h2>
+              <h2 className="text-xl font-black text-slate-900 tracking-tight">Group Sold Items</h2>
               <p className="text-[10px] text-indigo-600 font-bold uppercase tracking-widest mt-1">{items.length} Items Selected</p>
             </div>
           </div>
@@ -120,7 +122,7 @@ const RetroBundleModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
 
         <div className="p-8 space-y-6 overflow-y-auto scrollbar-hide">
           <div className="space-y-2">
-             <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Bundle Name</label>
+             <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Container Name</label>
              <input 
                 autoFocus
                 className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm outline-none focus:border-indigo-500 transition-all"
@@ -131,6 +133,26 @@ const RetroBundleModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
           </div>
 
           <div className="grid grid-cols-1 gap-4">
+             <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-2">Container Type</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {(Object.keys(KIND_META) as RetroComposeKind[]).map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setKind(k)}
+                      className={`inline-flex items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-[11px] font-bold ${
+                        kind === k
+                          ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                      }`}
+                    >
+                      {KIND_META[k].icon}
+                      {KIND_META[k].label}
+                    </button>
+                  ))}
+                </div>
+             </div>
              {/* SELL DATE */}
              <div 
                 className="bg-slate-50 p-4 rounded-2xl border border-slate-100 cursor-pointer hover:border-indigo-200 transition-colors group"
@@ -160,6 +182,27 @@ const RetroBundleModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
                    </div>
                 )}
              </div>
+          </div>
+
+          <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 space-y-2">
+             <label className="inline-flex items-center gap-2 text-xs font-bold text-emerald-800 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="rounded border-emerald-300"
+                  checked={useSmartDistribution}
+                  onChange={(e) => setUseSmartDistribution(e.target.checked)}
+                />
+                <Sparkles size={13} />
+                Smartly redistribute sell price across components
+             </label>
+             <p className="text-[10px] text-emerald-700">
+               Uses your own sold-history by variant when available; otherwise applies weighted category value.
+             </p>
+             {useSmartDistribution && suggestionPreview.length > 0 && (
+               <p className="text-[10px] text-emerald-700">
+                 Preview computed for {suggestionPreview.length} component(s). Total sale amount remains unchanged.
+               </p>
+             )}
           </div>
 
           {/* FINANCIAL SUMMARY */}
@@ -193,7 +236,7 @@ const RetroBundleModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
           <div className="flex items-start gap-2 bg-blue-50 p-3 rounded-xl">
              <HelpCircle size={14} className="text-blue-500 mt-0.5 shrink-0"/>
              <p className="text-[10px] text-blue-700 leading-tight">
-                <strong>Note:</strong> Bundling merges margins. If you use <em>Differential Taxation</em>, this can correctly increase net profit by offsetting losses against gains before tax calculation.
+                <strong>Note:</strong> Grouping merges margins on the new sold container. Component prices may be redistributed, but the total sale amount stays intact.
              </p>
           </div>
 
@@ -219,7 +262,7 @@ const RetroBundleModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
             onClick={handleConfirm} 
             className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-indigo-200 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
           >
-            <Package size={16} /> Confirm Bundle
+            <Package size={16} /> Confirm Grouping
           </button>
         </footer>
 

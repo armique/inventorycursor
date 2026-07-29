@@ -1959,6 +1959,7 @@ const App: React.FC = () => {
           <Route path="inventory" element={<InventoryList key="inventory-main" items={items} totalCount={items.length} onUpdate={handleUpdate} onDelete={handleDelete} onUndo={handleUndo} onRedo={handleRedo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} pageTitle="Inventory" allowedStatuses={ALL_STATUSES} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} persistenceKey="inventory_main" onPublishStoreCatalog={publishStoreCatalogNow} bulkImports={bulkImports} onUpdateBulkImport={handleUpdateBulkImport} onDeleteBulkImport={handleDeleteBulkImport} />} />
           <Route path="flip-coach" element={<FlipCoachPage items={items} />} />
           <Route path="sold-pulse" element={<SoldPulsePage items={items} />} />
+          <Route path="deal-hunter" element={<EstDealwatchPage />} />
           <Route path="est" element={<EstDealwatchPage />} />
           <Route
             path="reinvest"
