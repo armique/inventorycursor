@@ -29,6 +29,25 @@ function shortCpu(name: string): string {
 }
 
 /**
+ * Short GPU label for titles — e.g. RTX 3070, GTX 1660 Super, RX 6600.
+ */
+export function shortGpu(name: string): string {
+  const cleaned = name
+    .replace(/\b(graphics\s*card|videokarte|vga|gpu)\b/gi, '')
+    .replace(/\b(NVIDIA|GeForce|AMD|Radeon)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const m =
+    cleaned.match(/\b(RTX\s*\d{3,4}\s*(?:Ti|Super)?)\b/i) ||
+    cleaned.match(/\b(GTX\s*\d{3,4}\s*(?:Ti|Super)?)\b/i) ||
+    cleaned.match(/\b(RX\s*\d{3,4}\s*(?:XT|X)?)\b/i) ||
+    cleaned.match(/\b(Quadro\s*\w+)\b/i) ||
+    cleaned.match(/\b(Arc\s*A\d{3,4})\b/i);
+  if (m) return m[1]!.replace(/\s+/g, ' ').trim().slice(0, 18);
+  return cleaned.slice(0, 18).trim();
+}
+
+/**
  * Short motherboard label for titles — brand + chipset/model (e.g. MSI A320M, ASRock H81M).
  */
 export function shortMobo(name: string): string {
@@ -196,6 +215,7 @@ function storageBits(items: InventoryItem[]): string {
 function findBySlotHints(parts: InventoryItem[]): {
   mobo?: InventoryItem;
   cpu?: InventoryItem;
+  gpu?: InventoryItem;
   ram: InventoryItem[];
   storage: InventoryItem[];
 } {
@@ -209,17 +229,27 @@ function findBySlotHints(parts: InventoryItem[]): {
   const cpu = parts.find(
     (p) =>
       p.subCategory === 'Processors' ||
+      p.category === 'Processors' ||
       /\b(i[3579]|ryzen|cpu|prozessor)\b/i.test(p.name)
   );
+  const gpu = parts.find(
+    (p) =>
+      p.subCategory === 'Graphics Cards' ||
+      p.category === 'Graphics Cards' ||
+      /\b(rtx|gtx|rx\s*\d{3,4}|radeon|geforce|quadro|arc\s*a\d)\b/i.test(p.name)
+  );
   const ram = parts.filter(
-    (p) => p.subCategory === 'RAM' || /\b(ddr[2345]|dimm|\d+\s*GB.*MHz)\b/i.test(p.name)
+    (p) =>
+      p.subCategory === 'RAM' ||
+      p.category === 'RAM' ||
+      /\b(ddr[2345]|dimm|\d+\s*GB.*MHz)\b/i.test(p.name)
   );
   const storage = parts.filter(
     (p) =>
       p.subCategory === 'Storage (SSD/HDD)' ||
       /\b(ssd|hdd|nvme|m\.2)\b/i.test(p.name)
   );
-  return { mobo, cpu, ram, storage };
+  return { mobo, cpu, gpu, ram, storage };
 }
 
 function truncateTitle(title: string, max = MARKETPLACE_TITLE_MAX): string {
@@ -231,19 +261,20 @@ function truncateTitle(title: string, max = MARKETPLACE_TITLE_MAX): string {
 /**
  * Marketplace title for PC / Bundle / Mixed from parts.
  *
- * Bundle order:
- * 1) PC Bundle | Aufrustkit
+ * Order:
+ * 1) PC | PC Bundle | Aufrustkit | Mixed
  * 2) Motherboard (short)
  * 3) CPU
- * 4) RAM total (NxMGB) DDR speed
- * 5) Storage if present
+ * 4) GPU (when present)
+ * 5) RAM total (NxMGB) DDR type/speed
+ * 6) Storage if present
  */
 export function buildContainerTitle(
   kind: BuildTitleKind,
   parts: InventoryItem[],
   options?: { preferAufrustkit?: boolean; existingName?: string }
 ): string {
-  const { mobo, cpu, ram, storage } = findBySlotHints(parts);
+  const { mobo, cpu, gpu, ram, storage } = findBySlotHints(parts);
   const segments: string[] = [];
 
   if (kind === 'bundle') {
@@ -256,6 +287,7 @@ export function buildContainerTitle(
 
   if (mobo) segments.push(shortMobo(mobo.name));
   if (cpu) segments.push(shortCpu(cpu.name));
+  if (gpu) segments.push(shortGpu(gpu.name));
   const ramStr = ramBits(ram);
   if (ramStr) segments.push(ramStr);
   const storStr = storageBits(storage);
@@ -265,7 +297,7 @@ export function buildContainerTitle(
     return truncateTitle(`Mixed Bundle ${parts.length} Teile`);
   }
 
-  // Prefer keeping type + mobo + CPU + RAM; drop storage first if over limit
+  // Prefer keeping type + mobo + CPU + GPU + RAM; drop storage first if over limit
   const join = (partsSeg: string[]) => partsSeg.filter(Boolean).join(' · ');
   let title = join(segments);
   if (title.length > MARKETPLACE_TITLE_MAX && storStr && segments[segments.length - 1] === storStr) {

@@ -1,11 +1,12 @@
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { formatEUR } from '../utils/formatMoney';
 
 import { X, Package, Layers, Calendar, Edit2, Check, HelpCircle, Monitor, Boxes, Sparkles } from 'lucide-react';
 import type { InventoryItem } from '../types';
 import { buildRetroContainerAndComponents, type RetroComposeKind } from '../utils/retroSoldCompose';
 import { suggestBundleComponentPrices } from '../utils/bundlePriceRecalc';
+import { buildContainerTitle } from '../utils/buildTitle';
 
 interface Props {
   items: InventoryItem[];
@@ -14,36 +15,6 @@ interface Props {
   onClose: () => void;
 }
 
-const getSmartBundleName = (items: InventoryItem[]) => {
-  const cpus = items.filter(i => i.category === 'Components' && i.subCategory === 'Processors' || i.category === 'Processors');
-  const gpus = items.filter(i => i.category === 'Components' && i.subCategory === 'Graphics Cards' || i.category === 'Graphics Cards');
-  const mobos = items.filter(i => i.category === 'Components' && i.subCategory === 'Motherboards' || i.category === 'Motherboards');
-  const cases = items.filter(i => i.category === 'Components' && i.subCategory === 'Cases' || i.category === 'Cases');
-  
-  // Clean names helper
-  const cleanName = (name: string) => name.replace(/(Intel|AMD|Core|Ryzen|NVIDIA|GeForce|Radeon|ASUS|MSI|Gigabyte)/gi, '').trim();
-
-  // 1. Full PC
-  if (cases.length > 0 && cpus.length > 0 && gpus.length > 0) {
-     return `Gaming PC: ${cleanName(cpus[0].name)} + ${cleanName(gpus[0].name)}`;
-  }
-  
-  // 2. Mobo Bundle
-  if (cpus.length > 0 && mobos.length > 0) {
-     return `Upgrade Bundle: ${cleanName(cpus[0].name)} + Mobo`;
-  }
-  
-  // 3. GPU Farm
-  if (gpus.length > 1) {
-     return `GPU Bundle: ${gpus.length}x Graphics Cards`;
-  }
-  
-  // 4. Fallback: Top Value Items
-  const sortedByPrice = [...items].sort((a,b) => b.buyPrice - a.buyPrice);
-  const topNames = sortedByPrice.slice(0, 2).map(i => i.name).join(' + ');
-  return `Bundle: ${topNames}${items.length > 2 ? '...' : ''}`;
-};
-
 const KIND_META: Record<RetroComposeKind, { label: string; icon: React.ReactNode }> = {
   mixed: { label: 'Mixed Bundle', icon: <Boxes size={14} /> },
   bundle: { label: 'Bundle', icon: <Package size={14} /> },
@@ -51,9 +22,15 @@ const KIND_META: Record<RetroComposeKind, { label: string; icon: React.ReactNode
 };
 
 const RetroBundleModal: React.FC<Props> = ({ items, allItems, onConfirm, onClose }) => {
-  const [bundleName, setBundleName] = useState(() => getSmartBundleName(items));
   const [kind, setKind] = useState<RetroComposeKind>('mixed');
+  const suggestedName = useMemo(() => buildContainerTitle(kind, items), [kind, items]);
+  const [bundleName, setBundleName] = useState(suggestedName);
+  const [nameTouched, setNameTouched] = useState(false);
   const [useSmartDistribution, setUseSmartDistribution] = useState(true);
+
+  useEffect(() => {
+    if (!nameTouched) setBundleName(suggestedName);
+  }, [suggestedName, nameTouched]);
   
   // Calculate Totals - Strict Number Casting
   const totalBuy = items.reduce((sum, i) => sum + Number(i.buyPrice || 0), 0);
@@ -96,7 +73,7 @@ const RetroBundleModal: React.FC<Props> = ({ items, allItems, onConfirm, onClose
       items,
       allItems,
       kind,
-      bundleName,
+      bundleName: bundleName.trim() || suggestedName,
       sellDate,
       useSmartDistribution,
     });
@@ -122,14 +99,34 @@ const RetroBundleModal: React.FC<Props> = ({ items, allItems, onConfirm, onClose
 
         <div className="p-8 space-y-6 overflow-y-auto scrollbar-hide">
           <div className="space-y-2">
-             <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Container Name</label>
+             <div className="flex items-center justify-between gap-2 ml-2">
+               <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Container Name</label>
+               {nameTouched && bundleName !== suggestedName && (
+                 <button
+                   type="button"
+                   onClick={() => {
+                     setNameTouched(false);
+                     setBundleName(suggestedName);
+                   }}
+                   className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800"
+                 >
+                   Reset to auto
+                 </button>
+               )}
+             </div>
              <input 
                 autoFocus
                 className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm outline-none focus:border-indigo-500 transition-all"
                 value={bundleName}
-                onChange={e => setBundleName(e.target.value)}
-                placeholder="e.g. Gaming PC Sale to John"
+                onChange={e => {
+                  setNameTouched(true);
+                  setBundleName(e.target.value);
+                }}
+                placeholder="e.g. PC · B450 · Ryzen 5 5600 · RTX 3060 · 16GB DDR4"
              />
+             <p className="text-[10px] text-slate-400 ml-2">
+               Auto: mobo · CPU · GPU · RAM (DDR size/type) from selected parts
+             </p>
           </div>
 
           <div className="grid grid-cols-1 gap-4">

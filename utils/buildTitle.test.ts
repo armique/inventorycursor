@@ -92,4 +92,50 @@ describe('ramBits kit expansion', () => {
     expect(title).toContain('8GB (2×4GB) DDR3');
     expect(title).not.toContain('4GB (1×4GB)');
   });
+
+  it('includes GPU, CPU, mobo and DDR in sold-style titles', () => {
+    const title = buildContainerTitle('pc', [
+      {
+        id: 'mobo',
+        name: 'MSI B450 Tomahawk',
+        buyPrice: 0,
+        buyDate: '2026-01-01',
+        category: 'Components',
+        subCategory: 'Motherboards',
+        status: ItemStatus.SOLD,
+        comment1: '',
+        comment2: '',
+      },
+      {
+        id: 'cpu',
+        name: 'AMD Ryzen 5 5600',
+        buyPrice: 0,
+        buyDate: '2026-01-01',
+        category: 'Components',
+        subCategory: 'Processors',
+        status: ItemStatus.SOLD,
+        comment1: '',
+        comment2: '',
+      },
+      {
+        id: 'gpu',
+        name: 'NVIDIA GeForce RTX 3060 Ti',
+        buyPrice: 0,
+        buyDate: '2026-01-01',
+        category: 'Components',
+        subCategory: 'Graphics Cards',
+        status: ItemStatus.SOLD,
+        comment1: '',
+        comment2: '',
+      },
+      ramItem({
+        name: 'Corsair Vengeance DDR4 16GB (2x8GB) 3200MHz',
+        id: 'ram',
+      }),
+    ]);
+    expect(title).toMatch(/MSI B450/i);
+    expect(title).toMatch(/Ryzen\s*5\s*5600/i);
+    expect(title).toMatch(/RTX\s*3060\s*Ti/i);
+    expect(title).toMatch(/16GB \(2×8GB\) DDR4/i);
+  });
 });
