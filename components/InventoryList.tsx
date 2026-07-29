@@ -7625,7 +7625,10 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
   }, [scrollElement]);
 
   const itemFlexWidth = useMemo(() => {
-    if (manualWidthColumns.has('item') || !containerWidth) return null;
+    // SOLD should always consume full pane width; otherwise persisted manual item width
+    // can leave a large dead strip on the right side of the table.
+    const allowAutoItemFlex = paneStatus === 'SOLD' || !manualWidthColumns.has('item');
+    if (!allowAutoItemFlex || !containerWidth) return null;
     const floor = columnWidths['item'] || DEFAULT_WIDTHS['item'];
     const othersWidth = visibleColumns
       .filter((id) => id !== 'item')
@@ -7636,7 +7639,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
     // trading a few px of width for never causing an unwanted horizontal scrollbar to appear.
     const scrollbarGutter = 20;
     return Math.max(floor, containerWidth - othersWidth - scrollbarGutter);
-  }, [containerWidth, visibleColumns, columnWidths, manualWidthColumns]);
+  }, [containerWidth, visibleColumns, columnWidths, manualWidthColumns, paneStatus]);
 
   const timeGaugeTitle =
     paneStatus === 'SOLD' ? 'Sale speed' : paneStatus === 'ACTIVE' ? 'Stock age' : 'Hold / sale';
