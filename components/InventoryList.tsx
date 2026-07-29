@@ -2170,6 +2170,38 @@ const InventoryList: React.FC<Props> = ({
   const soldTableRef = useRef<HTMLDivElement>(null);
   const rowHeightEstimate = listDensity === 'compact' ? 84 : 98;
 
+  const snapshotInventoryScrollTops = useCallback((): Map<HTMLDivElement, number> => {
+    const tops = new Map<HTMLDivElement, number>();
+    for (const ref of [tableContainerRef, activeTableRef, soldTableRef]) {
+      if (ref.current) tops.set(ref.current, ref.current.scrollTop);
+    }
+    return tops;
+  }, []);
+
+  const restoreInventoryScrollTops = useCallback((tops: Map<HTMLDivElement, number>) => {
+    tops.forEach((top, el) => {
+      el.scrollTop = top;
+    });
+  }, []);
+
+  const pendingScrollRestoreRef = useRef<Map<HTMLDivElement, number> | null>(null);
+
+  const runSelectionUpdate = useCallback(
+    (updater: (prev: string[]) => string[]) => {
+      pendingScrollRestoreRef.current = snapshotInventoryScrollTops();
+      setSelectedIds(updater);
+    },
+    [snapshotInventoryScrollTops]
+  );
+
+  useLayoutEffect(() => {
+    const tops = pendingScrollRestoreRef.current;
+    if (!tops || tops.size === 0) return;
+    pendingScrollRestoreRef.current = null;
+    restoreInventoryScrollTops(tops);
+    requestAnimationFrame(() => restoreInventoryScrollTops(tops));
+  }, [selectedIds, restoreInventoryScrollTops]);
+
   useEffect(() => {
     if (tableContainerRef.current) tableContainerRef.current.scrollTop = 0;
     if (activeTableRef.current) activeTableRef.current.scrollTop = 0;
@@ -2373,17 +2405,15 @@ const InventoryList: React.FC<Props> = ({
   };
 
   const handleSelectAll = useCallback(() => {
-    startTransition(() => {
-      setSelectedIds((prev) => {
-        if (prev.length === sortedItems.length && sortedItems.length > 0) return [];
-        return sortedItems.map((i) => i.id);
-      });
+    runSelectionUpdate((prev) => {
+      if (prev.length === sortedItems.length && sortedItems.length > 0) return [];
+      return sortedItems.map((i) => i.id);
     });
-  }, [sortedItems]);
+  }, [sortedItems, runSelectionUpdate]);
 
-  const handleSelectAllFor = useCallback((list: InventoryItem[]) => {
-    startTransition(() => {
-      setSelectedIds((prev) => {
+  const handleSelectAllFor = useCallback(
+    (list: InventoryItem[]) => {
+      runSelectionUpdate((prev) => {
         const listIds = list.map((i) => i.id);
         const allInPaneSelected = listIds.length > 0 && listIds.every((id) => prev.includes(id));
         if (allInPaneSelected) {
@@ -2391,17 +2421,21 @@ const InventoryList: React.FC<Props> = ({
         }
         return [...new Set([...prev, ...listIds])];
       });
-    });
-  }, []);
+    },
+    [runSelectionUpdate]
+  );
 
-  const toggleSelect = useCallback((id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return [...next];
-    });
-  }, []);
+  const toggleSelect = useCallback(
+    (id: string) => {
+      runSelectionUpdate((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return [...next];
+      });
+    },
+    [runSelectionUpdate]
+  );
 
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const deferredSelectedIds = useDeferredValue(selectedIds);
@@ -6449,7 +6483,6 @@ const InventoryList: React.FC<Props> = ({
             highlightedItemId={highlightedItemId}
             aiStates={itemAiStates}
             rowHeightEstimate={rowHeightEstimate}
-            reserveBulkBarPadding={selectedIds.length > 0}
             collapsedBundles={collapsedBundles}
             bulkBatchActive={bulkBatchActive}
           />
@@ -6490,7 +6523,6 @@ const InventoryList: React.FC<Props> = ({
             highlightedItemId={highlightedItemId}
             aiStates={itemAiStates}
             rowHeightEstimate={rowHeightEstimate}
-            reserveBulkBarPadding={selectedIds.length > 0}
             collapsedBundles={collapsedBundles}
             bulkBatchActive={bulkBatchActive}
           />
@@ -6537,7 +6569,6 @@ const InventoryList: React.FC<Props> = ({
           highlightedItemId={highlightedItemId}
           aiStates={itemAiStates}
           rowHeightEstimate={rowHeightEstimate}
-          reserveBulkBarPadding={selectedIds.length > 0}
           collapsedBundles={collapsedBundles}
           className="flex flex-1"
           bulkBatchActive={bulkBatchActive}
@@ -7375,7 +7406,11 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
   useLayoutEffect(() => {
     if (!useVirtual || !scrollElement) return;
     rowVirtualizer.measure();
-    const ro = new ResizeObserver(() => rowVirtualizer.measure());
+    const ro = new ResizeObserver(() => {
+      const top = scrollElement.scrollTop;
+      rowVirtualizer.measure();
+      scrollElement.scrollTop = top;
+    });
     ro.observe(scrollElement);
     return () => ro.disconnect();
   }, [scrollElement, useVirtual, sortedItems, rowVirtualizer, collapsedBundles]);
@@ -7620,8 +7655,6 @@ type InventoryListTablePaneProps = {
   highlightedItemId: string | null;
   aiStates: Map<string, ItemAiState>;
   rowHeightEstimate: number;
-  /** Extra scroll padding so last rows stay above the docked bulk bar (desktop overlay). */
-  reserveBulkBarPadding?: boolean;
   collapsedBundles: Set<string>;
   className?: string;
   bulkBatchActive?: boolean;
@@ -7653,7 +7686,6 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
   highlightedItemId,
   aiStates,
   rowHeightEstimate,
-  reserveBulkBarPadding = false,
   collapsedBundles,
   className = 'flex flex-1',
   bulkBatchActive = false,
@@ -7729,9 +7761,8 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
       )}
       <div
         ref={attachScrollRef}
-        className={`flex-1 min-h-0 overflow-x-auto overflow-y-auto custom-scrollbar ${
-          reserveBulkBarPadding ? 'pb-[4.75rem]' : 'pb-3'
-        }`}
+        className="flex-1 min-h-0 overflow-x-auto overflow-y-auto custom-scrollbar pb-[4.75rem]"
+        style={{ overflowAnchor: 'none' }}
       >
         <table
           className="w-full text-left border-collapse min-w-[1160px] table-fixed"
