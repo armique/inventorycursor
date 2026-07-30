@@ -2835,15 +2835,116 @@ async function runEbaySearch() {
   }, 3500);
 }
 
-async function bootstrap() {
+const STORE_CACHE_KEY = 'dealwatch_store_cache_v1';
+
+function cacheStore(store) {
   try {
-    const store = await api('/api/store');
-    applyStore(store);
+    if (store && Array.isArray(store.searches) && store.searches.length) {
+      localStorage.setItem(STORE_CACHE_KEY, JSON.stringify({
+        savedAt: new Date().toISOString(),
+        store,
+      }));
+    }
   } catch {
-    // keep defaults
+    /* ignore quota */
   }
+}
+
+function readCachedStore() {
+  try {
+    const raw = localStorage.getItem(STORE_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const store = parsed?.store || parsed;
+    if (!store || !Array.isArray(store.searches) || !store.searches.length) return null;
+    return store;
+  } catch {
+    return null;
+  }
+}
+
+function setConnectionStatus(text, ok = true) {
+  const node = el('connectionStatus');
+  if (!node) return;
+  node.innerHTML = `<i></i> ${text}`;
+  node.classList.toggle('is-error', !ok);
+  node.classList.toggle('is-ok', !!ok);
+}
+
+async function loadStoreFromApi() {
+  const store = await api('/api/store');
+  if (!store || !Array.isArray(store.searches)) {
+    throw new Error('Dealwatch API returned an empty store.');
+  }
+  cacheStore(store);
+  return store;
+}
+
+function hydrateFromStore(store, sourceLabel) {
+  applyStore(store);
+  const n = store.searches?.length || 0;
+  setConnectionStatus(
+    n ? `Loaded ${n} saved searches (${sourceLabel})` : `Connected (${sourceLabel}) · no searches yet`,
+    true,
+  );
+}
+
+window.addEventListener('message', (event) => {
+  if (event.origin !== window.location.origin) return;
+  const data = event?.data;
+  if (!data || data.type !== 'dealwatch-hydrate' || !data.store) return;
+  try {
+    hydrateFromStore(data.store, 'panel');
+    cacheStore(data.store);
+  } catch (err) {
+    console.error('[dealwatch] hydrate failed', err);
+  }
+});
+
+async function bootstrap() {
+  setConnectionStatus('Loading saved searches…', true);
+  let loaded = false;
+  let lastError = '';
+
+  try {
+    const store = await loadStoreFromApi();
+    hydrateFromStore(store, 'API');
+    loaded = true;
+  } catch (err) {
+    lastError = err instanceof Error ? err.message : String(err);
+    console.error('[dealwatch] store API failed:', lastError);
+  }
+
+  if (!loaded) {
+    const cached = readCachedStore();
+    if (cached) {
+      hydrateFromStore(cached, 'local cache');
+      setConnectionStatus(
+        `Using cached searches (${cached.searches.length}). API: ${lastError || 'unavailable'}`,
+        false,
+      );
+      loaded = true;
+    }
+  }
+
+  if (!loaded) {
+    setConnectionStatus(
+      `Saved searches not loaded. ${lastError || 'Start with npm run dev (Dealwatch API).'}`,
+      false,
+    );
+  }
+
   updatePageMeta();
-  await fetchListings();
+  try {
+    await fetchListings();
+  } catch (err) {
+    if (!loaded) {
+      setConnectionStatus(
+        `Dealwatch API unavailable: ${err instanceof Error ? err.message : String(err)}`,
+        false,
+      );
+    }
+  }
   await fetchKaPurchases({ quiet: true });
   await fetchKaSales({ quiet: true });
   await refreshNotifications({ quiet: true });

@@ -702,6 +702,16 @@ main {
   background: var(--warn);
   box-shadow: 0 0 0 3px rgb(180 83 9 / .14);
 }
+.connection.is-error {
+  color: #b45309;
+}
+.connection.is-error i {
+  background: var(--warn);
+  box-shadow: 0 0 0 3px rgb(180 83 9 / .14);
+}
+.connection.is-ok i {
+  background: var(--accent);
+}
 
 .quiet-button,
 .text-button,
