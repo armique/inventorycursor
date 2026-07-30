@@ -28,7 +28,6 @@ import { toLocalCalendarDateKey, yearMonthKeyFromDate, currentLocalYearMonth } f
 import { countSalesByPlatform, formatItemSalePlatform, groupSalesByPlatform, PLATFORM_GROUP_LABEL, buildPlatformReconciliation, buildEbayTagFixUpdates, sumRevenueByPlatform, countOrdersByPlatform, groupItemsByMarketplaceOrder, countMissingExplicitSalePlatform, type PlatformGroupKey } from '../utils/salePlatform';
 
 const DashboardAnalyticsPanel = lazy(() => import('./DashboardAnalyticsPanel'));
-const DealwatchWorkspace = lazy(() => import('./dealwatch/DealwatchWorkspace'));
 interface Props {
   items: InventoryItem[];
   expenses?: Expense[];
@@ -1608,17 +1607,13 @@ const Dashboard: React.FC<Props> = ({
       )}
 
       {mainTab === 'dealwatch' && (
-        <div className="flex-1 min-h-[min(70vh,720px)] flex flex-col min-w-0">
-          <Suspense
-            fallback={
-              <div className="flex-1 flex items-center justify-center text-slate-400 gap-2">
-                <Sparkles className="animate-pulse" size={18} />
-                <span className="text-sm font-bold">Loading Dealwatch…</span>
-              </div>
-            }
-          >
-            <DealwatchWorkspace embedded />
-          </Suspense>
+        <div className="flex-1 min-h-[min(70vh,720px)] flex flex-col min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white">
+          <iframe
+            title="Dealwatch"
+            src="/dealwatch/index.html"
+            className="flex-1 min-h-0 w-full border-0 bg-white"
+            allow="clipboard-read; clipboard-write"
+          />
         </div>
       )}
     </div>

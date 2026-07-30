@@ -73,8 +73,17 @@ export function viteDealwatchRuntimeDevPlugin(): Plugin {
         const rawUrl = req.url || '';
         const pathname = rawUrl.split('?')[0] || '';
 
-        if (pathname === '/api/dealwatch' || pathname.startsWith('/api/dealwatch/')) {
-          const rewritten = rawUrl.replace(/^\/api\/dealwatch(?=\/|\?|$)/, '/api') || '/api';
+        // Legacy aliases from the pre-rename paths.
+        if (pathname === '/api/est' || pathname.startsWith('/api/est/')) {
+          req.url = rawUrl.replace(/^\/api\/est(?=\/|\?|$)/, '/api/dealwatch');
+          // Fall through — next checks will handle /api/dealwatch.
+        }
+
+        const apiUrl = req.url || rawUrl;
+        const apiPath = apiUrl.split('?')[0] || '';
+
+        if (apiPath === '/api/dealwatch' || apiPath.startsWith('/api/dealwatch/')) {
+          const rewritten = apiUrl.replace(/^\/api\/dealwatch(?=\/|\?|$)/, '/api') || '/api';
           const originalUrl = req.url;
           req.url = rewritten;
           try {
@@ -89,6 +98,13 @@ export function viteDealwatchRuntimeDevPlugin(): Plugin {
           } finally {
             req.url = originalUrl;
           }
+          return;
+        }
+
+        if (pathname === '/market' || pathname.startsWith('/market/')) {
+          res.statusCode = 302;
+          res.setHeader('Location', pathname === '/market' ? '/dealwatch/' : `/dealwatch${pathname.slice('/market'.length)}`);
+          res.end();
           return;
         }
 
