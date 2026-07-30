@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>Free Search | Dealwatch</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,500;6..72,600;6..72,700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./explore.css" />
+  </head>
+  <body class="explore-page">
+    <header class="explore-topbar">
+      <div class="explore-topbar-inner">
+        <a class="brand" href="./index.html" aria-label="Dealwatch home">
+          <span class="brand-mark">D</span><span>dealwatch</span>
+        </a>
+        <nav class="explore-nav" aria-label="Main navigation">
+          <a href="./index.html">Deals</a>
+          <a class="is-active" href="./explore.html">Free search</a>
+          <a href="./compare.html">Parts compare</a>
+        </nav>
+        <p class="explore-top-note" id="exploreMeta">Search any item on eBay.de — no Dealwatch Out filters.</p>
+      </div>
+    </header>
+
+    <div class="explore-shell">
+      <aside class="explore-filters" aria-label="Search filters">
+        <form id="exploreForm" class="explore-form">
+          <label class="explore-field explore-field-grow">
+            <span>Keywords</span>
+            <input id="queryInput" type="search" name="query" placeholder="e.g. RTX 3080, iPhone 13, Lego…" autocomplete="off" autofocus />
+          </label>
+
+          <label class="explore-field">
+            <span>Category</span>
+            <input id="categorySearch" type="search" placeholder="Search PC categories or leave blank" autocomplete="off" />
+            <input id="categoryId" type="hidden" value="" />
+            <input id="categoryName" type="hidden" value="" />
+            <div id="categoryPicks" class="category-picks" hidden></div>
+            <p id="categoryChosen" class="category-chosen" hidden></p>
+          </label>
+
+          <div class="explore-row">
+            <label class="explore-field">
+              <span>Min €</span>
+              <input id="minPrice" type="number" min="0" step="1" value="0" />
+            </label>
+            <label class="explore-field">
+              <span>Max €</span>
+              <input id="maxPrice" type="number" min="1" step="1" value="500" />
+            </label>
+          </div>
+
+          <label class="explore-field">
+            <span>Condition</span>
+            <select id="condition">
+              <option value="any">Any (excl. for parts)</option>
+              <option value="new">New</option>
+              <option value="used">Used</option>
+              <option value="refurbished">Refurbished</option>
+              <option value="all">All conditions</option>
+            </select>
+          </label>
+
+          <fieldset class="explore-fieldset">
+            <legend>Buying format</legend>
+            <label class="check"><input type="checkbox" name="buying" value="FIXED_PRICE" checked /> Buy It Now</label>
+            <label class="check"><input type="checkbox" name="buying" value="AUCTION" checked /> Auction</label>
+            <label class="check"><input type="checkbox" name="buying" value="BEST_OFFER" checked /> Best Offer</label>
+          </fieldset>
+
+          <fieldset class="explore-fieldset">
+            <legend>Shipping &amp; location</legend>
+            <label class="check"><input id="freeShipping" type="checkbox" /> Free shipping</label>
+            <label class="check"><input id="returnsAccepted" type="checkbox" /> Returns accepted</label>
+            <label class="check"><input id="locatedInDE" type="checkbox" /> Item located in Germany</label>
+          </fieldset>
+
+          <div class="explore-row">
+            <label class="explore-field">
+              <span>Min seller feedback</span>
+              <input id="minFeedback" type="number" min="0" step="1" value="0" />
+            </label>
+            <label class="explore-field">
+              <span>Sort</span>
+              <select id="sort">
+                <option value="newlyListed">Newly listed</option>
+                <option value="price">Price + shipping: lowest</option>
+                <option value="priceDesc">Price + shipping: highest</option>
+                <option value="endingSoonest">Ending soonest</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="explore-actions">
+            <button class="primary-button" type="submit" id="searchButton">Search eBay.de</button>
+            <a id="ebayLink" class="quiet-button" href="https://www.ebay.de" target="_blank" rel="noreferrer">Open on eBay</a>
+          </div>
+        </form>
+      </aside>
+
+      <main class="explore-stage">
+        <div class="explore-stage-head">
+          <h1>Free search</h1>
+          <p id="resultSummary" class="explore-summary">Enter keywords and search — results skip Dealwatch smart filters.</p>
+        </div>
+        <div id="exploreGrid" class="listing-grid view-list" aria-live="polite"></div>
+        <p id="exploreEmpty" class="empty-state">No results yet.</p>
+      </main>
+    </div>
+
+    <template id="listingTemplate">
+      <article class="listing-card">
+        <div class="listing-image">
+          <img alt="" hidden />
+          <span class="listing-fallback">Item</span>
+          <span class="new-badge" hidden>New</span>
+          <span class="offer-badge" hidden>Best Offer</span>
+        </div>
+        <div class="listing-main">
+          <div class="listing-topline">
+            <span class="deal-label"></span>
+            <span class="listing-timing">
+              <span class="listed-at" hidden></span>
+              <span class="time-left"></span>
+            </span>
+          </div>
+          <h3 class="listing-title"></h3>
+          <p class="meta-line"><span class="seller"></span><span class="meta-sep"> · </span><span class="condition"></span></p>
+          <p class="offer-hint" hidden>Accepts offers</p>
+          <div class="price-line"><strong class="total-price"></strong><span class="shipping"></span></div>
+        </div>
+        <div class="card-actions">
+          <a class="offer-link" target="_blank" rel="noreferrer">eBay</a>
+        </div>
+      </article>
+    </template>
+
+    <script src="./explore.js"></script>
+  </body>
+</html>

@@ -2043,6 +2043,22 @@ const App: React.FC = () => {
         </Route>
         <Route path="/auth/github/callback" element={<GitHubOAuthCallback />} />
         <Route path="/auth/ebay/callback" element={<EbayOAuthCallback />} />
+        {/* If /dealwatch/* somehow hits the React SPA (static UI missing), never dump users on the storefront. */}
+        <Route
+          path="/dealwatch/*"
+          element={
+            <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-100 p-6 text-center">
+              <div className="max-w-md space-y-2">
+                <p className="text-lg font-black">Dealwatch UI failed to load</p>
+                <p className="text-sm text-slate-400">
+                  Restart the app with <code className="text-emerald-300">npm run dev</code> so `/dealwatch` is served from
+                  dealwatch-runtime. Then open <a className="underline text-white" href="/panel/dealwatch">/panel/dealwatch</a>.
+                </p>
+              </div>
+            </div>
+          }
+        />
+        <Route path="/market/*" element={<Navigate to="/panel/dealwatch" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </PanelLocaleProvider>
