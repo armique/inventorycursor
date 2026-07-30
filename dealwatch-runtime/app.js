@@ -2167,7 +2167,15 @@ async function api(path, options = {}) {
     ...options,
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || 'Request failed.');
+  if (!response.ok) {
+    const raw = data && data.error;
+    const message = typeof raw === 'string'
+      ? raw
+      : raw && typeof raw.message === 'string'
+        ? raw.message
+        : `Request failed (${response.status})`;
+    throw new Error(message);
+  }
   return data;
 }
 
@@ -2698,10 +2706,10 @@ async function fetchListings({
   if (quiet && fetching) return;
   fetching = true;
   if (!quiet) {
-    const Dealwatch = filters.marketplace === 'kleinanzeigen' ? 'Kleinanzeigen' : 'eBay.de';
+    const channelName = filters.marketplace === 'kleinanzeigen' ? 'Kleinanzeigen' : 'eBay.de';
     note.textContent = filters.search
-      ? `Searching ${market} for “${filters.search}”…`
-      : `Scanning ${market}…`;
+      ? `Searching ${channelName} for “${filters.search}”…`
+      : `Scanning ${channelName}…`;
     el('scanButton').textContent = 'Scanning…';
     el('scanButton').disabled = true;
     if (el('ebaySearchButton')) {
@@ -2768,12 +2776,12 @@ async function fetchListings({
     const suggestNote = currentSuggestions.length
       ? ` No lots under €${filters.maxPrice} — showing ${currentSuggestions.length} closer option${currentSuggestions.length === 1 ? '' : 's'} above budget.`
       : '';
-    const Dealwatch = filters.marketplace === 'kleinanzeigen' || data.marketplace === 'kleinanzeigen'
+    const channelName = filters.marketplace === 'kleinanzeigen' || data.marketplace === 'kleinanzeigen'
       ? 'Kleinanzeigen'
       : 'eBay.de';
-    note.textContent = `Live ${market} lots. Scanned: ${data.scanned}; rejected by rules: ${data.rejected}.${pool}${suggestNote}${telegramStatus}`;
+    note.textContent = `Live ${channelName} lots. Scanned: ${data.scanned}; rejected by rules: ${data.rejected}.${pool}${suggestNote}${telegramStatus}`;
     const marketLabel = document.querySelector('.sidebar-footer strong');
-    if (marketLabel) marketLabel.textContent = market;
+    if (marketLabel) marketLabel.textContent = channelName;
     scheduleAutoRefresh();
     scheduleNotificationPoll();
   } catch (error) {
@@ -2938,11 +2946,12 @@ async function bootstrap() {
   try {
     await fetchListings();
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[dealwatch] initial scan failed:', msg);
     if (!loaded) {
-      setConnectionStatus(
-        `Dealwatch API unavailable: ${err instanceof Error ? err.message : String(err)}`,
-        false,
-      );
+      setConnectionStatus(`Dealwatch API unavailable: ${msg}`, false);
+    } else {
+      setConnectionStatus(`Loaded ${searches.length} saved searches · scan error: ${msg}`, false);
     }
   }
   await fetchKaPurchases({ quiet: true });

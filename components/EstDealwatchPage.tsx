@@ -25,8 +25,14 @@ const EstDealwatchPage: React.FC = () => {
           cache: 'no-store',
         });
         if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.error || `Dealwatch API HTTP ${res.status}`);
+          const body = await res.json().catch(() => ({} as { error?: unknown }));
+          const raw = body?.error;
+          const message = typeof raw === 'string'
+            ? raw
+            : raw && typeof raw === 'object' && 'message' in raw && typeof (raw as { message: unknown }).message === 'string'
+              ? String((raw as { message: string }).message)
+              : `Dealwatch API HTTP ${res.status}`;
+          throw new Error(message);
         }
         const next = (await res.json()) as DealwatchStorePayload;
         if (cancelled) return;
@@ -44,7 +50,9 @@ const EstDealwatchPage: React.FC = () => {
           setSearchCount(null);
           setBootError(
             err instanceof Error
-              ? err.message
+              ? (err.message && err.message !== '[object Object]'
+                ? err.message
+                : 'Dealwatch API unavailable. Restart with npm run dev.')
               : 'Dealwatch API unavailable. Restart with npm run dev (needs dealwatch-runtime/.env).',
           );
         }
@@ -80,7 +88,7 @@ const EstDealwatchPage: React.FC = () => {
       <iframe
         ref={iframeRef}
         title="Dealwatch"
-        src="/dealwatch/index.html?hydrate=1"
+        src={`/dealwatch/index.html?v=${encodeURIComponent('2026-07-30-searches')}`}
         className="flex-1 min-h-0 w-full border-0 bg-white"
         allow="clipboard-read; clipboard-write"
         onLoad={postHydrate}
