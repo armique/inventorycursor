@@ -67,6 +67,13 @@ export function syncDealwatchPublicUi(): void {
     if (!fs.existsSync(src)) continue;
     fs.copyFileSync(src, path.join(PUBLIC_DEALWATCH_DIR, file));
   }
+  // Seed for production static fallback + serverless first boot.
+  const seedSrc = path.join(DEALWATCH_DIR, 'data', 'store.seed.json');
+  const liveSrc = path.join(DEALWATCH_DIR, 'data', 'store.json');
+  const storeSrc = fs.existsSync(liveSrc) ? liveSrc : seedSrc;
+  if (fs.existsSync(storeSrc)) {
+    fs.copyFileSync(storeSrc, path.join(PUBLIC_DEALWATCH_DIR, 'store.json'));
+  }
 }
 
 function serveDealwatchFile(relPosix: string, res: ServerResponse): boolean {

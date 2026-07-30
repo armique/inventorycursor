@@ -2936,6 +2936,25 @@ async function bootstrap() {
   }
 
   if (!loaded) {
+    try {
+      const seedRes = await fetch('/dealwatch/store.json', { cache: 'no-store' });
+      if (seedRes.ok) {
+        const seed = await seedRes.json();
+        if (seed && Array.isArray(seed.searches) && seed.searches.length) {
+          hydrateFromStore(seed, 'static seed');
+          setConnectionStatus(
+            `Using static seed (${seed.searches.length} searches). API: ${lastError || 'unavailable'}`,
+            false,
+          );
+          loaded = true;
+        }
+      }
+    } catch (seedErr) {
+      console.warn('[dealwatch] static seed failed:', seedErr);
+    }
+  }
+
+  if (!loaded) {
     setConnectionStatus(
       `Saved searches not loaded. ${lastError || 'Start with npm run dev (Dealwatch API).'}`,
       false,

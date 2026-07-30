@@ -20,27 +20,37 @@ const EstDealwatchPage: React.FC = () => {
     let cancelled = false;
     (async () => {
       try {
+        let next: DealwatchStorePayload | null = null;
         const res = await fetch('/api/dealwatch/store', {
           headers: { Accept: 'application/json' },
           cache: 'no-store',
         });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({} as { error?: unknown }));
-          const raw = body?.error;
-          const message = typeof raw === 'string'
-            ? raw
-            : raw && typeof raw === 'object' && 'message' in raw && typeof (raw as { message: unknown }).message === 'string'
-              ? String((raw as { message: string }).message)
-              : `Dealwatch API HTTP ${res.status}`;
-          throw new Error(message);
+        if (res.ok) {
+          next = (await res.json()) as DealwatchStorePayload;
+        } else {
+          // Production without serverless wiring yet — fall back to static seed.
+          const seed = await fetch('/dealwatch/store.json', {
+            headers: { Accept: 'application/json' },
+            cache: 'no-store',
+          });
+          if (!seed.ok) {
+            const body = await res.json().catch(() => ({} as { error?: unknown }));
+            const raw = body?.error;
+            const message = typeof raw === 'string'
+              ? raw
+              : raw && typeof raw === 'object' && 'message' in raw && typeof (raw as { message: unknown }).message === 'string'
+                ? String((raw as { message: string }).message)
+                : `Dealwatch API HTTP ${res.status}`;
+            throw new Error(message);
+          }
+          next = (await seed.json()) as DealwatchStorePayload;
         }
-        const next = (await res.json()) as DealwatchStorePayload;
-        if (cancelled) return;
+        if (cancelled || !next) return;
         const count = Array.isArray(next.searches) ? next.searches.length : 0;
         setStore(next);
         setSearchCount(count);
         if (!count) {
-          setBootError('Dealwatch API is up, but store.json has no saved searches.');
+          setBootError('Dealwatch store has no saved searches.');
         } else {
           setBootError('');
         }
@@ -52,8 +62,8 @@ const EstDealwatchPage: React.FC = () => {
             err instanceof Error
               ? (err.message && err.message !== '[object Object]'
                 ? err.message
-                : 'Dealwatch API unavailable. Restart with npm run dev.')
-              : 'Dealwatch API unavailable. Restart with npm run dev (needs dealwatch-runtime/.env).',
+                : 'Dealwatch API unavailable.')
+              : 'Dealwatch API unavailable.',
           );
         }
       }

@@ -14,7 +14,11 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const MONITOR_INTERVAL_MINUTES = numberInRange(process.env.MONITOR_INTERVAL_MINUTES, 3, 1, 60);
 const DATA_DIR = path.join(__dirname, 'data');
-const STORE_PATH = path.join(DATA_DIR, 'store.json');
+const STORE_SEED_PATH = path.join(DATA_DIR, 'store.seed.json');
+const STORE_PATH = process.env.VERCEL
+  ? path.join('/tmp', 'dealwatch-store.json')
+  : path.join(DATA_DIR, 'store.json');
+const PUBLIC_STORE_SEED = path.join(__dirname, '..', 'public', 'dealwatch', 'store.json');
 const GPU_SPECS_PATH = path.join(DATA_DIR, 'gpu-specs.json');
 const CPU_SPECS_PATH = path.join(DATA_DIR, 'cpu-specs.json');
 const SSD_SPECS_PATH = path.join(DATA_DIR, 'ssd-specs.json');
@@ -1463,7 +1467,9 @@ function isBlockedListing(
   return false;
 }
 
-if (!EBAY_CLIENT_ID || !EBAY_CLIENT_SECRET) throw new Error('EBAY_CLIENT_ID and EBAY_CLIENT_SECRET are required in .env.');
+if (!EBAY_CLIENT_ID || !EBAY_CLIENT_SECRET) {
+  console.warn('[dealwatch] EBAY_CLIENT_ID/SECRET missing — eBay search routes will fail until env is set.');
+}
 
 function loadEnv(filePath) {
   if (!fs.existsSync(filePath)) return;
@@ -2010,7 +2016,8 @@ async function refreshPcCategoryTreeFromEbay() {
 }
 
 function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  const dir = process.env.VERCEL ? path.dirname(STORE_PATH) : DATA_DIR;
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
 function emptyStore() {
@@ -2243,6 +2250,16 @@ function migrateLegacySearch() {
 
 function loadStore() {
   try {
+    if (!fs.existsSync(STORE_PATH)) {
+      const seedFrom =
+        (fs.existsSync(STORE_SEED_PATH) && STORE_SEED_PATH)
+        || (fs.existsSync(PUBLIC_STORE_SEED) && PUBLIC_STORE_SEED)
+        || null;
+      if (seedFrom) {
+        ensureDataDir();
+        fs.copyFileSync(seedFrom, STORE_PATH);
+      }
+    }
     if (fs.existsSync(STORE_PATH)) {
       const raw = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
       const store = normalizeStore(raw);
@@ -2284,8 +2301,23 @@ function storeMeta(store = loadStore()) {
 }
 
 async function readJsonBody(request) {
+  // Vercel may already parse JSON onto req.body.
+  if (request && request.body != null && request.body !== '') {
+    if (typeof request.body === 'string') {
+      try {
+        return JSON.parse(request.body);
+      } catch {
+        return {};
+      }
+    }
+    if (typeof request.body === 'object') return request.body;
+  }
   const chunks = [];
-  for await (const chunk of request) chunks.push(chunk);
+  try {
+    for await (const chunk of request) chunks.push(chunk);
+  } catch {
+    return {};
+  }
   if (!chunks.length) return {};
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
@@ -4579,13 +4611,26 @@ let marketRuntimeStarted = false;
 function startDealwatchRuntime() {
   if (marketRuntimeStarted) return;
   marketRuntimeStarted = true;
+  if (process.env.VERCEL) {
+    // Serverless: no long-lived background monitor. Store still loads on demand.
+    const store = loadStore();
+    const active = getActiveSearch(store);
+    console.log(`[dealwatch] Vercel mode ready · tracked filters: ${store.searches.length}; active: ${active?.name || '—'}`);
+    return;
+  }
   ensureDataDir();
   const store = saveStore(loadStore());
   const active = getActiveSearch(store);
-  console.log(`[market] Active search: ${active.name}; tracked filters: ${store.searches.length}; in trash: ${store.trash.length}`);
-  monitorSearches();
-  setInterval(monitorSearches, MONITOR_INTERVAL_MINUTES * 60 * 1000);
-  console.log(`[market] Background monitor interval: ${MONITOR_INTERVAL_MINUTES} min.`);
+  console.log(`[dealwatch] Active search: ${active.name}; tracked filters: ${store.searches.length}; in trash: ${store.trash.length}`);
+  startBackgroundMonitor();
+  console.log(`[dealwatch] Background monitor interval: ${MONITOR_INTERVAL_MINUTES} min.`);
+}
+
+function startBackgroundMonitor() {
+  monitorSearches().catch((error) => console.error('[dealwatch] monitor error:', error));
+  setInterval(() => {
+    monitorSearches().catch((error) => console.error('[dealwatch] monitor error:', error));
+  }, MONITOR_INTERVAL_MINUTES * 60 * 1000);
 }
 
 function createDealwatchServer() {
