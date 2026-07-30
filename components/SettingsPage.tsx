@@ -1829,13 +1829,13 @@ const SettingsPage: React.FC<Props> = ({
                 <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
                    <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
                       <FileSpreadsheet size={24} className="text-emerald-600" />
-                      Export fÃ¼r Finanzamt &amp; Steuerberater (Google Tabellen / Excel)
+                      Export für Finanzamt &amp; Steuerberater (Google Tabellen / Excel)
                    </h3>
                    <p className="text-sm text-slate-600 leading-relaxed max-w-3xl">
-                      Erzeugt eine <strong>.xlsx</strong>-Datei mit mehreren BlÃ¤ttern, die Sie direkt in{' '}
-                      <strong>Google Drive</strong> hochladen und mit <strong>Google Tabellen</strong> Ã¶ffnen kÃ¶nnen — ohne OAuth oder API-SchlÃ¼ssel in der App.
-                      Enthalten sind: aktive Inventarpositionen (Bestand und verkauft), erklÃ¤rtes Paket-/PC-Verhalten, und Ihre{' '}
-                      <strong>Betriebsausgaben</strong>. Optional schrÃ¤nken Sie den Export auf einen <strong>Zeitraum</strong> ein (siehe unten).
+                      Erzeugt eine <strong>.xlsx</strong>-Datei mit mehreren Blättern, die Sie direkt in{' '}
+                      <strong>Google Drive</strong> hochladen und mit <strong>Google Tabellen</strong> öffnen können — ohne OAuth oder API-Schlüssel in der App.
+                      Enthalten sind: aktive Inventarpositionen (Bestand und verkauft), erklärtes Paket-/PC-Verhalten, und Ihre{' '}
+                      <strong>Betriebsausgaben</strong>. Optional schränken Sie den Export auf einen <strong>Zeitraum</strong> ein (siehe unten).
                    </p>
 
                    <div className="grid gap-4 md:grid-cols-2">
@@ -1844,32 +1844,32 @@ const SettingsPage: React.FC<Props> = ({
                          <ul className="text-sm text-slate-700 space-y-2 list-disc pl-5">
                             <li>
                                <strong>Bezeichnung</strong>, <strong>Einkaufsdatum</strong>, <strong>Verkaufsdatum</strong>,{' '}
-                               <strong>Einkaufspreis_EUR</strong>, <strong>Verkaufspreis_EUR</strong>, <strong>Gewinn_EUR</strong> (und GebÃ¼hren)
+                               <strong>Einkaufspreis_EUR</strong>, <strong>Verkaufspreis_EUR</strong>, <strong>Gewinn_EUR</strong> (und Gebühren)
                             </li>
-                            <li>Spalten <strong>Paket_oder_PC</strong>, <strong>Rolle_im_Paket</strong> und <strong>StÃ¼ckliste_Komponenten</strong> erklÃ¤ren Bundles und PCs</li>
-                            <li>EntwÃ¼rfe (<code className="bg-slate-200 px-1 rounded text-xs">isDraft</code>) und Papierkorb sind nicht enthalten</li>
+                            <li>Spalten <strong>Paket_oder_PC</strong>, <strong>Rolle_im_Paket</strong> und <strong>Stückliste_Komponenten</strong> erklären Bundles und PCs</li>
+                            <li>Entwürfe (<code className="bg-slate-200 px-1 rounded text-xs">isDraft</code>) und Papierkorb sind nicht enthalten</li>
                          </ul>
                       </div>
                       <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-3">
-                         <h4 className="text-xs font-black uppercase tracking-wider text-slate-500">Pakete &amp; DoppelzÃ¤hlung</h4>
+                         <h4 className="text-xs font-black uppercase tracking-wider text-slate-500">Pakete &amp; Doppelzählung</h4>
                          <ul className="text-sm text-slate-700 space-y-2 list-disc pl-5">
                             <li>
-                               <strong>Verkauf Ã¼ber den Verkaufsdialog:</strong> Verkaufspreis und Gewinn stehen auf den <strong>Komponentenzeilen</strong> (anteilig nach Einkaufspreis). Die leere Paket-HÃ¼lle erscheint nicht — damit summieren Sie den Umsatz nicht zweimal.
+                               <strong>Verkauf über den Verkaufsdialog:</strong> Verkaufspreis und Gewinn stehen auf den <strong>Komponentenzeilen</strong> (anteilig nach Einkaufspreis). Die leere Paket-Hülle erscheint nicht — damit summieren Sie den Umsatz nicht zweimal.
                             </li>
                             <li>
-                               <strong>Retro-Paket / ein Paketpreis:</strong> Umsatz steht auf der <strong>Paketzeile</strong>; Komponenten nur als StÃ¼ckliste.
+                               <strong>Retro-Paket / ein Paketpreis:</strong> Umsatz steht auf der <strong>Paketzeile</strong>; Komponenten nur als Stückliste.
                             </li>
-                            <li>Blatt <strong>Pakete_Uebersicht</strong>: je Paket/PC eine Zeile mit StÃ¼ckliste und Buchungshinweis</li>
+                            <li>Blatt <strong>Pakete_Uebersicht</strong>: je Paket/PC eine Zeile mit Stückliste und Buchungshinweis</li>
                          </ul>
                       </div>
                    </div>
 
                    <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 space-y-2">
-                      <h4 className="text-sm font-black text-emerald-900">So Ã¶ffnen Sie die Datei in Google Tabellen</h4>
+                      <h4 className="text-sm font-black text-emerald-900">So öffnen Sie die Datei in Google Tabellen</h4>
                       <ol className="text-sm text-emerald-900/90 list-decimal pl-5 space-y-1">
                          <li>Export hier unten herunterladen.</li>
-                         <li>Google Drive → <strong>Neu</strong> → <strong>Datei hochladen</strong> → die .xlsx wÃ¤hlen.</li>
-                         <li>Rechtsklick auf die Datei → <strong>Ã–ffnen mit</strong> → <strong>Google Tabellen</strong>.</li>
+                         <li>Google Drive → <strong>Neu</strong> → <strong>Datei hochladen</strong> → die .xlsx wählen.</li>
+                         <li>Rechtsklick auf die Datei → <strong>Öffnen mit</strong> → <strong>Google Tabellen</strong>.</li>
                       </ol>
                    </div>
 
@@ -1941,7 +1941,7 @@ const SettingsPage: React.FC<Props> = ({
                          </div>
                       )}
                       {finanzRangePreset === 'custom_range' && !finanzExportResolution.valid && (
-                         <p className="text-xs text-amber-700 font-semibold">Bitte Von- und Bis-Datum wÃ¤hlen (Format JJJJ-MM-TT).</p>
+                         <p className="text-xs text-amber-700 font-semibold">Bitte Von- und Bis-Datum wählen (Format JJJJ-MM-TT).</p>
                       )}
                       {finanzExportResolution.valid && finanzExportResolution.bounds && (
                          <p className="text-xs text-slate-600">
@@ -1954,7 +1954,7 @@ const SettingsPage: React.FC<Props> = ({
                             disabled={!finanzExportResolution.valid}
                             onClick={() => {
                                if (!finanzExportResolution.valid) {
-                                  showToast('Bitte gÃ¼ltigen Zeitraum wÃ¤hlen.', 'error');
+                                  showToast('Bitte gültigen Zeitraum wählen.', 'error');
                                   return;
                                }
                                void (async () => {
@@ -1965,7 +1965,7 @@ const SettingsPage: React.FC<Props> = ({
                                         companyName: businessSettings.companyName,
                                         dateRange: bounds,
                                         dateRangeDescription: bounds
-                                           ? `${formatBoundsGerman(bounds)} — Inventar: Positionen mit Einkaufs-, Verkaufs- oder Container-Verkaufsdatum im Zeitraum (Pakete vollstÃ¤ndig, wenn eine Position passt). Ausgaben: Buchungsdatum im Zeitraum.`
+                                           ? `${formatBoundsGerman(bounds)} — Inventar: Positionen mit Einkaufs-, Verkaufs- oder Container-Verkaufsdatum im Zeitraum (Pakete vollständig, wenn eine Position passt). Ausgaben: Buchungsdatum im Zeitraum.`
                                            : undefined,
                                      });
                                      showToast('Finanzamt-Export heruntergeladen', 'success');
@@ -2016,7 +2016,7 @@ const SettingsPage: React.FC<Props> = ({
 
                    <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-3">
                       <h4 className="text-sm font-black text-slate-900">ELSTER-Vorbereitung (#64)</h4>
-                      <p className="text-xs text-slate-500">Checkliste — ersetzt keine ELSTER-Ãœbermittlung.</p>
+                      <p className="text-xs text-slate-500">Checkliste — ersetzt keine ELSTER-Übermittlung.</p>
                       <ul className="space-y-2">
                          {elsterChecklist.map((row) => (
                             <li key={row.id} className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
@@ -2035,7 +2035,7 @@ const SettingsPage: React.FC<Props> = ({
                    </div>
 
                    <p className="text-xs text-slate-400 max-w-2xl leading-relaxed">
-                      Keine Rechtsberatung: Die Datei spiegelt Ihre App-Daten wider. Bewertung fÃ¼r Umsatzsteuer, EÃœR oder Gewinnermittlung bleibt Sache von Ihnen und ggf. Ihrem Steuerberater.
+                      Keine Rechtsberatung: Die Datei spiegelt Ihre App-Daten wider. Bewertung für Umsatzsteuer, EÜR oder Gewinnermittlung bleibt Sache von Ihnen und ggf. Ihrem Steuerberater.
                    </p>
                 </div>
              </div>

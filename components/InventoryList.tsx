@@ -1769,7 +1769,7 @@ const InventoryList: React.FC<Props> = ({
     } catch (e: any) {
       console.error('Price suggestion failed', e);
       const msg = e?.message || 'Preisermittlung fehlgeschlagen.';
-      setPriceSuggestError(msg.includes('No AI configured') ? 'Kein AI Provider konfiguriert. Bitte .env prÃ¼fen.' : msg);
+      setPriceSuggestError(msg.includes('No AI configured') ? 'Kein AI Provider konfiguriert. Bitte .env prüfen.' : msg);
     } finally {
       setPriceSuggestId(null);
     }
@@ -2671,7 +2671,7 @@ const InventoryList: React.FC<Props> = ({
         setTimeout(() => setToast(null), 2200);
         return;
       }
-      const preferAufrustkit = /aufrustkit|aufrÃ¼stkit|aufrÃ¼st[\s-]?kit/i.test(
+      const preferAufrustkit = /aufrustkit|aufrüstkit|aufrüst[\s-]?kit/i.test(
         `${container.name} ${container.vendor || ''}`
       );
       const title = buildContainerTitle(kind, parts, { preferAufrustkit });
@@ -5814,7 +5814,7 @@ const InventoryList: React.FC<Props> = ({
                                              <input type="number" placeholder={`Min ${optMin ?? ''}`} value={range?.min ?? ''} onChange={e => setSpecRangeFilters(prev => ({ ...prev, [key]: { ...prev[key], min: e.target.value === '' ? undefined : Number(e.target.value), max: prev[key]?.max } }))} className="w-12 px-1.5 py-0.5 rounded border border-slate-200 text-[10px]" />
                                              <span className="text-slate-400 text-[10px]">–</span>
                                              <input type="number" placeholder={`Max ${optMax ?? ''}`} value={range?.max ?? ''} onChange={e => setSpecRangeFilters(prev => ({ ...prev, [key]: { ...prev[key], min: prev[key]?.min, max: e.target.value === '' ? undefined : Number(e.target.value) } }))} className="w-12 px-1.5 py-0.5 rounded border border-slate-200 text-[10px]" />
-                                             {hasRange && <button type="button" onClick={() => setSpecRangeFilters(prev => { const n = { ...prev }; delete n[key]; return n; })} className="text-[10px] font-bold text-slate-400 hover:text-red-600">Ã—</button>}
+                                             {hasRange && <button type="button" onClick={() => setSpecRangeFilters(prev => { const n = { ...prev }; delete n[key]; return n; })} className="text-[10px] font-bold text-slate-400 hover:text-red-600">×</button>}
                                           </div>
                                        )}
                                     </div>
@@ -5962,23 +5962,23 @@ const InventoryList: React.FC<Props> = ({
             <div className="flex flex-wrap items-center gap-1.5">
                {statusFilter !== 'ACTIVE' && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 text-xs font-medium">
-                     {statusFilter} <button type="button" onClick={() => setStatusFilter('ACTIVE')} className="hover:opacity-80">Ã—</button>
+                     {statusFilter} <button type="button" onClick={() => setStatusFilter('ACTIVE')} className="hover:opacity-80">×</button>
                   </span>
                )}
                {categoryFilter !== 'ALL' && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 text-xs font-medium">
-                     {categoryFilter}{subCategoryFilter ? ` / ${subCategoryFilter}` : ''} <button type="button" onClick={() => { setCategoryFilter('ALL'); setSubCategoryFilter(''); setSpecFilters({}); setSpecRangeFilters({}); }} className="hover:opacity-80">Ã—</button>
+                     {categoryFilter}{subCategoryFilter ? ` / ${subCategoryFilter}` : ''} <button type="button" onClick={() => { setCategoryFilter('ALL'); setSubCategoryFilter(''); setSpecFilters({}); setSpecRangeFilters({}); }} className="hover:opacity-80">×</button>
                   </span>
                )}
                {timeFilter !== 'ALL' && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 text-xs font-medium">
-                     {timeFilter} <button type="button" onClick={() => setTimeFilter('ALL')} className="hover:opacity-80">Ã—</button>
+                     {timeFilter} <button type="button" onClick={() => setTimeFilter('ALL')} className="hover:opacity-80">×</button>
                   </span>
                )}
                {sourceFilter !== 'ALL' && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-100 text-violet-800 text-xs font-medium">
                      {sourceFilter === 'AI' ? 'AI touched' : sourceFilter === 'AI_UNREVIEWED' ? 'AI · to review' : 'Manual only'}
-                     <button type="button" onClick={() => setSourceFilter('ALL')} className="hover:opacity-80">Ã—</button>
+                     <button type="button" onClick={() => setSourceFilter('ALL')} className="hover:opacity-80">×</button>
                   </span>
                )}
                {statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS' && (salePlatformFilter !== 'ALL' || salePaymentFilter !== 'ALL') && (
@@ -5986,26 +5986,26 @@ const InventoryList: React.FC<Props> = ({
                      {salePlatformFilter !== 'ALL' && (
                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 text-xs font-medium">
                          {salePlatformFilter === MISSING_PLATFORM_FILTER ? 'No platform' : salePlatformFilter}
-                         <button type="button" onClick={() => setSalePlatformFilter('ALL')} className="hover:opacity-80">Ã—</button>
+                         <button type="button" onClick={() => setSalePlatformFilter('ALL')} className="hover:opacity-80">×</button>
                        </span>
                      )}
-                     {salePaymentFilter !== 'ALL' && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 text-xs font-medium truncate max-w-[120px]" title={salePaymentFilter}>{salePaymentFilter} <button type="button" onClick={() => setSalePaymentFilter('ALL')} className="hover:opacity-80">Ã—</button></span>}
+                     {salePaymentFilter !== 'ALL' && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 text-xs font-medium truncate max-w-[120px]" title={salePaymentFilter}>{salePaymentFilter} <button type="button" onClick={() => setSalePaymentFilter('ALL')} className="hover:opacity-80">×</button></span>}
                      {isAmountFilterActive(amountFilter) && (
                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 text-xs font-medium">
                          {amountFilterSummary(amountFilter)}
-                         <button type="button" onClick={clearAmountFilter} className="hover:opacity-80">Ã—</button>
+                         <button type="button" onClick={clearAmountFilter} className="hover:opacity-80">×</button>
                        </span>
                      )}
                   </>
                )}
                {Object.entries(specFilters).filter(([, v]) => v?.length).map(([k, v]) => (
                   <span key={k} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-xs font-medium">
-                     {k}: {v?.slice(0, 2).join(', ')}{(v?.length ?? 0) > 2 ? '…' : ''} <button type="button" onClick={() => setSpecFilters(prev => { const n = { ...prev }; delete n[k]; return n; })} className="hover:opacity-80">Ã—</button>
+                     {k}: {v?.slice(0, 2).join(', ')}{(v?.length ?? 0) > 2 ? '…' : ''} <button type="button" onClick={() => setSpecFilters(prev => { const n = { ...prev }; delete n[k]; return n; })} className="hover:opacity-80">×</button>
                   </span>
                ))}
                {Object.entries(specRangeFilters).filter(([, r]) => r && (r.min !== undefined || r.max !== undefined)).map(([k, r]) => (
                   <span key={k} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-xs font-medium">
-                     {k}: {r?.min ?? '?'}–{r?.max ?? '?'} <button type="button" onClick={() => setSpecRangeFilters(prev => { const n = { ...prev }; delete n[k]; return n; })} className="hover:opacity-80">Ã—</button>
+                     {k}: {r?.min ?? '?'}–{r?.max ?? '?'} <button type="button" onClick={() => setSpecRangeFilters(prev => { const n = { ...prev }; delete n[k]; return n; })} className="hover:opacity-80">×</button>
                   </span>
                ))}
             </div>
@@ -8166,7 +8166,7 @@ const BulkSalePctModal: React.FC<{ count: number; onApply: (pct: number) => void
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
       <div className="bg-white p-6 rounded-2xl shadow-2xl max-w-sm w-full">
         <h3 className="text-lg font-black text-slate-900 mb-2">Apply sale % ({count} items)</h3>
-        <p className="text-sm text-slate-500 mb-4">Set store sale price to (sell price Ã— (1 − pct/100)). E.g. 10 = 10% off.</p>
+        <p className="text-sm text-slate-500 mb-4">Set store sale price to (sell price × (1 − pct/100)). E.g. 10 = 10% off.</p>
         <input type="number" min={0} max={100} step={1} value={pct} onChange={(e) => setPct(e.target.value)} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium mb-4 outline-none focus:ring-2 focus:ring-blue-400" placeholder="10" />
         <div className="flex gap-2">
           <button onClick={onClose} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200">Cancel</button>

@@ -122,7 +122,7 @@ const ListingAiPanelModal: React.FC<Props> = ({ item, onClose, onApply }) => {
             <div className="rounded-xl border border-dashed border-emerald-300 bg-emerald-50/70 px-3 py-2.5">
               <div className="flex items-center justify-between gap-2 mb-1">
                 <p className="text-[10px] font-black uppercase tracking-widest text-emerald-800">
-                  FÃ¼r dich (nicht Teil der Anzeige)
+                  Für dich (nicht Teil der Anzeige)
                 </p>
                 <button
                   type="button"

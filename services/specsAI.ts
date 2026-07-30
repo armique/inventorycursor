@@ -165,7 +165,7 @@ Rules: specs values can be string or number. Only include keys allowed above.
 
 standardizedName: short product name only — brand + model + key size/capacity (e.g. "Samsung 980 Pro 1TB NVMe", "Crucial BX500 480GB SSD", "Corsair Vengeance 16GB DDR4").
 STORAGE (SSD/HDD): Always end the name with the drive kind — "NVMe" for NVMe/M.2/PCIe SSDs, "SSD" for normal/SATA/2.5" SSDs, "HDD" for hard disks. Set Drive Type accordingly (NVMe SSD / SATA SSD / HDD).
-Do NOT include marketplace fluff: funktionsfÃ¤hig, gebraucht, Zustand, OVP, Versand, getestet, Garantie, Sofortkauf, "wie neu", etc.
+Do NOT include marketplace fluff: funktionsfähig, gebraucht, Zustand, OVP, Versand, getestet, Garantie, Sofortkauf, "wie neu", etc.
 
 GRAPHICS CARDS (GPUs): For the "VRAM" field, use the exact frame-buffer memory of that GPU model only (e.g. RTX 5070 has 12GB VRAM). Do not use system RAM, total memory across unrelated devices, or another GPU tier. If the product name includes a GB figure next to the chip name (e.g. "RTX 5070 12GB"), that GB value is the VRAM.
 
