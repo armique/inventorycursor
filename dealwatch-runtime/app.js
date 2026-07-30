@@ -2159,8 +2159,8 @@ function render() {
 }
 
 async function api(path, options = {}) {
-  const url = typeof path === 'string' && path.startsWith('/api/') && !path.startsWith('/api/est')
-    ? `/api/est${path.slice(4)}`
+  const url = typeof path === 'string' && path.startsWith('/api/') && !path.startsWith('/api/dealwatch')
+    ? `/api/dealwatch${path.slice(4)}`
     : path;
   const response = await fetch(url, {
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
@@ -2698,7 +2698,7 @@ async function fetchListings({
   if (quiet && fetching) return;
   fetching = true;
   if (!quiet) {
-    const market = filters.marketplace === 'kleinanzeigen' ? 'Kleinanzeigen' : 'eBay.de';
+    const Dealwatch = filters.marketplace === 'kleinanzeigen' ? 'Kleinanzeigen' : 'eBay.de';
     note.textContent = filters.search
       ? `Searching ${market} for “${filters.search}”…`
       : `Scanning ${market}…`;
@@ -2768,7 +2768,7 @@ async function fetchListings({
     const suggestNote = currentSuggestions.length
       ? ` No lots under €${filters.maxPrice} — showing ${currentSuggestions.length} closer option${currentSuggestions.length === 1 ? '' : 's'} above budget.`
       : '';
-    const market = filters.marketplace === 'kleinanzeigen' || data.marketplace === 'kleinanzeigen'
+    const Dealwatch = filters.marketplace === 'kleinanzeigen' || data.marketplace === 'kleinanzeigen'
       ? 'Kleinanzeigen'
       : 'eBay.de';
     note.textContent = `Live ${market} lots. Scanned: ${data.scanned}; rejected by rules: ${data.rejected}.${pool}${suggestNote}${telegramStatus}`;

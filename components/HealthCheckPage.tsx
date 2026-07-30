@@ -26,7 +26,7 @@ const HealthCheckPage: React.FC = () => {
       status: hasClientGeminiKey() ? 'ok' : 'warn',
       detail: hasClientGeminiKey()
         ? 'VITE_GEMINI_API_KEY detected in build.'
-        : 'Optional in browser — on Vercel set GEMINI_API_KEY (server) for Deal Hunter; redeploy after adding.',
+        : 'Optional in browser — on Vercel set GEMINI_API_KEY (server) for Dealwatch; redeploy after adding.',
     });
 
     list.push({

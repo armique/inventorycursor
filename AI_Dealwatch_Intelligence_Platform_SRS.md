@@ -1,4 +1,4 @@
-AI Market Intelligence Platform
+AI Dealwatch Intelligence Platform
 
 Product Vision & Software Requirements Specification (SRS)
 
@@ -8,10 +8,10 @@ Product Vision & Software Requirements Specification (SRS)
 1. Project Vision
 
  ● Continue developing the existing project, not replace it.
- ● Build an AI-powered Market Intelligence Platform for an electronics
+ ● Build an AI-powered Dealwatch Intelligence Platform for an electronics
 flipping business.
 
- ● Help make better buying and selling decisions using both market data
+ ● Help make better buying and selling decisions using both Dealwatch data
 and historical business data.
 
  ● Improve architecture without breaking existing functionality.
@@ -47,7 +47,7 @@ copy
 /ai
 /services
 /parsers
-/market
+/dealwatch
 /analytics
 /business
 /dashboard
@@ -58,7 +58,7 @@ copy
 /types
 /config
 
-5. Market Intelligence System
+5. Dealwatch Intelligence System
 
 The platform should: - Monitor saved marketplace searches. - Track
 prices over time. - Store listing history. - Calculate: - Minimum
@@ -84,7 +84,7 @@ The AI must continuously improve from every completed transaction.
 8. AI Recommendation Engine
 
 Combine: - Personal purchase history - Personal sales history - Current
-market data - Historical market data - eBay sold prices - Market trends
+Dealwatch data - Historical Dealwatch data - eBay sold prices - Dealwatch trends
 
 Generate: - Recommended buy price - Recommended sell price - Expected
 profit - Expected margin - Expected ROI - Estimated selling time -
@@ -97,13 +97,13 @@ the most profitable option.
 
 This is the most important requirement.
 
-The entire Market Intelligence system must work through ONE central
+The entire Dealwatch Intelligence system must work through ONE central
 page.
 
 Do not create separate standalone pages unless absolutely necessary.
 
-The dashboard should include: - Market monitoring - AI recommendations -
-Purchase history - Sales history - Market statistics - Charts - Current
+The dashboard should include: - Dealwatch monitoring - AI recommendations -
+Purchase history - Sales history - Dealwatch statistics - Charts - Current
 opportunities - Best deals - Historical analytics - Bundle
 intelligence - ROI analysis - Profit analysis - Inventory insights
 

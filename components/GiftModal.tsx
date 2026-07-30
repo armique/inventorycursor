@@ -43,7 +43,7 @@ const GiftModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
 
   const handleConfirm = () => {
     if (marketNum <= 0) {
-      alert('Enter the market value (Verkehrswert) of the gifted item — required for German Privatentnahme bookkeeping.');
+      alert('Enter the Dealwatch value (Verkehrswert) of the gifted item — required for German Privatentnahme bookkeeping.');
       return;
     }
     if (!recipient.trim()) {
@@ -113,7 +113,7 @@ const GiftModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
           <div className="rounded-2xl border border-amber-100 bg-amber-50/80 p-4 text-[11px] text-amber-950 leading-relaxed space-y-1">
             <p>
               <strong>German tax (EÜR):</strong> gifting business stock is a{' '}
-              <strong>Privatentnahme</strong> — booked at <strong>Verkehrswert</strong> (fair market
+              <strong>Privatentnahme</strong> — booked at <strong>Verkehrswert</strong> (fair Dealwatch
               value), not at €0. No cash is received, but imputed revenue and profit/loss still apply on
               your dashboard and tax export.
             </p>
@@ -125,7 +125,7 @@ const GiftModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', onSave, o
 
           <div className="space-y-2">
             <label className="text-[10px] font-black uppercase text-slate-400 ml-1 flex items-center gap-2">
-              <TrendingUp size={12} /> Market value / Verkehrswert (€)
+              <TrendingUp size={12} /> Dealwatch value / Verkehrswert (€)
             </label>
             <input
               type="text"

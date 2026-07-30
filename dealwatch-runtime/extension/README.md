@@ -10,7 +10,7 @@ Nothing is saved until you **confirm**.
 ## Install
 
 1. Start Dealwatch: `npm start` → http://localhost:3000
-2. `chrome://extensions` → Developer mode → **Load unpacked** → `market/extension`
+2. `chrome://extensions` → Developer mode → **Load unpacked** → `dealwatch-runtime/extension`
 3. Pin **Dealwatch KA Purchases**
 
 ## Use

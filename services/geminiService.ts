@@ -246,7 +246,7 @@ export const estimateMarketValue = async (itemName: string, condition: string = 
     return await withAI(async (ai, model) => {
       const prompt = `
         Act as a professional German pricing expert for electronics.
-        Real-time market search for: "${itemName}" (${condition}).
+        Real-time Dealwatch search for: "${itemName}" (${condition}).
         
         VERY IMPORTANT RULES:
         - Nutze bei eBay.de ausschließlich die Ansicht "Verkaufte Artikel" / "Beendete Angebote", also nur bereits verkaufte Artikel (keine aktiven Listings).
@@ -662,12 +662,12 @@ export const generateCrossPostingContent = async (item: InventoryItem): Promise<
   } catch { return null; }
 };
 
-export const analyzeMarket = async (query: string, context: string) => { 
+export const analyzeDealwatch = async (query: string, context: string) => { 
   try {
     return await withAI(async (ai, model) => {
         const response = await ai.models.generateContent({
           model: model,
-          contents: `Market analysis for: ${query}. Context: ${context}`,
+          contents: `Dealwatch analysis for: ${query}. Context: ${context}`,
           config: { tools: [{ googleSearch: {} }] }
         });
         return { 

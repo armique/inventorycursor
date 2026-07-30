@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Auto-fill tech specs using any available AI.
  * FREE options: Groq, Ollama, Gemini, Together, Mistral (add keys to .env).
  * Paid: OpenAI, Anthropic.
@@ -24,7 +24,7 @@ type Provider = 'openai' | 'anthropic' | 'gemini' | 'groq' | 'ollama' | 'togethe
 
 export type AIProviderId = Provider;
 
-/** Text models — lite first (higher free-tier quota). */
+/** Text models â€” lite first (higher free-tier quota). */
 const GEMINI_TEXT_MODELS = ['gemini-2.0-flash-lite', 'gemini-2.0-flash'] as const;
 
 function sleep(ms: number): Promise<void> {
@@ -44,10 +44,10 @@ export function formatAIProviderError(provider: AIProviderId, error: unknown): s
   if (msg.startsWith(`${label}:`) || msg.startsWith('Gemini:')) {
     return msg.replace(/^Gemini:/, `${label}:`);
   }
-  return msg.length > 240 ? `${msg.slice(0, 240)}…` : msg;
+  return msg.length > 240 ? `${msg.slice(0, 240)}â€¦` : msg;
 }
 
-/** Default Card Studio providers — Groq/Together first; Gemini last (strict free quota). */
+/** Default Card Studio providers â€” Groq/Together first; Gemini last (strict free quota). */
 export function getDefaultCardStudioProviderIds(
   providers: { id: AIProviderId }[]
 ): AIProviderId[] {
@@ -86,7 +86,7 @@ async function fetchGeminiText(
         const errBody = await res.text();
         lastError = new Error(
           res.status === 429
-            ? `Gemini: 429 quota exceeded (${model}). Free tier limits — try Groq or wait ~1 min.`
+            ? `Gemini: 429 quota exceeded (${model}). Free tier limits â€” try Groq or wait ~1 min.`
             : `Gemini: ${res.status} ${errBody.slice(0, 200)}`
         );
         if (res.status === 429) break;
@@ -138,11 +138,11 @@ function buildPrompt(name: string, rawCategory: string, knownKeys: string[]): st
   let fieldInstruction = '';
   if (knownKeys.length > 0) {
     fieldInstruction = `
-ESSENTIAL KEYS ONLY — return specs using EXACTLY these keys and nothing else:
+ESSENTIAL KEYS ONLY â€” return specs using EXACTLY these keys and nothing else:
 ${JSON.stringify(knownKeys)}
 
 Rules:
-- Map synonyms to the closest key (e.g. "DDR4" → "Memory Type", "16GB" → "Kit Capacity").
+- Map synonyms to the closest key (e.g. "DDR4" â†’ "Memory Type", "16GB" â†’ "Kit Capacity").
 - Do NOT add extra geeky fields (no lithography, cache, threads, PCIe lanes, process node, etc.) unless the key is in the list above.
 - Omit a key if you are unsure; do not guess.
 `;
@@ -163,18 +163,18 @@ Return a valid JSON object with this exact structure (no markdown, no code fence
 
 Rules: specs values can be string or number. Only include keys allowed above.
 
-standardizedName: short product name only — brand + model + key size/capacity (e.g. "Samsung 980 Pro 1TB NVMe", "Crucial BX500 480GB SSD", "Corsair Vengeance 16GB DDR4").
-STORAGE (SSD/HDD): Always end the name with the drive kind — "NVMe" for NVMe/M.2/PCIe SSDs, "SSD" for normal/SATA/2.5" SSDs, "HDD" for hard disks. Set Drive Type accordingly (NVMe SSD / SATA SSD / HDD).
-Do NOT include marketplace fluff: funktionsfähig, gebraucht, Zustand, OVP, Versand, getestet, Garantie, Sofortkauf, "wie neu", etc.
+standardizedName: short product name only â€” brand + model + key size/capacity (e.g. "Samsung 980 Pro 1TB NVMe", "Crucial BX500 480GB SSD", "Corsair Vengeance 16GB DDR4").
+STORAGE (SSD/HDD): Always end the name with the drive kind â€” "NVMe" for NVMe/M.2/PCIe SSDs, "SSD" for normal/SATA/2.5" SSDs, "HDD" for hard disks. Set Drive Type accordingly (NVMe SSD / SATA SSD / HDD).
+Do NOT include marketplace fluff: funktionsfÃ¤hig, gebraucht, Zustand, OVP, Versand, getestet, Garantie, Sofortkauf, "wie neu", etc.
 
 GRAPHICS CARDS (GPUs): For the "VRAM" field, use the exact frame-buffer memory of that GPU model only (e.g. RTX 5070 has 12GB VRAM). Do not use system RAM, total memory across unrelated devices, or another GPU tier. If the product name includes a GB figure next to the chip name (e.g. "RTX 5070 12GB"), that GB value is the VRAM.
 
-RAM / MEMORY MODULES (think carefully — especially older DDR2/DDR3 OEM sticks):
-- Decode the full manufacturer part number (SK Hynix HMT…, Samsung M378…/M471…, Micron MT…). Do not invent modern DDR4/DDR5 from a single digit in the SKU.
-- Digits mid-P/N are often density organization or revision — NOT always module capacity.
+RAM / MEMORY MODULES (think carefully â€” especially older DDR2/DDR3 OEM sticks):
+- Decode the full manufacturer part number (SK Hynix HMTâ€¦, Samsung M378â€¦/M471â€¦, Micron MTâ€¦). Do not invent modern DDR4/DDR5 from a single digit in the SKU.
+- Digits mid-P/N are often density organization or revision â€” NOT always module capacity.
   Critical example: "SK Hynix HMT351U6EFR8C" = 4GB DDR3 UDIMM (PC3). It is NOT 8GB and NOT DDR4. The trailing "8" is not capacity.
-- HMT3… → DDR3 generation. HMT4… → DDR4 generation. Never upgrade an older generation.
-- Hynix density "351" on HMT3 modules → 4GB; "41G" → 8GB. Prefer datasheet-accurate Memory Type + GB per Stick / Kit Capacity.
+- HMT3â€¦ â†’ DDR3 generation. HMT4â€¦ â†’ DDR4 generation. Never upgrade an older generation.
+- Hynix density "351" on HMT3 modules â†’ 4GB; "41G" â†’ 8GB. Prefer datasheet-accurate Memory Type + GB per Stick / Kit Capacity.
 - If the title has no explicit "8GB"/"16GB" and the P/N decodes to 4GB DDR3, output 4GB DDR3.
 - When unsure between DDR3 and DDR4, omit Memory Type rather than guessing DDR4.
 - Prefer slower, older, conservative specs over "upgrading" vintage parts.`;
@@ -256,7 +256,7 @@ async function callGemini(prompt: string): Promise<GenerateSpecsResult> {
   return { specs: parsed.specs || {}, standardizedName: parsed.standardizedName, vendor: parsed.vendor };
 }
 
-/** Groq: free tier at console.groq.com — OpenAI-compatible API */
+/** Groq: free tier at console.groq.com â€” OpenAI-compatible API */
 async function callGroq(prompt: string): Promise<GenerateSpecsResult> {
   const apiKey = getEnv('VITE_GROQ_API_KEY')?.trim();
   if (!apiKey) throw new Error('VITE_GROQ_API_KEY not set');
@@ -284,7 +284,7 @@ async function callGroq(prompt: string): Promise<GenerateSpecsResult> {
   return { specs: parsed.specs || {}, standardizedName: parsed.standardizedName, vendor: parsed.vendor };
 }
 
-/** Ollama: 100% free, local — no API key. Run "ollama run llama3.2" (or similar) first. */
+/** Ollama: 100% free, local â€” no API key. Run "ollama run llama3.2" (or similar) first. */
 async function callOllama(prompt: string): Promise<GenerateSpecsResult> {
   const baseUrl = (getEnv('VITE_OLLAMA_URL') || 'http://localhost:11434').replace(/\/$/, '');
   const model = getEnv('VITE_OLLAMA_MODEL') || 'llama3.2';
@@ -683,11 +683,11 @@ async function getRawTextFromAI(prompt: string, maxTokens: number = DEFAULT_TEXT
 }
 
 export interface StoreDescriptionHints {
-  /** Original packaging — buyer-facing listing hint. */
+  /** Original packaging â€” buyer-facing listing hint. */
   hasOVP?: boolean;
-  /** IO shield — buyer-facing listing hint. */
+  /** IO shield â€” buyer-facing listing hint. */
   hasIOShield?: boolean;
-  /** Receipt / Rechnung — buyer-facing listing hint. */
+  /** Receipt / Rechnung â€” buyer-facing listing hint. */
   hasReceipt?: boolean;
   /** Short seller note the AI must factor into the listing. */
   aiDescriptionNote?: string;
@@ -745,18 +745,18 @@ export async function suggestPriceFromSoldListings(itemName: string, condition: 
 
 I need a realistic sell price for: "${itemName}" (condition: ${condLabel}).
 
-CRITICAL – AVOID OVERPRICING:
-- OLD/BUDGET components sell for very little: used CPUs from 2012–2015 (e.g. Intel i3/i5 4xxx, Celeron, Pentium, AMD FX) typically €5–20 on eBay.de.
-- Do NOT confuse with newer models or retail prices. "Intel i5-4150" or similar old budget CPUs = €5–15, NOT €50+.
-- DDR3 RAM, old HDDs, low-end mobos: often €5–15.
-- When unsure, err LOWER – used PC parts are cheap.
+CRITICAL â€“ AVOID OVERPRICING:
+- OLD/BUDGET components sell for very little: used CPUs from 2012â€“2015 (e.g. Intel i3/i5 4xxx, Celeron, Pentium, AMD FX) typically â‚¬5â€“20 on eBay.de.
+- Do NOT confuse with newer models or retail prices. "Intel i5-4150" or similar old budget CPUs = â‚¬5â€“15, NOT â‚¬50+.
+- DDR3 RAM, old HDDs, low-end mobos: often â‚¬5â€“15.
+- When unsure, err LOWER â€“ used PC parts are cheap.
 
 RULES:
 1. Base estimate ONLY on eBay.de sold/completed listings ("Verkaufte Artikel").
 2. Ignore active listings. Only prices where a buyer actually paid.
 3. Use knowledge of recent eBay.de sold prices. If rare, use comparable sold items.
 4. Prices in EUR. Always provide range and average, never zeros.
-5. Include 5–10 sold listing examples with realistic German eBay titles and actual sold prices.
+5. Include 5â€“10 sold listing examples with realistic German eBay titles and actual sold prices.
 
 Return a valid JSON object (no markdown, no code fence):
 {
@@ -811,3 +811,4 @@ export function getSpecsAIProvider(): string | null {
   const names = list.map((p) => PROVIDER_LABELS[p]);
   return names.length === 1 ? names[0] : `${names[0]} (+${names.length - 1} fallback)`;
 }
+

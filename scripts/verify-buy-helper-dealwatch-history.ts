@@ -2,7 +2,7 @@
  * Verifies Buy Helper market-history math: percentiles, stddev, trend, velocity,
  * 30-day pruning, and end-to-end channel analysis.
  *
- * Run: npx tsx scripts/verify-buy-helper-market-history.ts
+ * Run: npx tsx scripts/verify-buy-helper-dealwatch-history.ts
  */
 
 import {
@@ -11,8 +11,8 @@ import {
   calculateStdDev,
   calculateTrend,
   calculateVelocity,
-} from '../services/buyHelperMarketAnalysis';
-import { prunePriceHistory, type MarketSnapshot } from '../services/buyHelperMarketHistory';
+} from '../services/buyHelperDealwatchAnalysis';
+import { prunePriceHistory, type DealwatchSnapshot } from '../services/buyHelperDealwatchHistory';
 
 let failures = 0;
 
@@ -38,7 +38,7 @@ eq('stdDev of known set', calculateStdDev([2, 4, 4, 4, 5, 5, 7, 9]), 2);
 eq('stdDev of single value', calculateStdDev([5]), 0);
 
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
-const snap = (day: number, median: number, count = 10): MarketSnapshot => ({
+const snap = (day: number, median: number, count = 10): DealwatchSnapshot => ({
   timestamp: daysAgo(day),
   ebaySold: { median, low: median - 5, high: median + 5, count, items: [] },
   ebayLive: null,

@@ -22,7 +22,7 @@ export type SoldPulseWatchItem = {
   category: SoldPulseCategory;
   /** Optional note to yourself */
   note?: string;
-  /** Your read of the market after opening eBay sold (buyer-paid euros). */
+  /** Your read of the Dealwatch after opening eBay sold (buyer-paid euros). */
   low?: number;
   median?: number;
   high?: number;

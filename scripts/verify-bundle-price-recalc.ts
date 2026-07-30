@@ -1,6 +1,6 @@
 /**
  * Verify weighted bundle-component price recalculation: category priors (GPU/CPU > RAM/PSU) and
- * market-data override when the account has its own standalone sales for a part.
+ * Dealwatch-data override when the account has its own standalone sales for a part.
  * Run: npx tsx scripts/verify-bundle-price-recalc.ts
  */
 import assert from 'node:assert/strict';
@@ -20,7 +20,7 @@ function item(partial: Partial<InventoryItem> & Pick<InventoryItem, 'id' | 'name
 }
 
 // ============================================================
-// Case A: no market data for any part -> falls back to category priors (GPU/CPU > RAM/case).
+// Case A: no Dealwatch data for any part -> falls back to category priors (GPU/CPU > RAM/case).
 // ============================================================
 const containerId = 'pc-1';
 const gpuId = 'gpu-1';
@@ -58,22 +58,22 @@ assert.ok(byId.get(cpuId)!.newSellPrice > byId.get(caseId)!.newSellPrice, 'CPU s
 assert.ok(byId.get(gpuId)!.newSellPrice > byId.get(cpuId)!.newSellPrice, 'GPU should get more than CPU (higher base weight)');
 assert.equal(byId.get(gpuId)!.weightSource, 'category');
 console.log(
-  `OK: no market data -> category priors (GPU €${byId.get(gpuId)!.newSellPrice} > CPU €${byId.get(cpuId)!.newSellPrice} > RAM €${byId.get(ramId)!.newSellPrice} > Case €${byId.get(caseId)!.newSellPrice}), sums to container total`,
+  `OK: no Dealwatch data -> category priors (GPU €${byId.get(gpuId)!.newSellPrice} > CPU €${byId.get(cpuId)!.newSellPrice} > RAM €${byId.get(ramId)!.newSellPrice} > Case €${byId.get(caseId)!.newSellPrice}), sums to container total`,
 );
 
 // ============================================================
-// Case B: real standalone sales exist for the RAM variant -> market data wins over category prior.
+// Case B: real standalone sales exist for the RAM variant -> Dealwatch data wins over category prior.
 // ============================================================
-const marketItems: InventoryItem[] = [
+const dealwatchItems: InventoryItem[] = [
   ...bundleItems,
   // Several standalone DDR4 16GB sales at a high real price -> should outrank the generic RAM prior.
   item({ id: 'std-ram-1', name: 'Corsair 16GB DDR4', buyPrice: 30, sellPrice: 400, buyDate: '2026-01-01', sellDate: '2026-01-05' }),
   item({ id: 'std-ram-2', name: 'Corsair 16GB DDR4', buyPrice: 30, sellPrice: 420, buyDate: '2026-01-01', sellDate: '2026-01-10' }),
 ];
-const withMarket = suggestBundleComponentPrices(marketItems[4], marketItems);
-const ramWithMarket = withMarket.find((s) => s.itemId === ramId)!;
-assert.equal(ramWithMarket.weightSource, 'market');
-assert.ok(ramWithMarket.newSellPrice > byId.get(ramId)!.newSellPrice, 'real market data for RAM should raise its allocated share vs the generic prior');
-console.log(`OK: RAM with real standalone sales (avg €410) gets a market-based share (€${ramWithMarket.newSellPrice}), overriding the generic low prior`);
+const withDealwatch = suggestBundleComponentPrices(dealwatchItems[4], dealwatchItems);
+const ramWithDealwatch = withDealwatch.find((s) => s.itemId === ramId)!;
+assert.equal(ramWithDealwatch.weightSource, 'dealwatch');
+assert.ok(ramWithDealwatch.newSellPrice > byId.get(ramId)!.newSellPrice, 'real Dealwatch data for RAM should raise its allocated share vs the generic prior');
+console.log(`OK: RAM with real standalone sales (avg €410) gets a Dealwatch-based share (€${ramWithDealwatch.newSellPrice}), overriding the generic low prior`);
 
 console.log('\nAll bundle price recalculation checks passed.');

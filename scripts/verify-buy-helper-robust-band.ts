@@ -10,8 +10,8 @@
 
 import Module from 'node:module';
 const require = Module.createRequire(import.meta.url);
-const market = require('../market/server.js');
-const { robustBand, summarizeComponentTotals, buildBuyHelperQuoteQuery } = market;
+const Dealwatch = require('../dealwatch-runtime/server.js');
+const { robustBand, summarizeComponentTotals, buildBuyHelperQuoteQuery } = dealwatchRuntime;
 
 let failures = 0;
 

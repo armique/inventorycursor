@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Listing AI accessory hints (OVP / IO / Rechnung).
  * IO is only included for motherboard category items.
  */
@@ -54,3 +54,4 @@ assert.deepEqual(
 );
 
 console.log('verify-listing-accessory-hints: ok');
+

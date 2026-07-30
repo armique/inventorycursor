@@ -28,7 +28,7 @@ import { toLocalCalendarDateKey, yearMonthKeyFromDate, currentLocalYearMonth } f
 import { countSalesByPlatform, formatItemSalePlatform, groupSalesByPlatform, PLATFORM_GROUP_LABEL, buildPlatformReconciliation, buildEbayTagFixUpdates, sumRevenueByPlatform, countOrdersByPlatform, groupItemsByMarketplaceOrder, countMissingExplicitSalePlatform, type PlatformGroupKey } from '../utils/salePlatform';
 
 const DashboardAnalyticsPanel = lazy(() => import('./DashboardAnalyticsPanel'));
-const MarketWorkspace = lazy(() => import('./market/MarketWorkspace'));
+const DealwatchWorkspace = lazy(() => import('./dealwatch/DealwatchWorkspace'));
 interface Props {
   items: InventoryItem[];
   expenses?: Expense[];
@@ -45,7 +45,7 @@ const LEVELS = [
   { name: 'Novice Flipper', min: 0, icon: <Package size={20}/>, color: 'text-slate-500', bg: 'bg-slate-100' },
   { name: 'Hobby Reseller', min: 500, icon: <Star size={20}/>, color: 'text-blue-500', bg: 'bg-blue-100' },
   { name: 'Pro Merchant', min: 2500, icon: <Zap size={20}/>, color: 'text-purple-500', bg: 'bg-purple-100' },
-  { name: 'Market Tycoon', min: 10000, icon: <Crown size={20}/>, color: 'text-yellow-500', bg: 'bg-yellow-100' },
+  { name: 'Dealwatch Tycoon', min: 10000, icon: <Crown size={20}/>, color: 'text-yellow-500', bg: 'bg-yellow-100' },
   { name: 'Inventory Legend', min: 50000, icon: <Trophy size={20}/>, color: 'text-emerald-500', bg: 'bg-emerald-100' }
 ];
 
@@ -88,7 +88,7 @@ const QUICK_FILTERS: { value: string; label: string }[] = [
   { value: 'ALL', label: 'All' },
 ];
 
-type DashboardMainTab = 'overview' | 'charts' | 'market';
+type DashboardMainTab = 'overview' | 'charts' | 'dealwatch';
 
 function exportPeriodSalesCsv(sold: InventoryItem[], label: string) {
   const headers = ['Name', 'Category', 'Platform', 'eBayOrderId', 'SellDate', 'SellPrice', 'BuyPrice', 'Fees', 'Profit'];
@@ -890,12 +890,12 @@ const Dashboard: React.FC<Props> = ({
   return (
     <>
     <div className={`h-full min-h-0 w-full animate-in fade-in ${
-      mainTab === 'market'
+      mainTab === 'dealwatch'
         ? 'flex flex-col overflow-hidden pb-2'
         : 'overflow-y-auto space-y-3 sm:space-y-4 lg:space-y-6 xl:space-y-7 pb-8 lg:pb-10 xl:px-1'
     }`}>
       {/* Header + period filters */}
-      <header className={`flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between ${mainTab === 'market' ? 'shrink-0 mb-3' : ''}`}>
+      <header className={`flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between ${mainTab === 'dealwatch' ? 'shrink-0 mb-3' : ''}`}>
         <div className="min-w-0">
           <h1 className="text-xl sm:text-2xl lg:text-3xl xl:text-4xl font-black text-slate-900 tracking-tight">Dashboard</h1>
           <p className="text-xs sm:text-sm lg:text-base text-slate-500 truncate mt-0.5">
@@ -970,8 +970,8 @@ const Dashboard: React.FC<Props> = ({
         </div>
       </header>
 
-      {/* Overview vs charts vs market */}
-      <div className={`flex rounded-xl lg:rounded-2xl border border-slate-200 bg-white p-1 lg:p-1.5 w-full sm:w-auto ${mainTab === 'market' ? 'shrink-0 mb-3' : ''}`}>
+      {/* Overview vs charts vs Dealwatch */}
+      <div className={`flex rounded-xl lg:rounded-2xl border border-slate-200 bg-white p-1 lg:p-1.5 w-full sm:w-auto ${mainTab === 'dealwatch' ? 'shrink-0 mb-3' : ''}`}>
         <button
           type="button"
           onClick={() => setMainTab('overview')}
@@ -994,13 +994,13 @@ const Dashboard: React.FC<Props> = ({
         </button>
         <button
           type="button"
-          onClick={() => setMainTab('market')}
+          onClick={() => setMainTab('dealwatch')}
           className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 lg:px-6 py-2.5 lg:py-3 rounded-lg lg:rounded-xl text-xs lg:text-sm font-black uppercase tracking-wide transition-all min-h-[44px] ${
-            mainTab === 'market' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
+            mainTab === 'dealwatch' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
           }`}
         >
           <Radar size={16} className="lg:w-[18px] lg:h-[18px] shrink-0" />
-          Market
+          Dealwatch
         </button>
       </div>
 
@@ -1607,17 +1607,17 @@ const Dashboard: React.FC<Props> = ({
       </>
       )}
 
-      {mainTab === 'market' && (
+      {mainTab === 'dealwatch' && (
         <div className="flex-1 min-h-[min(70vh,720px)] flex flex-col min-w-0">
           <Suspense
             fallback={
               <div className="flex-1 flex items-center justify-center text-slate-400 gap-2">
                 <Sparkles className="animate-pulse" size={18} />
-                <span className="text-sm font-bold">Loading market…</span>
+                <span className="text-sm font-bold">Loading Dealwatch…</span>
               </div>
             }
           >
-            <MarketWorkspace embedded />
+            <DealwatchWorkspace embedded />
           </Suspense>
         </div>
       )}

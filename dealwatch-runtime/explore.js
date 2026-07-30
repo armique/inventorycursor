@@ -31,8 +31,8 @@ function listedLabel(originDate) {
 }
 
 async function api(path) {
-  const url = typeof path === 'string' && path.startsWith('/api/') && !path.startsWith('/api/est')
-    ? `/api/est${path.slice(4)}`
+  const url = typeof path === 'string' && path.startsWith('/api/') && !path.startsWith('/api/dealwatch')
+    ? `/api/dealwatch${path.slice(4)}`
     : path;
   const response = await fetch(url, { headers: { Accept: 'application/json' } });
   const data = await response.json().catch(() => ({}));

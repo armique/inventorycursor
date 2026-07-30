@@ -175,7 +175,7 @@ export const TEXTS_EN = {
   trustDirectTitle: 'Direct inquiry',
   trustDirectDesc: 'Fill out the form and we get back to you personally.',
   trustFairTitle: 'Fair pricing',
-  trustFairDesc: 'Priced against the market, no hidden markups.',
+  trustFairDesc: 'Priced against Dealwatch data, no hidden markups.',
   trustSupportTitle: 'Personal support',
   trustSupportDesc: 'Questions about compatibility? We can help.',
 };

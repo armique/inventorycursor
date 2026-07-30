@@ -10,13 +10,13 @@
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const market = require('../market/server.js');
+const Dealwatch = require('../dealwatch-runtime/server.js');
 const {
   isBlockedListing,
   normalizeListingText,
   classifyLotType,
   matchesRamTotalCapacity,
-} = market;
+} = dealwatchRuntime;
 
 let failures = 0;
 

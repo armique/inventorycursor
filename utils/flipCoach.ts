@@ -106,7 +106,7 @@ function soldPocket(
 ): { pocket: number; platform: Platform | 'unknown' } | null {
   const sell = Number(item.sellPrice) || 0;
   if (sell <= 0) return null;
-  // sellPrice = market sold price; feeAmount = platform fees (0 on Klein / older net-as-sell rows).
+  // sellPrice = Dealwatch sold price; feeAmount = platform fees (0 on Klein / older net-as-sell rows).
   const fee = Number(item.feeAmount) || 0;
   const pocket = Math.max(0, sell - fee);
   return { pocket, platform: resolveSalePlatform(item) };

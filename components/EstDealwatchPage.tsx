@@ -1,10 +1,10 @@
 import React from 'react';
-import MarketWorkspace from './market/MarketWorkspace';
+import DealwatchWorkspace from './dealwatch/DealwatchWorkspace';
 
-/** Panel route /panel/est — React Market Intelligence workspace (Phase 2). */
+/** Panel route /panel/dealwatch — React Dealwatch workspace. */
 const EstDealwatchPage: React.FC = () => (
   <div className="flex-1 min-h-0 flex flex-col">
-    <MarketWorkspace />
+    <DealwatchWorkspace />
   </div>
 );
 

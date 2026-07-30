@@ -3570,7 +3570,7 @@ function decodeId(value) {
   return decodeURIComponent(value);
 }
 
-async function handleEstRequest(request, response) {
+async function handleDealwatchRequest(request, response) {
   const url = new URL(request.url, `http://${request.headers.host || '127.0.0.1'}`);
   const { pathname } = url;
 
@@ -4576,7 +4576,7 @@ async function monitorSearches() {
 
 let marketRuntimeStarted = false;
 
-function startMarketRuntime() {
+function startDealwatchRuntime() {
   if (marketRuntimeStarted) return;
   marketRuntimeStarted = true;
   ensureDataDir();
@@ -4588,9 +4588,9 @@ function startMarketRuntime() {
   console.log(`[market] Background monitor interval: ${MONITOR_INTERVAL_MINUTES} min.`);
 }
 
-function createMarketServer() {
+function createDealwatchServer() {
   return http.createServer((request, response) => {
-    handleEstRequest(request, response).catch((error) => {
+    handleDealwatchRequest(request, response).catch((error) => {
       console.error('[market] Unhandled request error:', error);
       if (!response.headersSent) {
         response.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -4601,9 +4601,9 @@ function createMarketServer() {
 }
 
 module.exports = {
-  handleEstRequest,
-  startMarketRuntime,
-  createMarketServer,
+  handleDealwatchRequest,
+  startDealwatchRuntime,
+  createDealwatchServer,
   PORT,
   classifyLotType,
   filterSoldMedianOutliers,
@@ -4620,9 +4620,9 @@ module.exports = {
 };
 
 if (require.main === module) {
-  const server = createMarketServer();
+  const server = createDealwatchServer();
   server.listen(PORT, () => {
     console.log(`Dealwatch (standalone) running: http://localhost:${PORT}`);
-    startMarketRuntime();
+    startDealwatchRuntime();
   });
 }

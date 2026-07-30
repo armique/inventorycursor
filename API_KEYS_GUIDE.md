@@ -126,7 +126,7 @@ Powers the "Find real photos" button in the item editor — searches real produc
 1. **API key**: go to **https://console.cloud.google.com/apis/credentials**, create/select a project, **Create Credentials → API key**. Enable the **Custom Search API** at **https://console.cloud.google.com/apis/library/customsearch.googleapis.com**.
 2. **Billing**: this API requires an active billing account linked to the project (free tier is still free, billing is just required to exist). Check/link one at **https://console.cloud.google.com/billing**.
 3. **Search Engine ID**: go to **https://programmablesearchengine.google.com/controlpanel/create**.
-   - Google has deprecated "Search the entire web" for new engines — it can no longer be enabled. Instead, add specific retailer/tech sites to search under "Sites to search" (e.g. `www.amazon.com/*`, `www.ebay.com/*`, `www.newegg.com/*`, `www.bestbuy.com/*`, `www.mediamarkt.de/*`, `geizhals.de/*`, `www.cyberport.de/*` — add whatever fits your market). Product photos are almost always hosted on sites like these anyway.
+   - Google has deprecated "Search the entire web" for new engines — it can no longer be enabled. Instead, add specific retailer/tech sites to search under "Sites to search" (e.g. `www.amazon.com/*`, `www.ebay.com/*`, `www.newegg.com/*`, `www.bestbuy.com/*`, `www.mediamarkt.de/*`, `geizhals.de/*`, `www.cyberport.de/*` — add whatever fits your niche). Product photos are almost always hosted on sites like these anyway.
    - Turn on **Image search** in its settings.
    - Copy the **Search engine ID** — that's your `cx`.
 4. Set both on Vercel, redeploy.

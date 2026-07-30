@@ -222,7 +222,7 @@ const PriceCheck: React.FC = () => {
                              <p className="text-sm font-bold text-slate-500 mt-1 uppercase tracking-wide bg-slate-100 inline-block px-3 py-1 rounded-lg">{result.condition} Condition</p>
                           </div>
                           <div className="text-right">
-                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Market Average</p>
+                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Dealwatch Average</p>
                              <p className="text-4xl font-black text-emerald-600">€{result.priceAverage}</p>
                           </div>
                        </div>
@@ -303,7 +303,7 @@ const PriceCheck: React.FC = () => {
                     <>
                        <Tag size={64} className="text-slate-300 mb-4"/>
                        <p className="font-black text-slate-400 text-lg">Enter an item to check prices</p>
-                       <p className="text-xs text-slate-400 mt-2">AI analyzes eBay.de sold listings (Verkaufte Artikel) for realistic market value</p>
+                       <p className="text-xs text-slate-400 mt-2">AI analyzes eBay.de sold listings (Verkaufte Artikel) for realistic Dealwatch value</p>
                     </>
                  )}
               </div>

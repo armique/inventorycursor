@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { formatEUR } from '../utils/formatMoney';
 import { Send, Sparkles, TrendingUp, AlertTriangle, RefreshCcw, Info, Globe, Package, Radar, ArrowRight, ExternalLink, ShoppingCart, Target, ArrowLeft, History, Clock, Trash2, ChevronRight } from 'lucide-react';
-import { analyzeMarket, getSlowSellingAdvice, analyzeSourcingStrategy, findLiveDeals, SourcingStrategy, LiveDeal, DealSearchPlatform } from '../services/geminiService';
+import { analyzeDealwatch, getSlowSellingAdvice, analyzeSourcingStrategy, findLiveDeals, SourcingStrategy, LiveDeal, DealSearchPlatform } from '../services/geminiService';
 import { InventoryItem, ItemStatus } from '../types';
 import SmartBundleSuggester from './SmartBundleSuggester';
 
@@ -21,7 +21,7 @@ interface Props {
   items: InventoryItem[];
   onUpdate?: (toSave: InventoryItem[]) => void;
   defaultTab?: 'MARKET' | 'BUNDLES' | 'SOURCING';
-  /** Compact panel inside Deal Hunter (no page header / tabs). */
+  /** Compact panel inside Dealwatch (no page header / tabs). */
   variant?: 'full' | 'embedded';
 }
 
@@ -70,10 +70,10 @@ const AIAssistant: React.FC<Props> = ({ items, onUpdate, defaultTab = 'MARKET', 
     if (!query) return;
     setLoading(true);
     try {
-      const result = await analyzeMarket(query, "General Hardware Market Analysis");
+      const result = await analyzeDealwatch(query, "General Hardware Dealwatch Analysis");
       setResponse(result as AIResponse);
     } catch (err) {
-      console.error("Market analysis failed", err);
+      console.error("Dealwatch analysis failed", err);
     } finally {
       setLoading(false);
     }
@@ -163,20 +163,20 @@ const AIAssistant: React.FC<Props> = ({ items, onUpdate, defaultTab = 'MARKET', 
       <header className="flex flex-col md:flex-row justify-between items-end gap-6">
         <div>
           <h1 className="text-4xl font-black text-slate-900 tracking-tight">AI Command Center</h1>
-          <p className="text-slate-500 font-medium">Market intelligence and inventory optimization</p>
+          <p className="text-slate-500 font-medium">Dealwatch intelligence and inventory optimization</p>
         </div>
         <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm overflow-x-auto max-w-full">
            <button 
              onClick={() => setActiveTab('MARKET')} 
              className={`flex items-center gap-2 px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'MARKET' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
            >
-             <TrendingUp size={14}/> Market Research
+             <TrendingUp size={14}/> Dealwatch Research
            </button>
            <button 
              onClick={() => setActiveTab('SOURCING')} 
              className={`flex items-center gap-2 px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === 'SOURCING' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
            >
-             <Radar size={14}/> Deal Hunter
+             <Radar size={14}/> Dealwatch
            </button>
            <button 
              onClick={() => setActiveTab('BUNDLES')} 
@@ -418,7 +418,7 @@ const AIAssistant: React.FC<Props> = ({ items, onUpdate, defaultTab = 'MARKET', 
                       <div className="flex flex-wrap gap-2">
                         {slowAdvice.sources.map((s, idx) => (
                           <a key={idx} href={s.uri} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-blue-600 border border-amber-200 rounded-lg text-[10px] font-bold hover:bg-amber-50 transition-colors">
-                            <Globe size={12} /> {s.title || 'Market Source'}
+                            <Globe size={12} /> {s.title || 'Dealwatch Source'}
                           </a>
                         ))}
                       </div>
@@ -446,7 +446,7 @@ const AIAssistant: React.FC<Props> = ({ items, onUpdate, defaultTab = 'MARKET', 
                         <div className="flex flex-wrap gap-2">
                           {response.sources.map((s, idx) => (
                             <a key={idx} href={s.uri} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-bold hover:bg-blue-100 transition-colors">
-                              <Globe size={12} /> {s.title || 'Market Reference'}
+                              <Globe size={12} /> {s.title || 'Dealwatch Reference'}
                             </a>
                           ))}
                         </div>
@@ -456,12 +456,12 @@ const AIAssistant: React.FC<Props> = ({ items, onUpdate, defaultTab = 'MARKET', 
                 ) : (
                   <div className="h-full flex flex-col items-center justify-center text-center p-12 space-y-4 opacity-40">
                     <Sparkles size={64} className="text-blue-600" />
-                    <p className="font-bold text-slate-400">Ask me about market prices or hardware trends...</p>
+                    <p className="font-bold text-slate-400">Ask me about Dealwatch prices or hardware trends...</p>
                   </div>
                 )}
                 {loading && (
                   <div className="flex items-center gap-3 text-blue-600 font-black uppercase text-[10px] tracking-widest animate-pulse ml-14">
-                    <RefreshCcw className="animate-spin" size={14}/> Researching Market Data...
+                    <RefreshCcw className="animate-spin" size={14}/> Researching Dealwatch Data...
                   </div>
                 )}
               </div>
@@ -472,7 +472,7 @@ const AIAssistant: React.FC<Props> = ({ items, onUpdate, defaultTab = 'MARKET', 
                     type="text" 
                     value={query}
                     onChange={e => setQuery(e.target.value)}
-                    placeholder="What is the market price for an RTX 4070?"
+                    placeholder="What is the Dealwatch price for an RTX 4070?"
                     className="w-full pl-6 pr-14 py-4 rounded-2xl border border-slate-200 outline-none focus:ring-4 focus:ring-blue-100 shadow-sm font-medium"
                   />
                   <button disabled={loading || !query} type="submit" className="absolute right-2 top-1/2 -translate-y-1/2 p-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all disabled:opacity-50">
@@ -487,7 +487,7 @@ const AIAssistant: React.FC<Props> = ({ items, onUpdate, defaultTab = 'MARKET', 
             <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100">
               <h3 className="font-black text-slate-800 mb-6 flex items-center gap-3"><TrendingUp size={20} className="text-emerald-600" /> Popular Queries</h3>
               <div className="space-y-3">
-                {['RTX 4090 Market Price', 'Gaming PC Bundle Ideas', 'GPU Market Trends 2024'].map(item => (
+                {['RTX 4090 Dealwatch Price', 'Gaming PC Bundle Ideas', 'GPU Dealwatch Trends 2024'].map(item => (
                   <button 
                     key={item}
                     onClick={() => { setQuery(item); }}
@@ -503,7 +503,7 @@ const AIAssistant: React.FC<Props> = ({ items, onUpdate, defaultTab = 'MARKET', 
             <div className="bg-slate-900 p-8 rounded-[2rem] text-white space-y-4">
                <div className="flex items-center gap-3">
                   <Info className="text-blue-400" />
-                  <h4 className="font-bold text-sm">Market Optimization</h4>
+                  <h4 className="font-bold text-sm">Dealwatch Optimization</h4>
                </div>
                <p className="text-xs text-slate-400 leading-relaxed">
                  Use the AI to compare current prices on eBay.de with your inventory values to find the best time to sell.

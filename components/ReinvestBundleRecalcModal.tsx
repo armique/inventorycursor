@@ -12,7 +12,7 @@ interface Props {
 }
 
 /** Preview modal for redistributing a sold bundle/PC's total sell price across its components —
- * replaces a naive equal split with weights from the account's own market data (or category
+ * replaces a naive equal split with weights from the account's own Dealwatch data (or category
  * priors as a fallback). Mirrors RetroBundleModal's layout so the two feel like one feature. */
 const ReinvestBundleRecalcModal: React.FC<Props> = ({ container, allItems, onApply, onClose }) => {
   const suggestions = useMemo(
@@ -72,7 +72,7 @@ const ReinvestBundleRecalcModal: React.FC<Props> = ({ container, allItems, onApp
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-bold text-slate-700 truncate">{s.name}</p>
                       <p className="text-[9px] font-black uppercase tracking-widest mt-0.5 flex items-center gap-1">
-                        {s.weightSource === 'market' ? (
+                        {s.weightSource === 'dealwatch' ? (
                           <span className="text-emerald-600 flex items-center gap-1"><Tag size={9} /> Your own sales</span>
                         ) : (
                           <span className="text-slate-400 flex items-center gap-1"><Tag size={9} /> Typical value</span>

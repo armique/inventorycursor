@@ -1,20 +1,20 @@
 /**
- * Verify classifyLotType() in market/server.js against real + representative titles.
+ * Verify classifyLotType() in dealwatch-runtime/server.js against real + representative titles.
  * Run: npx tsx scripts/verify-lot-classifier.ts
  *
- * Requires market/.env (EBAY_CLIENT_ID/SECRET) to be present — market/server.js
- * loads/validates them at module scope, same as when running `npm run dev:market`.
+ * Requires dealwatch-runtime/.env (EBAY_CLIENT_ID/SECRET) to be present — dealwatch-runtime/server.js
+ * loads/validates them at module scope, same as when running `npm run dev:dealwatch`.
  */
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const market = require('../market/server.js');
-const { classifyLotType, normalizeListingText } = market;
+const Dealwatch = require('../dealwatch-runtime/server.js');
+const { classifyLotType, normalizeListingText } = dealwatchRuntime;
 
 type Case = { title: string; expected: string; note: string; source: 'real' | 'synthetic' };
 
 // Titles marked "real" are copied verbatim from this project's own
-// market/data/store.json (real eBay sold-comp / watchlist titles).
+// dealwatch-runtime/data/store.json (real eBay sold-comp / watchlist titles).
 const mustPass: Case[] = [
   {
     title: 'Gaming PC RTX 5070 Ryzen 7800X3D',
@@ -97,7 +97,7 @@ const mustPass: Case[] = [
   // Previously a known limitation: looksLikeCompletePc()'s RAM/DIMM-kit guard never matched
   // normalized "so dimm" (hyphen collapsed to space by normalizeListingText), and its cancel-list
   // wrongly treated "mini-pc"/"komplett" as whole-system evidence instead of RAM-compatibility
-  // wording. Fixed in market/server.js; promoted from known-limitation to must-pass so a
+  // wording. Fixed in dealwatch-runtime/server.js; promoted from known-limitation to must-pass so a
   // regression here fails the build, not just gets silently reported.
   {
     title: 'SK hynix 16GB 2x8GB DDR5-5600 SO-DIMM Notebook RAM Laptop Mini-PC',
@@ -115,7 +115,7 @@ const mustPass: Case[] = [
   // protective cases/brackets/thermal modules (dragging the low band to €22) or
   // whole laptops/laptop-mainboards (dragging the high band to €2164), because none
   // of these wordings were covered by the accessory/whole-PC classifiers. Fixed in
-  // market/server.js (accessoryPatterns, replacementPartPatterns, hasPcComputeSignal,
+  // dealwatch-runtime/server.js (accessoryPatterns, replacementPartPatterns, hasPcComputeSignal,
   // looksLikeCompletePc's literal laptop/notebook check).
   {
     title: 'Bracket For   RTX 4060 VENTUS 2X OC Graphics Video Card #lk',

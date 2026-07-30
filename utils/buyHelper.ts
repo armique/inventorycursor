@@ -31,16 +31,16 @@ import {
   type ItemSaleEvent,
   type PoolCompHit,
 } from './itemSalesPool';
-import type { ResolvedMarketPrices } from '../services/marketPriceSource';
-import type { BuyHelperPriceHistory, MarketSnapshot } from '../services/buyHelperMarketHistory';
-import type { MarketAnalysis, AnalysisSignal } from '../services/buyHelperMarketAnalysis';
+import type { ResolvedDealwatchPrices } from '../services/dealwatchPriceSource';
+import type { BuyHelperPriceHistory, DealwatchSnapshot } from '../services/buyHelperDealwatchHistory';
+import type { DealwatchAnalysis, AnalysisSignal } from '../services/buyHelperDealwatchAnalysis';
 
 export const BUY_HELPER_STORAGE_KEY = 'buy_helper_tracklist_v1';
 export const BUY_HELPER_VAT_KEY = 'buy_helper_vat_pct_v1';
 
-// Re-export market history and analysis types for convenience
-export type { BuyHelperPriceHistory, MarketSnapshot } from '../services/buyHelperMarketHistory';
-export type { MarketAnalysis, AnalysisSignal } from '../services/buyHelperMarketAnalysis';
+// Re-export Dealwatch history and analysis types for convenience
+export type { BuyHelperPriceHistory, DealwatchSnapshot } from '../services/buyHelperDealwatchHistory';
+export type { DealwatchAnalysis, AnalysisSignal } from '../services/buyHelperDealwatchAnalysis';
 
 export type BuyHelperCategory = SoldPulseCategory;
 
@@ -57,7 +57,7 @@ export type BuyHelperItem = {
   sellEbay?: number;
   /** Desired net margin % after fees + VAT on profit (editable). */
   desiredMarginPct?: number;
-  /** Market read (inventory comps and/or pasted eBay sold). */
+  /** Dealwatch read (inventory comps and/or pasted eBay sold). */
   marketLow?: number;
   marketMedian?: number;
   marketHigh?: number;
@@ -319,37 +319,37 @@ export function suggestBuyHelperTargets(
 }
 
 /**
- * Same as suggestBuyHelperTargets, but grounded in real market/ data (eBay sold > eBay live
- * for the eBay channel, KA live for the KA channel — see services/marketPriceSource.ts) when
+ * Same as suggestBuyHelperTargets, but grounded in real dealwatch-runtime/ data (eBay sold > eBay live
+ * for the eBay channel, KA live for the KA channel — see services/dealwatchPriceSource.ts) when
  * available, falling back to suggestBuyHelperTargets (your own sold inventory) per channel
- * when the market bridge has no signal. Reuses channelNet/maxBuyForNetMargin/pocketFromXList
+ * when the Dealwatch bridge has no signal. Reuses channelNet/maxBuyForNetMargin/pocketFromXList
  * as-is — only the sellKa/sellEbay inputs change, never the fee/VAT/margin math itself.
  */
-export function suggestBuyHelperTargetsFromMarket(
-  market: ResolvedMarketPrices | null,
+export function suggestBuyHelperTargetsFromDealwatch(
+  dealwatchData: ResolvedDealwatchPrices | null,
   items: InventoryItem[],
   query: string,
   fees: BuyHelperFees,
   opts?: { category?: string; desiredMarginPct?: number },
 ): Partial<BuyHelperItem> & { note?: string } {
   const inventorySuggestion = suggestBuyHelperTargets(items, query, fees, opts);
-  // Market was checked (caller passed a resolved result) but came back empty — say so
+  // Dealwatch was checked (caller passed a resolved result) but came back empty — say so
   // explicitly rather than silently falling back to the plain inventory-only note, so the
   // UI can distinguish "never checked" from "checked, found nothing" from "found data".
-  if (market && !market.ebay && !market.ka) {
+  if (dealwatchData && !dealwatchData.ebay && !dealwatchData.ka) {
     return {
       ...inventorySuggestion,
-      note: `Market: no live/sold data found for "${query}". ${inventorySuggestion.note || ''}`.trim(),
+      note: `Dealwatch: no live/sold data found for "${query}". ${inventorySuggestion.note || ''}`.trim(),
     };
   }
-  if (!market) return inventorySuggestion;
+  if (!dealwatchData) return inventorySuggestion;
 
   const desired = opts?.desiredMarginPct ?? DEFAULT_DESIRED_MARGIN_PCT;
   const hits = inventoryCompsForQuery(items, query, { category: opts?.category });
   const inv = summarizeInventoryComps(hits);
 
-  const sellEbay = market.ebay?.median || inventorySuggestion.sellEbay || 0;
-  const sellKa = market.ka?.median || inventorySuggestion.sellKa || 0;
+  const sellEbay = dealwatchData.ebay?.median || inventorySuggestion.sellEbay || 0;
+  const sellKa = dealwatchData.ka?.median || inventorySuggestion.sellKa || 0;
   if (sellEbay <= 0 && sellKa <= 0) return inventorySuggestion;
 
   const maxBuyEbay = sellEbay > 0
@@ -361,12 +361,12 @@ export function suggestBuyHelperTargetsFromMarket(
   const buyPrice = roundMoney(Math.min(maxBuyEbay, maxBuyKa));
 
   const sourceLabel = [
-    market.ebay ? `eBay ${market.ebay.source === 'ebay-sold' ? 'sold' : 'live'} (n=${market.ebay.count})` : null,
-    market.ka ? `KA live (n=${market.ka.count})` : null,
+    dealwatchData.ebay ? `eBay ${dealwatchData.ebay.source === 'ebay-sold' ? 'sold' : 'live'} (n=${dealwatchData.ebay.count})` : null,
+    dealwatchData.ka ? `KA live (n=${dealwatchData.ka.count})` : null,
   ].filter(Boolean).join(', ') || (inv ? `${inv.count} inventory comps` : 'no comps');
 
-  const lows = [market.ebay?.low, market.ka?.low, inv?.low].filter((n): n is number => typeof n === 'number');
-  const highs = [market.ebay?.high, market.ka?.high, inv?.high].filter((n): n is number => typeof n === 'number');
+  const lows = [dealwatchData.ebay?.low, dealwatchData.ka?.low, inv?.low].filter((n): n is number => typeof n === 'number');
+  const highs = [dealwatchData.ebay?.high, dealwatchData.ka?.high, inv?.high].filter((n): n is number => typeof n === 'number');
   const medians = [sellEbay, sellKa].filter((n) => n > 0);
 
   return {
@@ -378,7 +378,7 @@ export function suggestBuyHelperTargetsFromMarket(
     marketMedian: medians.length ? roundMoney(medians.reduce((a, b) => a + b, 0) / medians.length) : undefined,
     marketHigh: highs.length ? Math.max(...highs) : undefined,
     inventoryCompCount: inv?.count ?? 0,
-    note: `Market: ${sourceLabel}. Target ${desired}% net after ${totalEbayFeePct(fees)}% eBay cut + ${fees.vatOnProfitPct}% VAT on profit.`,
+    note: `Dealwatch: ${sourceLabel}. Target ${desired}% net after ${totalEbayFeePct(fees)}% eBay cut + ${fees.vatOnProfitPct}% VAT on profit.`,
     lastCheckedAt: new Date().toISOString(),
   };
 }

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ExternalLink, Loader2 } from 'lucide-react';
-import { fetchListings, type MarketListing } from '../../services/marketApi';
+import { fetchListings, type DealwatchListing } from '../../services/dealwatchApi';
 import { formatEURPrefix } from '../../utils/formatMoney';
 
 type Props = {
@@ -10,7 +10,7 @@ type Props = {
   maxPrice?: number;
 };
 
-type LoadState = { loading: boolean; error: string | null; items: MarketListing[] };
+type LoadState = { loading: boolean; error: string | null; items: DealwatchListing[] };
 
 /** Green/amber/red vs the recommended buy price — a quick visual "is this lot worth it". */
 function priceBandClass(price: number | undefined, maxPrice: number | undefined): string {

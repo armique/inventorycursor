@@ -1,10 +1,10 @@
 /**
- * Buy Helper market analysis: calculate percentiles, trends, volatility, velocity
+ * Buy Helper Dealwatch analysis: calculate percentiles, trends, volatility, velocity
  * from 30-day price history snapshots.
  */
 
-import { type MarketSnapshot, type BuyHelperPriceHistory } from './buyHelperMarketHistory';
-import { type MarketPriceSource } from './marketPriceSource';
+import { type DealwatchSnapshot, type BuyHelperPriceHistory } from './buyHelperDealwatchHistory';
+import { type DealwatchPriceSource } from './dealwatchPriceSource';
 
 export type AnalysisSignal = {
   median: number;
@@ -19,10 +19,10 @@ export type AnalysisSignal = {
   trend: 'up' | 'down' | 'flat'; // Compare first 10 days vs last 10 days
   velocity: number; // % of listings from last 7 days (0-100)
   count30d: number; // Total listings in 30-day window
-  source: MarketPriceSource;
+  source: DealwatchPriceSource;
 };
 
-export type MarketAnalysis = {
+export type DealwatchAnalysis = {
   ebaySold: AnalysisSignal | null;
   ebayLive: AnalysisSignal | null;
   kaLive: AnalysisSignal | null;
@@ -62,7 +62,7 @@ type Channel = (typeof CHANNELS)[number];
 const average = (values: number[]) => values.reduce((a, b) => a + b, 0) / values.length;
 
 /** Trend for one channel: mean median of the oldest third vs the newest third. */
-export function calculateTrend(history: MarketSnapshot[], channel: Channel): 'up' | 'down' | 'flat' {
+export function calculateTrend(history: DealwatchSnapshot[], channel: Channel): 'up' | 'down' | 'flat' {
   const medians = history
     .map((s) => ({ t: s.timestamp, m: s[channel]?.median ?? 0 }))
     .filter((x) => x.m > 0);
@@ -87,7 +87,7 @@ export function calculateTrend(history: MarketSnapshot[], channel: Channel): 'up
  * Deliberately a ratio, not a share: snapshots are taken on a fixed cadence, so a raw
  * "share of listings seen in the last 7 days" would sit near 23% regardless of demand.
  */
-export function calculateVelocity(history: MarketSnapshot[]): number {
+export function calculateVelocity(history: DealwatchSnapshot[]): number {
   const counts = history
     .map((s) => ({ time: new Date(s.timestamp).getTime(), count: s.ebaySold?.count ?? 0 }))
     .filter((x) => Number.isFinite(x.time));
@@ -106,7 +106,7 @@ export function calculateVelocity(history: MarketSnapshot[]): number {
 /**
  * Analyze a single channel (eBay Sold, eBay Live, KA Live) from history.
  */
-export function analyzeChannel(history: MarketSnapshot[], channel: Channel): AnalysisSignal | null {
+export function analyzeChannel(history: DealwatchSnapshot[], channel: Channel): AnalysisSignal | null {
   if (!history.length) return null;
 
   // Collect all median prices from this channel
@@ -163,7 +163,7 @@ export function analyzeChannel(history: MarketSnapshot[], channel: Channel): Ana
 /**
  * Analyze full price history and return statistics for all channels.
  */
-export function analyzePriceHistory(priceHistory: BuyHelperPriceHistory | null): MarketAnalysis {
+export function analyzePriceHistory(priceHistory: BuyHelperPriceHistory | null): DealwatchAnalysis {
   if (!priceHistory || !priceHistory.history.length) {
     return { ebaySold: null, ebayLive: null, kaLive: null };
   }

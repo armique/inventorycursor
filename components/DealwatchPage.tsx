@@ -3,8 +3,8 @@ import { Radar, Bell, Sparkles, TrendingUp } from 'lucide-react';
 import { InventoryItem } from '../types';
 import AIAssistant from './AIAssistant';
 import SavedSearches from './SavedSearches';
-import DealHunterInsights from './DealHunterInsights';
-import { loadDealWatchlist } from '../services/dealHunterExtras';
+import DealwatchInsights from './DealwatchInsights';
+import { loadDealWatchlist } from '../services/dealwatchExtras';
 import type { LiveDeal, DealSearchPlatform } from '../services/geminiService';
 
 export type SavedDealSearch = {
@@ -31,22 +31,22 @@ function loadSearches(): SavedDealSearch[] {
   }
 }
 
-type DealHunterTab = 'alerts' | 'sourcing' | 'insights';
+type DealwatchTab = 'alerts' | 'sourcing' | 'insights';
 
 interface Props {
   items: InventoryItem[];
   onUpdate?: (items: InventoryItem[]) => void;
 }
 
-const TABS: { id: DealHunterTab; label: string; icon: React.ReactNode }[] = [
+const TABS: { id: DealwatchTab; label: string; icon: React.ReactNode }[] = [
   { id: 'alerts', label: 'Saved alerts', icon: <Bell size={14} /> },
   { id: 'sourcing', label: 'AI sourcing', icon: <Sparkles size={14} /> },
   { id: 'insights', label: 'Insights', icon: <TrendingUp size={14} /> },
 ];
 
-const DealHunterPage: React.FC<Props> = ({ items, onUpdate }) => {
+const DealwatchPage: React.FC<Props> = ({ items, onUpdate }) => {
   const [searches, setSearches] = useState<SavedDealSearch[]>(loadSearches);
-  const [activeTab, setActiveTab] = useState<DealHunterTab>('alerts');
+  const [activeTab, setActiveTab] = useState<DealwatchTab>('alerts');
   const [seedQuery, setSeedQuery] = useState<string | null>(null);
   const [watchlistCount, setWatchlistCount] = useState(() => loadDealWatchlist().length);
 
@@ -77,7 +77,7 @@ const DealHunterPage: React.FC<Props> = ({ items, onUpdate }) => {
             <Radar size={22} />
           </div>
           <div className="min-w-0">
-            <h1 className="text-xl font-black text-slate-900 tracking-tight truncate">Deal Hunter</h1>
+            <h1 className="text-xl font-black text-slate-900 tracking-tight truncate">Dealwatch</h1>
             <p className="text-[11px] text-slate-500 font-medium truncate">
               Kleinanzeigen & eBay alerts · AI niches · inventory-based tips
             </p>
@@ -132,7 +132,7 @@ const DealHunterPage: React.FC<Props> = ({ items, onUpdate }) => {
 
         {activeTab === 'insights' && (
           <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4 sm:p-5">
-            <DealHunterInsights items={items} compact onRunSearch={handleHuntFromInsights} />
+            <DealwatchInsights items={items} compact onRunSearch={handleHuntFromInsights} />
           </div>
         )}
       </div>
@@ -140,4 +140,4 @@ const DealHunterPage: React.FC<Props> = ({ items, onUpdate }) => {
   );
 };
 
-export default DealHunterPage;
+export default DealwatchPage;

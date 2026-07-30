@@ -98,7 +98,7 @@ export type SuggestionMarginBand = {
   reason?: string;
 };
 
-/** Split leftovers / kit children often carry below-market buy costs. */
+/** Split leftovers / kit children often carry below-Dealwatch buy costs. */
 export function isCheapAcquisitionItem(item: InventoryItem): boolean {
   if (item.id?.startsWith('split-')) return true;
   if (item.parentContainerId) return true;

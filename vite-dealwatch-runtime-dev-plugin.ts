@@ -7,7 +7,7 @@ import type { Plugin } from 'vite';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const MARKET_DIR = path.resolve(ROOT, 'market');
+const DEALWATCH_DIR = path.resolve(ROOT, 'dealwatch-runtime');
 
 const STATIC_BLOCKLIST = new Set([
   'server.js',
@@ -46,41 +46,41 @@ function isBlockedStatic(relPosix: string): boolean {
 }
 
 /**
- * Serves market/ (former EST) from the same Vite origin:
- * - UI at /market/*
- * - APIs at /api/est/* (rewritten to /api/* for the existing handler)
+ * Serves Dealwatch runtime from the same Vite origin:
+ * - UI at /dealwatch/*
+ * - APIs at /api/dealwatch/* (rewritten to /api/* for the existing handler)
  */
-export function viteMarketDevPlugin(): Plugin {
+export function viteDealwatchRuntimeDevPlugin(): Plugin {
   return {
-    name: 'vite-market-dev',
+    name: 'vite-dealwatch-dev',
     configureServer(server) {
-      let market: {
-        handleEstRequest: (req: IncomingMessage, res: ServerResponse) => Promise<void>;
-        startMarketRuntime: () => void;
+      let dealwatchRuntime: {
+        handleDealwatchRequest: (req: IncomingMessage, res: ServerResponse) => Promise<void>;
+        startDealwatchRuntime: () => void;
       };
 
       try {
-        market = require(path.join(MARKET_DIR, 'server.js'));
+        dealwatchRuntime = require(path.join(DEALWATCH_DIR, 'server.js'));
       } catch (err) {
-        console.error('[market] Failed to load market/server.js', err);
+        console.error('[dealwatch] Failed to load runtime server.js', err);
         return;
       }
 
-      market.startMarketRuntime();
-      console.log('[market] Mounted at /market and /api/est (same Vite process)');
+      dealwatchRuntime.startDealwatchRuntime();
+      console.log('[dealwatch] Mounted at /dealwatch and /api/dealwatch (same Vite process)');
 
       server.middlewares.use(async (req, res, next) => {
         const rawUrl = req.url || '';
         const pathname = rawUrl.split('?')[0] || '';
 
-        if (pathname === '/api/est' || pathname.startsWith('/api/est/')) {
-          const rewritten = rawUrl.replace(/^\/api\/est(?=\/|\?|$)/, '/api') || '/api';
+        if (pathname === '/api/dealwatch' || pathname.startsWith('/api/dealwatch/')) {
+          const rewritten = rawUrl.replace(/^\/api\/dealwatch(?=\/|\?|$)/, '/api') || '/api';
           const originalUrl = req.url;
           req.url = rewritten;
           try {
-            await market.handleEstRequest(req, res);
+            await dealwatchRuntime.handleDealwatchRequest(req, res);
           } catch (err) {
-            console.error('[market] API error:', err);
+            console.error('[dealwatch] API error:', err);
             if (!res.headersSent) {
               res.statusCode = 500;
               res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -92,15 +92,15 @@ export function viteMarketDevPlugin(): Plugin {
           return;
         }
 
-        if (pathname === '/market' || pathname.startsWith('/market/')) {
-          if (pathname === '/market') {
+        if (pathname === '/dealwatch' || pathname.startsWith('/dealwatch/')) {
+          if (pathname === '/dealwatch') {
             res.statusCode = 302;
-            res.setHeader('Location', '/market/');
+            res.setHeader('Location', '/dealwatch/');
             res.end();
             return;
           }
 
-          let rel = decodeURIComponent(pathname.slice('/market'.length) || '/');
+          let rel = decodeURIComponent(pathname.slice('/dealwatch'.length) || '/');
           if (rel === '/' || rel === '') rel = '/index.html';
           const relPosix = rel.replace(/\\/g, '/').replace(/^\/+/, '');
           if (isBlockedStatic(relPosix)) {
@@ -109,8 +109,8 @@ export function viteMarketDevPlugin(): Plugin {
             return;
           }
 
-          const filePath = path.resolve(MARKET_DIR, relPosix);
-          if (!filePath.startsWith(MARKET_DIR + path.sep) && filePath !== MARKET_DIR) {
+          const filePath = path.resolve(DEALWATCH_DIR, relPosix);
+          if (!filePath.startsWith(DEALWATCH_DIR + path.sep) && filePath !== DEALWATCH_DIR) {
             res.statusCode = 403;
             res.end('Forbidden');
             return;

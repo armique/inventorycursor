@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Sandbox: Listing Studio "Apply to item" merge + hydration wipe regression.
  *
  * Reproduces the PC bug where Generate listing text was wiped when any other
@@ -124,11 +124,11 @@ function applyListingToItem(
 
 function run() {
   const generatedDescription = formatListingTextSpacing(`Crucial BX500 480GB SSD
-💻 Schnelle und zuverlässige SSD für Ihren Computer.
-🔧 Technische Daten: 480GB, SATA III
-📦 Lieferumfang: Ohne Originalverpackung
-✅ Zustand: Gebraucht / Voll funktionsfähig / Normale Gebrauchsspuren
-🔥 In meinen weiteren Anzeigen sowie auf Lager finden Sie außerdem Grafikkarten.`);
+ðŸ’» Schnelle und zuverlÃ¤ssige SSD fÃ¼r Ihren Computer.
+ðŸ”§ Technische Daten: 480GB, SATA III
+ðŸ“¦ Lieferumfang: Ohne Originalverpackung
+âœ… Zustand: Gebraucht / Voll funktionsfÃ¤hig / Normale Gebrauchsspuren
+ðŸ”¥ In meinen weiteren Anzeigen sowie auf Lager finden Sie auÃŸerdem Grafikkarten.`);
 
   const generatedTitle = 'Crucial BX500 480GB SSD SATA III gebraucht';
 
@@ -137,7 +137,7 @@ function run() {
   let localTitle = generatedTitle;
   let localDescription = generatedDescription;
 
-  // User blurs AI note / vendor → item patch updates → OLD effect re-hydrates
+  // User blurs AI note / vendor â†’ item patch updates â†’ OLD effect re-hydrates
   const afterVendorPatch = mergeStudioPatch(itemOpen, itemOpen, { vendor: 'eBay-seller' });
   const wiped = buggyHydrateOnAnyFieldChange({
     localTitle,
@@ -195,10 +195,11 @@ function run() {
   assert.ok((appliedWithPhotos.marketDescription || '').length > 50);
 
   // --- 5) Spacing still applied for readable blocks ---
-  assert.match(applied.marketDescription || '', /\n\n💻/);
-  assert.match(applied.marketDescription || '', /\n\n🔧/);
+  assert.match(applied.marketDescription || '', /\n\nðŸ’»/);
+  assert.match(applied.marketDescription || '', /\n\nðŸ”§/);
 
   console.log('verify-apply-listing: all checks passed');
 }
 
 run();
+

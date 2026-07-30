@@ -10,7 +10,7 @@ import SavedSearchForm, {
   formValuesFromSearch,
   buildSearchFromForm,
   type SavedSearchFormValues,
-} from './dealHunter/SavedSearchForm';
+} from './dealwatch/SavedSearchForm';
 import {
   filterDealByFlags,
   computeDealScore,
@@ -18,7 +18,7 @@ import {
   upsertPriceAlert,
   loadDealWatchlist,
   type DealWatchlistItem,
-} from '../services/dealHunterExtras';
+} from '../services/dealwatchExtras';
 
 interface SavedSearch extends SavedSearchCriteria {
   id: string; // Ensure ID is present
@@ -30,7 +30,7 @@ interface Props {
   searches?: SavedSearch[];
   onUpdate?: (searches: SavedSearch[]) => void;
   embedded?: boolean;
-  /** Use full parent height (Deal Hunter panel). */
+  /** Use full parent height (Dealwatch panel). */
   fillHeight?: boolean;
   /** Pre-fill new alert form when navigating from Insights. */
   seedQuery?: string | null;

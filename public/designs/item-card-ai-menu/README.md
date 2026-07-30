@@ -1,4 +1,4 @@
-# Item card AI menu — 10 design concepts
+﻿# Item card AI menu â€” 10 design concepts
 
 Open [`index.html`](./index.html) in a browser, or open any numbered file alone.
 
@@ -23,3 +23,4 @@ Removed from the listing menu across concepts: Parse Specs, Suggest Price as sep
 | 10 | `10-rail-and-panels.html` | Icon rail + dual panels |
 
 **Implemented in app:** Sparkles on the inventory row opens `ListingAiPanelModal` (stacked title + description, inspired by 01/05/06). Generation uses `services/marketplaceListingAI.ts` with the professional eBay.de / Kleinanzeigen DE prompt.
+

@@ -69,7 +69,7 @@ export async function summarizePastedSoldComps(
       `You help a German PC-parts reseller read eBay.de SOLD listings for the LAST ~30 DAYS.
 Product query: "${query}"
 
-The user pasted real sold-result text from eBay (often a long scroll of many sales). Goal: a clear monthly market picture — NOT 2–3 cherry-picked rows.
+The user pasted real sold-result text from eBay (often a long scroll of many sales). Goal: a clear monthly Dealwatch picture — NOT 2–3 cherry-picked rows.
 
 Extract ONLY realistic used sales for WORKING standalone units (Buy It Now / fixed-price preferred).
 IGNORE or down-weight: Defekt/for parts, 1-bidder auction giveaways, wrong models, lots/bundles/PCs, mining farms, obvious shipping-only weirdness.
@@ -88,12 +88,12 @@ Return JSON only:
   "median": number,
   "high": number,
   "count": number,
-  "advice": "1-2 short sentences in simple English or German about the monthly market",
+  "advice": "1-2 short sentences in simple English or German about the monthly Dealwatch trend",
   "warnings": ["short warning", "..."]
 }
 
 Rules:
-- Numbers must be grounded in the pasted text (or the local extract). Do NOT invent market prices from memory.
+- Numbers must be grounded in the pasted text (or the local extract). Do NOT invent Dealwatch prices from memory.
 - Prefer median of a fat sample (15+ when available). If paste has few usable prices, warn to copy more recent sold rows.
 - If paste is too messy, keep local median and warn.
 - count = how many usable comps you trusted.`,

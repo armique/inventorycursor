@@ -118,7 +118,7 @@ export function mergeLocalMarketplaceCredentialsIntoSettings(
 }
 
 /** Patch marketplace fields onto business settings (Settings save / Refresh). */
-export function withMarketplaceCredentials(
+export function withDealwatchplaceCredentials(
   settings: BusinessSettings,
   patch: {
     ebaySellerUsername?: string;
@@ -155,7 +155,7 @@ export function withMarketplaceCredentials(
 /** Snapshot current local eBay OAuth fields into business settings for cloud sync. */
 export function withLocalEbayOAuthOnSettings(settings: BusinessSettings): BusinessSettings {
   const cfg = getEbayConfig();
-  const next = withMarketplaceCredentials(settings, {
+  const next = withDealwatchplaceCredentials(settings, {
     ebaySellerUsername: cfg.username,
     ebayOAuthToken: cfg.token || '',
     ebayOAuthRefreshToken: cfg.refreshToken || '',

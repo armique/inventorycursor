@@ -1,7 +1,7 @@
 /**
  * Rule-based free-text -> componentKey extractor for PC parts.
  * No canonical component identity existed anywhere in the codebase before this
- * (market/data/*-specs.json has its own unconnected slug ids; hardwareDB.ts
+ * (dealwatch-runtime/data/*-specs.json has its own unconnected slug ids; hardwareDB.ts
  * matches by lowercased string; ebayListingMatch/cpuMoboComboAnalytics build
  * ad-hoc tokens per call). This is the shared key going forward.
  */
@@ -38,7 +38,7 @@ function normalize(text: string): string {
     .trim();
 }
 
-/** Mirrors market/server.js's parseGpuSearch — duplicated deliberately across the
+/** Mirrors dealwatch-runtime/server.js's parseGpuSearch — duplicated deliberately across the
  * CommonJS/TS runtime boundary (see architecture decision on classifyLotType). */
 function extractGpu(haystack: string): ComponentKeyMatch | null {
   let match = haystack.match(/\b(rtx|gtx|rx)\s*(\d{3,4})\s*(ti|super)?\b/);

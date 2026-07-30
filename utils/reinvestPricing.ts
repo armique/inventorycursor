@@ -114,7 +114,7 @@ function buildAdvice(
   pricing: Pick<ReinvestPricing, 'suggestedMaxBuy' | 'sellKa' | 'sellEbay' | 'ebayFeePct' | 'sellEbaySource'>,
 ): string {
   if (group.kind === 'hypothesis') {
-    return 'AI idea — verify market prices before buying.';
+    return 'AI idea — verify Dealwatch prices before buying.';
   }
   if (!group.soldCount) {
     return 'Not enough sold history yet.';

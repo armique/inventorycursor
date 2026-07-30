@@ -7,11 +7,11 @@ import { formatEUR } from '../utils/formatMoney';
 interface Props {
   items: InventoryItem[];
   onRunSearch?: (query: string, maxPrice?: number) => void;
-  /** Tighter layout for Deal Hunter insights tab. */
+  /** Tighter layout for Dealwatch insights tab. */
   compact?: boolean;
 }
 
-const DealHunterInsights: React.FC<Props> = ({ items, onRunSearch, compact = false }) => {
+const DealwatchInsights: React.FC<Props> = ({ items, onRunSearch, compact = false }) => {
   const roi = useMemo(() => computeCategoryRoi(items).slice(0, 6), [items]);
   const gaps = useMemo(() => suggestSimilarToMyStock(items), [items]);
 
@@ -65,7 +65,7 @@ const DealHunterInsights: React.FC<Props> = ({ items, onRunSearch, compact = fal
                     onClick={() => onRunSearch(g.query)}
                     className="shrink-0 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-[10px] font-black uppercase"
                   >
-                    Hunt
+                    Search
                   </button>
                 )}
               </div>
@@ -77,4 +77,4 @@ const DealHunterInsights: React.FC<Props> = ({ items, onRunSearch, compact = fal
   );
 };
 
-export default DealHunterInsights;
+export default DealwatchInsights;

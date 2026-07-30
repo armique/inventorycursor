@@ -1,6 +1,6 @@
 /**
  * Adds launchPriceEur + marketPriceEur (used/street) to GPU and CPU DBs.
- * Launch: USD→EUR (~0.92) or existing EUR. Market: curated used DE/EU estimates.
+ * Launch: USD→EUR (~0.92) or existing EUR. Dealwatch: curated used DE/EU estimates.
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -113,7 +113,7 @@ function enrichGpu() {
     delete next.launchPriceUsd;
     return next;
   });
-  db.note = `${db.note || ''} Prices in EUR: launch ≈ original MSRP, used market ≈ typical eBay.de/street used (approx).`.trim();
+  db.note = `${db.note || ''} Prices in EUR: launch ≈ original MSRP, used Dealwatch ≈ typical eBay.de/street used (approx).`.trim();
   db.updatedAt = '2026-07-24';
   fs.writeFileSync(file, `${JSON.stringify(db, null, 2)}\n`);
   console.log(`GPUs enriched: ${db.gpus.length}`);
@@ -132,7 +132,7 @@ function enrichCpu() {
     delete next.launchPriceUsd;
     return next;
   });
-  db.note = `${(db.note || '').replace(/\s*Prices in EUR:.*/, '')} Prices in EUR: launch ≈ original MSRP, used market ≈ typical eBay.de/street used (approx).`.trim();
+  db.note = `${(db.note || '').replace(/\s*Prices in EUR:.*/, '')} Prices in EUR: launch ≈ original MSRP, used Dealwatch ≈ typical eBay.de/street used (approx).`.trim();
   db.updatedAt = '2026-07-24';
   fs.writeFileSync(file, `${JSON.stringify(db, null, 2)}\n`);
   console.log(`CPUs enriched: ${db.cpus.length}`);

@@ -1,5 +1,5 @@
 /**
- * Verify the market/server.js side of the Buy Helper bridge:
+ * Verify the dealwatch-runtime/server.js side of the Buy Helper bridge:
  * buildBuyHelperQuoteQuery() and buildQuoteBucket(). No network calls —
  * these are the pure pieces around the /api/buy-helper/quote route.
  * Run: npx tsx scripts/verify-buy-helper-quote-bridge.ts
@@ -8,8 +8,8 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const market = require('../market/server.js');
-const { buildBuyHelperQuoteQuery, buildQuoteBucket } = market;
+const Dealwatch = require('../dealwatch-runtime/server.js');
+const { buildBuyHelperQuoteQuery, buildQuoteBucket } = dealwatchRuntime;
 
 console.log('\n=== buildBuyHelperQuoteQuery ===');
 

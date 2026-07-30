@@ -2,10 +2,10 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { viteApiDevPlugin } from './vite-api-dev-plugin';
-import { viteMarketDevPlugin } from './vite-market-dev-plugin';
+import { viteDealwatchRuntimeDevPlugin } from './vite-dealwatch-runtime-dev-plugin';
 
 export default defineConfig(({ mode }) => ({
-  plugins: [react(), viteMarketDevPlugin(), viteApiDevPlugin()],
+  plugins: [react(), viteDealwatchRuntimeDevPlugin(), viteApiDevPlugin()],
   base: '/',
   define: {
     // `npm run dev:emulator` (vite --mode emulator) points Firebase at the local

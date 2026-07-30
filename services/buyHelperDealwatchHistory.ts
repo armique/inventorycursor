@@ -1,5 +1,5 @@
 /**
- * Buy Helper market history: fetch, store, and manage 30-day price history
+ * Buy Helper Dealwatch history: fetch, store, and manage 30-day price history
  * for each tracked part from eBay (sold + live) and Kleinanzeigen (live).
  *
  * Stored in its own Firestore collection (users/{uid}/buyHelperPrices/{itemId}),
@@ -7,16 +7,16 @@
  * inventory/expenses if used for a partial payload.
  */
 
-import { type MarketQuoteBucket, fetchBuyHelperQuote } from './marketApi';
+import { type DealwatchQuoteBucket, fetchBuyHelperQuote } from './dealwatchApi';
 import type { BuyHelperItem, BuyHelperCategory } from '../utils/buyHelper';
 import { fetchBuyHelperPricesFromCloud, writeBuyHelperPricesToCloud } from './firebaseService';
 import { shouldSkipCloudRefetch, markCloudRefetchDone } from '../utils/cloudFetchThrottle';
 
-export type MarketSnapshot = {
+export type DealwatchSnapshot = {
   timestamp: string; // ISO 8601
-  ebaySold: MarketQuoteBucket;
-  ebayLive: MarketQuoteBucket;
-  kaLive: MarketQuoteBucket;
+  ebaySold: DealwatchQuoteBucket;
+  ebayLive: DealwatchQuoteBucket;
+  kaLive: DealwatchQuoteBucket;
 };
 
 export type BuyHelperPriceHistory = {
@@ -24,7 +24,7 @@ export type BuyHelperPriceHistory = {
   query: string;
   category: BuyHelperCategory;
   /** Sorted ascending by timestamp, trimmed to the last 30 days. */
-  history: MarketSnapshot[];
+  history: DealwatchSnapshot[];
   createdAt: string;
   updatedAt: string;
 };
@@ -33,9 +33,9 @@ export const PRICE_HISTORY_MAX_DAYS = 30;
 
 /** Drop snapshots older than maxDays and keep the rest sorted oldest → newest. */
 export function prunePriceHistory(
-  history: MarketSnapshot[],
+  history: DealwatchSnapshot[],
   maxDays = PRICE_HISTORY_MAX_DAYS,
-): MarketSnapshot[] {
+): DealwatchSnapshot[] {
   const cutoff = Date.now() - maxDays * 24 * 60 * 60 * 1000;
   return history
     .filter((s) => new Date(s.timestamp).getTime() >= cutoff)
@@ -47,13 +47,13 @@ export function prunePriceHistory(
  * them for 30 days would blow past Firestore's 1 MiB per-document limit, so snapshots
  * keep the aggregates only.
  */
-function stripItems(bucket: MarketQuoteBucket): MarketQuoteBucket {
+function stripItems(bucket: DealwatchQuoteBucket): DealwatchQuoteBucket {
   if (!bucket) return null;
   return { median: bucket.median, low: bucket.low, high: bucket.high, count: bucket.count, items: [] };
 }
 
-/** Fetch one market snapshot for a tracked part. Returns null when the bridge has nothing. */
-export async function fetchMarketSnapshot(item: BuyHelperItem): Promise<MarketSnapshot | null> {
+/** Fetch one Dealwatch snapshot for a tracked part. Returns null when the bridge has nothing. */
+export async function fetchDealwatchSnapshot(item: BuyHelperItem): Promise<DealwatchSnapshot | null> {
   const quote = await fetchBuyHelperQuote(item.query);
   if (!quote) return null;
   return {
@@ -89,7 +89,7 @@ function writePriceHistoryCache(histories: Record<string, BuyHelperPriceHistory>
  * Fetch a fresh snapshot for every tracked item, append it to that item's history,
  * prune to 30 days, and persist all of them in one batched write.
  */
-export async function fetchAndStoreBuyHelperMarkets(
+export async function fetchAndStoreBuyHelperDealwatch(
   items: BuyHelperItem[],
   existingHistories: Record<string, BuyHelperPriceHistory> = {},
 ): Promise<{ success: number; errors: string[] }> {
@@ -99,7 +99,7 @@ export async function fetchAndStoreBuyHelperMarkets(
 
   for (const item of items) {
     try {
-      const snapshot = await fetchMarketSnapshot(item);
+      const snapshot = await fetchDealwatchSnapshot(item);
       if (!snapshot) {
         errors.push(`No data for "${item.query}"`);
         continue;

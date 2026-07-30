@@ -17,7 +17,7 @@ Open `http://localhost:5173/panel/dashboard` for the admin panel, or `/` for the
 
 | Variable | Purpose |
 |----------|---------|
-| `VITE_GEMINI_API_KEY` | Deal Hunter, AI listings, screenshot parse (browser) |
+| `VITE_GEMINI_API_KEY` | Dealwatch, AI listings, screenshot parse (browser) |
 | `GEMINI_API_KEY` | Vercel API routes (`/api/*`) — same key as above on server |
 | `VITE_GROQ_API_KEY` | Fast spec fill (optional) |
 | Firebase config | Settings → Cloud Sync (or baked-in defaults) |
@@ -33,7 +33,7 @@ See [API_KEYS_GUIDE.md](./API_KEYS_GUIDE.md) and [.env.example](./.env.example).
 
 - Inventory with bundles/PCs, Kleinanzeigen + eBay sale capture
 - Finanzamt Excel export, invoices, expenses
-- Deal Hunter (saved searches, AI sourcing)
+- Dealwatch (saved searches, AI sourcing)
 - Public storefront (ArmikTech) with inquiries
 - Firebase cloud sync + GitHub backup
 
@@ -42,7 +42,7 @@ See [API_KEYS_GUIDE.md](./API_KEYS_GUIDE.md) and [.env.example](./.env.example).
 | Path | Description |
 |------|-------------|
 | `/panel/inventory` | Main stock list |
-| `/panel/deal-hunter` | Saved KA/eBay searches |
+| `/panel/dealwatch` | Saved KA/eBay searches |
 | `/panel/health-check` | API keys & sync status |
 | `/panel/competitors` | eBay competitor watch |
 

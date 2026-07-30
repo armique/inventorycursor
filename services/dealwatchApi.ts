@@ -1,10 +1,10 @@
-/** Client for market/ Dealwatch APIs (mounted at /api/est). */
+/** Client for Dealwatch APIs (mounted at /api/dealwatch). */
 
-const API = '/api/est';
+const API = '/api/dealwatch';
 
-export type MarketMarketplace = 'ebay' | 'kleinanzeigen';
+export type DealwatchMarketplace = 'ebay' | 'kleinanzeigen';
 
-export type MarketSearch = {
+export type DealwatchSearch = {
   id: string;
   name: string;
   search: string;
@@ -13,7 +13,7 @@ export type MarketSearch = {
   maxPrice?: number;
   minFeedback?: number;
   condition?: string;
-  marketplace?: MarketMarketplace | string;
+  marketplace?: DealwatchMarketplace | string;
   enabledSmartFilters?: string[];
   disabledSmartFilters?: string[];
   includeCapacities?: string[];
@@ -30,7 +30,7 @@ export type MarketSearch = {
   updatedAt?: string;
 };
 
-export type MarketListing = {
+export type DealwatchListing = {
   id: string;
   title: string;
   price?: number;
@@ -56,13 +56,13 @@ export type MarketListing = {
   lotType?: 'component' | 'whole_pc' | 'donor_bundle' | 'accessory_only';
 };
 
-export type MarketWatchItem = MarketListing & {
+export type DealwatchWatchItem = DealwatchListing & {
   addedAt?: string;
   searchId?: string;
   searchName?: string;
 };
 
-export type MarketKaRecord = {
+export type DealwatchKaRecord = {
   id: string;
   title?: string;
   displayName?: string;
@@ -74,12 +74,12 @@ export type MarketKaRecord = {
   confirmed?: boolean;
 };
 
-export type MarketStore = {
+export type DealwatchStore = {
   activeId?: string;
   alerts?: boolean;
-  searches: MarketSearch[];
-  trash?: MarketSearch[];
-  watchlist?: MarketWatchItem[];
+  searches: DealwatchSearch[];
+  trash?: DealwatchSearch[];
+  watchlist?: DealwatchWatchItem[];
   notifications?: Array<{
     id: string;
     searchId?: string;
@@ -91,43 +91,43 @@ export type MarketStore = {
     read?: boolean;
     createdAt?: string;
   }>;
-  kaPurchases?: MarketKaRecord[];
-  kaSales?: MarketKaRecord[];
+  kaPurchases?: DealwatchKaRecord[];
+  kaSales?: DealwatchKaRecord[];
   offersSent?: string[];
   monitorIntervalMinutes?: number;
   telegramConfigured?: boolean;
 };
 
 export type ListingsResult = {
-  items: MarketListing[];
+  items: DealwatchListing[];
   matched?: number;
   rejected?: number;
   best?: number;
   error?: string;
   checkedAt?: string;
-  activeSearch?: MarketSearch;
+  activeSearch?: DealwatchSearch;
   watchlistIds?: string[];
-  store?: MarketStore;
+  store?: DealwatchStore;
 };
 
-export type MarketQuoteBucket = {
+export type DealwatchQuoteBucket = {
   median: number | null;
   low: number | null;
   high: number | null;
   count: number;
-  items: MarketListing[];
+  items: DealwatchListing[];
 } | null;
 
-export type MarketBuyHelperQuote = {
+export type DealwatchBuyHelperQuote = {
   query: string;
-  ebaySold: MarketQuoteBucket;
-  ebayLive: MarketQuoteBucket;
-  kaLive: MarketQuoteBucket;
+  ebaySold: DealwatchQuoteBucket;
+  ebayLive: DealwatchQuoteBucket;
+  kaLive: DealwatchQuoteBucket;
   errors?: Record<string, string>;
   checkedAt: string;
 };
 
-async function marketFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function dealwatchFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API}${path}`, {
     headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...(options.headers || {}) },
     ...options,
@@ -137,58 +137,58 @@ async function marketFetch<T>(path: string, options: RequestInit = {}): Promise<
   return data;
 }
 
-export function fetchMarketStore() {
-  return marketFetch<MarketStore>('/store');
+export function fetchDealwatchStore() {
+  return dealwatchFetch<DealwatchStore>('/store');
 }
 
 export function setActiveSearch(id: string) {
-  return marketFetch<MarketStore>('/searches/active', {
+  return dealwatchFetch<DealwatchStore>('/searches/active', {
     method: 'PUT',
     body: JSON.stringify({ id }),
   });
 }
 
-export function updateSearch(id: string, payload: Partial<MarketSearch> & Record<string, unknown>) {
-  return marketFetch<{ search: MarketSearch } & MarketStore>(`/searches/${encodeURIComponent(id)}`, {
+export function updateSearch(id: string, payload: Partial<DealwatchSearch> & Record<string, unknown>) {
+  return dealwatchFetch<{ search: DealwatchSearch } & DealwatchStore>(`/searches/${encodeURIComponent(id)}`, {
     method: 'PUT',
     body: JSON.stringify(payload),
   });
 }
 
-export function createSearch(payload: Partial<MarketSearch> & { search: string }) {
-  return marketFetch<{ search: MarketSearch } & MarketStore>('/searches', {
+export function createSearch(payload: Partial<DealwatchSearch> & { search: string }) {
+  return dealwatchFetch<{ search: DealwatchSearch } & DealwatchStore>('/searches', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
 }
 
 export function deleteSearch(id: string) {
-  return marketFetch<MarketStore>(`/searches/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  return dealwatchFetch<DealwatchStore>(`/searches/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
 export function restoreSearch(id: string) {
-  return marketFetch<{ search: MarketSearch } & MarketStore>(`/searches/${encodeURIComponent(id)}/restore`, {
+  return dealwatchFetch<{ search: DealwatchSearch } & DealwatchStore>(`/searches/${encodeURIComponent(id)}/restore`, {
     method: 'POST',
     body: '{}',
   });
 }
 
 export function setAlerts(alerts: boolean) {
-  return marketFetch<MarketStore>('/alerts', {
+  return dealwatchFetch<DealwatchStore>('/alerts', {
     method: 'PUT',
     body: JSON.stringify({ alerts }),
   });
 }
 
-export function addToWatchlist(item: MarketListing, meta?: { searchId?: string; searchName?: string }) {
-  return marketFetch<{ watchlist: MarketWatchItem[] } & MarketStore>('/watchlist', {
+export function addToWatchlist(item: DealwatchListing, meta?: { searchId?: string; searchName?: string }) {
+  return dealwatchFetch<{ watchlist: DealwatchWatchItem[] } & DealwatchStore>('/watchlist', {
     method: 'POST',
     body: JSON.stringify({ ...item, ...meta }),
   });
 }
 
 export function removeFromWatchlist(id: string) {
-  return marketFetch<{ watchlist: MarketWatchItem[] } & MarketStore>(`/watchlist/${encodeURIComponent(id)}`, {
+  return dealwatchFetch<{ watchlist: DealwatchWatchItem[] } & DealwatchStore>(`/watchlist/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   });
 }
@@ -199,13 +199,13 @@ export function fetchListings(params: Record<string, string | number | boolean |
     if (value === undefined || value === null || value === '') continue;
     qs.set(key, String(value));
   }
-  return marketFetch<ListingsResult>(`/listings?${qs.toString()}`);
+  return dealwatchFetch<ListingsResult>(`/listings?${qs.toString()}`);
 }
 
 /**
  * Read-only Buy Helper bridge: eBay sold + eBay live + Kleinanzeigen live for one query,
  * in a single call. Does not touch any saved search or its seenBySearch/freshness state —
- * see the comment on the /api/buy-helper/quote route in market/server.js.
+ * see the comment on the /api/buy-helper/quote route in dealwatch-runtime/server.js.
  */
 export function fetchBuyHelperQuote(
   query: string,
@@ -225,18 +225,18 @@ export function fetchBuyHelperQuote(
   if (opts?.includeCapacities?.length) qs.set('includeCapacities', opts.includeCapacities.join(','));
   if (opts?.categoryId) qs.set('categoryId', opts.categoryId);
   if (opts?.kaCategory) qs.set('kaCategory', opts.kaCategory);
-  return marketFetch<MarketBuyHelperQuote>(`/buy-helper/quote?${qs.toString()}`);
+  return dealwatchFetch<DealwatchBuyHelperQuote>(`/buy-helper/quote?${qs.toString()}`);
 }
 
 export function fetchKaPurchases() {
-  return marketFetch<{ purchases: MarketKaRecord[]; count: number } & MarketStore>('/ka/purchases');
+  return dealwatchFetch<{ purchases: DealwatchKaRecord[]; count: number } & DealwatchStore>('/ka/purchases');
 }
 
 export function fetchKaSales() {
-  return marketFetch<{ sales: MarketKaRecord[]; count: number } & MarketStore>('/ka/sales');
+  return dealwatchFetch<{ sales: DealwatchKaRecord[]; count: number } & DealwatchStore>('/ka/sales');
 }
 
-export function listingParamsFromSearch(search: MarketSearch, alerts = true): Record<string, string | number | boolean> {
+export function listingParamsFromSearch(search: DealwatchSearch, alerts = true): Record<string, string | number | boolean> {
   return {
     query: search.search || '',
     minPrice: search.minPrice ?? 1,

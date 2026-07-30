@@ -1,6 +1,6 @@
 /**
  * Optional AI assist for Buy Helper — suggests buy/sell/margin using
- * inventory comps + pasted market text. Never invents sold prices from memory.
+ * inventory comps + pasted Dealwatch text. Never invents sold prices from memory.
  */
 
 import { getSpecsAIProvider, requestAIJson } from './specsAI';
@@ -110,7 +110,7 @@ export async function generateBuyHelperWithAi(input: {
         `You help a German PC-parts flipper decide BUY prices.
 Product: "${input.query}"
 
-Ground truth (do NOT invent other market prices):
+Ground truth (do NOT invent other Dealwatch prices):
 - Inventory pocket median (your real sales, may include bundle-attributed parts): €${pocket}
 - Inventory comps: ${input.inventoryCompCount || 0}
 - Suggested KA list (0% fees): €${sellKa}

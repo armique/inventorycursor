@@ -9,8 +9,8 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const market = require('../market/server.js');
-const { filterSoldMedianOutliers, summarizeComponentTotals, loadClassifierConfig, classifyLotType, normalizeListingText } = market;
+const Dealwatch = require('../dealwatch-runtime/server.js');
+const { filterSoldMedianOutliers, summarizeComponentTotals, loadClassifierConfig, classifyLotType, normalizeListingText } = dealwatchRuntime;
 
 function item(sourceText: string, total: number) {
   return {
@@ -33,7 +33,7 @@ const normalSales = [45, 48, 50, 52, 55, 58, 60, 62, 65, 68].map((price) =>
 
 // Bare "OVP" mention, no "nur"/"ohne" wording — classifyLotType alone can't tell box-only
 // from card-with-box (isPackagingWithoutCard needs explicit "nur/ohne" phrasing, see
-// market/server.js's isPackagingWithoutCard). Priced far below the pack is the only signal.
+// dealwatch-runtime/server.js's isPackagingWithoutCard). Priced far below the pack is the only signal.
 const probableBoxOnly = item('RTX 4060 OVP', 8);
 
 // A genuinely cheap real card — no ambiguous wording — must NOT be excluded.

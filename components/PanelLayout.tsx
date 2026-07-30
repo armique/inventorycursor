@@ -106,7 +106,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
 
   /** Inventory/trash use internal scroll + docked bulk bar; eBay tools / EST use full-width workspace layout. */
   const isDockedPanelPage =
-    /^\/panel\/(inventory|trash|ebay-store-pull|est)(\/|$)/.test(location.pathname);
+    /^\/panel\/(inventory|trash|ebay-store-pull|est|dealwatch)(\/|$)/.test(location.pathname);
 
   const requireAuth = isCloudEnabled && authReady && !authUser;
 
@@ -217,8 +217,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     },
     { to: '/panel/flip-coach', icon: <Target size={18} />, label: 'Flip Coach' },
     { to: '/panel/sold-pulse', icon: <Activity size={18} />, label: 'Buy Helper' },
-    { to: '/panel/deal-hunter', icon: <Radar size={18} />, label: 'DealWatch' },
-    { to: '/panel/est', icon: <Radar size={18} />, label: 'Market' },
+    { to: '/panel/dealwatch', icon: <Radar size={18} />, label: 'Dealwatch' },
     { to: '/panel/reinvest', icon: <Coins size={18} />, label: 'Reinvest' },
     { to: '/panel/combo-lab', icon: <CircuitBoard size={18} />, label: 'Combo Lab' },
     { to: '/panel/add-bulk', icon: <Layers size={18} />, label: 'Bulk Entry' },
@@ -409,7 +408,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
         {/* Mobile global search — skip on Stock (has its own search) */}
         {!location.pathname.startsWith('/panel/inventory') &&
           !location.pathname.startsWith('/panel/edit') &&
-          !location.pathname.startsWith('/panel/est') && (
+          !location.pathname.startsWith('/panel/dealwatch') && (
           <div className="md:hidden mb-4">
             <GlobalSearch items={items} expenses={expenses} businessSettings={businessSettings} />
           </div>

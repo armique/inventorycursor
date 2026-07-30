@@ -12,7 +12,7 @@ const LABELS: Record<string, string> = {
   'ebay-store-pull': 'eBay Store Pull',
   'sold-pulse': 'Buy Helper',
   'flip-coach': 'Flip Coach',
-  est: 'Market Intelligence',
+  est: 'Dealwatch Intelligence',
   reinvest: 'Reinvest',
   'card-gallery': 'Card gallery',
   invoices: 'Invoices',

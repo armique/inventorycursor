@@ -2,7 +2,7 @@
  * Redistributes a sold bundle/PC's total sell price across its components — instead of naive
  * equal division (which makes RAM look as valuable as a GPU), each part's share comes from:
  * 1) this account's own real standalone sale data for that exact variant, when there's enough
- *    of it to trust (>=2 sales) — the most honest signal, since it's this seller's own market.
+ *    of it to trust (>=2 sales) — the most honest signal, since it's this seller's own Dealwatch signal.
  * 2) otherwise a category-based prior (GPU/CPU carry more of a build's value than RAM/PSU/case),
  *    reflecting typical relative component value.
  * Pure function — callers decide whether/how to apply the result (see ReinvestBundleRecalcModal).
@@ -29,9 +29,9 @@ export type ComponentPriceSuggestion = {
   name: string;
   oldSellPrice: number | null;
   newSellPrice: number;
-  /** 'market' = based on this account's own standalone sales of the same variant (>=2 sales).
+  /** 'dealwatch' = based on this account's own standalone sales of the same variant (>=2 sales).
    * 'category' = fallback prior (GPU/CPU worth more of the build than RAM/PSU/case/etc). */
-  weightSource: 'market' | 'category';
+  weightSource: 'dealwatch' | 'category';
 };
 
 /** Returns [] when the container has no sell price or no children to split it across. */
@@ -45,13 +45,13 @@ export function suggestBundleComponentPrices(
 
   // Bundle children are already excluded from groupSalesByVariant's standalone pool, so this
   // lookup is a clean read of the account's own OTHER (non-bundle) sales — not circular.
-  const marketByKey = new Map(buildVariantGroups(allItems).map((g) => [g.key, g]));
+  const dealwatchByKey = new Map(buildVariantGroups(allItems).map((g) => [g.key, g]));
 
   const weighted = children.map((child) => {
     const key = variantKeyForItem(child);
-    const marketGroup = marketByKey.get(key);
-    if (marketGroup && marketGroup.soldCount >= 2 && (marketGroup.overallSellMedian ?? 0) > 0) {
-      return { child, weight: marketGroup.overallSellMedian!, source: 'market' as const };
+    const dealwatchGroup = dealwatchByKey.get(key);
+    if (dealwatchGroup && dealwatchGroup.soldCount >= 2 && (dealwatchGroup.overallSellMedian ?? 0) > 0) {
+      return { child, weight: dealwatchGroup.overallSellMedian!, source: 'dealwatch' as const };
     }
     const match = extractPrimaryComponentKey(child.name || '');
     const weight = match ? CATEGORY_BASE_WEIGHT[match.category] : UNRECOGNIZED_PART_WEIGHT;

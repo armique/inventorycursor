@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Copy, Check, Loader2, Sparkles, X } from 'lucide-react';
 import type { InventoryItem } from '../types';
@@ -122,7 +122,7 @@ const ListingAiPanelModal: React.FC<Props> = ({ item, onClose, onApply }) => {
             <div className="rounded-xl border border-dashed border-emerald-300 bg-emerald-50/70 px-3 py-2.5">
               <div className="flex items-center justify-between gap-2 mb-1">
                 <p className="text-[10px] font-black uppercase tracking-widest text-emerald-800">
-                  Für dich (nicht Teil der Anzeige)
+                  FÃ¼r dich (nicht Teil der Anzeige)
                 </p>
                 <button
                   type="button"
@@ -139,14 +139,14 @@ const ListingAiPanelModal: React.FC<Props> = ({ item, onClose, onApply }) => {
             </div>
           )}
 
-          {/* Block 1 — Title */}
+          {/* Block 1 â€” Title */}
           <section className="rounded-xl border border-slate-200 bg-white overflow-hidden">
             <div className="px-3 py-2 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-2">
               <div>
                 <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">
                   AI Titel
                 </h4>
-                <p className="text-[10px] text-slate-400 font-medium">eBay · max 80 Zeichen</p>
+                <p className="text-[10px] text-slate-400 font-medium">eBay Â· max 80 Zeichen</p>
               </div>
               <button
                 type="button"
@@ -164,7 +164,7 @@ const ListingAiPanelModal: React.FC<Props> = ({ item, onClose, onApply }) => {
               maxLength={80}
               onChange={(e) => setTitle(e.target.value)}
               className="w-full px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none"
-              placeholder="eBay title…"
+              placeholder="eBay titleâ€¦"
             />
             <div className="px-3 py-1.5 border-t border-slate-100 text-[10px] font-bold text-slate-400 flex justify-between">
               <span>Optimierter Marktplatz-Titel</span>
@@ -174,7 +174,7 @@ const ListingAiPanelModal: React.FC<Props> = ({ item, onClose, onApply }) => {
             </div>
           </section>
 
-          {/* Block 2 — Description */}
+          {/* Block 2 â€” Description */}
           <section className="rounded-xl border border-slate-200 bg-white overflow-hidden flex flex-col">
             <div className="px-3 py-2 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-2">
               <div>
@@ -182,7 +182,7 @@ const ListingAiPanelModal: React.FC<Props> = ({ item, onClose, onApply }) => {
                   AI Beschreibung
                 </h4>
                 <p className="text-[10px] text-slate-400 font-medium">
-                  eBay.de / Kleinanzeigen · DE
+                  eBay.de / Kleinanzeigen Â· DE
                 </p>
               </div>
               <button
@@ -199,7 +199,7 @@ const ListingAiPanelModal: React.FC<Props> = ({ item, onClose, onApply }) => {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               className="w-full min-h-[260px] px-3 py-2.5 text-sm text-slate-800 outline-none resize-y leading-relaxed"
-              placeholder="Generate a German listing…"
+              placeholder="Generate a German listingâ€¦"
             />
           </section>
 
@@ -212,7 +212,7 @@ const ListingAiPanelModal: React.FC<Props> = ({ item, onClose, onApply }) => {
           {loading && (
             <div className="flex items-center justify-center gap-2 py-2 text-slate-500 text-xs font-bold">
               <Loader2 size={16} className="animate-spin text-emerald-600" />
-              Generating title + description…
+              Generating title + descriptionâ€¦
             </div>
           )}
         </div>
@@ -251,3 +251,4 @@ const ListingAiPanelModal: React.FC<Props> = ({ item, onClose, onApply }) => {
 };
 
 export default ListingAiPanelModal;
+

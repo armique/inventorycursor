@@ -1,33 +1,33 @@
 /**
- * Priority resolution over market/'s Buy Helper quote bridge.
+ * Priority resolution over dealwatch-runtime/'s Buy Helper quote bridge.
  * Per-channel priority (agreed): eBay sold median > eBay live > (caller falls back
  * to inventory comps when this returns null). Kleinanzeigen never has sold data,
  * so live is its only signal.
  */
-import { fetchBuyHelperQuote, type MarketBuyHelperQuote, type MarketQuoteBucket } from './marketApi';
+import { fetchBuyHelperQuote, type DealwatchBuyHelperQuote, type DealwatchQuoteBucket } from './dealwatchApi';
 
-export type MarketPriceSource = 'ebay-sold' | 'ebay-live' | 'ka-live';
+export type DealwatchPriceSource = 'ebay-sold' | 'ebay-live' | 'ka-live';
 
-export type MarketPriceSignal = {
-  source: MarketPriceSource;
+export type DealwatchPriceSignal = {
+  source: DealwatchPriceSource;
   median: number;
   low: number | null;
   high: number | null;
   count: number;
 };
 
-export type ResolvedMarketPrices = {
-  ebay: MarketPriceSignal | null;
-  ka: MarketPriceSignal | null;
+export type ResolvedDealwatchPrices = {
+  ebay: DealwatchPriceSignal | null;
+  ka: DealwatchPriceSignal | null;
 };
 
-function toSignal(bucket: MarketQuoteBucket, source: MarketPriceSource): MarketPriceSignal | null {
+function toSignal(bucket: DealwatchQuoteBucket, source: DealwatchPriceSource): DealwatchPriceSignal | null {
   if (!bucket || bucket.median == null || bucket.count <= 0) return null;
   return { source, median: bucket.median, low: bucket.low, high: bucket.high, count: bucket.count };
 }
 
 /** Pure — no I/O. Applies the agreed per-channel priority to an already-fetched quote. */
-export function resolveMarketPrices(quote: MarketBuyHelperQuote | null): ResolvedMarketPrices {
+export function resolveDealwatchPrices(quote: DealwatchBuyHelperQuote | null): ResolvedDealwatchPrices {
   if (!quote) return { ebay: null, ka: null };
   const ebay = toSignal(quote.ebaySold, 'ebay-sold') || toSignal(quote.ebayLive, 'ebay-live');
   const ka = toSignal(quote.kaLive, 'ka-live');
@@ -35,10 +35,10 @@ export function resolveMarketPrices(quote: MarketBuyHelperQuote | null): Resolve
 }
 
 /**
- * Fetches + resolves in one call. Never throws — a failed/unreachable market bridge
+ * Fetches + resolves in one call. Never throws — a failed/unreachable Dealwatch bridge
  * resolves to { ebay: null, ka: null } so callers fall back to inventory comps automatically.
  */
-export async function fetchResolvedMarketPrices(
+export async function fetchResolvedDealwatchPrices(
   query: string,
   opts?: {
     maxPrice?: number;
@@ -48,10 +48,10 @@ export async function fetchResolvedMarketPrices(
     categoryId?: string;
     kaCategory?: string;
   },
-): Promise<ResolvedMarketPrices> {
+): Promise<ResolvedDealwatchPrices> {
   try {
     const quote = await fetchBuyHelperQuote(query, opts);
-    return resolveMarketPrices(quote);
+    return resolveDealwatchPrices(quote);
   } catch {
     return { ebay: null, ka: null };
   }

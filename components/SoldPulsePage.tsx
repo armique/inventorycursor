@@ -24,7 +24,7 @@ import {
   seedBuyHelperIfEmpty,
   sortBuyHelperItems,
   suggestBuyHelperTargets,
-  suggestBuyHelperTargetsFromMarket,
+  suggestBuyHelperTargetsFromDealwatch,
   summarizeInventoryComps,
   upsertBuyHelperItem,
   type BuyHelperCategory,
@@ -34,20 +34,20 @@ import {
 } from '../utils/buyHelper';
 import { saveFlipFees, totalEbayFeePct } from '../utils/flipCoach';
 import { canUseBuyHelperAi, generateBuyHelperWithAi } from '../services/buyHelperAI';
-import { fetchBuyHelperQuote, type MarketBuyHelperQuote, type MarketQuoteBucket } from '../services/marketApi';
-import { resolveMarketPrices, type ResolvedMarketPrices } from '../services/marketPriceSource';
+import { fetchBuyHelperQuote, type DealwatchBuyHelperQuote, type DealwatchQuoteBucket } from '../services/dealwatchApi';
+import { resolveDealwatchPrices, type ResolvedDealwatchPrices } from '../services/dealwatchPriceSource';
 import {
-  fetchAndStoreBuyHelperMarkets,
+  fetchAndStoreBuyHelperDealwatch,
   loadBuyHelperPriceHistories,
   type BuyHelperPriceHistory,
-} from '../services/buyHelperMarketHistory';
-import { analyzePriceHistory } from '../services/buyHelperMarketAnalysis';
+} from '../services/buyHelperDealwatchHistory';
+import { analyzePriceHistory } from '../services/buyHelperDealwatchAnalysis';
 
 interface Props {
   items: InventoryItem[];
 }
 
-type BuyHelperEditorTab = 'overview' | 'market' | 'analysis' | 'history';
+type BuyHelperEditorTab = 'overview' | 'dealwatch' | 'analysis' | 'history';
 
 const CATEGORIES: BuyHelperCategory[] = [
   'GPU',
@@ -66,7 +66,7 @@ function parseEuro(raw: string): number | undefined {
   return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : undefined;
 }
 
-const MarketBucketCard: React.FC<{ label: string; bucket: MarketQuoteBucket; used: boolean }> = ({ label, bucket, used }) => (
+const DealwatchBucketCard: React.FC<{ label: string; bucket: DealwatchQuoteBucket; used: boolean }> = ({ label, bucket, used }) => (
   <div className={`rounded-xl border px-3 py-2 text-xs ${used ? 'border-emerald-300 bg-emerald-50' : 'border-slate-100 bg-white'}`}>
     <p className="font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
       {label}
@@ -102,13 +102,13 @@ const SoldPulsePage: React.FC<Props> = ({ items }) => {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Live market check (Buy Helper -> market/ bridge)
+  // Live Dealwatch check (Buy Helper bridge)
   const [marketBusy, setMarketBusy] = useState(false);
   const [marketError, setMarketError] = useState<string | null>(null);
-  const [marketQuote, setMarketQuote] = useState<MarketBuyHelperQuote | null>(null);
-  const [marketResolved, setMarketResolved] = useState<ResolvedMarketPrices | null>(null);
+  const [dealwatchQuote, setDealwatchQuote] = useState<DealwatchBuyHelperQuote | null>(null);
+  const [dealwatchResolved, setDealwatchResolved] = useState<ResolvedDealwatchPrices | null>(null);
 
-  // Market history (30-day snapshots per tracked part)
+  // Dealwatch history (30-day snapshots per tracked part)
   const [priceHistories, setPriceHistories] = useState<Record<string, BuyHelperPriceHistory>>({});
   const [historyBusy, setHistoryBusy] = useState(false);
 
@@ -185,8 +185,8 @@ const SoldPulsePage: React.FC<Props> = ({ items }) => {
     setPaste('');
     setMessage(null);
     setError(null);
-    setMarketQuote(null);
-    setMarketResolved(null);
+    setDealwatchQuote(null);
+    setDealwatchResolved(null);
     setMarketError(null);
     setBuyHelperTab('overview');
   };
@@ -286,10 +286,10 @@ const SoldPulsePage: React.FC<Props> = ({ items }) => {
     setError(null);
     try {
       const quote = await fetchBuyHelperQuote(q);
-      const resolved = resolveMarketPrices(quote);
-      setMarketQuote(quote);
-      setMarketResolved(resolved);
-      const suggested = suggestBuyHelperTargetsFromMarket(resolved, items, q, fees, {
+      const resolved = resolveDealwatchPrices(quote);
+      setDealwatchQuote(quote);
+      setDealwatchResolved(resolved);
+      const suggested = suggestBuyHelperTargetsFromDealwatch(resolved, items, q, fees, {
         category: draftCategory,
         desiredMarginPct: Number(draftMargin) || DEFAULT_DESIRED_MARGIN_PCT,
       });
@@ -307,8 +307,8 @@ const SoldPulsePage: React.FC<Props> = ({ items }) => {
       setList(next);
       setMessage(
         resolved.ebay || resolved.ka
-          ? 'Filled from live market data — see breakdown below.'
-          : 'No live/sold market data found — filled from inventory instead.',
+          ? 'Filled from live Dealwatch data — see breakdown below.'
+          : 'No live/sold Dealwatch data found — filled from inventory instead.',
       );
     } catch (err) {
       setMarketError(err instanceof Error ? err.message : String(err));
@@ -326,7 +326,7 @@ const SoldPulsePage: React.FC<Props> = ({ items }) => {
     setMessage(null);
     setError(null);
     try {
-      const result = await fetchAndStoreBuyHelperMarkets(list, priceHistories);
+      const result = await fetchAndStoreBuyHelperDealwatch(list, priceHistories);
       setPriceHistories(await loadBuyHelperPriceHistories());
       setMessage(
         `Updated ${result.success} of ${list.length} parts.` +
@@ -595,7 +595,7 @@ const SoldPulsePage: React.FC<Props> = ({ items }) => {
                 {(
                   [
                     ['overview', 'Overview'],
-                    ['market', 'Market'],
+                    ['dealwatch', 'Dealwatch'],
                     ['analysis', 'Analysis'],
                     ['history', 'History'],
                   ] as const
@@ -732,7 +732,7 @@ const SoldPulsePage: React.FC<Props> = ({ items }) => {
                     className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-sky-200 bg-sky-50 text-sky-900 text-xs font-black uppercase tracking-wider disabled:opacity-50"
                   >
                     {marketBusy ? <Loader2 size={14} className="animate-spin" /> : <TrendingUp size={14} />}
-                    Check market
+                    Check Dealwatch
                   </button>
                   <button
                     type="button"
@@ -751,31 +751,31 @@ const SoldPulsePage: React.FC<Props> = ({ items }) => {
                   </p>
                 )}
 
-                {marketQuote && (
+                {dealwatchQuote && (
                   <div className="rounded-2xl border border-slate-200 overflow-hidden">
                     <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between gap-2">
                       <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                        Live market check for "{marketQuote.query}"
+                        Live Dealwatch check for "{dealwatchQuote.query}"
                       </p>
                       <span className="text-[10px] text-slate-400 font-semibold">
-                        {new Date(marketQuote.checkedAt).toLocaleTimeString()}
+                        {new Date(dealwatchQuote.checkedAt).toLocaleTimeString()}
                       </span>
                     </div>
-                    {!marketResolved?.ebay && !marketResolved?.ka ? (
+                    {!dealwatchResolved?.ebay && !dealwatchResolved?.ka ? (
                       <p className="p-4 text-sm font-semibold text-amber-800 bg-amber-50">
-                        No live or sold market data found for this query — buy/sell targets above were filled from
+                        No live or sold Dealwatch data found for this query — buy/sell targets above were filled from
                         your inventory comps instead (see note).
                       </p>
                     ) : (
                       <div className="p-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        <MarketBucketCard label="eBay sold" bucket={marketQuote.ebaySold} used={marketResolved?.ebay?.source === 'ebay-sold'} />
-                        <MarketBucketCard label="eBay live" bucket={marketQuote.ebayLive} used={marketResolved?.ebay?.source === 'ebay-live'} />
-                        <MarketBucketCard label="Kleinanzeigen live" bucket={marketQuote.kaLive} used={marketResolved?.ka?.source === 'ka-live'} />
+                        <DealwatchBucketCard label="eBay sold" bucket={dealwatchQuote.ebaySold} used={dealwatchResolved?.ebay?.source === 'ebay-sold'} />
+                        <DealwatchBucketCard label="eBay live" bucket={dealwatchQuote.ebayLive} used={dealwatchResolved?.ebay?.source === 'ebay-live'} />
+                        <DealwatchBucketCard label="Kleinanzeigen live" bucket={dealwatchQuote.kaLive} used={dealwatchResolved?.ka?.source === 'ka-live'} />
                       </div>
                     )}
-                    {marketQuote.errors && Object.keys(marketQuote.errors).length > 0 && (
+                    {dealwatchQuote.errors && Object.keys(dealwatchQuote.errors).length > 0 && (
                       <p className="px-4 pb-3 text-[10px] text-slate-400 font-semibold">
-                        {Object.entries(marketQuote.errors).map(([src, msg]) => `${src}: ${msg}`).join(' · ')}
+                        {Object.entries(dealwatchQuote.errors).map(([src, msg]) => `${src}: ${msg}`).join(' · ')}
                       </p>
                     )}
                   </div>
@@ -823,7 +823,7 @@ const SoldPulsePage: React.FC<Props> = ({ items }) => {
 
                 <div className="rounded-2xl border border-slate-200 p-3 space-y-2">
                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                    Optional: paste eBay sold rows to refine market
+                    Optional: paste eBay sold rows to refine Dealwatch
                   </p>
                   <textarea
                     value={paste}
@@ -835,15 +835,15 @@ const SoldPulsePage: React.FC<Props> = ({ items }) => {
                 </div>
               </div>
 
-              {/* Market tab — latest snapshot per channel */}
-              <div className={`flex-1 min-h-0 overflow-y-auto p-4 space-y-3 ${buyHelperTab === 'market' ? '' : 'hidden'}`}>
+              {/* Dealwatch tab — latest snapshot per channel */}
+              <div className={`flex-1 min-h-0 overflow-y-auto p-4 space-y-3 ${buyHelperTab === 'dealwatch' ? '' : 'hidden'}`}>
                 {(() => {
                   const hist = activeHistory;
                   const latest = hist?.history[hist.history.length - 1];
                   if (!hist || !latest) {
                     return (
                       <p className="text-sm font-semibold text-slate-500">
-                        No stored market snapshots yet. Press "Refresh all" in the header to fetch eBay sold + live and
+                        No stored Dealwatch snapshots yet. Press "Refresh all" in the header to fetch eBay sold + live and
                         Kleinanzeigen for every tracked part.
                       </p>
                     );
@@ -854,9 +854,9 @@ const SoldPulsePage: React.FC<Props> = ({ items }) => {
                         Latest snapshot · {new Date(latest.timestamp).toLocaleString()}
                       </p>
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        <MarketBucketCard label="eBay sold" bucket={latest.ebaySold} used={false} />
-                        <MarketBucketCard label="eBay live" bucket={latest.ebayLive} used={false} />
-                        <MarketBucketCard label="Kleinanzeigen live" bucket={latest.kaLive} used={false} />
+                        <DealwatchBucketCard label="eBay sold" bucket={latest.ebaySold} used={false} />
+                        <DealwatchBucketCard label="eBay live" bucket={latest.ebayLive} used={false} />
+                        <DealwatchBucketCard label="Kleinanzeigen live" bucket={latest.kaLive} used={false} />
                       </div>
                       <p className="text-[10px] font-semibold text-slate-400">
                         {hist.history.length} snapshot{hist.history.length === 1 ? '' : 's'} stored (last 30 days).

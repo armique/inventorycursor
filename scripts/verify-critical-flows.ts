@@ -185,7 +185,7 @@ function runProfitTests(): void {
     feeAmount: 0,
     hasFee: false,
   });
-  assertClose(computeItemProfitBeforeOverhead(gifted, 'SmallBusiness'), 50, 'gift profit = market value - buy');
+  assertClose(computeItemProfitBeforeOverhead(gifted, 'SmallBusiness'), 50, 'gift profit = Dealwatch value - buy');
   const withShipping = baseItem({
     status: ItemStatus.SOLD,
     sellPrice: 115,

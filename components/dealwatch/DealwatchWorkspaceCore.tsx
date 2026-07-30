@@ -19,33 +19,33 @@ import {
   fetchKaPurchases,
   fetchKaSales,
   fetchListings,
-  fetchMarketStore,
+  fetchDealwatchStore,
   listingParamsFromSearch,
   removeFromWatchlist,
   restoreSearch,
   setActiveSearch,
   setAlerts,
   updateSearch,
-  type MarketKaRecord,
-  type MarketListing,
-  type MarketSearch,
-  type MarketStore,
-} from '../../services/marketApi';
+  type DealwatchKaRecord,
+  type DealwatchListing,
+  type DealwatchSearch,
+  type DealwatchStore,
+} from '../../services/dealwatchApi';
 
-type MarketTab = 'matches' | 'watchlist' | 'trash' | 'ka-buys' | 'ka-sales';
+type DealwatchTab = 'matches' | 'watchlist' | 'trash' | 'ka-buys' | 'ka-sales';
 
 function euros(value?: number) {
   if (value == null || !Number.isFinite(Number(value))) return '—';
   return formatEURPrefix(Number(value));
 }
 
-function searchLabel(search: MarketSearch) {
+function searchLabel(search: DealwatchSearch) {
   const variants = (search.searchVariants || []).map((v) => String(v || '').trim()).filter(Boolean);
   if (variants.length > 1) return variants.join(' · ');
   return String(search.search || search.name || 'Untitled').trim() || 'Untitled';
 }
 
-const TABS: { id: MarketTab; label: string }[] = [
+const TABS: { id: DealwatchTab; label: string }[] = [
   { id: 'matches', label: 'Matches' },
   { id: 'watchlist', label: 'Watchlist' },
   { id: 'ka-buys', label: 'KA buys' },
@@ -53,19 +53,19 @@ const TABS: { id: MarketTab; label: string }[] = [
   { id: 'trash', label: 'Trash' },
 ];
 
-export type MarketWorkspaceProps = {
+export type DealwatchWorkspaceProps = {
   /** Compact header when embedded in Dashboard */
   embedded?: boolean;
 };
 
-const MarketWorkspace: React.FC<MarketWorkspaceProps> = ({ embedded = false }) => {
-  const [tab, setTab] = useState<MarketTab>('matches');
-  const [store, setStore] = useState<MarketStore | null>(null);
-  const [items, setItems] = useState<MarketListing[]>([]);
+const DealwatchWorkspaceCore: React.FC<DealwatchWorkspaceProps> = ({ embedded = false }) => {
+  const [tab, setTab] = useState<DealwatchTab>('matches');
+  const [store, setStore] = useState<DealwatchStore | null>(null);
+  const [items, setItems] = useState<DealwatchListing[]>([]);
   const [metrics, setMetrics] = useState({ matched: 0, rejected: 0, best: 0 });
   const [watchIds, setWatchIds] = useState<Set<string>>(new Set());
-  const [kaBuys, setKaBuys] = useState<MarketKaRecord[]>([]);
-  const [kaSales, setKaSales] = useState<MarketKaRecord[]>([]);
+  const [kaBuys, setKaBuys] = useState<DealwatchKaRecord[]>([]);
+  const [kaSales, setKaSales] = useState<DealwatchKaRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState('');
@@ -87,14 +87,14 @@ const MarketWorkspace: React.FC<MarketWorkspaceProps> = ({ embedded = false }) =
   );
   const alertsOn = store?.alerts !== false;
 
-  const applyStore = useCallback((next: MarketStore) => {
+  const applyStore = useCallback((next: DealwatchStore) => {
     setStore(next);
     setWatchIds(new Set((next.watchlist || []).map((w) => String(w.id))));
     if (Array.isArray(next.kaPurchases)) setKaBuys(next.kaPurchases);
     if (Array.isArray(next.kaSales)) setKaSales(next.kaSales);
   }, []);
 
-  const syncDraftFromSearch = useCallback((search: MarketSearch | null) => {
+  const syncDraftFromSearch = useCallback((search: DealwatchSearch | null) => {
     if (!search) return;
     setDraftQuery(String(search.search || ''));
     setDraftMin(Number(search.minPrice) || 1);
@@ -103,7 +103,7 @@ const MarketWorkspace: React.FC<MarketWorkspaceProps> = ({ embedded = false }) =
   }, []);
 
   const scan = useCallback(
-    async (search: MarketSearch, opts?: { quiet?: boolean }) => {
+    async (search: DealwatchSearch, opts?: { quiet?: boolean }) => {
       if (!opts?.quiet) {
         setScanning(true);
         setNote(`Scanning ${search.marketplace === 'kleinanzeigen' ? 'Kleinanzeigen' : 'eBay.de'}…`);
@@ -139,7 +139,7 @@ const MarketWorkspace: React.FC<MarketWorkspaceProps> = ({ embedded = false }) =
       setLoading(true);
       setError('');
       try {
-        const next = await fetchMarketStore();
+        const next = await fetchDealwatchStore();
         if (cancelled) return;
         applyStore(next);
         const current = (next.searches || []).find((s) => s.id === next.activeId) || next.searches?.[0];
@@ -263,18 +263,18 @@ const MarketWorkspace: React.FC<MarketWorkspaceProps> = ({ embedded = false }) =
     }
   };
 
-  const onToggleWatch = async (item: MarketListing) => {
+  const onToggleWatch = async (item: DealwatchListing) => {
     const id = String(item.id);
     try {
       if (watchIds.has(id)) {
         const next = await removeFromWatchlist(id);
-        applyStore(next as MarketStore);
+        applyStore(next as DealwatchStore);
       } else {
         const next = await addToWatchlist(item, {
           searchId: active?.id,
           searchName: active?.name,
         });
-        applyStore(next as MarketStore);
+        applyStore(next as DealwatchStore);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -285,7 +285,7 @@ const MarketWorkspace: React.FC<MarketWorkspaceProps> = ({ embedded = false }) =
     return (
       <div className="flex-1 min-h-[320px] flex items-center justify-center gap-3 text-slate-500">
         <Loader2 className="animate-spin" size={22} />
-        <span className="text-sm font-bold">Loading market intelligence…</span>
+        <span className="text-sm font-bold">Loading Dealwatch intelligence…</span>
       </div>
     );
   }
@@ -299,15 +299,15 @@ const MarketWorkspace: React.FC<MarketWorkspaceProps> = ({ embedded = false }) =
               <Radar size={14} />
             </span>
             <div className="min-w-0">
-              <p className="text-sm font-black text-slate-900 tracking-tight truncate">Market Intelligence</p>
+              <p className="text-sm font-black text-slate-900 tracking-tight truncate">Dealwatch Intelligence</p>
               <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 truncate">
-                React workspace · market/ APIs
+                React workspace · Dealwatch APIs
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <a
-              href="/market/explore.html"
+              href="/dealwatch/explore.html"
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase tracking-wider text-slate-600 hover:bg-slate-50"
@@ -315,7 +315,7 @@ const MarketWorkspace: React.FC<MarketWorkspaceProps> = ({ embedded = false }) =
               Free search <ExternalLink size={12} />
             </a>
             <a
-              href="/market/compare.html"
+              href="/dealwatch/compare.html"
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase tracking-wider text-slate-600 hover:bg-slate-50"
@@ -410,8 +410,8 @@ const MarketWorkspace: React.FC<MarketWorkspaceProps> = ({ embedded = false }) =
               </button>
               {embedded && (
                 <>
-                  <a href="/market/explore.html" target="_blank" rel="noreferrer" className="px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase text-slate-600">Explore</a>
-                  <a href="/market/compare.html" target="_blank" rel="noreferrer" className="px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase text-slate-600">Compare</a>
+                  <a href="/dealwatch/explore.html" target="_blank" rel="noreferrer" className="px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase text-slate-600">Explore</a>
+                  <a href="/dealwatch/compare.html" target="_blank" rel="noreferrer" className="px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase text-slate-600">Compare</a>
                 </>
               )}
             </div>
@@ -504,7 +504,7 @@ const MarketWorkspace: React.FC<MarketWorkspaceProps> = ({ embedded = false }) =
             )}
             {tab === 'watchlist' && (
               <ListingGrid
-                items={watchlist as MarketListing[]}
+                items={watchlist as DealwatchListing[]}
                 watchIds={watchIds}
                 empty="Watchlist is empty."
                 onToggleWatch={onToggleWatch}
@@ -549,10 +549,10 @@ function ListingGrid({
   empty,
   onToggleWatch,
 }: {
-  items: MarketListing[];
+  items: DealwatchListing[];
   watchIds: Set<string>;
   empty: string;
-  onToggleWatch: (item: MarketListing) => void;
+  onToggleWatch: (item: DealwatchListing) => void;
 }) {
   if (!items.length) return <EmptyState text={empty} />;
   return (
@@ -620,7 +620,7 @@ function ListingGrid({
   );
 }
 
-function KaList({ records, empty }: { records: MarketKaRecord[]; empty: string }) {
+function KaList({ records, empty }: { records: DealwatchKaRecord[]; empty: string }) {
   if (!records.length) return <EmptyState text={empty} />;
   return (
     <div className="space-y-2">
@@ -646,4 +646,4 @@ function KaList({ records, empty }: { records: MarketKaRecord[]; empty: string }
   );
 }
 
-export default MarketWorkspace;
+export default DealwatchWorkspaceCore;

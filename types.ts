@@ -302,7 +302,7 @@ export interface InventoryItem extends AiAttribution, SourceLinks {
   /** Optional relation for your records (German gift-tax context). */
   giftRelation?: 'family' | 'friend' | 'other';
 
-  // AI Market Data
+  // AI Dealwatch Data
   marketTitle?: string;
   marketDescription?: string;
 
