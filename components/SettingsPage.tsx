@@ -238,7 +238,7 @@ const SettingsPage: React.FC<Props> = ({
     if (tab === 'EBAY' || tab === 'EBAY API' || tab === 'LISTINGS') setActiveTab('EBAY');
     if (searchParams.get('ebay_connected') === '1') {
       setEbayConfigVersion((v) => v + 1);
-      showToast('eBay connected â€” token will auto-refresh for ~18 months', 'success');
+      showToast('eBay connected — token will auto-refresh for ~18 months', 'success');
     }
   }, [searchParams]);
 
@@ -326,7 +326,7 @@ const SettingsPage: React.FC<Props> = ({
       return;
     }
     if (photoArchiveAnalysis.uniquePhotosToArchive === 0) {
-      showToast('No remote photos to archive â€” everything is already on Firebase Storage.', 'success');
+      showToast('No remote photos to archive — everything is already on Firebase Storage.', 'success');
       return;
     }
     const ok = window.confirm(
@@ -397,7 +397,7 @@ const SettingsPage: React.FC<Props> = ({
       if (user) {
         showToast("Signed in successfully", "success");
       } else {
-        showToast("Redirecting to Google sign-inâ€¦", "success");
+        showToast("Redirecting to Google sign-in…", "success");
       }
     } catch (e: unknown) {
       showToast(getAuthErrorMessage(e), "error");
@@ -911,26 +911,26 @@ const SettingsPage: React.FC<Props> = ({
                    <h3 className="text-lg font-black text-indigo-950">Where to paste your seller profiles</h3>
                    <ol className="text-sm text-indigo-900/90 space-y-1.5 list-decimal list-inside font-medium">
                       <li>
-                         <strong>eBay</strong> â€” enter your seller username below (public store). Optional OAuth token for private listings / orders.
+                         <strong>eBay</strong> — enter your seller username below (public store). Optional OAuth token for private listings / orders.
                       </li>
                       <li>
-                         <strong>Kleinanzeigen</strong> â€” paste your public profile / Bestandsliste URL in â€œListing presenceâ€, then Refresh.
+                         <strong>Kleinanzeigen</strong> — paste your public profile / Bestandsliste URL in “Listing presence”, then Refresh.
                       </li>
                       <li>
                          Sync matches listings to <strong>all in-stock</strong> items by name (auto-marks matches Ready). Use Ready for delisting / maybe-sold watch.
                       </li>
                       <li>
-                         After sync: missing listings show KA/EB muted; vanished ads get a <strong>mark sold?</strong> nudge; price gaps show Lower â†’ hints.
+                         After sync: missing listings show KA/EB muted; vanished ads get a <strong>mark sold?</strong> nudge; price gaps show Lower → hints.
                       </li>
                    </ol>
                    <p className="text-xs text-indigo-800/80">
-                      Tip: open Inventory â†’ filter â€œReady Â· not listedâ€ or â€œMaybe soldâ€. Use time filters (This week / Month / â€¦) with â€œSale readyâ€ to watch items you added in a period.
+                      Tip: open Inventory → filter “Ready · not listed” or “Maybe sold”. Use time filters (This week / Month / …) with “Sale ready” to watch items you added in a period.
                    </p>
                 </div>
 
                 <h3 className="text-xl font-black text-slate-900 flex items-center gap-2"><ShoppingBag size={24}/> eBay sync</h3>
                 <p className="text-sm text-slate-500">
-                   Connect once with eBay OAuth (refresh token ~18 months). Access tokens refresh automatically â€” no more pasting a new key every 2 hours.
+                   Connect once with eBay OAuth (refresh token ~18 months). Access tokens refresh automatically — no more pasting a new key every 2 hours.
                 </p>
                 <div className="space-y-2">
                    <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Seller username</label>
@@ -971,14 +971,14 @@ const SettingsPage: React.FC<Props> = ({
                                : 'â‰ˆ18 months';
                             return (
                                <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-100">
-                                  <CheckCircle2 size={14} /> Connected Â· refresh until {until}
+                                  <CheckCircle2 size={14} /> Connected · refresh until {until}
                                </span>
                             );
                          }
                          if (st.hasAccessToken) {
                             return (
                                <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-900 text-xs font-bold border border-amber-100">
-                                  <AlertTriangle size={14} /> Manual token only (expires ~2h) â€” Connect eBay recommended
+                                  <AlertTriangle size={14} /> Manual token only (expires ~2h) — Connect eBay recommended
                                </span>
                             );
                          }
@@ -1040,7 +1040,7 @@ const SettingsPage: React.FC<Props> = ({
                    <p className="text-[11px] text-slate-500 leading-snug">
                       Server needs <code className="bg-white px-1 rounded border">EBAY_CLIENT_ID</code>,{' '}
                       <code className="bg-white px-1 rounded border">EBAY_CLIENT_SECRET</code>, and{' '}
-                      <code className="bg-white px-1 rounded border">EBAY_RUNAME</code>. In eBay Developer â†’ User Tokens,
+                      <code className="bg-white px-1 rounded border">EBAY_RUNAME</code>. In eBay Developer → User Tokens,
                       set the RuName <strong>Accept URL</strong> to{' '}
                       <code className="bg-white px-1 rounded border">{typeof window !== 'undefined' ? `${window.location.origin}/auth/ebay/callback` : 'https://YOUR_DOMAIN/auth/ebay/callback'}</code>.
                    </p>
@@ -1048,14 +1048,14 @@ const SettingsPage: React.FC<Props> = ({
 
                 <details className="rounded-2xl border border-slate-200 bg-white p-4">
                    <summary className="text-xs font-black uppercase tracking-widest text-slate-500 cursor-pointer">
-                      Advanced â€” paste access token manually (expires ~2h)
+                      Advanced — paste access token manually (expires ~2h)
                    </summary>
                    <div className="mt-4 space-y-2">
                    <label className="text-[10px] font-black uppercase text-slate-400 ml-1">OAuth Access Token</label>
                    <input
                       type="password"
                       className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm outline-none focus:border-slate-900"
-                      placeholder={getEbayConfig()?.token ? 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢' : 'v^1.1#... (eBay OAuth token)'}
+                      placeholder={getEbayConfig()?.token ? '••••••••••••••••' : 'v^1.1#... (eBay OAuth token)'}
                       value={ebayTokenInput}
                       onChange={e => setEbayTokenInput(e.target.value)}
                    />
@@ -1101,11 +1101,11 @@ const SettingsPage: React.FC<Props> = ({
                             )}
                             {hasToken ? (
                                <span className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-800 rounded-xl text-sm font-bold">
-                                  <CheckCircle2 size={16}/> OAuth token saved â€” order API ready
+                                  <CheckCircle2 size={16}/> OAuth token saved — order API ready
                                </span>
                             ) : (
                                <span className="inline-flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-900 rounded-xl text-sm font-bold">
-                                  <AlertTriangle size={16}/> No OAuth token â€” order backfill needs one (CSV import does not)
+                                  <AlertTriangle size={16}/> No OAuth token — order backfill needs one (CSV import does not)
                                </span>
                             )}
                          </div>
@@ -1125,12 +1125,12 @@ const SettingsPage: React.FC<Props> = ({
                       <input
                          type="url"
                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm outline-none focus:border-slate-900"
-                         placeholder="https://www.kleinanzeigen.de/s-bestandsliste.html?userId=â€¦"
+                         placeholder="https://www.kleinanzeigen.de/s-bestandsliste.html?userId=…"
                          value={kaProfileUrl}
                          onChange={(e) => setKaProfileUrl(e.target.value)}
                       />
                       <p className="text-[11px] text-slate-500">
-                         Open your KA profile â†’ copy the browser URL (often contains <code className="bg-slate-100 px-1 rounded">s-bestandsliste</code>).
+                         Open your KA profile → copy the browser URL (often contains <code className="bg-slate-100 px-1 rounded">s-bestandsliste</code>).
                       </p>
                    </div>
                    <div className="space-y-2">
@@ -1139,7 +1139,7 @@ const SettingsPage: React.FC<Props> = ({
                       </label>
                       <textarea
                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs outline-none focus:border-slate-900 min-h-[88px]"
-                         placeholder={'One per line\nTitle | 49\nTitle | 49 | https://www.kleinanzeigen.de/s-anzeige/â€¦'}
+                         placeholder={'One per line\nTitle | 49\nTitle | 49 | https://www.kleinanzeigen.de/s-anzeige/…'}
                          value={kaTitlesPaste}
                          onChange={(e) => setKaTitlesPaste(e.target.value)}
                       />
@@ -1170,15 +1170,15 @@ const SettingsPage: React.FC<Props> = ({
                                onRestoreItems(result.items);
                                const hint =
                                  result.kaTitleCount > 0 && result.kaMatched === 0
-                                   ? ' Â· No KA title matched inventory names â€” check names or paste titles with prices'
+                                   ? ' · No KA title matched inventory names — check names or paste titles with prices'
                                    : result.eligibleCount === 0
-                                     ? ' Â· No eligible in-stock items to match'
+                                     ? ' · No eligible in-stock items to match'
                                      : '';
                                setListingPresenceMsg(
-                                  `Eligible ${result.eligibleCount} Â· Ready ${result.watchCount} Â· eBay ${result.ebayMatched}/${result.ebayTitleCount} Â· KA ${result.kaMatched}/${result.kaTitleCount} Â· ${result.priceHints} price hints Â· ${result.maybeSoldCount} maybe sold` +
+                                  `Eligible ${result.eligibleCount} · Ready ${result.watchCount} · eBay ${result.ebayMatched}/${result.ebayTitleCount} · KA ${result.kaMatched}/${result.kaTitleCount} · ${result.priceHints} price hints · ${result.maybeSoldCount} maybe sold` +
                                     hint +
-                                    (result.ebayError ? ` Â· eBay: ${result.ebayError}` : '') +
-                                    (result.kaError ? ` Â· KA: ${result.kaError}` : '')
+                                    (result.ebayError ? ` · eBay: ${result.ebayError}` : '') +
+                                    (result.kaError ? ` · KA: ${result.kaError}` : '')
                                );
                             } catch (e) {
                                setListingPresenceMsg((e as Error)?.message || 'Sync failed');
@@ -1209,14 +1209,14 @@ const SettingsPage: React.FC<Props> = ({
                    <p className="text-xs text-emerald-600 mt-2 font-bold uppercase tracking-wider">Status: {isCloudEnabled() && user ? 'Live' : isCloudEnabled() ? 'Sign in required' : 'Not configured'}</p>
                 </div>
 
-                {/* Photo archive â†’ Firebase Storage */}
+                {/* Photo archive → Firebase Storage */}
                 <div className="bg-white p-6 rounded-[3rem] border border-slate-200 shadow-sm space-y-4">
                    <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
                       <Images size={22} className="text-blue-600" /> Photo archive (Firebase Storage)
                    </h3>
                    <p className="text-sm text-slate-500 leading-relaxed">
                       Turn existing eBay, search, and pasted image links into permanent copies in Firebase Storage.
-                      You do <strong>not</strong> need to refetch from eBay â€” the app downloads from the URL already on each item.
+                      You do <strong>not</strong> need to refetch from eBay — the app downloads from the URL already on each item.
                    </p>
 
                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1240,7 +1240,7 @@ const SettingsPage: React.FC<Props> = ({
                    {photoArchiveRunning && photoArchiveProgress && (
                       <div className="space-y-2">
                          <div className="flex justify-between text-xs font-bold text-slate-600">
-                            <span>Archiving photosâ€¦</span>
+                            <span>Archiving photos…</span>
                             <span>{photoArchiveProgress.done} / {photoArchiveProgress.total}</span>
                          </div>
                          <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
@@ -1292,7 +1292,7 @@ const SettingsPage: React.FC<Props> = ({
                                         />
                                         <div className="min-w-0 flex-1">
                                            <p className="text-sm font-bold text-slate-900 truncate">
-                                              {entry.items.map((i) => i.name).join(' Â· ')}
+                                              {entry.items.map((i) => i.name).join(' · ')}
                                            </p>
                                            <p className="text-[10px] text-slate-500 font-mono truncate mt-1" title={entry.url}>{entry.url}</p>
                                            {failure?.error && (
@@ -1310,7 +1310,7 @@ const SettingsPage: React.FC<Props> = ({
                                            disabled={photoArchiveRunning || retryingPhotoUrl === entry.url || !canArchivePhotosToCloud()}
                                            className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-blue-700 disabled:opacity-50"
                                         >
-                                           {retryingPhotoUrl === entry.url ? 'Retryingâ€¦' : 'Retry archive'}
+                                           {retryingPhotoUrl === entry.url ? 'Retrying…' : 'Retry archive'}
                                         </button>
                                         <a
                                            href={entry.url}
@@ -1354,12 +1354,12 @@ const SettingsPage: React.FC<Props> = ({
                          How to check if Firebase Storage is enabled
                       </summary>
                       <ol className="mt-3 space-y-2 list-decimal list-inside text-xs leading-relaxed">
-                         <li>Open <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-blue-600 font-bold hover:underline">Firebase Console</a> â†’ your project (<code className="bg-slate-200 px-1 rounded">{firebaseConfig.projectId || 'project-id'}</code>).</li>
-                         <li>Go to <strong>Build â†’ Storage</strong> in the left menu.</li>
+                         <li>Open <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-blue-600 font-bold hover:underline">Firebase Console</a> → your project (<code className="bg-slate-200 px-1 rounded">{firebaseConfig.projectId || 'project-id'}</code>).</li>
+                         <li>Go to <strong>Build → Storage</strong> in the left menu.</li>
                          <li>If you see <strong>Get started</strong>, click it and choose a bucket location (EU if you are in Germany). That enables Storage.</li>
                          <li>Under <strong>Rules</strong>, allow signed-in uploads, e.g. <code className="bg-slate-200 px-1 rounded text-[10px]">allow read, write: if request.auth != null;</code> for paths under <code className="bg-slate-200 px-1 rounded text-[10px]">items/&#123;userId&#125;/</code>. Deploy rules with <code className="bg-slate-200 px-1 rounded text-[10px]">firebase deploy --only storage</code> if you use the CLI.</li>
                          <li>Back in this app: sign in, then import or archive one photo. If it works, thumbnails switch to <code className="bg-slate-200 px-1 rounded text-[10px]">firebasestorage.googleapis.com</code> URLs.</li>
-                         <li>In Firebase Console â†’ Storage â†’ <strong>Files</strong>, you should see folders like <code className="bg-slate-200 px-1 rounded text-[10px]">items/your-uid/â€¦</code>.</li>
+                         <li>In Firebase Console → Storage → <strong>Files</strong>, you should see folders like <code className="bg-slate-200 px-1 rounded text-[10px]">items/your-uid/…</code>.</li>
                       </ol>
                    </details>
                 </div>
@@ -1379,7 +1379,7 @@ const SettingsPage: React.FC<Props> = ({
                    </div>
                 </div>
 
-                {/* GitHub: sign in â†’ choose/create repo â†’ push (AI Studio style) */}
+                {/* GitHub: sign in → choose/create repo → push (AI Studio style) */}
                 <div className="bg-white p-6 rounded-[3rem] border border-slate-200 shadow-sm space-y-6" key={ghAuthRefresh}>
                    <h3 className="text-lg font-black text-slate-900 flex items-center gap-2"><Github size={22}/> Backup to GitHub</h3>
                    <p className="text-sm text-slate-500">
@@ -1408,7 +1408,7 @@ const SettingsPage: React.FC<Props> = ({
                                   onChange={e => { const v = e.target.value; setGitHubRepo(v); if (v && ghToken) saveGitHubConfig(v, ghToken); }}
                                   disabled={ghReposLoading}
                                >
-                                  <option value="">Choose a repoâ€¦</option>
+                                  <option value="">Choose a repo…</option>
                                   {githubRepo && !ghRepos.some((r) => r.full_name === githubRepo) && (
                                      <option value={githubRepo}>{githubRepo}</option>
                                   )}
@@ -1490,7 +1490,7 @@ const SettingsPage: React.FC<Props> = ({
                             </p>
                          </div>
                          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2">
-                            <strong>Or use a token:</strong> Repository (owner/repo) and Personal Access Token below. GitHub â†’ Settings â†’ Developer settings â†’ Personal access tokens (<code className="bg-amber-100 px-1 rounded">repo</code> scope).
+                            <strong>Or use a token:</strong> Repository (owner/repo) and Personal Access Token below. GitHub → Settings → Developer settings → Personal access tokens (<code className="bg-amber-100 px-1 rounded">repo</code> scope).
                          </p>
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-1">
@@ -1540,7 +1540,7 @@ const SettingsPage: React.FC<Props> = ({
                                      <p className="text-xs font-bold text-slate-800 truncate">{c.message || 'Backup'}</p>
                                      <p className="text-[10px] text-slate-500">
                                         {new Date(c.date).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })}
-                                        {c.author ? ` Â· ${c.author}` : ''}
+                                        {c.author ? ` · ${c.author}` : ''}
                                      </p>
                                   </div>
                                   <button
@@ -1558,7 +1558,7 @@ const SettingsPage: React.FC<Props> = ({
                       </div>
                    )}
 
-                   {/* Push this app (source code) to GitHub â€” armique/inventorycursor */}
+                   {/* Push this app (source code) to GitHub — armique/inventorycursor */}
                    <div className="pt-6 border-t border-slate-100">
                       <h4 className="text-sm font-black text-slate-800 mb-2 flex items-center gap-2"><FolderPlus size={18}/> Push this app to GitHub</h4>
                       <p className="text-xs text-slate-500 mb-3">From your project folder, run these commands to push to <strong>armique/inventorycursor</strong>:</p>
@@ -1708,12 +1708,12 @@ const SettingsPage: React.FC<Props> = ({
                 <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
                    <h3 className="text-xl font-black text-slate-900 flex items-center gap-2"><Rocket size={24}/> Push app to GitHub &amp; deploy on Vercel</h3>
                    <p className="text-sm text-slate-600">
-                      Sync this entire project to a GitHub repo so you can deploy it on Vercel. The repo will contain the full app (source code). <strong>Do not commit <code className="bg-slate-100 px-1 rounded">.env</code></strong> â€” add secrets in Vercel after deploying.
+                      Sync this entire project to a GitHub repo so you can deploy it on Vercel. The repo will contain the full app (source code). <strong>Do not commit <code className="bg-slate-100 px-1 rounded">.env</code></strong> — add secrets in Vercel after deploying.
                    </p>
 
                    <div className="space-y-6">
                       <div>
-                         <h4 className="text-sm font-black text-slate-800 mb-2 flex items-center gap-2">Step 1 â€” Create a GitHub repo</h4>
+                         <h4 className="text-sm font-black text-slate-800 mb-2 flex items-center gap-2">Step 1 — Create a GitHub repo</h4>
                          <p className="text-sm text-slate-600 mb-2">Create a new repository on GitHub (e.g. <code className="bg-slate-100 px-1 rounded">inventory-pro</code>). Leave it empty (no README).</p>
                          <a href="https://github.com/new" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-sm font-bold text-blue-600 hover:underline">
                             <ExternalLink size={14}/> github.com/new
@@ -1721,7 +1721,7 @@ const SettingsPage: React.FC<Props> = ({
                       </div>
 
                       <div>
-                         <h4 className="text-sm font-black text-slate-800 mb-2 flex items-center gap-2">Step 2 â€” Push this project to GitHub</h4>
+                         <h4 className="text-sm font-black text-slate-800 mb-2 flex items-center gap-2">Step 2 — Push this project to GitHub</h4>
                          <p className="text-sm text-slate-600 mb-3">In a terminal, open this project folder and run (replace <code className="bg-slate-100 px-1 rounded">YOUR_USERNAME/YOUR_REPO</code> with your repo):</p>
                          <div className="bg-slate-900 text-slate-100 rounded-2xl p-4 font-mono text-xs overflow-x-auto space-y-2">
                             <div className="flex items-center justify-between gap-2">
@@ -1753,12 +1753,12 @@ const SettingsPage: React.FC<Props> = ({
                       </div>
 
                       <div>
-                         <h4 className="text-sm font-black text-slate-800 mb-2 flex items-center gap-2">Step 3 â€” Deploy on Vercel</h4>
+                         <h4 className="text-sm font-black text-slate-800 mb-2 flex items-center gap-2">Step 3 — Deploy on Vercel</h4>
                          <p className="text-sm text-slate-600 mb-2">Import your GitHub repo on Vercel. Vercel will detect Vite and use the project&apos;s <code className="bg-slate-100 px-1 rounded">vercel.json</code>.</p>
                          <a href="https://vercel.com/new" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-sm font-bold text-blue-600 hover:underline">
                             <ExternalLink size={14}/> vercel.com/new
                          </a>
-                         <p className="text-xs text-slate-500 mt-2">After import, add your environment variables (e.g. Firebase / API keys) in Vercel â†’ Project â†’ Settings â†’ Environment Variables.</p>
+                         <p className="text-xs text-slate-500 mt-2">After import, add your environment variables (e.g. Firebase / API keys) in Vercel → Project → Settings → Environment Variables.</p>
                       </div>
                    </div>
                 </div>
@@ -1767,9 +1767,9 @@ const SettingsPage: React.FC<Props> = ({
 
           {activeTab === 'AI' && (
              <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
-                <h3 className="text-xl font-black text-slate-900 flex items-center gap-2"><Sparkles size={22} className="text-amber-500"/> AI settings (#92â€“93)</h3>
+                <h3 className="text-xl font-black text-slate-900 flex items-center gap-2"><Sparkles size={22} className="text-amber-500"/> AI settings (#92–93)</h3>
                 <p className="text-sm text-slate-600 max-w-2xl">
-                   Control provider priority and model tiers. Keys stay in <code className="bg-slate-100 px-1 rounded">.env</code> / Vercel â€” this panel only stores preferences.
+                   Control provider priority and model tiers. Keys stay in <code className="bg-slate-100 px-1 rounded">.env</code> / Vercel — this panel only stores preferences.
                 </p>
                 <div className="grid gap-4 md:grid-cols-2 max-w-2xl">
                    <div>
@@ -1819,7 +1819,7 @@ const SettingsPage: React.FC<Props> = ({
                    Prefer Groq for spec fill when available
                 </label>
                 <p className="text-xs text-slate-500">
-                   Provider order: {aiSettings.providerPriority.join(' â†’ ')}. Add keys in Health check.
+                   Provider order: {aiSettings.providerPriority.join(' → ')}. Add keys in Health check.
                 </p>
              </div>
           )}
@@ -1833,14 +1833,14 @@ const SettingsPage: React.FC<Props> = ({
                    </h3>
                    <p className="text-sm text-slate-600 leading-relaxed max-w-3xl">
                       Erzeugt eine <strong>.xlsx</strong>-Datei mit mehreren BlÃ¤ttern, die Sie direkt in{' '}
-                      <strong>Google Drive</strong> hochladen und mit <strong>Google Tabellen</strong> Ã¶ffnen kÃ¶nnen â€” ohne OAuth oder API-SchlÃ¼ssel in der App.
+                      <strong>Google Drive</strong> hochladen und mit <strong>Google Tabellen</strong> Ã¶ffnen kÃ¶nnen — ohne OAuth oder API-SchlÃ¼ssel in der App.
                       Enthalten sind: aktive Inventarpositionen (Bestand und verkauft), erklÃ¤rtes Paket-/PC-Verhalten, und Ihre{' '}
                       <strong>Betriebsausgaben</strong>. Optional schrÃ¤nken Sie den Export auf einen <strong>Zeitraum</strong> ein (siehe unten).
                    </p>
 
                    <div className="grid gap-4 md:grid-cols-2">
                       <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-3">
-                         <h4 className="text-xs font-black uppercase tracking-wider text-slate-500">Blatt â€žWare_Buchungenâ€œ</h4>
+                         <h4 className="text-xs font-black uppercase tracking-wider text-slate-500">Blatt â€žWare_Buchungen“</h4>
                          <ul className="text-sm text-slate-700 space-y-2 list-disc pl-5">
                             <li>
                                <strong>Bezeichnung</strong>, <strong>Einkaufsdatum</strong>, <strong>Verkaufsdatum</strong>,{' '}
@@ -1854,7 +1854,7 @@ const SettingsPage: React.FC<Props> = ({
                          <h4 className="text-xs font-black uppercase tracking-wider text-slate-500">Pakete &amp; DoppelzÃ¤hlung</h4>
                          <ul className="text-sm text-slate-700 space-y-2 list-disc pl-5">
                             <li>
-                               <strong>Verkauf Ã¼ber den Verkaufsdialog:</strong> Verkaufspreis und Gewinn stehen auf den <strong>Komponentenzeilen</strong> (anteilig nach Einkaufspreis). Die leere Paket-HÃ¼lle erscheint nicht â€” damit summieren Sie den Umsatz nicht zweimal.
+                               <strong>Verkauf Ã¼ber den Verkaufsdialog:</strong> Verkaufspreis und Gewinn stehen auf den <strong>Komponentenzeilen</strong> (anteilig nach Einkaufspreis). Die leere Paket-HÃ¼lle erscheint nicht — damit summieren Sie den Umsatz nicht zweimal.
                             </li>
                             <li>
                                <strong>Retro-Paket / ein Paketpreis:</strong> Umsatz steht auf der <strong>Paketzeile</strong>; Komponenten nur als StÃ¼ckliste.
@@ -1868,8 +1868,8 @@ const SettingsPage: React.FC<Props> = ({
                       <h4 className="text-sm font-black text-emerald-900">So Ã¶ffnen Sie die Datei in Google Tabellen</h4>
                       <ol className="text-sm text-emerald-900/90 list-decimal pl-5 space-y-1">
                          <li>Export hier unten herunterladen.</li>
-                         <li>Google Drive â†’ <strong>Neu</strong> â†’ <strong>Datei hochladen</strong> â†’ die .xlsx wÃ¤hlen.</li>
-                         <li>Rechtsklick auf die Datei â†’ <strong>Ã–ffnen mit</strong> â†’ <strong>Google Tabellen</strong>.</li>
+                         <li>Google Drive → <strong>Neu</strong> → <strong>Datei hochladen</strong> → die .xlsx wÃ¤hlen.</li>
+                         <li>Rechtsklick auf die Datei → <strong>Ã–ffnen mit</strong> → <strong>Google Tabellen</strong>.</li>
                       </ol>
                    </div>
 
@@ -1945,7 +1945,7 @@ const SettingsPage: React.FC<Props> = ({
                       )}
                       {finanzExportResolution.valid && finanzExportResolution.bounds && (
                          <p className="text-xs text-slate-600">
-                            Zeitraum: <strong>{formatBoundsGerman(finanzExportResolution.bounds)}</strong> â€” im Export erscheinen nur Positionen mit Einkaufs-, Verkaufs- oder Container-Verkaufsdatum in diesem Bereich (Pakete/PCs inkl. aller Komponenten, wenn mindestens eine Position passt) sowie Ausgaben mit Buchungsdatum im Bereich.
+                            Zeitraum: <strong>{formatBoundsGerman(finanzExportResolution.bounds)}</strong> — im Export erscheinen nur Positionen mit Einkaufs-, Verkaufs- oder Container-Verkaufsdatum in diesem Bereich (Pakete/PCs inkl. aller Komponenten, wenn mindestens eine Position passt) sowie Ausgaben mit Buchungsdatum im Bereich.
                          </p>
                       )}
                       <div className="flex flex-wrap items-center gap-3 pt-1">
@@ -1965,12 +1965,12 @@ const SettingsPage: React.FC<Props> = ({
                                         companyName: businessSettings.companyName,
                                         dateRange: bounds,
                                         dateRangeDescription: bounds
-                                           ? `${formatBoundsGerman(bounds)} â€” Inventar: Positionen mit Einkaufs-, Verkaufs- oder Container-Verkaufsdatum im Zeitraum (Pakete vollstÃ¤ndig, wenn eine Position passt). Ausgaben: Buchungsdatum im Zeitraum.`
+                                           ? `${formatBoundsGerman(bounds)} — Inventar: Positionen mit Einkaufs-, Verkaufs- oder Container-Verkaufsdatum im Zeitraum (Pakete vollstÃ¤ndig, wenn eine Position passt). Ausgaben: Buchungsdatum im Zeitraum.`
                                            : undefined,
                                      });
                                      showToast('Finanzamt-Export heruntergeladen', 'success');
                                   } catch {
-                                     showToast('Export fehlgeschlagen â€” bitte erneut versuchen.', 'error');
+                                     showToast('Export fehlgeschlagen — bitte erneut versuchen.', 'error');
                                   }
                                })();
                             }}
@@ -1980,7 +1980,7 @@ const SettingsPage: React.FC<Props> = ({
                             Finanzamt-Export (.xlsx) herunterladen
                          </button>
                          <span className="text-xs text-slate-500">
-                            {finanzExportCounts.items} Positionen Â· {finanzExportCounts.expenses} Ausgaben
+                            {finanzExportCounts.items} Positionen · {finanzExportCounts.expenses} Ausgaben
                             {finanzExportResolution.bounds ? ' (gefiltert)' : ''}
                          </span>
                       </div>
@@ -1991,7 +1991,7 @@ const SettingsPage: React.FC<Props> = ({
                          <FileText size={18} /> Steuerberater-Paket (JSON)
                       </h4>
                       <p className="text-xs text-indigo-900/80">
-                         Ein ZIP-freies JSON-Bundle mit Inventar, Ausgaben und Einstellungen â€” zum Weitergeben an Ihren Steuerberater (#70).
+                         Ein ZIP-freies JSON-Bundle mit Inventar, Ausgaben und Einstellungen — zum Weitergeben an Ihren Steuerberater (#70).
                       </p>
                       <button
                          type="button"
@@ -2016,7 +2016,7 @@ const SettingsPage: React.FC<Props> = ({
 
                    <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-3">
                       <h4 className="text-sm font-black text-slate-900">ELSTER-Vorbereitung (#64)</h4>
-                      <p className="text-xs text-slate-500">Checkliste â€” ersetzt keine ELSTER-Ãœbermittlung.</p>
+                      <p className="text-xs text-slate-500">Checkliste — ersetzt keine ELSTER-Ãœbermittlung.</p>
                       <ul className="space-y-2">
                          {elsterChecklist.map((row) => (
                             <li key={row.id} className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100">

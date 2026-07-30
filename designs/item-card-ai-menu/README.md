@@ -1,4 +1,4 @@
-﻿# Item card AI menu â€” 10 design concepts
+﻿# Item card AI menu — 10 design concepts
 
 Open [`index.html`](./index.html) in a browser, or open any numbered file alone.
 

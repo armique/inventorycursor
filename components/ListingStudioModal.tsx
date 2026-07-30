@@ -211,7 +211,7 @@ const ListingStudioModal: React.FC<Props> = ({
   const [providers, setProviders] = useState<ProductCardProviderInfo[]>([]);
   const [styleId, setStyleId] = useState<ProductCardStyleId>(DEFAULT_PRODUCT_CARD_STYLE_ID);
   const [photoSource, setPhotoSource] = useState<'none' | 'iphone' | 'folder'>('none');
-  /** Card provider/style panel â€” collapsed by default on narrow screens. */
+  /** Card provider/style panel — collapsed by default on narrow screens. */
   const [cardOptionsOpen, setCardOptionsOpen] = useState(() =>
     typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)').matches : false
   );
@@ -323,7 +323,7 @@ const ListingStudioModal: React.FC<Props> = ({
       for (const child of getChildren(item, allItems)) {
         if (child.hasOVP === true) hasOVP = true;
         if (child.hasReceipt === true) hasReceipt = true;
-        // IO only for motherboard listings â€” never lift child IO onto GPU/PC text.
+        // IO only for motherboard listings — never lift child IO onto GPU/PC text.
       }
     }
     return { hasOVP, hasIOShield, hasReceipt };
@@ -358,7 +358,7 @@ const ListingStudioModal: React.FC<Props> = ({
 
   // Hydrate local studio fields only when switching items.
   // Re-running this on every vendor/spec/photo patch was wiping unsaved Generate listing text
-  // before Apply â€” so Apply looked broken (saved empty / old description).
+  // before Apply — so Apply looked broken (saved empty / old description).
   useEffect(() => {
     setName(item.name || '');
     setSpecs({ ...(item.specs || {}) });
@@ -396,7 +396,7 @@ const ListingStudioModal: React.FC<Props> = ({
     setHasReceipt(!!item.hasReceipt);
     setPreviewPhotoIndex(null);
     setError(null);
-    // intentionally only item.id â€” local draft fields are source of truth while studio is open
+    // intentionally only item.id — local draft fields are source of truth while studio is open
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.id]);
 
@@ -535,7 +535,7 @@ const ListingStudioModal: React.FC<Props> = ({
         categoryFields
       );
       setSpecs(newSpecs);
-      // Specs parse must not rename â€” only the Item name "AI title" button may.
+      // Specs parse must not rename — only the Item name "AI title" button may.
       const nv = pickSpecsAiNameVendorUpdates(result);
       const patch: Partial<InventoryItem> = {
         specs: newSpecs,
@@ -669,7 +669,7 @@ const ListingStudioModal: React.FC<Props> = ({
     }
     setError(null);
     setGenCards(true);
-    setCardProgress(`GEN${n} Â· queuedâ€¦`);
+    setCardProgress(`GEN${n} · queued…`);
     enqueueProductCardBackgroundJob(
       { ...workingItem, name: name.trim() || item.name },
       {
@@ -693,7 +693,7 @@ const ListingStudioModal: React.FC<Props> = ({
       if (active) {
         sawActive = true;
         setGenCards(true);
-        setCardProgress(active.progress || 'Generatingâ€¦');
+        setCardProgress(active.progress || 'Generating…');
         return;
       }
       if (!sawActive) {
@@ -862,7 +862,7 @@ const ListingStudioModal: React.FC<Props> = ({
     if (!newKey || newKey === oldKey) return;
     setSpecs((prev) => {
       if (Object.prototype.hasOwnProperty.call(prev, newKey)) {
-        // Keep both values â€” don't overwrite an existing key silently.
+        // Keep both values — don't overwrite an existing key silently.
         return prev;
       }
       const next: Record<string, string | number> = {};
@@ -925,7 +925,7 @@ const ListingStudioModal: React.FC<Props> = ({
               <Sparkles size={14} className="text-rose-600" /> Listing Studio
             </h3>
             <p className="hidden sm:block text-[11px] text-slate-500 font-medium truncate">
-              Inventory Â· Specs Â· Photos Â· Title & description
+              Inventory · Specs · Photos · Title & description
             </p>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -964,9 +964,9 @@ const ListingStudioModal: React.FC<Props> = ({
           ref={studioScrollRef}
           className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(240px,0.92fr)_minmax(280px,1.05fr)_minmax(280px,1.05fr)] overflow-y-auto lg:overflow-hidden"
         >
-          {/* LEFT â€” item / specs / trade */}
+          {/* LEFT — item / specs / trade */}
           <aside className="border-r border-slate-100 overflow-y-auto p-2.5 space-y-2.5 lg:p-3 lg:space-y-3 bg-slate-50/40">
-            {/* Where this deal came from â€” one click to the chat / order / profile. */}
+            {/* Where this deal came from — one click to the chat / order / profile. */}
             {itemSourceLinks.list.length > 0 && (
               <section className="flex flex-wrap items-center gap-1.5">
                 <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">
@@ -1029,7 +1029,7 @@ const ListingStudioModal: React.FC<Props> = ({
                   onPatch={(patch) => void persistPatch(patch)}
                 />
                 <span className="hidden sm:inline text-[9px] text-slate-400 font-medium truncate">
-                  OVP / Rechnung / IO â†’ AI listing hints
+                  OVP / Rechnung / IO → AI listing hints
                 </span>
               </div>
             </section>
@@ -1077,7 +1077,7 @@ const ListingStudioModal: React.FC<Props> = ({
                         className={`inline-flex items-center gap-1 text-[9px] font-black uppercase ${
                           photoSource === 'iphone' ? 'text-sky-700' : 'text-slate-600 hover:text-sky-700'
                         }`}
-                        title="Scan QR on iPhone â€” pick from full Photos library"
+                        title="Scan QR on iPhone — pick from full Photos library"
                       >
                         <Smartphone size={11} /> iPhone
                       </button>
@@ -1100,7 +1100,7 @@ const ListingStudioModal: React.FC<Props> = ({
                         className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-slate-600 hover:text-rose-700 disabled:opacity-50"
                       >
                         {photoUpload ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}{' '}
-                        {photoUpload ? 'Uploadingâ€¦' : 'Add'}
+                        {photoUpload ? 'Uploading…' : 'Add'}
                       </button>
                     </>
                   )}
@@ -1160,7 +1160,7 @@ const ListingStudioModal: React.FC<Props> = ({
                   </div>
                   {photoUpload.fileName ? (
                     <p className="text-[10px] text-rose-800/90 truncate font-medium">
-                      {photoUpload.phase === 'error' ? 'Failed Â· ' : 'Working on Â· '}
+                      {photoUpload.phase === 'error' ? 'Failed · ' : 'Working on · '}
                       {photoUpload.fileName}
                       {photoUpload.phase === 'start' ? ' (convert / compress)' : ''}
                     </p>
@@ -1234,8 +1234,8 @@ const ListingStudioModal: React.FC<Props> = ({
               )}
               <p className="text-[10px] text-slate-400 mt-1 font-medium">
                 {photos.length === 0
-                  ? 'GEN1â€“3 from name/specs'
-                  : `${photos.length} photo${photos.length === 1 ? '' : 's'} Â· hold+drag Â· GEN1/2/3`}
+                  ? 'GEN1–3 from name/specs'
+                  : `${photos.length} photo${photos.length === 1 ? '' : 's'} · hold+drag · GEN1/2/3`}
               </p>
               <p className="text-[9px] text-slate-400 mt-0.5 font-medium">
                 Before each card, AI Google-checks official specs (drops impossible features like M.2 on old boards).
@@ -1249,8 +1249,8 @@ const ListingStudioModal: React.FC<Props> = ({
               aria-expanded={mobileDetailsOpen}
             >
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">
-                Inventory Â· Specs Â· purchase
-                {Object.keys(specs).length > 0 ? ` Â· ${Object.keys(specs).length}` : ''}
+                Inventory · Specs · purchase
+                {Object.keys(specs).length > 0 ? ` · ${Object.keys(specs).length}` : ''}
               </span>
               <span className="text-[10px] font-bold text-slate-400">
                 {mobileDetailsOpen ? 'Hide' : 'Show'}
@@ -1302,7 +1302,7 @@ const ListingStudioModal: React.FC<Props> = ({
                     disabled={parsingSpecs}
                     onClick={() => void handleParseSpecs()}
                     className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-rose-200 bg-rose-50 text-rose-800 text-[9px] font-black uppercase disabled:opacity-50"
-                    title="Fill tech specs only â€” does not change the item title"
+                    title="Fill tech specs only — does not change the item title"
                   >
                     {parsingSpecs ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
                     Parse AI
@@ -1315,7 +1315,7 @@ const ListingStudioModal: React.FC<Props> = ({
               <div className="space-y-1 max-h-40 lg:max-h-56 overflow-y-auto pr-0.5">
                 {Object.keys(specs).length === 0 && (
                   <p className="text-[10px] text-slate-400 font-medium py-2">
-                    No specs yet â€” run Parse AI or add your own.
+                    No specs yet — run Parse AI or add your own.
                   </p>
                 )}
                 {Object.entries(specs).map(([key, value]) => (
@@ -1447,7 +1447,7 @@ const ListingStudioModal: React.FC<Props> = ({
                         void persistPatch({ subCategory: next || undefined });
                       }}
                     >
-                      {!subCategoryOptions.length && <option value="">â€”</option>}
+                      {!subCategoryOptions.length && <option value="">—</option>}
                       {subCategoryOptions.map((s) => (
                         <option key={s} value={s}>
                           {s}
@@ -1459,7 +1459,7 @@ const ListingStudioModal: React.FC<Props> = ({
 
                 <div className="grid grid-cols-3 gap-1.5">
                   <label className="block space-y-0.5">
-                    <span className="text-[9px] font-black uppercase text-slate-400">Buy â‚¬</span>
+                    <span className="text-[9px] font-black uppercase text-slate-400">Buy €</span>
                     <input
                       type="text"
                       inputMode="decimal"
@@ -1471,25 +1471,25 @@ const ListingStudioModal: React.FC<Props> = ({
                     />
                   </label>
                   <label className="block space-y-0.5">
-                    <span className="text-[9px] font-black uppercase text-slate-400">Sold â‚¬</span>
+                    <span className="text-[9px] font-black uppercase text-slate-400">Sold €</span>
                     <input
                       type="text"
                       inputMode="decimal"
                       className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-bold text-slate-900 outline-none focus:border-rose-400"
                       value={sellPriceText}
-                      placeholder="â€”"
+                      placeholder="—"
                       onChange={(e) => setSellPriceText(e.target.value)}
                       onBlur={() => commitMoneyField(sellPriceText, 'sellPrice', setSellPriceText)}
                     />
                   </label>
                   <label className="block space-y-0.5">
-                    <span className="text-[9px] font-black uppercase text-slate-400">Store â‚¬</span>
+                    <span className="text-[9px] font-black uppercase text-slate-400">Store €</span>
                     <input
                       type="text"
                       inputMode="decimal"
                       className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-bold text-slate-900 outline-none focus:border-rose-400"
                       value={storePriceText}
-                      placeholder="â€”"
+                      placeholder="—"
                       onChange={(e) => setStorePriceText(e.target.value)}
                       onBlur={() => commitMoneyField(storePriceText, 'storePrice', setStorePriceText)}
                     />
@@ -1550,7 +1550,7 @@ const ListingStudioModal: React.FC<Props> = ({
                   <textarea
                     className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-semibold text-slate-900 outline-none focus:border-rose-400 min-h-[48px] resize-y"
                     value={notes}
-                    placeholder="Condition, defects, accessoriesâ€¦"
+                    placeholder="Condition, defects, accessories…"
                     onChange={(e) => setNotes(e.target.value)}
                     onBlur={() => void persistPatch({ comment1: notes.trim() || undefined })}
                   />
@@ -1649,7 +1649,7 @@ const ListingStudioModal: React.FC<Props> = ({
                         }
                       }}
                     >
-                      <option value="">â€” Not linked â€”</option>
+                      <option value="">— Not linked —</option>
                       {openContainers.map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.isPC ? 'PC' : 'Bundle'}: {c.name}
@@ -1756,7 +1756,7 @@ const ListingStudioModal: React.FC<Props> = ({
                           });
                         }}
                       >
-                        <option value="">â€” not sold</option>
+                        <option value="">— not sold</option>
                         {SALE_PLATFORM_OPTIONS.map((o) => (
                           <option key={o.value} value={o.value}>
                             {o.label}
@@ -1777,7 +1777,7 @@ const ListingStudioModal: React.FC<Props> = ({
                           });
                         }}
                       >
-                        <option value="">â€”</option>
+                        <option value="">—</option>
                         {PAYMENT_METHODS.map((p) => (
                           <option key={p} value={p}>
                             {p}
@@ -1826,7 +1826,7 @@ const ListingStudioModal: React.FC<Props> = ({
             </div>
           </aside>
 
-          {/* MIDDLE â€” card gallery */}
+          {/* MIDDLE — card gallery */}
           <section
             id="studio-cards"
             className="border-r border-slate-100 overflow-y-auto p-2.5 space-y-2 lg:p-3 lg:space-y-2.5 bg-white scroll-mt-2"
@@ -1837,14 +1837,14 @@ const ListingStudioModal: React.FC<Props> = ({
                   Card gallery
                 </h4>
                 <p className="hidden sm:block text-[10px] text-slate-400 font-medium">
-                  Saved for this item Â· edit / remove anytime
+                  Saved for this item · edit / remove anytime
                 </p>
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 {genCards ? (
                   <span className="inline-flex items-center gap-1 px-2 py-1.5 rounded-xl bg-slate-900 text-white text-[9px] font-black uppercase">
                     <Loader2 size={11} className="animate-spin" />
-                    {cardProgress || 'â€¦'}
+                    {cardProgress || '…'}
                   </span>
                 ) : (
                   ([1, 2, 3] as const).map((n) => (
@@ -1869,7 +1869,7 @@ const ListingStudioModal: React.FC<Props> = ({
             {genCards && (
               <p className="text-[10px] font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
                 Keep this Safari/Chrome tab open until cards finish. Switching apps on iPhone can pause
-                generation â€” return to the tab and it will retry.
+                generation — return to the tab and it will retry.
               </p>
             )}
 
@@ -1886,7 +1886,7 @@ const ListingStudioModal: React.FC<Props> = ({
                   </p>
                   <p className="text-[10px] text-slate-500 font-medium truncate">
                     {providerList.find((p) => p.id === provider)?.name || provider}
-                    {' Â· '}
+                    {' · '}
                     {PRODUCT_CARD_STYLES.find((s) => s.id === styleId)?.name || styleId}
                   </p>
                 </div>
@@ -2028,7 +2028,7 @@ const ListingStudioModal: React.FC<Props> = ({
             )}
           </section>
 
-          {/* RIGHT â€” title + description */}
+          {/* RIGHT — title + description */}
           <section
             id="studio-listing"
             className="overflow-y-auto p-2.5 space-y-2 lg:p-3 lg:space-y-2.5 bg-slate-50/30 flex flex-col scroll-mt-2"
@@ -2039,11 +2039,11 @@ const ListingStudioModal: React.FC<Props> = ({
                   Your sold comps ({soldPriceBand.count})
                 </p>
                 <p className="text-xs text-slate-700 font-bold">
-                  â‚¬{formatEUR(soldPriceBand.low)} â€“ â‚¬{formatEUR(soldPriceBand.high)}
-                  <span className="text-slate-400 font-medium"> Â· median </span>
-                  â‚¬{formatEUR(soldPriceBand.median)}
-                  <span className="text-slate-400 font-medium"> Â· avg sold </span>
-                  â‚¬{formatEUR(soldPriceBand.average)}
+                  €{formatEUR(soldPriceBand.low)} – €{formatEUR(soldPriceBand.high)}
+                  <span className="text-slate-400 font-medium"> · median </span>
+                  €{formatEUR(soldPriceBand.median)}
+                  <span className="text-slate-400 font-medium"> · avg sold </span>
+                  €{formatEUR(soldPriceBand.average)}
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   <button
@@ -2145,7 +2145,7 @@ const ListingStudioModal: React.FC<Props> = ({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 className="w-full flex-1 min-h-[120px] lg:min-h-[180px] px-2.5 py-2 text-xs text-slate-800 outline-none resize-none leading-relaxed"
-                placeholder="Generate German listingâ€¦"
+                placeholder="Generate German listing…"
               />
             </div>
 
@@ -2214,7 +2214,7 @@ const ListingStudioModal: React.FC<Props> = ({
           >
             <p className="text-xs font-black uppercase tracking-widest text-white/80">
               Photo {previewPhotoIndex + 1} / {photos.length}
-              {previewPhotoIndex === 0 ? ' Â· Main' : ''}
+              {previewPhotoIndex === 0 ? ' · Main' : ''}
             </p>
             <button
               type="button"

@@ -133,7 +133,7 @@ type AppSyncSnapshot = {
 
 /** When merging an update into an existing item, preserve these from the old item if the update
  * doesn't provide them (so renames/edits from inventory don't wipe store data). Deliberately
- * excludes sellPrice/storePrice â€” those are actively user-editable numeric fields with real
+ * excludes sellPrice/storePrice — those are actively user-editable numeric fields with real
  * "clear to remove" semantics (e.g. clearing a price in the inline table editor); restoring the
  * old value whenever the new one is undefined made it impossible to ever actually clear them. */
 const PRESERVE_FROM_OLD_IF_UPDATE_MISSING: (keyof InventoryItem)[] = [
@@ -146,7 +146,7 @@ const PRESERVE_FROM_OLD_IF_UPDATE_MISSING: (keyof InventoryItem)[] = [
 ];
 
 /**
- * Stamp `lastModifiedBy: 'manual'` â€” but only on records the AI has already touched.
+ * Stamp `lastModifiedBy: 'manual'` — but only on records the AI has already touched.
  * Items the assistant never saw stay untouched so the cloud payload doesn't grow by a
  * redundant field on every row.
  */
@@ -226,7 +226,7 @@ function EbayOAuthCallback() {
         </>
       )}
       <p className="text-slate-500 text-sm">
-        {status === 'loading' ? 'Connecting eBay accountâ€¦' : ''}
+        {status === 'loading' ? 'Connecting eBay account…' : ''}
       </p>
     </div>
   );
@@ -275,7 +275,7 @@ function GitHubOAuthCallback() {
           <button type="button" onClick={() => navigate('/panel/settings')} className="px-4 py-2 bg-slate-900 text-white rounded-xl text-sm font-bold">Go to Settings</button>
         </>
       )}
-      <p className="text-slate-500 text-sm">{status === 'loading' ? 'Signing in with GitHubâ€¦' : ''}</p>
+      <p className="text-slate-500 text-sm">{status === 'loading' ? 'Signing in with GitHub…' : ''}</p>
     </div>
   );
 }
@@ -335,7 +335,7 @@ const App: React.FC = () => {
   const [categories, setCategories] = useState<Record<string, string[]>>(() => {
     const saved = localStorage.getItem('custom_categories');
     const base = saved ? JSON.parse(saved) : { ...DEFAULT_CATEGORIES };
-    // PC / Bundle / Mixed Bundle â€” no subcategories
+    // PC / Bundle / Mixed Bundle — no subcategories
     base.PC = [];
     base.Bundle = [];
     base['Mixed Bundle'] = [];
@@ -580,7 +580,7 @@ const App: React.FC = () => {
       localStorage.setItem('recurring_expenses', JSON.stringify(newRecurringExpenses));
     }
     persistDashboardPreferencesToLocalStorage(dash);
-    // Debounced â€” only when sold-set changes; never block clicks.
+    // Debounced — only when sold-set changes; never block clicks.
     try {
       scheduleItemSalesPoolRebuild(newItems);
     } catch {
@@ -610,11 +610,11 @@ const App: React.FC = () => {
       return changed ? out : base;
     };
 
-    // Start with local (preserves items only in local â€“ e.g. newly added bulk items not yet in cloud)
+    // Start with local (preserves items only in local – e.g. newly added bulk items not yet in cloud)
     localList.forEach((i) => {
       if (i?.id) byId.set(i.id, i);
     });
-    // Overlay remote when ID matches â€” default remote wins, except stale cloud must not undo a local sale/trade
+    // Overlay remote when ID matches — default remote wins, except stale cloud must not undo a local sale/trade
     remoteList.forEach((r) => {
       if (!r?.id) return;
       const local = localById.get(r.id);
@@ -647,7 +647,7 @@ const App: React.FC = () => {
           changed = true;
         }
       }
-      // bulkImportId stamps must survive remote-wins â€” otherwise a lagging phone wipe clears Flags.
+      // bulkImportId stamps must survive remote-wins — otherwise a lagging phone wipe clears Flags.
       const localBid = (local.bulkImportId || '').trim();
       const remoteBid = (r.bulkImportId || '').trim();
       if (localBid && !remoteBid) {
@@ -793,7 +793,7 @@ const App: React.FC = () => {
         setSyncState(prev => ({ ...prev, status: 'idle', message: undefined }));
         return;
       }
-      setSyncState({ status: 'syncing', lastSynced: null, message: 'Connectingâ€¦' });
+      setSyncState({ status: 'syncing', lastSynced: null, message: 'Connecting…' });
       unsubSnapshot = subscribeToData(user.uid, (data) => {
         if (data && shouldApplyRemoteSnapshot(data)) {
           applyRemoteData(data);
@@ -966,7 +966,7 @@ const App: React.FC = () => {
     void pullListingIndexFromCloud().catch((e) => console.warn('eBay listing index cloud pull failed:', e));
   }, [authUser]);
 
-  // Hydrate Reinvest gamification state (bank, quests, achievements) from its own doc â€” same
+  // Hydrate Reinvest gamification state (bank, quests, achievements) from its own doc — same
   // pull-on-boot pattern as the eBay indexes above, kept out of the main syncPack blob.
   useEffect(() => {
     if (!authUser || !isCloudEnabled() || gamificationPulledRef.current) return;
@@ -1012,7 +1012,7 @@ const App: React.FC = () => {
             );
           }
         } catch (e) {
-          // Never surface as a blocking error â€” the next boot retries.
+          // Never surface as a blocking error — the next boot retries.
           console.warn('[backup] Daily snapshot failed:', e);
         }
       });
@@ -1235,7 +1235,7 @@ const App: React.FC = () => {
     };
   }, [runSilentCloudSync]);
 
-  // Action history can be large â€” persist separately so item edits don't always stringify it with inventory.
+  // Action history can be large — persist separately so item edits don't always stringify it with inventory.
   useEffect(() => {
     if (appState !== 'READY') return;
     const t = setTimeout(() => {
@@ -1347,7 +1347,7 @@ const App: React.FC = () => {
     }
 
     /*
-     * AI attribution pass â€” runs before setItems so the log is written exactly once
+     * AI attribution pass — runs before setItems so the log is written exactly once
      * (React may invoke a state updater twice in StrictMode). It diffs against the
      * same merged item that will be stored, so preserved fields never look "cleared".
      */
@@ -1361,7 +1361,7 @@ const App: React.FC = () => {
         const candidate = preserveMissingFields ? applyPreservedFields(oldItem, u) : u;
         /*
          * Records the assistant creates must point back at a verifiable source (Finanzamt
-         * paper trail). Only creation is gated â€” blocking edits too would lock the AI out
+         * paper trail). Only creation is gated — blocking edits too would lock the AI out
          * of every pre-existing item. eBay orders and bulk-import children are exempt:
          * they carry ids the order link is derived from, or inherit the batch's proof.
          * Thrown from an event handler, so the save aborts without unmounting the panel.
@@ -1371,7 +1371,7 @@ const App: React.FC = () => {
           ebayOrderId: candidate.ebayOrderId,
           bulkImportId: candidate.bulkImportId,
         })) {
-          throw new MissingSourceLinkError(`Item â€œ${candidate.name}â€`);
+          throw new MissingSourceLinkError(`Item “${candidate.name}”`);
         }
         const diff = diffInventoryItems(oldItem, candidate);
         if (oldItem && diff.length === 0) continue;
@@ -1514,11 +1514,11 @@ const App: React.FC = () => {
   };
   const handleAddExpense = (expense: Expense) => {
     setExpenses(prev => [...prev, expense]);
-    addActionEntries([makeActionEntry('Expense added', undefined, `${expense.description} (â‚¬${expense.amount})`)]);
+    addActionEntries([makeActionEntry('Expense added', undefined, `${expense.description} (€${expense.amount})`)]);
   };
   const handleUpdateExpense = (expense: Expense) => {
     setExpenses(prev => prev.map(e => (e.id === expense.id ? expense : e)));
-    addActionEntries([makeActionEntry('Expense updated', undefined, `${expense.description} (â‚¬${expense.amount})`)]);
+    addActionEntries([makeActionEntry('Expense updated', undefined, `${expense.description} (€${expense.amount})`)]);
   };
   const handleDeleteExpense = (id: string) => {
     setExpenses(prev => prev.filter(e => e.id !== id));
@@ -1824,7 +1824,7 @@ const App: React.FC = () => {
            </div>
            <div className="text-center space-y-2">
               <h2 className="text-2xl font-black tracking-tight">DeInventory</h2>
-              <p className="text-slate-400 font-medium">Connecting to Firestoreâ€¦</p>
+              <p className="text-slate-400 font-medium">Connecting to Firestore…</p>
            </div>
         </div>
      );

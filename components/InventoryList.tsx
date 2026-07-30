@@ -267,7 +267,7 @@ function containerRowClassName(
     parts.push('ring-2 ring-amber-400 ring-inset bg-amber-50/40 animate-pulse');
     return parts.join(' ');
   }
-  // Unreviewed AI edit â€” 4px indigo stripe, wins over the container stripes below so the
+  // Unreviewed AI edit — 4px indigo stripe, wins over the container stripes below so the
   // row is unmistakable until the user approves it.
   if (aiUnreviewed) {
     parts.push(
@@ -338,8 +338,8 @@ interface SortConfig {
 const PRESENCE_ICON_SIZE_PX = 28;
 const PRESENCE_ICON_GAP_PX = 4;
 /**
- * Flags base (no AI wand): Presence Â· Photos Â· BG cards Â· â‚¬ Â· Store Â· Orders Â· Quick Bundle Â· Bulk Â· Rebuild
- * + merged row actions (sold/trade/gift/split/unbundle/â€¦/delete) â€” width sized for ~15 slots.
+ * Flags base (no AI wand): Presence · Photos · BG cards · € · Store · Orders · Quick Bundle · Bulk · Rebuild
+ * + merged row actions (sold/trade/gift/split/unbundle/…/delete) — width sized for ~15 slots.
  */
 const PRESENCE_ICON_COUNT = 15;
 const PRESENCE_COL_WIDTH =
@@ -378,7 +378,7 @@ const ALL_COLUMNS: { id: ColumnId; label: string }[] = [
   { id: 'buyDate', label: 'Acquired' },
   { id: 'timeGauge', label: 'Time' },
   { id: 'sellDate', label: 'Sold Date' },
-  // Actions merged into Flags â€” kept for legacy saved layouts only
+  // Actions merged into Flags — kept for legacy saved layouts only
   { id: 'actions', label: 'Actions' },
 ];
 
@@ -501,7 +501,7 @@ function computeAutoColumnWidths(items: InventoryItem[]): Partial<Record<ColumnI
 
   let maxFlagActionButtons = 0;
 
-  // Sample â€” measuring every row on large inventories blocks first paint.
+  // Sample — measuring every row on large inventories blocks first paint.
   const sample =
     items.length <= 120
       ? items
@@ -519,17 +519,17 @@ function computeAutoColumnWidths(items: InventoryItem[]): Partial<Record<ColumnI
     const statusLabel = item.status === ItemStatus.IN_COMPOSITION ? 'In Composition' : item.status;
     statusW = Math.max(statusW, measureTextWidth(ctx, String(statusLabel).toUpperCase(), '900 10px Inter, sans-serif', 2.2));
 
-    buyPriceW = Math.max(buyPriceW, measureTextWidth(ctx, `â‚¬${formatEUR(item.buyPrice)}`, '900 13px Inter, sans-serif'));
+    buyPriceW = Math.max(buyPriceW, measureTextWidth(ctx, `€${formatEUR(item.buyPrice)}`, '900 13px Inter, sans-serif'));
     sellPriceW = Math.max(
       sellPriceW,
-      measureTextWidth(ctx, item.sellPrice ? `â‚¬${formatEUR(item.sellPrice)}` : '-', '700 13px Inter, sans-serif')
+      measureTextWidth(ctx, item.sellPrice ? `€${formatEUR(item.sellPrice)}` : '-', '700 13px Inter, sans-serif')
     );
     storePriceW = Math.max(
       storePriceW,
-      measureTextWidth(ctx, item.storePrice ? `â‚¬${formatEUR(item.storePrice)}` : '-', '700 13px Inter, sans-serif')
+      measureTextWidth(ctx, item.storePrice ? `€${formatEUR(item.storePrice)}` : '-', '700 13px Inter, sans-serif')
     );
     if (item.profit != null && !item.isPC && !item.isBundle) {
-      profitW = Math.max(profitW, measureTextWidth(ctx, `â‚¬${formatEUR(item.profit)}`, '900 13px Inter, sans-serif'));
+      profitW = Math.max(profitW, measureTextWidth(ctx, `€${formatEUR(item.profit)}`, '900 13px Inter, sans-serif'));
     }
     if (item.buyDate) {
       buyDateW = Math.max(
@@ -607,9 +607,9 @@ type InventoryListFilterParams = {
   smartPreset: SmartPreset;
   /** When set, show only this bulk-import batch (status tabs ignored). */
   bulkImportFilterId: string | null;
-  /** Item ids from the history record â€” used when rows were never stamped with bulkImportId. */
+  /** Item ids from the history record — used when rows were never stamped with bulkImportId. */
   bulkImportItemIds: Set<string> | null;
-  /** Precomputed kit-child ids â€” avoids O(nÂ²) hide scans. */
+  /** Precomputed kit-child ids — avoids O(n²) hide scans. */
   hiddenChildIds?: Set<string>;
   /** Provenance filter: everything / AI-touched / AI awaiting review / hand-entered only. */
   sourceFilter: SourceFilter;
@@ -691,7 +691,7 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
       if (!(ageDays > 90) || isRealizedDisposal(item)) return false;
     }
 
-    // Bundle/PC/mixed components always nest under the parent â€” never as top-level rows.
+    // Bundle/PC/mixed components always nest under the parent — never as top-level rows.
     // Search still surfaces the parent when a child matches.
     // Dedicated bulk-batch view lists every stamped member (including sold / in-composition kids).
     if (!bulkBatchActive) {
@@ -724,7 +724,7 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
       }
     }
 
-    // Spec and date filters are browsing aids â€” skip them during search so a suggestion click always reveals the row.
+    // Spec and date filters are browsing aids — skip them during search so a suggestion click always reveals the row.
     if (!searchActive && timeFilter !== 'ALL') {
       const isSalesItem = isRealizedDisposal(item);
       const dateStr = isSalesItem ? item.sellDate : item.buyDate;
@@ -899,7 +899,7 @@ const InventoryList: React.FC<Props> = ({
   const filtersPanelRef = useRef<HTMLDivElement>(null);
   const filtersButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Desktop split/table chrome is unusable on phones â€” force single-pane card list.
+  // Desktop split/table chrome is unusable on phones — force single-pane card list.
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 1023px)');
     const sync = () => {
@@ -913,19 +913,19 @@ const InventoryList: React.FC<Props> = ({
   // Visibility toggle for orphan "In Composition" items (container children always nest under parent)
   const [showInComposition, setShowInComposition] = useState<boolean>(() => loadState<boolean>('show_in_composition', false));
 
-  /** Collapsed bundle/PC rows â€” open by default; user closes only if they want. */
+  /** Collapsed bundle/PC rows — open by default; user closes only if they want. */
   const [collapsedBundles, setCollapsedBundles] = useState<Set<string>>(() => new Set());
 
   const toggleBundleExpanded = useCallback((id: string) => {
     setCollapsedBundles((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); // was collapsed â†’ open
-      else next.add(id); // was open â†’ collapse
+      if (next.has(id)) next.delete(id); // was collapsed → open
+      else next.add(id); // was open → collapse
       return next;
     });
   }, []);
 
-  // Sort â€” persisted per status tab; tab defaults only apply when switching tabs (not on every render).
+  // Sort — persisted per status tab; tab defaults only apply when switching tabs (not on every render).
   const [sortConfig, setSortConfig] = useState<SortConfig>(() => {
     const tab = loadState<StatusFilter>('status_filter', 'ACTIVE');
     return readPersistedSortForTab(tab) ?? defaultSortForTab(tab);
@@ -1322,7 +1322,7 @@ const InventoryList: React.FC<Props> = ({
       imageUrl: fallbackImage,
       imageUrls: fallbackImage ? [fallbackImage] : [],
       comment1: '',
-      comment2: `Bulk Import (added later). Source total: â‚¬${bulkImportRecord.totalCost}.`,
+      comment2: `Bulk Import (added later). Source total: €${bulkImportRecord.totalCost}.`,
       kleinanzeigenBuyChatUrl: bulkImportRecord.kleinanzeigenBuyChatUrl,
       kleinanzeigenBuyChatImage: bulkImportRecord.kleinanzeigenBuyChatImage,
       kleinanzeigenSellerProfileUrl: bulkImportRecord.kleinanzeigenSellerProfileUrl,
@@ -1347,7 +1347,7 @@ const InventoryList: React.FC<Props> = ({
     setBulkNewName('');
     setBulkNewManualCost('');
     setBulkAdding(false);
-    setToast(`Added â€œ${name}â€ to batch`);
+    setToast(`Added “${name}” to batch`);
     setTimeout(() => setToast(null), 2200);
   }, [
     bulkImportRecord,
@@ -1365,7 +1365,7 @@ const InventoryList: React.FC<Props> = ({
     if (!bulkImportRecord || !onDeleteBulkImport) return;
     if (
       !window.confirm(
-        `Remove â€œ${bulkImportRecord.label}â€ from bulk import history?\n\nInventory items stay â€” only the history link is removed.`
+        `Remove “${bulkImportRecord.label}” from bulk import history?\n\nInventory items stay — only the history link is removed.`
       )
     ) {
       return;
@@ -1517,7 +1517,7 @@ const InventoryList: React.FC<Props> = ({
     return () => document.removeEventListener('mousedown', handle);
   }, [showRecentDropdown]);
 
-  // Listing AI opens as a modal â€” no dropdown click-outside needed
+  // Listing AI opens as a modal — no dropdown click-outside needed
 
   const toggleColumnVisibility = (id: ColumnId) => {
     const visible = visibleColumns.length;
@@ -1537,7 +1537,7 @@ const InventoryList: React.FC<Props> = ({
   };
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  /** AI provenance per item id â€” drives the badge, the unreviewed stripe and the Source filter. */
+  /** AI provenance per item id — drives the badge, the unreviewed stripe and the Source filter. */
   const itemAiStates = useItemAiStates();
   const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null);
   const [scrollTargetItemId, setScrollTargetItemId] = useState<string | null>(null);
@@ -1576,7 +1576,7 @@ const InventoryList: React.FC<Props> = ({
   }, [quickBundleSeed]);
 
   const openQuickBundlePanel = useCallback((seed: InventoryItem) => {
-    // Cancel any pending row-click â†’ Edit PC Build / Edit Item navigation
+    // Cancel any pending row-click → Edit PC Build / Edit Item navigation
     if (rowClickTimeoutRef.current != null) {
       window.clearTimeout(rowClickTimeoutRef.current);
       rowClickTimeoutRef.current = null;
@@ -1676,12 +1676,12 @@ const InventoryList: React.FC<Props> = ({
       if (job.status === 'done') {
         const extra = job.error ? ` (${job.plannedCards - job.cardsSaved} failed)` : '';
         setToast(
-          `AI cards ready Â· ${job.itemName.slice(0, 40)}${job.itemName.length > 40 ? 'â€¦' : ''} Â· ${job.cardsSaved} in gallery${extra}`
+          `AI cards ready · ${job.itemName.slice(0, 40)}${job.itemName.length > 40 ? '…' : ''} · ${job.cardsSaved} in gallery${extra}`
         );
         refreshAiCardCounts();
       } else {
         setToast(
-          `AI card failed Â· ${job.itemName.slice(0, 36)}${job.itemName.length > 36 ? 'â€¦' : ''} Â· ${job.error || 'error'}`
+          `AI card failed · ${job.itemName.slice(0, 36)}${job.itemName.length > 36 ? '…' : ''} · ${job.error || 'error'}`
         );
       }
       setTimeout(() => setToast((prev) => (prev?.startsWith('AI card') ? null : prev)), 4200);
@@ -1691,7 +1691,7 @@ const InventoryList: React.FC<Props> = ({
   const queueBackgroundAiCards = useCallback(
     (item: InventoryItem) => {
       if (isItemProductCardJobActive(item.id)) {
-        setToast('AI cards already generating for this itemâ€¦');
+        setToast('AI cards already generating for this item…');
         setTimeout(() => setToast((prev) => (prev?.startsWith('AI cards already') ? null : prev)), 2200);
         return;
       }
@@ -1701,7 +1701,7 @@ const InventoryList: React.FC<Props> = ({
       enqueueProductCardBackgroundJob(item, { categoryFields: fields });
       setAiCardRegenConfirmId(null);
       setToast(
-        `Generating AI cards in background Â· ${item.name.slice(0, 36)}${item.name.length > 36 ? 'â€¦' : ''}`
+        `Generating AI cards in background · ${item.name.slice(0, 36)}${item.name.length > 36 ? '…' : ''}`
       );
       setTimeout(() => setToast((prev) => (prev?.startsWith('Generating AI cards') ? null : prev)), 2600);
     },
@@ -1788,11 +1788,11 @@ const InventoryList: React.FC<Props> = ({
 
   const savePriceSuggestionAsNote = (item: InventoryItem, result: SoldPriceSuggestion) => {
     const suggested = result.priceAverage;
-    const rangeText = result.priceLow && result.priceHigh ? `â‚¬${formatEUR(Number(result.priceLow))}â€“â‚¬${formatEUR(Number(result.priceHigh))}` : '';
+    const rangeText = result.priceLow && result.priceHigh ? `€${formatEUR(Number(result.priceLow))}–€${formatEUR(Number(result.priceHigh))}` : '';
     const examplesText = result.soldExamples.length > 0
-      ? '\nBeispiele: ' + result.soldExamples.map(e => `${e.title} (â‚¬${formatEUR(Number(e.price))})`).join(', ')
+      ? '\nBeispiele: ' + result.soldExamples.map(e => `${e.title} (€${formatEUR(Number(e.price))})`).join(', ')
       : '';
-    const note = `AI-Preistipp (eBay verkaufte Artikel): ~â‚¬${formatEUR(suggested)}${rangeText ? ` (${rangeText})` : ''}${examplesText}`;
+    const note = `AI-Preistipp (eBay verkaufte Artikel): ~€${formatEUR(suggested)}${rangeText ? ` (${rangeText})` : ''}${examplesText}`;
     onUpdate([{ ...item, comment2: item.comment2 ? `${item.comment2}\n${note}` : note }]);
     closePriceSuggestModal();
   };
@@ -1837,12 +1837,12 @@ const InventoryList: React.FC<Props> = ({
         ebaySku: item.ebaySku || match.sku,
       },
     ]);
-    setToast(`Storefront price set to â‚¬${formatEUR(price)} from eBay`);
+    setToast(`Storefront price set to €${formatEUR(price)} from eBay`);
     setTimeout(() => setToast((prev) => (prev?.startsWith('Storefront price set') ? null : prev)), 2000);
     closeEbayPriceModal();
   };
 
-  // --- eBay order lookup (Flags column) â€” searches the locally cached order index (API backfill + CSV import) ---
+  // --- eBay order lookup (Flags column) — searches the locally cached order index (API backfill + CSV import) ---
   const [orderLookupItem, setOrderLookupItem] = useState<InventoryItem | null>(null);
   const [orderLookupMatches, setOrderLookupMatches] = useState<EbayOrderMatch[]>([]);
 
@@ -1866,12 +1866,12 @@ const InventoryList: React.FC<Props> = ({
     closeOrderLookupModal();
   };
 
-  // Visible Columns (from order, excluding hidden) â€” memoized so row renders are not invalidated every parent render
+  // Visible Columns (from order, excluding hidden) — memoized so row renders are not invalidated every parent render
   const visibleColumns = useMemo(() => {
     const ALWAYS_HIDDEN = ['parseSpecs', 'salePlatform', 'actions'];
     return columnOrder.filter((id) => {
       if (hiddenColumnIds.includes(id) || ALWAYS_HIDDEN.includes(id)) return false;
-      // In pure ACTIVE mode: hide SOLD DATE (always empty â€” items haven't been sold yet)
+      // In pure ACTIVE mode: hide SOLD DATE (always empty — items haven't been sold yet)
       if (id === 'sellDate' && !splitView && statusFilter === 'ACTIVE') return false;
       // In pure SOLD mode: hide STOCK AGE gauge (irrelevant once item is sold)
       if (id === 'timeGauge' && !splitView && statusFilter === 'SOLD') return false;
@@ -1968,7 +1968,7 @@ const InventoryList: React.FC<Props> = ({
       setTimeFilter(period);
       setSmartPreset('sale_ready');
       setShowReadyPeriodMenu(false);
-      setToast(`Marked ${updated.length} Ready Â· ${READY_PERIOD_OPTIONS.find((o) => o.id === period)?.label}`);
+      setToast(`Marked ${updated.length} Ready · ${READY_PERIOD_OPTIONS.find((o) => o.id === period)?.label}`);
       setTimeout(() => setToast(null), 2800);
     },
     [items, onUpdate]
@@ -1999,7 +1999,7 @@ const InventoryList: React.FC<Props> = ({
     [quickCategoryPins, isQuickCategoryPinActive]
   );
 
-  // Base-filtered items (no spec filters) â€” used to build available spec options in the Filters panel / quick pins
+  // Base-filtered items (no spec filters) — used to build available spec options in the Filters panel / quick pins
   const baseFilteredForSpecs = useMemo(() => {
     if (!showSpecFiltersPanel && !hasActiveSpecFilters && !activeQuickPin) return [];
     const searchLower = searchTerm.toLowerCase();
@@ -2096,7 +2096,7 @@ const InventoryList: React.FC<Props> = ({
     return specOptions.find((o) => lowerMatch(o.key));
   }, [specOptions]);
 
-  /** Fast hide set for kit children â€” built before filter to avoid O(nÂ²) parent scans. */
+  /** Fast hide set for kit children — built before filter to avoid O(n²) parent scans. */
   const hiddenChildIds = useMemo(() => {
     const s = new Set<string>();
     for (const i of items) {
@@ -2217,9 +2217,9 @@ const InventoryList: React.FC<Props> = ({
   const getRowActivityKey = useCallback(
     (item: InventoryItem) =>
       // Include editValue (not just which field is being edited) while this row is the one being
-      // edited â€” otherwise the key stays identical across every keystroke, the row's React.memo
+      // edited — otherwise the key stays identical across every keystroke, the row's React.memo
       // sees "no change," and the input silently stops updating after the very first keystroke.
-      // Include quickBundleSeed so Flags â€œ+â€ panel open/close re-renders the memoized row
+      // Include quickBundleSeed so Flags “+” panel open/close re-renders the memoized row
       // (otherwise X / Cancel set state but the inline panel stays mounted).
       `${editingCell?.itemId === item.id ? `${editingCell.field}:${editValue}` : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${(item.isPC || item.isBundle) && collapsedBundles.has(item.id) ? 'col' : 'exp'}|${quickBundleSeed?.id === item.id ? 'qb' : ''}|${activeBgCardItemIds.has(item.id) ? 'bgcard' : ''}|${itemAiCardCounts[item.id] || 0}|${aiCardRegenConfirmId === item.id ? 'confirm' : ''}`,
     [editingCell, editValue, listingGenId, parsingSingleId, priceSuggestId, collapsedBundles, quickBundleSeed, activeBgCardItemIds, itemAiCardCounts, aiCardRegenConfirmId]
@@ -2247,7 +2247,7 @@ const InventoryList: React.FC<Props> = ({
     return map;
   }, [sortedItems, sortedActiveItems, items, statusFilter, splitView]);
 
-  // Active filter count (for badge) â€” category/subcategory + spec keys
+  // Active filter count (for badge) — category/subcategory + spec keys
   const activeSpecFilterCount = useMemo(() => {
     let n = 0;
     if (categoryFilter !== 'ALL' || subCategoryFilter) n += 1;
@@ -2376,9 +2376,9 @@ const InventoryList: React.FC<Props> = ({
     let newValue: any = editValue;
 
     if (targetField === 'buyPrice' || targetField === 'sellPrice' || targetField === 'storePrice') {
-       // Clearing the field should actually clear it (undefined), not silently reset to 0 â€” buyPrice
+       // Clearing the field should actually clear it (undefined), not silently reset to 0 — buyPrice
        // still defaults to 0 (it's required), but sellPrice/storePrice are optional and should be
-       // erasable, otherwise "empty" ends up as a fake â‚¬0 value polluting profit/dashboard math.
+       // erasable, otherwise "empty" ends up as a fake €0 value polluting profit/dashboard math.
        if (String(editValue).trim() === '' && targetField !== 'buyPrice') {
          newValue = undefined;
        } else {
@@ -2554,7 +2554,7 @@ const InventoryList: React.FC<Props> = ({
   // Delayed row click handler so double-click can enter inline rename
   const handleRowClick = (item: InventoryItem, isEditingName: boolean) => {
     if (isEditingName) return;
-    // Don't open Edit / PC Builder while the Flags â€œ+â€ add panel is open
+    // Don't open Edit / PC Builder while the Flags “+” add panel is open
     if (quickBundleSeed) return;
     // If there's already a pending click, do nothing (double-click handler will take over)
     if (rowClickTimeoutRef.current != null) return;
@@ -2606,7 +2606,7 @@ const InventoryList: React.FC<Props> = ({
     setBundleToDismantle(null);
   };
 
-  /** Remove one child from a PC / Bundle / Mixed Bundle â†’ back to active stock; parent buy total recalculates. */
+  /** Remove one child from a PC / Bundle / Mixed Bundle → back to active stock; parent buy total recalculates. */
   const handleRemoveFromContainer = useCallback(
     (child: InventoryItem, parent: InventoryItem) => {
       if (!parent || child.id === parent.id) return;
@@ -2642,17 +2642,17 @@ const InventoryList: React.FC<Props> = ({
           .slice(0, 2000),
       };
       onUpdate([updatedParent, restored]);
-      setToast(`Removed â€œ${child.name}â€ â†’ active inventory Â· container â‚¬${formatEUR(buyTotal)}`);
+      setToast(`Removed “${child.name}” → active inventory · container €${formatEUR(buyTotal)}`);
       setTimeout(() => setToast(null), 2400);
     },
     [items, onUpdate]
   );
 
   const handleEditClick = (item: InventoryItem) => {
-    // Flags â€œ+â€ panel open â€” never navigate away
+    // Flags “+” panel open — never navigate away
     if (quickBundleSeedRef.current) return;
     addRecentItemId(item.id);
-    // Always stay on inventory: edit in modal (PC / Bundle included â€” no Builder route)
+    // Always stay on inventory: edit in modal (PC / Bundle included — no Builder route)
     setItemToEdit(item);
   };
 
@@ -2686,7 +2686,7 @@ const InventoryList: React.FC<Props> = ({
         marketTitle: title,
       };
       onUpdate([updated], undefined, { skipUndo: false, flushCloud: true });
-      setToast(`Title rebuilt Â· ${title}`);
+      setToast(`Title rebuilt · ${title}`);
       setTimeout(() => setToast(null), 2800);
     },
     [items, onUpdate]
@@ -2713,7 +2713,7 @@ const InventoryList: React.FC<Props> = ({
           type === 'pc'
             ? `PC Build (${parts.length} parts).`
             : type === 'mixed'
-              ? `Mixed Bundle (${parts.length} items)${defectiveCount ? ` Â· ${defectiveCount} defekt` : ''}.`
+              ? `Mixed Bundle (${parts.length} items)${defectiveCount ? ` · ${defectiveCount} defekt` : ''}.`
               : `Bundle (${parts.length} items).`,
         comment2: parts
           .map((i) => `- ${i.name}${i.isDefective ? ' [defekt]' : ''}`)
@@ -2744,10 +2744,10 @@ const InventoryList: React.FC<Props> = ({
       });
       setToast(
         type === 'pc'
-          ? `PC created in inventory Â· ${parts.length} parts`
+          ? `PC created in inventory · ${parts.length} parts`
           : type === 'mixed'
-            ? `Mixed Bundle created Â· ${parts.length} parts`
-            : `Bundle created Â· ${parts.length} parts`
+            ? `Mixed Bundle created · ${parts.length} parts`
+            : `Bundle created · ${parts.length} parts`
       );
       setTimeout(() => setToast(null), 2400);
     },
@@ -2784,7 +2784,7 @@ const InventoryList: React.FC<Props> = ({
   const openParentContainer = useCallback(
     (parent: InventoryItem) => {
       addRecentItemId(parent.id);
-      // Stay in inventory â€” expand & scroll (never open PC Builder)
+      // Stay in inventory — expand & scroll (never open PC Builder)
       focusContainerInList(parent);
     },
     [focusContainerInList]
@@ -2819,7 +2819,7 @@ const InventoryList: React.FC<Props> = ({
       const knownKeys = resolveEssentialSpecKeys(item.category || '', item.subCategory, categoryFields);
       const result = await generateItemSpecs(item.name, categoryContext, knownKeys);
       const newSpecs = mergeAiSpecsIntoEssential(item.specs, result.specs, item.category || '', item.subCategory, categoryFields);
-      // Specs parse must not rename standalone items â€” only the explicit AI title button may.
+      // Specs parse must not rename standalone items — only the explicit AI title button may.
       const updates: Partial<InventoryItem> = {
         specs: newSpecs,
         specsAiSuggested: Object.keys(newSpecs).length ? { ...newSpecs } : undefined,
@@ -2878,7 +2878,7 @@ const InventoryList: React.FC<Props> = ({
       );
       if (validItems.length === 0) {
         alert(
-          `No valid items for a ${type === 'bundle' ? 'Bundle' : 'PC'} (defective blocked â€” use Mixed Bundle).`
+          `No valid items for a ${type === 'bundle' ? 'Bundle' : 'PC'} (defective blocked — use Mixed Bundle).`
         );
         return;
       }
@@ -2892,12 +2892,12 @@ const InventoryList: React.FC<Props> = ({
           return;
         }
       }
-      // Stay in inventory â€” create immediately (no Builder page)
+      // Stay in inventory — create immediately (no Builder page)
       createContainerInInventory(type, validItems);
       return;
     }
 
-    // Mixed Bundle â€” defective allowed
+    // Mixed Bundle — defective allowed
     const validItems = selectedItemsList.filter(
       (i) => i.status === ItemStatus.IN_STOCK || i.status === ItemStatus.ORDERED
     );
@@ -3073,7 +3073,7 @@ const InventoryList: React.FC<Props> = ({
             <div
               className={`flex flex-wrap ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-start min-w-0 max-w-full`}
             >
-              {/* Physical presence: present â†’ lost â†’ defective â†’ unknown */}
+              {/* Physical presence: present → lost → defective → unknown */}
               {(() => {
                 const cycleState = getItemPresenceCycleState(item);
                 return (
@@ -3091,12 +3091,12 @@ const InventoryList: React.FC<Props> = ({
                 }`}
                 title={
                   cycleState === 'present'
-                    ? 'Present (click â†’ lost)'
+                    ? 'Present (click → lost)'
                     : cycleState === 'lost'
-                    ? 'Lost (click â†’ defective)'
+                    ? 'Lost (click → defective)'
                     : cycleState === 'defective'
-                    ? 'Defective (click â†’ clear)'
-                    : '? Presence not set â€” click to mark present / lost / defective'
+                    ? 'Defective (click → clear)'
+                    : '? Presence not set — click to mark present / lost / defective'
                 }
               >
                 {cycleState === 'defective' ? (
@@ -3132,7 +3132,7 @@ const InventoryList: React.FC<Props> = ({
                     ? 'border-blue-300 bg-blue-50 text-blue-600 hover:bg-blue-100'
                     : 'border-slate-200 bg-white text-slate-500 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50/50'
                 }`}
-                title={qc.ok ? 'Photos OK â€” click to add more' : `Photo QC: ${qc.label}`}
+                title={qc.ok ? 'Photos OK — click to add more' : `Photo QC: ${qc.label}`}
               >
                 <Camera size={13} strokeWidth={2.25} />
               </button>
@@ -3172,12 +3172,12 @@ const InventoryList: React.FC<Props> = ({
                 }`}
                 title={
                   bgBusy
-                    ? `Generating in backgroundâ€¦ ${bgJob?.progress || ''}`.trim()
+                    ? `Generating in background… ${bgJob?.progress || ''}`.trim()
                     : confirming
-                      ? `Already has ${cardCount} AI card${cardCount === 1 ? '' : 's'} â€” confirm to generate more`
+                      ? `Already has ${cardCount} AI card${cardCount === 1 ? '' : 's'} — confirm to generate more`
                       : hasCards
-                        ? `Already has ${cardCount} AI card${cardCount === 1 ? '' : 's'} in gallery â€” click to confirm another run`
-                        : 'Generate AI cards in background â€” saved to card gallery (come back later to pick)'
+                        ? `Already has ${cardCount} AI card${cardCount === 1 ? '' : 's'} in gallery — click to confirm another run`
+                        : 'Generate AI cards in background — saved to card gallery (come back later to pick)'
                 }
               >
                 {bgBusy ? (
@@ -3210,7 +3210,7 @@ const InventoryList: React.FC<Props> = ({
                       queueBackgroundAiCards(item);
                     }}
                     className="p-1 rounded-md bg-emerald-600 text-white hover:bg-emerald-700"
-                    title="Yes â€” generate more cards"
+                    title="Yes — generate more cards"
                   >
                     <Check size={12} strokeWidth={2.75} />
                   </button>
@@ -3221,7 +3221,7 @@ const InventoryList: React.FC<Props> = ({
                       setAiCardRegenConfirmId(null);
                     }}
                     className="p-1 rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-rose-600"
-                    title="No â€” keep existing cards"
+                    title="No — keep existing cards"
                   >
                     <X size={12} strokeWidth={2.75} />
                   </button>
@@ -3251,7 +3251,7 @@ const InventoryList: React.FC<Props> = ({
                 }`}
                 title={
                   ebayPriceSynced
-                    ? `eBay storefront price synced${item.storePrice != null ? ` (â‚¬${formatEUR(item.storePrice)})` : ''}${item.ebayListingId ? ` Â· listing ${item.ebayListingId}` : ''} â€” click to refresh`
+                    ? `eBay storefront price synced${item.storePrice != null ? ` (€${formatEUR(item.storePrice)})` : ''}${item.ebayListingId ? ` · listing ${item.ebayListingId}` : ''} — click to refresh`
                     : 'Fetch live storefront price from your eBay listing (rounded to .99)'
                 }
               >
@@ -3264,7 +3264,7 @@ const InventoryList: React.FC<Props> = ({
                         : 'bg-slate-200 text-slate-600'
                   }`}
                 >
-                  â‚¬
+                  €
                 </span>
               </button>
                 );
@@ -3306,14 +3306,14 @@ const InventoryList: React.FC<Props> = ({
                 }`}
                 title={
                   item.ebayOrderId
-                    ? `eBay order linked: ${item.ebayOrderId} â€” click to search cached orders again`
+                    ? `eBay order linked: ${item.ebayOrderId} — click to search cached orders again`
                     : 'Search cached eBay orders (since Feb 2025) for this item'
                 }
               >
                 <Receipt size={13} strokeWidth={2.25} />
               </button>
 
-              {/* One-click jump to the source chat / order â€” the whole point of the links. */}
+              {/* One-click jump to the source chat / order — the whole point of the links. */}
               {(() => {
                 const links = resolveItemSourceLinks(item);
                 const primary = links.chat || links.order || links.profile;
@@ -3325,7 +3325,7 @@ const InventoryList: React.FC<Props> = ({
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
                     className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors`}
-                    title={`${primary.title} â†—`}
+                    title={`${primary.title} ↗`}
                   >
                     {primary.kind === 'chat' ? (
                       <MessageSquare size={13} strokeWidth={2.25} />
@@ -3338,7 +3338,7 @@ const InventoryList: React.FC<Props> = ({
                 );
               })()}
 
-              {/* Quick Bundle / Mixed Bundle / add-to-PC from Flags â€” any category */}
+              {/* Quick Bundle / Mixed Bundle / add-to-PC from Flags — any category */}
               {(() => {
                 const parentOfItem = resolveParentContainer(item, containersById, containerByChildId);
                 const soldLike =
@@ -3360,7 +3360,7 @@ const InventoryList: React.FC<Props> = ({
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      // Parts already inside a container â†’ add more to that parent
+                      // Parts already inside a container → add more to that parent
                       const seed =
                         parentOfItem && !item.isPC && !item.isBundle ? parentOfItem : item;
                       openQuickBundlePanel(seed);
@@ -3373,7 +3373,7 @@ const InventoryList: React.FC<Props> = ({
                           ? 'Add parts to this PC'
                           : item.isBundle
                             ? 'Add parts to this bundle'
-                            : 'Turn into Bundle / Mixed Bundle â€” search any category'
+                            : 'Turn into Bundle / Mixed Bundle — search any category'
                     }
                   >
                     <Plus size={13} strokeWidth={2.5} />
@@ -3381,7 +3381,7 @@ const InventoryList: React.FC<Props> = ({
                 );
               })()}
 
-              {/* Bulk import batch â€” open dedicated status-agnostic view */}
+              {/* Bulk import batch — open dedicated status-agnostic view */}
               {(() => {
                 const itemBulkId = resolveItemBulkImportId(item);
                 if (!itemBulkId) return null;
@@ -3397,7 +3397,7 @@ const InventoryList: React.FC<Props> = ({
                         ? 'border-violet-400 bg-violet-100 text-violet-800'
                         : 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 hover:border-violet-300'
                     }`}
-                    title="Bulk import â€” show all from this batch (including sold)"
+                    title="Bulk import — show all from this batch (including sold)"
                   >
                     <Layers size={13} strokeWidth={2.25} />
                   </button>
@@ -3413,7 +3413,7 @@ const InventoryList: React.FC<Props> = ({
                     handleRebuildContainerTitle(item);
                   }}
                   className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border transition-colors border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 hover:border-sky-300`}
-                  title="Rebuild title from parts (RAM kits, CPU, moboâ€¦)"
+                  title="Rebuild title from parts (RAM kits, CPU, mobo…)"
                 >
                   <RotateCw size={13} strokeWidth={2.25} />
                 </button>
@@ -3464,7 +3464,7 @@ const InventoryList: React.FC<Props> = ({
           const raw = isSoldContainerRow
             ? child.sellDate || child.containerSoldDate || child.buyDate
             : child.buyDate || child.sellDate;
-          return raw ? new Date(raw).toLocaleDateString() : 'â€”';
+          return raw ? new Date(raw).toLocaleDateString() : '—';
         };
         const parentContainer = resolveParentContainer(item, containersById, containerByChildId);
         const parentKind = getContainerKind(parentContainer);
@@ -3494,7 +3494,7 @@ const InventoryList: React.FC<Props> = ({
                   }`}
                   title={
                     hasUserPhotos
-                      ? `${userPhotoCount} photo${userPhotoCount === 1 ? '' : 's'} â€” click to add more`
+                      ? `${userPhotoCount} photo${userPhotoCount === 1 ? '' : 's'} — click to add more`
                       : 'Click to add photos'
                   }
                   onClick={(e) => {
@@ -3597,15 +3597,15 @@ const InventoryList: React.FC<Props> = ({
                          const ebOk = Boolean(item.listedOnEbay);
                          const viaKit = Boolean(item.listedViaParent);
                          const syncHint = item.listingPresenceSyncedAt
-                           ? ` Â· synced ${item.listingPresenceSyncedAt.slice(0, 16).replace('T', ' ')}`
+                           ? ` · synced ${item.listingPresenceSyncedAt.slice(0, 16).replace('T', ' ')}`
                            : '';
                          const kaLive =
                            item.liveKleinListPrice != null
-                             ? ` Â· live â‚¬${Math.round(item.liveKleinListPrice)}`
+                             ? ` · live €${Math.round(item.liveKleinListPrice)}`
                              : '';
                          const ebLive =
                            item.liveEbayListPrice != null
-                             ? ` Â· live â‚¬${Math.round(item.liveEbayListPrice)}`
+                             ? ` · live €${Math.round(item.liveEbayListPrice)}`
                              : '';
                          const sugg = suggestedEbayById.get(item.id) || null;
                          const analyzer = computePriceAnalyzer(item, sugg, items);
@@ -3617,7 +3617,7 @@ const InventoryList: React.FC<Props> = ({
                              return 'bg-amber-50 text-amber-950 border-amber-300';
                            if (action === 'raise')
                              return 'bg-sky-50 text-sky-950 border-sky-300';
-                           // Recommended sell + OK: option 3 â€” KA green, eBay orange
+                           // Recommended sell + OK: option 3 — KA green, eBay orange
                            if (channel === 'KA')
                              return 'bg-emerald-100 text-emerald-950 border-emerald-400';
                            return 'bg-orange-100 text-orange-800 border-orange-300';
@@ -3629,12 +3629,12 @@ const InventoryList: React.FC<Props> = ({
                            live?: number;
                          }) => {
                            if (ch.action === 'drop')
-                             return `â†“${ch.channel} â‚¬${Math.round(ch.live || 0)}â†’â‚¬${Math.round(ch.suggest)}`;
+                             return `↓${ch.channel} €${Math.round(ch.live || 0)}→€${Math.round(ch.suggest)}`;
                            if (ch.action === 'raise')
-                             return `â†‘${ch.channel} â‚¬${Math.round(ch.live || 0)}â†’â‚¬${Math.round(ch.suggest)}`;
+                             return `↑${ch.channel} €${Math.round(ch.live || 0)}→€${Math.round(ch.suggest)}`;
                            if (ch.action === 'ok')
-                             return `OK ${ch.channel} â‚¬${Math.round(ch.live || ch.suggest)}`;
-                           return `${ch.channel} â‚¬${Math.round(ch.suggest)}`;
+                             return `OK ${ch.channel} €${Math.round(ch.live || ch.suggest)}`;
+                           return `${ch.channel} €${Math.round(ch.suggest)}`;
                          };
                          const saveSuggest = () => {
                            if (!analyzer) return;
@@ -3652,7 +3652,7 @@ const InventoryList: React.FC<Props> = ({
                              { skipActionLog: true }
                            );
                            setToast(
-                             `Saved price target Â· Day ${fresh.daysHeld ?? analyzer.daysHeld} Â· ${Math.round((fresh.targetMargin ?? analyzer.targetMarginPct / 100) * 100)}% Â· KA â‚¬${formatEUR(fresh.kleinList)} Â· EB â‚¬${formatEUR(fresh.ebayList)}`
+                             `Saved price target · Day ${fresh.daysHeld ?? analyzer.daysHeld} · ${Math.round((fresh.targetMargin ?? analyzer.targetMarginPct / 100) * 100)}% · KA €${formatEUR(fresh.kleinList)} · EB €${formatEUR(fresh.ebayList)}`
                            );
                            setTimeout(() => setToast(null), 2600);
                          };
@@ -3662,7 +3662,7 @@ const InventoryList: React.FC<Props> = ({
                                className="flex items-center gap-1.5 flex-wrap leading-tight"
                                title={
                                  analyzer
-                                   ? `Age-aware price from buy â‚¬${formatEUR(analyzer.buy || item.buyPrice || 0)}. Floor 30%; age target decays 60%â†’30%. ${analyzer.marginReason ? `Now: ${analyzer.marginReason}.` : ''} Click price chips to save.`
+                                   ? `Age-aware price from buy €${formatEUR(analyzer.buy || item.buyPrice || 0)}. Floor 30%; age target decays 60%→30%. ${analyzer.marginReason ? `Now: ${analyzer.marginReason}.` : ''} Click price chips to save.`
                                    : undefined
                                }
                              >
@@ -3670,7 +3670,7 @@ const InventoryList: React.FC<Props> = ({
                                  type="button"
                                  title={
                                    item.saleReady
-                                     ? 'Sale ready â€” watched for delisting / maybe-sold. Click to unwatch.'
+                                     ? 'Sale ready — watched for delisting / maybe-sold. Click to unwatch.'
                                      : 'Mark sale ready when photos/specs are done.'
                                  }
                                  onClick={() =>
@@ -3693,7 +3693,7 @@ const InventoryList: React.FC<Props> = ({
                                  title={
                                    kaOk
                                      ? `Listed on Kleinanzeigen${kaLive}${syncHint}`
-                                     : `Not posted on Kleinanzeigen${syncHint || ' Â· run Listings sync in Settings'}`
+                                     : `Not posted on Kleinanzeigen${syncHint || ' · run Listings sync in Settings'}`
                                  }
                                  onClick={() => {
                                    if (item.kleinanzeigenListingUrl) {
@@ -3745,7 +3745,7 @@ const InventoryList: React.FC<Props> = ({
                                >
                                  KA
                                  {item.liveKleinListPrice != null && kaOk
-                                   ? ` â‚¬${Math.round(item.liveKleinListPrice)}`
+                                   ? ` €${Math.round(item.liveKleinListPrice)}`
                                    : ''}
                                </button>
                                <button
@@ -3753,7 +3753,7 @@ const InventoryList: React.FC<Props> = ({
                                  title={
                                    ebOk
                                      ? `Listed on eBay${ebLive}${syncHint}`
-                                     : `Not posted on eBay${syncHint || ' Â· run Listings sync in Settings'}`
+                                     : `Not posted on eBay${syncHint || ' · run Listings sync in Settings'}`
                                  }
                                  onClick={() => {
                                    if (item.ebayListingId) {
@@ -3784,7 +3784,7 @@ const InventoryList: React.FC<Props> = ({
                                >
                                  EB
                                  {item.liveEbayListPrice != null && ebOk
-                                   ? ` â‚¬${Math.round(item.liveEbayListPrice)}`
+                                   ? ` €${Math.round(item.liveEbayListPrice)}`
                                    : ''}
                                </button>
                                {viaKit && (kaOk || ebOk) && (
@@ -3795,17 +3795,17 @@ const InventoryList: React.FC<Props> = ({
                                {analyzer && (
                                  <>
                                    <span className="text-[11px] font-bold text-slate-500 tabular-nums">
-                                     d{analyzer.daysHeld} Â· {analyzer.targetMarginPct}%
+                                     d{analyzer.daysHeld} · {analyzer.targetMarginPct}%
                                      {analyzer.buy > 0
-                                       ? ` Â· â‚¬${formatEUR(analyzer.buy)}`
+                                       ? ` · €${formatEUR(analyzer.buy)}`
                                        : ''}
                                    </span>
                                    {analyzer.minKlein > 0 && analyzer.minEbay > 0 && (
                                      <span
                                        className="inline-flex items-center px-1.5 py-0.5 rounded border border-rose-200 bg-rose-50 text-[11px] font-black uppercase text-rose-900 tabular-nums"
-                                       title={`Hard floor ${analyzer.minMarginPct}%: KA â‚¬${formatEUR(analyzer.minKlein)} Â· EB â‚¬${formatEUR(analyzer.minEbay)}`}
+                                       title={`Hard floor ${analyzer.minMarginPct}%: KA €${formatEUR(analyzer.minKlein)} · EB €${formatEUR(analyzer.minEbay)}`}
                                      >
-                                       min â‚¬{Math.round(analyzer.minKlein)}/â‚¬
+                                       min €{Math.round(analyzer.minKlein)}/€
                                        {Math.round(analyzer.minEbay)}
                                      </span>
                                    )}
@@ -3895,7 +3895,7 @@ const InventoryList: React.FC<Props> = ({
                         </span>
                       )}
                       {item.specs && Object.keys(item.specs).length > 0 && (
-                         <span className="inline-flex items-center gap-1 text-emerald-600" title="Tech specs filled â€” open to edit or re-parse">
+                         <span className="inline-flex items-center gap-1 text-emerald-600" title="Tech specs filled — open to edit or re-parse">
                             <ListChecks size={12} className="shrink-0" />
                             <span className="text-[9px] font-bold uppercase text-emerald-600">Specs</span>
                          </span>
@@ -3904,19 +3904,19 @@ const InventoryList: React.FC<Props> = ({
                       {item.isBundle && (
                         <span className="inline-flex items-center gap-0.5 text-[9px] bg-violet-600 text-white px-1.5 py-0.5 rounded font-black uppercase shadow-sm shadow-violet-200/80">
                           <Layers size={9} className="shrink-0" /> Bundle
-                          {childItems.length > 0 ? ` Â· ${childItems.length}` : ''}
+                          {childItems.length > 0 ? ` · ${childItems.length}` : ''}
                         </span>
                       )}
                       {item.isPC && (
                         <span className="inline-flex items-center gap-0.5 text-[9px] bg-indigo-600 text-white px-1.5 py-0.5 rounded font-black uppercase shadow-sm shadow-indigo-200/80">
                           <Monitor size={9} className="shrink-0" /> PC Build
-                          {childItems.length > 0 ? ` Â· ${childItems.length}` : ''}
+                          {childItems.length > 0 ? ` · ${childItems.length}` : ''}
                         </span>
                       )}
                       {!item.isPC && !item.isBundle && isInventoryContainer(item) && (
                         <span className="inline-flex items-center gap-0.5 text-[9px] bg-violet-600 text-white px-1.5 py-0.5 rounded font-black uppercase shadow-sm shadow-violet-200/80">
                           <Package size={9} className="shrink-0" /> Container
-                          {item.componentIds?.length ? ` Â· ${item.componentIds.length}` : ''}
+                          {item.componentIds?.length ? ` · ${item.componentIds.length}` : ''}
                         </span>
                       )}
                       {isContainerMember(item) && !showMembershipBadge && (
@@ -3933,7 +3933,7 @@ const InventoryList: React.FC<Props> = ({
                       {showFinancials && isMissingExplicitSalePlatform(item) && (
                         <span
                           className="inline-flex items-center gap-0.5 text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-black uppercase"
-                          title="Platform not set â€” choose Sold on in the row or use bulk edit"
+                          title="Platform not set — choose Sold on in the row or use bulk edit"
                         >
                           <AlertTriangle size={9} className="shrink-0" /> No platform
                         </span>
@@ -3948,10 +3948,10 @@ const InventoryList: React.FC<Props> = ({
                             item.buyPaymentType ? `Paid with: ${item.buyPaymentType}` : null,
                           ]
                             .filter(Boolean)
-                            .join(' Â· ')}
+                            .join(' · ')}
                         >
                           {formatPlatformBoughtLabel(item.platformBought) || 'Bought'}
-                          {item.buyPaymentType ? ` Â· ${item.buyPaymentType}` : ''}
+                          {item.buyPaymentType ? ` · ${item.buyPaymentType}` : ''}
                         </span>
                       )}
                       <span className="text-[10px] text-slate-400 font-bold uppercase truncate">{item.vendor}</span>
@@ -3973,15 +3973,15 @@ const InventoryList: React.FC<Props> = ({
                                 ? 'text-slate-600 bg-slate-50 px-2 py-1 border-slate-100 hover:bg-slate-100 hover:border-slate-200'
                                 : 'text-indigo-800 bg-indigo-50 px-2 py-1 border-indigo-200 hover:bg-indigo-100'
                             }`}
-                            title="Open buyer & eBay order editor â€” paste order ID, upload screenshot for AI parse, or type manually"
+                            title="Open buyer & eBay order editor — paste order ID, upload screenshot for AI parse, or type manually"
                           >
                             {hasBuyerInfo ? (
                               <>
                                 <Info size={10} className="text-slate-400 shrink-0" />
                                 <span className="truncate max-w-[14rem]">
                                   {item.customer?.name || 'Buyer'}
-                                  {item.ebayUsername ? ` Â· eBay: ${item.ebayUsername}` : ''}
-                                  {item.ebayOrderId ? ` Â· #${item.ebayOrderId}` : ''}
+                                  {item.ebayUsername ? ` · eBay: ${item.ebayUsername}` : ''}
+                                  {item.ebayOrderId ? ` · #${item.ebayOrderId}` : ''}
                                 </span>
                               </>
                             ) : (
@@ -4015,23 +4015,23 @@ const InventoryList: React.FC<Props> = ({
                           item.ebayOrderId ? `Order ID: ${item.ebayOrderId}` : null,
                         ]
                           .filter(Boolean)
-                          .join(' â€¢ ')}
+                          .join(' • ')}
                       >
                         <Info size={10} className="text-slate-400" />
                         <span className="truncate">
                           {item.customer?.name || item.giftRecipient || 'Buyer'}
-                          {item.ebayUsername ? ` Â· eBay: ${item.ebayUsername}` : ''}
-                          {item.ebayOrderId ? ` Â· #${item.ebayOrderId}` : ''}
+                          {item.ebayUsername ? ` · eBay: ${item.ebayUsername}` : ''}
+                          {item.ebayOrderId ? ` · #${item.ebayOrderId}` : ''}
                         </span>
                       </p>
                    )}
                    {item.specs && Object.keys(item.specs).length > 0 && (
-                      <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-snug truncate pb-0.5" title={Object.entries(item.specs).map(([k, v]) => `${k}: ${v}`).join(' â€¢ ')}>
-                         {Object.entries(item.specs).slice(0, 4).map(([k, v]) => `${k}: ${v}`).join(' Â· ')}
+                      <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-snug truncate pb-0.5" title={Object.entries(item.specs).map(([k, v]) => `${k}: ${v}`).join(' • ')}>
+                         {Object.entries(item.specs).slice(0, 4).map(([k, v]) => `${k}: ${v}`).join(' · ')}
                       </p>
                    )}
                    {compatibleCountByItemId.get(item.id) != null && (
-                      <p className="text-[9px] text-blue-600 font-bold mt-1 flex items-center gap-1" title="Compatible parts in inventory â€” open item to see list">
+                      <p className="text-[9px] text-blue-600 font-bold mt-1 flex items-center gap-1" title="Compatible parts in inventory — open item to see list">
                          <Layers size={10} /> Works with {compatibleCountByItemId.get(item.id)} item{compatibleCountByItemId.get(item.id) === 1 ? '' : 's'}
                       </p>
                    )}
@@ -4079,7 +4079,7 @@ const InventoryList: React.FC<Props> = ({
                           onUpdate(updates);
                           setToast(
                             updates.some((u) => (u.isBundle || u.isPC) && u.componentIds)
-                              ? `Updated Â· ${updates.find((u) => u.isBundle || u.isPC)?.name || 'saved'}`
+                              ? `Updated · ${updates.find((u) => u.isBundle || u.isPC)?.name || 'saved'}`
                               : 'Bundle saved'
                           );
                           setTimeout(() => setToast(null), 2200);
@@ -4126,13 +4126,13 @@ const InventoryList: React.FC<Props> = ({
                                 </span>
                                 <span className="text-[10px] font-semibold text-slate-500 shrink-0 tabular-nums flex items-center gap-1">
                                   {!isSoldContainerRow && child.buyPrice != null && (
-                                    <span className="text-slate-600">â‚¬{formatEUR(child.buyPrice)}</span>
+                                    <span className="text-slate-600">€{formatEUR(child.buyPrice)}</span>
                                   )}
                                   {isSoldContainerRow && (
                                     <>
-                                      <span className="text-slate-500">â‚¬{formatEUR(child.buyPrice || 0)}</span>
+                                      <span className="text-slate-500">€{formatEUR(child.buyPrice || 0)}</span>
                                       <span className="text-slate-400">/</span>
-                                      <span className="text-slate-700">â‚¬{formatEUR(child.sellPrice || 0)}</span>
+                                      <span className="text-slate-700">€{formatEUR(child.sellPrice || 0)}</span>
                                       {childProfit != null && (
                                         <span
                                           className={`${
@@ -4166,7 +4166,7 @@ const InventoryList: React.FC<Props> = ({
                                         setItemToSell(child);
                                       }}
                                       className="shrink-0 p-1 rounded-md text-emerald-600 hover:bg-emerald-50 hover:text-emerald-800 transition-colors"
-                                      title="Mark this part sold â€” leaves the group"
+                                      title="Mark this part sold — leaves the group"
                                       aria-label={`Mark ${child.name} sold`}
                                     >
                                       <ShoppingBag size={12} strokeWidth={2.25} />
@@ -4179,7 +4179,7 @@ const InventoryList: React.FC<Props> = ({
                                       handleRemoveFromContainer(child, item);
                                     }}
                                     className="shrink-0 p-1 rounded-md text-red-500 hover:bg-red-50 hover:text-red-700 transition-colors"
-                                    title="Remove from container â€” back to active inventory"
+                                    title="Remove from container — back to active inventory"
                                     aria-label={`Remove ${child.name} from container`}
                                   >
                                     <Trash2 size={12} strokeWidth={2.25} />
@@ -4193,15 +4193,15 @@ const InventoryList: React.FC<Props> = ({
                            <p className={`px-2 pt-0.5 text-[9px] font-bold uppercase tracking-wider ${
                              item.isPC ? 'text-indigo-600/90' : 'text-violet-600/90'
                            }`}>
-                             Total cost â‚¬{formatEUR(item.buyPrice)} Â· {childItems.length} parts
+                             Total cost €{formatEUR(item.buyPrice)} · {childItems.length} parts
                            </p>
                          )}
                          {isSoldContainerRow && (
                            <p className={`px-2 pt-0.5 text-[9px] font-bold uppercase tracking-wider ${
                              item.isPC ? 'text-indigo-600/90' : 'text-violet-600/90'
                            }`}>
-                             Split sell â‚¬{formatEUR(childItems.reduce((s, c) => s + (Number(c.sellPrice) || 0), 0))} Â·
-                             total cost â‚¬{formatEUR(childItems.reduce((s, c) => s + (Number(c.buyPrice) || 0), 0))} Â·
+                             Split sell €{formatEUR(childItems.reduce((s, c) => s + (Number(c.sellPrice) || 0), 0))} ·
+                             total cost €{formatEUR(childItems.reduce((s, c) => s + (Number(c.buyPrice) || 0), 0))} ·
                              {childItems.length} parts
                            </p>
                          )}
@@ -4237,9 +4237,9 @@ const InventoryList: React.FC<Props> = ({
         const tradeSourceForStatus = resolveTradeSourceItem(item, itemsById);
         const statusTitle =
           item.status === ItemStatus.TRADED && tradeReceivedForStatus.length > 0
-            ? `Traded for: ${tradeReceivedForStatus.map((i) => i.name).join(', ')} â€” double click to change status`
+            ? `Traded for: ${tradeReceivedForStatus.map((i) => i.name).join(', ')} — double click to change status`
             : tradeSourceForStatus
-              ? `From trade: ${tradeSourceForStatus.name} â€” double click to change status`
+              ? `From trade: ${tradeSourceForStatus.name} — double click to change status`
               : 'Double click to change status';
         return (
           <td 
@@ -4307,7 +4307,7 @@ const InventoryList: React.FC<Props> = ({
                  onClick={e => e.stopPropagation()}
                />
             ) : (
-               `â‚¬${formatEUR(item.buyPrice)}`
+               `€${formatEUR(item.buyPrice)}`
             )}
           </td>
         );
@@ -4329,7 +4329,7 @@ const InventoryList: React.FC<Props> = ({
               soldContainerSell != null
                 ? 'Bundle total sell price (sum of components)'
                 : feeAmt > 0 || shipAmt > 0
-                  ? `Sold amount before marketplace fees/shipping. ${feeAmt > 0 ? `Fees âˆ’â‚¬${formatEUR(feeAmt)}` : ''}${feeAmt > 0 && shipAmt > 0 ? ' and ' : ''}${shipAmt > 0 ? `Shipping you paid âˆ’â‚¬${formatEUR(shipAmt)}` : ''} are deducted in Margin (sell âˆ’ buy âˆ’ fees âˆ’ shipping).`
+                  ? `Sold amount before marketplace fees/shipping. ${feeAmt > 0 ? `Fees −€${formatEUR(feeAmt)}` : ''}${feeAmt > 0 && shipAmt > 0 ? ' and ' : ''}${shipAmt > 0 ? `Shipping you paid −€${formatEUR(shipAmt)}` : ''} are deducted in Margin (sell − buy − fees − shipping).`
                   : 'Double click to edit'
             }
             onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, 'sellPrice', item.sellPrice || 0); }}
@@ -4348,15 +4348,15 @@ const InventoryList: React.FC<Props> = ({
                />
             ) : displaySellPrice ? (
               <div className="flex flex-col items-start leading-tight gap-0.5">
-                <span>â‚¬{formatEUR(displaySellPrice)}</span>
+                <span>€{formatEUR(displaySellPrice)}</span>
                 {feeAmt > 0 && (
                   <span className="text-[9px] font-bold text-amber-700 tabular-nums whitespace-nowrap">
-                    âˆ’â‚¬{formatEUR(feeAmt)} fees
+                    −€{formatEUR(feeAmt)} fees
                   </span>
                 )}
                 {shipAmt > 0 && (
                   <span className="text-[9px] font-bold text-sky-700 tabular-nums whitespace-nowrap">
-                    âˆ’â‚¬{formatEUR(shipAmt)} shipping
+                    −€{formatEUR(shipAmt)} shipping
                   </span>
                 )}
               </div>
@@ -4367,7 +4367,7 @@ const InventoryList: React.FC<Props> = ({
         );
       }
       case 'storePrice': {
-        // Public asking price shown on the storefront â€” deliberately separate from Sell Price
+        // Public asking price shown on the storefront — deliberately separate from Sell Price
         // (which is your internal target/realized sale price used for profit tracking).
         const isEditingStorePrice = editingCell?.itemId === item.id && editingCell?.field === 'storePrice';
         return (
@@ -4375,7 +4375,7 @@ const InventoryList: React.FC<Props> = ({
             key={id}
             className="text-left font-bold text-violet-700 cursor-pointer hover:bg-violet-50/40 transition-colors"
             style={style}
-            title="Storefront asking price. Double click to edit â€” separate from Sell Price."
+            title="Storefront asking price. Double click to edit — separate from Sell Price."
             onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, 'storePrice', item.storePrice || 0); }}
           >
             {isEditingStorePrice ? (
@@ -4391,7 +4391,7 @@ const InventoryList: React.FC<Props> = ({
                  onClick={e => e.stopPropagation()}
                />
             ) : (
-               item.storePrice ? `â‚¬${formatEUR(item.storePrice)}` : '-'
+               item.storePrice ? `€${formatEUR(item.storePrice)}` : '-'
             )}
           </td>
         );
@@ -4406,8 +4406,8 @@ const InventoryList: React.FC<Props> = ({
         const shipAmt = getItemDisplayShippingAmount(item, items);
         const feeHint =
           feeAmt > 0 || shipAmt > 0
-            ? `Profit = sell âˆ’ buy âˆ’ fees âˆ’ shipping.${feeAmt > 0 ? ` â‚¬${formatEUR(feeAmt)} marketplace fees.` : ''}${shipAmt > 0 ? ` â‚¬${formatEUR(shipAmt)} shipping you paid.` : ''}`
-            : 'Profit = sell âˆ’ buy âˆ’ fees (when recorded).';
+            ? `Profit = sell − buy − fees − shipping.${feeAmt > 0 ? ` €${formatEUR(feeAmt)} marketplace fees.` : ''}${shipAmt > 0 ? ` €${formatEUR(shipAmt)} shipping you paid.` : ''}`
+            : 'Profit = sell − buy − fees (when recorded).';
         if (item.isPC || item.isBundle) {
           if (soldContainerProfit != null) {
             return (
@@ -4418,15 +4418,15 @@ const InventoryList: React.FC<Props> = ({
                 title={`Bundle total profit (sum of component margins). ${feeHint}`}
               >
                 <div className="flex flex-col items-start leading-tight gap-0.5">
-                  <span>â‚¬{formatEUR(soldContainerProfit)}</span>
+                  <span>€{formatEUR(soldContainerProfit)}</span>
                   {feeAmt > 0 && (
                     <span className="text-[9px] font-bold text-amber-700 tabular-nums whitespace-nowrap">
-                      âˆ’â‚¬{formatEUR(feeAmt)} fees
+                      −€{formatEUR(feeAmt)} fees
                     </span>
                   )}
                   {shipAmt > 0 && (
                     <span className="text-[9px] font-bold text-sky-700 tabular-nums whitespace-nowrap">
-                      âˆ’â‚¬{formatEUR(shipAmt)} shipping
+                      −€{formatEUR(shipAmt)} shipping
                     </span>
                   )}
                 </div>
@@ -4448,15 +4448,15 @@ const InventoryList: React.FC<Props> = ({
           >
             {displayProfit != null ? (
               <div className="flex flex-col items-start leading-tight gap-0.5">
-                <span>â‚¬{formatEUR(displayProfit)}</span>
+                <span>€{formatEUR(displayProfit)}</span>
                 {feeAmt > 0 && (
                   <span className="text-[9px] font-bold text-amber-700 tabular-nums whitespace-nowrap">
-                    âˆ’â‚¬{formatEUR(feeAmt)} fees
+                    −€{formatEUR(feeAmt)} fees
                   </span>
                 )}
                 {shipAmt > 0 && (
                   <span className="text-[9px] font-bold text-sky-700 tabular-nums whitespace-nowrap">
-                    âˆ’â‚¬{formatEUR(shipAmt)} shipping
+                    −€{formatEUR(shipAmt)} shipping
                   </span>
                 )}
               </div>
@@ -4472,7 +4472,7 @@ const InventoryList: React.FC<Props> = ({
         if (!row) {
           return (
             <td key={id} className="text-left text-[10px] text-slate-300" style={style} title="Set acquisition date (or add components to bundle)">
-              â€”
+              —
             </td>
           );
         }
@@ -4481,7 +4481,7 @@ const InventoryList: React.FC<Props> = ({
             <td key={id} className="align-middle" style={style}>
               <div className="flex flex-col items-stretch gap-0.5 min-w-0" title={row.title}>
                 <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden" />
-                <span className="text-[8px] font-bold text-slate-400 text-center leading-none">â€”</span>
+                <span className="text-[8px] font-bold text-slate-400 text-center leading-none">—</span>
               </div>
             </td>
           );
@@ -4518,7 +4518,7 @@ const InventoryList: React.FC<Props> = ({
              style={style}
              title={
                item.isPC || item.isBundle
-                 ? 'Bundle/PC acquired (composition) date â€” double click to edit'
+                 ? 'Bundle/PC acquired (composition) date — double click to edit'
                  : 'Double click to edit'
              }
              onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, id, toLocalCalendarDateKey((item as any)[id]) || ''); }}
@@ -4547,7 +4547,7 @@ const InventoryList: React.FC<Props> = ({
           item.customer?.address ? `Address: ${item.customer.address}` : null,
           item.ebayUsername ? `eBay: ${item.ebayUsername}` : null,
           item.ebayOrderId ? `Order ID: ${item.ebayOrderId}` : null,
-        ].filter(Boolean).join(' â€¢ ') : undefined;
+        ].filter(Boolean).join(' • ') : undefined;
         const isEditingDate = editingCell?.itemId === item.id && editingCell?.field === id;
         
         const missing = isSoldOrTraded ? isMissingExplicitSalePlatform(item) : false;
@@ -4580,7 +4580,7 @@ const InventoryList: React.FC<Props> = ({
                        {missing ? (
                          <div className="flex flex-col items-end gap-1 mt-1" onClick={e => e.stopPropagation()}>
                            <div className="flex items-center gap-1 scale-90 origin-right">
-                             <span title="Platform not set â€” pick where this was sold">
+                             <span title="Platform not set — pick where this was sold">
                                <AlertTriangle size={12} className="text-amber-500 shrink-0" />
                              </span>
                              <SalePlatformQuickPickButtons
@@ -4605,7 +4605,7 @@ const InventoryList: React.FC<Props> = ({
                                backgroundPosition: 'right 0.15rem center',
                              }}
                            >
-                             <option value="">â€” Sold On â€”</option>
+                             <option value="">— Sold On —</option>
                              {SALE_PLATFORM_OPTIONS.map((opt) => (
                                <option key={opt.value} value={opt.value}>{opt.label}</option>
                              ))}
@@ -4631,7 +4631,7 @@ const InventoryList: React.FC<Props> = ({
         );
       }
       case 'actions':
-        // Merged into Flags â€” never rendered (column always hidden).
+        // Merged into Flags — never rendered (column always hidden).
         return null;
       default: return null;
     }
@@ -4841,7 +4841,7 @@ const InventoryList: React.FC<Props> = ({
       if (updated.length) {
         onUpdate(updated);
         const priceNote = options?.ebayMatch
-          ? ` Â· storefront â‚¬${formatEUR(options.ebayMatch.roundedPrice)} from eBay`
+          ? ` · storefront €${formatEUR(options.ebayMatch.roundedPrice)} from eBay`
           : '';
         setToast(
           `Added ${prepared.length} photo${prepared.length === 1 ? '' : 's'} to ${updated.length} item${updated.length === 1 ? '' : 's'}${priceNote}`
@@ -4916,7 +4916,7 @@ const InventoryList: React.FC<Props> = ({
       { id: 'excel', label: 'Export Excel', icon: <FileSpreadsheet size={16} />, onClick: exportExcel, variant: 'primary' },
       {
         id: 'aidesc',
-        label: bulkGenerateDescriptions ? bulkGenerateProgress || 'Generatingâ€¦' : 'AI descriptions',
+        label: bulkGenerateDescriptions ? bulkGenerateProgress || 'Generating…' : 'AI descriptions',
         icon: bulkGenerateDescriptions ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />,
         onClick: () => handleBulkGenerateDescriptions(),
         variant: 'violet',
@@ -5011,25 +5011,25 @@ const InventoryList: React.FC<Props> = ({
                <div className="min-w-0 flex-1">
                  <p className="font-bold text-violet-950 truncate">
                    Bulk batch
-                   {bulkImportRecord?.label ? ` Â· ${bulkImportRecord.label}` : ''}
+                   {bulkImportRecord?.label ? ` · ${bulkImportRecord.label}` : ''}
                  </p>
                  <p className="text-[11px] font-semibold text-violet-800/80">
                    {bulkImportRecord
-                     ? `${bulkImportSourceLabel(bulkImportRecord.source)} Â· ${bulkMembers.length} children Â· â‚¬${formatEUR(bulkImportRecord.totalCost || 0)}`
+                     ? `${bulkImportSourceLabel(bulkImportRecord.source)} · ${bulkMembers.length} children · €${formatEUR(bulkImportRecord.totalCost || 0)}`
                      : 'Batch view'}
                    {bulkImportCounts
-                     ? ` Â· ${bulkImportCounts.inStock} in stock Â· ${bulkImportCounts.sold} sold`
+                     ? ` · ${bulkImportCounts.inStock} in stock · ${bulkImportCounts.sold} sold`
                      : ''}
                    {bulkImportCounts && bulkImportCounts.missing > 0
-                     ? ` Â· ${bulkImportCounts.missing} missing`
+                     ? ` · ${bulkImportCounts.missing} missing`
                      : ''}
-                   {' Â· includes sold'}
+                   {' · includes sold'}
                  </p>
                </div>
                {bulkImportRecord && onUpdateBulkImport && (
                  <>
                    <label className="inline-flex items-center gap-1 text-[10px] font-bold text-violet-800">
-                     Total â‚¬
+                     Total €
                      <input
                        type="text"
                        inputMode="decimal"
@@ -5094,7 +5094,7 @@ const InventoryList: React.FC<Props> = ({
                          value={bulkNewName}
                          onChange={(e) => setBulkNewName(e.target.value)}
                          className="mt-0.5 w-full px-2 py-1 rounded-md border border-slate-200 text-xs font-semibold"
-                         placeholder="Forgotten itemâ€¦"
+                         placeholder="Forgotten item…"
                        />
                      </label>
                      <label className="text-[10px] font-bold text-slate-500">
@@ -5130,7 +5130,7 @@ const InventoryList: React.FC<Props> = ({
                        </select>
                      </label>
                      <label className="text-[10px] font-bold text-slate-500 w-20">
-                       Manual â‚¬
+                       Manual €
                        <input
                          value={bulkNewManualCost}
                          onChange={(e) => setBulkNewManualCost(e.target.value)}
@@ -5155,7 +5155,7 @@ const InventoryList: React.FC<Props> = ({
                        className="flex items-center gap-2 text-[11px] font-semibold text-slate-700 pl-2 border-l-2 border-violet-300"
                      >
                        <span className="truncate flex-1 min-w-0">{m.name}</span>
-                       <span className="shrink-0 text-slate-500">â‚¬{formatEUR(m.buyPrice || 0)}</span>
+                       <span className="shrink-0 text-slate-500">€{formatEUR(m.buyPrice || 0)}</span>
                        {onUpdateBulkImport && (
                          <button
                            type="button"
@@ -5177,7 +5177,7 @@ const InventoryList: React.FC<Props> = ({
            </div>
          )}
 
-         {/* Compact phone chrome â€” hide dense desktop toolbar below lg */}
+         {/* Compact phone chrome — hide dense desktop toolbar below lg */}
          <div className="lg:hidden space-y-1.5">
            <div className="flex items-center gap-1.5">
              <div className="flex flex-1 rounded-lg border border-slate-200 bg-white p-0.5">
@@ -5205,7 +5205,7 @@ const InventoryList: React.FC<Props> = ({
                  className={`flex-1 inline-flex items-center justify-center gap-1 px-1.5 py-2 rounded-md text-[11px] font-black uppercase ${
                    statusFilter === 'PURCHASES' ? 'bg-slate-900 text-white' : 'text-slate-600'
                  }`}
-                 title="Pending eBay and Kleinanzeigen deals â€” buys and sells"
+                 title="Pending eBay and Kleinanzeigen deals — buys and sells"
                >
                  <Inbox size={13} /> Inbox
                  {purchasesView.openCount > 0 && (
@@ -5257,7 +5257,7 @@ const InventoryList: React.FC<Props> = ({
                type="button"
                onClick={() => navigate('/panel/bulk-imports')}
                className="shrink-0 inline-flex items-center gap-1 px-2.5 py-2 rounded-lg border border-violet-200 bg-violet-50 text-[11px] font-black uppercase text-violet-900"
-               title="Bulk import / parse history â€” reopen a batch"
+               title="Bulk import / parse history — reopen a batch"
              >
                <Layers size={13} />
                Imports
@@ -5274,8 +5274,8 @@ const InventoryList: React.FC<Props> = ({
                className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-slate-900/15"
                placeholder={
                  statusFilter === 'PURCHASES'
-                   ? 'Search purchasesâ€¦'
-                   : 'Search stock, seller profileâ€¦'
+                   ? 'Search purchases…'
+                   : 'Search stock, seller profile…'
                }
                value={searchTerm}
                onChange={(e) => setSearchTerm(e.target.value)}
@@ -5309,7 +5309,7 @@ const InventoryList: React.FC<Props> = ({
            <div className="flex items-center justify-between gap-2 px-0.5">
              <span className="text-[11px] font-semibold text-slate-500">
                {listCountLabel}
-               {statusFilter !== 'PURCHASES' && categoryFilter !== 'ALL' ? ` Â· ${categoryFilter}` : ''}
+               {statusFilter !== 'PURCHASES' && categoryFilter !== 'ALL' ? ` · ${categoryFilter}` : ''}
              </span>
              {hasActiveFilters && statusFilter !== 'PURCHASES' && (
                <button type="button" onClick={clearAllFilters} className="text-[10px] font-black uppercase text-slate-500">
@@ -5386,7 +5386,7 @@ const InventoryList: React.FC<Props> = ({
                     className={`inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-black uppercase transition-all ${
                       !splitView && statusFilter === 'PURCHASES' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'
                     }`}
-                    title="Pending eBay and Kleinanzeigen deals â€” buys and sells"
+                    title="Pending eBay and Kleinanzeigen deals — buys and sells"
                   >
                     <Inbox size={12} className="shrink-0" />
                     Inbox
@@ -5435,7 +5435,7 @@ const InventoryList: React.FC<Props> = ({
                     className="py-1 pl-2 pr-6 rounded-lg border border-slate-200 bg-white text-[10px] font-semibold text-slate-600 outline-none focus:ring-2 focus:ring-slate-900/20 appearance-none bg-no-repeat bg-right"
                     style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.25rem center' }}
                   >
-                    <option value="">Moreâ€¦</option>
+                    <option value="">More…</option>
                     <option value="DRAFTS">Drafts</option>
                     <option value="ALL">All items</option>
                   </select>
@@ -5446,8 +5446,8 @@ const InventoryList: React.FC<Props> = ({
               {statusFilter === 'PURCHASES'
                 ? listCountLabel
                 : splitView
-                ? `${sortedActiveItems.length} active Â· ${sortedSoldItems.length} sold${timeFilter !== 'ALL' ? ' Â· period' : ''}`
-                : `${sortedItems.length} items${timeFilter !== 'ALL' ? ' Â· period' : ''}`}
+                ? `${sortedActiveItems.length} active · ${sortedSoldItems.length} sold${timeFilter !== 'ALL' ? ' · period' : ''}`
+                : `${sortedItems.length} items${timeFilter !== 'ALL' ? ' · period' : ''}`}
             </span>
             <div className="flex-1 min-w-0 max-w-[200px] sm:max-w-[220px] relative" ref={searchSuggestionsRef}>
                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
@@ -5457,8 +5457,8 @@ const InventoryList: React.FC<Props> = ({
                   className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-slate-900/20"
                   placeholder={
                     statusFilter === 'PURCHASES'
-                      ? 'Search purchasesâ€¦'
-                      : 'Search name, seller profile URLâ€¦'
+                      ? 'Search purchases…'
+                      : 'Search name, seller profile URL…'
                   }
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
@@ -5513,7 +5513,7 @@ const InventoryList: React.FC<Props> = ({
                          className="w-full px-3 py-2 text-left text-xs hover:bg-slate-50 flex flex-col gap-0.5 truncate"
                        >
                          <span className="font-medium text-slate-900 truncate">{it.name}</span>
-                         <span className="text-[10px] text-slate-500">{it.category}{it.subCategory ? ` Â· ${it.subCategory}` : ''}</span>
+                         <span className="text-[10px] text-slate-500">{it.category}{it.subCategory ? ` · ${it.subCategory}` : ''}</span>
                        </button>
                      ))
                    )}
@@ -5524,7 +5524,7 @@ const InventoryList: React.FC<Props> = ({
                type="button"
                onClick={() => navigate('/panel/bulk-imports')}
                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:border-slate-300"
-               title="Bulk import history â€” reopen any batch"
+               title="Bulk import history — reopen any batch"
              >
                <Layers size={14} /> Imports
                {bulkImports.length > 0 && (
@@ -5596,14 +5596,14 @@ const InventoryList: React.FC<Props> = ({
             >
                <option value="ALL">Source</option>
                <option value="AI">AI touched</option>
-               <option value="AI_UNREVIEWED">AI Â· to review</option>
+               <option value="AI_UNREVIEWED">AI · to review</option>
                <option value="MANUAL">Manual only</option>
             </select>
             {(splitView || (statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS')) && (
                <>
                   <select value={salePlatformFilter} onChange={e => setSalePlatformFilter(e.target.value)} className="py-1.5 pl-2.5 pr-7 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-slate-900/20 appearance-none bg-no-repeat bg-right min-w-[100px]" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E")`, backgroundPosition: 'right 0.35rem center' }}>
                       <option value="ALL">Platform</option>
-                      <option value={MISSING_PLATFORM_FILTER}>âš  No platform</option>
+                      <option value={MISSING_PLATFORM_FILTER}>⚠ No platform</option>
                       <option value="kleinanzeigen.de">Kleinanzeigen</option>
                       <option value="ebay.de">eBay</option>
                       <option value="In Person">In person</option>
@@ -5658,7 +5658,7 @@ const InventoryList: React.FC<Props> = ({
                           ))}
                         </div>
                         <label className="block space-y-1">
-                          <span className="text-[10px] font-bold uppercase text-slate-500">Exact â‚¬</span>
+                          <span className="text-[10px] font-bold uppercase text-slate-500">Exact €</span>
                           <input
                             type="text"
                             inputMode="decimal"
@@ -5671,7 +5671,7 @@ const InventoryList: React.FC<Props> = ({
                         </label>
                         <div className="grid grid-cols-2 gap-2">
                           <label className="block space-y-1">
-                            <span className="text-[10px] font-bold uppercase text-slate-500">Min â‚¬</span>
+                            <span className="text-[10px] font-bold uppercase text-slate-500">Min €</span>
                             <input
                               type="text"
                               inputMode="decimal"
@@ -5683,7 +5683,7 @@ const InventoryList: React.FC<Props> = ({
                             />
                           </label>
                           <label className="block space-y-1">
-                            <span className="text-[10px] font-bold uppercase text-slate-500">Max â‚¬</span>
+                            <span className="text-[10px] font-bold uppercase text-slate-500">Max €</span>
                             <input
                               type="text"
                               inputMode="decimal"
@@ -5695,7 +5695,7 @@ const InventoryList: React.FC<Props> = ({
                             />
                           </label>
                         </div>
-                        <p className="text-[10px] text-slate-500 leading-snug">Exact match allows Â±2 ct. Use Either to match sell or buy price.</p>
+                        <p className="text-[10px] text-slate-500 leading-snug">Exact match allows ±2 ct. Use Either to match sell or buy price.</p>
                         <button
                           type="button"
                           onClick={applyAmountFilterDraft}
@@ -5812,7 +5812,7 @@ const InventoryList: React.FC<Props> = ({
                                        {isNumeric && (optMin !== undefined || optMax !== undefined) && (
                                           <div className="flex items-center gap-1 mt-1.5 pt-1.5 border-t border-slate-200/50">
                                              <input type="number" placeholder={`Min ${optMin ?? ''}`} value={range?.min ?? ''} onChange={e => setSpecRangeFilters(prev => ({ ...prev, [key]: { ...prev[key], min: e.target.value === '' ? undefined : Number(e.target.value), max: prev[key]?.max } }))} className="w-12 px-1.5 py-0.5 rounded border border-slate-200 text-[10px]" />
-                                             <span className="text-slate-400 text-[10px]">â€“</span>
+                                             <span className="text-slate-400 text-[10px]">–</span>
                                              <input type="number" placeholder={`Max ${optMax ?? ''}`} value={range?.max ?? ''} onChange={e => setSpecRangeFilters(prev => ({ ...prev, [key]: { ...prev[key], min: prev[key]?.min, max: e.target.value === '' ? undefined : Number(e.target.value) } }))} className="w-12 px-1.5 py-0.5 rounded border border-slate-200 text-[10px]" />
                                              {hasRange && <button type="button" onClick={() => setSpecRangeFilters(prev => { const n = { ...prev }; delete n[key]; return n; })} className="text-[10px] font-bold text-slate-400 hover:text-red-600">Ã—</button>}
                                           </div>
@@ -5835,7 +5835,7 @@ const InventoryList: React.FC<Props> = ({
                    ['defective', 'Defekt'],
                    ['aging', '>90d'],
                    ['sale_ready', 'Sale ready'],
-                   ['sale_ready_unlisted', 'Ready Â· not listed'],
+                   ['sale_ready_unlisted', 'Ready · not listed'],
                    ['maybe_sold', 'Maybe sold'],
                    ['price_change', 'Change price'],
                  ] as const
@@ -5851,7 +5851,7 @@ const InventoryList: React.FC<Props> = ({
                    }`}
                    title={
                      id === 'sale_ready'
-                       ? 'Sale-ready watchlist. Combine with Time (This week / Month / â€¦) to track items added in a period.'
+                       ? 'Sale-ready watchlist. Combine with Time (This week / Month / …) to track items added in a period.'
                        : `Smart filter: ${label}`
                    }
                  >
@@ -5863,7 +5863,7 @@ const InventoryList: React.FC<Props> = ({
                    type="button"
                    onClick={() => setShowReadyPeriodMenu((v) => !v)}
                    className="px-2 py-1 rounded-lg border border-violet-200 bg-violet-50 text-violet-800 text-[9px] font-black uppercase tracking-wide hover:bg-violet-100 inline-flex items-center gap-1"
-                   title="Mark all in-stock items from a buy period as Ready for listing watch â€” no multi-select needed"
+                   title="Mark all in-stock items from a buy period as Ready for listing watch — no multi-select needed"
                  >
                    <ListChecks size={12} />
                    Ready by period
@@ -5872,7 +5872,7 @@ const InventoryList: React.FC<Props> = ({
                  {showReadyPeriodMenu && (
                    <div className="absolute left-0 top-full mt-1 z-40 min-w-[200px] rounded-xl border border-slate-200 bg-white shadow-lg py-1">
                      <p className="px-3 py-1.5 text-[9px] font-black uppercase tracking-wide text-slate-400">
-                       Mark Ready Â· by buy date
+                       Mark Ready · by buy date
                      </p>
                      {READY_PERIOD_OPTIONS.map((opt) => {
                        const n = readyPeriodCounts[opt.id] ?? 0;
@@ -5952,7 +5952,7 @@ const InventoryList: React.FC<Props> = ({
             )}
          </div>
 
-         {/* Desktop purchase subfilters â€” same slot height as mobile pin row */}
+         {/* Desktop purchase subfilters — same slot height as mobile pin row */}
          {statusFilter === 'PURCHASES' && (
            <div className="hidden lg:block min-h-[28px]">{purchasesView.chrome}</div>
          )}
@@ -5977,7 +5977,7 @@ const InventoryList: React.FC<Props> = ({
                )}
                {sourceFilter !== 'ALL' && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-100 text-violet-800 text-xs font-medium">
-                     {sourceFilter === 'AI' ? 'AI touched' : sourceFilter === 'AI_UNREVIEWED' ? 'AI Â· to review' : 'Manual only'}
+                     {sourceFilter === 'AI' ? 'AI touched' : sourceFilter === 'AI_UNREVIEWED' ? 'AI · to review' : 'Manual only'}
                      <button type="button" onClick={() => setSourceFilter('ALL')} className="hover:opacity-80">Ã—</button>
                   </span>
                )}
@@ -6000,12 +6000,12 @@ const InventoryList: React.FC<Props> = ({
                )}
                {Object.entries(specFilters).filter(([, v]) => v?.length).map(([k, v]) => (
                   <span key={k} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-xs font-medium">
-                     {k}: {v?.slice(0, 2).join(', ')}{(v?.length ?? 0) > 2 ? 'â€¦' : ''} <button type="button" onClick={() => setSpecFilters(prev => { const n = { ...prev }; delete n[k]; return n; })} className="hover:opacity-80">Ã—</button>
+                     {k}: {v?.slice(0, 2).join(', ')}{(v?.length ?? 0) > 2 ? '…' : ''} <button type="button" onClick={() => setSpecFilters(prev => { const n = { ...prev }; delete n[k]; return n; })} className="hover:opacity-80">Ã—</button>
                   </span>
                ))}
                {Object.entries(specRangeFilters).filter(([, r]) => r && (r.min !== undefined || r.max !== undefined)).map(([k, r]) => (
                   <span key={k} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-xs font-medium">
-                     {k}: {r?.min ?? '?'}â€“{r?.max ?? '?'} <button type="button" onClick={() => setSpecRangeFilters(prev => { const n = { ...prev }; delete n[k]; return n; })} className="hover:opacity-80">Ã—</button>
+                     {k}: {r?.min ?? '?'}–{r?.max ?? '?'} <button type="button" onClick={() => setSpecRangeFilters(prev => { const n = { ...prev }; delete n[k]; return n; })} className="hover:opacity-80">Ã—</button>
                   </span>
                ))}
             </div>
@@ -6057,7 +6057,7 @@ const InventoryList: React.FC<Props> = ({
                       ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
                       : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200 hover:border-slate-300'
                   }`}
-                  title={pin.subCategory ? `${pin.category} â€º ${pin.subCategory}` : pin.category}
+                  title={pin.subCategory ? `${pin.category} › ${pin.subCategory}` : pin.category}
                 >
                   {pin.label}
                 </button>
@@ -6092,7 +6092,7 @@ const InventoryList: React.FC<Props> = ({
                </div>
                {quickPinSpecOptions.length === 0 ? (
                  <p className="text-[10px] text-slate-500">
-                   No key spec fields on {activeQuickPin.label} items yet â€” add specs like memory type, capacity, or speed to filter here.
+                   No key spec fields on {activeQuickPin.label} items yet — add specs like memory type, capacity, or speed to filter here.
                  </p>
                ) : (
                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
@@ -6217,7 +6217,7 @@ const InventoryList: React.FC<Props> = ({
                 ['defective', 'Defekt'],
                 ['aging', '>90d'],
                 ['sale_ready', 'Sale ready'],
-                ['sale_ready_unlisted', 'Ready Â· not listed'],
+                ['sale_ready_unlisted', 'Ready · not listed'],
                 ['maybe_sold', 'Maybe sold'],
                 ['price_change', 'Change price'],
               ] as const
@@ -6316,7 +6316,7 @@ const InventoryList: React.FC<Props> = ({
               imageUrl: merged[0],
               imageUrls: merged,
             };
-            // handleUpdate expects InventoryItem[] â€” a bare object crashed with .forEach
+            // handleUpdate expects InventoryItem[] — a bare object crashed with .forEach
             await onUpdate([next]);
             setGeminiCardItem(next);
             setToast('AI product card set as main photo');
@@ -6352,7 +6352,7 @@ const InventoryList: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Shared list shells â€” only the inner items swap between Active / Sold / Purchases */}
+      {/* Shared list shells — only the inner items swap between Active / Sold / Purchases */}
       <div
         className="lg:hidden flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y custom-scrollbar px-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] space-y-1.5"
         style={{ WebkitOverflowScrolling: 'touch' }}
@@ -6429,7 +6429,7 @@ const InventoryList: React.FC<Props> = ({
           )}
       </div>
 
-      {/* Mobile Quick Bundle â€” desktop embeds the panel in the table row (hidden on phones). */}
+      {/* Mobile Quick Bundle — desktop embeds the panel in the table row (hidden on phones). */}
       {quickBundleSeed && (
         <div className="lg:hidden fixed inset-0 z-[220] flex flex-col justify-end bg-slate-900/50 backdrop-blur-[1px]">
           <button
@@ -6447,7 +6447,7 @@ const InventoryList: React.FC<Props> = ({
                 onUpdate(updates);
                 setToast(
                   updates.some((u) => (u.isBundle || u.isPC) && u.componentIds)
-                    ? `Updated Â· ${updates.find((u) => u.isBundle || u.isPC)?.name || 'saved'}`
+                    ? `Updated · ${updates.find((u) => u.isBundle || u.isPC)?.name || 'saved'}`
                     : 'Bundle saved'
                 );
                 setTimeout(() => setToast(null), 2200);
@@ -6655,7 +6655,7 @@ const InventoryList: React.FC<Props> = ({
                  if (savePurchaseDraftFromPreviewItem(updated)) {
                    purchasesView.refresh();
                    setItemToEdit(updated);
-                   setToast('Purchase draft saved â€” Confirm received to add to Active');
+                   setToast('Purchase draft saved — Confirm received to add to Active');
                    setTimeout(() => setToast(null), 2200);
                  }
                  return;
@@ -6864,7 +6864,7 @@ const InventoryList: React.FC<Props> = ({
                <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                   <div className="flex items-center gap-2">
                      <Tag size={18} className="text-amber-500"/>
-                     <h3 className="font-black text-slate-900 text-sm">eBay Sold Price â€¢ {priceSuggestModalItem.name}</h3>
+                     <h3 className="font-black text-slate-900 text-sm">eBay Sold Price • {priceSuggestModalItem.name}</h3>
                   </div>
                   <button onClick={closePriceSuggestModal} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl"><X size={18}/></button>
                </div>
@@ -6884,8 +6884,8 @@ const InventoryList: React.FC<Props> = ({
                         <div className="flex justify-between items-end">
                            <div>
                               <p className="text-[10px] font-bold text-slate-400 uppercase">Sold comps band (eBay.de)</p>
-                              <p className="text-sm font-black text-slate-700">â‚¬{formatEUR(Number(priceSuggestResult.priceLow))} â€“ â‚¬{formatEUR(Number(priceSuggestResult.priceHigh))}</p>
-                              <p className="text-2xl font-black text-emerald-600 mt-1">â‚¬{formatEUR(Number(priceSuggestResult.priceAverage))} avg</p>
+                              <p className="text-sm font-black text-slate-700">€{formatEUR(Number(priceSuggestResult.priceLow))} – €{formatEUR(Number(priceSuggestResult.priceHigh))}</p>
+                              <p className="text-2xl font-black text-emerald-600 mt-1">€{formatEUR(Number(priceSuggestResult.priceAverage))} avg</p>
                            </div>
                            <a href={ebaySoldSearchUrl(priceSuggestModalItem.name)} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1">
                               eBay.de <ArrowRight size={12}/>
@@ -6899,7 +6899,7 @@ const InventoryList: React.FC<Props> = ({
                            />
                         </div>
                         <p className="text-[11px] text-slate-500 italic">{priceSuggestResult.reasoning}</p>
-                        <p className="text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded border border-amber-200">AI estimate â€“ verify on eBay. Click a listing to search for that exact title.</p>
+                        <p className="text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded border border-amber-200">AI estimate – verify on eBay. Click a listing to search for that exact title.</p>
                         {priceSuggestResult.soldExamples.length > 0 && (
                            <div>
                               <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Sold Listings</p>
@@ -6907,7 +6907,7 @@ const InventoryList: React.FC<Props> = ({
                                  {priceSuggestResult.soldExamples.map((ex, idx) => (
                                     <a key={idx} href={ebaySoldSearchUrl(ex.title || priceSuggestModalItem.name)} target="_blank" rel="noopener noreferrer" className="flex justify-between items-center py-2 px-3 bg-slate-50 rounded-lg hover:bg-amber-50 text-left group" title="Search for this exact listing on eBay sold">
                                        <span className="text-[11px] font-medium text-slate-700 truncate flex-1 mr-2">{ex.title}</span>
-                                       <span className="text-xs font-black text-slate-900 shrink-0">â‚¬{formatEUR(Number(ex.price))}</span>
+                                       <span className="text-xs font-black text-slate-900 shrink-0">€{formatEUR(Number(ex.price))}</span>
                                     </a>
                                  ))}
                               </div>
@@ -6918,7 +6918,7 @@ const InventoryList: React.FC<Props> = ({
                               onClick={() => applyPriceSuggestionAsSellPrice(priceSuggestModalItem, priceSuggestResult.priceAverage)}
                               className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-black hover:bg-emerald-700"
                            >
-                              Apply â‚¬{formatEUR(Number(priceSuggestResult.priceAverage))} as sell price
+                              Apply €{formatEUR(Number(priceSuggestResult.priceAverage))} as sell price
                            </button>
                            <button 
                               onClick={() => savePriceSuggestionAsNote(priceSuggestModalItem, priceSuggestResult)}
@@ -6944,7 +6944,7 @@ const InventoryList: React.FC<Props> = ({
                <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                   <div className="flex items-center gap-2 min-w-0">
                      <ShoppingBag size={18} className="text-blue-600 shrink-0"/>
-                     <h3 className="font-black text-slate-900 text-sm truncate">eBay live price â€¢ {ebayPriceModalItem.name}</h3>
+                     <h3 className="font-black text-slate-900 text-sm truncate">eBay live price • {ebayPriceModalItem.name}</h3>
                   </div>
                   <button onClick={closeEbayPriceModal} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl shrink-0"><X size={18}/></button>
                </div>
@@ -6952,7 +6952,7 @@ const InventoryList: React.FC<Props> = ({
                   {ebayPriceLoading ? (
                      <div className="py-8 flex flex-col items-center justify-center gap-3 text-slate-500">
                         <Loader2 size={32} className="animate-spin text-blue-600"/>
-                        <p className="text-xs font-bold">Matching your eBay listingsâ€¦</p>
+                        <p className="text-xs font-bold">Matching your eBay listings…</p>
                      </div>
                   ) : ebayPriceError ? (
                      <div className="py-4 flex items-start gap-3">
@@ -6979,16 +6979,16 @@ const InventoryList: React.FC<Props> = ({
                         <div className="grid grid-cols-2 gap-3">
                            <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
                               <p className="text-[10px] font-black uppercase text-slate-400">eBay price</p>
-                              <p className="text-xl font-black text-slate-700">â‚¬{formatEUR(ebayPriceMatch.rawPrice)}</p>
+                              <p className="text-xl font-black text-slate-700">€{formatEUR(ebayPriceMatch.rawPrice)}</p>
                            </div>
                            <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3">
                               <p className="text-[10px] font-black uppercase text-emerald-600">Rounded to .99</p>
-                              <p className="text-xl font-black text-emerald-700">â‚¬{formatEUR(ebayPriceMatch.roundedPrice)}</p>
+                              <p className="text-xl font-black text-emerald-700">€{formatEUR(ebayPriceMatch.roundedPrice)}</p>
                            </div>
                         </div>
                         {ebayPriceModalItem.storePrice != null && (
                            <p className="text-xs text-slate-500">
-                              Current storefront price: <span className="font-bold text-slate-800">â‚¬{formatEUR(ebayPriceModalItem.storePrice)}</span>
+                              Current storefront price: <span className="font-bold text-slate-800">€{formatEUR(ebayPriceModalItem.storePrice)}</span>
                            </p>
                         )}
                         {ebayPriceMatch.rawPrice !== ebayPriceMatch.roundedPrice && (
@@ -7002,7 +7002,7 @@ const InventoryList: React.FC<Props> = ({
                               onClick={() => applyEbayListingPrice(ebayPriceModalItem, ebayPriceMatch.roundedPrice, ebayPriceMatch)}
                               className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-black hover:bg-emerald-700"
                            >
-                              Apply â‚¬{formatEUR(ebayPriceMatch.roundedPrice)} as storefront price
+                              Apply €{formatEUR(ebayPriceMatch.roundedPrice)} as storefront price
                            </button>
                            <button
                               type="button"
@@ -7029,7 +7029,7 @@ const InventoryList: React.FC<Props> = ({
                <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                   <div className="flex items-center gap-2 min-w-0">
                      <Receipt size={18} className="text-indigo-600 shrink-0"/>
-                     <h3 className="font-black text-slate-900 text-sm truncate">eBay order lookup â€¢ {orderLookupItem.name}</h3>
+                     <h3 className="font-black text-slate-900 text-sm truncate">eBay order lookup • {orderLookupItem.name}</h3>
                   </div>
                   <button onClick={closeOrderLookupModal} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl shrink-0"><X size={18}/></button>
                </div>
@@ -7039,7 +7039,7 @@ const InventoryList: React.FC<Props> = ({
                         <AlertCircle size={28} className="mx-auto text-slate-300"/>
                         <p className="text-sm font-bold text-slate-600">No cached orders match this item.</p>
                         <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                           Run an API backfill or import a Seller Hub CSV in <span className="font-bold text-slate-600">eBay Store Pull â†’ Sales sync</span>, then try again.
+                           Run an API backfill or import a Seller Hub CSV in <span className="font-bold text-slate-600">eBay Store Pull → Sales sync</span>, then try again.
                         </p>
                         <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
                            <button
@@ -7076,7 +7076,7 @@ const InventoryList: React.FC<Props> = ({
                               <div className="flex items-start justify-between gap-2">
                                  <div className="min-w-0">
                                     <p className="text-sm font-bold text-slate-900 line-clamp-2">{lineItem.title}</p>
-                                    <p className="text-[11px] text-slate-500 mt-0.5">Order {order.orderId} Â· {order.creationDate || 'date unknown'}</p>
+                                    <p className="text-[11px] text-slate-500 mt-0.5">Order {order.orderId} · {order.creationDate || 'date unknown'}</p>
                                  </div>
                                  <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap ${
                                     matchKind === 'listingId' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
@@ -7089,14 +7089,14 @@ const InventoryList: React.FC<Props> = ({
                               <div className="grid grid-cols-2 gap-2 text-xs">
                                  <div className="rounded-lg bg-slate-50 border border-slate-200 p-2">
                                     <p className="text-[9px] font-black uppercase text-slate-400">Buyer</p>
-                                    <p className="font-bold text-slate-800 truncate">{order.buyer.fullName || order.buyer.username || 'â€”'}</p>
+                                    <p className="font-bold text-slate-800 truncate">{order.buyer.fullName || order.buyer.username || '—'}</p>
                                     {order.buyer.address && <p className="text-slate-500 whitespace-pre-line text-[10px] mt-0.5 line-clamp-3">{order.buyer.address}</p>}
                                  </div>
                                  <div className="rounded-lg bg-slate-50 border border-slate-200 p-2">
                                     <p className="text-[9px] font-black uppercase text-slate-400">Price</p>
-                                    {gross != null && <p className="font-bold text-slate-800">Gross â‚¬{formatEUR(gross)}</p>}
+                                    {gross != null && <p className="font-bold text-slate-800">Gross €{formatEUR(gross)}</p>}
                                     {net != null ? (
-                                       <p className="font-black text-emerald-700">Net â‚¬{formatEUR(net)}</p>
+                                       <p className="font-black text-emerald-700">Net €{formatEUR(net)}</p>
                                     ) : (
                                        <p className="text-[10px] text-slate-400">Net unknown (import CSV for fees)</p>
                                     )}
@@ -7172,7 +7172,7 @@ const InventoryList: React.FC<Props> = ({
                    };
                    onUpdate([updatedParent, soldChild]);
                    setToast(
-                     `Sold â€œ${soldChild.name}â€ Â· left group Â· container now â‚¬${formatEUR(buyTotal)}`
+                     `Sold “${soldChild.name}” · left group · container now €${formatEUR(buyTotal)}`
                    );
                    setTimeout(() => setToast(null), 2600);
                  } else {
@@ -7632,33 +7632,33 @@ const SoldFinancialBar: React.FC<SoldFinancialBarProps> = ({
     >
       <span className="inline-flex items-baseline gap-1">
         <span className="text-[9px] font-black uppercase text-slate-400">Gross</span>
-        <span className="font-black text-slate-900">â‚¬{formatEUR(stats.totalGross)}</span>
+        <span className="font-black text-slate-900">€{formatEUR(stats.totalGross)}</span>
       </span>
       {stats.totalFees > 0 && (
         <span
           className="inline-flex items-baseline gap-1"
-          title="Marketplace fees (eBay etc.) deducted from profit: sell âˆ’ buy âˆ’ fees"
+          title="Marketplace fees (eBay etc.) deducted from profit: sell − buy − fees"
         >
           <span className="text-[9px] font-black uppercase text-amber-600">Fees</span>
-          <span className="font-black text-amber-700">âˆ’â‚¬{formatEUR(stats.totalFees)}</span>
+          <span className="font-black text-amber-700">−€{formatEUR(stats.totalFees)}</span>
         </span>
       )}
       {taxMode !== 'SmallBusiness' && (
         <span className="inline-flex items-baseline gap-1">
           <span className="text-[9px] font-black uppercase text-slate-400">VAT</span>
-          <span className="font-black text-red-500">-â‚¬{formatEUR(stats.totalTax)}</span>
+          <span className="font-black text-red-500">-€{formatEUR(stats.totalTax)}</span>
         </span>
       )}
       {showCashMargin && (
-        <span className="inline-flex items-baseline gap-1" title="Sell âˆ’ buy âˆ’ fees (no VAT reserve)">
+        <span className="inline-flex items-baseline gap-1" title="Sell − buy − fees (no VAT reserve)">
           <span className="text-[9px] font-black uppercase text-slate-400">Cash</span>
-          <span className="font-black text-slate-700">â‚¬{formatEUR(stats.cashMargin)}</span>
+          <span className="font-black text-slate-700">€{formatEUR(stats.cashMargin)}</span>
         </span>
       )}
       <span className="inline-flex items-baseline gap-1">
         <span className="text-[9px] font-black uppercase text-slate-400">{profitLabel}</span>
         <span className={`font-black ${stats.totalProfit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-          {stats.totalProfit >= 0 ? '+' : ''}â‚¬{formatEUR(stats.totalProfit)}
+          {stats.totalProfit >= 0 ? '+' : ''}€{formatEUR(stats.totalProfit)}
         </span>
       </span>
       <div className={`${compact ? '' : 'ml-auto'} flex rounded-md border border-slate-200 bg-slate-50 p-0.5`}>
@@ -7668,7 +7668,7 @@ const SoldFinancialBar: React.FC<SoldFinancialBarProps> = ({
           className={`px-2 py-0.5 rounded text-[9px] font-black uppercase transition-all ${
             taxMode === 'SmallBusiness' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'
           }`}
-          title="Cash income â€” no VAT reserve on margin"
+          title="Cash income — no VAT reserve on margin"
         >
           Kleinunt.
         </button>
@@ -7678,7 +7678,7 @@ const SoldFinancialBar: React.FC<SoldFinancialBarProps> = ({
           className={`px-2 py-0.5 rounded text-[9px] font-black uppercase transition-all ${
             taxMode === 'DifferentialVAT' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'
           }`}
-          title="Differenzbesteuerung â€” VAT on margin"
+          title="Differenzbesteuerung — VAT on margin"
         >
           Diff.
         </button>
@@ -7772,7 +7772,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
 
   // Fixed sibling columns + a flexible item column. Table min-width = siblings + item floor so
   // item never collapses to 0 when siblings are wide; leftover viewport space always goes to item
-  // (no fragile px math â€” that left a dead strip after sold-bundle auto-width changes).
+  // (no fragile px math — that left a dead strip after sold-bundle auto-width changes).
   const itemFloor = columnWidths['item'] || DEFAULT_WIDTHS['item'];
   const othersWidth = useMemo(
     () =>
@@ -7908,7 +7908,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
                           className="flex items-center justify-start gap-1 w-full truncate"
                           title={
                             paneStatus === 'SOLD'
-                              ? 'Buy â†’ sell: green = quick, red = slow'
+                              ? 'Buy → sell: green = quick, red = slow'
                               : 'Days in stock: green = recent, red = aging'
                           }
                         >
@@ -8033,7 +8033,7 @@ const QuickCategoryPinPickerModal: React.FC<{
               }}
               className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-400/30"
             >
-              <option value="">All subcategories â€” category only</option>
+              <option value="">All subcategories — category only</option>
               {(categories[pickCategory] ?? []).map((sub) => (
                 <option key={sub} value={sub}>{sub}</option>
               ))}
@@ -8075,7 +8075,7 @@ const QuickCategoryPinPickerModal: React.FC<{
                   <span className="flex-1 min-w-0">
                     <span className="text-sm font-bold text-slate-900">{pin.label}</span>
                     <span className="block text-[10px] text-slate-500 truncate">
-                      {pin.subCategory ? `${pin.category} â€º ${pin.subCategory}` : pin.category}
+                      {pin.subCategory ? `${pin.category} › ${pin.subCategory}` : pin.category}
                     </span>
                   </span>
                   <button
@@ -8166,7 +8166,7 @@ const BulkSalePctModal: React.FC<{ count: number; onApply: (pct: number) => void
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
       <div className="bg-white p-6 rounded-2xl shadow-2xl max-w-sm w-full">
         <h3 className="text-lg font-black text-slate-900 mb-2">Apply sale % ({count} items)</h3>
-        <p className="text-sm text-slate-500 mb-4">Set store sale price to (sell price Ã— (1 âˆ’ pct/100)). E.g. 10 = 10% off.</p>
+        <p className="text-sm text-slate-500 mb-4">Set store sale price to (sell price Ã— (1 − pct/100)). E.g. 10 = 10% off.</p>
         <input type="number" min={0} max={100} step={1} value={pct} onChange={(e) => setPct(e.target.value)} className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium mb-4 outline-none focus:ring-2 focus:ring-blue-400" placeholder="10" />
         <div className="flex gap-2">
           <button onClick={onClose} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200">Cancel</button>

@@ -139,14 +139,14 @@ const ListingAiPanelModal: React.FC<Props> = ({ item, onClose, onApply }) => {
             </div>
           )}
 
-          {/* Block 1 â€” Title */}
+          {/* Block 1 — Title */}
           <section className="rounded-xl border border-slate-200 bg-white overflow-hidden">
             <div className="px-3 py-2 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-2">
               <div>
                 <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">
                   AI Titel
                 </h4>
-                <p className="text-[10px] text-slate-400 font-medium">eBay Â· max 80 Zeichen</p>
+                <p className="text-[10px] text-slate-400 font-medium">eBay · max 80 Zeichen</p>
               </div>
               <button
                 type="button"
@@ -164,7 +164,7 @@ const ListingAiPanelModal: React.FC<Props> = ({ item, onClose, onApply }) => {
               maxLength={80}
               onChange={(e) => setTitle(e.target.value)}
               className="w-full px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none"
-              placeholder="eBay titleâ€¦"
+              placeholder="eBay title…"
             />
             <div className="px-3 py-1.5 border-t border-slate-100 text-[10px] font-bold text-slate-400 flex justify-between">
               <span>Optimierter Marktplatz-Titel</span>
@@ -174,7 +174,7 @@ const ListingAiPanelModal: React.FC<Props> = ({ item, onClose, onApply }) => {
             </div>
           </section>
 
-          {/* Block 2 â€” Description */}
+          {/* Block 2 — Description */}
           <section className="rounded-xl border border-slate-200 bg-white overflow-hidden flex flex-col">
             <div className="px-3 py-2 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-2">
               <div>
@@ -182,7 +182,7 @@ const ListingAiPanelModal: React.FC<Props> = ({ item, onClose, onApply }) => {
                   AI Beschreibung
                 </h4>
                 <p className="text-[10px] text-slate-400 font-medium">
-                  eBay.de / Kleinanzeigen Â· DE
+                  eBay.de / Kleinanzeigen · DE
                 </p>
               </div>
               <button
@@ -199,7 +199,7 @@ const ListingAiPanelModal: React.FC<Props> = ({ item, onClose, onApply }) => {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               className="w-full min-h-[260px] px-3 py-2.5 text-sm text-slate-800 outline-none resize-y leading-relaxed"
-              placeholder="Generate a German listingâ€¦"
+              placeholder="Generate a German listing…"
             />
           </section>
 
@@ -212,7 +212,7 @@ const ListingAiPanelModal: React.FC<Props> = ({ item, onClose, onApply }) => {
           {loading && (
             <div className="flex items-center justify-center gap-2 py-2 text-slate-500 text-xs font-bold">
               <Loader2 size={16} className="animate-spin text-emerald-600" />
-              Generating title + descriptionâ€¦
+              Generating title + description…
             </div>
           )}
         </div>

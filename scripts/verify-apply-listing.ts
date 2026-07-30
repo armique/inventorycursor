@@ -137,7 +137,7 @@ function run() {
   let localTitle = generatedTitle;
   let localDescription = generatedDescription;
 
-  // User blurs AI note / vendor â†’ item patch updates â†’ OLD effect re-hydrates
+  // User blurs AI note / vendor → item patch updates → OLD effect re-hydrates
   const afterVendorPatch = mergeStudioPatch(itemOpen, itemOpen, { vendor: 'eBay-seller' });
   const wiped = buggyHydrateOnAnyFieldChange({
     localTitle,
