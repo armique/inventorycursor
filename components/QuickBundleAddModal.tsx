@@ -8,6 +8,7 @@ import { isInventoryContainer } from '../utils/containerMembership';
 import ItemThumbnail from './ItemThumbnail';
 import { itemMatchesBuilderSearch } from '../utils/builderSlotMatch';
 import { todayLocalDateKey } from '../utils/calendarDate';
+import { resplitContainerBuyPrices } from '../utils/containerBuyPriceRecalc';
 
 export type QuickBundleKind = 'bundle' | 'mixed' | 'pc';
 
@@ -94,6 +95,8 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
   const [newPinCategory, setNewPinCategory] = useState('Components');
   const [newPinSub, setNewPinSub] = useState('');
   const [newPinLabel, setNewPinLabel] = useState('');
+  /** When adding into an existing container: resplit the prior lot total across all parts. */
+  const [resplitLotCost, setResplitLotCost] = useState(true);
 
   const discardAndClose = () => {
     setSelectedIds([]);
@@ -182,6 +185,26 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
     [selectedIds, items]
   );
 
+  const existingParts = useMemo(() => {
+    if (!seedIsContainer) return [] as InventoryItem[];
+    return items.filter(
+      (i) => (seed.componentIds || []).includes(i.id) || i.parentContainerId === seed.id
+    );
+  }, [seedIsContainer, items, seed.componentIds, seed.id]);
+
+  const lotTotalForResplit = useMemo(() => {
+    if (!seedIsContainer) return 0;
+    const parentBuy = Number(seed.buyPrice) || 0;
+    if (parentBuy > 0) return roundMoney(parentBuy);
+    return roundMoney(existingParts.reduce((s, i) => s + (Number(i.buyPrice) || 0), 0));
+  }, [seedIsContainer, seed.buyPrice, existingParts]);
+
+  useEffect(() => {
+    if (!seedIsContainer || selectedItems.length === 0) return;
+    const newHaveZero = selectedItems.some((i) => !(Number(i.buyPrice) > 0));
+    setResplitLotCost(newHaveZero && lotTotalForResplit > 0);
+  }, [seedIsContainer, selectedItems, lotTotalForResplit]);
+
   const toggle = (id: string) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
@@ -244,14 +267,19 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
     }
 
     if (seedIsContainer) {
-      const existingParts = items.filter(
+      const existingPartsNow = items.filter(
         (i) =>
           (seed.componentIds || []).includes(i.id) || i.parentContainerId === seed.id
       );
-      const allParts = [...existingParts];
+      const allParts = [...existingPartsNow];
       for (const p of selectedItems) {
         if (!allParts.some((x) => x.id === p.id)) allParts.push(p);
       }
+      const priorLotTotal = roundMoney(
+        (Number(seed.buyPrice) || 0) > 0
+          ? Number(seed.buyPrice)
+          : existingPartsNow.reduce((s, i) => s + (Number(i.buyPrice) || 0), 0)
+      );
       const buyTotal = roundMoney(allParts.reduce((s, i) => s + Number(i.buyPrice || 0), 0));
       const defectiveCount = allParts.filter((i) => i.isDefective).length;
 
@@ -309,7 +337,29 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
         status: ItemStatus.IN_COMPOSITION,
         parentContainerId: seed.id,
       }));
-      onApply([parent, ...updatedNew]);
+
+      if (resplitLotCost && priorLotTotal > 0 && allParts.length > 0) {
+        const mergedForSplit = [
+          ...items.filter((i) => i.id !== parent.id && !updatedNew.some((u) => u.id === i.id)),
+          parent,
+          ...updatedNew,
+        ];
+        // Ensure parent linkage is visible to the splitter via componentIds already set.
+        const { parent: splitParent, children: splitChildren } = resplitContainerBuyPrices({
+          container: parent,
+          items: mergedForSplit,
+          totalCost: priorLotTotal,
+          mode: 'SMART',
+        });
+        const splitById = new Map(splitChildren.map((c) => [c.id, c]));
+        const finalNew = updatedNew.map((c) => splitById.get(c.id) || c);
+        const finalExistingTouched = existingPartsNow
+          .map((c) => splitById.get(c.id))
+          .filter(Boolean) as InventoryItem[];
+        onApply([splitParent, ...finalNew, ...finalExistingTouched.filter((c) => !finalNew.some((n) => n.id === c.id))]);
+      } else {
+        onApply([parent, ...updatedNew]);
+      }
       discardAndClose();
       return;
     }
@@ -642,7 +692,23 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
         </ul>
       </div>
 
-      <div className="px-3 py-2 border-t border-slate-100 flex items-center gap-2 bg-white">
+      <div className="px-3 py-2 border-t border-slate-100 flex flex-col gap-2 bg-white">
+        {seedIsContainer && selectedItems.length > 0 && lotTotalForResplit > 0 && (
+          <label className="flex items-start gap-2 text-[10px] font-semibold text-slate-600 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              className="mt-0.5 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+              checked={resplitLotCost}
+              onChange={(e) => setResplitLotCost(e.target.checked)}
+            />
+            <span>
+              Resplit lot cost (€{formatEUR(lotTotalForResplit)}) across all{' '}
+              {existingParts.length + selectedItems.length} parts so new items get a proportional share.
+              Uncheck to keep each part’s current buy price (container becomes the sum).
+            </span>
+          </label>
+        )}
+        <div className="flex items-center gap-2">
         <button
           type="button"
           onClick={(e) => {
@@ -665,6 +731,7 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
             ? `Add ${selectedItems.length || ''}`.trim()
             : `Create ${kind === 'mixed' ? 'Mixed Bundle' : 'Bundle'} (+${selectedItems.length})`}
         </button>
+        </div>
       </div>
     </div>
   );

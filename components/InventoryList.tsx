@@ -39,6 +39,7 @@ import {
   removeBulkImportMember,
 } from '../utils/bulkImportHistory';
 import { applyBulkImportResplit } from '../utils/bulkImportEdit';
+import { resplitContainerBuyPrices } from '../utils/containerBuyPriceRecalc';
 import { CATEGORY_IMAGES } from '../services/hardwareDB';
 import MobileStockCard from './MobileStockCard';
 import { MobileSheetShell } from './MobileBottomSheets';
@@ -1347,7 +1348,7 @@ const InventoryList: React.FC<Props> = ({
     setBulkNewName('');
     setBulkNewManualCost('');
     setBulkAdding(false);
-    setToast(`Added “${name}” to batch`);
+    setToast(`Added “${name}” to batch · prices resplit`);
     setTimeout(() => setToast(null), 2200);
   }, [
     bulkImportRecord,
@@ -2945,6 +2946,38 @@ const InventoryList: React.FC<Props> = ({
     setRecalcTarget(null);
   };
 
+  /** SMART-resplit container lot buy cost across current parts (incl. items added later). */
+  const handleResplitContainerBuy = useCallback(
+    (container: InventoryItem) => {
+      const children = getChildren(container, items);
+      if (children.length === 0) {
+        setToast('No parts to resplit');
+        setTimeout(() => setToast(null), 2000);
+        return;
+      }
+      const lot = Number(container.buyPrice) || children.reduce((s, c) => s + (Number(c.buyPrice) || 0), 0);
+      if (!(lot > 0)) {
+        setToast('Set a buy price on the bundle first');
+        setTimeout(() => setToast(null), 2200);
+        return;
+      }
+      const ok = window.confirm(
+        `Resplit €${formatEUR(lot)} across ${children.length} parts with SMART weights?\n\nEach part’s buy price will be replaced by a proportional share of the lot total.`
+      );
+      if (!ok) return;
+      const { parent, children: patched } = resplitContainerBuyPrices({
+        container,
+        items,
+        totalCost: lot,
+        mode: 'SMART',
+      });
+      onUpdate([parent, ...patched], undefined, { flushCloud: true, skipActionLog: true });
+      setToast(`Buy prices resplit · €${formatEUR(lot)} across ${patched.length} parts`);
+      setTimeout(() => setToast(null), 2400);
+    },
+    [items, onUpdate]
+  );
+
   const handleBulkEditSales = (platform: Platform, payment: PaymentType) => {
      const updates = items.filter(i => selectedIds.includes(i.id)).map(i => ({
         ...i,
@@ -3427,7 +3460,20 @@ const InventoryList: React.FC<Props> = ({
                 <button type="button" onClick={(e) => { e.stopPropagation(); setSplitPartsSeed(item); }} className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100`} title="Split into parts"><Scissors size={13} strokeWidth={2.25} /></button>
               )}
               {(item.isPC || item.isBundle) && isRealizedDisposal(item) && getChildren(item, items).length > 0 && (
-                <button type="button" onClick={(e) => { e.stopPropagation(); setRecalcTarget(item); }} className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100`} title="Recalculate component prices"><Calculator size={13} strokeWidth={2.25} /></button>
+                <button type="button" onClick={(e) => { e.stopPropagation(); setRecalcTarget(item); }} className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100`} title="Recalculate component sell prices"><Calculator size={13} strokeWidth={2.25} /></button>
+              )}
+              {(item.isPC || item.isBundle) && !isRealizedDisposal(item) && getChildren(item, items).length > 0 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleResplitContainerBuy(item);
+                  }}
+                  className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100`}
+                  title="Resplit buy prices across parts (proportional lot cost)"
+                >
+                  <Calculator size={13} strokeWidth={2.25} />
+                </button>
               )}
               {item.status === ItemStatus.IN_STOCK && (
                 <button type="button" onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToSell(item); }} className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100`} title="Mark Sold"><ShoppingBag size={13} strokeWidth={2.25} /></button>
