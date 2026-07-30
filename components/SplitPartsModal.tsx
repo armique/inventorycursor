@@ -24,13 +24,12 @@ interface Props {
 
 const SplitPartsModal: React.FC<Props> = ({ item, items, onClose, onApply }) => {
   const qtyHint = useMemo(() => detectIdenticalQtyHint(item.name || ''), [item.name]);
-  const [mode, setMode] = useState<SplitMode>(() => (qtyHint ? 'identical' : 'parts'));
+  // Default to identical copies — most multi-buy lots need this; AIO users switch to Different parts.
+  const [mode, setMode] = useState<SplitMode>('identical');
   const [identicalQty, setIdenticalQty] = useState(() => qtyHint || 2);
   const [selection, setSelection] = useState<SplitSelection>(() => defaultSplitSelection(item));
   const [drafts, setDrafts] = useState<SplitPartDraft[]>(() =>
-    qtyHint
-      ? buildIdenticalCopyDrafts(item, qtyHint || 2)
-      : buildSplitDrafts(item, defaultSplitSelection(item))
+    buildIdenticalCopyDrafts(item, qtyHint || 2)
   );
 
   useEffect(() => {
@@ -96,57 +95,59 @@ const SplitPartsModal: React.FC<Props> = ({ item, items, onClose, onApply }) => 
         role="dialog"
         aria-label="Split into parts"
       >
-        <div className="px-4 py-3 border-b border-slate-100 flex items-start justify-between gap-3 bg-violet-50/80">
-          <div className="min-w-0">
-            <h3 className="text-sm font-black text-violet-950 uppercase tracking-tight flex items-center gap-2">
-              <Scissors size={16} className="shrink-0 text-violet-700" />
-              Split into parts
-            </h3>
-            <p className="text-xs font-semibold text-slate-700 truncate mt-0.5" title={item.name}>
-              {item.name}
-            </p>
-            <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-              Buy €{formatEUR(totalBuy)}
-              {mode === 'identical' && perItem != null
-                ? ` · ≈ €${formatEUR(perItem)} each ×${identicalQty}`
-                : ''}
-            </p>
+        <div className="px-4 py-3 border-b border-slate-100 bg-violet-50/80 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="text-sm font-black text-violet-950 uppercase tracking-tight flex items-center gap-2">
+                <Scissors size={16} className="shrink-0 text-violet-700" />
+                Split lot
+              </h3>
+              <p className="text-xs font-semibold text-slate-700 truncate mt-0.5" title={item.name}>
+                {item.name}
+              </p>
+              <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                Buy €{formatEUR(totalBuy)}
+                {mode === 'identical' && perItem != null
+                  ? ` · ≈ €${formatEUR(perItem)} each ×${identicalQty}`
+                  : ''}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 rounded-lg text-slate-400 hover:bg-white hover:text-slate-700"
+              aria-label="Close"
+            >
+              <X size={18} />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 rounded-lg text-slate-400 hover:bg-white hover:text-slate-700"
-            aria-label="Close"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-          <div className="flex rounded-xl border border-slate-200 p-0.5 bg-slate-50">
+          <div className="flex rounded-xl border border-violet-200 p-0.5 bg-white shadow-sm">
             <button
               type="button"
               onClick={() => setMode('identical')}
-              className={`flex-1 inline-flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-black uppercase tracking-wide transition-colors ${
+              className={`flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-[11px] font-black uppercase tracking-wide transition-colors ${
                 mode === 'identical'
-                  ? 'bg-white text-violet-800 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
+                  ? 'bg-violet-600 text-white'
+                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
               }`}
             >
-              <Copy size={12} /> Identical copies
+              <Copy size={12} /> Identical ×N
             </button>
             <button
               type="button"
               onClick={() => setMode('parts')}
-              className={`flex-1 inline-flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-black uppercase tracking-wide transition-colors ${
+              className={`flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-[11px] font-black uppercase tracking-wide transition-colors ${
                 mode === 'parts'
-                  ? 'bg-white text-violet-800 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
+                  ? 'bg-violet-600 text-white'
+                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
               }`}
             >
               <Scissors size={12} /> Different parts
             </button>
           </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
 
           {mode === 'identical' ? (
             <div className="space-y-3">
