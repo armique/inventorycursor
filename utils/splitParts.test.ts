@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { ItemStatus, type InventoryItem } from '../types';
 import {
   allocateBuyAcrossParts,
+  buildIdenticalCopyDrafts,
   buildPartName,
   buildSplitApplyItems,
   buildSplitDrafts,
   canSplitItem,
   defaultSplitSelection,
   detectAioHints,
+  detectIdenticalQtyHint,
   shortSourceStem,
 } from './splitParts';
 
@@ -107,5 +109,33 @@ describe('splitParts', () => {
     expect(canSplitItem(stock, 0)).toBe(true);
     expect(canSplitItem({ ...stock, isBundle: true }, 3)).toBe(false);
     expect(canSplitItem({ ...stock, status: ItemStatus.SOLD }, 0)).toBe(false);
+  });
+
+  it('splits identical copies with equal buy prices', () => {
+    const source: InventoryItem = {
+      id: 'lot-ssd',
+      name: '8x Kingston NV2 1TB SSD',
+      buyPrice: 200,
+      buyDate: '2026-01-01',
+      category: 'Components',
+      subCategory: 'Storage (SSD/HDD)',
+      status: ItemStatus.IN_STOCK,
+      comment1: '',
+      comment2: '',
+    };
+    expect(detectIdenticalQtyHint(source.name)).toBe(8);
+    const drafts = buildIdenticalCopyDrafts(source, 8);
+    expect(drafts).toHaveLength(8);
+    expect(drafts.every((d) => d.name === source.name)).toBe(true);
+    const sum = drafts.reduce((s, d) => s + d.buyPrice, 0);
+    expect(Math.round(sum * 100) / 100).toBe(200);
+    expect(drafts.every((d) => d.buyPrice === 25)).toBe(true);
+
+    const { parent, children } = buildSplitApplyItems(source, drafts);
+    expect(parent.isBundle).toBe(true);
+    expect(children).toHaveLength(8);
+    expect(children.every((c) => c.buyPrice === 25)).toBe(true);
+    expect(children.every((c) => c.name === source.name)).toBe(true);
+    expect(Number(parent.buyPrice)).toBe(200);
   });
 });

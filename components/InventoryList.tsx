@@ -3457,7 +3457,7 @@ const InventoryList: React.FC<Props> = ({
                 <button type="button" onClick={(e) => { e.stopPropagation(); setBundleToDismantle(item); }} className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100`} title="Unbundle / Dismantle"><Unlink size={13} strokeWidth={2.25} /></button>
               )}
               {canSplitItem(item, (item.isPC || item.isBundle) ? getChildren(item, items).length : 0) && (
-                <button type="button" onClick={(e) => { e.stopPropagation(); setSplitPartsSeed(item); }} className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100`} title="Split into parts"><Scissors size={13} strokeWidth={2.25} /></button>
+                <button type="button" onClick={(e) => { e.stopPropagation(); setSplitPartsSeed(item); }} className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100`} title="Split into parts or identical copies"><Scissors size={13} strokeWidth={2.25} /></button>
               )}
               {(item.isPC || item.isBundle) && isRealizedDisposal(item) && getChildren(item, items).length > 0 && (
                 <button type="button" onClick={(e) => { e.stopPropagation(); setRecalcTarget(item); }} className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100`} title="Recalculate component sell prices"><Calculator size={13} strokeWidth={2.25} /></button>

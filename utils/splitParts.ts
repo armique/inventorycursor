@@ -16,7 +16,10 @@ export type SplitPartPresetId =
   | 'fans'
   | 'radiator'
   | 'controller'
-  | 'cable';
+  | 'cable'
+  | 'identical';
+
+export type SplitMode = 'parts' | 'identical';
 
 export type SplitPartPreset = {
   id: SplitPartPresetId;
@@ -388,6 +391,67 @@ export function canSplitItem(item: InventoryItem, childCount = 0): boolean {
   return true;
 }
 
+/** Parse "8x SSD", "SSD x8", "8 × Kingston" style titles for a default copy count. */
+export function detectIdenticalQtyHint(name: string): number | null {
+  const raw = String(name || '');
+  const m =
+    raw.match(/\b(\d{1,2})\s*[x×]\b/i) ||
+    raw.match(/\b[x×]\s*(\d{1,2})\b/i) ||
+    raw.match(/\b(\d{1,2})\s*pcs?\b/i) ||
+    raw.match(/\b(\d{1,2})\s*stück\b/i);
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n) || n < 2 || n > 48) return null;
+  return n;
+}
+
+/**
+ * N identical child drafts sharing the source name; buy cost split equally.
+ */
+export function buildIdenticalCopyDrafts(
+  source: Pick<InventoryItem, 'name' | 'buyPrice' | 'category' | 'subCategory' | 'isDefective'>,
+  qty: number,
+  previous?: SplitPartDraft[]
+): SplitPartDraft[] {
+  const count = Math.min(48, Math.max(2, Math.round(Number(qty) || 2)));
+  const prevByKey = new Map((previous || []).map((d) => [d.key, d]));
+  const baseName = String(source.name || '').trim() || 'Item';
+  const drafts: SplitPartDraft[] = [];
+
+  for (let i = 0; i < count; i++) {
+    const key = `identical-${i}`;
+    const prev = prevByKey.get(key);
+    drafts.push({
+      key,
+      presetId: 'identical',
+      label: `#${i + 1}`,
+      name: prev?.name || baseName,
+      buyPrice: prev?.buyLocked ? prev.buyPrice : 0,
+      weight: 1,
+      category: source.category || 'Components',
+      subCategory: source.subCategory || '',
+      isDefective: prev?.isDefective ?? Boolean(source.isDefective),
+      buyLocked: prev?.buyLocked,
+    });
+  }
+
+  const buy = Number(source.buyPrice) || 0;
+  const allocated = allocateBuyAcrossParts(
+    buy,
+    drafts.map((d) => ({
+      key: d.key,
+      weight: d.weight,
+      buyLocked: d.buyLocked,
+      buyPrice: d.buyPrice,
+    }))
+  );
+
+  return drafts.map((d) => ({
+    ...d,
+    buyPrice: d.buyLocked ? roundMoney(d.buyPrice) : roundMoney(allocated[d.key] ?? 0),
+  }));
+}
+
 export type SplitApplyResult = {
   parent: InventoryItem;
   children: InventoryItem[];
@@ -427,6 +491,19 @@ export function buildSplitApplyItems(
       child = { ...child, quantity: d.quantity };
     }
     if (d.presetId === 'ovp') child = { ...child, hasOVP: true };
+    if (d.presetId === 'identical' && source.specs && Object.keys(source.specs).length) {
+      child = { ...child, specs: { ...source.specs } };
+    }
+    if (d.presetId === 'identical') {
+      child = {
+        ...child,
+        comment1: `Identical split ${idx + 1}/${drafts.length} from lot`,
+        imageUrl: source.imageUrl,
+        imageUrls: source.imageUrls ? [...source.imageUrls] : undefined,
+        platformBought: source.platformBought,
+        bulkImportId: source.bulkImportId,
+      };
+    }
 
     const sugg = resolveSuggestedEbayList(child, [...allItems, child], loadFlipFees(), []);
     if (sugg) {
@@ -437,6 +514,7 @@ export function buildSplitApplyItems(
 
   const buyTotal = roundMoney(children.reduce((s, c) => s + (Number(c.buyPrice) || 0), 0));
   const anyDefective = children.some((c) => c.isDefective);
+  const identical = drafts.every((d) => d.presetId === 'identical');
   const parent: InventoryItem = {
     ...source,
     isBundle: true,
@@ -445,13 +523,15 @@ export function buildSplitApplyItems(
     status: ItemStatus.IN_STOCK,
     buyPrice: buyTotal,
     componentIds: children.map((c) => c.id),
-    comment1: `Split into ${children.length} parts from original item.`,
+    comment1: identical
+      ? `Split into ${children.length} identical items (equal buy share).`
+      : `Split into ${children.length} parts from original item.`,
     comment2: children
       .map((c) => `- ${c.name}${c.isDefective ? ' [defekt]' : ''}`)
       .join('\n')
       .slice(0, 2000),
     marketTitle: source.marketTitle || source.name,
-    vendor: source.vendor || 'Split Parts',
+    vendor: source.vendor || (identical ? 'Identical Split' : 'Split Parts'),
   };
   delete (parent as { subCategory?: string }).subCategory;
 
