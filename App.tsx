@@ -378,7 +378,7 @@ const App: React.FC = () => {
     return mergeLocalMarketplaceCredentialsIntoSettings(base);
   });
 
-  // Keep this browserâ€™s eBay/KA local keys in sync when cloud settings arrive / change.
+  // Keep this browser’s eBay/KA local keys in sync when cloud settings arrive / change.
   useEffect(() => {
     hydrateMarketplaceCredentialsFromSettings(businessSettings);
   }, [

@@ -968,7 +968,7 @@ const SettingsPage: React.FC<Props> = ({
                          if (st.hasRefreshToken && !st.refreshExpired) {
                             const until = st.refreshExpiresAt
                                ? new Date(st.refreshExpiresAt).toLocaleDateString()
-                               : 'â‰ˆ18 months';
+                               : '≈18 months';
                             return (
                                <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-100">
                                   <CheckCircle2 size={14} /> Connected · refresh until {until}
@@ -1840,7 +1840,7 @@ const SettingsPage: React.FC<Props> = ({
 
                    <div className="grid gap-4 md:grid-cols-2">
                       <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-3">
-                         <h4 className="text-xs font-black uppercase tracking-wider text-slate-500">Blatt â€žWare_Buchungen“</h4>
+                         <h4 className="text-xs font-black uppercase tracking-wider text-slate-500">Blatt „Ware_Buchungen“</h4>
                          <ul className="text-sm text-slate-700 space-y-2 list-disc pl-5">
                             <li>
                                <strong>Bezeichnung</strong>, <strong>Einkaufsdatum</strong>, <strong>Verkaufsdatum</strong>,{' '}
