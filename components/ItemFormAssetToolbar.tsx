@@ -211,6 +211,7 @@ const ItemFormAssetToolbar: React.FC<Props> = ({
   const [noteOpen, setNoteOpen] = useState(Boolean((formData.aiDescriptionNote || '').trim()));
   const [specsFlash, setSpecsFlash] = useState(false);
   const [noteFlash, setNoteFlash] = useState(false);
+  const [accDraft, setAccDraft] = useState<{ hasOVP?: boolean; hasIOShield?: boolean } | null>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const libraryRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -218,18 +219,45 @@ const ItemFormAssetToolbar: React.FC<Props> = ({
   const prevNoteTrim = useRef((formData.aiDescriptionNote || '').trim());
   const specsFlashTimer = useRef<number | null>(null);
   const noteFlashTimer = useRef<number | null>(null);
+  const accPendingRef = useRef<Partial<InventoryItem>>({});
+  const accTimerRef = useRef<number | null>(null);
+  const onPatchRef = useRef(onPatch);
+  onPatchRef.current = onPatch;
 
-  const accessories = accessoryTogglesForItem(formData);
+  const formForAccessories = accDraft ? { ...formData, ...accDraft } : formData;
+  const accessories = accessoryTogglesForItem(formForAccessories);
   const condition = getBuyCondition(formData);
   const cond = conditionMeta(condition);
   const noteFilled = Boolean((formData.aiDescriptionNote || '').trim());
   const hasSpecs = Object.keys(formData.specs || {}).length > 0;
-  const accessoriesGate = listingAccessoriesReady(formData);
+  const accessoriesGate = listingAccessoriesReady(formForAccessories);
   const listingBlockedReason = !accessoriesGate.ok
     ? accessoriesGate.reason
     : !(formData.name || '').trim()
       ? 'Enter an item name first'
       : undefined;
+
+  useEffect(() => {
+    setAccDraft((prev) => {
+      if (!prev) return null;
+      const ovpOk = !('hasOVP' in prev) || formData.hasOVP === prev.hasOVP;
+      const ioOk = !('hasIOShield' in prev) || formData.hasIOShield === prev.hasIOShield;
+      return ovpOk && ioOk ? null : prev;
+    });
+  }, [formData.hasOVP, formData.hasIOShield]);
+
+  const cycleAccessory = (id: AccessoryToggleId) => {
+    const patch = cycleAccessoryTogglePatch(formForAccessories, id);
+    setAccDraft((prev) => ({ ...(prev || {}), ...patch }));
+    accPendingRef.current = { ...accPendingRef.current, ...patch };
+    if (accTimerRef.current != null) window.clearTimeout(accTimerRef.current);
+    accTimerRef.current = window.setTimeout(() => {
+      accTimerRef.current = null;
+      const pending = accPendingRef.current;
+      accPendingRef.current = {};
+      if (Object.keys(pending).length) onPatchRef.current(pending);
+    }, 280);
+  };
 
   const pulseSpecs = () => {
     if (specsFlashTimer.current != null) window.clearTimeout(specsFlashTimer.current);
@@ -247,6 +275,12 @@ const ItemFormAssetToolbar: React.FC<Props> = ({
     return () => {
       if (specsFlashTimer.current != null) window.clearTimeout(specsFlashTimer.current);
       if (noteFlashTimer.current != null) window.clearTimeout(noteFlashTimer.current);
+      if (accTimerRef.current != null) window.clearTimeout(accTimerRef.current);
+      const pending = accPendingRef.current;
+      if (Object.keys(pending).length) {
+        accPendingRef.current = {};
+        onPatchRef.current(pending);
+      }
     };
   }, []);
 
@@ -342,7 +376,7 @@ const ItemFormAssetToolbar: React.FC<Props> = ({
         />
 
         {accessories.map((id) => {
-          const state = accessoryToggleState(formData, id);
+          const state = accessoryToggleState(formForAccessories, id);
           return (
             <IconTile
               key={id}
@@ -350,7 +384,7 @@ const ItemFormAssetToolbar: React.FC<Props> = ({
               title={accessoryToggleTitle(id, state)}
               tone={state}
               selected={state === 'present'}
-              onClick={() => onPatch(cycleAccessoryTogglePatch(formData, id))}
+              onClick={() => cycleAccessory(id)}
               icon={<AccessoryGlyph id={id} />}
             />
           );

@@ -140,11 +140,22 @@ type AppSyncSnapshot = {
  * old value whenever the new one is undefined made it impossible to ever actually clear them. */
 const PRESERVE_FROM_OLD_IF_UPDATE_MISSING: (keyof InventoryItem)[] = [
   'imageUrl', 'imageUrls', 'storeGalleryUrls', 'storeDescription', 'storeVisible', 'storeOnSale', 'storeSalePrice',
-  'specs', 'componentIds', 'comment1', 'comment2', 'vendor', 'hasOVP', 'hasIOShield', 'hasReceipt', 'aiDescriptionNote',
+  'specs', 'componentIds', 'comment1', 'comment2', 'vendor', 'aiDescriptionNote',
   'platformBought', 'buyPaymentType', 'kleinanzeigenBuyChatUrl', 'kleinanzeigenBuyChatImage',
   'kleinanzeigenSellerProfileUrl',
   'bulkImportId',
   'source', 'lastModifiedBy', 'aiReviewStatus',
+];
+
+/**
+ * Accessory flags: when the update object includes the key (even as undefined), treat it as an
+ * intentional clear — otherwise cycling OVP/IO to “unspecified” was restored by preserve and
+ * rapid clicks flooded undo + re-renders with no UI change.
+ */
+const ACCESSORY_EXPLICIT_CLEAR_KEYS: (keyof InventoryItem)[] = [
+  'hasOVP',
+  'hasIOShield',
+  'hasReceipt',
 ];
 
 /**
@@ -170,6 +181,14 @@ function applyPreservedFields(oldItem: InventoryItem | undefined, merged: Invent
   const final = { ...merged } as unknown as Record<string, unknown>;
   const oldRecord = oldItem as unknown as Record<string, unknown>;
   const mergedRecord = merged as unknown as Record<string, unknown>;
+  for (const k of ACCESSORY_EXPLICIT_CLEAR_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(mergedRecord, k as string)) {
+      const newVal = mergedRecord[k as string];
+      if (newVal === undefined || newVal === null) {
+        delete final[k as string];
+      }
+    }
+  }
   for (const k of PRESERVE_FROM_OLD_IF_UPDATE_MISSING) {
     const oldVal = oldRecord[k as string];
     const newVal = mergedRecord[k as string];

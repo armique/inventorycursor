@@ -3919,6 +3919,7 @@ const InventoryList: React.FC<Props> = ({
                        onPatch={(patch) =>
                          onUpdate([{ ...item, ...patch }], undefined, {
                            skipActionLog: true,
+                           skipUndo: true,
                          })
                        }
                      />
@@ -6469,7 +6470,10 @@ const InventoryList: React.FC<Props> = ({
                   onDuplicate: (it) => handleDuplicate(it),
                   onDelete: (it) => setItemToDelete(it),
                   onPatchAccessory: (it, patch) =>
-                    onUpdate([{ ...it, ...patch }], undefined, { skipActionLog: true }),
+                    onUpdate([{ ...it, ...patch }], undefined, {
+                      skipActionLog: true,
+                      skipUndo: true,
+                    }),
                 }}
               />
               </div>

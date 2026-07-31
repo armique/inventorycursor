@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Package, Shield } from 'lucide-react';
 import type { InventoryItem } from '../types';
 import {
@@ -48,6 +48,12 @@ function toneClasses(state: AccessoryTriState): string {
   return 'bg-violet-500 text-white border-violet-600 shadow-sm shadow-violet-500/40 ring-1 ring-violet-600/50 hover:bg-violet-600';
 }
 
+const FLUSH_MS = 280;
+
+/**
+ * OVP / IO Blende chips. Optimistic local state + debounced persist so rapid clicks
+ * don't flood inventory updates / undo history / re-renders.
+ */
 const ItemAccessoryToggles: React.FC<Props> = ({ item, children, onPatch, dense, mini }) => {
   const ids = accessoryTogglesForItem(item, children);
   const iconSize = mini ? 10 : dense ? 11 : 12;
@@ -58,6 +64,57 @@ const ItemAccessoryToggles: React.FC<Props> = ({ item, children, onPatch, dense,
         ? 'h-5 min-w-[1.25rem] px-1 rounded-md'
         : 'h-6 min-w-[1.5rem] px-1.5 rounded-lg';
 
+  const [draft, setDraft] = useState<{ hasOVP?: boolean; hasIOShield?: boolean } | null>(null);
+  const pendingRef = useRef<Partial<InventoryItem>>({});
+  const timerRef = useRef<number | null>(null);
+  const onPatchRef = useRef(onPatch);
+  onPatchRef.current = onPatch;
+
+  const effective = draft ? { ...item, ...draft } : item;
+
+  // Drop draft once parent caught up (or item switched).
+  useEffect(() => {
+    setDraft((prev) => {
+      if (!prev) return null;
+      const ovpMatch =
+        !('hasOVP' in prev) || item.hasOVP === prev.hasOVP;
+      const ioMatch =
+        !('hasIOShield' in prev) || item.hasIOShield === prev.hasIOShield;
+      return ovpMatch && ioMatch ? null : prev;
+    });
+  }, [item.hasOVP, item.hasIOShield]);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current != null) {
+        window.clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      const pending = pendingRef.current;
+      if (Object.keys(pending).length) {
+        pendingRef.current = {};
+        onPatchRef.current(pending);
+      }
+    };
+  }, []);
+
+  const flushSoon = () => {
+    if (timerRef.current != null) window.clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = null;
+      const pending = pendingRef.current;
+      pendingRef.current = {};
+      if (Object.keys(pending).length) onPatchRef.current(pending);
+    }, FLUSH_MS);
+  };
+
+  const handleClick = (id: AccessoryToggleId) => {
+    const patch = cycleAccessoryTogglePatch(effective, id);
+    setDraft((prev) => ({ ...(prev || {}), ...patch }));
+    pendingRef.current = { ...pendingRef.current, ...patch };
+    flushSoon();
+  };
+
   return (
     <div
       className="flex items-center gap-0.5 flex-wrap"
@@ -65,7 +122,7 @@ const ItemAccessoryToggles: React.FC<Props> = ({ item, children, onPatch, dense,
       onDoubleClick={(e) => e.stopPropagation()}
     >
       {ids.map((id) => {
-        const state = accessoryToggleState(item, id);
+        const state = accessoryToggleState(effective, id);
         const label = accessoryToggleLabel(id);
         return (
           <button
@@ -73,7 +130,7 @@ const ItemAccessoryToggles: React.FC<Props> = ({ item, children, onPatch, dense,
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              onPatch(cycleAccessoryTogglePatch(item, id));
+              handleClick(id);
             }}
             className={`inline-flex items-center justify-center border transition-colors ${chip} ${toneClasses(state)}`}
             title={accessoryToggleTitle(id, state)}
