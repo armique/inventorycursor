@@ -41,7 +41,7 @@ import {
   normalizeDashboardPreferences,
   getDefaultDashboardPreferences,
 } from './services/dashboardPreferences';
-import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchFromCloud, fetchGamificationState, writeGamificationState, completeGoogleRedirectSignIn, consumeAuthReturnPath, getAuthErrorMessage } from './services/firebaseService';
+import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchFromCloud, fetchGamificationState, writeGamificationState, completeGoogleRedirectSignIn, consumeAuthReturnPath, consumeRedirectPending, getAuthErrorMessage, resolveAuthDomain } from './services/firebaseService';
 import { installAiBridge, isAiSessionActive } from './services/aiSession';
 import { installAiInboxBridge } from './services/aiInboxBridge';
 import { recordAiActions, type NewAiAction } from './services/aiActionLog';
@@ -242,6 +242,7 @@ function GoogleAuthRedirectBootstrap() {
     let cancelled = false;
     (async () => {
       try {
+        const pending = consumeRedirectPending();
         const user = await completeGoogleRedirectSignIn();
         if (cancelled) return;
         const returnPath = consumeAuthReturnPath();
@@ -254,6 +255,16 @@ function GoogleAuthRedirectBootstrap() {
           !window.location.pathname.startsWith('/upload/')
         ) {
           navigate(returnPath || '/panel/dashboard', { replace: true });
+        } else if (pending && !user) {
+          const origin = window.location.origin;
+          const authDomain = resolveAuthDomain();
+          console.error('[auth] Redirect returned without a session', { origin, authDomain });
+          alert(
+            `Google sign-in did not complete on this device.\n\n` +
+              `1) Confirm Firebase Authorized domains includes ${window.location.hostname}\n` +
+              `2) In Google Cloud → Credentials → OAuth Web client, add:\n${origin}/__/auth/handler\n\n` +
+              `Then try Sign in again.`
+          );
         }
       } catch (err) {
         console.error('Google redirect bootstrap failed', err);

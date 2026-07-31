@@ -13,6 +13,21 @@ export default defineConfig(({ mode }) => ({
     // false, so the emulator branch is dropped from the bundle.
     'import.meta.env.VITE_FIREBASE_EMULATOR': JSON.stringify(mode === 'emulator'),
   },
+  server: {
+    // Same-origin Firebase Auth helper (mobile redirect). Mirrors vercel.json production proxy.
+    proxy: {
+      '/__/auth': {
+        target: 'https://inventorycursor-e9000.firebaseapp.com',
+        changeOrigin: true,
+        secure: true,
+      },
+      '/__/firebase': {
+        target: 'https://inventorycursor-e9000.firebaseapp.com',
+        changeOrigin: true,
+        secure: true,
+      },
+    },
+  },
   build: {
     outDir: 'dist',
     rollupOptions: {

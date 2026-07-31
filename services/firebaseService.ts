@@ -71,6 +71,22 @@ const DEFAULT_FIREBASE_CONFIG: FirebaseConfig = {
   appId: "1:844355746831:web:41b3829c7de55eeadd777a",
 };
 
+/** Firebase Hosting helper origin (proxied from the app domain for mobile redirect auth). */
+export const FIREBASE_AUTH_HELPER_HOST = "inventorycursor-e9000.firebaseapp.com";
+
+/**
+ * Use the current app host as authDomain when we proxy `/__/auth/*` there.
+ * Required so Safari/Chrome do not block the redirect sign-in storage handshake
+ * (app on armiktech.com + authDomain on *.firebaseapp.com = infinite sign-in loop).
+ */
+export function resolveAuthDomain(fallback = FIREBASE_AUTH_HELPER_HOST): string {
+  if (typeof window === "undefined") return fallback;
+  const host = window.location.hostname;
+  if (host === "armiktech.com" || host === "www.armiktech.com") return host;
+  if (host === "localhost" || host === "127.0.0.1") return host;
+  return fallback || FIREBASE_AUTH_HELPER_HOST;
+}
+
 export interface FirebaseConfig {
   apiKey: string;
   authDomain?: string;
@@ -83,10 +99,20 @@ export interface FirebaseConfig {
 export function getFirebaseConfig(): FirebaseConfig | null {
   try {
     const saved = localStorage.getItem("firebase_client_config");
-    if (saved) return JSON.parse(saved) as FirebaseConfig;
-    return DEFAULT_FIREBASE_CONFIG;
+    const base = saved
+      ? (JSON.parse(saved) as FirebaseConfig)
+      : DEFAULT_FIREBASE_CONFIG;
+    if (!base?.apiKey || !base?.projectId) return DEFAULT_FIREBASE_CONFIG;
+    return {
+      ...base,
+      // Always prefer same-origin authDomain when the host is proxied (see vercel.json / vite proxy).
+      authDomain: resolveAuthDomain(base.authDomain || FIREBASE_AUTH_HELPER_HOST),
+    };
   } catch {
-    return DEFAULT_FIREBASE_CONFIG;
+    return {
+      ...DEFAULT_FIREBASE_CONFIG,
+      authDomain: resolveAuthDomain(DEFAULT_FIREBASE_CONFIG.authDomain),
+    };
   }
 }
 
@@ -190,11 +216,20 @@ export function getAuthErrorMessage(err: unknown): string {
   if (code === 'auth/network-request-failed') {
     return 'Network error during sign-in. Check your connection and try again.';
   }
+  if (
+    /redirect_uri_mismatch/i.test(message) ||
+    (/invalid.?request/i.test(message) && /redirect/i.test(message))
+  ) {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://armiktech.com';
+    return `Google rejected the sign-in return URL. In Google Cloud Console → APIs & Services → Credentials → your OAuth 2.0 Web client, add Authorized redirect URI: ${origin}/__/auth/handler`;
+  }
   return message || 'Sign-in failed.';
 }
 
 /** sessionStorage key for post-OAuth return path (panel or phone upload). */
 export const AUTH_RETURN_PATH_KEY = 'deinventory_auth_return';
+/** Set before redirect so we can show an error if the return has no session. */
+export const AUTH_REDIRECT_PENDING_KEY = 'deinventory_auth_redirect_pending';
 
 /** Phones/tablets: Google popup auth is unreliable — use full-page redirect. */
 export function prefersRedirectSignIn(): boolean {
@@ -216,6 +251,24 @@ function rememberAuthReturnPath(explicit?: string): void {
     sessionStorage.setItem(AUTH_RETURN_PATH_KEY, safe);
   } catch {
     /* private mode */
+  }
+}
+
+function markRedirectPending(): void {
+  try {
+    sessionStorage.setItem(AUTH_REDIRECT_PENDING_KEY, '1');
+  } catch {
+    /* ignore */
+  }
+}
+
+export function consumeRedirectPending(): boolean {
+  try {
+    const pending = sessionStorage.getItem(AUTH_REDIRECT_PENDING_KEY) === '1';
+    sessionStorage.removeItem(AUTH_REDIRECT_PENDING_KEY);
+    return pending;
+  } catch {
+    return false;
   }
 }
 
@@ -251,11 +304,11 @@ export async function signInWithGoogle(options?: { returnPath?: string }): Promi
   if (!ctx?.auth) throw new Error("Firebase not configured. Check Settings.");
   await setPersistence(ctx.auth, browserLocalPersistence);
   const provider = new GoogleAuthProvider();
-  provider.setCustomParameters({ prompt: 'select_account' });
   rememberAuthReturnPath(options?.returnPath);
 
   const useRedirect = isUsingFirebaseEmulator() || prefersRedirectSignIn();
   if (useRedirect) {
+    markRedirectPending();
     await signInWithRedirect(ctx.auth, provider);
     return null;
   }
@@ -269,6 +322,7 @@ export async function signInWithGoogle(options?: { returnPath?: string }): Promi
     // Only fall back to redirect when the popup could not open — not when the user
     // closed it (that used to cause a mobile refresh / re-prompt loop).
     if (code === 'auth/popup-blocked' || code === 'auth/cancelled-popup-request') {
+      markRedirectPending();
       await signInWithRedirect(ctx.auth, provider);
       return null;
     }
