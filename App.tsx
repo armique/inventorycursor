@@ -41,7 +41,7 @@ import {
   normalizeDashboardPreferences,
   getDefaultDashboardPreferences,
 } from './services/dashboardPreferences';
-import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchFromCloud, fetchGamificationState, writeGamificationState } from './services/firebaseService';
+import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchFromCloud, fetchGamificationState, writeGamificationState, completeGoogleRedirectSignIn, consumeAuthReturnPath, getAuthErrorMessage } from './services/firebaseService';
 import { installAiBridge, isAiSessionActive } from './services/aiSession';
 import { installAiInboxBridge } from './services/aiInboxBridge';
 import { recordAiActions, type NewAiAction } from './services/aiActionLog';
@@ -230,6 +230,43 @@ function EbayOAuthCallback() {
       </p>
     </div>
   );
+}
+
+/**
+ * Finish Google redirect OAuth on every route (including `/`), then send the user
+ * back to the panel/upload URL they started from.
+ */
+function GoogleAuthRedirectBootstrap() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const user = await completeGoogleRedirectSignIn();
+        if (cancelled) return;
+        const returnPath = consumeAuthReturnPath();
+        const here = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+        if (user && returnPath && returnPath !== here) {
+          navigate(returnPath, { replace: true });
+        } else if (
+          user &&
+          !window.location.pathname.startsWith('/panel') &&
+          !window.location.pathname.startsWith('/upload/')
+        ) {
+          navigate(returnPath || '/panel/dashboard', { replace: true });
+        }
+      } catch (err) {
+        console.error('Google redirect bootstrap failed', err);
+        if (!cancelled && window.location.pathname.startsWith('/panel')) {
+          alert(getAuthErrorMessage(err));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate]);
+  return null;
 }
 
 function GitHubOAuthCallback() {
@@ -493,6 +530,8 @@ const App: React.FC = () => {
   const preferredCloudFlushMsRef = useRef(WRITE_DEBOUNCE_MS);
   const pendingCloudFlushRef = useRef(false);
   const initialWriteDoneRef = useRef(false);
+  /** Blocks cloud uploads until the first pull finishes (prevents empty-phone wipe). */
+  const cloudHydratedRef = useRef(!isCloudEnabled());
   const ebayOrderIndexPulledRef = useRef(false);
   const storeCatalogPublishDoneRef = useRef(false);
   const catalogPublishDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -789,6 +828,7 @@ const App: React.FC = () => {
       }
       if (!user) {
         initialWriteDoneRef.current = false;
+        cloudHydratedRef.current = !isCloudEnabled();
         ebayOrderIndexPulledRef.current = false;
         setSyncState(prev => ({ ...prev, status: 'idle', message: undefined }));
         return;
@@ -797,6 +837,10 @@ const App: React.FC = () => {
       unsubSnapshot = subscribeToData(user.uid, (data) => {
         if (data && shouldApplyRemoteSnapshot(data)) {
           applyRemoteData(data);
+        }
+        if (data) {
+          // Real-time snapshot arrived — safe to upload local edits afterward.
+          cloudHydratedRef.current = true;
         }
         remoteSnapshotSeenRef.current = true;
         setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
@@ -907,55 +951,72 @@ const App: React.FC = () => {
   }, [appState, items, categories, categoryFields, trash, expenses, businessSettings, monthlyGoal, recurringExpenses]);
 
   // Initial cloud sync when user signs in:
-  // - FIRST try to pull existing data from Firestore so a new device never overwrites cloud with an empty local state.
-  // - ONLY if there is no remote document yet do we push the local snapshot once.
+  // - FIRST pull from Firestore so a new/empty device never overwrites cloud.
+  // - ONLY seed cloud from local when remote truly has no document AND local has data.
   useEffect(() => {
     if (!authUser || !isCloudEnabled() || initialWriteDoneRef.current) return;
     initialWriteDoneRef.current = true;
+    cloudHydratedRef.current = false;
 
     (async () => {
       try {
-        // 1) Try to read existing cloud data for this user.
+        setSyncState({ status: 'syncing', lastSynced: null, message: 'Downloading from cloud…' });
         const remote = await fetchFromCloud();
         if (remote) {
           applyRemoteData(remote as any);
+          cloudHydratedRef.current = true;
+          pendingCloudFlushRef.current = false;
           setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
-          // Ensure storefront catalog is up to date with remote data.
           await writeStoreCatalog(buildStoreCatalog((remote.inventory || []) as InventoryItem[], remote.categoryFields || {})).catch((e) =>
             console.warn('Store catalog update failed', e)
           );
           return;
         }
 
-        // 2) No remote doc yet: push current local state once to initialize cloud.
+        // No remote doc yet: push local only when this device actually has inventory/expenses.
+        const localHasData =
+          itemsRef.current.length > 0 ||
+          trashRef.current.length > 0 ||
+          expensesRef.current.length > 0;
+        if (!localHasData) {
+          cloudHydratedRef.current = true;
+          pendingCloudFlushRef.current = false;
+          setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
+          return;
+        }
+
+        const snap = getSyncSnapshot();
         const payload = {
-          inventory: items,
-          trash,
-          expenses,
-          recurringExpenses,
-          categories,
-          categoryFields,
-          settings: businessSettings,
-          goals: { monthly: monthlyGoal },
-          dashboard: dashboardPrefs,
-          actionHistory: actionHistory.slice(-ACTION_HISTORY_LIMIT),
-          bulkImports: bulkImports.slice(0, BULK_IMPORTS_LIMIT),
+          inventory: snap.items,
+          trash: snap.trash,
+          expenses: snap.expenses,
+          recurringExpenses: snap.recurringExpenses,
+          categories: snap.categories,
+          categoryFields: snap.categoryFields,
+          settings: snap.businessSettings,
+          goals: { monthly: snap.monthlyGoal },
+          dashboard: snap.dashboardPrefs,
+          actionHistory: snap.actionHistory.slice(-ACTION_HISTORY_LIMIT),
+          bulkImports: snap.bulkImports.slice(0, BULK_IMPORTS_LIMIT),
         };
         await writeToCloud(payload);
         hasUnsavedChanges.current = false;
+        cloudHydratedRef.current = true;
+        pendingCloudFlushRef.current = false;
         suppressRemoteApplyUntilRef.current = Date.now() + REMOTE_APPLY_SUPPRESS_MS;
         setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
         scheduleBackgroundWork(async () => {
-          await writeStoreCatalog(buildStoreCatalog(items, categoryFields)).catch((e) =>
+          await writeStoreCatalog(buildStoreCatalog(snap.items, snap.categoryFields)).catch((e) =>
             console.warn('Store catalog update failed', e)
           );
         });
       } catch (err) {
         initialWriteDoneRef.current = false;
+        cloudHydratedRef.current = false;
         setSyncState((prev) => ({ ...prev, status: 'error', message: getSyncErrorMessage(err) }));
       }
     })();
-  }, [authUser, items, trash, expenses, recurringExpenses, categories, categoryFields, businessSettings, monthlyGoal, dashboardPrefs, actionHistory, bulkImports, applyRemoteData]);
+  }, [authUser, applyRemoteData, getSyncSnapshot]);
 
   // Re-hydrate eBay caches (orders / purchases / active listings) from Firestore when local is empty.
   useEffect(() => {
@@ -1090,6 +1151,11 @@ const App: React.FC = () => {
 
   const runSilentCloudSync = useCallback(async () => {
     if (!isCloudEnabled() || !authUser) return;
+    // Wait until the first cloud pull finishes — never upload a blank phone cache first.
+    if (!cloudHydratedRef.current) {
+      pendingCloudFlushRef.current = true;
+      return;
+    }
     if (cloudSyncInFlightRef.current) {
       pendingCloudFlushRef.current = true;
       return;
@@ -1189,6 +1255,7 @@ const App: React.FC = () => {
     }, LOCAL_PERSIST_DEBOUNCE_MS);
 
     if (!isCloudEnabled() || !authUser) return;
+    if (!cloudHydratedRef.current) return;
     if (writeDebounceRef.current) clearTimeout(writeDebounceRef.current);
     const delay = resolveCloudFlushDelay(preferredCloudFlushMsRef.current);
     preferredCloudFlushMsRef.current = WRITE_DEBOUNCE_MS;
@@ -1276,7 +1343,7 @@ const App: React.FC = () => {
     };
     try {
       cloudSyncInFlightRef.current = true;
-      await writeToCloud(payload);
+      await writeToCloud(payload, { allowEmptyOverwrite: true });
       hasUnsavedChanges.current = false;
       suppressRemoteApplyUntilRef.current = Date.now() + REMOTE_APPLY_SUPPRESS_MS;
       scheduleBackgroundWork(() =>
@@ -1866,6 +1933,7 @@ const App: React.FC = () => {
   return (
     <Router>
       <Analytics />
+      <GoogleAuthRedirectBootstrap />
       <UndoToastProvider>
       <UndoToastBridge showUndoRef={showUndoRef} />
       <PanelLocaleProvider>

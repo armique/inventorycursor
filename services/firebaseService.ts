@@ -193,6 +193,43 @@ export function getAuthErrorMessage(err: unknown): string {
   return message || 'Sign-in failed.';
 }
 
+/** sessionStorage key for post-OAuth return path (panel or phone upload). */
+export const AUTH_RETURN_PATH_KEY = 'deinventory_auth_return';
+
+/** Phones/tablets: Google popup auth is unreliable — use full-page redirect. */
+export function prefersRedirectSignIn(): boolean {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  if (/iPhone|iPad|iPod|Android/i.test(ua)) return true;
+  // iPadOS 13+ often reports as MacIntel with touch
+  if (navigator.platform === 'MacIntel' && Number(navigator.maxTouchPoints || 0) > 1) return true;
+  return false;
+}
+
+function rememberAuthReturnPath(explicit?: string): void {
+  try {
+    const path = (explicit || `${window.location.pathname}${window.location.search}${window.location.hash}`).trim();
+    const safe =
+      path.startsWith('/panel') || path.startsWith('/upload/')
+        ? path
+        : '/panel/dashboard';
+    sessionStorage.setItem(AUTH_RETURN_PATH_KEY, safe);
+  } catch {
+    /* private mode */
+  }
+}
+
+export function consumeAuthReturnPath(): string | null {
+  try {
+    const path = sessionStorage.getItem(AUTH_RETURN_PATH_KEY);
+    sessionStorage.removeItem(AUTH_RETURN_PATH_KEY);
+    if (path && (path.startsWith('/panel') || path.startsWith('/upload/'))) return path;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 /**
  * Sign in with Google via popup. Returns the user when complete.
  */
@@ -205,31 +242,33 @@ export async function signInWithGooglePopup(): Promise<User> {
   return result.user;
 }
 
-/** Popup first; falls back to full-page redirect when popups are blocked. */
-export async function signInWithGoogle(): Promise<User | null> {
+/**
+ * Google sign-in: redirect on mobile (and emulator); popup on desktop.
+ * Returns null when a full-page redirect was started (caller should wait for reload).
+ */
+export async function signInWithGoogle(options?: { returnPath?: string }): Promise<User | null> {
   const ctx = init();
   if (!ctx?.auth) throw new Error("Firebase not configured. Check Settings.");
   await setPersistence(ctx.auth, browserLocalPersistence);
   const provider = new GoogleAuthProvider();
-  if (isUsingFirebaseEmulator()) {
-    // The Auth Emulator's popup flow relays the result back via window.opener
-    // postMessage, which only exists when the popup was truly opened by window.open()
-    // from a live app tab. Automated/embedded browser contexts break that chain
-    // ("No matching frame"), so skip straight to full-page redirect here.
+  provider.setCustomParameters({ prompt: 'select_account' });
+  rememberAuthReturnPath(options?.returnPath);
+
+  const useRedirect = isUsingFirebaseEmulator() || prefersRedirectSignIn();
+  if (useRedirect) {
     await signInWithRedirect(ctx.auth, provider);
     return null;
   }
+
   try {
     const result = await signInWithPopup(ctx.auth, provider);
     return result.user;
   } catch (err: unknown) {
     const code = (err as { code?: string })?.code || '';
     if (code === 'auth/unauthorized-domain') throw err;
-    if (
-      code === 'auth/popup-blocked' ||
-      code === 'auth/popup-closed-by-user' ||
-      code === 'auth/cancelled-popup-request'
-    ) {
+    // Only fall back to redirect when the popup could not open — not when the user
+    // closed it (that used to cause a mobile refresh / re-prompt loop).
+    if (code === 'auth/popup-blocked' || code === 'auth/cancelled-popup-request') {
       await signInWithRedirect(ctx.auth, provider);
       return null;
     }
@@ -266,16 +305,21 @@ export async function signInEmulatorWithEmail(email: string): Promise<User> {
   }
 }
 
-/** Call once on app boot to finish a redirect sign-in flow. */
+/**
+ * Call once on app boot (any route) to finish a redirect sign-in flow.
+ * Must run on `/` too — a misconfigured `/panel` → `/` redirect used to drop
+ * OAuth returns on the storefront where PanelLayout never mounted.
+ */
 export async function completeGoogleRedirectSignIn(): Promise<User | null> {
   const ctx = init();
   if (!ctx?.auth) return null;
   try {
+    await setPersistence(ctx.auth, browserLocalPersistence);
     const result = await getRedirectResult(ctx.auth);
     return result?.user ?? null;
   } catch (err) {
     console.error('Redirect sign-in failed', err);
-    return null;
+    throw err;
   }
 }
 
@@ -757,11 +801,26 @@ function syncPackCollectionRef(db: Firestore, uid: string) {
   return collection(db, "users", uid, SYNC_PACK_COLLECTION);
 }
 
+function remotePackHasInventory(snap: QuerySnapshot): boolean {
+  for (const d of snap.docs) {
+    if (d.id === 'meta') {
+      const chunks = Number((d.data() as { inventoryChunks?: number }).inventoryChunks);
+      if (Number.isFinite(chunks) && chunks > 0) return true;
+    }
+    if (/^i\d+$/.test(d.id)) {
+      const items = (d.data() as { items?: unknown[] }).items;
+      if (Array.isArray(items) && items.length > 0) return true;
+    }
+  }
+  return false;
+}
+
 async function writeShardedSyncPack(
   db: Firestore,
   uid: string,
   data: FirestoreInventoryPayload,
-  savedBy: string
+  savedBy: string,
+  options?: { allowEmptyOverwrite?: boolean }
 ): Promise<void> {
   await yieldToMain();
   const colRef = syncPackCollectionRef(db, uid);
@@ -775,6 +834,17 @@ async function writeShardedSyncPack(
   const corePayload = shrinkCoreUntilUnder(buildCorePayloadForShard(data), CHUNK_BODY_MAX);
 
   const existingSnap = await getDocs(colRef);
+  const incomingInventory = (data.inventory || []).length;
+  if (
+    incomingInventory === 0 &&
+    !options?.allowEmptyOverwrite &&
+    remotePackHasInventory(existingSnap)
+  ) {
+    throw new Error(
+      'Refusing to overwrite cloud inventory with an empty device cache. Wait for sync to finish, or open Settings → Force push only if you intentionally cleared stock.'
+    );
+  }
+
   const extraDeletes: string[] = [];
   existingSnap.forEach((d) => {
     const id = d.id;
@@ -873,24 +943,20 @@ export function subscribeToData(
 
 /**
  * One-time read (e.g. for boot before subscription is active). Prefer subscribeToData for real-time.
+ * Throws on Firestore errors so callers do not treat a failed pull as “empty cloud”.
  */
 export async function fetchFromCloud(): Promise<FirestoreInventoryPayload | null> {
   const ctx = init();
   const user = ctx?.auth?.currentUser;
   if (!ctx?.db || !user) return null;
 
-  try {
-    const colRef = syncPackCollectionRef(ctx.db, user.uid);
-    const packSnap = await getDocs(colRef);
-    if (!packSnap.empty) {
-      return assemblePayloadFromSyncSnapshot(packSnap);
-    }
-    const leg = await getDoc(legacyInventoryDocRef(ctx.db, user.uid));
-    return leg.exists() ? (leg.data() as FirestoreInventoryPayload) : null;
-  } catch (err) {
-    console.error("Firestore fetch error:", err);
-    return null;
+  const colRef = syncPackCollectionRef(ctx.db, user.uid);
+  const packSnap = await getDocs(colRef);
+  if (!packSnap.empty) {
+    return assemblePayloadFromSyncSnapshot(packSnap);
   }
+  const leg = await getDoc(legacyInventoryDocRef(ctx.db, user.uid));
+  return leg.exists() ? (leg.data() as FirestoreInventoryPayload) : null;
 }
 
 /**
@@ -920,8 +986,14 @@ function getSyncErrorMessage(err: unknown): string {
  * Write current app state to Firestore. Call after local changes (debounced in app).
  * Other clients will receive the update via their onSnapshot listener.
  * Throws with a user-friendly message (see getSyncErrorMessage).
+ *
+ * By default refuses to replace a non-empty cloud inventory with an empty local
+ * snapshot (common on a fresh phone before the cloud pull finishes).
  */
-export async function writeToCloud(data: FirestoreInventoryPayload): Promise<void> {
+export async function writeToCloud(
+  data: FirestoreInventoryPayload,
+  options?: { allowEmptyOverwrite?: boolean }
+): Promise<void> {
   const ctx = init();
   const user = ctx?.auth?.currentUser;
   if (!ctx?.db || !user) throw new Error("Not signed in");
@@ -929,7 +1001,7 @@ export async function writeToCloud(data: FirestoreInventoryPayload): Promise<voi
   await yieldToMain();
 
   try {
-    await writeShardedSyncPack(ctx.db, user.uid, data, user.email ?? user.uid);
+    await writeShardedSyncPack(ctx.db, user.uid, data, user.email ?? user.uid, options);
   } catch (err) {
     const msg = err instanceof Error && err.message ? err.message : getSyncErrorMessage(err);
     const wrapped = new Error(msg) as Error & { cause?: unknown };

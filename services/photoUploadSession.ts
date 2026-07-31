@@ -17,11 +17,11 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
-import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import {
   getCurrentUser,
   getFirebaseContext,
   isCloudEnabled,
+  signInWithGoogle,
 } from './firebaseService';
 import { createPhotoUploadToken } from '../utils/photoUploadToken';
 
@@ -151,8 +151,10 @@ export async function revokePhotoUploadSession(token: string): Promise<void> {
 export async function ensureGoogleUploadAuth(): Promise<void> {
   const ctx = requireCtx();
   if (ctx.auth.currentUser && !ctx.auth.currentUser.isAnonymous) return;
-  const provider = new GoogleAuthProvider();
-  await signInWithPopup(ctx.auth, provider);
+  // Prefer mobile redirect (same path as panel) — popup-only broke iOS Safari.
+  await signInWithGoogle({
+    returnPath: `${window.location.pathname}${window.location.search}`,
+  });
 }
 
 export async function uploadPhonePhotoToSession(

@@ -13,10 +13,10 @@ import { usePanelKeyboardShortcuts } from '../hooks/usePanelKeyboardShortcuts';
 import {
   signInWithGoogle,
   logOut,
-  completeGoogleRedirectSignIn,
   getAuthErrorMessage,
   isUsingFirebaseEmulator,
   signInEmulatorWithEmail,
+  prefersRedirectSignIn,
 } from '../services/firebaseService';
 import QuotaMonitor from './QuotaMonitor';
 import FirestoreQuotaWidget from './FirestoreQuotaWidget';
@@ -68,10 +68,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   const aiSession = useAiSession();
   /** Deals unresolved for 3+ days — flagged on Inventory, since the Inbox lives there. */
   const staleDealCount = useStaleDealCount();
-
-  React.useEffect(() => {
-    void completeGoogleRedirectSignIn().catch(() => {});
-  }, []);
+  const mobileRedirectSignIn = prefersRedirectSignIn();
 
   // Lock document scroll while the panel shell owns nested scroll regions (esp. inventory on mobile).
   React.useEffect(() => {
@@ -131,7 +128,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
                   // ignore
                 } finally {
                   setSigningIn(false);
-                  window.location.reload();
                 }
               }}
               className="flex-1 py-3 px-4 rounded-xl bg-slate-900 text-white font-semibold text-sm hover:bg-slate-800 disabled:opacity-50"
@@ -155,19 +151,27 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             onClick={async () => {
               setSigningIn(true);
               try {
-                await signInWithGoogle();
+                const user = await signInWithGoogle({
+                  returnPath: `${window.location.pathname}${window.location.search}`,
+                });
+                // Redirect flow: page navigates away; keep spinner until unload.
+                if (!user) return;
               } catch (e) {
                 console.error(e);
                 alert(getAuthErrorMessage(e));
-              } finally {
                 setSigningIn(false);
               }
             }}
             className="w-full py-3 px-4 rounded-xl bg-slate-900 text-white font-semibold text-sm hover:bg-slate-800 disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {signingIn ? <Loader2 size={18} className="animate-spin" /> : null}
-            Sign in with Google
+            {signingIn && mobileRedirectSignIn ? 'Redirecting to Google…' : 'Sign in with Google'}
           </button>
+          {mobileRedirectSignIn && (
+            <p className="text-xs text-slate-500 mt-3">
+              On phones, Google opens in this tab. After you approve, you return here and inventory downloads from the cloud.
+            </p>
+          )}
           {isUsingFirebaseEmulator() && (
             <div className="mt-4 pt-4 border-t border-dashed border-slate-200 text-left">
               <p className="text-[10px] font-black uppercase tracking-widest text-amber-600 mb-2">
