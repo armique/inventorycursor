@@ -27,7 +27,7 @@ import {
   resolveProductCardGalleryOwner,
 } from '../utils/productCardParentMatch';
 import { listingAccessoriesReady } from '../utils/itemAccessoryToggles';
-import { ADD_FLOW_INPUT, ADD_FLOW_LABEL } from './addFlowShared';
+import { ADD_FLOW_LABEL } from './addFlowShared';
 
 type Props = {
   item: InventoryItem;
@@ -45,6 +45,14 @@ function urlsOnItem(item: InventoryItem): string[] {
   return [item.imageUrl, ...(item.imageUrls || [])].filter(
     (u): u is string => typeof u === 'string' && u.trim().length > 0
   );
+}
+
+function pickerBtnClass(active: boolean, disabled?: boolean): string {
+  return `text-left rounded-xl border px-2.5 py-2 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 ${
+    active
+      ? 'border-teal-400 bg-teal-50 text-teal-950 ring-1 ring-teal-200/80 shadow-[0_1px_0_rgba(13,148,136,0.1)]'
+      : 'border-slate-200 bg-white text-slate-800 hover:border-slate-300 hover:bg-slate-50'
+  } ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`;
 }
 
 /**
@@ -131,6 +139,58 @@ const GeminiProductCardMini: React.FC<Props> = ({
   const accessoriesGate = listingAccessoriesReady(item);
   const canGenerateCard = Boolean(item.name?.trim()) && accessoriesGate.ok;
 
+  const pickerBlock = (
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        <p className={ADD_FLOW_LABEL}>AI</p>
+        <div className="flex flex-wrap gap-1.5">
+          {providerList.map((p) => {
+            const active = p.id === provider;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                disabled={loading || !p.available}
+                onClick={() => setProvider(p.id)}
+                title={p.available ? p.blurb : `${p.name} — API key not configured`}
+                aria-pressed={active}
+                className={pickerBtnClass(active, loading || !p.available)}
+              >
+                <span className="block text-[11px] font-black">{p.name}</span>
+                <span className={`block text-[10px] font-semibold mt-0.5 ${active ? 'text-teal-700/80' : 'text-slate-500'}`}>
+                  {p.blurb}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <p className={ADD_FLOW_LABEL}>Style · choose before generate</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-44 overflow-y-auto pr-0.5">
+          {PRODUCT_CARD_STYLES.map((s) => {
+            const active = s.id === styleId;
+            return (
+              <button
+                key={s.id}
+                type="button"
+                disabled={loading}
+                onClick={() => setStyleId(s.id)}
+                aria-pressed={active}
+                className={pickerBtnClass(active, loading)}
+              >
+                <span className="block text-[11px] font-black leading-snug">{s.name}</span>
+                <span className={`block text-[10px] font-semibold mt-0.5 leading-snug ${active ? 'text-teal-700/80' : 'text-slate-500'}`}>
+                  {s.blurb}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+
   const pushPhotoOntoItem = async (source: string, entry?: GeneratedProductCardEntry | null) => {
     const prepared = await resolveUrlForInventoryMainPhoto(
       source,
@@ -216,35 +276,36 @@ const GeminiProductCardMini: React.FC<Props> = ({
   if (!started && !preview && gallery.length === 0) {
     return (
       <div
-        className={`h-full flex flex-col items-center justify-center text-center gap-3 px-4 py-8 ${
+        className={`h-full flex flex-col gap-3 min-h-0 px-1 py-2 ${
           highlight ? 'ring-2 ring-slate-900/10 rounded-xl' : ''
         }`}
       >
-        <div className="w-12 h-12 rounded-2xl border border-slate-200 bg-white text-slate-600 inline-flex items-center justify-center">
-          <Sparkles size={22} strokeWidth={1.75} />
-        </div>
-        <div>
+        <div className="text-center space-y-1 px-2">
           <p className="text-sm font-black text-slate-900">AI card studio</p>
-          <p className="text-[11px] font-semibold text-slate-500 mt-1 max-w-[16rem]">
-            Generated cards are added as item photos and saved to the card gallery.
+          <p className="text-[11px] font-semibold text-slate-500">
+            Pick AI + style, then generate — card is added as an item photo.
           </p>
         </div>
+
+        {pickerBlock}
+
         {!accessoriesGate.ok && (
-          <p className="text-[10px] font-semibold text-violet-900 bg-violet-100 border border-violet-300 rounded-lg px-3 py-2 max-w-[18rem]">
+          <p className="text-[10px] font-semibold text-violet-900 bg-violet-100 border border-violet-300 rounded-lg px-3 py-2">
             {accessoriesGate.reason}
           </p>
         )}
+
         <button
           type="button"
           onClick={() => void generate()}
           disabled={loading || !canGenerateCard}
           title={accessoriesGate.reason || undefined}
-          className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-slate-900 text-white text-[11px] font-black uppercase tracking-widest hover:bg-slate-800 disabled:opacity-40"
+          className="mt-auto inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-900 text-white text-[11px] font-black uppercase tracking-widest hover:bg-slate-800 disabled:opacity-40"
         >
           {loading ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
           Generate card
         </button>
-        {error && <p className="text-[10px] font-bold text-red-600">{error}</p>}
+        {error && <p className="text-[10px] font-bold text-red-600 text-center">{error}</p>}
       </div>
     );
   }
@@ -261,7 +322,7 @@ const GeminiProductCardMini: React.FC<Props> = ({
             <Sparkles size={11} /> AI card studio
           </p>
           <p className="text-[11px] font-semibold text-slate-500 mt-0.5">
-            Generate adds a photo · tick gallery cards for the item
+            Change style anytime · generate adds a photo
           </p>
           {galleryOwner.isSharedParent && (
             <p className="text-[10px] font-bold text-amber-800 mt-1">
@@ -271,38 +332,7 @@ const GeminiProductCardMini: React.FC<Props> = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        <div className="space-y-1">
-          <label className={ADD_FLOW_LABEL}>AI</label>
-          <select
-            className={`${ADD_FLOW_INPUT} py-2 text-xs font-bold`}
-            value={provider}
-            disabled={loading}
-            onChange={(e) => setProvider(e.target.value as ProductCardProviderId)}
-          >
-            {providerList.map((p) => (
-              <option key={p.id} value={p.id} disabled={!p.available}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="space-y-1">
-          <label className={ADD_FLOW_LABEL}>Style</label>
-          <select
-            className={`${ADD_FLOW_INPUT} py-2 text-xs font-bold`}
-            value={styleId}
-            disabled={loading}
-            onChange={(e) => setStyleId(e.target.value as ProductCardStyleId)}
-          >
-            {PRODUCT_CARD_STYLES.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
+      {pickerBlock}
 
       <div className="flex-1 min-h-[8rem] rounded-xl border border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center relative">
         {loading ? (
