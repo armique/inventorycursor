@@ -76,15 +76,11 @@ const DEFAULT_FIREBASE_CONFIG: FirebaseConfig = {
 export const FIREBASE_AUTH_HELPER_HOST = "inventorycursor-e9000.firebaseapp.com";
 
 /**
- * Use the current app host as authDomain when we proxy `/__/auth/*` there.
- * Required so Safari/Chrome do not block the redirect sign-in storage handshake
- * (app on armiktech.com + authDomain on *.firebaseapp.com = infinite sign-in loop).
+ * Use the current app host as authDomain only when doing full-page redirect auth
+ * AND `/__/auth` is proxied on that host. Default stays on *.firebaseapp.com —
+ * custom authDomain was breaking post-login for GIS / popup sessions on Vercel.
  */
 export function resolveAuthDomain(fallback = FIREBASE_AUTH_HELPER_HOST): string {
-  if (typeof window === "undefined") return fallback;
-  const host = window.location.hostname;
-  if (host === "armiktech.com" || host === "www.armiktech.com") return host;
-  if (host === "localhost" || host === "127.0.0.1") return host;
   return fallback || FIREBASE_AUTH_HELPER_HOST;
 }
 
@@ -342,6 +338,36 @@ type GisTokenClient = {
   requestAccessToken: (override?: { prompt?: string }) => void;
 };
 
+type GisId = {
+  initialize: (config: {
+    client_id: string;
+    callback: (response: { credential: string }) => void;
+    auto_select?: boolean;
+    cancel_on_tap_outside?: boolean;
+    context?: string;
+    ux_mode?: 'popup' | 'redirect';
+  }) => void;
+  prompt: (momentListener?: (notification: {
+    isNotDisplayed: () => boolean;
+    isSkippedMoment: () => boolean;
+    isDismissedMoment: () => boolean;
+    getNotDisplayedReason?: () => string;
+    getSkippedReason?: () => string;
+  }) => void) => void;
+  renderButton: (
+    parent: HTMLElement,
+    options: {
+      type?: string;
+      theme?: string;
+      size?: string;
+      text?: string;
+      shape?: string;
+      width?: number;
+    }
+  ) => void;
+  cancel: () => void;
+};
+
 type GisOauth2 = {
   initTokenClient: (config: {
     client_id: string;
@@ -351,24 +377,27 @@ type GisOauth2 = {
   }) => GisTokenClient;
 };
 
-function getGisOauth2(): GisOauth2 | null {
-  const g = (window as unknown as { google?: { accounts?: { oauth2?: GisOauth2 } } }).google;
-  return g?.accounts?.oauth2 ?? null;
+function getGisApi(): { id?: GisId; oauth2?: GisOauth2 } | null {
+  const g = (window as unknown as { google?: { accounts?: { id?: GisId; oauth2?: GisOauth2 } } }).google;
+  return g?.accounts ?? null;
 }
 
-function loadGoogleIdentityServices(): Promise<GisOauth2> {
-  const existing = getGisOauth2();
-  if (existing) return Promise.resolve(existing);
+function loadGoogleIdentityServices(): Promise<{ id?: GisId; oauth2?: GisOauth2 }> {
+  const existing = getGisApi();
+  if (existing?.id || existing?.oauth2) return Promise.resolve(existing);
 
   return new Promise((resolve, reject) => {
     const prev = document.querySelector<HTMLScriptElement>('script[data-gis="1"]');
+    const done = () => {
+      const api = getGisApi();
+      if (api?.id || api?.oauth2) resolve(api!);
+      else reject(new Error("Google sign-in script loaded but API is missing."));
+    };
     if (prev) {
-      prev.addEventListener("load", () => {
-        const oauth2 = getGisOauth2();
-        if (oauth2) resolve(oauth2);
-        else reject(new Error("Google sign-in script loaded but oauth2 API is missing."));
-      });
+      prev.addEventListener("load", done);
       prev.addEventListener("error", () => reject(new Error("Failed to load Google sign-in script.")));
+      // Script may already be loaded (index.html).
+      if (getGisApi()?.id || getGisApi()?.oauth2) done();
       return;
     }
     const script = document.createElement("script");
@@ -376,25 +405,120 @@ function loadGoogleIdentityServices(): Promise<GisOauth2> {
     script.async = true;
     script.defer = true;
     script.dataset.gis = "1";
-    script.onload = () => {
-      const oauth2 = getGisOauth2();
-      if (oauth2) resolve(oauth2);
-      else reject(new Error("Google sign-in script loaded but oauth2 API is missing."));
-    };
+    script.onload = done;
     script.onerror = () => reject(new Error("Failed to load Google sign-in script."));
     document.head.appendChild(script);
   });
 }
 
+function showGoogleButtonOverlay(): { host: HTMLElement; cleanup: () => void } {
+  const host = document.createElement("div");
+  host.setAttribute("data-gis-overlay", "1");
+  host.style.cssText =
+    "position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,0.55);padding:16px;";
+  host.innerHTML = `
+    <div style="background:#fff;border-radius:20px;padding:24px;max-width:360px;width:100%;text-align:center;font-family:system-ui,sans-serif;box-shadow:0 20px 50px rgba(0,0,0,.25)">
+      <p style="margin:0 0 8px;font-weight:800;font-size:18px;color:#0f172a">Continue with Google</p>
+      <p style="margin:0 0 20px;font-size:13px;font-weight:600;color:#64748b">Tap the button below to finish signing in.</p>
+      <div data-gis-btn style="display:flex;justify-content:center;min-height:44px"></div>
+      <button type="button" data-gis-cancel style="margin-top:16px;border:0;background:transparent;color:#64748b;font-weight:700;font-size:12px;cursor:pointer">Cancel</button>
+    </div>
+  `;
+  document.body.appendChild(host);
+  const cleanup = () => {
+    host.remove();
+  };
+  return { host, cleanup };
+}
+
 /**
- * Mobile-safe Google sign-in via Google Identity Services (access token → Firebase credential).
- * Avoids Firebase signInWithRedirect /__/auth/handler which hits redirect_uri_mismatch on Vercel.
+ * Mobile-safe Google sign-in via Google Identity Services (ID token → Firebase).
+ * Prefers GIS ID credential; falls back to access-token client if needed.
  */
 async function signInWithGoogleIdentityServices(auth: Auth): Promise<User> {
-  const [oauth2, clientId] = await Promise.all([
+  const [gis, clientId] = await Promise.all([
     loadGoogleIdentityServices(),
     resolveGoogleWebClientId(),
   ]);
+
+  // Preferred: ID token (JWT) from Google Identity Services.
+  if (gis.id) {
+    return new Promise<User>((resolve, reject) => {
+      let settled = false;
+      let cleanupOverlay: (() => void) | null = null;
+      const finish = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        cleanupOverlay?.();
+        try {
+          gis.id?.cancel();
+        } catch {
+          /* ignore */
+        }
+        fn();
+      };
+
+      gis.id!.initialize({
+        client_id: clientId,
+        auto_select: false,
+        cancel_on_tap_outside: true,
+        callback: (response) => {
+          void (async () => {
+            try {
+              if (!response?.credential) {
+                finish(() => reject(new Error("Google did not return an ID token.")));
+                return;
+              }
+              const credential = GoogleAuthProvider.credential(response.credential);
+              const result = await signInWithCredential(auth, credential);
+              finish(() => resolve(result.user));
+            } catch (err) {
+              finish(() => reject(err));
+            }
+          })();
+        },
+      });
+
+      const showButtonFallback = () => {
+        const { host, cleanup } = showGoogleButtonOverlay();
+        cleanupOverlay = cleanup;
+        const btnParent = host.querySelector<HTMLElement>("[data-gis-btn]");
+        const cancelBtn = host.querySelector<HTMLButtonElement>("[data-gis-cancel]");
+        cancelBtn?.addEventListener("click", () => {
+          finish(() => reject(new Error("Google sign-in was cancelled.")));
+        });
+        if (btnParent) {
+          gis.id!.renderButton(btnParent, {
+            type: "standard",
+            theme: "outline",
+            size: "large",
+            text: "signin_with",
+            shape: "pill",
+            width: 280,
+          });
+        }
+      };
+
+      try {
+        gis.id!.prompt((notification) => {
+          if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+            showButtonFallback();
+          }
+        });
+        // If prompt never shows a UI (some mobile browsers), ensure a button appears.
+        window.setTimeout(() => {
+          if (!settled && !cleanupOverlay) showButtonFallback();
+        }, 1200);
+      } catch {
+        showButtonFallback();
+      }
+    });
+  }
+
+  // Fallback: access token client (older GIS path).
+  if (!gis.oauth2) {
+    throw new Error("Google sign-in is unavailable in this browser.");
+  }
   return new Promise<User>((resolve, reject) => {
     let settled = false;
     const finish = (fn: () => void) => {
@@ -402,8 +526,7 @@ async function signInWithGoogleIdentityServices(auth: Auth): Promise<User> {
       settled = true;
       fn();
     };
-
-    const client = oauth2.initTokenClient({
+    const client = gis.oauth2!.initTokenClient({
       client_id: clientId,
       scope: "openid email profile",
       callback: (response) => {
@@ -430,12 +553,9 @@ async function signInWithGoogleIdentityServices(auth: Auth): Promise<User> {
         })();
       },
       error_callback: (err) => {
-        finish(() =>
-          reject(new Error(err?.message || err?.type || "Google sign-in failed."))
-        );
+        finish(() => reject(new Error(err?.message || err?.type || "Google sign-in failed.")));
       },
     });
-
     try {
       client.requestAccessToken({ prompt: "select_account" });
     } catch (err) {
