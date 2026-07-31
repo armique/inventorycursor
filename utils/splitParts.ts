@@ -406,7 +406,25 @@ export function detectIdenticalQtyHint(name: string): number | null {
 }
 
 /**
- * N identical child drafts sharing the source name; buy cost split equally.
+ * Strip lot multipliers from a title so children are plain unit names.
+ * "x8 Samsung SSD" / "8x Samsung SSD" / "Samsung SSD 8 pcs" → "Samsung SSD"
+ */
+export function stripIdenticalQtyFromName(name: string): string {
+  let out = String(name || '').trim();
+  if (!out) return out;
+  out = out
+    .replace(/\b\d{1,2}\s*[x×]\b/gi, ' ')
+    .replace(/\b[x×]\s*\d{1,2}\b/gi, ' ')
+    .replace(/\b\d{1,2}\s*pcs?\b/gi, ' ')
+    .replace(/\b\d{1,2}\s*stück\b/gi, ' ')
+    .replace(/[_\-–—|/]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  return out || String(name || '').trim();
+}
+
+/**
+ * N identical child drafts sharing a cleaned unit name; buy cost split equally.
  */
 export function buildIdenticalCopyDrafts(
   source: Pick<InventoryItem, 'name' | 'buyPrice' | 'category' | 'subCategory' | 'isDefective'>,
@@ -415,7 +433,10 @@ export function buildIdenticalCopyDrafts(
 ): SplitPartDraft[] {
   const count = Math.min(48, Math.max(2, Math.round(Number(qty) || 2)));
   const prevByKey = new Map((previous || []).map((d) => [d.key, d]));
-  const baseName = String(source.name || '').trim() || 'Item';
+  const baseName =
+    stripIdenticalQtyFromName(String(source.name || '').trim()) ||
+    String(source.name || '').trim() ||
+    'Item';
   const drafts: SplitPartDraft[] = [];
 
   for (let i = 0; i < count; i++) {

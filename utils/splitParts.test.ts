@@ -11,6 +11,7 @@ import {
   detectAioHints,
   detectIdenticalQtyHint,
   shortSourceStem,
+  stripIdenticalQtyFromName,
 } from './splitParts';
 
 describe('splitParts', () => {
@@ -124,9 +125,12 @@ describe('splitParts', () => {
       comment2: '',
     };
     expect(detectIdenticalQtyHint(source.name)).toBe(8);
+    expect(stripIdenticalQtyFromName('x8 Samsung SSD')).toBe('Samsung SSD');
+    expect(stripIdenticalQtyFromName('8x Samsung SSD')).toBe('Samsung SSD');
+    expect(stripIdenticalQtyFromName('Samsung SSD x8')).toBe('Samsung SSD');
     const drafts = buildIdenticalCopyDrafts(source, 8);
     expect(drafts).toHaveLength(8);
-    expect(drafts.every((d) => d.name === source.name)).toBe(true);
+    expect(drafts.every((d) => d.name === 'Kingston NV2 1TB SSD')).toBe(true);
     const sum = drafts.reduce((s, d) => s + d.buyPrice, 0);
     expect(Math.round(sum * 100) / 100).toBe(200);
     expect(drafts.every((d) => d.buyPrice === 25)).toBe(true);
@@ -135,7 +139,7 @@ describe('splitParts', () => {
     expect(parent.isBundle).toBe(true);
     expect(children).toHaveLength(8);
     expect(children.every((c) => c.buyPrice === 25)).toBe(true);
-    expect(children.every((c) => c.name === source.name)).toBe(true);
+    expect(children.every((c) => c.name === 'Kingston NV2 1TB SSD')).toBe(true);
     expect(Number(parent.buyPrice)).toBe(200);
   });
 });
