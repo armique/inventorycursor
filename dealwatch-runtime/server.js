@@ -3200,7 +3200,8 @@ async function fetchBrowseOnce(query, searchText) {
 
   const url = `https://api.ebay.com/buy/browse/v1/item_summary/search?${searchParams}`;
   const interactive = Boolean(query.interactive);
-  const maxRetries = interactive ? Math.min(2, EBAY_MAX_RETRIES_ON_429) : EBAY_MAX_RETRIES_ON_429;
+  // Monitor: fail fast on 429 so it does not burn the shared Browse budget.
+  const maxRetries = interactive ? Math.min(1, EBAY_MAX_RETRIES_ON_429) : Math.min(1, EBAY_MAX_RETRIES_ON_429);
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     let response;
@@ -4239,11 +4240,11 @@ async function handleDealwatchRequest(request, response) {
         });
       } catch (error) {
         console.error('Listings request failed:', error.message);
-        sendJson(response, 502, {
-          error: marketplaceHint === 'kleinanzeigen'
-            ? `Kleinanzeigen: ${error.message}`
-            : `eBay API: ${error.message}`,
-        });
+        const msg = error instanceof Error ? error.message : String(error);
+        const prefixed = marketplaceHint === 'kleinanzeigen'
+          ? (msg.startsWith('Kleinanzeigen') ? msg : `Kleinanzeigen: ${msg}`)
+          : (msg.startsWith('eBay') ? msg : `eBay API: ${msg}`);
+        sendJson(response, 502, { error: prefixed });
       }
       return;
     }
