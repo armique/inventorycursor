@@ -1695,6 +1695,7 @@ const InventoryList: React.FC<Props> = ({
         hasIOShield: item.hasIOShield,
         hasReceipt: item.hasReceipt,
         aiDescriptionNote: item.aiDescriptionNote,
+        children: getChildren(item, items),
       });
       const updated: InventoryItem = {
         ...item,
@@ -3036,6 +3037,7 @@ const InventoryList: React.FC<Props> = ({
              hasIOShield: selected[i].hasIOShield,
              hasReceipt: selected[i].hasReceipt,
              aiDescriptionNote: selected[i].aiDescriptionNote,
+             children: getChildren(selected[i], items),
            });
            updates.push({
              ...selected[i],

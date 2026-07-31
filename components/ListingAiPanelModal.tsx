@@ -7,6 +7,8 @@ import {
   generateMarketplaceListing,
   type MarketplaceListingResult,
 } from '../services/marketplaceListingAI';
+import { getChildren } from '../services/financialAggregation';
+import { listingAccessoriesReady } from '../utils/itemAccessoryToggles';
 
 interface Props {
   item: InventoryItem;
@@ -57,11 +59,18 @@ const ListingAiPanelModal: React.FC<Props> = ({ item, onClose, onApply }) => {
     setLoading(true);
     setError(null);
     try {
+      const children = allItems?.length ? getChildren(item, allItems) : [];
+      const gate = listingAccessoriesReady(item, children);
+      if (!gate.ok) {
+        setError(gate.reason || 'Confirm OVP / IO Blende first.');
+        return;
+      }
       const result = await generateMarketplaceListing(item, {
         hasOVP: item.hasOVP,
         hasIOShield: item.hasIOShield,
         hasReceipt: item.hasReceipt,
         aiDescriptionNote: item.aiDescriptionNote,
+        children,
       });
       applyResult(result);
     } catch (e) {

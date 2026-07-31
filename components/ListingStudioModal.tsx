@@ -579,6 +579,7 @@ const ListingStudioModal: React.FC<Props> = ({
         hasIOShield: listingAccessories.hasIOShield,
         hasReceipt: listingAccessories.hasReceipt || undefined,
         aiDescriptionNote: aiDescriptionNote.trim() || undefined,
+        children: containerChildren,
       });
       setTitle(result.ebayTitle);
       setDescription(result.listingText);

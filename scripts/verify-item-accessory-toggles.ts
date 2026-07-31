@@ -12,6 +12,7 @@ import {
   isIOShieldRelevant,
   isMotherboardItem,
   listingAccessoriesReady,
+  resolveIoShieldTriState,
 } from '../utils/itemAccessoryToggles.ts';
 
 assert.equal(isMotherboardItem({ category: 'Motherboards', subCategory: '' }), true);
@@ -65,5 +66,20 @@ assert.equal(
 );
 
 assert.equal(accessoryToggleLabel('io'), 'IO Blende');
+
+assert.equal(
+  resolveIoShieldTriState(
+    { category: 'Bundle', subCategory: '', isBundle: true, name: 'Kit' },
+    [{ category: 'Components', subCategory: 'Motherboards', name: 'Z97', hasIOShield: false }]
+  ),
+  'missing'
+);
+assert.equal(
+  listingAccessoriesReady(
+    { category: 'Bundle', subCategory: '', isBundle: true, name: 'Kit', hasOVP: true },
+    [{ category: 'Components', subCategory: 'Motherboards', name: 'Z97', hasIOShield: true }]
+  ).ok,
+  true
+);
 
 console.log('verify-item-accessory-toggles: all checks passed');

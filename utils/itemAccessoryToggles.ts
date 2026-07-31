@@ -17,7 +17,10 @@ export type AccessoryItemRef = Pick<
   'category' | 'subCategory' | 'isBundle' | 'isPC' | 'name' | 'componentIds' | 'hasOVP' | 'hasIOShield'
 >;
 
-export type AccessoryChildRef = Pick<InventoryItem, 'category' | 'subCategory' | 'name'>;
+export type AccessoryChildRef = Pick<
+  InventoryItem,
+  'category' | 'subCategory' | 'name' | 'hasIOShield'
+>;
 
 export function isMotherboardItem(
   item: Pick<InventoryItem, 'category' | 'subCategory'>
@@ -117,6 +120,29 @@ export function accessoryStateLabel(state: AccessoryTriState): string {
 }
 
 /**
+ * IO Blende tri-state for listing: parent flag first, else motherboard child flag
+ * (bundles often store IO on the mobo part or on the kit itself).
+ */
+export function resolveIoShieldTriState(
+  item: AccessoryItemRef,
+  children?: AccessoryChildRef[],
+  override?: boolean
+): AccessoryTriState | 'na' {
+  if (!isIOShieldRelevant(item, children)) return 'na';
+  if (override !== undefined) {
+    return override ? 'present' : 'missing';
+  }
+  const own = accessoryToggleState(item, 'io');
+  if (own !== 'unspecified') return own;
+  for (const child of children || []) {
+    if (!isMotherboardItem(child)) continue;
+    const st = accessoryToggleState(child, 'io');
+    if (st !== 'unspecified') return st;
+  }
+  return 'unspecified';
+}
+
+/**
  * AI listing / card studio may run only after required accessory icons are confirmed
  * (not left on purple / unspecified).
  */
@@ -130,11 +156,14 @@ export function listingAccessoriesReady(
       reason: 'Confirm OVP first (green = present, red = missing). Purple means not set yet.',
     };
   }
-  if (isIOShieldRelevant(item, children) && accessoryToggleState(item, 'io') === 'unspecified') {
-    return {
-      ok: false,
-      reason: 'Confirm IO Blende first (green = present, red = missing). Purple means not set yet.',
-    };
+  if (isIOShieldRelevant(item, children)) {
+    const io = resolveIoShieldTriState(item, children);
+    if (io === 'unspecified') {
+      return {
+        ok: false,
+        reason: 'Confirm IO Blende first (green = present, red = missing). Purple means not set yet.',
+      };
+    }
   }
   return { ok: true };
 }
@@ -150,13 +179,10 @@ export function formatAccessoryHintsForAI(
   else if (ovp === 'missing') lines.push('OVP: NO — Ohne Originalverpackung');
   else lines.push('OVP: UNSPECIFIED');
 
-  if (isIOShieldRelevant(item, children)) {
-    const io = accessoryToggleState(item, 'io');
-    if (io === 'present') lines.push('IO-Blende: YES — IO-Blende inklusive');
-    else if (io === 'missing') lines.push('IO-Blende: NO — Ohne IO-Blende');
-    else lines.push('IO-Blende: UNSPECIFIED');
-  } else {
-    lines.push('IO-Blende: NOT APPLICABLE — do not mention IO-Blende / IO Shield at all');
-  }
+  const io = resolveIoShieldTriState(item, children);
+  if (io === 'present') lines.push('IO-Blende: YES — IO-Blende inklusive (MUST state in Lieferumfang)');
+  else if (io === 'missing') lines.push('IO-Blende: NO — Ohne IO-Blende (MUST state in Lieferumfang)');
+  else if (io === 'unspecified') lines.push('IO-Blende: UNSPECIFIED');
+  else lines.push('IO-Blende: NOT APPLICABLE — do not mention IO-Blende / IO Shield at all');
   return lines;
 }

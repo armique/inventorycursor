@@ -638,7 +638,14 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       alert('Please enter an item name first.');
       return;
     }
-    const gate = listingAccessoriesReady(formData as InventoryItem);
+    const formChildren = items.length
+      ? items.filter(
+          (i) =>
+            i.parentContainerId === formData.id ||
+            (formData.componentIds || []).includes(i.id)
+        )
+      : [];
+    const gate = listingAccessoriesReady(formData as InventoryItem, formChildren);
     if (!gate.ok) {
       alert(gate.reason || 'Confirm OVP / IO Blende first.');
       return;
@@ -655,6 +662,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
         hasOVP: formData.hasOVP,
         hasIOShield: formData.hasIOShield,
         aiDescriptionNote: noteParts.filter(Boolean).join('\n') || undefined,
+        children: formChildren,
       });
       setFormData((prev) => ({
         ...prev,
