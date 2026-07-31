@@ -33,6 +33,7 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   signInWithRedirect,
+  signInWithCredential,
   getRedirectResult,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -295,36 +296,148 @@ export async function signInWithGooglePopup(): Promise<User> {
   return result.user;
 }
 
+/** OAuth Web client from Google Cloud (InventoryCursor) — used by GIS, not Firebase redirect. */
+export const GOOGLE_WEB_CLIENT_ID =
+  "844355746831-1ljb175ft765o296ujie2871hd1fv1cv.apps.googleusercontent.com";
+
+type GisTokenClient = {
+  requestAccessToken: (override?: { prompt?: string }) => void;
+};
+
+type GisOauth2 = {
+  initTokenClient: (config: {
+    client_id: string;
+    scope: string;
+    callback: (response: { access_token?: string; error?: string; error_description?: string }) => void;
+    error_callback?: (err: { type?: string; message?: string }) => void;
+  }) => GisTokenClient;
+};
+
+function getGisOauth2(): GisOauth2 | null {
+  const g = (window as unknown as { google?: { accounts?: { oauth2?: GisOauth2 } } }).google;
+  return g?.accounts?.oauth2 ?? null;
+}
+
+function loadGoogleIdentityServices(): Promise<GisOauth2> {
+  const existing = getGisOauth2();
+  if (existing) return Promise.resolve(existing);
+
+  return new Promise((resolve, reject) => {
+    const prev = document.querySelector<HTMLScriptElement>('script[data-gis="1"]');
+    if (prev) {
+      prev.addEventListener("load", () => {
+        const oauth2 = getGisOauth2();
+        if (oauth2) resolve(oauth2);
+        else reject(new Error("Google sign-in script loaded but oauth2 API is missing."));
+      });
+      prev.addEventListener("error", () => reject(new Error("Failed to load Google sign-in script.")));
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.dataset.gis = "1";
+    script.onload = () => {
+      const oauth2 = getGisOauth2();
+      if (oauth2) resolve(oauth2);
+      else reject(new Error("Google sign-in script loaded but oauth2 API is missing."));
+    };
+    script.onerror = () => reject(new Error("Failed to load Google sign-in script."));
+    document.head.appendChild(script);
+  });
+}
+
 /**
- * Google sign-in: redirect on mobile (and emulator); popup on desktop.
- * Returns null when a full-page redirect was started (caller should wait for reload).
+ * Mobile-safe Google sign-in via Google Identity Services (access token → Firebase credential).
+ * Avoids Firebase signInWithRedirect /__/auth/handler which hits redirect_uri_mismatch on Vercel.
+ */
+async function signInWithGoogleIdentityServices(auth: Auth): Promise<User> {
+  const oauth2 = await loadGoogleIdentityServices();
+  return new Promise<User>((resolve, reject) => {
+    let settled = false;
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      fn();
+    };
+
+    const client = oauth2.initTokenClient({
+      client_id: GOOGLE_WEB_CLIENT_ID,
+      scope: "openid email profile",
+      callback: (response) => {
+        void (async () => {
+          try {
+            if (response.error) {
+              finish(() =>
+                reject(
+                  new Error(response.error_description || response.error || "Google sign-in was cancelled.")
+                )
+              );
+              return;
+            }
+            if (!response.access_token) {
+              finish(() => reject(new Error("Google did not return an access token.")));
+              return;
+            }
+            const credential = GoogleAuthProvider.credential(null, response.access_token);
+            const result = await signInWithCredential(auth, credential);
+            finish(() => resolve(result.user));
+          } catch (err) {
+            finish(() => reject(err));
+          }
+        })();
+      },
+      error_callback: (err) => {
+        finish(() =>
+          reject(new Error(err?.message || err?.type || "Google sign-in failed."))
+        );
+      },
+    });
+
+    try {
+      client.requestAccessToken({ prompt: "select_account" });
+    } catch (err) {
+      finish(() => reject(err instanceof Error ? err : new Error(String(err))));
+    }
+  });
+}
+
+/**
+ * Google sign-in. Mobile uses Google Identity Services (no /__/auth/handler redirect).
+ * Desktop uses Firebase popup, with GIS fallback if the popup is blocked.
  */
 export async function signInWithGoogle(options?: { returnPath?: string }): Promise<User | null> {
   const ctx = init();
   if (!ctx?.auth) throw new Error("Firebase not configured. Check Settings.");
   await setPersistence(ctx.auth, browserLocalPersistence);
-  const provider = new GoogleAuthProvider();
   rememberAuthReturnPath(options?.returnPath);
 
-  const useRedirect = isUsingFirebaseEmulator() || prefersRedirectSignIn();
-  if (useRedirect) {
+  if (isUsingFirebaseEmulator()) {
+    const provider = new GoogleAuthProvider();
     markRedirectPending();
     await signInWithRedirect(ctx.auth, provider);
     return null;
   }
 
+  // Phones: GIS token client — does not use Firebase redirect_uri (fixes Error 400 mismatch).
+  if (prefersRedirectSignIn()) {
+    return signInWithGoogleIdentityServices(ctx.auth);
+  }
+
   try {
+    const provider = new GoogleAuthProvider();
     const result = await signInWithPopup(ctx.auth, provider);
     return result.user;
   } catch (err: unknown) {
-    const code = (err as { code?: string })?.code || '';
-    if (code === 'auth/unauthorized-domain') throw err;
-    // Only fall back to redirect when the popup could not open — not when the user
-    // closed it (that used to cause a mobile refresh / re-prompt loop).
-    if (code === 'auth/popup-blocked' || code === 'auth/cancelled-popup-request') {
-      markRedirectPending();
-      await signInWithRedirect(ctx.auth, provider);
-      return null;
+    const code = (err as { code?: string })?.code || "";
+    if (code === "auth/unauthorized-domain") throw err;
+    if (
+      code === "auth/popup-blocked" ||
+      code === "auth/cancelled-popup-request" ||
+      code === "auth/popup-closed-by-user"
+    ) {
+      return signInWithGoogleIdentityServices(ctx.auth);
     }
     throw err;
   }

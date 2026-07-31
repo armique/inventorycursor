@@ -154,22 +154,22 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
                 const user = await signInWithGoogle({
                   returnPath: `${window.location.pathname}${window.location.search}`,
                 });
-                // Redirect flow: page navigates away; keep spinner until unload.
                 if (!user) return;
               } catch (e) {
                 console.error(e);
                 alert(getAuthErrorMessage(e));
+              } finally {
                 setSigningIn(false);
               }
             }}
             className="w-full py-3 px-4 rounded-xl bg-slate-900 text-white font-semibold text-sm hover:bg-slate-800 disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {signingIn ? <Loader2 size={18} className="animate-spin" /> : null}
-            {signingIn && mobileRedirectSignIn ? 'Redirecting to Google…' : 'Sign in with Google'}
+            {signingIn ? 'Waiting for Google…' : 'Sign in with Google'}
           </button>
           {mobileRedirectSignIn && (
             <p className="text-xs text-slate-500 mt-3">
-              On phones, Google opens in this tab. After you approve, you return here and inventory downloads from the cloud.
+              A Google account window will open. After you approve, your inventory downloads from the cloud onto this phone.
             </p>
           )}
           {isUsingFirebaseEmulator() && (
