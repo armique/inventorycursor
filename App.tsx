@@ -11,6 +11,7 @@ import OpenSettingsFromRoute from './components/OpenSettingsFromRoute';
 const StorefrontPage = lazy(() => import('./components/StorefrontPage'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
 const InventoryList = lazy(() => import('./components/InventoryList'));
+const ItemForm = lazy(() => import('./components/ItemForm'));
 const BulkItemForm = lazy(() => import('./components/BulkItemForm'));
 const SheetsImport = lazy(() => import('./components/SheetsImport'));
 const ExpenseManager = lazy(() => import('./components/ExpenseManager'));
@@ -26,8 +27,6 @@ const ThreeDPrintPage = lazy(() => import('./components/ThreeDPrintPage'));
 const ProductCardGalleryPage = lazy(() => import('./components/ProductCardGalleryPage'));
 const BulkImportHistoryPage = lazy(() => import('./components/BulkImportHistoryPage'));
 const EditItemRoute = lazy(() => import('./components/EditItemRoute'));
-const AddHubPage = lazy(() => import('./components/AddHubPage'));
-const AddItemRoute = lazy(() => import('./components/AddItemRoute'));
 const PhonePhotoUploadPage = lazy(() => import('./components/PhonePhotoUploadPage'));
 const FlipCoachPage = lazy(() => import('./components/FlipCoachPage'));
 const SoldPulsePage = lazy(() => import('./components/SoldPulsePage'));
@@ -2063,19 +2062,7 @@ const App: React.FC = () => {
               />
             }
           />
-          <Route path="add" element={<AddHubPage />} />
-          <Route
-            path="add/item"
-            element={
-              <AddItemRoute
-                onSave={handleUpdate}
-                items={items}
-                categories={categories}
-                onAddCategory={handleAddCategory}
-                categoryFields={categoryFields}
-              />
-            }
-          />
+          <Route path="add" element={<ItemForm onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="add-bulk" element={<BulkItemForm onSave={handleUpdate} onBulkImportComplete={handleBulkImportComplete} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="edit/:id" element={<EditItemRoute onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="builder" element={<BuilderEntry items={items} onSave={handleUpdate} />} />
