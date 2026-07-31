@@ -62,11 +62,12 @@ import {
 import {
   downloadProductCardEntry,
   productCardSaveActionLabel,
-  listProductCardGallery,
+  listProductCardGalleryForItemIds,
   removeProductCardFromGallery,
   resolveProductCardImageUrl,
 } from '../services/productCardGallery';
 import { resolveUrlForInventoryMainPhoto } from '../utils/applyProductCardAsMainPhoto';
+import { productCardGalleryItemIds } from '../utils/productCardParentMatch';
 import { getChildren } from '../services/financialAggregation';
 import { getInventorySoldPriceBand } from '../utils/inventorySoldComps';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
@@ -329,7 +330,8 @@ const ListingStudioModal: React.FC<Props> = ({
   const reloadGallery = useCallback(async () => {
     setGalleryLoading(true);
     try {
-      const list = await listProductCardGallery(item.id);
+      const ids = productCardGalleryItemIds(allItems || [], item);
+      const list = await listProductCardGalleryForItemIds(ids);
       setGallery(list);
       const nextThumbs: Record<string, string> = {};
       await Promise.all(
@@ -351,7 +353,7 @@ const ListingStudioModal: React.FC<Props> = ({
     } finally {
       setGalleryLoading(false);
     }
-  }, [item.id]);
+  }, [item, allItems]);
 
   // Hydrate local studio fields only when switching items.
   // Re-running this on every vendor/spec/photo patch was wiping unsaved Generate listing text
@@ -673,6 +675,7 @@ const ListingStudioModal: React.FC<Props> = ({
         provider,
         photos: photos.slice(0, 3),
         count: n,
+        inventoryItems: allItems || [],
       }
     );
   };

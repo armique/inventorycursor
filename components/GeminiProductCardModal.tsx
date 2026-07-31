@@ -32,6 +32,7 @@ import {
   downloadProductCardEntry,
   isProductCardGalleryCloudReady,
   listProductCardGallery,
+  listProductCardGalleryForItemIds,
   productCardSaveActionLabel,
   removeProductCardFromGallery,
   resolveProductCardImageUrl,
@@ -39,9 +40,14 @@ import {
   shareOrDownloadImageBlob,
 } from '../services/productCardGallery';
 import { resolveUrlForInventoryMainPhoto } from '../utils/applyProductCardAsMainPhoto';
+import {
+  productCardGalleryItemIds,
+  resolveProductCardGalleryOwner,
+} from '../utils/productCardParentMatch';
 
 interface Props {
   item: InventoryItem;
+  inventoryItems?: InventoryItem[];
   categoryFields?: string[];
   onClose: () => void;
   onApplyAsMainPhoto: (url: string) => void | Promise<void>;
@@ -50,6 +56,7 @@ interface Props {
 
 const GeminiProductCardModal: React.FC<Props> = ({
   item,
+  inventoryItems = [],
   categoryFields,
   onClose,
   onApplyAsMainPhoto,
@@ -57,6 +64,14 @@ const GeminiProductCardModal: React.FC<Props> = ({
 }) => {
   const fileRef = useRef<HTMLInputElement>(null);
   const itemPhotos = useMemo(() => getItemUserPhotoUrls(item).slice(0, 3), [item]);
+  const galleryOwner = useMemo(
+    () => resolveProductCardGalleryOwner(inventoryItems, item),
+    [inventoryItems, item]
+  );
+  const galleryItemIds = useMemo(
+    () => productCardGalleryItemIds(inventoryItems, item),
+    [inventoryItems, item]
+  );
   const [customPhotos, setCustomPhotos] = useState<string[]>([]);
   const [useItemPhotos, setUseItemPhotos] = useState(true);
   const [provider, setProvider] = useState<ProductCardProviderId>('openai');
@@ -98,7 +113,10 @@ const GeminiProductCardModal: React.FC<Props> = ({
   const reloadGallery = async (scope: 'item' | 'all' = galleryScope) => {
     setGalleryLoading(true);
     try {
-      const list = await listProductCardGallery(scope === 'item' ? item.id : undefined);
+      const list =
+        scope === 'all'
+          ? await listProductCardGallery(undefined)
+          : await listProductCardGalleryForItemIds(galleryItemIds);
       setGallery(list);
       const thumbs: Record<string, string> = {};
       await Promise.all(
@@ -160,8 +178,8 @@ const GeminiProductCardModal: React.FC<Props> = ({
     setGalleryNote(null);
     try {
       const entry = await saveGeneratedProductCard({
-        itemId: item.id,
-        itemName: item.name,
+        itemId: galleryOwner.ownerId,
+        itemName: galleryOwner.ownerName || item.name,
         dataUrl,
         provider: info.provider,
         model: info.model,
@@ -171,7 +189,9 @@ const GeminiProductCardModal: React.FC<Props> = ({
       setSavedEntry(entry);
       setGalleryNote(
         entry.cloudStored
-          ? 'Saved to cloud gallery (high quality) — credits safe'
+          ? galleryOwner.isSharedParent
+            ? `Saved to shared gallery (${galleryOwner.ownerName})`
+            : 'Saved to cloud gallery (high quality) — credits safe'
           : 'Saved locally (IndexedDB) — sign in to also sync to cloud'
       );
       void reloadGallery(galleryScope);

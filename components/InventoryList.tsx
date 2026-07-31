@@ -1697,7 +1697,7 @@ const InventoryList: React.FC<Props> = ({
       const fields =
         (categoryFields || {})[`${item.category}:${item.subCategory}`] ||
         (categoryFields || {})[item.category];
-      enqueueProductCardBackgroundJob(item, { categoryFields: fields });
+      enqueueProductCardBackgroundJob(item, { categoryFields: fields, inventoryItems: items });
       setAiCardRegenConfirmId(null);
       setToast(
         `Generating AI cards in background · ${item.name.slice(0, 36)}${item.name.length > 36 ? '…' : ''}`
@@ -6368,6 +6368,7 @@ const InventoryList: React.FC<Props> = ({
       {geminiCardItem && (
         <GeminiProductCardModal
           item={geminiCardItem}
+          inventoryItems={items}
           categoryFields={
             (categoryFields || {})[`${geminiCardItem.category}:${geminiCardItem.subCategory}`] ||
             (categoryFields || {})[geminiCardItem.category]

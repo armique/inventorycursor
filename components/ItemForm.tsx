@@ -2323,17 +2323,38 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                       comment1: formData.comment1 || '',
                       comment2: formData.comment2 || '',
                     }}
+                    inventoryItems={items}
                     categoryFields={
                       categoryFields[`${formData.category}:${formData.subCategory}`] ||
                       categoryFields[formData.category || '']
                     }
                     highlight={cardStudioHighlight}
-                    onApplyAsMainPhoto={async (url) => {
-                      setFormData((prev) => ({
-                        ...prev,
-                        imageUrl: url,
-                        imageUrls: [url, ...(prev.imageUrls || []).filter((u) => u !== url)],
-                      }));
+                    onAppendPhoto={async (url) => {
+                      setFormData((prev) => {
+                        const merged = normalizeImageList([
+                          ...(prev.imageUrl ? [prev.imageUrl] : []),
+                          ...(prev.imageUrls || []),
+                          url,
+                        ]);
+                        return {
+                          ...prev,
+                          imageUrl: merged[0] || url,
+                          imageUrls: merged,
+                        };
+                      });
+                    }}
+                    onRemovePhotoUrl={async (url) => {
+                      setFormData((prev) => {
+                        const merged = normalizeImageList([
+                          ...(prev.imageUrl ? [prev.imageUrl] : []),
+                          ...(prev.imageUrls || []),
+                        ]).filter((u) => u !== url);
+                        return {
+                          ...prev,
+                          imageUrl: merged[0] || '',
+                          imageUrls: merged.length ? merged : undefined,
+                        };
+                      });
                     }}
                   />
                 </div>

@@ -16,6 +16,7 @@ import {
   DEFAULT_PRODUCT_CARD_STYLE_ID,
   type ProductCardStyleId,
 } from './productCardStyles';
+import { resolveProductCardGalleryOwner } from '../utils/productCardParentMatch';
 
 export type ProductCardBgJobStatus = 'queued' | 'running' | 'done' | 'error';
 
@@ -41,6 +42,8 @@ export type EnqueueProductCardBgOptions = {
   photos?: string[] | null;
   /** Explicit card count (1–3). Overrides photo-based batch size. */
   count?: number;
+  /** Used to attach cards to an exact parent SKU gallery when maker/model/Ti match. */
+  inventoryItems?: InventoryItem[];
 };
 
 type Listener = (jobs: ProductCardBgJob[]) => void;
@@ -217,9 +220,10 @@ async function runOne(work: PendingWork): Promise<void> {
             editFromPhoto: jobPhotos.length > 0,
           }
         );
+        const owner = resolveProductCardGalleryOwner(work.options.inventoryItems || [], work.item);
         const entry = await saveGeneratedProductCard({
-          itemId: work.item.id,
-          itemName: work.item.name,
+          itemId: owner.ownerId,
+          itemName: owner.ownerName || work.item.name,
           dataUrl: result.dataUrl,
           provider: result.provider,
           model: result.model,

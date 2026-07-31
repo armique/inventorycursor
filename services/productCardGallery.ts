@@ -559,6 +559,24 @@ export async function listProductCardGallery(
   );
 }
 
+/** Gallery entries for several item ids (e.g. self + shared parent SKU). */
+export async function listProductCardGalleryForItemIds(
+  itemIds: string[]
+): Promise<GeneratedProductCardEntry[]> {
+  const ids = [...new Set(itemIds.map((id) => (id || '').trim()).filter(Boolean))];
+  if (!ids.length) return [];
+  if (ids.length === 1) return listProductCardGallery(ids[0]);
+
+  const byId = new Map<string, GeneratedProductCardEntry>();
+  for (const id of ids) {
+    const list = await listProductCardGallery(id);
+    for (const e of list) byId.set(e.id, e);
+  }
+  return Array.from(byId.values()).sort((a, b) =>
+    (b.createdAt || '').localeCompare(a.createdAt || '')
+  );
+}
+
 export function groupProductCardGalleryByItem(
   entries: GeneratedProductCardEntry[]
 ): ProductCardGalleryGroup[] {
