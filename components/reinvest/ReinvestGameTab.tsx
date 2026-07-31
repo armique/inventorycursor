@@ -15,6 +15,7 @@ import { loadMissionLog } from '../../utils/flipCoachMissions';
 import { formatEURPrefix } from '../../utils/formatMoney';
 import AchievementGrid from '../gamification/AchievementGrid';
 import WeeklyDigestCard from '../gamification/WeeklyDigestCard';
+import ReinvestStockGaps from './ReinvestStockGaps';
 
 type Props = {
   items: InventoryItem[];
@@ -105,6 +106,8 @@ const ReinvestGameTab: React.FC<Props> = ({ items, reinvestData, gamification, u
           </p>
         </section>
       </div>
+
+      <ReinvestStockGaps items={items} />
 
       <section className="rounded-2xl border border-slate-200 bg-white shadow-card p-4 space-y-2">
         <h2 className="text-[11px] font-black uppercase tracking-widest text-slate-400">Today's quests</h2>

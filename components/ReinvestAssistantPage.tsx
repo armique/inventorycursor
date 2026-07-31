@@ -28,6 +28,7 @@ import ReinvestSkipList from './reinvest/ReinvestSkipList';
 import ReinvestGameTab from './reinvest/ReinvestGameTab';
 import ReinvestAdvisorTab from './reinvest/ReinvestAdvisorTab';
 import ReinvestCategoryBudgets from './reinvest/ReinvestCategoryBudgets';
+import ReinvestStockGaps from './reinvest/ReinvestStockGaps';
 
 type Props = {
   items: InventoryItem[];
@@ -202,6 +203,7 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
       )}
 
       {view === 'buylist' && <ReinvestCategoryBudgets items={items} />}
+      {view === 'buylist' && <ReinvestStockGaps items={items} />}
 
       {view === 'buylist' && (
         <div className="flex items-center justify-between gap-3">

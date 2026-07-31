@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Camera,
   FileText,
@@ -91,9 +91,11 @@ type TileProps = {
   icon: React.ReactNode;
   /** OVP/IO tri-state or item condition (new / used / defective). */
   tone?: TileTone;
+  /** Brief attention pulse after parse / note added. */
+  flash?: boolean;
 };
 
-function IconTile({ selected, disabled, title, label, onClick, icon, tone = 'neutral' }: TileProps) {
+function IconTile({ selected, disabled, title, label, onClick, icon, tone = 'neutral', flash = false }: TileProps) {
   const toneBox =
     tone === 'present' || tone === 'new'
       ? 'border-emerald-600 bg-emerald-500 text-white shadow-sm shadow-emerald-500/40 ring-1 ring-emerald-600/50'
@@ -103,8 +105,8 @@ function IconTile({ selected, disabled, title, label, onClick, icon, tone = 'neu
           ? 'border-violet-600 bg-violet-500 text-white shadow-sm shadow-violet-500/45 ring-1 ring-violet-600/55'
           : tone === 'used'
             ? 'border-amber-800 bg-amber-700 text-white shadow-sm shadow-amber-700/45 ring-1 ring-amber-900/40'
-            : selected
-              ? 'border-slate-900 text-slate-900 bg-white'
+            : selected || flash
+              ? 'border-teal-500 bg-teal-50 text-teal-900 ring-1 ring-teal-300/80'
               : 'border-slate-200 text-slate-600 bg-white';
   const toneWrap =
     tone === 'present' || tone === 'new'
@@ -115,9 +117,11 @@ function IconTile({ selected, disabled, title, label, onClick, icon, tone = 'neu
           ? 'bg-violet-100/90'
           : tone === 'used'
             ? 'bg-amber-100/90'
-            : selected
-              ? 'bg-slate-100/90'
-              : 'hover:bg-slate-100/80';
+            : flash
+              ? 'bg-teal-100/90 ring-2 ring-teal-400/70 shadow-[0_0_0_3px_rgba(45,212,191,0.25)]'
+              : selected
+                ? 'bg-teal-50/90'
+                : 'hover:bg-slate-100/80';
   const labelTone =
     tone === 'present' || tone === 'new'
       ? 'text-emerald-800'
@@ -127,7 +131,9 @@ function IconTile({ selected, disabled, title, label, onClick, icon, tone = 'neu
           ? 'text-violet-800'
           : tone === 'used'
             ? 'text-amber-900'
-            : 'text-slate-800';
+            : flash || selected
+              ? 'text-teal-900'
+              : 'text-slate-800';
 
   return (
     <button
@@ -136,7 +142,7 @@ function IconTile({ selected, disabled, title, label, onClick, icon, tone = 'neu
       aria-pressed={selected || undefined}
       disabled={disabled}
       onClick={onClick}
-      className={`group flex flex-col items-center justify-start text-center rounded-2xl transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 gap-1 px-0.5 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed ${toneWrap}`}
+      className={`group flex flex-col items-center justify-start text-center rounded-2xl transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 gap-1 px-0.5 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed ${toneWrap}`}
     >
       <span
         className={`w-9 h-9 rounded-xl border shadow-[0_1px_0_rgba(15,23,42,0.04)] inline-flex items-center justify-center transition-transform group-hover:-translate-y-0.5 ${toneBox}`}
@@ -203,9 +209,15 @@ const ItemFormAssetToolbar: React.FC<Props> = ({
   nativePhoto,
 }) => {
   const [noteOpen, setNoteOpen] = useState(Boolean((formData.aiDescriptionNote || '').trim()));
+  const [specsFlash, setSpecsFlash] = useState(false);
+  const [noteFlash, setNoteFlash] = useState(false);
   const cameraRef = useRef<HTMLInputElement>(null);
   const libraryRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const prevGeneratingSpecs = useRef(generatingSpecs);
+  const prevNoteTrim = useRef((formData.aiDescriptionNote || '').trim());
+  const specsFlashTimer = useRef<number | null>(null);
+  const noteFlashTimer = useRef<number | null>(null);
 
   const accessories = accessoryTogglesForItem(formData);
   const condition = getBuyCondition(formData);
@@ -218,6 +230,44 @@ const ItemFormAssetToolbar: React.FC<Props> = ({
     : !(formData.name || '').trim()
       ? 'Enter an item name first'
       : undefined;
+
+  const pulseSpecs = () => {
+    if (specsFlashTimer.current != null) window.clearTimeout(specsFlashTimer.current);
+    setSpecsFlash(true);
+    specsFlashTimer.current = window.setTimeout(() => setSpecsFlash(false), 1800);
+  };
+
+  const pulseNote = () => {
+    if (noteFlashTimer.current != null) window.clearTimeout(noteFlashTimer.current);
+    setNoteFlash(true);
+    noteFlashTimer.current = window.setTimeout(() => setNoteFlash(false), 1800);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (specsFlashTimer.current != null) window.clearTimeout(specsFlashTimer.current);
+      if (noteFlashTimer.current != null) window.clearTimeout(noteFlashTimer.current);
+    };
+  }, []);
+
+  // Flash Specs when AI parse finishes with saved specs.
+  useEffect(() => {
+    if (prevGeneratingSpecs.current && !generatingSpecs && hasSpecs) {
+      pulseSpecs();
+    }
+    prevGeneratingSpecs.current = generatingSpecs;
+  }, [generatingSpecs, hasSpecs]);
+
+  // Flash Note when seller note goes from empty → filled.
+  useEffect(() => {
+    const next = (formData.aiDescriptionNote || '').trim();
+    const prev = prevNoteTrim.current;
+    if (!prev && next) {
+      setNoteOpen(true);
+      pulseNote();
+    }
+    prevNoteTrim.current = next;
+  }, [formData.aiDescriptionNote]);
 
   return (
     <div className="space-y-3">
@@ -254,15 +304,20 @@ const ItemFormAssetToolbar: React.FC<Props> = ({
           label="Note"
           title="Seller note for AI description"
           selected={noteOpen || noteFilled}
+          flash={noteFlash}
           onClick={() => setNoteOpen((v) => !v)}
           icon={<StickyNote size={15} strokeWidth={1.75} />}
         />
         <IconTile
           label="Specs"
           title="Parse tech specs with AI (saved silently — review later in inventory)"
-          selected={hasSpecs}
+          selected={hasSpecs || specsFlash}
+          flash={specsFlash}
           disabled={generatingSpecs || !(formData.name || '').trim()}
-          onClick={onParseSpecs}
+          onClick={() => {
+            pulseSpecs();
+            onParseSpecs();
+          }}
           icon={
             generatingSpecs ? (
               <Loader2 size={15} className="animate-spin" />
@@ -434,10 +489,16 @@ const ItemFormAssetToolbar: React.FC<Props> = ({
       )}
 
       {noteOpen && (
-        <div className="space-y-1.5 animate-in fade-in slide-in-from-top-1">
+        <div
+          className={`space-y-1.5 animate-in fade-in slide-in-from-top-1 rounded-xl transition-all duration-300 ${
+            noteFlash ? 'ring-2 ring-teal-400/70 bg-teal-50/60 p-2 -mx-1 shadow-[0_0_0_3px_rgba(45,212,191,0.2)]' : ''
+          }`}
+        >
           <p className={ADD_FLOW_LABEL}>Note for AI description</p>
           <textarea
-            className={`${ADD_FLOW_INPUT} min-h-[4.5rem] font-medium text-xs resize-y`}
+            className={`${ADD_FLOW_INPUT} min-h-[4.5rem] font-medium text-xs resize-y ${
+              noteFlash ? 'border-teal-400 ring-1 ring-teal-300/80' : ''
+            }`}
             placeholder="e.g. wifi antennas aren't original — AI rephrases this into the listing"
             value={formData.aiDescriptionNote || ''}
             maxLength={200}
