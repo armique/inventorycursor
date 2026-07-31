@@ -62,10 +62,15 @@ export function AddCategorySubcategoryPicker({
 
   const tileSize = size === 'sm' ? 'sm' : 'md';
   const iconSize = size === 'sm' ? 18 : 22;
-  const gridClass =
+  const categoryGridClass =
     size === 'sm'
       ? 'grid grid-cols-3 sm:grid-cols-4 gap-1'
       : 'grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-1 sm:gap-2';
+  const subcategoryGridClass =
+    size === 'sm'
+      ? 'grid grid-cols-2 sm:grid-cols-3 gap-2'
+      : 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-2.5';
+  const subIconSize = size === 'sm' ? 26 : 32;
 
   return (
     <div className={`space-y-3 ${className}`}>
@@ -91,7 +96,7 @@ export function AddCategorySubcategoryPicker({
           No categories yet — add some in Settings.
         </p>
       ) : (
-        <div className={gridClass}>
+        <div className={categoryGridClass}>
           {categoryKeys.map((cat) => {
             const Icon = getCategoryIcon(cat);
             const selected = category === cat;
@@ -120,16 +125,17 @@ export function AddCategorySubcategoryPicker({
               No subcategories for “{category}”. Add one in Settings, or continue with the category only.
             </p>
           ) : (
-            <div className={gridClass}>
+            <div className={subcategoryGridClass}>
               {subKeys.map((sub) => {
                 const Icon = getCategoryIcon(sub);
                 const selected = subCategory === sub;
                 return (
                   <AddOptionTile
                     key={sub}
-                    size="sm"
+                    layout="boxed"
+                    size={tileSize}
                     label={sub}
-                    icon={<Icon size={18} strokeWidth={1.75} />}
+                    icon={<Icon size={subIconSize} strokeWidth={1.6} />}
                     selected={selected}
                     dimmed={Boolean(subCategory) && !selected}
                     onClick={() => {

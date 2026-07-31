@@ -108,6 +108,11 @@ type AddOptionTileProps = {
   /** Soften unselected peers once a choice is made. */
   dimmed?: boolean;
   size?: 'md' | 'sm';
+  /**
+   * boxed = single rectangular card (icon + label inside).
+   * default = icon chip with label underneath (Add hub / categories).
+   */
+  layout?: 'default' | 'boxed';
   className?: string;
 };
 
@@ -120,9 +125,54 @@ export function AddOptionTile({
   selected = false,
   dimmed = false,
   size = 'md',
+  layout = 'default',
   className = '',
 }: AddOptionTileProps) {
   const sm = size === 'sm';
+
+  if (layout === 'boxed') {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        aria-pressed={selected || undefined}
+        className={`group flex flex-col items-center justify-center text-center gap-2.5 rounded-2xl border transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 min-h-[5.75rem] sm:min-h-[6.5rem] px-3 py-3.5 ${
+          selected
+            ? 'bg-teal-50 border-teal-300 text-teal-900 shadow-[0_1px_0_rgba(13,148,136,0.12)] ring-1 ring-teal-200/80'
+            : 'bg-white border-slate-200 text-slate-800 hover:border-slate-300 hover:bg-slate-50'
+        } ${
+          dimmed && !selected ? 'opacity-40 blur-[0.5px] hover:opacity-70 hover:blur-0' : ''
+        } ${className}`}
+      >
+        <span
+          className={`inline-flex items-center justify-center transition-transform duration-200 group-hover:-translate-y-0.5 ${
+            selected ? 'text-teal-700' : 'text-slate-600 group-hover:text-slate-900'
+          }`}
+        >
+          {icon}
+        </span>
+        <span className="min-w-0 w-full">
+          <span
+            className={`block font-bold leading-snug line-clamp-2 ${
+              sm ? 'text-[12px]' : 'text-[13px] sm:text-sm'
+            } ${selected ? 'text-teal-950' : 'text-slate-900'}`}
+          >
+            {label}
+          </span>
+          {hint ? (
+            <span
+              className={`block text-[10px] font-semibold mt-0.5 leading-tight line-clamp-1 ${
+                selected ? 'text-teal-700/80' : 'text-slate-500'
+              }`}
+            >
+              {hint}
+            </span>
+          ) : null}
+        </span>
+      </button>
+    );
+  }
+
   return (
     <button
       type="button"
