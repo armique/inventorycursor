@@ -78,6 +78,7 @@ import KleinanzeigenBuyChatProofFields from './KleinanzeigenBuyChatProofFields';
 import SourceLinkIcons from './SourceLinkIcons';
 import ProofAttachmentsPanel from './ProofAttachmentsPanel';
 import { resolveItemSourceLinks } from '../utils/sourceLinks';
+import { ADD_FLOW_INPUT, ADD_FLOW_LABEL, ADD_FLOW_PANEL } from './addFlowShared';
 
 const BUY_PLATFORMS: Platform[] = [
   'kleinanzeigen.de',
@@ -208,6 +209,9 @@ const ListingStudioModal: React.FC<Props> = ({
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [galleryLoading, setGalleryLoading] = useState(false);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+  /** Card gallery entry id → durable URL currently on the item photos. */
+  const [selectedOnItem, setSelectedOnItem] = useState<Record<string, string>>({});
+  const [busyCardId, setBusyCardId] = useState<string | null>(null);
 
   const [provider, setProvider] = useState<ProductCardProviderId>('openai');
   const [providers, setProviders] = useState<ProductCardProviderInfo[]>([]);
@@ -344,6 +348,18 @@ const ListingStudioModal: React.FC<Props> = ({
         })
       );
       setThumbs(nextThumbs);
+      const onItem = new Set(
+        [item.imageUrl, ...(item.imageUrls || [])].filter(
+          (u): u is string => typeof u === 'string' && u.trim().length > 0
+        )
+      );
+      const selected: Record<string, string> = {};
+      for (const e of list) {
+        const candidates = [e.imageUrl, nextThumbs[e.id]].filter(Boolean) as string[];
+        const hit = candidates.find((u) => onItem.has(u));
+        if (hit) selected[e.id] = hit;
+      }
+      setSelectedOnItem(selected);
       setSelectedCardId((prev) => {
         if (prev && list.some((e) => e.id === prev)) return prev;
         return list[0]?.id || null;
@@ -737,6 +753,7 @@ const ListingStudioModal: React.FC<Props> = ({
       const prepared = await resolveUrlForInventoryMainPhoto(url, item.id, entry);
       const merged = normalizeImageList([prepared, item.imageUrl, ...(item.imageUrls || [])]);
       await persistPatch({ imageUrl: merged[0], imageUrls: merged });
+      setSelectedOnItem((prev) => ({ ...prev, [entry.id]: prepared }));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not set main photo');
     } finally {
@@ -744,18 +761,33 @@ const ListingStudioModal: React.FC<Props> = ({
     }
   };
 
-  const handleAddCardToItemGallery = async (entry: GeneratedProductCardEntry) => {
-    setSaving(true);
+  /** Toggle: selected cards are used on the item; others stay only in the card gallery. */
+  const toggleCardOnItem = async (entry: GeneratedProductCardEntry) => {
+    setBusyCardId(entry.id);
     setError(null);
+    setSelectedCardId(entry.id);
     try {
+      const already = selectedOnItem[entry.id];
+      if (already) {
+        const next = normalizeImageList(photos.filter((u) => u !== already));
+        await persistPatch({ imageUrl: next[0] || '', imageUrls: next });
+        setSelectedOnItem((prev) => {
+          const n = { ...prev };
+          delete n[entry.id];
+          return n;
+        });
+        return;
+      }
       const url = thumbs[entry.id] || (await resolveProductCardImageUrl(entry));
       const prepared = await resolveUrlForInventoryMainPhoto(url, item.id, entry);
       const merged = normalizeImageList([item.imageUrl, ...(item.imageUrls || []), prepared]);
       await persistPatch({ imageUrl: merged[0] || '', imageUrls: merged });
+      setSelectedOnItem((prev) => ({ ...prev, [entry.id]: prepared }));
+      if (!thumbs[entry.id]) setThumbs((prev) => ({ ...prev, [entry.id]: url }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not add card to item photos');
+      setError(e instanceof Error ? e.message : 'Could not update item photos');
     } finally {
-      setSaving(false);
+      setBusyCardId(null);
     }
   };
 
@@ -917,13 +949,13 @@ const ListingStudioModal: React.FC<Props> = ({
         className="bg-white w-full sm:max-w-[1280px] h-[100dvh] sm:h-[min(94vh,920px)] sm:rounded-2xl shadow-2xl border-0 sm:border border-slate-200 overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="px-3 py-2 border-b border-slate-100 flex items-center justify-between gap-2 bg-slate-50/90 shrink-0 pt-[max(0.5rem,env(safe-area-inset-top))]">
+        <header className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-2 bg-white shrink-0 pt-[max(0.75rem,env(safe-area-inset-top))]">
           <div className="min-w-0">
             <h3 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
-              <Sparkles size={14} className="text-rose-600" /> Listing Studio
+              <Sparkles size={14} className="text-slate-700" /> Listing Studio
             </h3>
             <p className="hidden sm:block text-[11px] text-slate-500 font-medium truncate">
-              Inventory · Specs · Photos · Title & description
+              Photos · Card gallery · Listing
             </p>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -943,7 +975,7 @@ const ListingStudioModal: React.FC<Props> = ({
           {(
             [
               { id: 'studio-item', label: 'Item' },
-              { id: 'studio-cards', label: 'Cards' },
+              { id: 'studio-photos', label: 'Photos' },
               { id: 'studio-listing', label: 'Listing' },
             ] as const
           ).map((tab) => (
@@ -960,16 +992,14 @@ const ListingStudioModal: React.FC<Props> = ({
 
         <div
           ref={studioScrollRef}
-          className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(240px,0.92fr)_minmax(280px,1.05fr)_minmax(280px,1.05fr)] overflow-y-auto lg:overflow-hidden"
+          className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(220px,0.85fr)_minmax(300px,1.2fr)_minmax(260px,1fr)] overflow-y-auto lg:overflow-hidden bg-slate-50/50"
         >
           {/* LEFT — item / specs / trade */}
-          <aside className="border-r border-slate-100 overflow-y-auto p-2.5 space-y-2.5 lg:p-3 lg:space-y-3 bg-slate-50/40">
+          <aside className="border-r border-slate-100 overflow-y-auto p-3 space-y-3 lg:p-3.5 bg-transparent">
             {/* Where this deal came from — one click to the chat / order / profile. */}
             {itemSourceLinks.list.length > 0 && (
               <section className="flex flex-wrap items-center gap-1.5">
-                <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                  Source
-                </h4>
+                <h4 className={ADD_FLOW_LABEL}>Source</h4>
                 <SourceLinkIcons links={itemSourceLinks} />
                 {itemSourceLinks.externalOrderId && (
                   <span className="text-[10px] font-bold text-slate-400">
@@ -986,11 +1016,9 @@ const ListingStudioModal: React.FC<Props> = ({
               onChange={(next) => void onUpdateItem({ proofAttachments: next })}
             />
 
-            <section id="studio-item" className="scroll-mt-2">
-              <div className="flex items-center justify-between mb-1 gap-2">
-                <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                  Item name
-                </h4>
+            <section id="studio-item" className={`scroll-mt-2 ${ADD_FLOW_PANEL} p-3 space-y-2`}>
+              <div className="flex items-center justify-between mb-0.5 gap-2">
+                <h4 className={ADD_FLOW_LABEL}>Item name</h4>
                 <div className="flex items-center gap-1 shrink-0">
                   <button
                     type="button"
@@ -1006,7 +1034,7 @@ const ListingStudioModal: React.FC<Props> = ({
                     type="button"
                     disabled={generatingTitle || parsingSpecs}
                     onClick={() => void handleGenerateItemTitle()}
-                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-600 text-white text-[9px] font-black uppercase disabled:opacity-50"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-900 text-white text-[9px] font-black uppercase tracking-wider disabled:opacity-50"
                     title="Generate a cleaned item title only (does not change specs)"
                   >
                     {generatingTitle ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
@@ -1015,12 +1043,12 @@ const ListingStudioModal: React.FC<Props> = ({
                 </div>
               </div>
               <input
-                className="w-full px-2.5 py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-900 outline-none focus:border-rose-400"
+                className={ADD_FLOW_INPUT}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 onBlur={() => void persistPatch({ name: name.trim() || item.name })}
               />
-              <div className="mt-1 flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5">
                 <ItemAccessoryToggles
                   item={workingItem}
                   children={containerChildren}
@@ -1028,214 +1056,6 @@ const ListingStudioModal: React.FC<Props> = ({
                   onPatch={(patch) => void persistPatch(patch)}
                 />
               </div>
-            </section>
-
-            <section>
-              <div className="flex items-center justify-between mb-1 gap-2">
-                <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                  Photos for card
-                </h4>
-                <div className="flex items-center gap-1 flex-wrap justify-end">
-                  {nativePhoto ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => cameraRef.current?.click()}
-                        className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-rose-700"
-                        title="Take a photo with this phone"
-                      >
-                        <Camera size={11} /> Camera
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => fileRef.current?.click()}
-                        className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-slate-600 hover:text-rose-700"
-                        title="Pick from Photos library on this phone"
-                      >
-                        <Upload size={11} /> Library
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPhotoSource((s) => (s === 'iphone' ? 'none' : 'iphone'))}
-                        className={`inline-flex items-center gap-1 text-[9px] font-black uppercase ${
-                          photoSource === 'iphone' ? 'text-sky-700' : 'text-slate-500 hover:text-sky-700'
-                        }`}
-                        title="Send photos from another phone via QR"
-                      >
-                        <Smartphone size={11} /> Other phone
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setPhotoSource((s) => (s === 'iphone' ? 'none' : 'iphone'))}
-                        className={`inline-flex items-center gap-1 text-[9px] font-black uppercase ${
-                          photoSource === 'iphone' ? 'text-sky-700' : 'text-slate-600 hover:text-sky-700'
-                        }`}
-                        title="Scan QR on iPhone — pick from full Photos library"
-                      >
-                        <Smartphone size={11} /> iPhone
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPhotoSource((s) => (s === 'folder' ? 'none' : 'folder'))}
-                        className={`inline-flex items-center gap-1 text-[9px] font-black uppercase ${
-                          photoSource === 'folder'
-                            ? 'text-violet-700'
-                            : 'text-slate-600 hover:text-violet-700'
-                        }`}
-                        title="Browse synced iCloud / Photos folder on this PC"
-                      >
-                        <FolderOpen size={11} /> Folder
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!!photoUpload}
-                        onClick={() => fileRef.current?.click()}
-                        className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-slate-600 hover:text-rose-700 disabled:opacity-50"
-                      >
-                        {photoUpload ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}{' '}
-                        {photoUpload ? 'Uploading…' : 'Add'}
-                      </button>
-                    </>
-                  )}
-                </div>
-                <input
-                  ref={cameraRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  className="hidden"
-                  onChange={(e) => void handleAddPhotos(e.target.files)}
-                />
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => void handleAddPhotos(e.target.files)}
-                />
-              </div>
-
-              {photoUpload && (
-                <div className="mb-2 rounded-xl border border-rose-200 bg-rose-50/80 px-3 py-2.5 space-y-1.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-[11px] font-black uppercase tracking-wide text-rose-900 flex items-center gap-1.5">
-                      <Loader2 size={13} className="animate-spin shrink-0" />
-                      Uploading photos {photoUpload.done}/{photoUpload.total}
-                    </p>
-                    <span className="text-[10px] font-bold text-rose-800 tabular-nums">
-                      {photoUpload.total
-                        ? Math.round((photoUpload.done / photoUpload.total) * 100)
-                        : 0}
-                      %
-                    </span>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-rose-100 overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-rose-500 transition-[width] duration-300 ease-out"
-                      style={{
-                        width: `${
-                          photoUpload.total
-                            ? Math.min(
-                                100,
-                                Math.round(
-                                  ((photoUpload.phase === 'start'
-                                    ? photoUpload.done + 0.35
-                                    : photoUpload.done) /
-                                    photoUpload.total) *
-                                    100
-                                )
-                              )
-                            : 0
-                        }%`,
-                      }}
-                    />
-                  </div>
-                  {photoUpload.fileName ? (
-                    <p className="text-[10px] text-rose-800/90 truncate font-medium">
-                      {photoUpload.phase === 'error' ? 'Failed · ' : 'Working on · '}
-                      {photoUpload.fileName}
-                      {photoUpload.phase === 'start' ? ' (convert / compress)' : ''}
-                    </p>
-                  ) : null}
-                </div>
-              )}
-
-              {nativePhoto && photos.length === 0 && photoSource === 'none' && (
-                <div className="mb-2 grid grid-cols-2 gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => cameraRef.current?.click()}
-                    className="flex flex-col items-center justify-center gap-1 h-20 rounded-xl border border-dashed border-rose-300 bg-rose-50/50 text-rose-700"
-                  >
-                    <Camera size={18} />
-                    <span className="text-[10px] font-black uppercase">Camera</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => fileRef.current?.click()}
-                    className="flex flex-col items-center justify-center gap-1 h-20 rounded-xl border border-dashed border-slate-300 bg-slate-50 text-slate-600"
-                  >
-                    <Upload size={18} />
-                    <span className="text-[10px] font-black uppercase">Library</span>
-                  </button>
-                </div>
-              )}
-
-              {photoSource === 'iphone' && (
-                <div className="mb-2">
-                  <PhoneUploadQrPanel
-                    itemId={item.id}
-                    itemName={name || item.name}
-                    onUrls={mergeRemotePhotoUrls}
-                    onClose={() => setPhotoSource('none')}
-                  />
-                </div>
-              )}
-              {photoSource === 'folder' && !nativePhoto && (
-                <div className="mb-2">
-                  <LocalPhotoFolderPanel
-                    maxSelect={6}
-                    onPickFiles={handleFolderFiles}
-                    onClose={() => setPhotoSource('none')}
-                  />
-                </div>
-              )}
-
-              {photos.length === 0 && !(nativePhoto && photoSource === 'none') ? (
-                <div className="h-20 rounded-xl border border-dashed border-slate-300 flex items-center justify-center text-[10px] font-bold text-slate-400">
-                  No photos yet
-                </div>
-              ) : photos.length === 0 ? null : (
-                <ReorderablePhotoThumbs
-                  urls={photos}
-                  layout="row"
-                  onReorder={(next) => void handleReorderPhotos(next)}
-                  onOpen={(index) => setPreviewPhotoIndex(index)}
-                  trailing={
-                    <button
-                      type="button"
-                      disabled={!!photoUpload}
-                      onClick={() => fileRef.current?.click()}
-                      className="shrink-0 w-[4.5rem] h-[4.5rem] sm:w-20 sm:h-20 rounded-xl border border-dashed border-slate-300 text-slate-400 font-black hover:border-rose-400 hover:text-rose-600 flex items-center justify-center snap-start disabled:opacity-50"
-                      title="Add photos"
-                    >
-                      {photoUpload ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
-                    </button>
-                  }
-                />
-              )}
-              <p className="text-[10px] text-slate-400 mt-1 font-medium">
-                {photos.length === 0
-                  ? 'GEN1–3 from name/specs'
-                  : `${photos.length} photo${photos.length === 1 ? '' : 's'} · hold+drag · GEN1/2/3`}
-              </p>
-              <p className="text-[9px] text-slate-400 mt-0.5 font-medium">
-                Before each card, AI Google-checks official specs (drops impossible features like M.2 on old boards).
-              </p>
             </section>
 
             <button
@@ -1267,7 +1087,7 @@ const ListingStudioModal: React.FC<Props> = ({
                   cardSpecChips.map((s) => (
                     <span
                       key={s.label}
-                      className="px-1.5 py-0.5 rounded-md bg-rose-50 text-rose-800 border border-rose-100 text-[10px] font-bold"
+                      className="px-1.5 py-0.5 rounded-md bg-teal-50 text-teal-900 border border-teal-100 text-[10px] font-bold"
                     >
                       {s.label}: {s.value}
                     </span>
@@ -1297,7 +1117,7 @@ const ListingStudioModal: React.FC<Props> = ({
                     type="button"
                     disabled={parsingSpecs}
                     onClick={() => void handleParseSpecs()}
-                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-rose-200 bg-rose-50 text-rose-800 text-[9px] font-black uppercase disabled:opacity-50"
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 bg-slate-50 text-slate-800 text-[9px] font-black uppercase disabled:opacity-50"
                     title="Fill tech specs only — does not change the item title"
                   >
                     {parsingSpecs ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
@@ -1822,212 +1642,438 @@ const ListingStudioModal: React.FC<Props> = ({
             </div>
           </aside>
 
-          {/* MIDDLE — card gallery */}
+          {/* MIDDLE — photos (top) → card gallery → generator */}
           <section
-            id="studio-cards"
-            className="border-r border-slate-100 overflow-y-auto p-2.5 space-y-2 lg:p-3 lg:space-y-2.5 bg-white scroll-mt-2"
+            id="studio-photos"
+            className="border-r border-slate-100 overflow-y-auto p-3 space-y-3 lg:p-3.5 bg-transparent scroll-mt-2"
           >
-            <div className="flex items-center justify-between gap-2">
-              <div className="min-w-0">
-                <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                  Card gallery
-                </h4>
-                <p className="hidden sm:block text-[10px] text-slate-400 font-medium">
-                  Saved for this item · edit / remove anytime
-                </p>
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                {genCards ? (
-                  <span className="inline-flex items-center gap-1 px-2 py-1.5 rounded-xl bg-slate-900 text-white text-[9px] font-black uppercase">
-                    <Loader2 size={11} className="animate-spin" />
-                    {cardProgress || '…'}
-                  </span>
-                ) : (
-                  ([1, 2, 3] as const).map((n) => (
-                    <button
-                      key={n}
-                      type="button"
-                      disabled={genCards}
-                      onClick={() => handleGenerateCards(n)}
-                      className={`inline-flex items-center justify-center min-w-[2.6rem] px-2 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wide disabled:opacity-50 ${
-                        n === plannedCards
-                          ? 'bg-slate-900 text-white'
-                          : 'bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200'
-                      }`}
-                      title={`Generate ${n} card${n === 1 ? '' : 's'}`}
-                    >
-                      GEN{n}
-                    </button>
-                  ))
-                )}
-              </div>
-            </div>
-            {genCards && (
-              <p className="text-[10px] font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
-                Keep this Safari/Chrome tab open until cards finish. Switching apps on iPhone can pause
-                generation — return to the tab and it will retry.
-              </p>
-            )}
-
-            <div className="rounded-xl border border-slate-200 bg-slate-50/80 overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setCardOptionsOpen((o) => !o)}
-                className="w-full flex items-center justify-between gap-2 px-2.5 py-2 text-left"
-                aria-expanded={cardOptionsOpen}
-              >
+            {/* 1. Product photos */}
+            <div className={`${ADD_FLOW_PANEL} p-3 space-y-2.5`}>
+              <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                    Card style
-                  </p>
-                  <p className="text-[10px] text-slate-500 font-medium truncate">
-                    {providerList.find((p) => p.id === provider)?.name || provider}
-                    {' · '}
-                    {PRODUCT_CARD_STYLES.find((s) => s.id === styleId)?.name || styleId}
+                  <h4 className={ADD_FLOW_LABEL}>Product photos</h4>
+                  <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                    {photos.length === 0
+                      ? 'Add photos first — used for GEN'
+                      : `${photos.length} photo${photos.length === 1 ? '' : 's'} · hold + drag · first 3 feed cards`}
                   </p>
                 </div>
-                <span className="inline-flex items-center gap-1 shrink-0 px-2 py-1 rounded-lg border border-slate-200 bg-white text-[9px] font-black uppercase text-slate-600">
-                  {cardOptionsOpen ? (
+                <div className="flex items-center gap-1 flex-wrap justify-end shrink-0">
+                  {nativePhoto ? (
                     <>
-                      Close <ChevronUp size={12} />
+                      <button
+                        type="button"
+                        onClick={() => cameraRef.current?.click()}
+                        className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-slate-700 hover:text-slate-900"
+                      >
+                        <Camera size={11} /> Camera
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => fileRef.current?.click()}
+                        className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-slate-600 hover:text-slate-900"
+                      >
+                        <Upload size={11} /> Library
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPhotoSource((s) => (s === 'iphone' ? 'none' : 'iphone'))}
+                        className={`inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider ${
+                          photoSource === 'iphone' ? 'text-slate-900' : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        <Smartphone size={11} /> Phone
+                      </button>
                     </>
                   ) : (
                     <>
-                      Expand <ChevronDown size={12} />
+                      <button
+                        type="button"
+                        onClick={() => setPhotoSource((s) => (s === 'iphone' ? 'none' : 'iphone'))}
+                        className={`inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider ${
+                          photoSource === 'iphone' ? 'text-slate-900' : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        <Smartphone size={11} /> iPhone
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPhotoSource((s) => (s === 'folder' ? 'none' : 'folder'))}
+                        className={`inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider ${
+                          photoSource === 'folder' ? 'text-slate-900' : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        <FolderOpen size={11} /> Folder
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!!photoUpload}
+                        onClick={() => fileRef.current?.click()}
+                        className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-slate-600 hover:text-slate-900 disabled:opacity-50"
+                      >
+                        {photoUpload ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
+                        {photoUpload ? '…' : 'Add'}
+                      </button>
                     </>
                   )}
-                </span>
-              </button>
-              {cardOptionsOpen && (
-                <div className="px-2.5 pb-2.5 space-y-2 border-t border-slate-200/80 pt-2">
-                  <div className="flex flex-wrap gap-1.5">
-                    {providerList.map((p) => (
+                </div>
+                <input
+                  ref={cameraRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={(e) => void handleAddPhotos(e.target.files)}
+                />
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => void handleAddPhotos(e.target.files)}
+                />
+              </div>
+
+              {photoUpload && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[11px] font-black uppercase tracking-wide text-slate-700 flex items-center gap-1.5">
+                      <Loader2 size={13} className="animate-spin shrink-0" />
+                      Uploading {photoUpload.done}/{photoUpload.total}
+                    </p>
+                    <span className="text-[10px] font-bold text-slate-500 tabular-nums">
+                      {photoUpload.total
+                        ? Math.round((photoUpload.done / photoUpload.total) * 100)
+                        : 0}
+                      %
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-slate-800 transition-[width] duration-300 ease-out"
+                      style={{
+                        width: `${
+                          photoUpload.total
+                            ? Math.min(
+                                100,
+                                Math.round(
+                                  ((photoUpload.phase === 'start'
+                                    ? photoUpload.done + 0.35
+                                    : photoUpload.done) /
+                                    photoUpload.total) *
+                                    100
+                                )
+                              )
+                            : 0
+                        }%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {nativePhoto && photos.length === 0 && photoSource === 'none' && (
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => cameraRef.current?.click()}
+                    className="flex flex-col items-center justify-center gap-1 h-20 rounded-xl border border-dashed border-slate-300 bg-slate-50 text-slate-700"
+                  >
+                    <Camera size={18} />
+                    <span className="text-[10px] font-black uppercase">Camera</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    className="flex flex-col items-center justify-center gap-1 h-20 rounded-xl border border-dashed border-slate-300 bg-slate-50 text-slate-600"
+                  >
+                    <Upload size={18} />
+                    <span className="text-[10px] font-black uppercase">Library</span>
+                  </button>
+                </div>
+              )}
+
+              {photoSource === 'iphone' && (
+                <PhoneUploadQrPanel
+                  itemId={item.id}
+                  itemName={name || item.name}
+                  onUrls={mergeRemotePhotoUrls}
+                  onClose={() => setPhotoSource('none')}
+                />
+              )}
+              {photoSource === 'folder' && !nativePhoto && (
+                <LocalPhotoFolderPanel
+                  maxSelect={6}
+                  onPickFiles={handleFolderFiles}
+                  onClose={() => setPhotoSource('none')}
+                />
+              )}
+
+              {photos.length === 0 && !(nativePhoto && photoSource === 'none') ? (
+                <div className="h-24 rounded-xl border border-dashed border-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-400">
+                  No photos yet
+                </div>
+              ) : photos.length === 0 ? null : (
+                <ReorderablePhotoThumbs
+                  urls={photos}
+                  layout="row"
+                  onReorder={(next) => void handleReorderPhotos(next)}
+                  onOpen={(index) => setPreviewPhotoIndex(index)}
+                  trailing={
+                    <button
+                      type="button"
+                      disabled={!!photoUpload}
+                      onClick={() => fileRef.current?.click()}
+                      className="shrink-0 w-[4.5rem] h-[4.5rem] sm:w-20 sm:h-20 rounded-xl border border-dashed border-slate-300 text-slate-400 font-black hover:border-slate-500 hover:text-slate-700 flex items-center justify-center snap-start disabled:opacity-50"
+                      title="Add photos"
+                    >
+                      {photoUpload ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
+                    </button>
+                  }
+                />
+              )}
+            </div>
+
+            {/* 2. Card gallery — select which cards appear on the item */}
+            {(photos.length > 0 || galleryLoading || gallery.length > 0 || genCards) && (
+              <div className={`${ADD_FLOW_PANEL} p-3 space-y-2`}>
+                <div>
+                  <h4 className={ADD_FLOW_LABEL}>Card gallery</h4>
+                  <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                    Tap to use on item photos · unselected stay stored here
+                  </p>
+                </div>
+
+                {selectedThumb && (
+                  <img
+                    src={selectedThumb}
+                    alt="Selected card"
+                    className="hidden sm:block w-full max-h-48 object-contain rounded-xl border border-slate-200 bg-slate-50"
+                  />
+                )}
+
+                {galleryLoading ? (
+                  <div className="flex justify-center py-6 text-slate-400">
+                    <Loader2 size={20} className="animate-spin" />
+                  </div>
+                ) : gallery.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-200 py-5 text-center text-[11px] text-slate-400 font-medium">
+                    Cards land here after generate
+                  </div>
+                ) : (
+                  <div className="flex gap-2 overflow-x-auto pb-0.5">
+                    {gallery.map((entry) => {
+                      const onItem = Boolean(selectedOnItem[entry.id]);
+                      const previewing = entry.id === selectedCardId;
+                      const busy = busyCardId === entry.id;
+                      return (
+                        <div key={entry.id} className="relative shrink-0 w-[4.75rem] space-y-1">
+                          <button
+                            type="button"
+                            disabled={busy || saving}
+                            onClick={() => void toggleCardOnItem(entry)}
+                            title={
+                              onItem
+                                ? 'On item — click to remove from photos (keeps gallery)'
+                                : 'Click to add this card to item photos'
+                            }
+                            className={`relative w-[4.75rem] h-[4.75rem] rounded-xl border-2 overflow-hidden bg-slate-50 transition-all ${
+                              onItem
+                                ? 'border-teal-500 ring-2 ring-teal-200/80'
+                                : previewing
+                                  ? 'border-slate-400'
+                                  : 'border-slate-200 opacity-75 hover:opacity-100'
+                            }`}
+                          >
+                            {thumbs[entry.id] ? (
+                              <img src={thumbs[entry.id]} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <span className="absolute inset-0 flex items-center justify-center text-slate-300">
+                                <ImageIcon size={16} />
+                              </span>
+                            )}
+                            {onItem && (
+                              <span className="absolute top-0.5 right-0.5 w-4 h-4 rounded bg-teal-500 text-white inline-flex items-center justify-center">
+                                <Check size={10} strokeWidth={3} />
+                              </span>
+                            )}
+                            {busy && (
+                              <span className="absolute inset-0 bg-white/60 flex items-center justify-center">
+                                <Loader2 size={12} className="animate-spin" />
+                              </span>
+                            )}
+                          </button>
+                          <div className="flex gap-0.5 justify-center">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedCardId(entry.id);
+                                void handleSetMainPhoto(entry);
+                              }}
+                              className="p-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50"
+                              title="Set as main photo"
+                            >
+                              <Star size={10} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void downloadProductCardEntry(entry)}
+                              className="p-1 rounded-md border border-slate-200 text-slate-500"
+                              title={productCardSaveActionLabel()}
+                            >
+                              <Download size={10} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleRemoveCard(entry.id)}
+                              className="p-1 rounded-md border border-slate-200 text-slate-500 hover:text-rose-600 hover:border-rose-200"
+                              title="Remove from gallery"
+                            >
+                              <Trash2 size={10} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 3. Card generator */}
+            <div className={`${ADD_FLOW_PANEL} p-3 space-y-2.5`}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <h4 className={`${ADD_FLOW_LABEL} flex items-center gap-1.5`}>
+                    <Sparkles size={11} /> AI card studio
+                  </h4>
+                  <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                    Cards save to gallery · pick which ones go on the item
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  {genCards ? (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-900 text-white text-[9px] font-black uppercase">
+                      <Loader2 size={11} className="animate-spin" />
+                      {cardProgress || '…'}
+                    </span>
+                  ) : (
+                    ([1, 2, 3] as const).map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        disabled={genCards}
+                        onClick={() => handleGenerateCards(n)}
+                        className={`inline-flex items-center justify-center min-w-[2.6rem] px-2 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wide disabled:opacity-50 ${
+                          n === plannedCards
+                            ? 'bg-slate-900 text-white'
+                            : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                        }`}
+                        title={`Generate ${n} card${n === 1 ? '' : 's'}`}
+                      >
+                        GEN{n}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {genCards && (
+                <p className="text-[10px] font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+                  Keep this tab open until cards finish.
+                </p>
+              )}
+
+              <div className="space-y-1.5">
+                <p className={ADD_FLOW_LABEL}>AI</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {providerList.map((p) => {
+                    const active = provider === p.id;
+                    return (
                       <button
                         key={p.id}
                         type="button"
                         disabled={!p.available || genCards}
                         onClick={() => setProvider(p.id)}
-                        className={`px-2 py-1 rounded-lg border text-[9px] font-black uppercase ${
-                          provider === p.id
-                            ? 'border-rose-400 bg-rose-50 text-rose-800'
-                            : 'border-slate-200 text-slate-500 bg-white'
-                        }`}
+                        className={`text-left rounded-xl border px-2.5 py-2 transition-all ${
+                          active
+                            ? 'border-teal-400 bg-teal-50 text-teal-950 ring-1 ring-teal-200/80'
+                            : 'border-slate-200 bg-white text-slate-800 hover:border-slate-300'
+                        } ${!p.available || genCards ? 'opacity-40 cursor-not-allowed' : ''}`}
                       >
-                        {p.name}
+                        <span className="block text-[11px] font-black">{p.name}</span>
+                        <span className={`block text-[10px] font-semibold mt-0.5 ${active ? 'text-teal-700/80' : 'text-slate-500'}`}>
+                          {p.blurb}
+                        </span>
                       </button>
-                    ))}
-                  </div>
-                  <div className="grid grid-cols-2 gap-1">
-                    {PRODUCT_CARD_STYLES.map((s) => (
-                      <button
-                        key={s.id}
-                        type="button"
-                        disabled={genCards}
-                        onClick={() => setStyleId(s.id)}
-                        className={`text-left px-2 py-1.5 rounded-lg border ${
-                          styleId === s.id
-                            ? 'border-rose-400 bg-rose-50'
-                            : 'border-slate-200 bg-white hover:bg-slate-50'
-                        }`}
-                      >
-                        <span className="block text-[10px] font-black text-slate-800">{s.name}</span>
-                        <span className="block text-[9px] text-slate-400 leading-snug">{s.blurb}</span>
-                      </button>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
-              )}
+              </div>
+
+              <div className="space-y-1.5">
+                <button
+                  type="button"
+                  onClick={() => setCardOptionsOpen((o) => !o)}
+                  className="w-full flex items-center justify-between gap-2 text-left"
+                  aria-expanded={cardOptionsOpen}
+                >
+                  <p className={ADD_FLOW_LABEL}>Style · choose before generate</p>
+                  <span className="text-[9px] font-black uppercase text-slate-500 inline-flex items-center gap-0.5">
+                    {cardOptionsOpen ? (
+                      <>
+                        Hide <ChevronUp size={12} />
+                      </>
+                    ) : (
+                      <>
+                        Show <ChevronDown size={12} />
+                      </>
+                    )}
+                  </span>
+                </button>
+                {cardOptionsOpen && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-0.5">
+                    {PRODUCT_CARD_STYLES.map((s) => {
+                      const active = styleId === s.id;
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          disabled={genCards}
+                          onClick={() => setStyleId(s.id)}
+                          className={`text-left rounded-xl border px-2.5 py-2 transition-all ${
+                            active
+                              ? 'border-teal-400 bg-teal-50 text-teal-950 ring-1 ring-teal-200/80'
+                              : 'border-slate-200 bg-white text-slate-800 hover:border-slate-300'
+                          } ${genCards ? 'opacity-40 cursor-not-allowed' : ''}`}
+                        >
+                          <span className="block text-[11px] font-black leading-snug">{s.name}</span>
+                          <span
+                            className={`block text-[10px] font-semibold mt-0.5 leading-snug ${
+                              active ? 'text-teal-700/80' : 'text-slate-500'
+                            }`}
+                          >
+                            {s.blurb}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {!cardOptionsOpen && (
+                  <p className="text-[10px] text-slate-500 font-semibold truncate">
+                    {PRODUCT_CARD_STYLES.find((s) => s.id === styleId)?.name || styleId}
+                  </p>
+                )}
+              </div>
             </div>
-
-            {selectedThumb && (
-              <img
-                src={selectedThumb}
-                alt="Selected card"
-                className="hidden sm:block w-full aspect-square max-h-56 object-contain rounded-xl border border-slate-200 bg-slate-50"
-              />
-            )}
-
-            {galleryLoading ? (
-              <div className="flex justify-center py-8 text-slate-400">
-                <Loader2 size={20} className="animate-spin" />
-              </div>
-            ) : gallery.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-slate-200 p-6 text-center text-[11px] text-slate-400 font-medium">
-                No cards yet for this item. Generate from the left photos.
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                {gallery.map((entry) => {
-                  const active = entry.id === selectedCardId;
-                  return (
-                    <div
-                      key={entry.id}
-                      className={`rounded-xl border overflow-hidden bg-slate-50 ${
-                        active ? 'border-rose-500 ring-2 ring-rose-200' : 'border-slate-200'
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        className="block w-full"
-                        onClick={() => setSelectedCardId(entry.id)}
-                      >
-                        {thumbs[entry.id] ? (
-                          <img
-                            src={thumbs[entry.id]}
-                            alt=""
-                            className="w-full aspect-square object-cover"
-                          />
-                        ) : (
-                          <div className="aspect-square flex items-center justify-center text-slate-300">
-                            <ImageIcon size={16} />
-                          </div>
-                        )}
-                      </button>
-                      <div className="px-1.5 py-1 flex gap-0.5">
-                        <button
-                          type="button"
-                          onClick={() => void handleSetMainPhoto(entry)}
-                          className="flex-1 py-1 rounded-md bg-slate-900 text-white text-[8px] font-black uppercase"
-                        >
-                          Main
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleAddCardToItemGallery(entry)}
-                          disabled={saving}
-                          className="p-1 rounded-md border border-slate-200 text-emerald-700 hover:bg-emerald-50 disabled:opacity-40"
-                          title="Add to item photos"
-                        >
-                          <Plus size={11} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void downloadProductCardEntry(entry)}
-                          className="p-1 rounded-md border border-slate-200 text-slate-500"
-                          title={productCardSaveActionLabel()}
-                        >
-                          <Download size={11} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleRemoveCard(entry.id)}
-                          className="p-1 rounded-md border border-slate-200 text-rose-500 hover:bg-rose-50"
-                          title="Remove from gallery"
-                        >
-                          <Trash2 size={11} />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
           </section>
 
           {/* RIGHT — title + description */}
           <section
             id="studio-listing"
-            className="overflow-y-auto p-2.5 space-y-2 lg:p-3 lg:space-y-2.5 bg-slate-50/30 flex flex-col scroll-mt-2"
+            className="overflow-y-auto p-3 space-y-3 lg:p-3.5 bg-transparent flex flex-col scroll-mt-2"
           >
             {soldPriceBand && (
               <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-2.5 py-2 space-y-1.5 shrink-0">
@@ -2156,7 +2202,7 @@ const ListingStudioModal: React.FC<Props> = ({
                 type="button"
                 disabled={genListing || saving}
                 onClick={() => void handleGenerateListing()}
-                className="inline-flex items-center gap-1 px-2.5 py-2 rounded-xl bg-rose-600 text-white text-[9px] font-black uppercase disabled:opacity-50"
+                className="inline-flex items-center gap-1 px-2.5 py-2 rounded-xl bg-slate-900 text-white text-[9px] font-black uppercase tracking-wider disabled:opacity-50"
               >
                 {genListing ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
                 Generate listing
@@ -2179,7 +2225,7 @@ const ListingStudioModal: React.FC<Props> = ({
             type="button"
             disabled={genListing || saving}
             onClick={() => void handleGenerateListing()}
-            className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-rose-600 text-white text-[10px] font-black uppercase disabled:opacity-50"
+            className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50"
           >
             {genListing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
             Generate
@@ -2244,14 +2290,14 @@ const ListingStudioModal: React.FC<Props> = ({
               onClick={() => void handleSetPhotoMain(photos[previewPhotoIndex])}
               className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-3 rounded-xl bg-white text-slate-900 text-[10px] font-black uppercase disabled:opacity-40"
             >
-              <Star size={14} className={previewPhotoIndex === 0 ? 'fill-rose-500 text-rose-500' : ''} />
+              <Star size={14} className={previewPhotoIndex === 0 ? 'fill-teal-500 text-teal-600' : ''} />
               {previewPhotoIndex === 0 ? 'Main photo' : 'Make main'}
             </button>
             <button
               type="button"
               disabled={saving}
               onClick={() => void handleRemovePhoto(photos[previewPhotoIndex])}
-              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-3 rounded-xl bg-rose-600 text-white text-[10px] font-black uppercase disabled:opacity-50"
+              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-3 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50"
             >
               <Trash2 size={14} />
               Remove
