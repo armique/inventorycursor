@@ -168,6 +168,11 @@ function init(): { db: Firestore; auth: Auth; storage: FirebaseStorage } | null 
       db = getFirestore(app);
     }
     auth = getAuth(app);
+    // Persist Google session across Safari/Chrome restarts (phones). Without this, every
+    // panel visit can look signed-out and re-prompt Continue with Google.
+    void setPersistence(auth, browserLocalPersistence).catch((err) => {
+      console.warn("[firebase] Auth persistence unavailable:", err);
+    });
     // Force correct bucket (Firebase default is now .firebasestorage.app, not .appspot.com)
     const bucket = config.projectId === "inventorycursor-e9000"
       ? "inventorycursor-e9000.firebasestorage.app"

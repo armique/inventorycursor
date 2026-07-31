@@ -50,12 +50,41 @@ type Options = {
   taxMode: TaxMode;
   gamification: GamificationState;
   updateGamification: (updater: (prev: GamificationState) => GamificationState) => void;
+  /**
+   * When false (e.g. cloud still downloading), keep the items baseline in sync but never
+   * emit deal/purchase/digest toasts. Prevents a phone with empty local state from treating
+   * every already-sold cloud item as a brand-new close on first sync.
+   */
+  eventsArmed?: boolean;
 };
 
-export function useGamificationEvents({ items, expenses, taxMode, gamification, updateGamification }: Options) {
+function isRealizedSale(item: InventoryItem): boolean {
+  return isRealizedDisposal(item) && (Number(item.sellPrice) || 0) > 0;
+}
+
+/** Live sale only: same id existed before and was not yet a realized sale. */
+export function findNewlyClosedDeals(prev: InventoryItem[], next: InventoryItem[]): InventoryItem[] {
+  const prevById = new Map(prev.map((i) => [i.id, i]));
+  return next.filter((i) => {
+    if (!isRealizedSale(i)) return false;
+    const was = prevById.get(i.id);
+    if (!was) return false; // appeared already-sold (hydrate / merge) — not a live close
+    return !isRealizedSale(was);
+  });
+}
+
+export function useGamificationEvents({
+  items,
+  expenses,
+  taxMode,
+  gamification,
+  updateGamification,
+  eventsArmed = true,
+}: Options) {
   const [queue, setQueue] = useState<GamificationEvent[]>([]);
   const prevItemsRef = useRef<InventoryItem[] | null>(null);
   const mountedOnceRef = useRef(false);
+  const wasArmedRef = useRef(eventsArmed);
   // Read the latest gamification state inside the items-diff effect without making it a
   // dependency — the % split and cushion state shouldn't retrigger a full item-list rescan.
   const gamificationRef = useRef(gamification);
@@ -64,8 +93,24 @@ export function useGamificationEvents({ items, expenses, taxMode, gamification, 
   }, [gamification]);
 
   // "Deal closed" (money in) + purchase debit (money out) — fires only for changes that happened
-  // AFTER mount, never retroactively on page load.
+  // AFTER mount (and after cloud hydrate when eventsArmed flips on), never retroactively.
   useEffect(() => {
+    // Disarmed (cloud downloading): track baseline only, never celebrate/debit.
+    if (!eventsArmed) {
+      prevItemsRef.current = items;
+      mountedOnceRef.current = false;
+      wasArmedRef.current = false;
+      return;
+    }
+
+    // Just armed after hydrate — take a fresh baseline, skip this tick.
+    if (!wasArmedRef.current) {
+      wasArmedRef.current = true;
+      prevItemsRef.current = items;
+      mountedOnceRef.current = true;
+      return;
+    }
+
     const prev = prevItemsRef.current;
     prevItemsRef.current = items;
     if (!mountedOnceRef.current) {
@@ -75,13 +120,8 @@ export function useGamificationEvents({ items, expenses, taxMode, gamification, 
     if (!prev) return;
     const prevIds = new Set(prev.map((i) => i.id));
 
-    // --- Money in: newly realized sales ---
-    const prevRealizedIds = new Set(
-      prev.filter((i) => isRealizedDisposal(i) && (Number(i.sellPrice) || 0) > 0).map((i) => i.id),
-    );
-    const newlyRealized = items.filter(
-      (i) => isRealizedDisposal(i) && (Number(i.sellPrice) || 0) > 0 && !prevRealizedIds.has(i.id),
-    );
+    // --- Money in: items that transitioned to sold in this session ---
+    const newlyRealized = findNewlyClosedDeals(prev, items);
     if (newlyRealized.length) {
       const monthNetProfit = computeMonthNetProfit(items, expenses, taxMode);
       const bankSplitPct = effectiveBankSplitPct(gamificationRef.current);
@@ -111,20 +151,22 @@ export function useGamificationEvents({ items, expenses, taxMode, gamification, 
     }
 
     // --- Money out: newly appeared purchases (any add-item flow, not just Reinvest) ---
+    // Skip bulk first-populate (empty → many ids), which is cloud hydrate / import seed.
     const newlyBought = items.filter(
       (i) => !prevIds.has(i.id) && !i.isDraft && !i.isBundle && !i.isPC && !i.parentContainerId && (Number(i.buyPrice) || 0) > 0,
     );
-    if (newlyBought.length) {
+    const looksLikeHydrate = prev.length === 0 && newlyBought.length > 1;
+    if (newlyBought.length && !looksLikeHydrate) {
       const totalSpent = roundMoney(newlyBought.reduce((s, i) => s + (Number(i.buyPrice) || 0), 0));
       if (totalSpent > 0) updateGamification((p) => applyPurchaseDebit(p, totalSpent));
     }
-    // Only `items` should retrigger this diff — expenses/taxMode are read fresh each time it
-    // does fire, and gamification is read via the ref above, not a reason to re-scan on its own.
+    // Only `items` / arming should retrigger this diff — expenses/taxMode are read fresh each time.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items]);
+  }, [items, eventsArmed]);
 
   // "Expansion signal" — at most once per day, only when a real up-trending gap exists.
   useEffect(() => {
+    if (!eventsArmed) return;
     const today = new Date().toISOString().slice(0, 10);
     if (gamification.lastExpansionSignalAt === today) return;
     const data = buildReinvestData(items);
@@ -150,17 +192,18 @@ export function useGamificationEvents({ items, expenses, taxMode, gamification, 
     ]);
     updateGamification((prev) => ({ ...prev, lastExpansionSignalAt: today }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, gamification.lastExpansionSignalAt]);
+  }, [items, gamification.lastExpansionSignalAt, eventsArmed]);
 
   // Weekly digest ready — once per ISO week, only once there's at least some sold history.
   useEffect(() => {
+    if (!eventsArmed) return;
     const week = localWeekKey();
     if (gamification.lastDigestShownWeek === week) return;
-    if (!items.some((i) => isRealizedDisposal(i) && (Number(i.sellPrice) || 0) > 0)) return;
+    if (!items.some((i) => isRealizedSale(i))) return;
     setQueue((q) => [...q, { kind: 'digest-ready', id: `digest-${week}` }]);
     updateGamification((prev) => ({ ...prev, lastDigestShownWeek: week }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, gamification.lastDigestShownWeek]);
+  }, [items, gamification.lastDigestShownWeek, eventsArmed]);
 
   const current = queue[0] ?? null;
 

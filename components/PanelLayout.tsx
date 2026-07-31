@@ -88,6 +88,10 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
 
   const gamificationState = gamification ?? defaultGamificationState();
   const updateGamificationState = updateGamification ?? (() => {});
+  // Wait for cloud download (or a failed sync) before celebrating sales — otherwise every
+  // already-sold item looks "new" on an empty phone and pops the deal toast over Inventory.
+  const gamificationEventsArmed =
+    !isCloudEnabled || syncState.status === 'success' || syncState.status === 'error';
   const {
     current: gamificationEvent,
     dismiss: dismissGamificationEvent,
@@ -98,6 +102,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     taxMode: businessSettings.taxMode,
     gamification: gamificationState,
     updateGamification: updateGamificationState,
+    eventsArmed: gamificationEventsArmed,
   });
 
   /** Inventory/trash use internal scroll + docked bulk bar; eBay tools / EST use full-width workspace layout. */

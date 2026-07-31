@@ -14,6 +14,7 @@ import {
   generateDailyQuests,
   suggestTakeAmount,
 } from '../utils/gamification';
+import { findNewlyClosedDeals } from '../hooks/useGamificationEvents';
 import type { MissionLogEntry } from '../utils/flipCoachMissions';
 
 function item(partial: Partial<InventoryItem> & Pick<InventoryItem, 'id' | 'name'>): InventoryItem {
@@ -139,5 +140,39 @@ const digest = computeWeeklyDigest(digestItems, buildReinvestData(digestItems));
 assert.ok(digest.profitThisWeek >= 0);
 assert.ok(typeof digest.tip === 'string' && digest.tip.length > 0);
 console.log(`OK: computeWeeklyDigest — this week €${digest.profitThisWeek}, tip: "${digest.tip}"`);
+
+// ============================================================
+// 6) findNewlyClosedDeals — ignore already-sold cloud hydrate; celebrate live transitions.
+// ============================================================
+const inStock = item({
+  id: 'lg-bluray',
+  name: 'LG WH16NS40 Blu-ray Brenner',
+  status: ItemStatus.IN_STOCK,
+  buyPrice: 10,
+  sellPrice: 0,
+});
+const sold = item({
+  id: 'lg-bluray',
+  name: 'LG WH16NS40 Blu-ray Brenner',
+  status: ItemStatus.SOLD,
+  buyPrice: 10,
+  sellPrice: 36.75,
+});
+assert.deepEqual(
+  findNewlyClosedDeals([], [sold]).map((i) => i.id),
+  [],
+  'hydrate of already-sold item must not count as a live close',
+);
+assert.deepEqual(
+  findNewlyClosedDeals([inStock], [sold]).map((i) => i.id),
+  ['lg-bluray'],
+  'in-stock → sold must count as a live close',
+);
+assert.deepEqual(
+  findNewlyClosedDeals([sold], [sold]).map((i) => i.id),
+  [],
+  'already sold → still sold must not re-fire',
+);
+console.log('OK: findNewlyClosedDeals ignores cloud hydrate and only fires on live closes');
 
 console.log('\nAll reinvest gamification checks passed.');
