@@ -268,9 +268,7 @@ function GoogleAuthRedirectBootstrap() {
         }
       } catch (err) {
         console.error('Google redirect bootstrap failed', err);
-        if (!cancelled && window.location.pathname.startsWith('/panel')) {
-          alert(getAuthErrorMessage(err));
-        }
+        // Avoid alarming popups after GIS/popup sign-in; only surface redirect failures.
       }
     })();
     return () => {
@@ -1889,7 +1887,14 @@ const App: React.FC = () => {
   );
 
   const isConfigured = isCloudEnabled();
-  const isAdminUser = authUser?.email === 'abelyanarmen@gmail.com';
+  const ownerEmail = 'abelyanarmen@gmail.com';
+  const authEmails = [
+    authUser?.email,
+    ...((authUser?.providerData || []).map((p: { email?: string | null }) => p?.email) || []),
+  ]
+    .filter(Boolean)
+    .map((e) => String(e).toLowerCase());
+  const isAdminUser = authEmails.includes(ownerEmail);
 
   if (appState === 'BOOTING') {
      return (

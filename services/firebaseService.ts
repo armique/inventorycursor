@@ -646,8 +646,21 @@ export async function completeGoogleRedirectSignIn(): Promise<User | null> {
     const result = await getRedirectResult(ctx.auth);
     return result?.user ?? null;
   } catch (err) {
-    console.error('Redirect sign-in failed', err);
-    throw err;
+    // GIS / popup sessions often have no redirect result. Never throw here —
+    // an alert/crash after a successful Google sign-in is worse than ignoring.
+    const code = (err as { code?: string })?.code || "";
+    if (
+      code === "auth/argument-error" ||
+      code === "auth/no-auth-event" ||
+      code === "auth/invalid-credential" ||
+      /missing initial state|no redirect operation/i.test(String((err as { message?: string })?.message || err))
+    ) {
+      console.warn("Redirect sign-in: no pending redirect (safe to ignore after GIS/popup)", err);
+      return null;
+    }
+    console.error("Redirect sign-in failed", err);
+    // Still don't hard-crash the app shell — PanelLayout can sign in again.
+    return null;
   }
 }
 
