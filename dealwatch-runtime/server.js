@@ -3140,20 +3140,40 @@ async function searchSoldListings(query) {
 
 let ebayNextAllowedAt = 0;
 let ebayGate = Promise.resolve();
+/** When set, background monitor skips cycles until this timestamp. */
+let monitorPausedUntil = 0;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
 }
 
-/** Serialize Browse API traffic and honor a minimum gap between calls. */
-function withEbayRateLimit(fn) {
+function pauseMonitor(ms, reason = '') {
+  const until = Date.now() + Math.max(0, Number(ms) || 0);
+  if (until > monitorPausedUntil) monitorPausedUntil = until;
+  if (reason) {
+    console.warn(`[dealwatch] monitor paused ${Math.round(ms / 1000)}s — ${reason}`);
+  }
+}
+
+/**
+ * Serialize Browse API calls with a short gap. Long 429 waits happen OUTSIDE the lock
+ * so interactive Scan is not stuck behind the background monitor.
+ */
+function withEbayRateLimit(fn, { maxWaitMs = 8000 } = {}) {
   const run = ebayGate.then(async () => {
     const wait = Math.max(0, ebayNextAllowedAt - Date.now());
+    if (wait > maxWaitMs) {
+      const err = new Error(
+        `eBay API cooling down (~${Math.ceil(wait / 1000)}s). Wait a moment, then Scan again.`
+      );
+      err.code = 'EBAY_COOLDOWN';
+      throw err;
+    }
     if (wait > 0) await sleep(wait);
     try {
       return await fn();
     } finally {
-      ebayNextAllowedAt = Date.now() + EBAY_MIN_GAP_MS;
+      ebayNextAllowedAt = Math.max(ebayNextAllowedAt, Date.now() + EBAY_MIN_GAP_MS);
     }
   });
   ebayGate = run.then(
@@ -3179,46 +3199,53 @@ async function fetchBrowseOnce(query, searchText) {
   }
 
   const url = `https://api.ebay.com/buy/browse/v1/item_summary/search?${searchParams}`;
+  const interactive = Boolean(query.interactive);
+  const maxRetries = interactive ? Math.min(2, EBAY_MAX_RETRIES_ON_429) : EBAY_MAX_RETRIES_ON_429;
 
-  return withEbayRateLimit(async () => {
-    let token = await accessToken();
-    let response = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}`, 'X-EBAY-C-MARKETPLACE-ID': EBAY_MARKETPLACE_ID },
-    });
-    let data = await response.json().catch(() => ({}));
-
-    if (!response.ok && /invalid.?access.?token|unauthorized|401/i.test(JSON.stringify(data) + response.status)) {
-      tokenCache = { token: '', expiresAt: 0 };
-      token = await accessToken({ forceRefresh: true });
-      response = await fetch(url, {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    let response;
+    let data;
+    ({ response, data } = await withEbayRateLimit(async () => {
+      let token = await accessToken();
+      let res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}`, 'X-EBAY-C-MARKETPLACE-ID': EBAY_MARKETPLACE_ID },
       });
-      data = await response.json().catch(() => ({}));
+      let body = await res.json().catch(() => ({}));
+
+      if (!res.ok && /invalid.?access.?token|unauthorized|401/i.test(JSON.stringify(body) + res.status)) {
+        tokenCache = { token: '', expiresAt: 0 };
+        token = await accessToken({ forceRefresh: true });
+        res = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}`, 'X-EBAY-C-MARKETPLACE-ID': EBAY_MARKETPLACE_ID },
+        });
+        body = await res.json().catch(() => ({}));
+      }
+      return { response: res, data: body };
+    }, { maxWaitMs: interactive ? 5000 : 20000 }));
+
+    if (response.status !== 429) {
+      if (!response.ok) {
+        throw new Error(data.errors?.[0]?.message || 'eBay did not return search results.');
+      }
+      return data;
     }
 
-    // Retry after rate-limit with Retry-After / exponential backoff.
-    for (let attempt = 0; response.status === 429 && attempt < EBAY_MAX_RETRIES_ON_429; attempt++) {
-      const headerWait = Number(response.headers.get('retry-after'));
-      const waitSec = Number.isFinite(headerWait) && headerWait > 0
-        ? Math.min(120, headerWait)
-        : Math.min(90, 5 * (2 ** attempt));
-      console.warn(`[dealwatch] eBay 429 on browse — waiting ${waitSec}s (retry ${attempt + 1}/${EBAY_MAX_RETRIES_ON_429})`);
-      ebayNextAllowedAt = Date.now() + waitSec * 1000;
-      await sleep(waitSec * 1000);
-      response = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}`, 'X-EBAY-C-MARKETPLACE-ID': EBAY_MARKETPLACE_ID },
-      });
-      data = await response.json().catch(() => ({}));
-    }
+    const headerWait = Number(response.headers.get('retry-after'));
+    const waitSec = Number.isFinite(headerWait) && headerWait > 0
+      ? Math.min(interactive ? 20 : 60, headerWait)
+      : Math.min(interactive ? 12 : 45, 4 * (2 ** attempt));
+    console.warn(`[dealwatch] eBay 429 — cooldown ${waitSec}s (retry ${attempt + 1}/${maxRetries})`);
+    ebayNextAllowedAt = Date.now() + waitSec * 1000;
+    pauseMonitor(Math.max(60_000, waitSec * 1000), 'eBay 429');
+    if (attempt >= maxRetries) break;
+    // Sleep outside the lock so UI Scan is not frozen behind monitor backoff.
+    await sleep(waitSec * 1000);
+  }
 
-    if (response.status === 429) {
-      throw new Error(
-        'eBay API: Too many requests. Raise MONITOR_INTERVAL_MINUTES (e.g. 20), pause unused eBay filters, or wait a few minutes.'
-      );
-    }
-    if (!response.ok) throw new Error(data.errors?.[0]?.message || 'eBay did not return search results.');
-    return data;
-  });
+  pauseMonitor(5 * 60_000, 'eBay still rate-limiting');
+  throw new Error(
+    'eBay API: Too many requests. Monitor paused 5 min — wait, then Scan again (or raise MONITOR_INTERVAL_MINUTES).'
+  );
 }
 
 async function fetchBrowseItemSummaries(query) {
@@ -3229,12 +3256,21 @@ async function fetchBrowseItemSummaries(query) {
 
   // Sequential merges — parallel Promise.all stacks Browse calls and trips rate limits.
   const pages = [];
+  let hardError = null;
   for (const q of queries) {
     try {
       pages.push(await fetchBrowseOnce(query, q));
-    } catch {
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (/too many requests|cooling down|429|EBAY_COOLDOWN/i.test(msg) || error?.code === 'EBAY_COOLDOWN') {
+        hardError = error instanceof Error ? error : new Error(msg);
+        break;
+      }
       pages.push({ itemSummaries: [] });
     }
+  }
+  if (hardError && !pages.some((page) => (page.itemSummaries || []).length)) {
+    throw hardError;
   }
   const byId = new Map();
   for (const page of pages) {
@@ -4175,6 +4211,9 @@ async function handleDealwatchRequest(request, response) {
             : store.alerts,
         };
         marketplaceHint = query.marketplace;
+        // Prefer UI Scan over the background monitor; fail fast on eBay cooldown.
+        pauseMonitor(45_000, 'interactive Scan');
+        query.interactive = true;
         const result = await searchListings(query);
         const ids = (result.items || []).map(item => String(item.id)).filter(Boolean);
         const items = active?.id
@@ -4240,6 +4279,8 @@ async function handleDealwatchRequest(request, response) {
           sendJson(response, 400, { error: 'Enter keywords or pick a category.' });
           return;
         }
+        pauseMonitor(45_000, 'interactive Explore');
+        query.interactive = true;
         const result = await searchExplore(query);
         const store = loadStore();
         const seenKey = exploreSeenKey(query);
@@ -4626,12 +4667,22 @@ async function monitorSearches() {
   const store = loadStore();
   if (!store.alerts) return;
 
+  if (Date.now() < monitorPausedUntil) {
+    const left = Math.ceil((monitorPausedUntil - Date.now()) / 1000);
+    console.log(`[dealwatch] monitor skip — paused ${left}s more (UI Scan / rate limit)`);
+    return;
+  }
+
   let changed = false;
   const monitored = store.searches.filter(search => search.monitor !== false);
   const canTelegram = telegramConfigured();
   let ebay429Streak = 0;
 
   for (const search of monitored) {
+    if (Date.now() < monitorPausedUntil) {
+      console.log('[dealwatch] monitor cycle interrupted — UI Scan or cooldown');
+      break;
+    }
     try {
       const result = await searchListings({
         ...search,
@@ -4673,12 +4724,12 @@ async function monitorSearches() {
       if (/too many requests|429/i.test(msg)) {
         ebay429Streak += 1;
         const coolSec = Math.min(120, 15 * ebay429Streak);
-        console.warn(`[dealwatch] monitor backing off ${coolSec}s after eBay rate limit`);
-        await sleep(coolSec * 1000);
+        pauseMonitor(coolSec * 1000, `monitor 429 streak ${ebay429Streak}`);
         if (ebay429Streak >= 3) {
           console.warn('[dealwatch] stopping this monitor cycle early — eBay still rate-limiting');
           break;
         }
+        continue;
       }
     }
 
