@@ -296,9 +296,47 @@ export async function signInWithGooglePopup(): Promise<User> {
   return result.user;
 }
 
-/** OAuth Web client from Google Cloud (InventoryCursor) — used by GIS, not Firebase redirect. */
-export const GOOGLE_WEB_CLIENT_ID =
-  "844355746831-1ljb175ft765o296ujie2871hd1fv1cv.apps.googleusercontent.com";
+/** Fallback if Identity Toolkit is unreachable (must match Google Cloud → Web client). */
+const GOOGLE_WEB_CLIENT_ID_FALLBACK =
+  "844355746831-1ljb175ft765o296ujle2871hd1fv1cv.apps.googleusercontent.com";
+
+let cachedGoogleWebClientId: string | null = null;
+
+/** Resolve the Firebase-registered Google OAuth web client id (avoids hardcoded typos). */
+export async function resolveGoogleWebClientId(): Promise<string> {
+  if (cachedGoogleWebClientId) return cachedGoogleWebClientId;
+  const config = getFirebaseConfig();
+  const apiKey = config?.apiKey;
+  if (!apiKey) return GOOGLE_WEB_CLIENT_ID_FALLBACK;
+
+  try {
+    const origin =
+      typeof window !== "undefined" && window.location?.origin
+        ? window.location.origin
+        : "https://armiktech.com";
+    const res = await fetch(
+      `https://www.googleapis.com/identitytoolkit/v3/relyingparty/createAuthUri?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerId: "google.com", continueUri: origin }),
+      }
+    );
+    const data = (await res.json().catch(() => ({}))) as { authUri?: string };
+    const match = String(data.authUri || "").match(/client_id=([^&]+)/i);
+    if (match?.[1]) {
+      cachedGoogleWebClientId = decodeURIComponent(match[1]);
+      return cachedGoogleWebClientId;
+    }
+  } catch (err) {
+    console.warn("[auth] Could not resolve Google client id from Firebase; using fallback.", err);
+  }
+  cachedGoogleWebClientId = GOOGLE_WEB_CLIENT_ID_FALLBACK;
+  return cachedGoogleWebClientId;
+}
+
+/** @deprecated use resolveGoogleWebClientId() — kept for older imports */
+export const GOOGLE_WEB_CLIENT_ID = GOOGLE_WEB_CLIENT_ID_FALLBACK;
 
 type GisTokenClient = {
   requestAccessToken: (override?: { prompt?: string }) => void;
@@ -353,7 +391,10 @@ function loadGoogleIdentityServices(): Promise<GisOauth2> {
  * Avoids Firebase signInWithRedirect /__/auth/handler which hits redirect_uri_mismatch on Vercel.
  */
 async function signInWithGoogleIdentityServices(auth: Auth): Promise<User> {
-  const oauth2 = await loadGoogleIdentityServices();
+  const [oauth2, clientId] = await Promise.all([
+    loadGoogleIdentityServices(),
+    resolveGoogleWebClientId(),
+  ]);
   return new Promise<User>((resolve, reject) => {
     let settled = false;
     const finish = (fn: () => void) => {
@@ -363,7 +404,7 @@ async function signInWithGoogleIdentityServices(auth: Auth): Promise<User> {
     };
 
     const client = oauth2.initTokenClient({
-      client_id: GOOGLE_WEB_CLIENT_ID,
+      client_id: clientId,
       scope: "openid email profile",
       callback: (response) => {
         void (async () => {
