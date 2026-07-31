@@ -26,6 +26,7 @@ import {
 } from '../services/financialAggregation';
 import { toLocalCalendarDateKey, yearMonthKeyFromDate, currentLocalYearMonth } from '../utils/calendarDate';
 import { countSalesByPlatform, formatItemSalePlatform, groupSalesByPlatform, PLATFORM_GROUP_LABEL, buildPlatformReconciliation, buildEbayTagFixUpdates, sumRevenueByPlatform, countOrdersByPlatform, groupItemsByMarketplaceOrder, countMissingExplicitSalePlatform, type PlatformGroupKey } from '../utils/salePlatform';
+import { ADD_OPTIONS, AddOptionTile } from './addFlowShared';
 
 const DashboardAnalyticsPanel = lazy(() => import('./DashboardAnalyticsPanel'));
 interface Props {
@@ -869,18 +870,49 @@ const Dashboard: React.FC<Props> = ({
   }, [items, expenses]);
 
   if (items.length === 0 && expenses.length === 0) {
+    const emptyCreate = ADD_OPTIONS.filter((o) => o.group === 'create').slice(0, 6);
+    const emptyImport = ADD_OPTIONS.filter((o) => o.group === 'import');
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-center space-y-6">
-        <div className="w-24 h-24 bg-white rounded-3xl shadow-xl border border-slate-100 flex items-center justify-center animate-bounce">
-          <Package size={48} className="text-blue-500" />
-        </div>
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-8 px-2">
         <div>
-          <h2 className="text-2xl font-black text-slate-800">Inventory is Empty</h2>
-          <p className="text-slate-500 max-w-sm mt-2">Add your first item or import sales history from CSV to start analysis.</p>
+          <h2 className="text-2xl font-black text-slate-800 tracking-tight">Inventory is empty</h2>
+          <p className="text-slate-500 max-w-md mt-2 text-sm font-semibold">
+            Choose how you want to add your first stock — same options as Add.
+          </p>
         </div>
-        <div className="flex gap-4">
-          <button type="button" onClick={() => navigate('/panel/add')} className="bg-blue-600 text-white px-8 py-3 rounded-2xl font-bold shadow-lg shadow-blue-200 hover:bg-blue-700 transition-all">Add Item</button>
-          <button type="button" onClick={() => navigate('/panel/import')} className="bg-white text-slate-700 border px-8 py-3 rounded-2xl font-bold hover:bg-slate-50 transition-all">Import Data</button>
+        <div className="w-full max-w-3xl space-y-6 text-left">
+          <section>
+            <h3 className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400 mb-2 px-1">
+              Create
+            </h3>
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-1 sm:gap-2">
+              {emptyCreate.map((opt) => (
+                <AddOptionTile
+                  key={opt.id}
+                  label={opt.label}
+                  hint={opt.hint}
+                  icon={opt.icon}
+                  onClick={() => navigate(opt.to)}
+                />
+              ))}
+            </div>
+          </section>
+          <section>
+            <h3 className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400 mb-2 px-1">
+              Import
+            </h3>
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-1 sm:gap-2">
+              {emptyImport.map((opt) => (
+                <AddOptionTile
+                  key={opt.id}
+                  label={opt.label}
+                  hint={opt.hint}
+                  icon={opt.icon}
+                  onClick={() => navigate(opt.to)}
+                />
+              ))}
+            </div>
+          </section>
         </div>
       </div>
     );
@@ -903,19 +935,18 @@ const Dashboard: React.FC<Props> = ({
         </div>
         <div className="flex flex-wrap items-center gap-2 lg:gap-3">
           <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              type="button"
+            <AddOptionTile
+              size="sm"
+              label="Bulk entry"
+              hint="Many rows"
+              icon={<Layers size={18} strokeWidth={1.75} />}
               onClick={() => navigate('/panel/add-bulk')}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-black uppercase tracking-wide text-slate-700 hover:bg-slate-50 shadow-sm"
-              title="Bulk Entry — add many items in one purchase"
-            >
-              <Layers size={14} className="text-violet-600" />
-              Bulk Entry
-            </button>
+              className="!py-2 !px-2 min-w-[5.5rem]"
+            />
             <button
               type="button"
               onClick={() => navigate('/panel/bulk-imports')}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-violet-200 bg-violet-50 text-xs font-black uppercase tracking-wide text-violet-900 hover:bg-violet-100 shadow-sm"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-black uppercase tracking-wide text-slate-700 hover:bg-slate-50 shadow-sm"
               title="Bulk import history — reopen past bulk / AI parses"
             >
               <History size={14} />

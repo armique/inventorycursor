@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ItemStatus, type InventoryItem } from '../types';
 import {
   allocateBuyAcrossParts,
+  applyQtyNamePrefix,
   buildIdenticalCopyDrafts,
   buildPartName,
   buildSplitApplyItems,
@@ -10,6 +11,7 @@ import {
   defaultSplitSelection,
   detectAioHints,
   detectIdenticalQtyHint,
+  resolveIdenticalLotQty,
   shortSourceStem,
   stripIdenticalQtyFromName,
 } from './splitParts';
@@ -125,18 +127,30 @@ describe('splitParts', () => {
       comment2: '',
     };
     expect(detectIdenticalQtyHint(source.name)).toBe(8);
+    expect(detectIdenticalQtyHint('x8/Samsung SSD')).toBe(8);
+    expect(detectIdenticalQtyHint('x7/Arctic P12')).toBe(7);
     expect(stripIdenticalQtyFromName('x8 Samsung SSD')).toBe('Samsung SSD');
+    expect(stripIdenticalQtyFromName('x8/Samsung SSD')).toBe('Samsung SSD');
     expect(stripIdenticalQtyFromName('8x Samsung SSD')).toBe('Samsung SSD');
     expect(stripIdenticalQtyFromName('Samsung SSD x8')).toBe('Samsung SSD');
-    const drafts = buildIdenticalCopyDrafts(source, 8);
+    expect(applyQtyNamePrefix('Samsung SSD', 8)).toBe('x8/Samsung SSD');
+    expect(applyQtyNamePrefix('x8/Samsung SSD', 1)).toBe('Samsung SSD');
+    expect(applyQtyNamePrefix('x8/Samsung SSD', 7)).toBe('x7/Samsung SSD');
+    expect(resolveIdenticalLotQty({ name: 'Samsung SSD', quantity: 8 })).toBe(8);
+    expect(resolveIdenticalLotQty({ name: 'x8/Samsung SSD', quantity: 3 })).toBe(8);
+    const drafts = buildIdenticalCopyDrafts({ ...source, name: 'x8/Kingston NV2 1TB SSD' }, 8);
     expect(drafts).toHaveLength(8);
     expect(drafts.every((d) => d.name === 'Kingston NV2 1TB SSD')).toBe(true);
     const sum = drafts.reduce((s, d) => s + d.buyPrice, 0);
     expect(Math.round(sum * 100) / 100).toBe(200);
     expect(drafts.every((d) => d.buyPrice === 25)).toBe(true);
 
-    const { parent, children } = buildSplitApplyItems(source, drafts);
+    const { parent, children } = buildSplitApplyItems(
+      { ...source, name: 'x8/Kingston NV2 1TB SSD', quantity: 8 },
+      drafts
+    );
     expect(parent.isBundle).toBe(true);
+    expect(parent.quantity).toBeUndefined();
     expect(children).toHaveLength(8);
     expect(children.every((c) => c.buyPrice === 25)).toBe(true);
     expect(children.every((c) => c.name === 'Kingston NV2 1TB SSD')).toBe(true);

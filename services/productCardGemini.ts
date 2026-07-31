@@ -5,6 +5,10 @@ import {
   DEFAULT_PRODUCT_CARD_STYLE_ID,
   type ProductCardStyleId,
 } from './productCardStyles';
+import {
+  formatAccessoryHintsForAI,
+  listingAccessoriesReady,
+} from '../utils/itemAccessoryToggles';
 
 export type ProductCardProviderId = 'openai' | 'gemini';
 
@@ -66,6 +70,11 @@ export async function generateProductCard(
   const styleId = opts.styleId || DEFAULT_PRODUCT_CARD_STYLE_ID;
   const provider = opts.provider || 'openai';
 
+  const gate = listingAccessoriesReady(item);
+  if (!gate.ok) {
+    throw new Error(gate.reason || 'Confirm OVP / IO Blende before generating a product card.');
+  }
+
   const specs = getProductCardSpecs(item, categoryFields, 8).map((s) => ({
     label: s.label,
     value: s.value,
@@ -80,6 +89,8 @@ export async function generateProductCard(
     url.startsWith('data:') ? { imageBase64: url } : { imageUrl: url }
   );
 
+  const accessoryHints = formatAccessoryHintsForAI(item);
+
   const res = await fetch('/api/images?route=product-card', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -88,6 +99,9 @@ export async function generateProductCard(
       category: item.category,
       subCategory: item.subCategory,
       comment: item.comment1 || '',
+      accessoryHints,
+      hasOVP: item.hasOVP,
+      hasIOShield: item.hasIOShield,
       specs,
       images,
       styleId,

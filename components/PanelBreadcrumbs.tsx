@@ -5,7 +5,8 @@ import { ChevronRight, Home } from 'lucide-react';
 const LABELS: Record<string, string> = {
   dashboard: 'Dashboard',
   inventory: 'Inventory',
-  add: 'Add item',
+  add: 'Add',
+  item: 'Single item',
   'add-bulk': 'Bulk add',
   'bulk-imports': 'Bulk imports',
   builder: 'Builder',

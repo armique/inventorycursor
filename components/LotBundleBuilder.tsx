@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Package, Plus, Save, Search, Trash2, X, AlertTriangle } from 'lucide-react';
+import { Plus, Search, Trash2, X, AlertTriangle, Boxes } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
 import { formatEUR } from '../utils/formatMoney';
 import ItemThumbnail, { getCategoryImageUrl } from './ItemThumbnail';
@@ -14,6 +14,15 @@ import {
 } from '../utils/builderSlotMatch';
 import { buildContainerTitle } from '../utils/buildTitle';
 import { todayLocalDateKey } from '../utils/calendarDate';
+import {
+  AddFlowPageHeader,
+  AddFlowBuilderModeSwitch,
+  AddFlowTotalBadge,
+  AddFlowSaveButton,
+  ADD_FLOW_PANEL,
+  ADD_FLOW_LABEL,
+  ADD_FLOW_INPUT,
+} from './addFlowShared';
 
 interface Props {
   items: InventoryItem[];
@@ -226,69 +235,47 @@ const LotBundleBuilder: React.FC<Props> = ({ items, onSave }) => {
 
   return (
     <div className="w-full h-[calc(100vh-88px)] flex flex-col animate-in fade-in px-4 pb-4">
-      <header className="shrink-0 rounded-2xl border border-slate-200 bg-white px-4 py-3 mb-4">
-        <div className="flex flex-wrap justify-between items-center gap-3">
-          <div className="flex items-center gap-4 min-w-0">
-            <button
-              type="button"
-              onClick={() => navigate(-1)}
-              className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-400 hover:text-slate-900"
-            >
-              <ArrowLeft size={22} />
-            </button>
-            <div>
-              <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-                <Package size={22} className="text-amber-600" />
-                {editId ? 'Edit Mixed Bundle' : 'Mixed Bundle'}
-              </h1>
-              <p className="text-sm text-slate-500 font-bold">
-                Any parts & qty · no slots · defective allowed
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="px-5 py-2 rounded-2xl bg-slate-900 text-white text-right">
-              <p className="text-[10px] font-black uppercase text-slate-400">Total</p>
-              <p className="text-xl font-black">€{formatEUR(total)}</p>
-            </div>
-            <button
-              type="button"
-              onClick={handleSave}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-amber-600 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-amber-700"
-            >
-              <Save size={16} /> Save Lot
-            </button>
-          </div>
-        </div>
-      </header>
+      <AddFlowPageHeader
+        icon={<Boxes size={22} strokeWidth={1.75} />}
+        title={editId ? 'Edit Mixed Bundle' : 'Mixed Bundle'}
+        subtitle="Any parts & qty · no slots · defective allowed"
+        onBack={() => navigate(-1)}
+        actions={
+          <>
+            <AddFlowTotalBadge value={`€${formatEUR(total)}`} />
+            <AddFlowSaveButton onClick={handleSave} label="Save mixed" />
+          </>
+        }
+        below={!editId ? <AddFlowBuilderModeSwitch active="mixed" /> : undefined}
+      />
 
       <div className="flex flex-1 gap-4 overflow-hidden min-h-0">
         <div className="w-[340px] flex flex-col gap-3 shrink-0 overflow-y-auto">
-          <div className="bg-white p-4 rounded-2xl border border-slate-200">
-            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Mixed name</label>
+          <div className={`${ADD_FLOW_PANEL} p-4`}>
+            <label className={ADD_FLOW_LABEL}>Mixed name</label>
             <input
-              className="w-full mt-2 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-black text-base outline-none"
+              className={`${ADD_FLOW_INPUT} mt-2 font-black text-base`}
               value={bundleName}
               onChange={(e) => {
                 setNameTouched(true);
                 setBundleName(e.target.value);
               }}
             />
-            <p className="text-[10px] text-slate-400 font-bold mt-1">Auto title ≤65 chars (eBay / Kleinanzeigen)</p>
+            <p className="text-[10px] text-slate-400 font-semibold mt-1">Auto title ≤65 chars (eBay / Kleinanzeigen)</p>
           </div>
 
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 flex gap-2 text-[11px] font-bold text-amber-900">
-            <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+          <div className={`${ADD_FLOW_PANEL} p-3 flex gap-2 text-[11px] font-semibold text-slate-600 bg-slate-50/80`}>
+            <AlertTriangle size={16} className="shrink-0 mt-0.5 text-slate-500" />
             Defective parts allowed here. PC and Bundle builds block them.
           </div>
 
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 flex-1 min-h-0 flex flex-col">
+          <div className={`${ADD_FLOW_PANEL} p-4 flex-1 min-h-0 flex flex-col`}>
             <div className="flex justify-between items-center mb-3">
-              <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
+              <p className={ADD_FLOW_LABEL}>
                 In lot ({selected.length})
               </p>
               {defectiveCount > 0 && (
-                <span className="text-[9px] font-black uppercase bg-red-100 text-red-700 px-2 py-0.5 rounded">
+                <span className="text-[9px] font-black uppercase bg-slate-900 text-white px-2 py-0.5 rounded-lg">
                   {defectiveCount} defekt
                 </span>
               )}
@@ -300,7 +287,7 @@ const LotBundleBuilder: React.FC<Props> = ({ items, onSave }) => {
                 selected.map((item) => (
                   <div
                     key={item.id}
-                    className="flex items-center gap-2 p-2 rounded-xl border border-slate-100 bg-slate-50"
+                    className="flex items-center gap-2 p-2 rounded-xl border border-slate-200 bg-slate-50/80"
                   >
                     <ItemThumbnail item={item} className="w-10 h-10 rounded-lg shrink-0" size={40} useCategoryImage />
                     <div className="flex-1 min-w-0">
@@ -330,12 +317,12 @@ const LotBundleBuilder: React.FC<Props> = ({ items, onSave }) => {
           />
         </div>
 
-        <div className="flex-1 bg-white rounded-2xl border border-slate-200 flex flex-col min-h-0 overflow-hidden">
+        <div className={`${ADD_FLOW_PANEL} flex-1 flex flex-col min-h-0 overflow-hidden`}>
           <div className="p-4 border-b border-slate-100">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
               <input
-                className="w-full pl-10 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none"
+                className={`${ADD_FLOW_INPUT} pl-10`}
                 placeholder="Search stock to add…"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -348,7 +335,7 @@ const LotBundleBuilder: React.FC<Props> = ({ items, onSave }) => {
                 key={item.id}
                 type="button"
                 onClick={() => addItem(item)}
-                className="w-full flex items-center gap-3 p-3 rounded-2xl border border-slate-100 hover:border-amber-300 hover:bg-amber-50/40 text-left"
+                className="w-full flex items-center gap-3 p-3 rounded-2xl border border-slate-200 hover:border-slate-400 hover:bg-slate-50 text-left transition-colors"
               >
                 <ItemThumbnail item={item} className="w-12 h-12 rounded-lg shrink-0" size={48} useCategoryImage />
                 <div className="flex-1 min-w-0">
@@ -358,21 +345,23 @@ const LotBundleBuilder: React.FC<Props> = ({ items, onSave }) => {
                     {item.isDefective ? ' · Defekt' : ''} · €{formatEUR(Number(item.buyPrice))}
                   </p>
                 </div>
-                <Plus size={18} className="text-amber-600 shrink-0" />
+                <span className="w-8 h-8 rounded-xl border border-slate-200 bg-white text-slate-700 inline-flex items-center justify-center shrink-0">
+                  <Plus size={16} strokeWidth={1.75} />
+                </span>
               </button>
             ))}
             {picker.blocked.length > 0 && (
               <div className="pt-3 mt-2 border-t border-slate-200 space-y-2">
-                <p className="text-[10px] font-black uppercase text-amber-700">Cannot add</p>
+                <p className={ADD_FLOW_LABEL}>Cannot add</p>
                 {picker.blocked.slice(0, 12).map(({ item, reason }) => (
                   <div
                     key={item.id}
-                    className="flex items-start gap-3 p-3 rounded-2xl border border-amber-200/80 bg-amber-50/50 opacity-80"
+                    className="flex items-start gap-3 p-3 rounded-2xl border border-slate-200 bg-slate-50 opacity-80"
                   >
                     <ItemThumbnail item={item} className="w-10 h-10 rounded-lg grayscale shrink-0" size={40} useCategoryImage />
                     <div className="min-w-0">
                       <p className="text-xs font-black text-slate-800 truncate">{item.name}</p>
-                      <p className="text-[10px] font-bold text-amber-900 mt-0.5">{reason}</p>
+                      <p className="text-[10px] font-semibold text-slate-500 mt-0.5">{reason}</p>
                     </div>
                   </div>
                 ))}

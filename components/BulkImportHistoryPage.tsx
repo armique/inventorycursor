@@ -28,6 +28,7 @@ import { applyBulkImportResplit } from '../utils/bulkImportEdit';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 import { CATEGORY_IMAGES } from '../services/hardwareDB';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
+import { AddOptionTile } from './addFlowShared';
 
 interface Props {
   records: BulkImportRecord[];
@@ -230,14 +231,14 @@ const BulkImportHistoryPage: React.FC<Props> = ({
             </p>
           </div>
         </div>
-        <button
-          type="button"
+        <AddOptionTile
+          size="sm"
+          label="Bulk entry"
+          hint="New batch"
+          icon={<Layers size={18} strokeWidth={1.75} />}
           onClick={() => navigate('/panel/add-bulk')}
-          className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-slate-800"
-        >
-          <Package size={16} />
-          New bulk entry
-        </button>
+          className="!py-2 shrink-0"
+        />
       </header>
 
       <div className="mb-4 relative max-w-md">

@@ -5,7 +5,7 @@
 import type { InventoryItem } from '../types';
 import { ItemStatus } from '../types';
 import { requestAIJson } from './specsAI';
-import { isMotherboardItem } from '../utils/itemAccessoryToggles';
+import { isIOShieldRelevant, listingAccessoriesReady } from '../utils/itemAccessoryToggles';
 
 export interface MarketplaceListingHints {
   /** Original packaging present — buyer-facing Lieferumfang/Zustand hint. */
@@ -55,7 +55,7 @@ listingText и ebayTitle — только немецкий язык.
 
 Название товара
 
-💻 Краткое описание (1–2 предложения)
+💻 Подробное описание (3–6 предложений: ценность, ключевые факты, для кого)
 
 🔧 Technische Daten: …
 
@@ -71,17 +71,31 @@ listingText и ebayTitle — только немецкий язык.
 
 Затем разделы (ровно один emoji в заголовке раздела):
 
-💻 или 🎮 или 💾 или 🖥️ — краткое описание (1–2 коротких предложения)
+💻 или 🎮 или 💾 или 🖥️ — подробное продающее описание (НЕ 1 короткое предложение):
+  • 3–6 содержательных предложений на немецком
+  • что это за товар, для кого подходит, ключевые преимущества
+  • важные тех. факты из Specs (без воды и без выдуманных характеристик)
+  • совместимость / типичные сценарии использования, если уместно
+  • язык уверенный, профессиональный, как у хорошего DE-магазина
 
-🔧 Technische Daten
+🔧 Technische Daten — максимально полно по доступным Specs:
+  • каждая значимая характеристика отдельной строкой или через « · »
+  • не пропускай известные поля из ITEM DATA (Kerne, Threads, Takt, Speicher, …)
+  • если данных мало — всё равно структурируй то, что есть; не выдумывай цифры
 
-📦 Lieferumfang
+📦 Lieferumfang — полный комплект (что реально входит / чего нет по флагам)
 
-ℹ️ Hinweis (только если есть важные особенности)
+ℹ️ Hinweis — только если есть важные особенности / seller note
 
-✅ Zustand
+✅ Zustand — ясный статус + обязательный Gebrauchsspuren-notice для исправных
 
 🔥 Weitere Komponenten verfügbar (для ПК и комплектующих / bundles)
+
+ВАЖНО ПРО ДЕТАЛИЗАЦИЮ:
+- listingText должен быть заметно информативнее «короткого тизера»: покупатель должен понять ценность товара без доп. вопросов.
+- Не раздувай текст пустыми фразами («Top Angebot», «Hammer Preis», «Muss weg»).
+- Не повторяй одно и то же в каждом разделе.
+- Используй ВСЕ релевантные Specs из ITEM DATA в Technische Daten и отражай ключевые из них в кратком описании.
 
 =========================
 ПРОЦЕССОРЫ
@@ -112,22 +126,22 @@ PC BUNDLE / FERTIG-PC
 Для готовых ПК: CPU, Kerne, Threads, Takte, RAM, SSD, Windows (если есть), царапины на корпусе если есть.
 
 =========================
-LIEFERUMFANG / OVP / IO / RECHNUNG
+LIEFERUMFANG / OVP / IO
 =========================
 
 Перечисляй комплект поставки отдельно.
-Флаги OVP / Rechnung в ITEM DATA — обязательные подсказки для покупателя. Включи их в 📦 Lieferumfang и/или ℹ️ Hinweis / ✅ Zustand — где уместно:
+Флаги OVP / IO-Blende в ITEM DATA — обязательные подсказки для покупателя. Включи их в 📦 Lieferumfang и/или ℹ️ Hinweis / ✅ Zustand — где уместно:
 
 Если OVP = YES: Originalverpackung vorhanden
 Если OVP = NO: Ohne Originalverpackung
-Если Rechnung = YES: Rechnung / Kaufbeleg vorhanden
-Если Rechnung = NO: Ohne Rechnung
 
 IO-Blende / IO Shield:
-- Упоминай IO-Blende ТОЛЬКО если в ITEM DATA есть строка IO-Blende (это бывает только для категории Motherboards / Mainboard).
-- Если строки IO-Blende нет — НИКОГДА не пиши про IO-Blende / IO Shield / Blende (ни „inklusive“, ни „ohne“).
+- Упоминай IO-Blende ТОЛЬКО если в ITEM DATA есть строка IO-Blende (motherboard / bundle with motherboard).
+- Если строки IO-Blende нет или NOT APPLICABLE — НИКОГДА не пиши про IO-Blende / IO Shield / Blende.
 - Если IO-Blende = YES: IO-Blende inklusive
 - Если IO-Blende = NO: Ohne IO-Blende
+
+Rechnung: упоминай ТОЛЬКО если в ITEM DATA явно Rechnung = YES. Не пиши „Ohne Rechnung“, если флаг не задан.
 
 Не игнорируй эти флаги. Не противоречь им.
 
@@ -163,23 +177,52 @@ Keine Garantie und keine Rücknahme.
 СТИЛЬ
 =========================
 
-Как профессиональное объявление крупного немецкого магазина. Без воды. Максимально продающее.
-Одинаковый стиль оформления.`;
+Как профессиональное объявление крупного немецкого магазина. Без воды, но с достаточной детализацией.
+Максимально продающее и информативное. Одинаковый стиль оформления.
+Покупатель должен получить ясное представление о товаре, комплекте и состоянии уже из текста.`;
 
-/** Resolve buyer-facing accessory hints for listing AI (not for product-card image gen). */
+/** Resolve buyer-facing accessory hints for listing AI. */
 export function resolveListingAccessoryHints(
-  item: Pick<InventoryItem, 'category' | 'subCategory' | 'hasOVP' | 'hasIOShield' | 'hasReceipt'>,
+  item: Pick<
+    InventoryItem,
+    'category' | 'subCategory' | 'isBundle' | 'isPC' | 'name' | 'hasOVP' | 'hasIOShield' | 'hasReceipt'
+  >,
   hints?: MarketplaceListingHints
-): { hasOVP: boolean; hasIOShield: boolean; hasReceipt: boolean; includeIOShield: boolean } {
-  const includeIOShield = isMotherboardItem(item);
+): {
+  ovp: 'YES' | 'NO' | 'UNSPECIFIED';
+  io: 'YES' | 'NO' | 'UNSPECIFIED' | null;
+  includeIOShield: boolean;
+  /** @deprecated kept for older callers — true only when present */
+  hasOVP: boolean;
+  hasIOShield: boolean;
+  hasReceipt: boolean;
+} {
+  const mergedOvp =
+    hints?.hasOVP !== undefined ? hints.hasOVP : item.hasOVP;
+  const includeIOShield = isIOShieldRelevant(item);
+  const mergedIo = includeIOShield
+    ? hints?.hasIOShield !== undefined
+      ? hints.hasIOShield
+      : item.hasIOShield
+    : undefined;
+
+  const ovp: 'YES' | 'NO' | 'UNSPECIFIED' =
+    mergedOvp === true ? 'YES' : mergedOvp === false ? 'NO' : 'UNSPECIFIED';
+  const io: 'YES' | 'NO' | 'UNSPECIFIED' | null = !includeIOShield
+    ? null
+    : mergedIo === true
+      ? 'YES'
+      : mergedIo === false
+        ? 'NO'
+        : 'UNSPECIFIED';
+
   return {
-    hasOVP: hints?.hasOVP === true || item.hasOVP === true,
-    // IO only matters for motherboard listings — never feed it for GPUs/RAM/etc.
-    hasIOShield: includeIOShield
-      ? hints?.hasIOShield === true || item.hasIOShield === true
-      : false,
-    hasReceipt: hints?.hasReceipt === true || item.hasReceipt === true,
+    ovp,
+    io,
     includeIOShield,
+    hasOVP: ovp === 'YES',
+    hasIOShield: io === 'YES',
+    hasReceipt: hints?.hasReceipt === true || item.hasReceipt === true,
   };
 }
 
@@ -202,18 +245,24 @@ function buildItemContext(item: InventoryItem, hints?: MarketplaceListingHints):
       : '',
     item.isDefective ? 'Condition flag: DEFECTIVE' : 'Condition flag: WORKING',
     `OVP: ${
-      accessories.hasOVP ? 'YES — Originalverpackung vorhanden' : 'NO — Ohne Originalverpackung'
+      accessories.ovp === 'YES'
+        ? 'YES — Originalverpackung vorhanden'
+        : accessories.ovp === 'NO'
+          ? 'NO — Ohne Originalverpackung'
+          : 'UNSPECIFIED — ask seller flags before writing'
     }`,
     accessories.includeIOShield
       ? `IO-Blende: ${
-          accessories.hasIOShield ? 'YES — IO-Blende inklusive' : 'NO — Ohne IO-Blende'
+          accessories.io === 'YES'
+            ? 'YES — IO-Blende inklusive'
+            : accessories.io === 'NO'
+              ? 'NO — Ohne IO-Blende'
+              : 'UNSPECIFIED — ask seller flags before writing'
         }`
       : 'IO-Blende: NOT APPLICABLE — do not mention IO-Blende / IO Shield at all',
-    `Rechnung: ${
-      accessories.hasReceipt
-        ? 'YES — Rechnung / Kaufbeleg vorhanden'
-        : 'NO — Ohne Rechnung'
-    }`,
+    accessories.hasReceipt
+      ? 'Rechnung: YES — Rechnung / Kaufbeleg vorhanden (optional mention)'
+      : '',
     item.isDefective
       ? ''
       : 'CONDITION NOTICE (required in ✅ Zustand): Normale Gebrauchsspuren sind möglich.',
@@ -272,6 +321,15 @@ export async function generateMarketplaceListing(
   item: InventoryItem,
   hints?: MarketplaceListingHints
 ): Promise<MarketplaceListingResult> {
+  const gate = listingAccessoriesReady({
+    ...item,
+    hasOVP: hints?.hasOVP !== undefined ? hints.hasOVP : item.hasOVP,
+    hasIOShield: hints?.hasIOShield !== undefined ? hints.hasIOShield : item.hasIOShield,
+  });
+  if (!gate.ok) {
+    throw new Error(gate.reason || 'Confirm OVP / IO Blende before generating listing text.');
+  }
+
   const prompt = `${LISTING_PROMPT_RULES}
 
 =========================

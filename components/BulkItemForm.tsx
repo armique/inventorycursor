@@ -1,12 +1,11 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  ArrowLeft, Save, Plus, Trash2, Calendar, Globe, CreditCard, 
-  ShoppingBag, Calculator, Layers, Box, ChevronDown, 
-  MessageCircle, Link as LinkIcon, Upload, Search, Database, 
-  Cpu, Monitor, HardDrive, Zap, Wind, AlertCircle, CheckCircle2, Copy,
-  Fan, Lightbulb, Keyboard, Mouse, Tv, MoreHorizontal, Cable, Laptop as LaptopIcon, Wrench,
+  ArrowLeft, Save, Plus, Trash2, Calendar, 
+  ShoppingBag, Calculator, Layers, 
+  Search, Database, 
+  CheckCircle2,
   Sparkles, Loader2, Package, Ban, ScanBarcode
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, Platform, PaymentType, BulkImportRecord, BulkImportSource } from '../types';
@@ -18,6 +17,15 @@ import {
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { CATEGORY_IMAGES, searchAllHardware, HardwareMetadata } from '../services/hardwareDB';
+import { AddFlowStepHeader, AddFlowPageHeader, AddFlowSecondaryButton, AddFlowPrimaryButton, AddOptionTile, ADD_FLOW_PANEL, ADD_FLOW_LABEL, ADD_FLOW_INPUT } from './addFlowShared';
+import BuySourcePlatformPicker, {
+  BuyPaymentTypePicker,
+  BuySourceSellerField,
+} from './BuySourcePlatformPicker';
+import AddCategorySubcategoryPicker, {
+  firstCategorySelection,
+  resolveCategoryFromHardwareType,
+} from './AddCategorySubcategoryPicker';
 import { generateItemSpecs, getSpecsAIProvider, requestAIJson } from '../services/specsAI';
 import { mergeAiSpecsIntoEssential, resolveEssentialSpecKeys } from '../services/essentialSpecFields';
 import { pickSpecsAiNameVendorUpdates } from '../utils/applySpecsAiResult';
@@ -53,43 +61,6 @@ interface Props {
   onAddCategory?: (category: string, subcategory?: string) => void;
   categoryFields?: Record<string, string[]>;
 }
-
-const PAYMENT_METHODS: PaymentType[] = [
-  'ebay.de',
-  'Kleinanzeigen (Cash)',
-  'Kleinanzeigen (Direkt Kaufen)',
-  'Kleinanzeigen (Paypal)',
-  'Kleinanzeigen (Wire Transfer)',
-  'Paypal',
-  'Cash',
-  'Bank Transfer',
-  'Other'
-];
-
-const GamepadIcon = ({size}: {size:number}) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="6" y1="12" x2="10" y2="12"></line><line x1="8" y1="10" x2="8" y2="14"></line><line x1="15" y1="13" x2="15.01" y2="13"></line><line x1="18" y1="11" x2="18.01" y2="11"></line><rect x="2" y="6" width="20" height="12" rx="2"></rect></svg>
-);
-
-// Quick Access Categories for the Grid
-const QUICK_CATS = [
-  { label: 'GPU', icon: <Monitor size={20}/>, cat: 'Components', sub: 'Graphics Cards' },
-  { label: 'CPU', icon: <Cpu size={20}/>, cat: 'Components', sub: 'Processors' },
-  { label: 'Mobo', icon: <Box size={20}/>, cat: 'Components', sub: 'Motherboards' },
-  { label: 'RAM', icon: <Layers size={20}/>, cat: 'Components', sub: 'RAM' },
-  { label: 'Storage', icon: <HardDrive size={20}/>, cat: 'Components', sub: 'Storage (SSD/HDD)' },
-  { label: 'PSU', icon: <Zap size={20}/>, cat: 'Components', sub: 'Power Supplies' },
-  { label: 'Case', icon: <Box size={20}/>, cat: 'Components', sub: 'Cases' },
-  { label: 'Cooling', icon: <Wind size={20}/>, cat: 'Components', sub: 'Cooling' },
-  { label: 'Fans', icon: <Fan size={20}/>, cat: 'Components', sub: 'Cooling' },
-  { label: 'RGB/Mod', icon: <Lightbulb size={20}/>, cat: 'Misc', sub: 'Spare Parts' },
-  { label: 'Cables', icon: <Cable size={20}/>, cat: 'Misc', sub: 'Cables' },
-  { label: 'Laptop', icon: <LaptopIcon size={20}/>, cat: 'Laptops', sub: 'Gaming Laptop' },
-  { label: 'Console', icon: <GamepadIcon size={20}/>, cat: 'Gadgets', sub: 'Consoles' },
-  { label: 'Monitor', icon: <Tv size={20}/>, cat: 'Peripherals', sub: 'Monitors' },
-  { label: 'Keyboard', icon: <Keyboard size={20}/>, cat: 'Peripherals', sub: 'Keyboards' },
-  { label: 'Mouse', icon: <Mouse size={20}/>, cat: 'Peripherals', sub: 'Mice' },
-  { label: 'Misc', icon: <MoreHorizontal size={20}/>, cat: 'Misc', sub: 'Spare Parts' },
-];
 
 interface DraftItem {
   id: string;
@@ -132,23 +103,38 @@ interface ParsedTextItem {
   specs?: Record<string, string | number>;
 }
 
-const CATEGORY_KEYS = Object.keys(HIERARCHY_CATEGORIES);
 const MOTHERBOARD_PATTERN =
   /\b(mainboard|motherboard|mobo|chipset|form\s*factor|io[\s-]*shield|(?:a|b|h|x|z)\d{2,4}[a-z0-9-]*)\b/i;
 
-function normalizeCategory(input?: string): string {
+function normalizeCategory(input: string | undefined, categories: Record<string, string[]>): string {
+  const keys = Object.keys(categories || {});
+  const fallback = keys[0] || 'Components';
   const raw = (input || '').trim().toLowerCase();
-  if (!raw) return 'Components';
-  const match = CATEGORY_KEYS.find((c) => c.toLowerCase() === raw);
-  return match || 'Components';
+  if (!raw) return fallback;
+  const match = keys.find((c) => c.toLowerCase() === raw);
+  return match || (keys.includes('Components') ? 'Components' : fallback);
 }
 
-function normalizeSubCategory(category: string, sub?: string): string {
-  const options = HIERARCHY_CATEGORIES[category] || [];
-  if (!options.length) return 'Spare Parts';
+function normalizeSubCategory(
+  category: string,
+  sub: string | undefined,
+  categories: Record<string, string[]>
+): string {
+  const options = categories[category] || [];
+  if (!options.length) return '';
   const raw = (sub || '').trim().toLowerCase();
   const match = options.find((s) => s.toLowerCase() === raw);
   return match || options[0];
+}
+
+/** Clamp any guessed/AI pair onto the live Settings tree. */
+function clampToLiveCategories(
+  selection: { category: string; subCategory: string },
+  categories: Record<string, string[]>
+): { category: string; subCategory: string } {
+  const category = normalizeCategory(selection.category, categories);
+  const subCategory = normalizeSubCategory(category, selection.subCategory, categories);
+  return { category, subCategory };
 }
 
 function inferCategoryFromName(name: string): { category: string; subCategory: string } {
@@ -183,41 +169,39 @@ function parseQuantityAndName(rawLine: string): { name: string; quantity: number
   return parseBulkLineQuantityAndName(rawLine);
 }
 
-function reconcileCategory(name: string, category?: string, subCategory?: string): { category: string; subCategory: string } {
+function reconcileCategory(
+  name: string,
+  category: string | undefined,
+  subCategory: string | undefined,
+  categories: Record<string, string[]>
+): { category: string; subCategory: string } {
   const guessed = inferCategoryFromName(name);
-  const aiCategory = normalizeCategory(category || guessed.category);
-  const aiSub = normalizeSubCategory(aiCategory, subCategory || guessed.subCategory);
+  const aiCategory = normalizeCategory(category || guessed.category, categories);
+  const aiSub = normalizeSubCategory(aiCategory, subCategory || guessed.subCategory, categories);
 
   const n = name.toLowerCase();
+  let resolved = { category: aiCategory, subCategory: aiSub };
   if (/(prodesk|optiplex|elitedesk|business\s*pc|desktop\s*pc|mini\s*pc)\b/i.test(n)) {
-    return { category: 'PC', subCategory: 'Pre-Built PC' };
-  }
-  if (/(dvd|bluray|blu-ray|optical|oddd|gud\d)/i.test(n)) {
-    return { category: 'Misc', subCategory: 'Spare Parts' };
-  }
-  if (/\b(i[3579]|intel\s*core|ryzen|threadripper|cpu|prozessor)\b/i.test(n) && !/mainboard|motherboard|prodesk|optiplex|elitedesk|business\s*pc/i.test(n)) {
-    return { category: 'Components', subCategory: 'Processors' };
-  }
-  if (/(ssd|nvme|m\.2|hdd|sata)/i.test(n)) {
-    return { category: 'Components', subCategory: 'Storage (SSD/HDD)' };
-  }
-  if (/(ddr4|ddr5|ram|memory|\d+\s*[x×]\s*\d+\s*gb|crucial)/i.test(n) && !/mainboard|motherboard|prodesk|business\s*pc/i.test(n)) {
-    return { category: 'Components', subCategory: 'RAM' };
-  }
-  if (MOTHERBOARD_PATTERN.test(n)) {
-    return { category: 'Components', subCategory: 'Motherboards' };
+    resolved = { category: 'PC', subCategory: 'Pre-Built PC' };
+  } else if (/(dvd|bluray|blu-ray|optical|oddd|gud\d)/i.test(n)) {
+    resolved = { category: 'Misc', subCategory: 'Spare Parts' };
+  } else if (/\b(i[3579]|intel\s*core|ryzen|threadripper|cpu|prozessor)\b/i.test(n) && !/mainboard|motherboard|prodesk|optiplex|elitedesk|business\s*pc/i.test(n)) {
+    resolved = { category: 'Components', subCategory: 'Processors' };
+  } else if (/(ssd|nvme|m\.2|hdd|sata)/i.test(n)) {
+    resolved = { category: 'Components', subCategory: 'Storage (SSD/HDD)' };
+  } else if (/(ddr4|ddr5|ram|memory|\d+\s*[x×]\s*\d+\s*gb|crucial)/i.test(n) && !/mainboard|motherboard|prodesk|business\s*pc/i.test(n)) {
+    resolved = { category: 'Components', subCategory: 'RAM' };
+  } else if (MOTHERBOARD_PATTERN.test(n)) {
+    resolved = { category: 'Components', subCategory: 'Motherboards' };
+  } else if (aiCategory !== 'Components' && guessed.category === 'Components') {
+    resolved = guessed;
+  } else if (aiCategory === 'Components' && aiSub === 'Graphics Cards' && guessed.subCategory !== 'Graphics Cards') {
+    resolved = guessed;
+  } else if (guessed.category === 'PC' && aiCategory !== 'PC') {
+    resolved = guessed;
   }
 
-  if (aiCategory !== 'Components' && guessed.category === 'Components') {
-    return guessed;
-  }
-  if (aiCategory === 'Components' && aiSub === 'Graphics Cards' && guessed.subCategory !== 'Graphics Cards') {
-    return guessed;
-  }
-  if (guessed.category === 'PC' && aiCategory !== 'PC') {
-    return guessed;
-  }
-  return { category: aiCategory, subCategory: aiSub };
+  return clampToLiveCategories(resolved, categories);
 }
 
 const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categories = HIERARCHY_CATEGORIES, onAddCategory, categoryFields = {} }) => {
@@ -239,6 +223,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
   const [chatUrl, setChatUrl] = useState('');
   const [sellerProfileUrl, setSellerProfileUrl] = useState('');
   const [chatImage, setChatImage] = useState('');
+  const [batchSeller, setBatchSeller] = useState('');
 
   // Items List
   const [items, setItems] = useState<DraftItem[]>([]);
@@ -261,9 +246,10 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
   const [searchResults, setSearchResults] = useState<HardwareMetadata[]>([]);
   
   // Manual Inputs
+  const initialCat = firstCategorySelection(categories);
   const [newName, setNewName] = useState('');
-  const [newCategory, setNewCategory] = useState<string>('Components');
-  const [newSubCategory, setNewSubCategory] = useState<string>('Graphics Cards');
+  const [newCategory, setNewCategory] = useState<string>(initialCat.category || 'Components');
+  const [newSubCategory, setNewSubCategory] = useState<string>(initialCat.subCategory || '');
   const [newNote, setNewNote] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [newDefective, setNewDefective] = useState(false);
@@ -275,6 +261,11 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
   const [bulkTextStatus, setBulkTextStatus] = useState<string | null>(null);
   const [bulkQtyMode, setBulkQtyMode] = useState<BulkQtyMode>('INDIVIDUAL');
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
+
+  const handleManualCategoryChange = useCallback((next: { category: string; subCategory: string }) => {
+    setNewCategory(next.category);
+    setNewSubCategory(next.subCategory);
+  }, []);
 
   // Search Logic
   useEffect(() => {
@@ -314,14 +305,22 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
   const handleAddManual = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!newName) return;
+    if (!newCategory) {
+      alert('Choose a category first.');
+      return;
+    }
+    const clamped = clampToLiveCategories(
+      { category: newCategory, subCategory: newSubCategory },
+      categories
+    );
 
     const newItems: DraftItem[] = [];
     for(let i=0; i<quantity; i++) {
         newItems.push({
             id: `draft-${Date.now()}-${i}`,
             name: newName,
-            category: newCategory,
-            subCategory: newSubCategory,
+            category: clamped.category,
+            subCategory: clamped.subCategory,
             note: newNote,
             isDefective: newDefective,
             draftSource: 'manual',
@@ -336,23 +335,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
   };
 
   const handleAddFromSearch = (hw: HardwareMetadata) => {
-    // Map DB type to category
-    let cat = 'Components';
-    let sub = 'Misc';
-    
-    // Try to find a match in QUICK_CATS first
-    const quickMatch = QUICK_CATS.find(q => q.label === hw.type || q.sub === hw.type);
-    if (quickMatch) {
-        cat = quickMatch.cat;
-        sub = quickMatch.sub;
-    } else {
-        // Fallback Mapping
-        if (hw.type === 'GPU') sub = 'Graphics Cards';
-        if (hw.type === 'CPU') sub = 'Processors';
-        if (hw.type === 'Motherboard') sub = 'Motherboards';
-        if (hw.type === 'RAM') sub = 'RAM';
-        if (hw.type === 'Storage') sub = 'Storage (SSD/HDD)';
-    }
+    const { category: cat, subCategory: sub } = resolveCategoryFromHardwareType(hw.type, categories);
 
     setItems(prev => [...prev, {
         id: `draft-${Date.now()}`,
@@ -375,13 +358,17 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
       handleAddFromSearch(hwHits[0]);
       return;
     }
+    const clamped = clampToLiveCategories(
+      { category: newCategory, subCategory: newSubCategory },
+      categories
+    );
     setItems((prev) => [
       ...prev,
       {
         id: `draft-${Date.now()}`,
         name: product.name,
-        category: newCategory,
-        subCategory: newSubCategory,
+        category: clamped.category,
+        subCategory: clamped.subCategory,
         note: product.barcode ? `EAN ${product.barcode}` : '',
         specs: {},
         vendor: product.brand || '',
@@ -413,8 +400,11 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
       const productFromLine = stripConditionAnnotations(fromLine.name) || fromLine.name;
       const baseName = stripConditionAnnotations(rawName) || rawName;
       const rec = importMode === 'AS_IS'
-        ? { category: newCategory, subCategory: normalizeSubCategory(newCategory, newSubCategory) }
-        : reconcileCategory(productFromLine || baseName, row.category, row.subCategory);
+        ? clampToLiveCategories(
+            { category: newCategory, subCategory: newSubCategory },
+            categories
+          )
+        : reconcileCategory(productFromLine || baseName, row.category, row.subCategory, categories);
       const ramKit =
         rec.subCategory === 'RAM'
           ? resolveRamKitInfo(productFromLine || baseName, { sourceLine, specs: row.specs })
@@ -540,8 +530,8 @@ Return JSON only (no markdown). Keep each item compact (omit empty strings). Pre
 {"items":[{"name":"string","quantity":1,"category":"PC|Laptops|Components|...","subCategory":"string","note":"","isDefective":false,"vendor":"","specs":{}}]}
 
 Rules:
-- Keep categories limited to: ${CATEGORY_KEYS.join(', ')}
-- SubCategory should fit the category and be concise.
+- Keep categories limited to: ${Object.keys(categories).join(', ') || 'Components'}
+- SubCategory must exist under that category in the list above (or be omitted).
 - Parse quantity from prefixes like "2x ..." or "8x4GB ...". If no quantity, use 1.
 - Leading "2x Product" / "4x Product" is a PURCHASE count (how many units bought), not a RAM kit size. Example: "2x Samsung … 4GB" → quantity=2, name without the "2x". Spaced "2x 8GB Samsung" → quantity=2, single 8GB sticks (NOT a 2x8GB kit).
 - Model codes like "ACR24D4U1S1ME-8X" or "…-8X 8GB": the "-8X" is part of the part number, NEVER modules=8. Keep the full model string in name.
@@ -784,7 +774,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
         status: addAsBundle ? ItemStatus.IN_COMPOSITION : ItemStatus.IN_STOCK,
         comment1: draft.note,
         comment2: `Bulk Import (${itemsToImport.length} items). Source total: €${totalCost}.`,
-        vendor: draft.vendor || 'Unknown',
+        vendor: draft.vendor || batchSeller.trim() || 'Unknown',
         specs: draft.specs,
         isDefective: draft.isDefective,
         parentContainerId: addAsBundle ? `bundle-${timestamp}` : undefined,
@@ -855,25 +845,23 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
 
   return (
     <div className="max-w-[1600px] mx-auto h-[calc(100dvh-5.5rem)] md:h-[calc(100vh-100px)] flex flex-col animate-in fade-in">
-      {/* HEADER */}
-      <header className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-3 mb-3 lg:mb-6 shrink-0 px-3 sm:px-4">
-        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-           <button onClick={() => navigate(-1)} className="p-2.5 sm:p-3 bg-white border border-slate-200 rounded-2xl text-slate-400 hover:text-slate-900 transition-all shrink-0"><ArrowLeft size={22}/></button>
-           <div className="min-w-0">
-              <h1 className="text-xl sm:text-3xl font-black text-slate-900 tracking-tight truncate">Bulk Entry</h1>
-              <p className="text-xs sm:text-sm text-slate-500 font-bold truncate">Add Multiple Items • One Transaction</p>
-           </div>
-           <button
-             type="button"
-             onClick={() => navigate('/panel/bulk-imports')}
-             className="ml-auto lg:ml-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-50 shrink-0"
-             title="Open bulk import history"
-           >
-             <Layers size={14} />
-             <span className="hidden sm:inline">History</span>
-           </button>
-        </div>
-        <div className="flex flex-wrap items-end gap-2 sm:gap-3 md:gap-4 bg-white p-2 md:p-3 rounded-2xl border border-slate-200 shadow-sm">
+      <div className="px-3 sm:px-4 shrink-0">
+        <AddFlowStepHeader title="Bulk entry" />
+        <AddFlowPageHeader
+          icon={<Layers size={22} strokeWidth={1.75} />}
+          title="Bulk Entry"
+          subtitle="Add multiple items · one transaction"
+          onBack={() => navigate(-1)}
+          actions={
+            <AddFlowSecondaryButton onClick={() => navigate('/panel/bulk-imports')}>
+              <Layers size={14} /> History
+            </AddFlowSecondaryButton>
+          }
+        />
+      </div>
+      {/* HEADER totals strip */}
+      <header className="flex flex-col lg:flex-row lg:justify-end lg:items-center gap-3 mb-3 lg:mb-6 shrink-0 px-3 sm:px-4">
+        <div className={`flex flex-wrap items-end gap-2 sm:gap-3 md:gap-4 ${ADD_FLOW_PANEL} p-2 md:p-3`}>
            <div className="px-3 border-r border-slate-100 min-w-[6rem]">
               <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest block">Total paid</label>
               <div className="flex items-center gap-1">
@@ -909,40 +897,23 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                  onChange={e => setBuyDate(e.target.value)}
               />
            </div>
-           <div className="px-3 min-w-[9rem]">
-              <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest block">Bought on</label>
-              <select 
-                 className="w-full max-w-[11rem] py-1.5 bg-transparent font-bold text-xs outline-none text-slate-800 border border-slate-200 rounded-xl px-2"
-                 value={platform}
-                 onChange={(e) => {
-                   const next = e.target.value as Platform;
-                   setPlatform(next);
-                   setPayment((prev) => paymentAfterPlatformChange(next, prev));
-                 }}
-              >
-                 <option value="kleinanzeigen.de">Kleinanzeigen</option>
-                 <option value="ebay.de">eBay</option>
-                 <option value="Amazon">Amazon</option>
-                 <option value="In Person">In Person</option>
-                 <option value="Other">Other</option>
-              </select>
-           </div>
-           <div className="px-3 min-w-[10rem]">
-              <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest block">Paid with</label>
-              <select 
-                 className="w-full max-w-[13rem] py-1.5 bg-transparent font-bold text-xs outline-none text-slate-800 border border-slate-200 rounded-xl px-2"
-                 value={payment}
-                 onChange={(e) =>
-                   setPayment(
-                     normalizeBuyPaymentForPlatform(platform, e.target.value as PaymentType) ||
-                       (e.target.value as PaymentType)
-                   )
-                 }
-              >
-                 {PAYMENT_METHODS.map((p) => (
-                   <option key={p} value={p}>{p}</option>
-                 ))}
-              </select>
+           <div className="px-3 min-w-[14rem] flex-1 max-w-md space-y-2">
+              <BuySourcePlatformPicker
+                size="sm"
+                value={platform}
+                onChange={(next) => {
+                  setPlatform(next);
+                  setPayment((prev) => paymentAfterPlatformChange(next, prev));
+                }}
+              />
+              <BuyPaymentTypePicker
+                size="sm"
+                platform={platform}
+                value={payment}
+                onChange={(next) =>
+                  setPayment(normalizeBuyPaymentForPlatform(platform, next) || next)
+                }
+              />
            </div>
         </div>
       </header>
@@ -953,25 +924,49 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
          <div className="w-full lg:w-[450px] flex flex-col gap-4 lg:gap-6 shrink-0 lg:overflow-y-auto lg:pb-20 scrollbar-hide">
             
             {/* INPUT MODE TABS */}
-            <div className="bg-slate-200 p-1 rounded-2xl flex font-bold text-xs">
-               <button onClick={() => setMode('MANUAL')} className={`flex-1 py-3 rounded-xl transition-all ${mode === 'MANUAL' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}>Manual</button>
-               <button onClick={() => setMode('SCAN')} className={`flex-1 py-3 rounded-xl transition-all flex items-center justify-center gap-1 ${mode === 'SCAN' ? 'bg-white shadow text-rose-600' : 'text-slate-500 hover:text-slate-700'}`}><ScanBarcode size={12} /> Scan</button>
-               <button onClick={() => setMode('SEARCH')} className={`flex-1 py-3 rounded-xl transition-all ${mode === 'SEARCH' ? 'bg-white shadow text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Database</button>
+            <div className={`${ADD_FLOW_PANEL} p-2 grid grid-cols-3 gap-1`}>
+               <AddOptionTile
+                 size="sm"
+                 label="Manual"
+                 hint="Type / paste"
+                 icon={<Plus size={18} strokeWidth={1.75} />}
+                 selected={mode === 'MANUAL'}
+                 onClick={() => setMode('MANUAL')}
+                 className="!py-2"
+               />
+               <AddOptionTile
+                 size="sm"
+                 label="Scan"
+                 hint="Barcode"
+                 icon={<ScanBarcode size={18} strokeWidth={1.75} />}
+                 selected={mode === 'SCAN'}
+                 onClick={() => setMode('SCAN')}
+                 className="!py-2"
+               />
+               <AddOptionTile
+                 size="sm"
+                 label="Database"
+                 hint="Search parts"
+                 icon={<Database size={18} strokeWidth={1.75} />}
+                 selected={mode === 'SEARCH'}
+                 onClick={() => setMode('SEARCH')}
+                 className="!py-2"
+               />
             </div>
 
             {mode === 'SCAN' ? (
-               <div className="bg-white p-4 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-3">
+               <div className={`${ADD_FLOW_PANEL} p-4 space-y-3`}>
                   <BarcodeScanPanel onProduct={handleAddFromBarcode} compact />
                   <p className="text-[10px] text-slate-400 px-1">
                     Each successful scan adds a row to the list. If the name matches the hardware DB, specs are filled automatically.
                   </p>
                </div>
             ) : mode === 'MANUAL' ? (
-               <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-6">
+               <div className={`${ADD_FLOW_PANEL} p-5 space-y-5`}>
                   <div className="space-y-2">
-                     <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Paste Text (Quick Bulk Parse)</label>
+                     <label className={ADD_FLOW_LABEL}>Paste text (quick bulk parse)</label>
                      <textarea
-                        className="w-full min-h-28 px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-medium text-xs outline-none focus:ring-4 focus:ring-slate-100 transition-all"
+                        className={`${ADD_FLOW_INPUT} min-h-28 font-medium text-xs`}
                         placeholder={'Paste list lines here (one item per line)\nExample: ▸ ASUS TUF Gaming RTX 5070 12GB GDDR7'}
                         value={bulkText}
                         onChange={(e) => setBulkText(e.target.value)}
@@ -1015,7 +1010,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                           type="button"
                           onClick={handleParseBulkTextWithAI}
                           disabled={!bulkText.trim() || bulkTextBusy}
-                          className="py-2.5 rounded-xl bg-violet-600 text-white text-[10px] font-black uppercase tracking-wide hover:bg-violet-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                          className="py-2.5 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase tracking-wide hover:bg-slate-800 disabled:opacity-50 flex items-center justify-center gap-2"
                         >
                           {bulkTextBusy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                           Parse With AI
@@ -1030,64 +1025,31 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                   </div>
 
                   <div className="space-y-2">
-                     <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Category Quick Select</label>
-                     <div className="flex flex-wrap gap-2">
-                        {QUICK_CATS.map(cat => (
-                           <button 
-                              key={cat.label}
-                              onClick={() => { setNewCategory(cat.cat); setNewSubCategory(cat.sub); }}
-                              className={`
-                                 flex items-center gap-2 px-3 py-2 rounded-xl border text-[10px] font-black uppercase transition-all
-                                 ${newSubCategory === cat.sub ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-500 border-slate-100 hover:border-slate-300'}
-                              `}
-                           >
-                              {cat.icon} {cat.label}
-                           </button>
-                        ))}
-                     </div>
-                  </div>
-
-                  <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
-                     <div className="space-y-1">
-                        <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Category</label>
-                        <select
-                          className="w-full px-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none"
-                          value={newCategory}
-                          onChange={(e) => {
-                            const c = e.target.value;
-                            setNewCategory(c);
-                            setNewSubCategory((categories[c] || [])[0] || '');
-                          }}
-                        >
-                          {Object.keys(categories).map((cat) => <option key={cat} value={cat}>{cat}</option>)}
-                        </select>
-                     </div>
-                     <div className="space-y-1">
-                        <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Subcategory</label>
-                        <select
-                          className="w-full px-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none"
-                          value={newSubCategory}
-                          onChange={(e) => setNewSubCategory(e.target.value)}
-                        >
-                          {(categories[newCategory] || []).map((sub) => <option key={sub} value={sub}>{sub}</option>)}
-                        </select>
-                     </div>
-                     <button
-                       type="button"
-                       onClick={handleAddGlobalCategory}
-                       className="h-[42px] w-[42px] rounded-xl bg-emerald-100 text-emerald-700 font-black text-xl leading-none hover:bg-emerald-200"
-                       title="Add global category"
-                     >
-                       +
-                     </button>
+                     <AddCategorySubcategoryPicker
+                       categories={categories}
+                       category={newCategory}
+                       subCategory={newSubCategory}
+                       onChange={handleManualCategoryChange}
+                       onAddCategory={onAddCategory ? handleAddGlobalCategory : undefined}
+                       size="sm"
+                     />
+                     {(newCategory || newSubCategory) && (
+                       <p className="text-[10px] font-semibold text-slate-500 px-1">
+                         New rows use{' '}
+                         <span className="font-black text-slate-800">
+                           {newCategory}
+                           {newSubCategory ? ` / ${newSubCategory}` : ''}
+                         </span>
+                       </p>
+                     )}
                   </div>
 
                   <div className="space-y-4">
                      <div className="space-y-2">
-                        <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Item Name</label>
+                        <label className={ADD_FLOW_LABEL}>Item name</label>
                         <input 
                            autoFocus
-                           className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm outline-none focus:ring-4 focus:ring-slate-100 transition-all"
+                           className={ADD_FLOW_INPUT}
                            placeholder="e.g. Corsair RM850x"
                            value={newName}
                            onChange={e => setNewName(e.target.value)}
@@ -1097,9 +1059,9 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                      
                      <div className="flex gap-4 items-center">
                         <div className="flex-1 space-y-2">
-                           <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Details (Optional)</label>
+                           <label className={ADD_FLOW_LABEL}>Details (optional)</label>
                            <input 
-                              className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-medium text-xs outline-none focus:border-slate-300"
+                              className={`${ADD_FLOW_INPUT} font-medium text-xs`}
                               placeholder="Condition, Specs..."
                               value={newNote}
                               onChange={e => setNewNote(e.target.value)}
@@ -1107,12 +1069,12 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                            />
                         </div>
                         <div className="w-24 space-y-2">
-                           <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">Count</label>
+                           <label className={ADD_FLOW_LABEL}>Count</label>
                            <input 
                               type="text"
                               inputMode="decimal"
                               min="1"
-                              className="w-full px-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-black text-center outline-none focus:border-slate-300"
+                              className={`${ADD_FLOW_INPUT} font-black text-center`}
                               value={quantity}
                               onChange={e => setQuantity(parseInt(e.target.value) || 1)}
                            />
@@ -1133,21 +1095,17 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                      </label>
                   </div>
 
-                  <button 
-                     onClick={handleAddManual}
-                     disabled={!newName}
-                     className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-black transition-all shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
+                  <AddFlowPrimaryButton onClick={handleAddManual} disabled={!newName} className="w-full py-4">
                      <Plus size={16}/> Add to List
-                  </button>
+                  </AddFlowPrimaryButton>
                </div>
             ) : (
-               <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm flex-1 flex flex-col min-h-0">
+               <div className={`${ADD_FLOW_PANEL} p-5 flex-1 flex flex-col min-h-0`}>
                   <div className="relative mb-4">
                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
                      <input 
                         autoFocus
-                        className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm outline-none focus:ring-4 focus:ring-blue-50 transition-all"
+                        className={`${ADD_FLOW_INPUT} pl-12`}
                         placeholder="Search model (e.g. 3060 Ti)..."
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
@@ -1159,11 +1117,11 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                         <button 
                            key={idx}
                            onClick={() => handleAddFromSearch(res)}
-                           className="w-full text-left p-3 rounded-xl border border-slate-100 hover:border-blue-300 hover:bg-blue-50 transition-all group"
+                           className="w-full text-left p-3 rounded-xl border border-slate-100 hover:border-slate-400 hover:bg-slate-50 transition-all group"
                         >
                            <div className="flex justify-between items-center">
-                              <p className="font-black text-xs text-slate-900 group-hover:text-blue-700">{res.vendor} {res.model}</p>
-                              <Plus size={14} className="opacity-0 group-hover:opacity-100 text-blue-600"/>
+                              <p className="font-black text-xs text-slate-900 group-hover:text-slate-700">{res.vendor} {res.model}</p>
+                              <Plus size={14} className="opacity-0 group-hover:opacity-100 text-slate-700"/>
                            </div>
                            <div className="flex gap-2 mt-1">
                               <span className="text-[9px] font-bold uppercase text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">{res.type || 'Part'}</span>
@@ -1178,14 +1136,27 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
             )}
 
             {/* Optional proof — platform & payment are in the header */}
-            <div className="bg-slate-50 p-6 rounded-[2.5rem] border border-slate-200 space-y-4">
-               <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 flex items-center gap-2"><Globe size={12}/> Optional purchase proof</h3>
+            <div className={`${ADD_FLOW_PANEL} p-5 space-y-4 bg-slate-50/80`}>
+               <h3 className={`${ADD_FLOW_LABEL} flex items-center gap-2`}><Globe size={12}/> Source extras</h3>
                <p className="text-[10px] text-slate-500 font-medium leading-snug">
-                 Source and payment are set in the top bar (same as single-item add). Add a chat link or screenshot if you bought on Kleinanzeigen.
+                 {platform === 'kleinanzeigen.de'
+                   ? 'Add chat link / screenshot for this Kleinanzeigen purchase.'
+                   : platform === 'ebay.de'
+                     ? 'eBay checkout is selected above. Item photos below apply to every imported row.'
+                     : platform === 'In Person'
+                       ? 'Cash is typical for in-person buys. Add shared item photos below if you have them.'
+                       : platform === 'Amazon'
+                         ? 'Amazon order trails go in comments later if needed. Photos below apply to all rows.'
+                         : 'Pick payment above. Photos below apply to every imported row.'}
                </p>
                
                {platform === 'kleinanzeigen.de' && (
                   <div className="pt-2 border-t border-slate-200/50 space-y-3">
+                     <BuySourceSellerField
+                       platform="kleinanzeigen.de"
+                       value={batchSeller}
+                       onChange={setBatchSeller}
+                     />
                      <div className="flex gap-2">
                         <input 
                            placeholder="Chat URL (kleinanzeigen.de/…)"
@@ -1213,7 +1184,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                         onChange={(e) => setChatImage(e.target.value.trim())}
                      />
                      {chatImage && (
-                        <div className="flex items-center gap-2 text-[10px] text-emerald-600 bg-emerald-50 p-2 rounded-xl border border-emerald-100">
+                        <div className="flex items-center gap-2 text-[10px] text-slate-700 bg-slate-50 p-2 rounded-xl border border-slate-200">
                            <CheckCircle2 size={12}/>
                            <span className="font-bold">
                              {chatImage.startsWith('data:')
@@ -1225,7 +1196,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                                href={chatImage}
                                target="_blank"
                                rel="noreferrer"
-                               className="ml-auto w-8 h-8 rounded-lg overflow-hidden border border-emerald-200 shrink-0"
+                               className="ml-auto w-8 h-8 rounded-lg overflow-hidden border border-slate-200 shrink-0"
                                onClick={(e) => e.stopPropagation()}
                              >
                                <img src={chatImage} alt="" className="w-full h-full object-cover" />
@@ -1234,12 +1205,22 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                            <button
                              type="button"
                              onClick={() => setChatImage('')}
-                             className="text-[9px] font-black uppercase text-emerald-800 hover:underline"
+                             className="text-[9px] font-black uppercase text-slate-800 hover:underline"
                            >
                              Clear
                            </button>
                         </div>
                      )}
+                  </div>
+               )}
+
+               {platform === 'ebay.de' && (
+                  <div className="pt-2 border-t border-slate-200/50 space-y-2">
+                     <BuySourceSellerField
+                       platform="ebay.de"
+                       value={batchSeller}
+                       onChange={setBatchSeller}
+                     />
                   </div>
                )}
 
@@ -1270,13 +1251,13 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                   {itemImageUrls.length > 0 && (
                     <div className="grid grid-cols-3 gap-2">
                       {itemImageUrls.map((url, idx) => (
-                        <div key={url} className={`p-1.5 rounded-lg border ${idx === 0 ? 'border-blue-300 bg-blue-50/60' : 'border-slate-200 bg-white'}`}>
+                        <div key={url} className={`p-1.5 rounded-lg border ${idx === 0 ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-white'}`}>
                           <img src={url} alt="" className="w-full h-14 object-cover rounded-md border border-slate-200 bg-slate-100" />
                           <div className="flex justify-between mt-1 gap-1">
                             <button
                               type="button"
                               onClick={() => setMainItemImage(url)}
-                              className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${idx === 0 ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}
+                              className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${idx === 0 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}
                             >
                               {idx === 0 ? 'Main' : 'Main'}
                             </button>
@@ -1297,10 +1278,10 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
          </div>
 
          {/* RIGHT: DRAFT LIST */}
-         <div className="flex-1 min-h-[40vh] lg:min-h-0 bg-white rounded-[1.75rem] lg:rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden flex flex-col">
-            <div className="p-4 sm:p-6 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+         <div className={`flex-1 min-h-[40vh] lg:min-h-0 ${ADD_FLOW_PANEL} overflow-hidden flex flex-col`}>
+            <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                <div className="flex items-center gap-3">
-                  <div className="bg-blue-100 text-blue-600 p-2 rounded-xl">
+                  <div className="bg-slate-100 text-slate-700 p-2 rounded-xl border border-slate-200">
                      <Layers size={20}/>
                   </div>
                   <div>
@@ -1312,14 +1293,16 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                   <button
                     type="button"
                     onClick={() => setCostSplitMode((m) => (m === 'EQUAL' ? 'SMART' : 'EQUAL'))}
-                    className={`text-[10px] font-black uppercase px-3 py-2 rounded-xl transition-all ${
-                      costSplitMode === 'SMART' ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    className={`text-[10px] font-black uppercase px-3 py-2 rounded-xl transition-all border ${
+                      costSplitMode === 'SMART'
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
                     }`}
                     title="Smart split prioritizes expensive component types (GPU/CPU/etc.)"
                   >
                     {costSplitMode === 'SMART' ? 'Smart Split: On' : 'Smart Split: Off'}
                   </button>
-                  <button onClick={distributeEvenly} className="text-[10px] font-black uppercase text-blue-500 hover:bg-blue-50 px-3 py-2 rounded-xl transition-all flex items-center gap-2">
+                  <button onClick={distributeEvenly} className="text-[10px] font-black uppercase text-slate-600 hover:bg-slate-100 px-3 py-2 rounded-xl transition-all flex items-center gap-2 border border-slate-200">
                     <Calculator size={14}/> Reset Split
                   </button>
                </div>
@@ -1335,7 +1318,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                   </div>
                ) : (
                   items.map((item, idx) => (
-                     <div key={item.id} className="p-3 bg-white border border-slate-100 rounded-2xl shadow-sm group hover:border-blue-200 transition-all relative space-y-2">
+                     <div key={item.id} className="p-3 bg-white border border-slate-100 rounded-2xl shadow-sm group hover:border-slate-300 transition-all relative space-y-2">
                         {item.isDefective && <div className="absolute top-0 right-0 p-1 bg-red-100 text-red-600 text-[8px] font-black uppercase rounded-bl-lg rounded-tr-2xl">Defekt</div>}
                         <div className="flex items-center gap-4">
                           <div className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 border border-slate-200 flex items-center justify-center font-black text-xs shrink-0">
@@ -1346,12 +1329,12 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                                 <p className="font-black text-slate-900 text-sm truncate">{item.name}</p>
                                 <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-[9px] font-bold uppercase">{item.subCategory || item.category}</span>
                                 {item.skipAiSpecs && (
-                                  <span className="bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded text-[8px] font-black uppercase">No AI specs</span>
+                                  <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[8px] font-black uppercase border border-slate-200">No AI specs</span>
                                 )}
                              </div>
                              {item.note && <p className="text-[10px] text-slate-400 truncate">{item.note}</p>}
                            </div>
-                          <div className="flex items-center gap-2 bg-slate-50 rounded-xl p-1 pr-3 border border-slate-200 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-50 transition-all">
+                          <div className="flex items-center gap-2 bg-slate-50 rounded-xl p-1 pr-3 border border-slate-200 focus-within:border-slate-400 transition-all">
                              <span className="text-[10px] font-bold text-slate-400 pl-2">€</span>
                              <input 
                                 type="text"
@@ -1402,8 +1385,8 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                             }
                             className={`p-2 rounded-xl transition-all ${
                               item.skipAiSpecs
-                                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                                : 'text-slate-300 hover:text-amber-600 hover:bg-amber-50'
+                                ? 'bg-slate-900 text-white hover:bg-slate-800'
+                                : 'text-slate-300 hover:text-slate-700 hover:bg-slate-100'
                             }`}
                           >
                             <Ban size={14} />
@@ -1411,7 +1394,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                           <button
                             type="button"
                             onClick={() => setEditingItemId((curr) => (curr === item.id ? null : item.id))}
-                            className="text-[10px] font-black uppercase text-blue-600 hover:bg-blue-50 px-2 py-1 rounded-lg"
+                            className="text-[10px] font-black uppercase text-slate-600 hover:bg-slate-100 px-2 py-1 rounded-lg border border-slate-200"
                           >
                             {editingItemId === item.id ? 'Close' : 'Edit'}
                           </button>
@@ -1423,33 +1406,30 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                           </button>
                         </div>
                         {editingItemId === item.id && (
-                          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
+                          <div className="space-y-3 pt-2 border-t border-slate-100">
                             <input
-                              className="col-span-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none"
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none"
                               value={item.name}
                               onChange={(e) => setItems((prev) => prev.map((x) => x.id === item.id ? { ...x, name: e.target.value } : x))}
                               placeholder="Item name"
                             />
-                            <select
-                              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none"
-                              value={item.category}
-                              onChange={(e) => {
-                                const nextCategory = e.target.value;
-                                const nextSub = (categories[nextCategory] || [item.subCategory || ''])[0] || '';
-                                setItems((prev) => prev.map((x) => x.id === item.id ? { ...x, category: nextCategory, subCategory: nextSub } : x));
-                              }}
-                            >
-                              {Object.keys(categories).map((cat) => <option key={cat} value={cat}>{cat}</option>)}
-                            </select>
-                            <select
-                              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none"
-                              value={item.subCategory || ''}
-                              onChange={(e) => setItems((prev) => prev.map((x) => x.id === item.id ? { ...x, subCategory: e.target.value } : x))}
-                            >
-                              {(categories[item.category] || []).map((sub) => <option key={sub} value={sub}>{sub}</option>)}
-                            </select>
+                            <AddCategorySubcategoryPicker
+                              categories={categories}
+                              category={item.category}
+                              subCategory={item.subCategory || ''}
+                              size="sm"
+                              onChange={(next) =>
+                                setItems((prev) =>
+                                  prev.map((x) =>
+                                    x.id === item.id
+                                      ? { ...x, category: next.category, subCategory: next.subCategory }
+                                      : x
+                                  )
+                                )
+                              }
+                            />
                             <input
-                              className="col-span-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none"
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none"
                               value={item.note}
                               onChange={(e) => setItems((prev) => prev.map((x) => x.id === item.id ? { ...x, note: e.target.value } : x))}
                               placeholder="Optional notes"
@@ -1464,7 +1444,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
             <div className="p-6 bg-slate-50 border-t border-slate-200">
                {items.length >= 2 && (
                   <label className="flex items-center gap-3 mb-4 p-3 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 transition-colors cursor-pointer">
-                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${addAsBundle ? 'bg-purple-100 text-purple-600' : 'bg-slate-100 text-slate-400'}`}>
+                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${addAsBundle ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}>
                         <Package size={16}/>
                      </div>
                      <div className="flex-1">
@@ -1472,15 +1452,15 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                         <span className="text-[10px] text-slate-400">Creates one bundle item with child components, margin calculated from children</span>
                      </div>
                      <input type="checkbox" checked={addAsBundle} onChange={e => setAddAsBundle(e.target.checked)} className="hidden"/>
-                     {addAsBundle && <CheckCircle2 size={16} className="text-purple-500"/>}
+                     {addAsBundle && <CheckCircle2 size={16} className="text-slate-900"/>}
                   </label>
                )}
                {addAsBundle && items.length >= 2 && (
                   <>
                      <div className="mb-4">
-                        <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest block mb-1">Bundle name</label>
+                        <label className={`${ADD_FLOW_LABEL} block mb-1`}>Bundle name</label>
                         <input 
-                           className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-purple-200"
+                           className={ADD_FLOW_INPUT}
                            placeholder={`Bundle: ${items[0]?.name || 'Item 1'} + ${items.length - 1} more`}
                            value={bundleName}
                            onChange={e => setBundleName(e.target.value)}
@@ -1488,11 +1468,11 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                      </div>
                      <div className="flex flex-wrap gap-4 mb-4 p-3 bg-white rounded-xl border border-slate-200">
                         <label className="flex items-center gap-2 cursor-pointer">
-                           <input type="checkbox" checked={bundleHasOVP} onChange={(e) => setBundleHasOVP(e.target.checked)} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                           <input type="checkbox" checked={bundleHasOVP} onChange={(e) => setBundleHasOVP(e.target.checked)} className="rounded border-slate-300 text-slate-900 focus:ring-slate-500" />
                            <span className="text-sm font-bold text-slate-700">OVP (Original Packaging)</span>
                         </label>
                         <label className="flex items-center gap-2 cursor-pointer">
-                           <input type="checkbox" checked={bundleHasIOShield} onChange={(e) => setBundleHasIOShield(e.target.checked)} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                           <input type="checkbox" checked={bundleHasIOShield} onChange={(e) => setBundleHasIOShield(e.target.checked)} className="rounded border-slate-300 text-slate-900 focus:ring-slate-500" />
                            <span className="text-sm font-bold text-slate-700">IO Shield</span>
                         </label>
                      </div>
@@ -1500,7 +1480,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                )}
                {!addAsBundle && items.length > 0 && (
                   <label className="flex items-center gap-3 mb-4 p-3 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 transition-colors cursor-pointer">
-                     <input type="checkbox" checked={allItemsHaveOVP} onChange={e => setAllItemsHaveOVP(e.target.checked)} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                     <input type="checkbox" checked={allItemsHaveOVP} onChange={e => setAllItemsHaveOVP(e.target.checked)} className="rounded border-slate-300 text-slate-900 focus:ring-slate-500" />
                      <div className="flex-1">
                         <span className="text-xs font-bold text-slate-700 block">OVP (Original Packaging)</span>
                         <span className="text-[10px] text-slate-400">All items come with original packaging</span>
@@ -1509,7 +1489,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                )}
                {aiAvailable && (
                   <label className="flex items-center gap-3 mb-4 p-3 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 transition-colors cursor-pointer">
-                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${parseSpecsBeforeImport ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-400'}`}>
+                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${parseSpecsBeforeImport ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}>
                         <Sparkles size={16}/>
                      </div>
                      <div className="flex-1">
@@ -1517,17 +1497,17 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                         <span className="text-[10px] text-slate-400">Fills specs from product knowledge so you don't need to edit later</span>
                      </div>
                      <input type="checkbox" checked={parseSpecsBeforeImport} onChange={e => setParseSpecsBeforeImport(e.target.checked)} className="hidden"/>
-                     {parseSpecsBeforeImport && <CheckCircle2 size={16} className="text-amber-500"/>}
+                     {parseSpecsBeforeImport && <CheckCircle2 size={16} className="text-slate-900"/>}
                   </label>
                )}
                <div className="hidden lg:flex justify-between items-center mb-6 text-xs font-bold text-slate-500">
                   <span>Total Paid: <span className="text-slate-900">€{formatEUR(totalCost)}</span></span>
                   <span>Allocated: <span className={Math.abs(allocatedTotal - totalCost) > 0.1 ? 'text-red-500' : 'text-emerald-500'}>€{formatEUR(allocatedTotal)}</span></span>
                </div>
-               <button 
+               <AddFlowPrimaryButton
                   onClick={handleSubmit}
                   disabled={items.length === 0 || parsingSpecs}
-                  className="hidden lg:flex w-full py-5 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-200 hover:bg-emerald-700 transition-all disabled:opacity-50 disabled:shadow-none items-center justify-center gap-3"
+                  className="hidden lg:flex w-full py-5"
                >
                   {parsingSpecs ? (
                      <>
@@ -1538,7 +1518,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                         <Save size={18}/> {addAsBundle && items.length >= 2 ? `Confirm Import as Bundle (${items.length} items)` : `Confirm Import (${items.length})`}
                      </>
                   )}
-               </button>
+               </AddFlowPrimaryButton>
             </div>
          </div>
       </div>
@@ -1551,11 +1531,10 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
               Alloc €{formatEUR(allocatedTotal)}
             </span>
          </div>
-         <button
-            type="button"
+         <AddFlowPrimaryButton
             onClick={handleSubmit}
             disabled={items.length === 0 || parsingSpecs}
-            className="w-full py-3.5 bg-emerald-600 text-white rounded-xl font-black text-[11px] uppercase tracking-widest disabled:opacity-50 flex items-center justify-center gap-2"
+            className="w-full py-3.5"
          >
             {parsingSpecs ? (
                <>
@@ -1571,7 +1550,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                       : `Confirm import (${items.length})`}
                </>
             )}
-         </button>
+         </AddFlowPrimaryButton>
       </div>
     </div>
   );

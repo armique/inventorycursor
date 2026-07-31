@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Printer, ArrowLeft, Save, AlertCircle, CheckCircle2,
-  Layers, Zap, Gauge, ShieldAlert, History,
+  Layers, Zap, Gauge, ShieldAlert, History, Plus,
 } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
 import FilamentStockPanel from './FilamentStockPanel';
@@ -14,6 +14,8 @@ import {
   spoolLabel,
   type FilamentSpool,
 } from '../services/filamentStock';
+import { AddFlowStepHeader, AddOptionTile } from './addFlowShared';
+import { getCategoryIcon } from './categoryIcons';
 
 interface ThreeDPrintPageProps {
   items: InventoryItem[];
@@ -342,6 +344,7 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-24 animate-in fade-in">
+      <AddFlowStepHeader title="3D print" />
       <header className="flex items-center justify-between gap-4">
         <div>
           <Link to="/panel/dashboard" className="text-slate-500 hover:text-slate-800 text-xs font-bold uppercase tracking-wider flex items-center gap-1 mb-1">
@@ -462,39 +465,74 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
 
               {!showCustomCategory ? (
                 <>
-                  <div>
-                    <label className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-1">
+                  <div className="sm:col-span-2 space-y-2">
+                    <label className="block text-[10px] font-black uppercase tracking-[0.18em] text-slate-400 px-1">
                       Category
                     </label>
-                    <select
-                      value={selectedCategory}
-                      onChange={(e) => handleCategoryChange(e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm bg-white"
-                    >
-                      {currentCategoryList.map((cat) => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                      <option value="CUSTOM">+ Add Custom Category</option>
-                    </select>
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-1 sm:gap-2">
+                      {currentCategoryList.map((cat) => {
+                        const Icon = getCategoryIcon(cat);
+                        return (
+                          <AddOptionTile
+                            key={cat}
+                            size="sm"
+                            label={cat}
+                            icon={<Icon size={18} strokeWidth={1.75} />}
+                            selected={selectedCategory === cat}
+                            dimmed={Boolean(selectedCategory) && selectedCategory !== 'CUSTOM' && selectedCategory !== cat}
+                            onClick={() => handleCategoryChange(cat)}
+                          />
+                        );
+                      })}
+                      <AddOptionTile
+                        size="sm"
+                        label="Custom"
+                        hint="New category"
+                        icon={<Plus size={18} strokeWidth={1.75} />}
+                        selected={showCustomCategory}
+                        dimmed={Boolean(selectedCategory) && !showCustomCategory}
+                        onClick={() => handleCategoryChange('CUSTOM')}
+                      />
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-1">
+                  {selectedCategory && !showCustomCategory && (
+                  <div className="sm:col-span-2 space-y-2">
+                    <label className="block text-[10px] font-black uppercase tracking-[0.18em] text-slate-400 px-1">
                       Subcategory
                     </label>
-                    <select
-                      value={selectedSubCategory}
-                      onChange={(e) => setSelectedSubCategory(e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm bg-white"
-                    >
-                      {selectedCategory === 'Misc' && !categories['Misc']?.includes('3D Printed') && (
-                        <option value="3D Printed">3D Printed</option>
-                      )}
-                      {(categories[selectedCategory] || []).map((sub) => (
-                        <option key={sub} value={sub}>{sub}</option>
-                      ))}
-                    </select>
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-1 sm:gap-2">
+                      {selectedCategory === 'Misc' &&
+                        !categories['Misc']?.includes('3D Printed') && (
+                          <AddOptionTile
+                            size="sm"
+                            label="3D Printed"
+                            icon={React.createElement(getCategoryIcon('3D Printed'), {
+                              size: 18,
+                              strokeWidth: 1.75,
+                            })}
+                            selected={selectedSubCategory === '3D Printed'}
+                            dimmed={Boolean(selectedSubCategory) && selectedSubCategory !== '3D Printed'}
+                            onClick={() => setSelectedSubCategory('3D Printed')}
+                          />
+                        )}
+                      {(categories[selectedCategory] || []).map((sub) => {
+                        const Icon = getCategoryIcon(sub);
+                        return (
+                          <AddOptionTile
+                            key={sub}
+                            size="sm"
+                            label={sub}
+                            icon={<Icon size={18} strokeWidth={1.75} />}
+                            selected={selectedSubCategory === sub}
+                            dimmed={Boolean(selectedSubCategory) && selectedSubCategory !== sub}
+                            onClick={() => setSelectedSubCategory(sub)}
+                          />
+                        );
+                      })}
+                    </div>
                   </div>
+                  )}
                 </>
               ) : (
                 <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">

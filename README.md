@@ -20,7 +20,7 @@ Open `http://localhost:5173/panel/dashboard` for the admin panel, or `/` for the
 | `VITE_GEMINI_API_KEY` | Dealwatch, AI listings, screenshot parse (browser) |
 | `GEMINI_API_KEY` | Vercel API routes (`/api/*`) — same key as above on server |
 | `VITE_GROQ_API_KEY` | Fast spec fill (optional) |
-| Firebase config | Settings → Cloud Sync (or baked-in defaults) |
+| Firebase | Baked-in defaults (sign in via Settings → Account) |
 
 See [API_KEYS_GUIDE.md](./API_KEYS_GUIDE.md) and [.env.example](./.env.example).
 

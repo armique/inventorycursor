@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { 
@@ -8,7 +8,7 @@ import {
   MessageCircle, Link as LinkIcon, Upload, Search, Database, 
   Cpu, Monitor, HardDrive, Zap, Wind, AlertCircle, CheckCircle2, Copy,
   Fan, Lightbulb, Keyboard, Mouse, Tv, MoreHorizontal, Cable, Laptop as LaptopIcon, Wrench,
-  Wand2, Sliders, X, History, Repeat2, Package, FileText, Sparkles, Loader2, ScanBarcode, Camera
+  Wand2, Sliders, X, Repeat2, FileText, Sparkles, Loader2, ScanBarcode, Camera, ChevronRight, PlusCircle
 } from 'lucide-react';
 import { prefersNativePhotoCapture } from '../utils/deviceUi';
 import { InventoryItem, ItemStatus, Platform, PaymentType } from '../types';
@@ -19,7 +19,6 @@ import { generateItemSpecs, getSpecsAIProvider, suggestPriceFromSoldListings, ty
 import { pickSpecsAiNameVendorUpdates } from '../utils/applySpecsAiResult';
 import { AiProvenanceNote } from './AiBadge';
 import SourceLinkIcons from './SourceLinkIcons';
-import ProofAttachmentsPanel from './ProofAttachmentsPanel';
 import { resolveItemSourceLinks } from '../utils/sourceLinks';
 import { useItemAiStates } from '../hooks/useAiActions';
 import { getCompatibleItemsForItem } from '../services/compatibility';
@@ -38,6 +37,14 @@ import { getCompatibilityWarnings } from '../utils/compatibilityWarnings';
 import { recordCategoryCorrection, suggestCategoryFromCorrections } from '../services/categoryCorrections';
 import { detectItemCategory, searchInventoryItemsForAdd } from '../utils/itemCategoryDetect';
 import { filesToDataUrls, prepareInventoryImagesForStorage, getItemUserPhotoCount, isCategoryPlaceholderImage } from '../utils/imageImport';
+import { AddFlowPageHeader, ADD_FLOW_PANEL, ADD_FLOW_INPUT } from './addFlowShared';
+import AddCategorySubcategoryPicker from './AddCategorySubcategoryPicker';
+import { generateMarketplaceListing } from '../services/marketplaceListingAI';
+import BuySourcePlatformPicker, {
+  BuyPaymentTypePicker,
+} from './BuySourcePlatformPicker';
+import ItemFormAssetToolbar, { getBuyCondition } from './ItemFormAssetToolbar';
+import EbayBuyOrderParse from './EbayBuyOrderParse';
 import ReorderablePhotoThumbs from './ReorderablePhotoThumbs';
 import { searchProductPhotos, getImageSearchProviders, ImageSearchResult, ImageSearchProvider } from '../services/imageSearchService';
 import { getCachedProductPhoto, setCachedProductPhoto } from '../services/firebaseService';
@@ -56,12 +63,15 @@ import {
   type ItemAddTemplate,
 } from '../utils/itemAddTemplates';
 import EbayListingPriceModal from './EbayListingPriceModal';
-import GeminiProductCardModal from './GeminiProductCardModal';
+import ItemFormListingPanel from './ItemFormListingPanel';
+import GeminiProductCardMini from './GeminiProductCardMini';
 import BarcodeScanPanel from './BarcodeScanPanel';
 import type { BarcodeProduct } from '../services/barcodeLookup';
-
-/** How quantity is applied when creating a new item. */
-type QtyMode = 'single' | 'stock' | 'clones';
+import {
+  applyQtyNamePrefix,
+  resolveIdenticalLotQty,
+} from '../utils/splitParts';
+import { listingAccessoriesReady } from '../utils/itemAccessoryToggles';
 
 interface Props {
   items: InventoryItem[];
@@ -165,6 +175,8 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     platformBought: 'kleinanzeigen.de',
     specs: {},
     vendor: '',
+    isDefective: false,
+    storeBadge: 'none',
     ...reinvestPrefill,
   });
 
@@ -187,14 +199,13 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   );
   const [generatingSpecs, setGeneratingSpecs] = useState(false);
   const [generatingTitle, setGeneratingTitle] = useState(false);
+  const [generatingListing, setGeneratingListing] = useState(false);
   const [showSpecs, setShowSpecs] = useState(true);
   const [nameSuggestionsOpen, setNameSuggestionsOpen] = useState(false);
   const [categorySearchOpen, setCategorySearchOpen] = useState(false);
   const [aiDetecting, setAiDetecting] = useState(false);
   const [aiDetectMessage, setAiDetectMessage] = useState<string | null>(null);
   const [aiDetectError, setAiDetectError] = useState<string | null>(null);
-  const [quantityToCreate, setQuantityToCreate] = useState<number>(1);
-  const [qtyMode, setQtyMode] = useState<QtyMode>('single');
   /** Spec fields the user explicitly switched from the AI-filled preset dropdown to manual typing. */
   const [customSpecKeys, setCustomSpecKeys] = useState<Set<string>>(new Set());
 
@@ -220,11 +231,12 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   const [selectedEbayPhotosByListing, setSelectedEbayPhotosByListing] = useState<Record<string, string[]>>({});
   const [ebayPriceModalMatch, setEbayPriceModalMatch] = useState<EbayListingPriceMatch | null>(null);
   const [ebayPriceModalOpen, setEbayPriceModalOpen] = useState(false);
-  const [showProductCardGen, setShowProductCardGen] = useState(false);
+  const [listingPanelOpen, setListingPanelOpen] = useState(false);
+  const [cardStudioHighlight, setCardStudioHighlight] = useState(false);
+  const listingPanelRef = useRef<HTMLDivElement>(null);
+  const cardStudioRef = useRef<HTMLDivElement>(null);
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
   const nativePhoto = prefersNativePhotoCapture();
-  const cameraPhotoRef = React.useRef<HTMLInputElement>(null);
-  const libraryPhotoRef = React.useRef<HTMLInputElement>(null);
   const [ebayPriceModalError, setEbayPriceModalError] = useState<string | null>(null);
   const [previewPhoto, setPreviewPhoto] = useState<ImageSearchResult | null>(null);
   const [imageProviders, setImageProviders] = useState<ImageSearchProvider[]>([]);
@@ -395,16 +407,17 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
 
   const openExistingForUpdate = useCallback((item: InventoryItem) => {
     const platformBought = item.platformBought || 'kleinanzeigen.de';
+    const lotQty = resolveIdenticalLotQty(item);
     setFormData({
       ...item,
       platformBought,
       buyPaymentType: normalizeBuyPaymentForPlatform(platformBought, item.buyPaymentType),
+      quantity: lotQty || undefined,
+      name: lotQty ? applyQtyNamePrefix(item.name || '', lotQty) : item.name,
     });
     setUpdateTargetId(item.id);
     setConfigStep('DONE');
     setDuplicateDismissed(true);
-    setQtyMode('single');
-    setQuantityToCreate(item.quantity && item.quantity > 1 ? item.quantity : 1);
     setAiDetectMessage(`Editing existing: ${item.name}`);
   }, []);
 
@@ -412,7 +425,11 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     (item: InventoryItem, addQty: number) => {
       const add = Math.max(1, Math.floor(addQty));
       const nextQty = (item.quantity && item.quantity > 0 ? item.quantity : 1) + add;
-      const updated: InventoryItem = { ...item, quantity: nextQty };
+      const updated: InventoryItem = {
+        ...item,
+        quantity: nextQty,
+        name: applyQtyNamePrefix(item.name || '', nextQty),
+      };
       onSave([updated]);
       setAiDetectMessage(`Added ${add} to stock of “${item.name}” → qty ${nextQty}`);
       if (onClose) onClose();
@@ -420,6 +437,15 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     },
     [onSave, onClose, navigate]
   );
+
+  const setItemQuantity = useCallback((raw: number) => {
+    const n = Math.max(1, Math.floor(Number(raw) || 1));
+    setFormData((prev) => ({
+      ...prev,
+      quantity: n > 1 ? n : undefined,
+      name: applyQtyNamePrefix(prev.name || '', n),
+    }));
+  }, []);
 
   const handleFetchAiPriceHint = async () => {
     if (!formData.name?.trim()) return;
@@ -483,13 +509,62 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     }
   };
 
+  /** Next step after naming: open details when category is ready, else AI-detect or ask for subcategory. */
+  const handleCategoryContinue = async () => {
+    const name = (formData.name || '').trim();
+    if (!name) {
+      setAiDetectError('Type an item name first.');
+      return;
+    }
+    setAiDetectError(null);
+
+    if (formData.category && formData.subCategory) {
+      setConfigStep('DONE');
+      return;
+    }
+
+    if (formData.category) {
+      const subs = categories[formData.category] || [];
+      if (subs.length === 1) {
+        setFormData((prev) => ({ ...prev, subCategory: subs[0] }));
+        setConfigStep('DONE');
+        return;
+      }
+      if (subs.length > 0) {
+        setAiDetectMessage('Pick a subcategory below, then Continue.');
+        document.getElementById('add-subcategory-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      setConfigStep('DONE');
+      return;
+    }
+
+    await handleAiDetectCategory();
+  };
+
+  const categoryContinueLabel = (() => {
+    const name = (formData.name || '').trim();
+    if (!name) return 'Enter a name to continue';
+    if (aiDetecting) return 'Detecting…';
+    if (formData.category && formData.subCategory) return 'Continue to details';
+    if (formData.category) {
+      const subs = categories[formData.category] || [];
+      if (subs.length <= 1) return 'Continue to details';
+      return 'Select subcategory';
+    }
+    return 'Continue';
+  })();
+
+  const categoryContinueEnabled = Boolean((formData.name || '').trim()) && !aiDetecting;
+
   const applyBarcodeProduct = (product: BarcodeProduct) => {
     setShowBarcodeScanner(false);
     setAiDetectError(null);
     setFormData((prev) => {
+      const qty = Math.max(1, Math.floor(Number(prev.quantity) || 1));
       const next: Partial<InventoryItem> = {
         ...prev,
-        name: product.name,
+        name: applyQtyNamePrefix(product.name, qty),
         vendor: product.brand || prev.vendor || '',
       };
       const existing = [prev.imageUrl, ...(prev.imageUrls || [])].filter(
@@ -541,11 +616,14 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
         alert('AI did not return a cleaned title. Try a clearer part number or model name.');
         return;
       }
-      setFormData((prev) => ({
-        ...prev,
-        name: nv.name!,
-        ...(nv.vendor ? { vendor: nv.vendor } : {}),
-      }));
+      setFormData((prev) => {
+        const qty = Math.max(1, Math.floor(Number(prev.quantity) || 1));
+        return {
+          ...prev,
+          name: applyQtyNamePrefix(nv.name!, qty),
+          ...(nv.vendor ? { vendor: nv.vendor } : {}),
+        };
+      });
     } catch (e: unknown) {
       const msg = (e as Error)?.message || 'Failed to generate title.';
       alert(msg.includes('API key') ? `${msg}\n\nAdd the key in .env and restart the app.` : msg);
@@ -554,13 +632,53 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     }
   };
 
+  const handleGenerateMarketplaceListing = async () => {
+    const currentName = (formData.name || '').trim();
+    if (!currentName) {
+      alert('Please enter an item name first.');
+      return;
+    }
+    const gate = listingAccessoriesReady(formData as InventoryItem);
+    if (!gate.ok) {
+      alert(gate.reason || 'Confirm OVP / IO Blende first.');
+      return;
+    }
+    setGeneratingListing(true);
+    setListingPanelOpen(true);
+    try {
+      const condition = getBuyCondition(formData);
+      const noteParts = [(formData.aiDescriptionNote || '').trim()];
+      if (condition === 'new') {
+        noteParts.unshift('Item is NEW / neu / unbenutzt — write Zustand accordingly (no Gebrauchsspuren).');
+      }
+      const result = await generateMarketplaceListing(formData as InventoryItem, {
+        hasOVP: formData.hasOVP,
+        hasIOShield: formData.hasIOShield,
+        aiDescriptionNote: noteParts.filter(Boolean).join('\n') || undefined,
+      });
+      setFormData((prev) => ({
+        ...prev,
+        marketTitle: result.ebayTitle,
+        marketDescription: result.listingText,
+      }));
+      setListingPanelOpen(true);
+      requestAnimationFrame(() => {
+        listingPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
+    } catch (e: unknown) {
+      const msg = (e as Error)?.message || 'Failed to generate listing.';
+      alert(msg.includes('API key') ? `${msg}\n\nAdd the key in .env and restart the app.` : msg);
+    } finally {
+      setGeneratingListing(false);
+    }
+  };
+
   const handleAutoFillSpecs = async () => {
-    if (!formData.name) return alert("Please enter an item name.");
-    
-    // Provide current category as context
+    if (!formData.name) return alert('Please enter an item name.');
+
     const categoryContext = formData.category || 'Unknown';
     setGeneratingSpecs(true);
-    
+
     const definedFields = resolveEssentialSpecKeys(formData.category || '', formData.subCategory, categoryFields);
 
     try {
@@ -584,8 +702,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
 
       setFormData((prev) => ({ ...prev, ...updates }));
     } catch (e: any) {
-      console.error(e);
-      const msg = e?.message || 'Failed to look up specs.';
+      const msg = e?.message || 'Failed to parse specs.';
       alert(msg.includes('API key') ? `${msg}\n\nAdd the key in .env and restart the app.` : msg);
     } finally {
       setGeneratingSpecs(false);
@@ -907,15 +1024,9 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       parentContainerId = linkContainerId;
     }
 
-    const qtyValue = Math.max(1, Math.floor(quantityToCreate) || 1);
-    const stockQuantity =
-      isEditingExisting
-        ? formData.quantity
-        : qtyMode === 'stock'
-          ? qtyValue
-          : qtyMode === 'single'
-            ? undefined
-            : undefined;
+    const qtyValue = Math.max(1, Math.floor(Number(formData.quantity) || 1));
+    const nameWithQty = applyQtyNamePrefix(formData.name || '', qtyValue);
+    const stockQuantity = qtyValue > 1 ? qtyValue : undefined;
 
     const platformBought = (formData.platformBought || 'kleinanzeigen.de') as Platform;
     const buyPaymentType = normalizeBuyPaymentForPlatform(
@@ -941,13 +1052,14 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
 
     const base: InventoryItem = {
       ...formData as InventoryItem,
+      name: nameWithQty,
       buyPrice: buyPriceResolved,
       sellPrice: sellPriceResolved,
       storePrice: storePriceResolved,
       id: saveItemId,
       status,
       parentContainerId,
-      quantity: stockQuantity !== undefined ? stockQuantity : formData.quantity,
+      quantity: stockQuantity,
       imageUrl: storedImages[0] || fallbackImage,
       imageUrls: storedImages.length ? storedImages : [fallbackImage],
       specs: specsOut ?? {},
@@ -973,30 +1085,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       }
     }
 
-    let itemsToSave: InventoryItem[] = [];
-    if (isEditingExisting || qtyMode !== 'clones' || qtyValue <= 1) {
-      itemsToSave = [base, ...componentLinkUpdates];
-    } else {
-      const count = qtyValue;
-      const clones = Array.from({ length: count }).map((_, index) => ({
-        ...base,
-        id: `item-${Date.now()}-${index}`,
-        quantity: undefined,
-        parentContainerId: index === 0 ? parentContainerId : undefined,
-      }));
-      if (parentContainerId && clones.length) {
-        const container = items.find((i) => i.id === parentContainerId);
-        if (container) {
-          const ids = Array.from(new Set([...(container.componentIds || []), ...clones.map((c) => c.id)]));
-          componentLinkUpdates = [{ ...container, componentIds: ids }];
-          clones.forEach((c) => {
-            c.parentContainerId = parentContainerId;
-            c.status = ItemStatus.IN_COMPOSITION;
-          });
-        }
-      }
-      itemsToSave = [...clones, ...componentLinkUpdates];
-    }
+    const itemsToSave: InventoryItem[] = [base, ...componentLinkUpdates];
 
     onSave(itemsToSave);
 
@@ -1008,13 +1097,6 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
     const prevCategory = initialData?.category;
     if (formData.category && prevCategory && formData.category !== prevCategory && formData.name) {
       recordCategoryCorrection(formData.name, formData.category);
-    }
-    
-    // When creating multiple new clone items, stay on the form so the user can keep adding
-    if (!isEditingExisting && qtyMode === 'clones' && qtyValue > 1) {
-      setQuantityToCreate(1);
-      setQtyMode('single');
-      return;
     }
 
     if (onClose) {
@@ -1149,10 +1231,10 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
 
   const renderCategorySelection = () => (
      <div className="space-y-6 animate-in slide-in-from-right-4">
-        <div className="bg-white border border-slate-200 rounded-[2rem] p-5 md:p-6 shadow-sm space-y-3">
+        <div className={`${ADD_FLOW_PANEL} p-5 md:p-6 space-y-3`}>
            <div>
-              <h2 className="text-xl font-black text-slate-900">Find or name your item</h2>
-              <p className="text-sm text-slate-500 mt-1">
+              <h2 className="text-xl font-display font-black tracking-tight text-slate-900">Find or name your item</h2>
+              <p className="text-sm font-semibold text-slate-500 mt-1">
                  Scan a barcode, search inventory, or type a new name and let AI pick category & subcategory.
               </p>
            </div>
@@ -1161,7 +1243,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                  <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                  <input
                     autoFocus={!id && !initialData && !showBarcodeScanner}
-                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm outline-none focus:border-violet-400 focus:bg-white transition-all"
+                    className={`${ADD_FLOW_INPUT} pl-10`}
                     placeholder="Search inventory or type new item name…"
                     value={formData.name || ''}
                     onChange={(e) => {
@@ -1178,37 +1260,14 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                       }
                     }}
                  />
-                 {categorySearchOpen && inventorySearchMatches.length > 0 && (
-                    <ul className="absolute z-30 left-0 right-0 mt-1 py-2 bg-white border border-slate-200 rounded-2xl shadow-xl max-h-60 overflow-y-auto">
-                       <li className="px-4 py-2 text-[10px] font-black uppercase text-slate-400 border-b border-slate-100">
-                          Already in inventory — pick to copy details
-                       </li>
-                       {inventorySearchMatches.map((item) => (
-                          <li
-                             key={item.id}
-                             className="px-4 py-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0"
-                             onMouseDown={(e) => {
-                                e.preventDefault();
-                                applyItemFromHistory(item as InventoryItem);
-                             }}
-                          >
-                             <p className="font-bold text-slate-900 text-sm">{item.name}</p>
-                             <p className="text-xs text-slate-500 mt-0.5">
-                                {item.category} / {item.subCategory || '—'}
-                                {item.vendor ? ` · ${item.vendor}` : ''}
-                             </p>
-                          </li>
-                       ))}
-                    </ul>
-                 )}
               </div>
               <button
                  type="button"
                  onClick={() => setShowBarcodeScanner((v) => !v)}
-                 className={`shrink-0 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-full text-[11px] font-black uppercase tracking-widest border transition-all ${
+                 className={`shrink-0 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest border transition-all ${
                    showBarcodeScanner
-                     ? 'bg-rose-600 text-white border-rose-600'
-                     : 'bg-white text-slate-700 border-slate-200 hover:border-rose-300 hover:text-rose-700'
+                     ? 'bg-slate-900 text-white border-slate-900'
+                     : 'bg-white text-slate-700 border-slate-200 hover:border-slate-400'
                  }`}
                  title="Scan EAN/UPC barcode"
               >
@@ -1219,12 +1278,39 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                  type="button"
                  onClick={() => void handleAiDetectCategory()}
                  disabled={aiDetecting || !(formData.name || '').trim()}
-                 className="shrink-0 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-full bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-[11px] font-black uppercase tracking-widest shadow-lg shadow-violet-500/25 hover:from-violet-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                 className="shrink-0 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-900 text-white text-[11px] font-black uppercase tracking-widest hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
               >
                  <Wand2 size={14} className={aiDetecting ? 'animate-spin' : ''} />
                  {aiDetecting ? 'Detecting…' : 'AI Detect'}
               </button>
            </div>
+           {categorySearchOpen && inventorySearchMatches.length > 0 && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50/80 overflow-hidden">
+                 <p className="px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.16em] text-slate-400 border-b border-slate-100 bg-white">
+                    In inventory
+                 </p>
+                 <ul className="max-h-36 overflow-y-auto divide-y divide-slate-100">
+                    {inventorySearchMatches.slice(0, 6).map((item) => (
+                       <li key={item.id}>
+                          <button
+                             type="button"
+                             className="w-full text-left px-3 py-1.5 hover:bg-white transition-colors"
+                             onMouseDown={(e) => {
+                                e.preventDefault();
+                                applyItemFromHistory(item as InventoryItem);
+                             }}
+                          >
+                             <p className="text-xs font-bold text-slate-900 truncate">{item.name}</p>
+                             <p className="text-[10px] font-semibold text-slate-400 truncate">
+                                {item.category} / {item.subCategory || '—'}
+                                {item.vendor ? ` · ${item.vendor}` : ''}
+                             </p>
+                          </button>
+                       </li>
+                    ))}
+                 </ul>
+              </div>
+           )}
            {showBarcodeScanner && (
               <BarcodeScanPanel
                  onProduct={applyBarcodeProduct}
@@ -1248,46 +1334,44 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
            )}
         </div>
 
-        <h2 className="text-2xl font-black text-slate-900">Or select category manually</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-           {Object.keys(categories).map(cat => (
-              <button 
-                 key={cat}
-                 onClick={() => setFormData({ ...formData, category: cat })}
-                 className={`p-6 rounded-[2rem] border-2 text-left transition-all group relative overflow-hidden ${formData.category === cat ? 'bg-blue-600 border-blue-600 text-white shadow-xl' : 'bg-white border-slate-100 hover:border-blue-200'}`}
+        <AddCategorySubcategoryPicker
+          categories={categories}
+          category={formData.category || ''}
+          subCategory={formData.subCategory || ''}
+          categoryHeading="Or select category manually"
+          onChange={({ category, subCategory }) =>
+            setFormData((prev) => ({ ...prev, category, subCategory }))
+          }
+          onSubcategorySelected={() => setConfigStep('DONE')}
+        />
+
+        <div className="sticky bottom-20 md:bottom-4 z-20 pt-2 pb-1">
+           <div className="rounded-2xl border border-slate-200 bg-white/95 backdrop-blur-sm shadow-lg shadow-slate-900/10 p-3 flex flex-col sm:flex-row sm:items-center gap-2">
+              <p className="text-[11px] font-semibold text-slate-500 sm:flex-1 min-w-0">
+                {(formData.name || '').trim()
+                  ? formData.category && formData.subCategory
+                    ? `${formData.category} / ${formData.subCategory}`
+                    : formData.category
+                      ? 'Choose a subcategory, or tap Continue'
+                      : 'Continue uses AI to pick category — or choose one below'
+                  : 'Type a name above, then continue'}
+              </p>
+              <button
+                type="button"
+                onClick={() => void handleCategoryContinue()}
+                disabled={!categoryContinueEnabled}
+                className="shrink-0 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-900 text-white text-[11px] font-black uppercase tracking-widest hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
-                 <span className="relative z-10 font-black text-lg">{cat}</span>
-                 {formData.category === cat && <CheckCircle2 className="absolute top-4 right-4 text-white/20" size={40}/>}
+                {aiDetecting ? <Loader2 size={14} className="animate-spin" /> : null}
+                {categoryContinueLabel}
+                {!aiDetecting && <ChevronRight size={14} />}
               </button>
-           ))}
-        </div>
-        
-        {formData.category && (
-           <div className="space-y-4 pt-6 border-t border-slate-100">
-              <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest">Subcategory</h3>
-              <div className="flex flex-wrap gap-2">
-                 {categories[formData.category]?.map(sub => (
-                    <button 
-                       key={sub}
-                       onClick={() => {
-                          setFormData({ ...formData, subCategory: sub });
-                          setConfigStep('DONE');
-                       }}
-                       className={`px-5 py-3 rounded-xl font-bold text-xs transition-all ${formData.subCategory === sub ? 'bg-slate-900 text-white shadow-lg' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                    >
-                       {sub}
-                    </button>
-                 ))}
-                 {!categories[formData.category] && (
-                    <p className="text-xs text-red-400 font-bold">Category '{formData.category}' config not found.</p>
-                 )}
-              </div>
            </div>
-        )}
+        </div>
      </div>
   );
 
-  const containerClass = isModal ? "h-full flex flex-col" : "max-w-4xl mx-auto space-y-6 pb-16 animate-in fade-in duration-400";
+  const containerClass = isModal ? "h-full flex flex-col" : "max-w-6xl mx-auto space-y-6 pb-16 animate-in fade-in duration-400";
   const isSold = formData.status === ItemStatus.SOLD || formData.status === ItemStatus.TRADED || formData.status === ItemStatus.GIFTED;
   const showSaleFields = isSold;
   const showOrderHint = formData.status === ItemStatus.ORDERED;
@@ -1300,24 +1384,12 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   return (
     <div className={containerClass}>
       {!isModal && (
-        <header className="flex items-center justify-between gap-4 mb-2">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => navigate(-1)}
-              className="p-2.5 bg-white border border-slate-200 rounded-2xl text-slate-400 hover:text-slate-900 transition-all"
-            >
-              <ArrowLeft size={22} />
-            </button>
-            <div>
-              <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-                {id ? 'Edit Item' : 'New Asset'}
-              </h1>
-              <p className="text-xs text-slate-500 font-bold">
-                Add with pricing, status, templates, duplicate check & PC/Bundle links.
-              </p>
-            </div>
-          </div>
-        </header>
+        <AddFlowPageHeader
+          icon={<PlusCircle size={22} strokeWidth={1.75} />}
+          title={id ? 'Edit Item' : 'New Asset'}
+          subtitle="Name, category, pricing, photos & purchase proof"
+          onBack={() => navigate(-1)}
+        />
       )}
 
       {id && sourceLinks.list.length > 0 && (
@@ -1374,142 +1446,16 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
 
       <div className={`flex-1 ${isModal ? 'overflow-y-auto scrollbar-hide -mx-4 px-4' : ''}`}>
         {configStep === 'CATEGORY' ? renderCategorySelection() : (
-           <form onSubmit={handleSave} className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-              <div className="lg:col-span-7 space-y-4">
-                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 space-y-4">
-                    {/* Templates */}
-                    {isCreatingNew && (lastTemplate || historyPresets.length > 0 || savedPresets.length > 0) && (
-                      <div className="space-y-2 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-[10px] font-black uppercase tracking-widest text-indigo-700 flex items-center gap-1.5">
-                            <Repeat2 size={12} /> Templates
-                          </p>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const label = window.prompt('Preset name', `${formData.subCategory || formData.category || 'Preset'}${formData.vendor ? ` · ${formData.vendor}` : ''}`);
-                              if (!label?.trim()) return;
-                              const next = upsertSavedPreset({
-                                label: label.trim(),
-                                category: formData.category,
-                                subCategory: formData.subCategory,
-                                vendor: formData.vendor,
-                                platformBought: formData.platformBought,
-                                buyPaymentType: formData.buyPaymentType,
-                                hasOVP: formData.hasOVP,
-                                usesDifferentialVat: formData.usesDifferentialVat,
-                                savedAt: new Date().toISOString(),
-                              });
-                              setSavedPresets(next);
-                            }}
-                            className="text-[10px] font-bold text-indigo-600 hover:underline"
-                          >
-                            Save current as preset
-                          </button>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
-                          {lastTemplate && (
-                            <button
-                              type="button"
-                              onClick={() => applyPurchaseTemplate(lastTemplate, true)}
-                              className="px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700"
-                              title={lastTemplate.label}
-                            >
-                              Repeat last
-                            </button>
-                          )}
-                          {savedPresets.map((p) => (
-                            <button
-                              key={`saved-${p.label}`}
-                              type="button"
-                              onClick={() => applyPurchaseTemplate(p, true)}
-                              className="px-2.5 py-1.5 rounded-lg bg-white border border-indigo-200 text-indigo-800 text-[10px] font-bold hover:bg-indigo-50"
-                            >
-                              {p.label}
-                            </button>
-                          ))}
-                          {historyPresets.map((p) => (
-                            <button
-                              key={`hist-${p.label}`}
-                              type="button"
-                              onClick={() => applyPurchaseTemplate(p, true)}
-                              className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 text-[10px] font-bold hover:bg-slate-50"
-                            >
-                              {p.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Duplicate control */}
-                    {isCreatingNew && duplicateCandidates.length > 0 && (
-                      <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 space-y-2.5">
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <p className="text-[10px] font-black uppercase tracking-widest text-amber-800 flex items-center gap-1.5">
-                              <AlertCircle size={12} /> Possible duplicates
-                            </p>
-                            <p className="text-[11px] text-amber-900/80 mt-0.5">
-                              Same product may already exist — choose how to continue.
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setDuplicateDismissed(true)}
-                            className="text-[10px] font-bold text-amber-700 hover:underline shrink-0"
-                          >
-                            Create as new
-                          </button>
-                        </div>
-                        <ul className="space-y-2">
-                          {duplicateCandidates.map((dup) => (
-                            <li key={dup.item.id} className="rounded-lg bg-white border border-amber-100 p-2.5 space-y-2">
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="min-w-0">
-                                  <p className="text-sm font-bold text-slate-900 truncate">{dup.item.name}</p>
-                                  <p className="text-[10px] text-slate-500">
-                                    {dup.confidence}% · {dup.reason} · {dup.item.status}
-                                    {dup.item.quantity != null && dup.item.quantity > 1 ? ` · qty ${dup.item.quantity}` : ''}
-                                    {dup.item.buyPrice != null ? ` · buy €${formatEUR(dup.item.buyPrice)}` : ''}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="flex flex-wrap gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => applyItemFromHistory(dup.item)}
-                                  className="px-2 py-1 rounded-md bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-slate-200"
-                                >
-                                  Use as template
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => openExistingForUpdate(dup.item)}
-                                  className="px-2 py-1 rounded-md bg-blue-600 text-white text-[10px] font-bold hover:bg-blue-700"
-                                >
-                                  Update existing
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => addStockToExisting(dup.item, qtyMode === 'stock' || qtyMode === 'clones' ? quantityToCreate : 1)}
-                                  className="px-2 py-1 rounded-md bg-emerald-600 text-white text-[10px] font-bold hover:bg-emerald-700"
-                                >
-                                  Add to stock qty
-                                </button>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
+           <form onSubmit={handleSave} className="space-y-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
+              <div className="flex flex-col gap-4 h-full min-h-0">
+                 <div className={`${ADD_FLOW_PANEL} p-4 space-y-4 flex-1 flex flex-col`}>
                     {updateTargetId && (
-                      <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] font-bold text-blue-900 flex items-center justify-between gap-2">
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-bold text-slate-700 flex items-center justify-between gap-2">
                         <span>Updating existing item — save will overwrite that card.</span>
                         <button
                           type="button"
-                          className="text-blue-700 hover:underline"
+                          className="text-slate-600 hover:underline"
                           onClick={() => {
                             setUpdateTargetId(null);
                             setFormData((prev) => ({
@@ -1536,8 +1482,8 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                                   onClick={() => setShowBarcodeScanner((v) => !v)}
                                   className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-black uppercase border transition-all ${
                                     showBarcodeScanner
-                                      ? 'bg-rose-600 text-white border-rose-600'
-                                      : 'bg-white text-slate-600 border-slate-200 hover:border-rose-300 hover:text-rose-700'
+                                      ? 'bg-slate-900 text-white border-slate-900'
+                                      : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'
                                   }`}
                                   title="Scan EAN/UPC barcode"
                                 >
@@ -1545,16 +1491,6 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                                   Scan
                                 </button>
                               )}
-                              <button
-                                type="button"
-                                disabled={generatingTitle || !(formData.name || '').trim() || !getSpecsAIProvider()}
-                                onClick={() => void handleGenerateItemTitle()}
-                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-600 text-white text-[9px] font-black uppercase disabled:opacity-50 hover:bg-rose-700"
-                                title="Generate a cleaned item title only (does not change specs)"
-                              >
-                                {generatingTitle ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
-                                AI title
-                              </button>
                             </div>
                           </div>
                           {isCreatingNew && showBarcodeScanner && (
@@ -1568,91 +1504,120 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                             <div className="relative flex-1">
                               <input
                                  autoFocus={!id && !initialData}
-                                 className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-base outline-none focus:border-blue-500 focus:bg-white transition-all"
+                                 className={ADD_FLOW_INPUT + ' font-black text-base'}
                                  placeholder="e.g. MSI GeForce RTX 3060 Gaming X — type to suggest from history"
                                  value={formData.name}
                                  onChange={e => setFormData({ ...formData, name: e.target.value })}
+                                 onBlur={() => {
+                                   const qty = Math.max(1, Math.floor(Number(formData.quantity) || 1));
+                                   if (qty <= 1) return;
+                                   setFormData((prev) => ({
+                                     ...prev,
+                                     name: applyQtyNamePrefix(prev.name || '', qty),
+                                   }));
+                                 }}
                                  onFocus={() => setNameSuggestionsOpen(true)}
                                  onBlur={() => setTimeout(() => setNameSuggestionsOpen(false), 180)}
                               />
-                              {nameSuggestionsOpen && nameSuggestions.length > 0 && (
-                                <ul className="absolute z-20 left-0 right-0 mt-1 py-2 bg-white border border-slate-200 rounded-xl shadow-xl max-h-56 overflow-y-auto">
-                                  <li className="px-4 py-2 text-[10px] font-black uppercase text-slate-400 border-b border-slate-100">
-                                    Pick from history to copy category, specs & more
-                                  </li>
-                                  {nameSuggestions.map((item) => (
-                                    <li
-                                      key={item.id}
-                                      className="px-4 py-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0"
-                                      onMouseDown={(e) => {
-                                        e.preventDefault();
-                                        applyItemFromHistory(item);
-                                      }}
-                                    >
-                                      <p className="font-bold text-slate-900">{item.name}</p>
-                                      <p className="text-xs text-slate-500 mt-0.5">
-                                        {item.category} / {item.subCategory || '—'}
-                                        {item.vendor ? ` · ${item.vendor}` : ''}
-                                      </p>
-                                    </li>
-                                  ))}
-                                </ul>
-                              )}
                             </div>
                             {learnedCategory && learnedCategory !== formData.category && (
                               <button
                                 type="button"
                                 onClick={() => setFormData((prev) => ({ ...prev, category: learnedCategory }))}
-                                className="shrink-0 text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg hover:bg-indigo-100 self-center"
+                                className="shrink-0 text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded-lg hover:bg-slate-200 self-center"
                               >
                                 Learned: {learnedCategory}
                               </button>
                             )}
                           </div>
-                       </div>
 
-                       {/* Status on create / edit */}
-                       <div className="space-y-1.5">
-                         <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Status</label>
-                         <div className="flex flex-wrap gap-1.5">
-                           {([
-                             ItemStatus.IN_STOCK,
-                             ItemStatus.ORDERED,
-                             ItemStatus.SOLD,
-                             ItemStatus.TRADED,
-                             ItemStatus.GIFTED,
-                             ItemStatus.IN_COMPOSITION,
-                           ] as ItemStatus[]).map((st) => (
-                             <button
-                               key={st}
-                               type="button"
-                               onClick={() => {
-                                 setFormData((prev) => ({
-                                   ...prev,
-                                   status: st,
-                                   ...(st === ItemStatus.SOLD || st === ItemStatus.TRADED || st === ItemStatus.GIFTED
-                                     ? { sellDate: prev.sellDate || new Date().toISOString().split('T')[0] }
-                                     : {}),
-                                   ...(st === ItemStatus.TRADED ? { paymentType: 'Trade' as PaymentType } : {}),
-                                   ...(st === ItemStatus.GIFTED ? { paymentType: 'Gift' as PaymentType } : {}),
-                                 }));
-                                 if (st === ItemStatus.IN_COMPOSITION && openContainers[0] && !linkContainerId) {
-                                   setLinkContainerId(openContainers[0].id);
-                                 }
-                               }}
-                               className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${
-                                 formData.status === st
-                                   ? 'bg-slate-900 text-white border-slate-900'
-                                   : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                               }`}
-                             >
-                               {st}
-                             </button>
-                           ))}
-                         </div>
-                         {showOrderHint && (
-                           <p className="text-[10px] text-amber-700 font-bold">Ordered — buy date = order / expected arrival.</p>
-                         )}
+                          {nameSuggestionsOpen && nameSuggestions.length > 0 && (
+                            <div className="rounded-xl border border-slate-200 bg-slate-50/80 overflow-hidden">
+                              <p className="px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.16em] text-slate-400 border-b border-slate-100 bg-white">
+                                From history
+                              </p>
+                              <ul className="max-h-32 overflow-y-auto divide-y divide-slate-100">
+                                {nameSuggestions.slice(0, 6).map((item) => (
+                                  <li key={item.id}>
+                                    <button
+                                      type="button"
+                                      className="w-full text-left px-3 py-1.5 hover:bg-white transition-colors"
+                                      onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        applyItemFromHistory(item);
+                                      }}
+                                    >
+                                      <p className="text-xs font-bold text-slate-900 truncate">{item.name}</p>
+                                      <p className="text-[10px] font-semibold text-slate-400 truncate">
+                                        {item.category} / {item.subCategory || '—'}
+                                        {item.vendor ? ` · ${item.vendor}` : ''}
+                                      </p>
+                                    </button>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {isCreatingNew && duplicateCandidates.length > 0 && (
+                            <div className="rounded-xl border border-slate-200 bg-slate-50/80 overflow-hidden">
+                              <div className="px-3 py-1.5 border-b border-slate-100 bg-white flex items-center justify-between gap-2">
+                                <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400 flex items-center gap-1">
+                                  <AlertCircle size={11} /> Possible duplicates
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => setDuplicateDismissed(true)}
+                                  className="text-[9px] font-black uppercase tracking-wider text-slate-500 hover:text-slate-900"
+                                >
+                                  New anyway
+                                </button>
+                              </div>
+                              <ul className="max-h-40 overflow-y-auto divide-y divide-slate-100">
+                                {duplicateCandidates.map((dup) => (
+                                  <li key={dup.item.id} className="px-3 py-1.5 hover:bg-white transition-colors">
+                                    <div className="flex items-start justify-between gap-2 min-w-0">
+                                      <div className="min-w-0">
+                                        <p className="text-xs font-bold text-slate-900 truncate">{dup.item.name}</p>
+                                        <p className="text-[10px] font-semibold text-slate-400 truncate">
+                                          {dup.confidence}% · {dup.reason} · {dup.item.status}
+                                          {dup.item.buyPrice != null ? ` · €${formatEUR(dup.item.buyPrice)}` : ''}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1 mt-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => applyItemFromHistory(dup.item)}
+                                        className="px-2 py-0.5 rounded-md border border-slate-200 bg-white text-slate-600 text-[9px] font-black uppercase tracking-wider hover:border-slate-400"
+                                      >
+                                        Copy
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => openExistingForUpdate(dup.item)}
+                                        className="px-2 py-0.5 rounded-md bg-slate-900 text-white text-[9px] font-black uppercase tracking-wider hover:bg-slate-800"
+                                      >
+                                        Update
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          addStockToExisting(
+                                            dup.item,
+                                            Math.max(1, Math.floor(Number(formData.quantity) || 1))
+                                          )
+                                        }
+                                        className="px-2 py-0.5 rounded-md border border-slate-200 bg-white text-slate-600 text-[9px] font-black uppercase tracking-wider hover:border-slate-400"
+                                      >
+                                        + Qty
+                                      </button>
+                                    </div>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
                        </div>
 
                        {/* Pricing economy block */}
@@ -1667,13 +1632,29 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                              </p>
                            )}
                          </div>
-                         <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-                          <div className="space-y-1.5">
+                         <div className="flex flex-col sm:flex-row sm:flex-nowrap gap-2.5 sm:items-end">
+                          <div className="space-y-1.5 w-full sm:w-16 sm:shrink-0">
+                             <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Qty</label>
+                             <input
+                                type="number"
+                                min={1}
+                                max={48}
+                                className="w-full px-2.5 py-2.5 bg-white border border-slate-200 rounded-xl font-black text-sm outline-none focus:border-blue-500 transition-all tabular-nums"
+                                value={formData.quantity && formData.quantity > 1 ? formData.quantity : 1}
+                                onChange={(e) => setItemQuantity(Number(e.target.value) || 1)}
+                                title={
+                                  (formData.quantity || 1) > 1
+                                    ? `Name prefix x${formData.quantity}/`
+                                    : 'Quantity 1 = single item'
+                                }
+                             />
+                          </div>
+                          <div className="space-y-1.5 flex-1 min-w-0">
                              <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Buy (€)</label>
                              <input
                                 type="text"
                                 inputMode="decimal"
-                                className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl font-black text-base outline-none focus:border-blue-500 transition-all"
+                                className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl font-black text-sm outline-none focus:border-blue-500 transition-all"
                                 value={buyPriceText}
                                 onChange={(e) => setBuyPriceText(e.target.value)}
                                 onBlur={() => {
@@ -1692,14 +1673,17 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                                 }}
                              />
                           </div>
-                          <div className="space-y-1.5">
-                             <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">
-                               {showSaleFields ? 'Sold (€)' : 'Target sell (€)'}
+                          <div className="space-y-1.5 flex-1 min-w-0">
+                             <label
+                               className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest"
+                               title={showSaleFields ? 'Sold price' : 'Target sell price'}
+                             >
+                               {showSaleFields ? 'Sold (€)' : 'Sell (€)'}
                              </label>
                              <input
                                 type="text"
                                 inputMode="decimal"
-                                className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl font-black text-base outline-none focus:border-blue-500 transition-all"
+                                className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl font-black text-sm outline-none focus:border-blue-500 transition-all"
                                 value={sellPriceText}
                                 placeholder="—"
                                 onChange={(e) => setSellPriceText(e.target.value)}
@@ -1716,12 +1700,12 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                                 }}
                              />
                           </div>
-                          <div className="space-y-1.5">
+                          <div className="space-y-1.5 flex-1 min-w-0">
                              <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Store (€)</label>
                              <input
                                 type="text"
                                 inputMode="decimal"
-                                className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl font-black text-base outline-none focus:border-blue-500 transition-all"
+                                className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl font-black text-sm outline-none focus:border-blue-500 transition-all"
                                 value={storePriceText}
                                 placeholder="—"
                                 onChange={(e) => setStorePriceText(e.target.value)}
@@ -1738,212 +1722,30 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                                 }}
                              />
                           </div>
-                          <div className="space-y-1.5">
+                          <div className="space-y-1.5 w-full sm:w-[11.25rem] sm:shrink-0">
                              <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Buy Date</label>
                              <input
                                 type="date"
-                                className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-blue-500 transition-all"
+                                className="w-full min-w-0 px-2.5 py-2.5 bg-white border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-blue-500 transition-all"
                                 value={formData.buyDate}
                                 onChange={e => setFormData({ ...formData, buyDate: e.target.value })}
                              />
                           </div>
                          </div>
-
-                         <div className="flex flex-wrap items-center gap-2">
-                           <button
-                             type="button"
-                             onClick={() => void handleFetchAiPriceHint()}
-                             disabled={aiPriceLoading || !formData.name?.trim()}
-                             className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                           >
-                             <Wand2 size={11} className={aiPriceLoading ? 'animate-spin' : ''} />
-                             {aiPriceLoading ? 'Estimating…' : 'AI eBay sold hint'}
-                           </button>
-                           {aiPriceHint && (
-                             <>
-                               <span className="text-[11px] font-bold text-slate-600">
-                                 AI €{formatEUR(aiPriceHint.priceLow)}–€{formatEUR(aiPriceHint.priceHigh)} (avg €{formatEUR(aiPriceHint.priceAverage)})
-                               </span>
-                               <button
-                                 type="button"
-                                 onClick={() => {
-                                   setSellPriceText(String(aiPriceHint.priceAverage));
-                                   setFormData((prev) => ({ ...prev, sellPrice: aiPriceHint.priceAverage }));
-                                 }}
-                                 className="text-[10px] font-bold text-blue-600 hover:underline"
-                               >
-                                 Apply avg
-                               </button>
-                             </>
-                           )}
-                           {aiPriceError && <span className="text-[10px] font-bold text-red-600">{aiPriceError}</span>}
-                         </div>
-                       </div>
-
-                       {/* Quantity modes */}
-                       {(isCreatingNew || updateTargetId || id || initialData) && (
-                         <div className="rounded-xl border border-slate-200 p-3 space-y-2.5">
-                           <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
-                             <Package size={12} /> Quantity
+                         {(formData.quantity || 1) > 1 && (
+                           <p className="text-[10px] font-semibold text-slate-500">
+                             Name uses <span className="font-black text-slate-800">x{formData.quantity}/</span> prefix · split later into {formData.quantity} items
                            </p>
-                           {isCreatingNew && (
-                             <div className="flex flex-wrap gap-1.5">
-                               {(
-                                 [
-                                   { id: 'single' as QtyMode, label: '1 unit (unique)' },
-                                   { id: 'stock' as QtyMode, label: '1 card · stock qty' },
-                                   { id: 'clones' as QtyMode, label: 'N separate cards' },
-                                 ] as const
-                               ).map((m) => (
-                                 <button
-                                   key={m.id}
-                                   type="button"
-                                   onClick={() => setQtyMode(m.id)}
-                                   className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold border ${
-                                     qtyMode === m.id
-                                       ? 'bg-slate-900 text-white border-slate-900'
-                                       : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                                   }`}
-                                 >
-                                   {m.label}
-                                 </button>
-                               ))}
-                             </div>
-                           )}
-                           {(qtyMode !== 'single' || !isCreatingNew) && (
-                             <div className="flex items-end gap-3">
-                               <div className="space-y-1.5 w-28">
-                                 <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
-                                   {isCreatingNew
-                                     ? qtyMode === 'stock'
-                                       ? 'Stock qty'
-                                       : 'Cards to create'
-                                     : 'Stock qty'}
-                                 </label>
-                                 <input
-                                   type="number"
-                                   min={1}
-                                   className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-sm outline-none focus:border-blue-500"
-                                   value={isCreatingNew ? quantityToCreate : formData.quantity ?? 1}
-                                   onChange={(e) => {
-                                     const n = Math.max(1, Number(e.target.value) || 1);
-                                     if (isCreatingNew) setQuantityToCreate(n);
-                                     else setFormData((prev) => ({ ...prev, quantity: n }));
-                                   }}
-                                 />
-                               </div>
-                               <p className="text-[10px] text-slate-500 font-medium pb-2">
-                                 {isCreatingNew && qtyMode === 'stock' && 'One inventory card with quantity on the store.'}
-                                 {isCreatingNew && qtyMode === 'clones' && 'Creates N identical separate items (unique serials / defects).'}
-                                 {!isCreatingNew && 'Store stock quantity (undefined = 1).'}
-                               </p>
-                             </div>
-                           )}
-                         </div>
-                       )}
-
-                       {/* Links: receipt + PC/Bundle */}
-                       <div className="rounded-xl border border-slate-200 p-3 space-y-3">
-                         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
-                           <LinkIcon size={12} /> Links
-                         </p>
-                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                           <div className="space-y-1.5">
-                             <label className="text-[10px] font-bold text-slate-500 flex items-center gap-1">
-                               <FileText size={11} /> Receipt / proof
-                             </label>
-                             <div className="flex flex-wrap items-center gap-2">
-                               <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-600 cursor-pointer hover:bg-slate-50">
-                                 <Upload size={11} />
-                                 {formData.hasReceipt ? 'Replace' : 'Attach'}
-                                 <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handleReceiptUpload} />
-                               </label>
-                               {formData.hasReceipt && formData.receiptUrl && (
-                                 <button
-                                   type="button"
-                                   onClick={() => setFormData((prev) => ({ ...prev, hasReceipt: false, receiptUrl: undefined }))}
-                                   className="text-[10px] font-bold text-red-600 hover:underline"
-                                 >
-                                   Remove
-                                 </button>
-                               )}
-                               {formData.hasReceipt && (
-                                 <span className="text-[10px] font-bold text-emerald-700">Attached</span>
-                               )}
-                             </div>
-                           </div>
-                           <div className="space-y-1.5">
-                             <label className="text-[10px] font-bold text-slate-500">Add into PC / Bundle</label>
-                             <select
-                               className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-xs outline-none"
-                               value={linkContainerId || formData.parentContainerId || ''}
-                               onChange={(e) => {
-                                 const v = e.target.value;
-                                 setLinkContainerId(v);
-                                 if (v) {
-                                   setFormData((prev) => ({ ...prev, status: ItemStatus.IN_COMPOSITION, parentContainerId: v }));
-                                 } else {
-                                   setFormData((prev) => ({
-                                     ...prev,
-                                     parentContainerId: undefined,
-                                     status: prev.status === ItemStatus.IN_COMPOSITION ? ItemStatus.IN_STOCK : prev.status,
-                                   }));
-                                 }
-                               }}
-                             >
-                               <option value="">— Not linked —</option>
-                               {openContainers.map((c) => (
-                                 <option key={c.id} value={c.id}>
-                                   {c.isPC ? 'PC' : 'Bundle'}: {c.name}
-                                 </option>
-                               ))}
-                             </select>
-                             {openContainers.length === 0 && (
-                               <p className="text-[10px] text-slate-400">No open PC/Bundle yet — create one in Compose first.</p>
-                             )}
-                           </div>
-                         </div>
+                         )}
                        </div>
-                    </div>
 
-                    {/* Specs & AI */}
-                    <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
-                      <div className="flex justify-between items-center gap-2 flex-wrap">
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setShowSpecs((v) => !v)}
-                            className="w-6 h-6 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100 shrink-0"
-                            title={showSpecs ? 'Hide specs' : 'Show specs'}
-                          >
-                            <ChevronDown
-                              size={13}
-                              className={`transition-transform ${showSpecs ? '' : '-rotate-90'}`}
-                            />
-                          </button>
-                          <h3 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
-                            <Sliders size={15} /> Tech Specs
-                          </h3>
-                        </div>
-                         <button
-                            type="button"
-                            onClick={handleAutoFillSpecs}
-                            disabled={generatingSpecs || !formData.name}
-                            title="Look up this product (e.g. i7-12700K) and fill in specs from the web — cores, threads, clock, TDP, etc. Adds new spec fields if needed."
-                            className="text-[10px] font-black uppercase bg-blue-600 text-white px-3 py-1.5 rounded-lg flex items-center gap-1.5 hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                         >
-                            {generatingSpecs ? <Wand2 size={12} className="animate-spin"/> : <Wand2 size={12}/>}
-                            {generatingSpecs ? 'Looking up specs…' : `Parse AI specs${getSpecsAIProvider() ? ` (${getSpecsAIProvider()})` : ''}`}
-                         </button>
-                      </div>
-                      {showSpecs && renderSpecsEditor()}
                     </div>
 
                     {/* Compatible with (CPU / Motherboard / RAM) — beyond PC Builder */}
                     {compatibleGroups.length > 0 && (
                       <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
                         <h3 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
-                          <LinkIcon size={15} className="text-blue-500" />
+                          <LinkIcon size={15} className="text-slate-500" />
                           Compatible with
                         </h3>
                         <div className="space-y-2.5">
@@ -1955,7 +1757,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                                   <li key={i.id}>
                                     <Link
                                       to={`/panel/edit/${i.id}`}
-                                      className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 hover:border-blue-300 hover:text-blue-600 transition-all"
+                                      className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 hover:border-slate-400 transition-all"
                                     >
                                       {i.name}
                                     </Link>
@@ -1968,114 +1770,42 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                       </div>
                     )}
 
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Item Photos</label>
-                        {imageProviders.length > 0 && (
-                          <div className="flex items-center gap-1 flex-wrap">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedProvider('')}
-                              title="Try every configured provider until one returns results"
-                              className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border transition-colors ${
-                                selectedProvider === ''
-                                  ? 'bg-slate-900 text-white border-slate-900'
-                                  : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
-                              }`}
-                            >
-                              Auto
-                            </button>
-                            {imageProviders.map((p) => (
-                              <button
-                                key={p.name}
-                                type="button"
-                                disabled={!p.configured}
-                                onClick={() => setSelectedProvider(p.name)}
-                                title={p.configured ? `Only use ${p.label}` : `${p.label} is not set up (missing API key on Vercel)`}
-                                className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                                  selectedProvider === p.name
-                                    ? 'bg-blue-600 text-white border-blue-600'
-                                    : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
-                                }`}
-                              >
-                                {p.label}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                        <button
-                          type="button"
-                          onClick={handleFindRealPhotos}
-                          disabled={photoSearching || !formData.name}
-                          title="Search real product photos for this item name and use one as the default photo"
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <Search size={12} className={photoSearching ? 'animate-spin' : ''} />
-                          {photoSearching ? 'Searching…' : 'Find real photos'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleFromMyEbayListings}
-                          disabled={ebayListingLoading || !formData.name}
-                          title={`Match this item name against your eBay seller store (${getEbayUsername()}) and import photos`}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-blue-200 text-blue-700 text-[10px] font-black uppercase tracking-widest hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <ShoppingBag size={12} className={ebayListingLoading ? 'animate-pulse' : ''} />
-                          {ebayListingLoading ? 'Loading…' : 'My eBay photos'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setShowProductCardGen(true)}
-                          disabled={!formData.name}
-                          title="Generate AI product card with Gemini"
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50"
-                        >
-                          <Wand2 size={12} /> AI card
-                        </button>
-                        {nativePhoto ? (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => cameraPhotoRef.current?.click()}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-rose-700"
-                              title="Take a photo with this phone"
-                            >
-                              <Camera size={12} /> Camera
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => libraryPhotoRef.current?.click()}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50"
-                              title="Pick from Photos library"
-                            >
-                              <Upload size={12} /> Library
-                            </button>
-                            <input
-                              ref={cameraPhotoRef}
-                              type="file"
-                              accept="image/*"
-                              capture="environment"
-                              className="hidden"
-                              onChange={handleMultiImageUpload}
-                            />
-                            <input
-                              ref={libraryPhotoRef}
-                              type="file"
-                              accept="image/*"
-                              multiple
-                              className="hidden"
-                              onChange={handleMultiImageUpload}
-                            />
-                          </>
-                        ) : (
-                          <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-600 cursor-pointer hover:bg-slate-50">
-                            <Upload size={12} /> Add images
-                            <input type="file" accept="image/*" multiple className="hidden" onChange={handleMultiImageUpload} />
-                          </label>
-                        )}
-                      </div>
+                    <div className={`${ADD_FLOW_PANEL} p-3 space-y-3`}>
+                      <ItemFormAssetToolbar
+                        formData={formData as InventoryItem}
+                        onPatch={(patch) => setFormData((prev) => ({ ...prev, ...patch }))}
+                        generatingTitle={generatingTitle}
+                        generatingListing={generatingListing}
+                        generatingSpecs={generatingSpecs}
+                        aiPriceLoading={aiPriceLoading}
+                        aiPriceHint={aiPriceHint}
+                        aiPriceError={aiPriceError}
+                        onGenerateTitle={() => void handleGenerateItemTitle()}
+                        onGenerateListing={() => void handleGenerateMarketplaceListing()}
+                        onParseSpecs={() => void handleAutoFillSpecs()}
+                        onFetchSoldHint={() => void handleFetchAiPriceHint()}
+                        onApplySoldAvg={() => {
+                          if (!aiPriceHint) return;
+                          setSellPriceText(String(aiPriceHint.priceAverage));
+                          setFormData((prev) => ({ ...prev, sellPrice: aiPriceHint.priceAverage }));
+                        }}
+                        photoSearching={photoSearching}
+                        ebayListingLoading={ebayListingLoading}
+                        imageProviders={imageProviders}
+                        selectedProvider={selectedProvider}
+                        onSelectProvider={setSelectedProvider}
+                        onFindPhotos={() => void handleFindRealPhotos()}
+                        onEbayPhotos={() => void handleFromMyEbayListings()}
+                        onAiCard={() => {
+                          setCardStudioHighlight(true);
+                          requestAnimationFrame(() => {
+                            cardStudioRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                          });
+                          window.setTimeout(() => setCardStudioHighlight(false), 1800);
+                        }}
+                        onUploadFiles={handleMultiImageUpload}
+                        nativePhoto={nativePhoto}
+                      />
 
                       {photoSearchError && (
                         <p className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
@@ -2351,106 +2081,12 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                         </div>
                       )}
                     </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {/* Description / Notes */}
-                      <div className="space-y-1.5">
-                         <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Notes / Condition</label>
-                         <textarea
-                            className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-xs outline-none focus:border-blue-500 focus:bg-white transition-all h-20 resize-none"
-                            placeholder="e.g. Minor scratches, box included..."
-                            value={formData.comment1}
-                            onChange={e => setFormData({ ...formData, comment1: e.target.value })}
-                         />
-                      </div>
-
-                      {/* AI Listing — Title + Description */}
-                      <div className="space-y-3">
-                        <div className="rounded-xl border border-slate-200 overflow-hidden bg-white">
-                          <div className="px-3 py-2 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-                            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
-                              AI Titel (eBay · 80)
-                            </label>
-                            <button
-                              type="button"
-                              disabled={!formData.marketTitle?.trim()}
-                              onClick={async () => {
-                                const text = (formData.marketTitle || '').trim();
-                                if (!text) return;
-                                try {
-                                  await navigator.clipboard.writeText(text);
-                                } catch {
-                                  alert('Could not copy title.');
-                                }
-                              }}
-                              className="inline-flex items-center justify-center p-1 rounded-md text-blue-600 hover:bg-blue-50 disabled:opacity-40"
-                              title="Copy title"
-                              aria-label="Copy title"
-                            >
-                              <Copy size={14} />
-                            </button>
-                          </div>
-                          <input
-                            type="text"
-                            maxLength={80}
-                            className="w-full px-3.5 py-2.5 font-semibold text-xs outline-none"
-                            placeholder="Optimierter eBay-Titel…"
-                            value={formData.marketTitle || ''}
-                            onChange={(e) => setFormData({ ...formData, marketTitle: e.target.value })}
-                          />
-                          <div className="px-3 py-1 border-t border-slate-100 text-[10px] font-bold text-slate-400 text-right">
-                            {[...(formData.marketTitle || '')].length}/80
-                          </div>
-                        </div>
-
-                        <div className="rounded-xl border border-slate-200 overflow-hidden bg-white">
-                          <div className="px-3 py-2 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-                            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
-                              AI Beschreibung (DE)
-                            </label>
-                            {formData.marketDescription && (
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  if (!formData.marketDescription) return;
-                                  try {
-                                    await navigator.clipboard.writeText(formData.marketDescription);
-                                  } catch (e) {
-                                    console.error('Copy AI listing text failed', e);
-                                    alert('Could not copy AI listing text.');
-                                  }
-                                }}
-                                className="text-[10px] font-bold uppercase tracking-widest text-blue-600 hover:text-blue-800"
-                              >
-                                Copy
-                              </button>
-                            )}
-                          </div>
-                          <textarea
-                            className="w-full px-3.5 py-2.5 font-medium text-xs outline-none h-28 resize-y"
-                            placeholder="AI listing appears after Generate in Inventory → Listing AI…"
-                            value={formData.marketDescription || ''}
-                            onChange={(e) =>
-                              setFormData({ ...formData, marketDescription: e.target.value })
-                            }
-                          />
-                        </div>
-                      </div>
-                    </div>
                  </div>
               </div>
 
-              <div className="lg:col-span-5 space-y-4">
-                 <ProofAttachmentsPanel
-                   recordId={getPhotoItemId()}
-                   attachments={formData.proofAttachments}
-                   record={formData as unknown as Record<string, unknown>}
-                   disabled={!id && !initialData?.id}
-                   onChange={(next) => setFormData({ ...formData, proofAttachments: next })}
-                 />
-
+              <div className="flex flex-col gap-4 h-full min-h-0">
                  {/* Category / source / payment */}
-                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 space-y-3">
+                 <div className={`${ADD_FLOW_PANEL} p-4 space-y-3 flex-1`}>
                     <h3 className="font-black text-xs uppercase tracking-widest text-slate-400">Purchase Info</h3>
 
                     <div className="grid grid-cols-2 gap-2.5">
@@ -2463,61 +2099,44 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                       </div>
 
                       <div className="col-span-2 space-y-1">
-                         <label className="text-[10px] font-bold text-slate-400">Vendor / seller</label>
-                         <input
-                            className="w-full px-3 py-2.5 bg-slate-50 rounded-xl font-bold text-xs outline-none focus:bg-white focus:ring-1 focus:ring-blue-400"
-                            value={formData.vendor || ''}
-                            onChange={(e) => setFormData({ ...formData, vendor: e.target.value })}
-                            placeholder="e.g. shop name or username"
+                         <BuySourcePlatformPicker
+                           value={(formData.platformBought || 'kleinanzeigen.de') as Platform}
+                           onChange={(nextPlatform) => {
+                             setFormData((prev) => ({
+                               ...prev,
+                               platformBought: nextPlatform,
+                               buyPaymentType: paymentAfterPlatformChange(
+                                 nextPlatform,
+                                 prev.buyPaymentType
+                               ),
+                             }));
+                           }}
                          />
                       </div>
 
-                      <div className="space-y-1">
-                         <label className="text-[10px] font-bold text-slate-400">Source Platform</label>
-                         <select
-                            className="w-full px-3 py-2.5 bg-slate-50 rounded-xl font-bold text-xs outline-none"
-                            value={formData.platformBought || 'kleinanzeigen.de'}
-                            onChange={(e) => {
-                              const nextPlatform = e.target.value as Platform;
-                              setFormData((prev) => ({
-                                ...prev,
-                                platformBought: nextPlatform,
-                                buyPaymentType: paymentAfterPlatformChange(
-                                  nextPlatform,
-                                  prev.buyPaymentType
-                                ),
-                              }));
-                            }}
-                         >
-                            <option value="kleinanzeigen.de">Kleinanzeigen</option>
-                            <option value="ebay.de">eBay</option>
-                            <option value="Amazon">Amazon</option>
-                            <option value="In Person">In Person</option>
-                            <option value="Other">Other</option>
-                         </select>
+                      <div className="col-span-2 space-y-1">
+                         <BuyPaymentTypePicker
+                           platform={(formData.platformBought || 'kleinanzeigen.de') as Platform}
+                           value={
+                             (formData.buyPaymentType ||
+                               defaultBuyPaymentForPlatform(
+                                 (formData.platformBought || 'kleinanzeigen.de') as Platform
+                               )) as PaymentType
+                           }
+                           onChange={(nextPayment) => {
+                             setFormData((prev) => ({
+                               ...prev,
+                               buyPaymentType: normalizeBuyPaymentForPlatform(
+                                 prev.platformBought,
+                                 nextPayment
+                               ),
+                             }));
+                           }}
+                         />
                       </div>
 
-                      <div className="space-y-1">
-                         <label className="text-[10px] font-bold text-slate-400">Payment Sent</label>
-                         <select
-                            className="w-full px-3 py-2.5 bg-slate-50 rounded-xl font-bold text-xs outline-none"
-                            value={formData.buyPaymentType || defaultBuyPaymentForPlatform('kleinanzeigen.de')}
-                            onChange={(e) => {
-                              const nextPayment = e.target.value as PaymentType;
-                              setFormData((prev) => ({
-                                ...prev,
-                                buyPaymentType: normalizeBuyPaymentForPlatform(
-                                  prev.platformBought,
-                                  nextPayment
-                                ),
-                              }));
-                            }}
-                         >
-                            {PAYMENT_METHODS.map(p => <option key={p} value={p}>{p}</option>)}
-                         </select>
-                      </div>
-
-                      <div className="col-span-2 pt-2 border-t border-slate-100">
+                      {(formData.platformBought || 'kleinanzeigen.de') === 'kleinanzeigen.de' && (
+                      <div className="col-span-2 pt-2 border-t border-slate-100 space-y-3">
                         <KleinanzeigenBuyChatProofFields
                           itemId={formData.id || 'draft'}
                           chatUrl={formData.kleinanzeigenBuyChatUrl || ''}
@@ -2542,97 +2161,47 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                           }}
                         />
                       </div>
-                    </div>
-                 </div>
+                      )}
 
-                 {/* Price & sale history */}
-                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 space-y-2.5">
-                    <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
-                      <History size={13} /> Price & sale history
-                    </h3>
-                    <div className="space-y-2 text-xs">
-                      <div className="flex items-center gap-2 text-slate-700">
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
-                        <span className="font-bold">Acquired</span>
-                        <span className="text-slate-500">{formData.buyDate ? new Date(formData.buyDate).toLocaleDateString() : '—'}</span>
-                        <span className="font-black text-slate-900">€{formatEUR(Number(formData.buyPrice || 0))}</span>
-                      </div>
-                      {(formData.priceHistory || []).slice().sort((a, b) => a.date.localeCompare(b.date)).map((entry, i) => (
-                        <div key={`${entry.date}-${entry.type}-${i}`} className="flex items-center gap-2 text-slate-600 pl-3.5 border-l-2 border-slate-200 ml-0.5">
-                          <span className="font-medium">{entry.type === 'buy' ? 'Cost' : entry.type === 'storePrice' ? 'Storefront price' : 'Sell price'} updated</span>
-                          <span className="text-slate-400">{new Date(entry.date).toLocaleDateString()}</span>
-                          {entry.previousPrice != null && (
-                            <span className="text-slate-400">€{formatEUR(entry.previousPrice)} →</span>
-                          )}
-                          <span className="font-bold text-slate-800">€{formatEUR(entry.price)}</span>
-                        </div>
-                      ))}
-                      {(formData.status === ItemStatus.SOLD || formData.status === ItemStatus.TRADED || formData.status === ItemStatus.GIFTED) && formData.sellDate && (
-                        <div className="flex items-center gap-2 text-emerald-700 font-bold pt-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                          <span>Sold</span>
-                          <span className="text-slate-500 font-medium">{new Date(formData.sellDate).toLocaleDateString()}</span>
-                          <span>€{formatEUR(formData.sellPrice ?? 0)}</span>
+                      {(formData.platformBought || '') === 'ebay.de' && (
+                        <div className="col-span-2 pt-2 border-t border-slate-100 space-y-3">
+                          <EbayBuyOrderParse
+                            itemName={formData.name || ''}
+                            onApply={(patch) => {
+                              setFormData((prev) => ({
+                                ...prev,
+                                ...patch,
+                                name: (prev.name || '').trim() ? prev.name : patch.name || prev.name,
+                                buyPrice:
+                                  patch.buyPrice != null ? patch.buyPrice : prev.buyPrice,
+                              }));
+                              if (patch.buyPrice != null) setBuyPriceText(String(patch.buyPrice));
+                            }}
+                          />
                         </div>
                       )}
-                      {!(formData.priceHistory && formData.priceHistory.length > 0) && formData.status !== ItemStatus.SOLD && formData.status !== ItemStatus.TRADED && formData.status !== ItemStatus.GIFTED && (
-                        <p className="text-slate-400 text-[10px]">Price changes will appear here when you edit buy or sell price.</p>
-                      )}
-                    </div>
-                 </div>
 
-                 {/* AI listing hints: note + OVP/IO (Rechnung via accessory icons / receipt attach) */}
-                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 space-y-2.5">
-                    <h3 className="font-black text-xs uppercase tracking-widest text-slate-400">Flags & AI note</h3>
-                    <div className="flex flex-col gap-2">
-                       <label className="block space-y-1">
-                          <span className="text-[10px] font-bold text-slate-500">AI note (short)</span>
-                          <input
-                             type="text"
-                             className="w-full px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-[11px] font-semibold text-slate-800 outline-none focus:border-violet-400 focus:bg-white"
-                             placeholder="e.g. wifi antennas aren't original"
-                             value={formData.aiDescriptionNote || ''}
-                             onChange={(e) =>
-                               setFormData({ ...formData, aiDescriptionNote: e.target.value })
-                             }
-                             maxLength={200}
-                          />
-                          <span className="text-[9px] text-slate-400 font-medium leading-snug block">
-                            Taken into account when generating the AI description — not pasted verbatim.
-                          </span>
-                       </label>
-                       <p className="text-[9px] text-slate-400 font-medium">
-                         OVP / IO / Rechnung feed the AI listing as buyer condition hints (not product-card images).
-                       </p>
-                       <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                             type="checkbox"
-                             checked={!!formData.hasOVP}
-                             onChange={e => setFormData({ ...formData, hasOVP: e.target.checked })}
-                             className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                          />
-                          <span className="text-xs font-bold text-slate-700">OVP (Original Packaging)</span>
-                       </label>
-                       {(formData.isBundle || formData.subCategory === 'Motherboards' || formData.category === 'Motherboards') && (
-                          <label className="flex items-center gap-2 cursor-pointer">
-                             <input
-                                type="checkbox"
-                                checked={!!formData.hasIOShield}
-                                onChange={e => setFormData({ ...formData, hasIOShield: e.target.checked })}
-                                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                             />
-                             <span className="text-xs font-bold text-slate-700">IO Blende</span>
-                          </label>
-                       )}
-                       <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                             type="checkbox"
-                             checked={!!formData.usesDifferentialVat}
-                             onChange={e => setFormData({ ...formData, usesDifferentialVat: e.target.checked })}
-                             className="w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
-                          />
-                          <span className="text-xs font-bold text-slate-700">§25a Differenzbesteuerung (Gebrauchtware)</span>
-                       </label>
+                      {(formData.platformBought || '') === 'In Person' && (
+                        <div className="col-span-2 pt-2 border-t border-slate-100">
+                          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">
+                            In person
+                          </p>
+                          <p className="text-[10px] text-slate-400 font-medium leading-snug">
+                            Cash is the default. Note meetup place in comments if useful.
+                          </p>
+                        </div>
+                      )}
+
+                      {(formData.platformBought || '') === 'Amazon' && (
+                        <div className="col-span-2 pt-2 border-t border-slate-100">
+                          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">
+                            Amazon
+                          </p>
+                          <p className="text-[10px] text-slate-400 font-medium leading-snug">
+                            Keep the order ID in comments if you may need returns or warranty later.
+                          </p>
+                        </div>
+                      )}
                     </div>
                  </div>
 
@@ -2709,9 +2278,69 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                     </div>
                  )}
               </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
+                <div
+                  ref={listingPanelRef}
+                  className={`${ADD_FLOW_PANEL} p-4 min-h-[24rem] h-full`}
+                >
+                  <ItemFormListingPanel
+                    title={formData.marketTitle || ''}
+                    description={formData.marketDescription || ''}
+                    generating={generatingListing}
+                    open={listingPanelOpen}
+                    onOpen={() => setListingPanelOpen(true)}
+                    onGenerate={() => void handleGenerateMarketplaceListing()}
+                    generateBlockedReason={
+                      listingAccessoriesReady(formData as InventoryItem).ok
+                        ? null
+                        : listingAccessoriesReady(formData as InventoryItem).reason
+                    }
+                    onTitleChange={(value) =>
+                      setFormData((prev) => ({ ...prev, marketTitle: value }))
+                    }
+                    onDescriptionChange={(value) =>
+                      setFormData((prev) => ({ ...prev, marketDescription: value }))
+                    }
+                  />
+                </div>
+                <div
+                  ref={cardStudioRef}
+                  className={`${ADD_FLOW_PANEL} p-4 min-h-[24rem] h-full transition-shadow ${
+                    cardStudioHighlight ? 'ring-2 ring-slate-900/15 shadow-md' : ''
+                  }`}
+                >
+                  <GeminiProductCardMini
+                    item={{
+                      ...(formData as InventoryItem),
+                      id: getPhotoItemId(),
+                      name: formData.name || '',
+                      buyPrice: formData.buyPrice ?? 0,
+                      buyDate: formData.buyDate || new Date().toISOString().split('T')[0],
+                      category: formData.category || 'Misc',
+                      status: formData.status || ItemStatus.IN_STOCK,
+                      comment1: formData.comment1 || '',
+                      comment2: formData.comment2 || '',
+                    }}
+                    categoryFields={
+                      categoryFields[`${formData.category}:${formData.subCategory}`] ||
+                      categoryFields[formData.category || '']
+                    }
+                    highlight={cardStudioHighlight}
+                    onApplyAsMainPhoto={async (url) => {
+                      setFormData((prev) => ({
+                        ...prev,
+                        imageUrl: url,
+                        imageUrls: [url, ...(prev.imageUrls || []).filter((u) => u !== url)],
+                      }));
+                    }}
+                  />
+                </div>
+              </div>
 
               {/* Sticky action bar — always visible, no scrolling needed to Save/Cancel */}
-              <div className="lg:col-span-12 sticky bottom-0 -mx-4 px-4 pt-3 pb-safe-min mt-1 bg-gradient-to-t from-slate-50 via-slate-50/95 to-transparent flex gap-2.5 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+              <div className="sticky bottom-0 -mx-4 px-4 pt-3 pb-safe-min mt-1 bg-gradient-to-t from-slate-50 via-slate-50/95 to-transparent flex gap-2.5 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
                  {isModal && (
                     <button type="button" onClick={onClose} className="px-6 py-3 bg-white border border-slate-200 text-slate-500 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-slate-100 transition-all">
                        Cancel
@@ -2779,45 +2408,6 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
         onClose={closeEbayPriceModal}
         onApply={applyEbayListingPriceFromModal}
       />
-
-      {showProductCardGen && formData.name && (
-        <GeminiProductCardModal
-          item={{
-            ...(formData as InventoryItem),
-            id: getPhotoItemId(),
-            name: formData.name,
-            buyPrice: formData.buyPrice ?? 0,
-            buyDate: formData.buyDate || new Date().toISOString().split('T')[0],
-            category: formData.category || 'Misc',
-            status: formData.status || ItemStatus.IN_STOCK,
-            comment1: formData.comment1 || '',
-            comment2: formData.comment2 || '',
-          }}
-          categoryFields={
-            categoryFields[`${formData.category}:${formData.subCategory}`] ||
-            categoryFields[formData.category || '']
-          }
-          onClose={() => setShowProductCardGen(false)}
-          onApplyAsMainPhoto={async (url) => {
-            setFormData((prev) => ({
-              ...prev,
-              imageUrl: url,
-              imageUrls: [url, ...(prev.imageUrls || []).filter((u) => u !== url)],
-            }));
-            setShowProductCardGen(false);
-          }}
-          onAddToItemGallery={async (url) => {
-            setFormData((prev) => {
-              const urls = normalizeImageList([prev.imageUrl, ...(prev.imageUrls || []), url]);
-              return {
-                ...prev,
-                imageUrl: urls[0] || url,
-                imageUrls: urls,
-              };
-            });
-          }}
-        />
-      )}
     </div>
   );
 };

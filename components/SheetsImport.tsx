@@ -6,6 +6,7 @@ import { read, utils } from 'xlsx';
 import { Upload, FileSpreadsheet, CheckCircle2, Info, Loader2, AlertCircle, Eye, HelpCircle, Trash2, AlertTriangle, RefreshCcw, ArrowRight, TrendingUp, Wallet, ListX, Table, Search, Globe, ChevronDown, ChevronUp, FileText, Settings2, Columns } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
 import { LOCAL_HARDWARE_INDEX, CATEGORY_MAP, VENDOR_LIST, CATEGORY_IMAGES } from '../services/hardwareDB';
+import { AddFlowStepHeader } from './addFlowShared';
 
 interface Props {
   onImport: (items: InventoryItem[], replace: boolean) => void;
@@ -374,6 +375,9 @@ const SheetsImport: React.FC<Props> = ({ onImport, onClearData }) => {
 
   return (
     <div className="max-w-[1600px] mx-auto space-y-6 animate-in fade-in duration-500 pb-20">
+      <div className="px-4">
+        <AddFlowStepHeader title="Import CSV" />
+      </div>
       <header className="px-4">
         <h1 className="text-4xl font-black text-slate-900 tracking-tight">Import Data</h1>
         <p className="text-slate-500 font-medium italic">Advanced CSV/Excel Analyzer</p>

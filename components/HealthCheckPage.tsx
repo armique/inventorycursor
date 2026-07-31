@@ -40,7 +40,7 @@ const HealthCheckPage: React.FC = () => {
       id: 'cloud',
       label: 'Firebase cloud sync',
       status: isCloudEnabled() ? 'ok' : 'warn',
-      detail: isCloudEnabled() ? 'Cloud sync enabled.' : 'Local-only mode — enable Firebase in Settings.',
+      detail: isCloudEnabled() ? 'Cloud sync enabled.' : 'Local-only mode — cloud is unavailable in this build.',
     });
 
     list.push({
@@ -141,7 +141,7 @@ const HealthCheckPage: React.FC = () => {
       <div className="grid grid-cols-2 gap-3 text-xs">
         <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center gap-3">
           <Cloud size={20} className="text-indigo-500" />
-          <span>Configure Firebase in Settings → Cloud</span>
+          <span>Sign in via Settings → Account for cloud backup</span>
         </div>
         <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center gap-3">
           <ShoppingBag size={20} className="text-emerald-500" />

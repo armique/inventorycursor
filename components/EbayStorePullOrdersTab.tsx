@@ -359,7 +359,7 @@ const EbayStorePullOrdersTab: React.FC<Props> = ({ items, taxMode, onUpdate }) =
                 orders dedupe by ID.
                 {cloudReady
                   ? ' Signed in — cache mirrors to your account across devices.'
-                  : ' Sign in (Settings → Cloud sync) to save history to your account.'}
+                  : ' Sign in (Settings → Account) to save history to your account.'}
               </p>
               {cloudPullMessage && (
                 <p className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-1.5 inline-block">

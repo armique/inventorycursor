@@ -86,9 +86,8 @@ import ReinvestBundleRecalcModal from './ReinvestBundleRecalcModal';
 import ComposeTypeModal, { type ComposeType } from './ComposeTypeModal';
 import QuickBundleAddModal from './QuickBundleAddModal';
 import SplitPartsModal from './SplitPartsModal';
-import { canSplitItem } from '../utils/splitParts';
+import { canSplitItem, resolveIdenticalLotQty } from '../utils/splitParts';
 import EditItemModal from './EditItemModal';
-import ItemForm from './ItemForm';
 import ItemThumbnail from './ItemThumbnail';
 import InvoiceView from './InvoiceView';
 import InventoryAISpecsPanel from './InventoryAISpecsPanel';
@@ -1595,7 +1594,6 @@ const InventoryList: React.FC<Props> = ({
   }, []);
 
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
-  const [showNewItemModal, setShowNewItemModal] = useState(false);
   const [searchSuggestionsOpen, setSearchSuggestionsOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchSuggestionsRef = useRef<HTMLDivElement>(null);
@@ -3456,9 +3454,31 @@ const InventoryList: React.FC<Props> = ({
               {(item.isPC || item.isBundle) && (
                 <button type="button" onClick={(e) => { e.stopPropagation(); setBundleToDismantle(item); }} className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100`} title="Unbundle / Dismantle"><Unlink size={13} strokeWidth={2.25} /></button>
               )}
-              {canSplitItem(item, (item.isPC || item.isBundle) ? getChildren(item, items).length : 0) && (
-                <button type="button" onClick={(e) => { e.stopPropagation(); setSplitPartsSeed(item); }} className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100`} title="Split into parts or identical copies"><Scissors size={13} strokeWidth={2.25} /></button>
-              )}
+              {canSplitItem(item, (item.isPC || item.isBundle) ? getChildren(item, items).length : 0) && (() => {
+                const lotQty = resolveIdenticalLotQty(item);
+                return (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSplitPartsSeed(item);
+                  }}
+                  className={`${iconBtn} shrink-0 inline-flex items-center justify-center gap-0.5 rounded-lg border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 px-1`}
+                  title={
+                    lotQty != null
+                      ? `Split lot ×${lotQty} into identical items`
+                      : 'Split into parts or identical copies'
+                  }
+                >
+                  <Scissors size={13} strokeWidth={2.25} />
+                  {lotQty != null && (
+                    <span className="text-[9px] font-black tabular-nums leading-none pr-0.5">
+                      ×{lotQty}
+                    </span>
+                  )}
+                </button>
+                );
+              })()}
               {(item.isPC || item.isBundle) && isRealizedDisposal(item) && getChildren(item, items).length > 0 && (
                 <button type="button" onClick={(e) => { e.stopPropagation(); setRecalcTarget(item); }} className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100`} title="Recalculate component sell prices"><Calculator size={13} strokeWidth={2.25} /></button>
               )}
@@ -3915,6 +3935,7 @@ const InventoryList: React.FC<Props> = ({
                    >
                      <ItemAccessoryToggles
                        item={item}
+                       children={isContainerRow ? childItems : undefined}
                        mini={dense}
                        dense={!dense}
                        onPatch={(patch) =>
@@ -5985,12 +6006,14 @@ const InventoryList: React.FC<Props> = ({
                </div>
                <button
                  type="button"
-                 onClick={() => setShowNewItemModal(true)}
-                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-emerald-700 transition-colors"
-                 title="Add new inventory item (opens modal)"
+                 onClick={() => navigate('/panel/add')}
+                 className="group inline-flex flex-col items-center justify-center gap-1 px-2.5 py-1.5 rounded-xl hover:bg-slate-100/80 transition-colors"
+                 title="Add — choose type"
                >
-                 <Plus size={14} />
-                 <span>Add Item</span>
+                 <span className="w-8 h-8 rounded-xl bg-white border border-slate-200 text-slate-700 shadow-[0_1px_0_rgba(15,23,42,0.04)] inline-flex items-center justify-center group-hover:-translate-y-0.5 group-hover:border-slate-300 group-hover:text-slate-900 transition-transform">
+                   <Plus size={14} strokeWidth={1.75} />
+                 </span>
+                 <span className="text-[10px] font-bold text-slate-900 uppercase tracking-wide">Add</span>
                </button>
             </div>
             {hasActiveFilters && (
@@ -6754,39 +6777,6 @@ const InventoryList: React.FC<Props> = ({
           onReset={resetQuickCategoryPins}
           onClose={() => setShowQuickCategoryPicker(false)}
         />
-      )}
-
-      {showNewItemModal && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in">
-          <div className="bg-slate-50 w-full max-w-6xl rounded-3xl shadow-2xl border border-white/20 overflow-hidden flex flex-col h-[min(88vh,820px)] relative">
-            <button
-              onClick={() => setShowNewItemModal(false)}
-              className="absolute top-4 right-4 z-50 p-2 bg-white rounded-full shadow-lg text-slate-400 hover:text-slate-900 hover:scale-110 transition-all"
-            >
-              <X size={18} />
-            </button>
-            <div className="flex-1 overflow-hidden p-4 md:p-5">
-              <ItemForm
-                items={items}
-                onSave={(created) => {
-                  onUpdate(created);
-                  setShowNewItemModal(false);
-                  const first = created[0];
-                  if (first) {
-                    revealItemInList(first);
-                    setCategoryFilter(first.category);
-                    setSubCategoryFilter(first.subCategory ?? '');
-                    setSearchTerm('');
-                  }
-                }}
-                categories={categories}
-                categoryFields={categoryFields}
-                onAddCategory={() => {}}
-                isModal={true}
-              />
-            </div>
-          </div>
-        </div>
       )}
 
       <ComposeTypeModal

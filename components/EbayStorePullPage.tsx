@@ -29,6 +29,7 @@ import { matchesEbayToolSearch } from '../utils/ebayToolSearch';
 import EbayToolProgressBar, { type EbayToolProgress } from './EbayToolProgressBar';
 import EbayToolSearchInput from './EbayToolSearchInput';
 import type { Expense } from '../types';
+import { AddFlowStepHeader } from './addFlowShared';
 
 const EbayStorePullImportTab = lazy(() => import('./EbayStorePullImportTab'));
 const EbayStorePullOrdersTab = lazy(() => import('./EbayStorePullOrdersTab'));
@@ -401,6 +402,7 @@ const EbayStorePullPage: React.FC<Props> = ({
 
   return (
     <div className="flex flex-col flex-1 min-h-0 w-full animate-in fade-in">
+      {tab === 'import' && <AddFlowStepHeader title="eBay import" />}
       <header className="shrink-0 flex flex-wrap items-start justify-between gap-4 px-1">
         <div className="flex items-start gap-3 min-w-0">
           <div className="p-3 rounded-2xl bg-blue-100 text-blue-700 shrink-0">

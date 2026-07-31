@@ -27,6 +27,8 @@ const ThreeDPrintPage = lazy(() => import('./components/ThreeDPrintPage'));
 const ProductCardGalleryPage = lazy(() => import('./components/ProductCardGalleryPage'));
 const BulkImportHistoryPage = lazy(() => import('./components/BulkImportHistoryPage'));
 const EditItemRoute = lazy(() => import('./components/EditItemRoute'));
+const AddHubPage = lazy(() => import('./components/AddHubPage'));
+const AddItemRoute = lazy(() => import('./components/AddItemRoute'));
 const PhonePhotoUploadPage = lazy(() => import('./components/PhonePhotoUploadPage'));
 const FlipCoachPage = lazy(() => import('./components/FlipCoachPage'));
 const SoldPulsePage = lazy(() => import('./components/SoldPulsePage'));
@@ -1334,21 +1336,34 @@ const App: React.FC = () => {
     return () => clearTimeout(t);
   }, [appState, bulkImports]);
 
+  const handleBusinessSettingsChange = useCallback((next: BusinessSettings) => {
+    businessSettingsRef.current = next;
+    setBusinessSettings(next);
+    hasUnsavedChanges.current = true;
+    requestFastCloudFlush();
+    try {
+      localStorage.setItem('business_settings', JSON.stringify(next));
+    } catch {
+      /* ignore quota */
+    }
+  }, [requestFastCloudFlush]);
+
   const handleForcePush = async () => {
     if (!isCloudEnabled() || !authUser) return false;
     setSyncState(prev => ({ ...prev, status: 'syncing', message: SYNC_MSG_UPLOADING }));
+    const snap = getSyncSnapshot();
     const payload = {
-      inventory: items,
-      trash,
-      expenses,
-      recurringExpenses,
-      categories,
-      categoryFields,
-      settings: businessSettings,
-      goals: { monthly: monthlyGoal },
-      dashboard: dashboardPrefs,
-      actionHistory: actionHistory.slice(-ACTION_HISTORY_LIMIT),
-      bulkImports: bulkImports.slice(0, BULK_IMPORTS_LIMIT),
+      inventory: snap.items,
+      trash: snap.trash,
+      expenses: snap.expenses,
+      recurringExpenses: snap.recurringExpenses,
+      categories: snap.categories,
+      categoryFields: snap.categoryFields,
+      settings: snap.businessSettings,
+      goals: { monthly: snap.monthlyGoal },
+      dashboard: snap.dashboardPrefs,
+      actionHistory: snap.actionHistory.slice(-ACTION_HISTORY_LIMIT),
+      bulkImports: snap.bulkImports.slice(0, BULK_IMPORTS_LIMIT),
     };
     try {
       cloudSyncInFlightRef.current = true;
@@ -1357,21 +1372,21 @@ const App: React.FC = () => {
       suppressRemoteApplyUntilRef.current = Date.now() + REMOTE_APPLY_SUPPRESS_MS;
       scheduleBackgroundWork(() =>
         persistSnapshotToLocalStorage({
-          itemsJson: JSON.stringify(items),
-          trashJson: JSON.stringify(trash),
-          expensesJson: JSON.stringify(expenses),
-          settingsJson: JSON.stringify(businessSettings),
-          monthlyGoal: monthlyGoal.toString(),
-          categoriesJson: JSON.stringify(categories),
-          categoryFieldsJson: JSON.stringify(categoryFields),
-          recurringExpensesJson: JSON.stringify(recurringExpenses),
-          dashboardPrefs: dashboardPrefsRef.current,
-          actionHistoryJson: JSON.stringify(actionHistory.slice(-ACTION_HISTORY_LIMIT)),
-          bulkImportsJson: JSON.stringify(bulkImports.slice(0, BULK_IMPORTS_LIMIT)),
+          itemsJson: JSON.stringify(snap.items),
+          trashJson: JSON.stringify(snap.trash),
+          expensesJson: JSON.stringify(snap.expenses),
+          settingsJson: JSON.stringify(snap.businessSettings),
+          monthlyGoal: snap.monthlyGoal.toString(),
+          categoriesJson: JSON.stringify(snap.categories),
+          categoryFieldsJson: JSON.stringify(snap.categoryFields),
+          recurringExpensesJson: JSON.stringify(snap.recurringExpenses),
+          dashboardPrefs: snap.dashboardPrefs,
+          actionHistoryJson: JSON.stringify(snap.actionHistory.slice(-ACTION_HISTORY_LIMIT)),
+          bulkImportsJson: JSON.stringify(snap.bulkImports.slice(0, BULK_IMPORTS_LIMIT)),
         })
       );
       scheduleBackgroundWork(async () => {
-        await writeStoreCatalog(buildStoreCatalog(items, categoryFields)).catch((e) => console.warn('Store catalog update failed', e));
+        await writeStoreCatalog(buildStoreCatalog(snap.items, snap.categoryFields)).catch((e) => console.warn('Store catalog update failed', e));
       });
       setSyncState({ status: 'success', lastSynced: new Date(), message: SYNC_MSG_SYNCED });
       return true;
@@ -2010,7 +2025,7 @@ const App: React.FC = () => {
                 onRestoreBackup={handleRestoreBackup}
                 onFixEncoding={handleFixEncoding}
                 businessSettings={businessSettings}
-                onBusinessSettingsChange={setBusinessSettings}
+                onBusinessSettingsChange={handleBusinessSettingsChange}
                 categories={categories}
                 categoryFields={categoryFields}
                 onUpdateCategoryStructure={handleUpdateCategoryStructure}
@@ -2040,7 +2055,7 @@ const App: React.FC = () => {
               />
             }
           />
-          <Route path="inventory" element={<InventoryList key="inventory-main" items={items} totalCount={items.length} onUpdate={handleUpdate} onDelete={handleDelete} onUndo={handleUndo} onRedo={handleRedo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} pageTitle="Inventory" allowedStatuses={ALL_STATUSES} businessSettings={businessSettings} onBusinessSettingsChange={setBusinessSettings} categories={categories} categoryFields={categoryFields} persistenceKey="inventory_main" onPublishStoreCatalog={publishStoreCatalogNow} bulkImports={bulkImports} onUpdateBulkImport={handleUpdateBulkImport} onDeleteBulkImport={handleDeleteBulkImport} />} />
+          <Route path="inventory" element={<InventoryList key="inventory-main" items={items} totalCount={items.length} onUpdate={handleUpdate} onDelete={handleDelete} onUndo={handleUndo} onRedo={handleRedo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} pageTitle="Inventory" allowedStatuses={ALL_STATUSES} businessSettings={businessSettings} onBusinessSettingsChange={handleBusinessSettingsChange} categories={categories} categoryFields={categoryFields} persistenceKey="inventory_main" onPublishStoreCatalog={publishStoreCatalogNow} bulkImports={bulkImports} onUpdateBulkImport={handleUpdateBulkImport} onDeleteBulkImport={handleDeleteBulkImport} />} />
           <Route path="flip-coach" element={<FlipCoachPage items={items} />} />
           <Route path="sold-pulse" element={<SoldPulsePage items={items} />} />
           <Route path="dealwatch" element={<EstDealwatchPage />} />
@@ -2067,7 +2082,19 @@ const App: React.FC = () => {
               />
             }
           />
-          <Route path="add" element={<ItemForm onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
+          <Route path="add" element={<AddHubPage />} />
+          <Route
+            path="add/item"
+            element={
+              <AddItemRoute
+                onSave={handleUpdate}
+                items={items}
+                categories={categories}
+                onAddCategory={handleAddCategory}
+                categoryFields={categoryFields}
+              />
+            }
+          />
           <Route path="add-bulk" element={<BulkItemForm onSave={handleUpdate} onBulkImportComplete={handleBulkImportComplete} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="edit/:id" element={<EditItemRoute onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="builder" element={<BuilderEntry items={items} onSave={handleUpdate} />} />

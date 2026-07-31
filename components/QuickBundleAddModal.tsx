@@ -9,6 +9,7 @@ import ItemThumbnail from './ItemThumbnail';
 import { itemMatchesBuilderSearch } from '../utils/builderSlotMatch';
 import { todayLocalDateKey } from '../utils/calendarDate';
 import { resplitContainerBuyPrices } from '../utils/containerBuyPriceRecalc';
+import { AddOptionTile } from './addFlowShared';
 
 export type QuickBundleKind = 'bundle' | 'mixed' | 'pc';
 
@@ -443,29 +444,23 @@ const QuickBundleAddModal: React.FC<Props> = ({ seed, items, onClose, onApply })
 
       <div className="px-3 py-2.5 space-y-2.5">
         {!seedIsPc && (
-          <div className="flex flex-wrap gap-1.5">
-            <button
-              type="button"
+          <div className="grid grid-cols-2 gap-1">
+            <AddOptionTile
+              size="sm"
+              label="Bundle"
+              hint="Aufrustkit"
+              icon={<Layers size={18} strokeWidth={1.75} />}
+              selected={kind === 'bundle'}
               onClick={() => setKind('bundle')}
-              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black border transition-colors ${
-                kind === 'bundle'
-                  ? 'bg-violet-600 text-white border-violet-600'
-                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-              }`}
-            >
-              <Layers size={11} /> Bundle
-            </button>
-            <button
-              type="button"
+            />
+            <AddOptionTile
+              size="sm"
+              label="Mixed"
+              hint="Any parts"
+              icon={<Package size={18} strokeWidth={1.75} />}
+              selected={kind === 'mixed'}
               onClick={() => setKind('mixed')}
-              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black border transition-colors ${
-                kind === 'mixed'
-                  ? 'bg-amber-600 text-white border-amber-600'
-                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-              }`}
-            >
-              <Package size={11} /> Mixed Bundle
-            </button>
+            />
           </div>
         )}
 

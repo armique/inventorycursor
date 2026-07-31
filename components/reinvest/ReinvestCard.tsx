@@ -112,7 +112,7 @@ const ReinvestCard: React.FC<Props> = ({
       status: ItemStatus.IN_STOCK,
     };
     onPurchaseConfirmed?.(calc.suggestedMaxBuy ?? 0);
-    navigate('/panel/add', { state: { reinvestPrefill: prefill } });
+    navigate('/panel/add/item', { state: { reinvestPrefill: prefill } });
   };
 
   const notifyHypothesisOpen = () => {

@@ -1,9 +1,9 @@
 import React, { Suspense } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
-  Package, PlusCircle, Settings, RefreshCw, Trash2, CloudUpload, LayoutDashboard,
-  Layers, Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe,
-  Printer, LayoutTemplate, PackageSearch, Monitor, Boxes, ChevronDown, Plus, Images,
+  Package, Settings, RefreshCw, Trash2, CloudUpload, LayoutDashboard,
+  Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe, Layers,
+  Printer, LayoutTemplate, PackageSearch, Boxes, ChevronDown, Plus, Images,
   Target, Activity, CircuitBoard, Radar, Coins, Bot,
 } from 'lucide-react';
 import PanelBreadcrumbs from './PanelBreadcrumbs';
@@ -62,7 +62,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   usePanelKeyboardShortcuts();
   const [signingIn, setSigningIn] = React.useState(false);
   const [emulatorEmail, setEmulatorEmail] = React.useState('abelyanarmen@gmail.com');
-  const [addMenuOpen, setAddMenuOpen] = React.useState(true);
   const [moreNavOpen, setMoreNavOpen] = React.useState(false);
   const unreviewedAiCount = useUnreviewedAiCount();
   const aiSession = useAiSession();
@@ -224,7 +223,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     { to: '/panel/dealwatch', icon: <Radar size={18} />, label: 'Dealwatch' },
     { to: '/panel/reinvest', icon: <Coins size={18} />, label: 'Reinvest' },
     { to: '/panel/combo-lab', icon: <CircuitBoard size={18} />, label: 'Combo Lab' },
-    { to: '/panel/add-bulk', icon: <Layers size={18} />, label: 'Bulk Entry' },
     { to: '/panel/bulk-imports', icon: <History size={18} />, label: 'Bulk imports' },
     { to: '/panel/ebay-store-pull', icon: <PackageSearch size={18} />, label: 'eBay Tools' },
     {
@@ -239,6 +237,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
 
   const moreNav = [
     { to: '/panel/3d-print', icon: <Printer size={16} />, label: '3D Print' },
+    { to: '/panel/add-bulk', icon: <Layers size={16} />, label: 'Bulk entry' },
     { to: '/panel/invoices', icon: <Receipt size={16} />, label: 'Invoices' },
     { to: '/panel/action-history', icon: <History size={16} />, label: 'Action history' },
     { to: '/panel/expenses', icon: <RefreshCw size={16} />, label: 'Expenses' },
@@ -248,12 +247,14 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     { to: '/panel/storefront-configurator', icon: <LayoutTemplate size={16} />, label: 'Storefront config' },
   ];
 
-  const addOptions = [
-    { to: '/panel/add', icon: <PlusCircle size={16} />, label: 'Single item', hint: 'One product' },
-    { to: '/panel/builder?mode=pc', icon: <Monitor size={16} />, label: 'PC Build', hint: 'Slots · no defekt' },
-    { to: '/panel/builder?mode=bundle', icon: <Package size={16} />, label: 'Bundle', hint: 'PC Bundle / Aufrustkit' },
-    { to: '/panel/builder?mode=mixed', icon: <Boxes size={16} />, label: 'Mixed Bundle', hint: 'Any parts · defekt OK' },
-  ];
+  const addHubActive =
+    location.pathname === '/panel/add' ||
+    location.pathname.startsWith('/panel/add/') ||
+    location.pathname.startsWith('/panel/builder') ||
+    location.pathname === '/panel/add-bulk' ||
+    location.pathname === '/panel/3d-print' ||
+    location.pathname === '/panel/import' ||
+    (location.pathname === '/panel/ebay-store-pull' && location.search.includes('tab=import'));
 
   return (
     <div className="flex h-screen h-dvh max-h-dvh bg-slate-50 text-slate-900 font-sans overflow-hidden">
@@ -269,44 +270,20 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
           <GlobalSearch items={items} expenses={expenses} businessSettings={businessSettings} />
         </div>
 
-        {/* ADD MENU — primary create actions */}
+        {/* ADD — opens icon hub (step 1) */}
         <div className="px-4 mb-3">
-          <button
-            type="button"
-            onClick={() => setAddMenuOpen((v) => !v)}
-            className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-black text-xs uppercase tracking-widest transition-colors"
+          <Link
+            to="/panel/add"
+            className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest transition-colors ${
+              addHubActive
+                ? 'bg-white text-slate-900'
+                : 'bg-brand-600 hover:bg-brand-500 text-white'
+            }`}
           >
             <span className="inline-flex items-center gap-2">
-              <Plus size={16} /> Add item
+              <Plus size={16} /> Add
             </span>
-            <ChevronDown size={14} className={`transition-transform ${addMenuOpen ? 'rotate-180' : ''}`} />
-          </button>
-          {addMenuOpen && (
-            <div className="mt-2 rounded-2xl border border-white/10 bg-white/5 p-1.5 space-y-0.5">
-              {addOptions.map((opt) => {
-                const active =
-                  location.pathname + (location.search || '') === opt.to ||
-                  (opt.to.includes('mode=') && location.pathname === '/panel/builder' && location.search.includes(opt.to.split('?')[1] || ''));
-                return (
-                  <Link
-                    key={opt.to}
-                    to={opt.to}
-                    className={`flex items-start gap-2.5 px-3 py-2.5 rounded-xl transition-colors ${
-                      active ? 'bg-white text-slate-900' : 'text-slate-300 hover:bg-white/10 hover:text-white'
-                    }`}
-                  >
-                    <span className={`mt-0.5 ${active ? 'text-brand-600' : 'text-brand-300'}`}>{opt.icon}</span>
-                    <span className="min-w-0">
-                      <span className="block text-sm font-bold leading-tight">{opt.label}</span>
-                      <span className={`block text-[10px] font-semibold ${active ? 'text-slate-500' : 'text-slate-500'}`}>
-                        {opt.hint}
-                      </span>
-                    </span>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
+          </Link>
         </div>
 
         <nav className="flex-1 px-4 space-y-1 overflow-y-auto scrollbar-hide pb-4">
@@ -481,7 +458,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             <Cloud className="shrink-0 mt-0.5 text-amber-600" size={20}/>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-bold">Set up Cloud Backup so your inventory is stored on the web.</p>
-              <button type="button" onClick={() => openSettings('CLOUD')} className="inline-block mt-2 text-xs font-black uppercase tracking-widest text-amber-700 hover:text-amber-900 underline">Settings → Cloud Sync</button>
+              <button type="button" onClick={() => openSettings('CLOUD')} className="inline-block mt-2 text-xs font-black uppercase tracking-widest text-amber-700 hover:text-amber-900 underline">Settings → Account</button>
             </div>
             <button type="button" onClick={onDismissBackupBanner} className="shrink-0 p-1 rounded-lg hover:bg-amber-100 text-amber-600" aria-label="Dismiss">
               <X size={18}/>
@@ -581,7 +558,10 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
                 );
               }
               const { to, icon, label } = item as { to: string; icon: React.ReactNode; label: string };
-              const isActive = location.pathname === to || (to === '/panel/add' && location.pathname.startsWith('/panel/builder'));
+              const isActive =
+                to === '/panel/add'
+                  ? addHubActive
+                  : location.pathname === to;
               return (
                 <Link
                   key={to}

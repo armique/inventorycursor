@@ -4,8 +4,6 @@ export type SettingsTabId =
   | 'BUSINESS'
   | 'EBAY'
   | 'CLOUD'
-  | 'DEPLOY'
-  | 'AI'
   | 'FINANZAMT'
   | 'CATEGORIES'
   | 'SYSTEM';
@@ -26,8 +24,6 @@ function normalizeTab(tab?: string): SettingsTabId | undefined {
   if (
     t === 'BUSINESS' ||
     t === 'CLOUD' ||
-    t === 'DEPLOY' ||
-    t === 'AI' ||
     t === 'FINANZAMT' ||
     t === 'CATEGORIES' ||
     t === 'SYSTEM'

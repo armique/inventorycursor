@@ -8,7 +8,8 @@ import {
   buildSplitApplyItems,
   buildSplitDrafts,
   defaultSplitSelection,
-  detectIdenticalQtyHint,
+  resolveIdenticalLotQty,
+  stripIdenticalQtyFromName,
   type SplitMode,
   type SplitPartDraft,
   type SplitPartPresetId,
@@ -23,7 +24,11 @@ interface Props {
 }
 
 const SplitPartsModal: React.FC<Props> = ({ item, items, onClose, onApply }) => {
-  const qtyHint = useMemo(() => detectIdenticalQtyHint(item.name || ''), [item.name]);
+  const qtyHint = useMemo(() => resolveIdenticalLotQty(item), [item]);
+  const unitName = useMemo(
+    () => stripIdenticalQtyFromName(item.name || '') || item.name || 'Item',
+    [item.name]
+  );
   // Default to identical copies — most multi-buy lots need this; AIO users switch to Different parts.
   const [mode, setMode] = useState<SplitMode>('identical');
   const [identicalQty, setIdenticalQty] = useState(() => qtyHint || 2);
@@ -105,6 +110,11 @@ const SplitPartsModal: React.FC<Props> = ({ item, items, onClose, onApply }) => 
               <p className="text-xs font-semibold text-slate-700 truncate mt-0.5" title={item.name}>
                 {item.name}
               </p>
+              {qtyHint != null && (
+                <p className="text-[11px] font-bold text-violet-700 mt-0.5">
+                  Detected lot ×{qtyHint} → splits into “{unitName}”
+                </p>
+              )}
               <p className="text-[11px] text-slate-500 font-medium mt-0.5">
                 Buy €{formatEUR(totalBuy)}
                 {mode === 'identical' && perItem != null
@@ -152,8 +162,9 @@ const SplitPartsModal: React.FC<Props> = ({ item, items, onClose, onApply }) => 
           {mode === 'identical' ? (
             <div className="space-y-3">
               <p className="text-[11px] text-slate-500 font-medium">
-                Split a multi-buy lot into separate rows with the same name. Buy cost is divided equally
-                (e.g. 8× SSD for €200 → 8 items at €25).
+                {qtyHint != null
+                  ? `This looks like a ×${qtyHint} lot (“${unitName}”). Confirm quantity, then split into separate rows with equal buy cost.`
+                  : 'Split a multi-buy lot into separate rows with the same name. Buy cost is divided equally (e.g. x8/SSD for €200 → 8 items at €25).'}
               </p>
               <div className="rounded-xl border border-violet-200 bg-violet-50/50 px-3 py-3 flex items-center justify-between gap-3">
                 <div>

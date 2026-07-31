@@ -11,6 +11,7 @@ import {
 } from '../utils/suggestEqualSplitSoldGroups';
 import { isRealizedDisposal } from '../utils/itemDisposition';
 import { toLocalCalendarDateKey } from '../utils/calendarDate';
+import { AddOptionTile } from './addFlowShared';
 
 type DraftGroup = {
   id: string;
@@ -234,20 +235,30 @@ const SoldEqualSplitGroupsModal: React.FC<Props> = ({ items, onApply, onClose, o
               {active && (
                 <>
                   <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 min-h-0">
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 gap-1">
                       {(
                         [
                           {
                             id: 'bundle' as const,
-                            label: 'Bundle / Aufrustkit',
-                            icon: <Package size={16} />,
+                            label: 'Bundle',
+                            hint: 'Aufrustkit',
+                            icon: <Package size={20} strokeWidth={1.75} />,
                           },
-                          { id: 'pc' as const, label: 'Gaming PC', icon: <Monitor size={16} /> },
+                          {
+                            id: 'pc' as const,
+                            label: 'PC Build',
+                            hint: 'Gaming PC',
+                            icon: <Monitor size={20} strokeWidth={1.75} />,
+                          },
                         ] as const
                       ).map((opt) => (
-                        <button
+                        <AddOptionTile
                           key={opt.id}
-                          type="button"
+                          size="sm"
+                          label={opt.label}
+                          hint={opt.hint}
+                          icon={opt.icon}
+                          selected={active.kind === opt.id}
                           onClick={() => {
                             const parts = active.itemIds
                               .map((id) => byId.get(id))
@@ -259,15 +270,7 @@ const SoldEqualSplitGroupsModal: React.FC<Props> = ({ items, onApply, onClose, o
                                 : buildContainerTitle(opt.id, parts),
                             });
                           }}
-                          className={`inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-[12px] font-bold ${
-                            active.kind === opt.id
-                              ? 'border-indigo-300 bg-indigo-50 text-indigo-800'
-                              : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
-                          }`}
-                        >
-                          {opt.icon}
-                          {opt.label}
-                        </button>
+                        />
                       ))}
                     </div>
 

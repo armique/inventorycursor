@@ -48,6 +48,7 @@ import {
 } from '../utils/imageImport';
 import ReorderablePhotoThumbs from './ReorderablePhotoThumbs';
 import ItemAccessoryToggles from './ItemAccessoryToggles';
+import { listingAccessoriesReady } from '../utils/itemAccessoryToggles';
 import {
   fetchProductCardProviders,
   type ProductCardProviderId,
@@ -307,27 +308,23 @@ const ListingStudioModal: React.FC<Props> = ({
   const categoryOptions = Object.keys(categories);
   const subCategoryOptions = categories[category] || [];
 
-  /** Buyer-facing listing hints only (not used by product-card image GEN). */
+  const containerChildren = useMemo(
+    () => (allItems?.length ? getChildren(item, allItems) : []),
+    [allItems, item]
+  );
+
+  /** Optional receipt roll-up; OVP/IO stay tri-state on the working item. */
   const listingAccessories = useMemo(() => {
-    let hasOVP = item.hasOVP === true;
-    let hasIOShield = item.hasIOShield === true;
     let hasReceipt = item.hasReceipt === true;
-    const isContainer =
-      item.isPC ||
-      item.isBundle ||
-      item.category === 'PC' ||
-      item.category === 'Bundle' ||
-      item.category === 'Mixed Bundle' ||
-      (item.componentIds?.length ?? 0) > 0;
-    if (isContainer && allItems?.length) {
-      for (const child of getChildren(item, allItems)) {
-        if (child.hasOVP === true) hasOVP = true;
-        if (child.hasReceipt === true) hasReceipt = true;
-        // IO only for motherboard listings — never lift child IO onto GPU/PC text.
-      }
+    for (const child of containerChildren) {
+      if (child.hasReceipt === true) hasReceipt = true;
     }
-    return { hasOVP, hasIOShield, hasReceipt };
-  }, [item, allItems]);
+    return {
+      hasOVP: workingItem.hasOVP,
+      hasIOShield: workingItem.hasIOShield,
+      hasReceipt,
+    };
+  }, [item.hasReceipt, containerChildren, workingItem.hasOVP, workingItem.hasIOShield]);
 
   const reloadGallery = useCallback(async () => {
     setGalleryLoading(true);
@@ -555,18 +552,16 @@ const ListingStudioModal: React.FC<Props> = ({
     setGenListing(true);
     setError(null);
     try {
-      const result = await generateMarketplaceListing(
-        {
-          ...workingItem,
-          hasOVP: listingAccessories.hasOVP,
-          hasIOShield: listingAccessories.hasIOShield,
-          hasReceipt: listingAccessories.hasReceipt,
-        },
-        {
-          ...listingAccessories,
-          aiDescriptionNote: aiDescriptionNote.trim() || undefined,
-        }
-      );
+      const gate = listingAccessoriesReady(workingItem, containerChildren);
+      if (!gate.ok) {
+        throw new Error(gate.reason || 'Confirm OVP / IO Blende first.');
+      }
+      const result = await generateMarketplaceListing(workingItem, {
+        hasOVP: listingAccessories.hasOVP,
+        hasIOShield: listingAccessories.hasIOShield,
+        hasReceipt: listingAccessories.hasReceipt || undefined,
+        aiDescriptionNote: aiDescriptionNote.trim() || undefined,
+      });
       setTitle(result.ebayTitle);
       setDescription(result.listingText);
     } catch (e) {
@@ -1024,13 +1019,11 @@ const ListingStudioModal: React.FC<Props> = ({
               />
               <div className="mt-1 flex items-center gap-1.5">
                 <ItemAccessoryToggles
-                  item={item}
+                  item={workingItem}
+                  children={containerChildren}
                   mini
                   onPatch={(patch) => void persistPatch(patch)}
                 />
-                <span className="hidden sm:inline text-[9px] text-slate-400 font-medium truncate">
-                  OVP / Rechnung / IO → AI listing hints
-                </span>
               </div>
             </section>
 

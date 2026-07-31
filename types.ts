@@ -342,9 +342,9 @@ export interface InventoryItem extends AiAttribution, SourceLinks {
   /** Stock quantity for store (undefined = 1). When 0, show "Out of stock" on store. */
   quantity?: number;
 
-  /** Original packaging (OVP) – feeds AI listing description as a buyer-facing condition hint. */
+  /** Original packaging (OVP) — tri-state: true present, false missing, undefined not set. Feeds AI listing + cards. */
   hasOVP?: boolean;
-  /** IO Shield included (for motherboards/bundles) – feeds AI listing description as a buyer-facing hint. */
+  /** IO Shield — same tri-state; only relevant for motherboards / bundles with a motherboard. */
   hasIOShield?: boolean;
   /**
    * Short seller note for AI listing generation only (not shown publicly as-is).

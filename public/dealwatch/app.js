@@ -2162,21 +2162,35 @@ async function api(path, options = {}) {
   const url = typeof path === 'string' && path.startsWith('/api/') && !path.startsWith('/api/dealwatch')
     ? `/api/dealwatch${path.slice(4)}`
     : path;
-  const response = await fetch(url, {
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-    ...options,
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const raw = data && data.error;
-    const message = typeof raw === 'string'
-      ? raw
-      : raw && typeof raw.message === 'string'
-        ? raw.message
-        : `Request failed (${response.status})`;
-    throw new Error(message);
+  const { timeoutMs: customTimeout, signal: userSignal, headers, ...rest } = options;
+  const controller = new AbortController();
+  const timeoutMs = Number(customTimeout) > 0 ? Number(customTimeout) : 90000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      headers: { 'Content-Type': 'application/json', ...(headers || {}) },
+      ...rest,
+      signal: userSignal || controller.signal,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const raw = data && data.error;
+      const message = typeof raw === 'string'
+        ? raw
+        : raw && typeof raw.message === 'string'
+          ? raw.message
+          : `Request failed (${response.status})`;
+      throw new Error(message);
+    }
+    return data;
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('Search timed out. eBay may be rate-limiting — wait a minute and try again.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
   }
-  return data;
 }
 
 async function flushAutoSaveIfNeeded() {

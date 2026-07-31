@@ -5,7 +5,7 @@ import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { 
   Cpu, Monitor, HardDrive, Zap, Box, Wind, 
   Save, ArrowLeft, Plus, X, Search, CheckCircle2,
-  AlertTriangle, Hammer, Info, Lock
+  AlertTriangle, Hammer, Info, Lock, Boxes, Package
 } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
 import { estimatePCPerformance, PerformanceEstimate } from '../services/geminiService';
@@ -23,6 +23,7 @@ import {
 } from '../utils/builderSlotMatch';
 import { buildContainerTitle, ensureBundleTitleTag } from '../utils/buildTitle';
 import { todayLocalDateKey } from '../utils/calendarDate';
+import { AddOptionTile, AddFlowPageHeader, AddFlowBuilderModeSwitch, AddFlowTotalBadge, AddFlowSaveButton, AddFlowSecondaryButton, ADD_FLOW_PANEL, ADD_FLOW_LABEL, ADD_FLOW_INPUT } from './addFlowShared';
 
 interface Props {
   items: InventoryItem[];
@@ -455,14 +456,14 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave, buildKind = 'pc' }) =
       <div
         key={slot.id}
         onClick={() => { setSelectedSlot(slot.id); setSearchQuery(''); }}
-        className={`${compact ? 'p-4 rounded-xl' : 'p-4 rounded-[2rem]'} border-2 cursor-pointer transition-all ${
+        className={`${compact ? 'p-4 rounded-xl' : 'p-4 rounded-2xl'} border cursor-pointer transition-all ${
           selectedSlot === slot.id
-            ? 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-200'
-            : 'bg-white border-slate-100 hover:border-indigo-200'
+            ? 'bg-slate-100/90 border-slate-900 ring-1 ring-slate-900/10'
+            : 'bg-white border-slate-200 hover:border-slate-300'
         }`}
       >
         <div className="flex items-center gap-2 mb-1">
-          <div className={`${compact ? 'p-1.5 rounded-lg' : 'p-2 rounded-xl'} ${hasItems ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-50 text-slate-400'}`}>
+          <div className={`${compact ? 'p-1.5 rounded-xl' : 'p-2 rounded-2xl'} border ${hasItems ? 'bg-white border-slate-900 text-slate-900' : 'bg-white border-slate-200 text-slate-400'}`}>
             {React.cloneElement(slot.icon as React.ReactElement<{ size?: number }>, {
               size: compact ? 23 : 20,
             })}
@@ -523,7 +524,7 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave, buildKind = 'pc' }) =
     }
 
     return (
-      <div className={`flex-1 bg-white border border-slate-200 shadow-sm flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 ${compact ? 'rounded-xl' : 'rounded-[2.5rem] shadow-lg'}`}>
+      <div className={`flex-1 ${ADD_FLOW_PANEL} flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 ${compact ? '!rounded-xl' : ''}`}>
         <div className={`${compact ? 'p-5' : 'p-6'} border-b border-slate-100 bg-slate-50/50 flex justify-between items-center gap-2`}>
           <div className="min-w-0">
             <h3 className={`font-black text-slate-900 truncate ${compact ? 'text-lg' : 'text-xl'}`}>
@@ -569,10 +570,10 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave, buildKind = 'pc' }) =
                     key={item.id}
                     onClick={() => togglePart(item)}
                     title={isSelected ? 'Click to remove from build' : 'Click to add to build'}
-                    className={`flex items-center gap-3 ${compact ? 'p-3 rounded-xl' : 'p-4 rounded-2xl'} border-2 transition-all cursor-pointer ${
+                    className={`flex items-center gap-3 ${compact ? 'p-3 rounded-xl' : 'p-4 rounded-2xl'} border transition-all cursor-pointer ${
                       isSelected
-                        ? 'bg-blue-50 border-blue-500 shadow-sm'
-                        : 'bg-white border-slate-100 hover:border-blue-200'
+                        ? 'bg-slate-100 border-slate-900 shadow-sm'
+                        : 'bg-white border-slate-200 hover:border-slate-300'
                     }`}
                   >
                     <ItemThumbnail item={item} className={`${compact ? 'w-14 h-14' : 'w-12 h-12'} rounded-lg object-cover bg-slate-100 shrink-0`} size={compact ? 53 : 48} useCategoryImage />
@@ -685,48 +686,18 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave, buildKind = 'pc' }) =
 
   const headerActions = (
     <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-      {!isCompactEdit && (
-        <button
-          type="button"
-          onClick={() => navigate('/panel/builder?mode=mixed')}
-          className="px-3 py-1.5 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-[10px] font-black uppercase tracking-widest hover:bg-amber-100"
-          title="Open Mixed Bundle (defective parts allowed)"
-        >
-          Mixed Bundle →
-        </button>
-      )}
-      <div className={`text-right ${isCompactEdit ? 'px-5 py-2.5 rounded-xl' : 'px-6 py-2 rounded-2xl shadow-lg'} bg-slate-900 text-white`}>
-        <p className="text-xs font-black uppercase tracking-widest text-slate-400">Total</p>
-        <p className={`font-black ${isCompactEdit ? 'text-2xl' : 'text-2xl'}`}>€{formatEUR(currentTotal)}</p>
-      </div>
+      <AddFlowTotalBadge value={`€${formatEUR(currentTotal)}`} />
       {!isCompactEdit && (
         <>
-          <button
-            type="button"
-            onClick={clearAllSlots}
-            disabled={selectedPartsCount === 0}
-            className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 text-xs font-black uppercase tracking-widest hover:bg-slate-50 disabled:opacity-50"
-          >
+          <AddFlowSecondaryButton onClick={clearAllSlots} disabled={selectedPartsCount === 0}>
             Clear all
-          </button>
-          <button
-            type="button"
-            onClick={handleRunEstimate}
-            disabled={estimating || !canRunEstimate}
-            className="px-4 py-2.5 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700 text-xs font-black uppercase tracking-widest hover:bg-indigo-100 disabled:opacity-50"
-          >
+          </AddFlowSecondaryButton>
+          <AddFlowSecondaryButton onClick={handleRunEstimate} disabled={estimating || !canRunEstimate}>
             {estimating ? 'Analyzing…' : 'Run AI check'}
-          </button>
+          </AddFlowSecondaryButton>
         </>
       )}
-      <button
-        onClick={handleSave}
-        className={`flex items-center gap-2 bg-blue-600 text-white rounded-xl font-black uppercase tracking-widest hover:bg-blue-700 transition-all ${
-          isCompactEdit ? 'px-6 py-3 text-sm' : 'px-6 py-3 rounded-xl shadow-lg text-xs'
-        }`}
-      >
-        <Save size={18}/> Save Build
-      </button>
+      <AddFlowSaveButton onClick={handleSave} label="Save build" />
     </div>
   );
 
@@ -806,50 +777,45 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave, buildKind = 'pc' }) =
 
   return (
     <div className="w-full h-[calc(100vh-88px)] flex flex-col animate-in fade-in px-4 pb-4">
-       {/* HEADER */}
-       <header className="shrink-0 rounded-2xl border border-slate-200 bg-white px-4 py-3 mb-4">
-         <div className="flex flex-wrap justify-between items-center gap-3">
-          <div className="flex items-center gap-4 min-w-0">
-             <button onClick={() => navigate(-1)} className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-400 hover:text-slate-900 transition-all"><ArrowLeft size={22}/></button>
-             <div>
-                <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-                  {editId
-                    ? isBundleKind
-                      ? 'Edit Bundle'
-                      : 'Edit PC Build'
-                    : isBundleKind
-                      ? 'Bundle / Aufrustkit'
-                      : 'PC Builder'}
-                </h1>
-                <p className="text-sm text-slate-500 font-bold">
-                  Slots + compatibility · no defective · Mixed Bundle for defekt parts
-                </p>
-             </div>
-          </div>
-          <div className="flex items-center gap-4 flex-wrap">
+       <AddFlowPageHeader
+         icon={isBundleKind ? <Package size={22} strokeWidth={1.75} /> : <Monitor size={22} strokeWidth={1.75} />}
+         title={
+           editId
+             ? isBundleKind
+               ? 'Edit Bundle'
+               : 'Edit PC Build'
+             : isBundleKind
+               ? 'Bundle'
+               : 'PC Build'
+         }
+         subtitle="Slots + compatibility · no defective parts"
+         onBack={() => navigate(-1)}
+         actions={
+           <>
              <div className="hidden lg:flex items-center gap-2">
-               <span className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-black">
+               <span className="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 text-[10px] font-black uppercase tracking-wider">
                  Parts {selectedPartsCount}
                </span>
-               <span className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-black">
+               <span className="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 text-[10px] font-black uppercase tracking-wider">
                  Required {requiredSlotsFilled}/{requiredSlotCount}
                </span>
              </div>
              {headerActions}
-          </div>
-         </div>
-       </header>
+           </>
+         }
+         below={!editId ? <AddFlowBuilderModeSwitch active={isBundleKind ? 'bundle' : 'pc'} /> : undefined}
+       />
 
        <div className="flex flex-1 gap-4 overflow-hidden min-h-0">
           
           {/* LEFT: SLOTS */}
           <div className="w-[360px] xl:w-[390px] flex flex-col gap-3 shrink-0 overflow-y-auto pb-6 scrollbar-hide">
-             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-2">
-                <label className="text-[10px] font-black uppercase text-slate-400 ml-2 tracking-widest">
+             <div className={`${ADD_FLOW_PANEL} p-4 space-y-2`}>
+                <label className={ADD_FLOW_LABEL}>
                   {isBundleKind ? 'Bundle name' : 'Build name'}
                 </label>
                 <input 
-                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-black text-base outline-none focus:ring-2 focus:ring-slate-100 transition-all"
+                   className={ADD_FLOW_INPUT + ' font-black text-base'}
                    value={buildName}
                    onChange={e => {
                      userEditedNameRef.current = true;
@@ -857,35 +823,35 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave, buildKind = 'pc' }) =
                    }}
                    placeholder={isBundleKind ? 'PC Bundle · …' : 'PC · …'}
                 />
-                <p className="text-[10px] text-slate-400 font-bold px-1">
+                <p className="text-[10px] text-slate-400 font-semibold px-1">
                   Auto: CPU · GPU · RAM · DDR/MHz · M.2/SSD · AIO/Air (max 65 for eBay/KA)
                 </p>
                 {isBundleKind && (
-                  <div className="flex gap-2 pt-1">
-                    <button
-                      type="button"
+                  <div className="grid grid-cols-2 gap-1 pt-1">
+                    <AddOptionTile
+                      size="sm"
+                      label="PC Bundle"
+                      hint="Standard"
+                      icon={<Package size={16} strokeWidth={1.75} />}
+                      selected={!preferAufrustkit}
                       onClick={() => {
                         setPreferAufrustkit(false);
                         userEditedNameRef.current = false;
                       }}
-                      className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase ${
-                        !preferAufrustkit ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-600'
-                      }`}
-                    >
-                      PC Bundle
-                    </button>
-                    <button
-                      type="button"
+                      className="!py-2"
+                    />
+                    <AddOptionTile
+                      size="sm"
+                      label="Aufrustkit"
+                      hint="Upgrade kit"
+                      icon={<Boxes size={16} strokeWidth={1.75} />}
+                      selected={preferAufrustkit}
                       onClick={() => {
                         setPreferAufrustkit(true);
                         userEditedNameRef.current = false;
                       }}
-                      className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase ${
-                        preferAufrustkit ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-600'
-                      }`}
-                    >
-                      Aufrustkit
-                    </button>
+                      className="!py-2"
+                    />
                   </div>
                 )}
              </div>
@@ -902,9 +868,9 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave, buildKind = 'pc' }) =
 
           {/* RIGHT: AI ANALYSIS */}
           <div className="w-[300px] xl:w-[330px] flex flex-col gap-4 shrink-0">
-             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm h-full flex flex-col">
-                <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2">
-                   <AlertTriangle size={14}/> Performance Check
+             <div className={`${ADD_FLOW_PANEL} p-4 h-full flex flex-col`}>
+                <h3 className={`${ADD_FLOW_LABEL} mb-4 flex items-center gap-2`}>
+                   <AlertTriangle size={14}/> Performance check
                 </h3>
                 
                 {performance ? (

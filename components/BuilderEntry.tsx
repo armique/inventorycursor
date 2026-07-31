@@ -4,10 +4,21 @@ import { InventoryItem } from '../types';
 import PCBuilderWizard from './PCBuilderWizard';
 import LotBundleBuilder from './LotBundleBuilder';
 import { isMixedBundleContainer } from '../utils/containerTaxonomy';
+import { AddFlowStepHeader } from './addFlowShared';
 
 interface Props {
   items: InventoryItem[];
   onSave: (items: InventoryItem[]) => void;
+}
+
+function withAddChrome(title: string, node: React.ReactNode, showChrome: boolean) {
+  if (!showChrome) return <>{node}</>;
+  return (
+    <div>
+      <AddFlowStepHeader title={title} />
+      {node}
+    </div>
+  );
 }
 
 /**
@@ -21,6 +32,7 @@ const BuilderEntry: React.FC<Props> = ({ items, onSave }) => {
   const editId = searchParams.get('editId');
   const mode = (searchParams.get('mode') || '').toLowerCase();
   const editing = editId ? items.find((i) => i.id === editId) : undefined;
+  const fromAddHub = !editing;
 
   if (editing) {
     if (editing.isPC || editing.category === 'PC') {
@@ -35,12 +47,20 @@ const BuilderEntry: React.FC<Props> = ({ items, onSave }) => {
   }
 
   if (mode === 'mixed' || mode === 'lot') {
-    return <LotBundleBuilder items={items} onSave={onSave} />;
+    return withAddChrome('Mixed Bundle', <LotBundleBuilder items={items} onSave={onSave} />, fromAddHub);
   }
   if (mode === 'bundle') {
-    return <PCBuilderWizard items={items} onSave={onSave} buildKind="bundle" />;
+    return withAddChrome(
+      'Bundle',
+      <PCBuilderWizard items={items} onSave={onSave} buildKind="bundle" />,
+      fromAddHub
+    );
   }
-  return <PCBuilderWizard items={items} onSave={onSave} buildKind="pc" />;
+  return withAddChrome(
+    'PC Build',
+    <PCBuilderWizard items={items} onSave={onSave} buildKind="pc" />,
+    fromAddHub
+  );
 };
 
 export default BuilderEntry;

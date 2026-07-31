@@ -260,7 +260,7 @@ export async function bulkArchiveInventoryPhotos(
   result: PhotoArchiveResult;
 }> {
   if (!canUploadToCloud()) {
-    throw new Error('Sign in with Google and configure Firebase to archive photos to Storage.');
+    throw new Error('Sign in with Google to archive photos to Storage.');
   }
 
   const trash = options?.trash ?? [];

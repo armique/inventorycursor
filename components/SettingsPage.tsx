@@ -1,17 +1,16 @@
-﻿import React, { useState, useEffect, useCallback, useMemo } from 'react';
+﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { 
-  Cloud, Building2, Layers, Wrench, ShoppingBag, Sparkles, Shield,
-  CheckCircle2, AlertTriangle, ArrowUp, RefreshCw, Save, LogIn, LogOut, User as UserIcon, Download, Upload, FileText, Github, History, ArchiveRestore, Rocket, Copy, ExternalLink, Plus, FolderPlus, FileSpreadsheet, Images, Loader2, X
+  Cloud, Building2, Layers, Wrench, ShoppingBag, Shield,
+  CheckCircle2, AlertTriangle, ArrowUp, RefreshCw, Save, LogIn, LogOut, User as UserIcon, Download, Upload, FileText, Github, History, ArchiveRestore, Copy, ExternalLink, Plus, FolderPlus, FileSpreadsheet, Images, Loader2, X
 } from 'lucide-react';
 import { fixItemsEncoding } from '../services/encodingFix';
 import { InventoryItem, BusinessSettings, Expense, ItemStatus, DashboardPreferences, ActionHistoryEntry, BulkImportRecord } from '../types';
-import { loadAISettings, saveAISettings, type AISettings, type AIModelTier } from '../services/aiSettings';
 import { buildElsterChecklist } from '../services/elsterChecklist';
 import { buildSteuerberaterBundle, downloadSteuerberaterBundle } from '../services/steuerberaterExport';
 import { buildGdprExportBlob, downloadGdprExport } from '../services/gdprExport';
 import { encryptBackupJson } from '../services/encryptedBackup';
-import { isCloudEnabled, saveFirebaseConfig, getFirebaseConfig, signInWithGoogle, logOut, onAuthChange, getAuthErrorMessage } from '../services/firebaseService';
+import { isCloudEnabled, getFirebaseConfig, signInWithGoogle, logOut, onAuthChange, getAuthErrorMessage } from '../services/firebaseService';
 import {
   analyzeInventoryPhotoArchive,
   archiveSinglePhotoUrl,
@@ -99,13 +98,30 @@ interface Props {
 const SETTINGS_TABS = [
   { id: 'BUSINESS', label: 'Business', icon: <Building2 size={18}/> },
   { id: 'EBAY', label: 'Listings sync', icon: <ShoppingBag size={18}/> },
-  { id: 'CLOUD', label: 'Cloud Sync', icon: <Cloud size={18}/> },
-  { id: 'AI', label: 'AI', icon: <Sparkles size={18}/> },
+  { id: 'CLOUD', label: 'Account', icon: <Cloud size={18}/> },
   { id: 'FINANZAMT', label: 'Finanzamt', icon: <FileSpreadsheet size={18}/> },
-  { id: 'DEPLOY', label: 'Deploy to Vercel', icon: <Rocket size={18}/> },
   { id: 'CATEGORIES', label: 'Categories', icon: <Layers size={18}/> },
   { id: 'SYSTEM', label: 'System', icon: <Wrench size={18}/> },
 ] as const;
+
+type BusinessProfileDraft = Pick<
+  BusinessSettings,
+  'companyName' | 'ownerName' | 'address' | 'phone' | 'taxId' | 'vatId' | 'iban' | 'bic' | 'bankName'
+>;
+
+function businessProfileFromSettings(s: BusinessSettings): BusinessProfileDraft {
+  return {
+    companyName: s.companyName || '',
+    ownerName: s.ownerName || '',
+    address: s.address || '',
+    phone: s.phone || '',
+    taxId: s.taxId || '',
+    vatId: s.vatId || '',
+    iban: s.iban || '',
+    bic: s.bic || '',
+    bankName: s.bankName || '',
+  };
+}
 
 const getEbayConfig = () => {
   try {
@@ -177,10 +193,14 @@ const SettingsPage: React.FC<Props> = ({
       ? 'EBAY'
       : (SETTINGS_TABS.find((t) => t.id === preferredTab)?.id ?? 'BUSINESS');
   const [activeTab, setActiveTab] = useState<typeof SETTINGS_TABS[number]['id']>(initialTab);
-  const [aiSettings, setAiSettings] = useState<AISettings>(() => loadAISettings());
+  const [businessDraft, setBusinessDraft] = useState<BusinessProfileDraft>(() =>
+    businessProfileFromSettings(businessSettings)
+  );
+  const [businessDraftDirty, setBusinessDraftDirty] = useState(false);
+  const pendingBusinessSaveFp = useRef<string | null>(null);
+  const [isSavingBusiness, setIsSavingBusiness] = useState(false);
   const [backupEncrypt, setBackupEncrypt] = useState(false);
   const [backupPassphrase, setBackupPassphrase] = useState('');
-  const [firebaseConfig, setFirebaseConfig] = useState(getFirebaseConfig() || { apiKey: '', authDomain: '', projectId: '' });
   const [user, setUser] = useState<any>(null);
   const [isPushing, setIsPushing] = useState(false);
   const [isSigningInPopup, setIsSigningInPopup] = useState(false);
@@ -229,6 +249,63 @@ const SettingsPage: React.FC<Props> = ({
       setKaProfileUrl(businessSettings.kleinanzeigenProfileUrl);
     }
   }, [businessSettings.ebaySellerUsername, businessSettings.kleinanzeigenProfileUrl]);
+
+  // Keep Business draft in sync with cloud/other devices unless the user is mid-edit
+  // or we just saved and parent props have not caught up yet.
+  useEffect(() => {
+    const incoming = businessProfileFromSettings(businessSettings);
+    const fp = JSON.stringify(incoming);
+    if (pendingBusinessSaveFp.current) {
+      if (fp === pendingBusinessSaveFp.current) pendingBusinessSaveFp.current = null;
+      else return;
+    }
+    if (businessDraftDirty) return;
+    setBusinessDraft(incoming);
+  }, [businessSettings, businessDraftDirty]);
+
+  const updateBusinessDraft = (patch: Partial<BusinessProfileDraft>) => {
+    setBusinessDraftDirty(true);
+    setBusinessDraft((prev) => ({ ...prev, ...patch }));
+  };
+
+  const handleSaveBusinessProfile = async () => {
+    const next: BusinessSettings = {
+      ...businessSettings,
+      companyName: businessDraft.companyName.trim(),
+      ownerName: businessDraft.ownerName.trim(),
+      address: businessDraft.address.trim(),
+      phone: businessDraft.phone.trim(),
+      taxId: businessDraft.taxId.trim(),
+      vatId: (businessDraft.vatId || '').trim() || undefined,
+      iban: businessDraft.iban.trim(),
+      bic: businessDraft.bic.trim(),
+      bankName: businessDraft.bankName.trim(),
+    };
+    const profile = businessProfileFromSettings(next);
+    setIsSavingBusiness(true);
+    try {
+      pendingBusinessSaveFp.current = JSON.stringify(profile);
+      onBusinessSettingsChange(next);
+      setBusinessDraft(profile);
+      setBusinessDraftDirty(false);
+      if (onForcePush && isCloudEnabled() && user) {
+        await onForcePush();
+        showToast('Business profile saved & synced', 'success');
+      } else {
+        showToast(
+          isCloudEnabled() && !user
+            ? 'Business profile saved on this device — sign in to sync across devices'
+            : 'Business profile saved',
+          'success'
+        );
+      }
+    } catch {
+      pendingBusinessSaveFp.current = null;
+      showToast('Failed to save business profile', 'error');
+    } finally {
+      setIsSavingBusiness(false);
+    }
+  };
   const [kaTitlesPaste, setKaTitlesPaste] = useState('');
   const [listingPresenceBusy, setListingPresenceBusy] = useState(false);
   const [listingPresenceMsg, setListingPresenceMsg] = useState<string | null>(null);
@@ -322,7 +399,7 @@ const SettingsPage: React.FC<Props> = ({
 
   const handleBulkArchivePhotos = async () => {
     if (!canArchivePhotosToCloud()) {
-      showToast('Sign in with Google and save Firebase config first.', 'error');
+      showToast('Sign in with Google first.', 'error');
       return;
     }
     if (photoArchiveAnalysis.uniquePhotosToArchive === 0) {
@@ -380,14 +457,6 @@ const SettingsPage: React.FC<Props> = ({
     } finally {
       setRetryingPhotoUrl(null);
     }
-  };
-
-  const handleSaveFirebase = () => {
-    if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
-      showToast("Missing API Key or Project ID", "error");
-      return;
-    }
-    saveFirebaseConfig(firebaseConfig);
   };
 
   const handleSignInPopup = async () => {
@@ -896,11 +965,35 @@ const SettingsPage: React.FC<Props> = ({
           {activeTab === 'BUSINESS' && (
              <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
                 <h3 className="text-xl font-black text-slate-900">Business Profile</h3>
+                <p className="text-sm text-slate-500">
+                   Used on invoices and exports. Click Save to store locally and sync to all signed-in devices.
+                </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                   <InputField label="Company Name" value={businessSettings.companyName} onChange={v => onBusinessSettingsChange({...businessSettings, companyName: v})} placeholder="My Company" />
-                   <InputField label="Owner Name" value={businessSettings.ownerName} onChange={v => onBusinessSettingsChange({...businessSettings, ownerName: v})} placeholder="John Doe" />
-                   <InputField label="Address" value={businessSettings.address} onChange={v => onBusinessSettingsChange({...businessSettings, address: v})} placeholder="123 Street, City" />
-                   <InputField label="Phone" value={businessSettings.phone} onChange={v => onBusinessSettingsChange({...businessSettings, phone: v})} placeholder="+1 234 567" />
+                   <InputField label="Company Name" value={businessDraft.companyName} onChange={v => updateBusinessDraft({ companyName: v })} placeholder="My Company" />
+                   <InputField label="Owner Name" value={businessDraft.ownerName} onChange={v => updateBusinessDraft({ ownerName: v })} placeholder="John Doe" />
+                   <InputField label="Address" value={businessDraft.address} onChange={v => updateBusinessDraft({ address: v })} placeholder="123 Street, City" />
+                   <InputField label="Phone" value={businessDraft.phone} onChange={v => updateBusinessDraft({ phone: v })} placeholder="+1 234 567" />
+                   <InputField label="Tax ID (St-Nr)" value={businessDraft.taxId} onChange={v => updateBusinessDraft({ taxId: v })} placeholder="12/345/67890" />
+                   <InputField label="VAT ID (USt-IdNr)" value={businessDraft.vatId || ''} onChange={v => updateBusinessDraft({ vatId: v })} placeholder="DE123456789" />
+                   <InputField label="Bank Name" value={businessDraft.bankName} onChange={v => updateBusinessDraft({ bankName: v })} placeholder="Bank name" />
+                   <InputField label="IBAN" value={businessDraft.iban} onChange={v => updateBusinessDraft({ iban: v })} placeholder="DE89…" />
+                   <InputField label="BIC" value={businessDraft.bic} onChange={v => updateBusinessDraft({ bic: v })} placeholder="COBADEFFXXX" />
+                </div>
+                <div className="flex flex-wrap items-center gap-3 pt-2">
+                   <button
+                      type="button"
+                      onClick={() => void handleSaveBusinessProfile()}
+                      disabled={isSavingBusiness || !businessDraftDirty}
+                      className="px-6 py-3 bg-slate-900 text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                   >
+                      {isSavingBusiness ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
+                      Save business profile
+                   </button>
+                   {businessDraftDirty ? (
+                      <span className="text-xs font-bold text-amber-700">Unsaved changes</span>
+                   ) : (
+                      <span className="text-xs text-slate-400">Saved on this device{user ? ' · cloud sync on Save' : ''}</span>
+                   )}
                 </div>
              </div>
           )}
@@ -1201,12 +1294,40 @@ const SettingsPage: React.FC<Props> = ({
 
           {activeTab === 'CLOUD' && (
              <div className="space-y-6">
-                <div className="bg-emerald-50 border border-emerald-200 p-6 rounded-[2rem]">
-                   <h3 className="text-lg font-black text-emerald-900 flex items-center gap-2 mb-2"><Cloud size={22}/> Cloud database (Firestore)</h3>
-                   <p className="text-sm text-emerald-800 leading-relaxed">
-                      Your inventory is stored in Firestore and syncs in real time. When you edit a price here, the change is written to the database immediately and anyone with the app open (another tab or device) sees the update. No request limits for normal daily use.
-                   </p>
-                   <p className="text-xs text-emerald-600 mt-2 font-bold uppercase tracking-wider">Status: {isCloudEnabled() && user ? 'Live' : isCloudEnabled() ? 'Sign in required' : 'Not configured'}</p>
+                <div className="bg-white p-6 rounded-[3rem] border border-slate-200 shadow-sm space-y-4">
+                   <div className="flex flex-col md:flex-row items-center gap-4 w-full">
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${user ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                         <UserIcon size={24}/>
+                      </div>
+                      <div className="flex-1 text-center md:text-left">
+                         <p className="text-sm font-black text-slate-900">{user ? user.email : 'Not signed in'}</p>
+                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                           {user ? 'Cloud backup & photo storage enabled' : 'Sign in to sync inventory across devices'}
+                         </p>
+                      </div>
+                      {user ? (
+                          <button onClick={handleSignOut} className="px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold text-xs uppercase hover:bg-slate-50 transition-all flex items-center gap-2">
+                          <LogOut size={16}/> Sign Out
+                          </button>
+                      ) : (
+                          <button onClick={handleSignInPopup} disabled={isSigningInPopup || !isCloudEnabled()} className="px-5 py-3 bg-blue-600 text-white rounded-xl font-bold text-xs uppercase hover:bg-blue-700 transition-all flex items-center gap-2 shadow-lg shadow-blue-200 disabled:opacity-70">
+                             {isSigningInPopup ? <RefreshCw size={14} className="animate-spin"/> : <LogIn size={16}/>} Sign in with Google
+                          </button>
+                      )}
+                   </div>
+                   {user && (
+                      <div>
+                         <button onClick={handleManualPush} disabled={isPushing} className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-emerald-700 transition-all flex items-center justify-center gap-2">
+                            {isPushing ? <RefreshCw size={16} className="animate-spin"/> : <ArrowUp size={16}/>} Save now
+                         </button>
+                         <p className="text-[10px] text-slate-400 mt-2 text-center">Data also saves automatically as you edit.</p>
+                      </div>
+                   )}
+                   {!isCloudEnabled() && (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2">
+                         Cloud is not available in this build.
+                      </p>
+                   )}
                 </div>
 
                 {/* Photo archive → Firebase Storage */}
@@ -1340,12 +1461,12 @@ const SettingsPage: React.FC<Props> = ({
 
                    {!isCloudEnabled() && (
                       <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2">
-                         Add Firebase config below and sign in before archiving.
+                         Cloud is not available in this build.
                       </p>
                    )}
                    {isCloudEnabled() && !user && (
                       <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2">
-                         Sign in with Google (below) to upload photos to your Storage bucket.
+                         Sign in with Google above to upload photos to your Storage bucket.
                       </p>
                    )}
 
@@ -1354,7 +1475,7 @@ const SettingsPage: React.FC<Props> = ({
                          How to check if Firebase Storage is enabled
                       </summary>
                       <ol className="mt-3 space-y-2 list-decimal list-inside text-xs leading-relaxed">
-                         <li>Open <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-blue-600 font-bold hover:underline">Firebase Console</a> → your project (<code className="bg-slate-200 px-1 rounded">{firebaseConfig.projectId || 'project-id'}</code>).</li>
+                         <li>Open <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-blue-600 font-bold hover:underline">Firebase Console</a> → your project (<code className="bg-slate-200 px-1 rounded">{getFirebaseConfig()?.projectId || 'project-id'}</code>).</li>
                          <li>Go to <strong>Build → Storage</strong> in the left menu.</li>
                          <li>If you see <strong>Get started</strong>, click it and choose a bucket location (EU if you are in Germany). That enables Storage.</li>
                          <li>Under <strong>Rules</strong>, allow signed-in uploads, e.g. <code className="bg-slate-200 px-1 rounded text-[10px]">allow read, write: if request.auth != null;</code> for paths under <code className="bg-slate-200 px-1 rounded text-[10px]">items/&#123;userId&#125;/</code>. Deploy rules with <code className="bg-slate-200 px-1 rounded text-[10px]">firebase deploy --only storage</code> if you use the CLI.</li>
@@ -1635,192 +1756,6 @@ const SettingsPage: React.FC<Props> = ({
                       </div>
                    )}
                 </div>
-
-                <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
-                   <div className="flex justify-between items-center">
-                      <div>
-                         <h3 className="text-xl font-black text-slate-900 flex items-center gap-2"><Cloud className="text-orange-500" size={24}/> Firebase config</h3>
-                         <p className="text-sm text-slate-500 mt-1">Firestore + Google sign-in. Add your project credentials below.</p>
-                      </div>
-                      <button onClick={handleSaveFirebase} className="px-6 py-3 bg-slate-900 text-white rounded-xl font-bold text-xs uppercase hover:bg-black transition-all flex items-center gap-2">
-                         <Save size={16}/> Save Config
-                      </button>
-                   </div>
-
-                   <div className="bg-slate-50 p-6 rounded-[2rem] space-y-4">
-                      <p className="text-xs text-slate-500 font-medium">
-                         Copy these values from your <b>Firebase Console</b> &rarr; Project Settings &rarr; General &rarr; Your Apps &rarr; SDK Setup (Config).
-                      </p>
-                      <div className="grid grid-cols-1 gap-4">
-                         <div className="space-y-1">
-                            <label className="text-[10px] font-black uppercase text-slate-400 ml-1">API Key</label>
-                            <input type="password" className="w-full px-5 py-3 bg-white border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-orange-500" value={firebaseConfig.apiKey} onChange={e => setFirebaseConfig({...firebaseConfig, apiKey: e.target.value})} placeholder="AIzaSy..." />
-                         </div>
-                         <div className="space-y-1">
-                            <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Auth Domain</label>
-                            <input type="text" className="w-full px-5 py-3 bg-white border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-orange-500" value={firebaseConfig.authDomain} onChange={e => setFirebaseConfig({...firebaseConfig, authDomain: e.target.value})} placeholder="project-id.firebaseapp.com" />
-                         </div>
-                         <div className="space-y-1">
-                            <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Project ID</label>
-                            <input type="text" className="w-full px-5 py-3 bg-white border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-orange-500" value={firebaseConfig.projectId} onChange={e => setFirebaseConfig({...firebaseConfig, projectId: e.target.value})} placeholder="project-id" />
-                         </div>
-                      </div>
-                   </div>
-
-                   {/* AUTH SECTION */}
-                   {isCloudEnabled() && (
-                      <div className="bg-white border-2 border-slate-100 p-6 rounded-3xl flex flex-col items-center justify-between gap-4">
-                         <div className="flex flex-col md:flex-row items-center gap-4 w-full">
-                            <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${user ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
-                               <UserIcon size={24}/>
-                            </div>
-                            <div className="flex-1">
-                               <p className="text-sm font-black text-slate-900">{user ? user.email : 'Not Signed In'}</p>
-                               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{user ? 'Authenticated' : 'Authentication Required'}</p>
-                            </div>
-                            {user ? (
-                                <button onClick={handleSignOut} className="px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold text-xs uppercase hover:bg-slate-50 transition-all flex items-center gap-2">
-                                <LogOut size={16}/> Sign Out
-                                </button>
-                            ) : (
-                                <button onClick={handleSignInPopup} disabled={isSigningInPopup} className="px-5 py-3 bg-blue-600 text-white rounded-xl font-bold text-xs uppercase hover:bg-blue-700 transition-all flex items-center gap-2 shadow-lg shadow-blue-200 disabled:opacity-70">
-                                   {isSigningInPopup ? <RefreshCw size={14} className="animate-spin"/> : <LogIn size={16}/>} Sign in with Google
-                                </button>
-                            )}
-                         </div>
-                      </div>
-                   )}
-
-                   {isCloudEnabled() && user && (
-                      <div>
-                         <button onClick={handleManualPush} disabled={isPushing} className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-emerald-700 transition-all flex items-center justify-center gap-2">
-                            {isPushing ? <RefreshCw size={16} className="animate-spin"/> : <ArrowUp size={16}/>} Save now
-                         </button>
-                         <p className="text-[10px] text-slate-400 mt-2 text-center">Data also saves automatically as you edit (real-time sync).</p>
-                      </div>
-                   )}
-                </div>
-             </div>
-          )}
-
-          {activeTab === 'DEPLOY' && (
-             <div className="space-y-6">
-                <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
-                   <h3 className="text-xl font-black text-slate-900 flex items-center gap-2"><Rocket size={24}/> Push app to GitHub &amp; deploy on Vercel</h3>
-                   <p className="text-sm text-slate-600">
-                      Sync this entire project to a GitHub repo so you can deploy it on Vercel. The repo will contain the full app (source code). <strong>Do not commit <code className="bg-slate-100 px-1 rounded">.env</code></strong> — add secrets in Vercel after deploying.
-                   </p>
-
-                   <div className="space-y-6">
-                      <div>
-                         <h4 className="text-sm font-black text-slate-800 mb-2 flex items-center gap-2">Step 1 — Create a GitHub repo</h4>
-                         <p className="text-sm text-slate-600 mb-2">Create a new repository on GitHub (e.g. <code className="bg-slate-100 px-1 rounded">inventory-pro</code>). Leave it empty (no README).</p>
-                         <a href="https://github.com/new" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-sm font-bold text-blue-600 hover:underline">
-                            <ExternalLink size={14}/> github.com/new
-                         </a>
-                      </div>
-
-                      <div>
-                         <h4 className="text-sm font-black text-slate-800 mb-2 flex items-center gap-2">Step 2 — Push this project to GitHub</h4>
-                         <p className="text-sm text-slate-600 mb-3">In a terminal, open this project folder and run (replace <code className="bg-slate-100 px-1 rounded">YOUR_USERNAME/YOUR_REPO</code> with your repo):</p>
-                         <div className="bg-slate-900 text-slate-100 rounded-2xl p-4 font-mono text-xs overflow-x-auto space-y-2">
-                            <div className="flex items-center justify-between gap-2">
-                               <span className="text-slate-400 select-all">git init</span>
-                               <button type="button" onClick={() => copyToClipboard('git init')} className="shrink-0 p-1.5 rounded-lg hover:bg-slate-700 text-slate-300"><Copy size={14}/></button>
-                            </div>
-                            <div className="flex items-center justify-between gap-2">
-                               <span className="text-slate-400 select-all">git add .</span>
-                               <button type="button" onClick={() => copyToClipboard('git add .')} className="shrink-0 p-1.5 rounded-lg hover:bg-slate-700 text-slate-300"><Copy size={14}/></button>
-                            </div>
-                            <div className="flex items-center justify-between gap-2">
-                               <span className="text-slate-400 select-all">git commit -m "Initial commit"</span>
-                               <button type="button" onClick={() => copyToClipboard('git commit -m "Initial commit"')} className="shrink-0 p-1.5 rounded-lg hover:bg-slate-700 text-slate-300"><Copy size={14}/></button>
-                            </div>
-                            <div className="flex items-center justify-between gap-2 flex-wrap">
-                               <span className="text-slate-400 select-all">git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO.git</span>
-                               <button type="button" onClick={() => copyToClipboard('git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO.git')} className="shrink-0 p-1.5 rounded-lg hover:bg-slate-700 text-slate-300"><Copy size={14}/></button>
-                            </div>
-                            <div className="flex items-center justify-between gap-2">
-                               <span className="text-slate-400 select-all">git branch -M main</span>
-                               <button type="button" onClick={() => copyToClipboard('git branch -M main')} className="shrink-0 p-1.5 rounded-lg hover:bg-slate-700 text-slate-300"><Copy size={14}/></button>
-                            </div>
-                            <div className="flex items-center justify-between gap-2">
-                               <span className="text-slate-400 select-all">git push -u origin main</span>
-                               <button type="button" onClick={() => copyToClipboard('git push -u origin main')} className="shrink-0 p-1.5 rounded-lg hover:bg-slate-700 text-slate-300"><Copy size={14}/></button>
-                            </div>
-                         </div>
-                         <p className="text-xs text-slate-500 mt-2">Requires Git installed. <code className="bg-slate-100 px-1 rounded">.env</code> is in <code className="bg-slate-100 px-1 rounded">.gitignore</code> and will not be pushed.</p>
-                      </div>
-
-                      <div>
-                         <h4 className="text-sm font-black text-slate-800 mb-2 flex items-center gap-2">Step 3 — Deploy on Vercel</h4>
-                         <p className="text-sm text-slate-600 mb-2">Import your GitHub repo on Vercel. Vercel will detect Vite and use the project&apos;s <code className="bg-slate-100 px-1 rounded">vercel.json</code>.</p>
-                         <a href="https://vercel.com/new" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-sm font-bold text-blue-600 hover:underline">
-                            <ExternalLink size={14}/> vercel.com/new
-                         </a>
-                         <p className="text-xs text-slate-500 mt-2">After import, add your environment variables (e.g. Firebase / API keys) in Vercel → Project → Settings → Environment Variables.</p>
-                      </div>
-                   </div>
-                </div>
-             </div>
-          )}
-
-          {activeTab === 'AI' && (
-             <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
-                <h3 className="text-xl font-black text-slate-900 flex items-center gap-2"><Sparkles size={22} className="text-amber-500"/> AI settings (#92–93)</h3>
-                <p className="text-sm text-slate-600 max-w-2xl">
-                   Control provider priority and model tiers. Keys stay in <code className="bg-slate-100 px-1 rounded">.env</code> / Vercel — this panel only stores preferences.
-                </p>
-                <div className="grid gap-4 md:grid-cols-2 max-w-2xl">
-                   <div>
-                      <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Specs fill tier</label>
-                      <select
-                         value={aiSettings.specsModelTier}
-                         onChange={(e) => {
-                            const next = { ...aiSettings, specsModelTier: e.target.value as AIModelTier };
-                            setAiSettings(next);
-                            saveAISettings(next);
-                         }}
-                         className="w-full mt-1 px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 font-bold text-sm"
-                      >
-                         <option value="fast">Fast (Groq)</option>
-                         <option value="balanced">Balanced</option>
-                         <option value="quality">Quality (Gemini)</option>
-                      </select>
-                   </div>
-                   <div>
-                      <label className="text-[10px] font-black uppercase text-slate-400 ml-1">Deal search tier</label>
-                      <select
-                         value={aiSettings.dealSearchModelTier}
-                         onChange={(e) => {
-                            const next = { ...aiSettings, dealSearchModelTier: e.target.value as AIModelTier };
-                            setAiSettings(next);
-                            saveAISettings(next);
-                         }}
-                         className="w-full mt-1 px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 font-bold text-sm"
-                      >
-                         <option value="fast">Fast</option>
-                         <option value="balanced">Balanced</option>
-                         <option value="quality">Quality</option>
-                      </select>
-                   </div>
-                </div>
-                <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
-                   <input
-                      type="checkbox"
-                      checked={aiSettings.preferGroqForSpecs}
-                      onChange={(e) => {
-                         const next = { ...aiSettings, preferGroqForSpecs: e.target.checked };
-                         setAiSettings(next);
-                         saveAISettings(next);
-                      }}
-                      className="accent-amber-500"
-                   />
-                   Prefer Groq for spec fill when available
-                </label>
-                <p className="text-xs text-slate-500">
-                   Provider order: {aiSettings.providerPriority.join(' → ')}. Add keys in Health check.
-                </p>
              </div>
           )}
 

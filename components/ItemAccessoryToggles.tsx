@@ -1,16 +1,31 @@
 import React from 'react';
-import { Package, Receipt, Shield } from 'lucide-react';
+import { Package, Shield } from 'lucide-react';
 import type { InventoryItem } from '../types';
 import {
   accessoryToggleLabel,
-  accessoryTogglePatch,
-  accessoryTogglePresent,
+  accessoryToggleState,
+  accessoryToggleTitle,
   accessoryTogglesForItem,
+  cycleAccessoryTogglePatch,
+  type AccessoryChildRef,
   type AccessoryToggleId,
+  type AccessoryTriState,
 } from '../utils/itemAccessoryToggles';
 
 interface Props {
-  item: Pick<InventoryItem, 'category' | 'subCategory' | 'hasOVP' | 'hasIOShield' | 'hasReceipt'>;
+  item: Pick<
+    InventoryItem,
+    | 'category'
+    | 'subCategory'
+    | 'isBundle'
+    | 'isPC'
+    | 'name'
+    | 'componentIds'
+    | 'hasOVP'
+    | 'hasIOShield'
+  >;
+  /** Bundle/PC children — enables IO Blende when a motherboard part is present. */
+  children?: AccessoryChildRef[];
   onPatch: (patch: Partial<InventoryItem>) => void;
   /** Compact row for inventory lists / phones. */
   dense?: boolean;
@@ -19,18 +34,22 @@ interface Props {
 }
 
 function AccessoryIcon({ id, size }: { id: AccessoryToggleId; size: number }) {
-  switch (id) {
-    case 'ovp':
-      return <Package size={size} strokeWidth={2.4} />;
-    case 'rechnung':
-      return <Receipt size={size} strokeWidth={2.4} />;
-    case 'io':
-      return <Shield size={size} strokeWidth={2.4} />;
-  }
+  if (id === 'ovp') return <Package size={size} strokeWidth={2.4} />;
+  return <Shield size={size} strokeWidth={2.4} />;
 }
 
-const ItemAccessoryToggles: React.FC<Props> = ({ item, onPatch, dense, mini }) => {
-  const ids = accessoryTogglesForItem(item);
+function toneClasses(state: AccessoryTriState): string {
+  if (state === 'present') {
+    return 'bg-emerald-500 text-white border-emerald-600 shadow-sm shadow-emerald-500/35 ring-1 ring-emerald-600/40 hover:bg-emerald-600';
+  }
+  if (state === 'missing') {
+    return 'bg-red-500 text-white border-red-600 shadow-sm shadow-red-500/35 ring-1 ring-red-600/40 hover:bg-red-600';
+  }
+  return 'bg-violet-500 text-white border-violet-600 shadow-sm shadow-violet-500/40 ring-1 ring-violet-600/50 hover:bg-violet-600';
+}
+
+const ItemAccessoryToggles: React.FC<Props> = ({ item, children, onPatch, dense, mini }) => {
+  const ids = accessoryTogglesForItem(item, children);
   const iconSize = mini ? 10 : dense ? 11 : 12;
   const chip =
     mini
@@ -39,11 +58,6 @@ const ItemAccessoryToggles: React.FC<Props> = ({ item, onPatch, dense, mini }) =
         ? 'h-5 min-w-[1.25rem] px-1 rounded-md'
         : 'h-6 min-w-[1.5rem] px-1.5 rounded-lg';
 
-  const toggle = (id: AccessoryToggleId) => {
-    const next = !accessoryTogglePresent(item, id);
-    onPatch(accessoryTogglePatch(id, next));
-  };
-
   return (
     <div
       className="flex items-center gap-0.5 flex-wrap"
@@ -51,7 +65,7 @@ const ItemAccessoryToggles: React.FC<Props> = ({ item, onPatch, dense, mini }) =
       onDoubleClick={(e) => e.stopPropagation()}
     >
       {ids.map((id) => {
-        const present = accessoryTogglePresent(item, id);
+        const state = accessoryToggleState(item, id);
         const label = accessoryToggleLabel(id);
         return (
           <button
@@ -59,20 +73,12 @@ const ItemAccessoryToggles: React.FC<Props> = ({ item, onPatch, dense, mini }) =
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              toggle(id);
+              onPatch(cycleAccessoryTogglePatch(item, id));
             }}
-            className={`inline-flex items-center justify-center border transition-colors ${chip} ${
-              present
-                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
-                : 'bg-white text-slate-400 border-slate-300 hover:bg-slate-50 hover:text-slate-600'
-            }`}
-            title={
-              present
-                ? `${label} present — click to mark missing`
-                : `${label} missing — click to mark present`
-            }
-            aria-label={label}
-            aria-pressed={present}
+            className={`inline-flex items-center justify-center border transition-colors ${chip} ${toneClasses(state)}`}
+            title={accessoryToggleTitle(id, state)}
+            aria-label={`${label}: ${state}`}
+            aria-pressed={state === 'present' ? true : state === 'missing' ? false : undefined}
           >
             <AccessoryIcon id={id} size={iconSize} />
           </button>

@@ -29,7 +29,7 @@ import { MobileSheetShell } from './MobileBottomSheets';
 import ItemAccessoryToggles from './ItemAccessoryToggles';
 import AiBadge, { hasUnreviewedAi, isAiTouched } from './AiBadge';
 import type { ItemAiState } from '../services/aiActionLog';
-import { canSplitItem } from '../utils/splitParts';
+import { canSplitItem, resolveIdenticalLotQty } from '../utils/splitParts';
 
 export interface MobileStockCardActions {
   onEdit: (item: InventoryItem) => void;
@@ -99,6 +99,7 @@ export const MobileStockCard: React.FC<{
   /** Containers use Unbundle; Split is for single stock SKUs. */
   const canSplit =
     Boolean(actions.onSplitParts) && inStock && canSplitItem(item, item.isPC || item.isBundle ? 1 : 0);
+  const lotQty = canSplit ? resolveIdenticalLotQty(item) : null;
 
   const quickBundleLabel = item.isPC
     ? 'Add parts to this PC'
@@ -412,7 +413,7 @@ export const MobileStockCard: React.FC<{
             canSplit
               ? {
                   key: 'split',
-                  label: 'Split into parts',
+                  label: lotQty != null ? `Split lot ×${lotQty}` : 'Split into parts',
                   icon: <Scissors size={16} />,
                   run: () => actions.onSplitParts?.(item),
                 }

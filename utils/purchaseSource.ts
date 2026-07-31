@@ -1,5 +1,14 @@
 import type { PaymentType, Platform } from '../types';
 
+/** Platforms offered when logging a purchase source. */
+export const BUY_SOURCE_PLATFORMS: Platform[] = [
+  'kleinanzeigen.de',
+  'ebay.de',
+  'Amazon',
+  'In Person',
+  'Other',
+];
+
 /** Short label for inventory chips / cards. */
 export function formatPlatformBoughtLabel(platform?: Platform | string | null): string {
   switch (platform) {
@@ -15,6 +24,81 @@ export function formatPlatformBoughtLabel(platform?: Platform | string | null): 
       return 'Other';
     default:
       return platform ? String(platform) : '';
+  }
+}
+
+/** Compact chip / button label. */
+export function formatPlatformBoughtShort(platform: Platform): string {
+  switch (platform) {
+    case 'kleinanzeigen.de':
+      return 'KA';
+    case 'ebay.de':
+      return 'eBay';
+    case 'In Person':
+      return 'Person';
+    case 'Amazon':
+      return 'Amazon';
+    case 'Other':
+      return 'Other';
+  }
+}
+
+/** Compact chip / button label for buy payment. */
+export function formatBuyPaymentShort(payment: PaymentType): string {
+  switch (payment) {
+    case 'Kleinanzeigen (Cash)':
+      return 'KA Cash';
+    case 'Kleinanzeigen (Direkt Kaufen)':
+      return 'Direkt';
+    case 'Kleinanzeigen (Paypal)':
+      return 'KA PayPal';
+    case 'Kleinanzeigen (Wire Transfer)':
+      return 'KA Wire';
+    case 'ebay.de':
+      return 'eBay';
+    case 'Paypal':
+      return 'PayPal';
+    case 'Cash':
+      return 'Cash';
+    case 'Bank Transfer':
+      return 'Wire';
+    case 'Trade':
+      return 'Trade';
+    case 'Gift':
+      return 'Gift';
+    case 'Other':
+      return 'Other';
+    default:
+      return String(payment);
+  }
+}
+
+/** Full title for payment option tooltips. */
+export function formatBuyPaymentLabel(payment: PaymentType): string {
+  return payment;
+}
+
+/** Payment choices that make sense for the selected buy place. */
+export function buyPaymentOptionsForPlatform(platform: Platform | undefined): PaymentType[] {
+  switch (platform) {
+    case 'kleinanzeigen.de':
+      return [
+        'Kleinanzeigen (Cash)',
+        'Kleinanzeigen (Direkt Kaufen)',
+        'Kleinanzeigen (Paypal)',
+        'Kleinanzeigen (Wire Transfer)',
+        'Other',
+      ];
+    case 'ebay.de':
+      return ['ebay.de', 'Paypal', 'Bank Transfer', 'Other'];
+    case 'Amazon':
+      return ['Other', 'Paypal', 'Bank Transfer', 'Cash'];
+    case 'In Person':
+      return ['Cash', 'Paypal', 'Bank Transfer', 'Other'];
+    case 'Other':
+      return ['Cash', 'Paypal', 'Bank Transfer', 'Trade', 'Gift', 'Other'];
+    default:
+      return ['Cash', 'Paypal', 'Bank Transfer', 'Other'];
   }
 }
 

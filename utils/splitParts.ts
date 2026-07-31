@@ -98,7 +98,7 @@ const FILLER_WORDS =
 
 /** Compact brand + model/size stem for short part names (e.g. "Arctic 360", "Corsair H100i"). */
 export function shortSourceStem(sourceName: string, radiatorMm?: number | null): string {
-  let s = (sourceName || '').trim();
+  let s = stripIdenticalQtyFromName(sourceName || '');
   if (!s) return 'Item';
 
   s = s.replace(FILLER_WORDS, ' ');
@@ -391,28 +391,49 @@ export function canSplitItem(item: InventoryItem, childCount = 0): boolean {
   return true;
 }
 
-/** Parse "8x SSD", "SSD x8", "8 × Kingston" style titles for a default copy count. */
+/** Clamp multi-buy lot size used in titles and identical splits. */
+function clampLotQty(n: number): number | null {
+  if (!Number.isFinite(n) || n < 2 || n > 48) return null;
+  return Math.floor(n);
+}
+
+/**
+ * Parse lot size from titles like "x8/SSD", "x8 Samsung", "8x Kingston", "SSD x8".
+ * Prefer the canonical leading `xN/` form used by Add Asset.
+ */
 export function detectIdenticalQtyHint(name: string): number | null {
-  const raw = String(name || '');
+  const raw = String(name || '').trim();
+  if (!raw) return null;
+
+  const leadingSlash = raw.match(/^x\s*(\d{1,2})\s*\//i);
+  if (leadingSlash) return clampLotQty(Number(leadingSlash[1]));
+
+  const leadingX = raw.match(/^x\s*(\d{1,2})(?:\s+|[-–—])/i);
+  if (leadingX) return clampLotQty(Number(leadingX[1]));
+
+  const leadingNx = raw.match(/^(\d{1,2})\s*[x×](?:\s*|\/)/i);
+  if (leadingNx) return clampLotQty(Number(leadingNx[1]));
+
   const m =
     raw.match(/\b(\d{1,2})\s*[x×]\b/i) ||
     raw.match(/\b[x×]\s*(\d{1,2})\b/i) ||
     raw.match(/\b(\d{1,2})\s*pcs?\b/i) ||
     raw.match(/\b(\d{1,2})\s*stück\b/i);
   if (!m) return null;
-  const n = Number(m[1]);
-  if (!Number.isFinite(n) || n < 2 || n > 48) return null;
-  return n;
+  return clampLotQty(Number(m[1]));
 }
 
 /**
  * Strip lot multipliers from a title so children are plain unit names.
- * "x8 Samsung SSD" / "8x Samsung SSD" / "Samsung SSD 8 pcs" → "Samsung SSD"
+ * "x8/Samsung SSD" / "x8 Samsung SSD" / "8x Samsung SSD" / "Samsung SSD 8 pcs" → "Samsung SSD"
  */
 export function stripIdenticalQtyFromName(name: string): string {
   let out = String(name || '').trim();
   if (!out) return out;
   out = out
+    .replace(/^x\s*\d{1,2}\s*\//i, '')
+    .replace(/^x\s*\d{1,2}(?:\s+|[-–—])/i, '')
+    .replace(/^\d{1,2}\s*[x×]\s*\/?/i, '')
     .replace(/\b\d{1,2}\s*[x×]\b/gi, ' ')
     .replace(/\b[x×]\s*\d{1,2}\b/gi, ' ')
     .replace(/\b\d{1,2}\s*pcs?\b/gi, ' ')
@@ -421,6 +442,27 @@ export function stripIdenticalQtyFromName(name: string): string {
     .replace(/\s{2,}/g, ' ')
     .trim();
   return out || String(name || '').trim();
+}
+
+/**
+ * Canonical multi-qty inventory title: `x8/Samsung SSD` when qty > 1.
+ * Strips any existing multiplier first so qty edits stay clean.
+ */
+export function applyQtyNamePrefix(name: string, qty: number): string {
+  const base = stripIdenticalQtyFromName(name);
+  const n = Math.max(1, Math.floor(Number(qty) || 1));
+  if (n <= 1) return base;
+  return base ? `x${n}/${base}` : `x${n}/`;
+}
+
+/** Best lot size from title and/or stored quantity field. */
+export function resolveIdenticalLotQty(
+  item: Pick<InventoryItem, 'name' | 'quantity'>
+): number | null {
+  const fromName = detectIdenticalQtyHint(item.name || '');
+  if (fromName) return fromName;
+  const q = Number(item.quantity);
+  return clampLotQty(q);
 }
 
 /**
@@ -554,6 +596,9 @@ export function buildSplitApplyItems(
     marketTitle: source.marketTitle || source.name,
     vendor: source.vendor || (identical ? 'Identical Split' : 'Split Parts'),
   };
+  if (identical) {
+    delete (parent as { quantity?: number }).quantity;
+  }
   delete (parent as { subCategory?: string }).subCategory;
 
   return { parent, children };

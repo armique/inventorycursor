@@ -7,6 +7,7 @@ import type { InventoryItem } from '../types';
 import { buildRetroContainerAndComponents, type RetroComposeKind } from '../utils/retroSoldCompose';
 import { suggestBundleComponentPrices } from '../utils/bundlePriceRecalc';
 import { buildContainerTitle } from '../utils/buildTitle';
+import { AddOptionTile } from './addFlowShared';
 
 interface Props {
   items: InventoryItem[];
@@ -15,10 +16,10 @@ interface Props {
   onClose: () => void;
 }
 
-const KIND_META: Record<RetroComposeKind, { label: string; icon: React.ReactNode }> = {
-  mixed: { label: 'Mixed Bundle', icon: <Boxes size={14} /> },
-  bundle: { label: 'Bundle', icon: <Package size={14} /> },
-  pc: { label: 'PC Build', icon: <Monitor size={14} /> },
+const KIND_META: Record<RetroComposeKind, { label: string; hint: string; icon: React.ReactNode }> = {
+  mixed: { label: 'Mixed', hint: 'Any parts', icon: <Boxes size={20} strokeWidth={1.75} /> },
+  bundle: { label: 'Bundle', hint: 'Aufrustkit', icon: <Package size={20} strokeWidth={1.75} /> },
+  pc: { label: 'PC Build', hint: 'Slot kit', icon: <Monitor size={20} strokeWidth={1.75} /> },
 };
 
 const RetroBundleModal: React.FC<Props> = ({ items, allItems, onConfirm, onClose }) => {
@@ -130,23 +131,19 @@ const RetroBundleModal: React.FC<Props> = ({ items, allItems, onConfirm, onClose
           </div>
 
           <div className="grid grid-cols-1 gap-4">
-             <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-2">Container Type</p>
-                <div className="grid grid-cols-3 gap-2">
+             <div className="bg-slate-50/80 p-3 rounded-2xl border border-slate-100">
+                <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1 px-1">Container Type</p>
+                <div className="grid grid-cols-3 gap-1">
                   {(Object.keys(KIND_META) as RetroComposeKind[]).map((k) => (
-                    <button
+                    <AddOptionTile
                       key={k}
-                      type="button"
+                      size="sm"
+                      label={KIND_META[k].label}
+                      hint={KIND_META[k].hint}
+                      icon={KIND_META[k].icon}
+                      selected={kind === k}
                       onClick={() => setKind(k)}
-                      className={`inline-flex items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-[11px] font-bold ${
-                        kind === k
-                          ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
-                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
-                      }`}
-                    >
-                      {KIND_META[k].icon}
-                      {KIND_META[k].label}
-                    </button>
+                    />
                   ))}
                 </div>
              </div>
