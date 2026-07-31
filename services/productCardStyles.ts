@@ -11,7 +11,8 @@ export type ProductCardStyleId =
   | 'apple-studio-white'
   | 'noir-editorial'
   | 'industrial-mono'
-  | 'steel-gradient';
+  | 'steel-gradient'
+  | 'premium-lifestyle-light';
 
 export interface ProductCardStyle {
   id: ProductCardStyleId;
