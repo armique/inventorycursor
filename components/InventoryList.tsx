@@ -334,17 +334,14 @@ interface SortConfig {
   direction: 'asc' | 'desc';
 }
 
-/** Inv column: flag + row-action icons in one wrap row (28px each + 4px gaps). */
+/** Flags column: fixed 8 icons per row (grid), then wrap to next row. */
 const PRESENCE_ICON_SIZE_PX = 28;
 const PRESENCE_ICON_GAP_PX = 4;
-/**
- * Flags base (no AI wand): Presence · Photos · BG cards · € · Store · Orders · Quick Bundle · Bulk · Rebuild
- * + merged row actions (sold/trade/gift/split/unbundle/…/delete) — width sized for ~15 slots.
- */
-const PRESENCE_ICON_COUNT = 15;
+const PRESENCE_ICONS_PER_ROW = 8;
+/** Column width fits one full row of 8 icons (second row wraps cleanly underneath). */
 const PRESENCE_COL_WIDTH =
-  PRESENCE_ICON_COUNT * PRESENCE_ICON_SIZE_PX +
-  (PRESENCE_ICON_COUNT - 1) * PRESENCE_ICON_GAP_PX +
+  PRESENCE_ICONS_PER_ROW * PRESENCE_ICON_SIZE_PX +
+  (PRESENCE_ICONS_PER_ROW - 1) * PRESENCE_ICON_GAP_PX +
   12;
 
 const DEFAULT_WIDTHS: Record<string, number> = {
@@ -448,20 +445,6 @@ const AUTO_SIZE_COLUMN_IDS: ColumnId[] = [
   'sellDate',
 ];
 
-/** Merged Flags action buttons (excludes Cross-post / Sparkles / Edit / Duplicate). */
-function countMergedFlagActionButtons(item: InventoryItem): number {
-  let n = 1; // Delete
-  if (item.isPC || item.isBundle) n += 1; // Unbundle
-  if (item.status === ItemStatus.IN_STOCK) {
-    n += 1; // Split may show
-    n += 3; // Sold, Trade, Gift
-  }
-  if (isSoldOrTradedOnly(item)) n += 1; // Invoice
-  if (item.status === ItemStatus.SOLD) n += 1; // Buyer
-  if (item.status === ItemStatus.SOLD || item.status === ItemStatus.GIFTED) n += 1; // Return
-  return n;
-}
-
 let measureCanvasCtx: CanvasRenderingContext2D | null | undefined;
 function getMeasureCtx(): CanvasRenderingContext2D | null {
   if (measureCanvasCtx !== undefined) return measureCanvasCtx;
@@ -499,8 +482,6 @@ function computeAutoColumnWidths(items: InventoryItem[]): Partial<Record<ColumnI
   storePriceW = Math.max(storePriceW, emptyCellW);
   profitW = Math.max(profitW, emptyCellW);
 
-  let maxFlagActionButtons = 0;
-
   // Sample — measuring every row on large inventories blocks first paint.
   const sample =
     items.length <= 120
@@ -508,7 +489,6 @@ function computeAutoColumnWidths(items: InventoryItem[]): Partial<Record<ColumnI
       : items.filter((_, idx) => idx % Math.ceil(items.length / 120) === 0).slice(0, 120);
 
   for (const item of sample) {
-    maxFlagActionButtons = Math.max(maxFlagActionButtons, countMergedFlagActionButtons(item));
     if (item.category) {
       categoryW = Math.max(categoryW, measureTextWidth(ctx, item.category.toUpperCase(), '900 11px Inter, sans-serif'));
     }
@@ -542,15 +522,11 @@ function computeAutoColumnWidths(items: InventoryItem[]): Partial<Record<ColumnI
     }
   }
 
-  // 9 flag icons + merged actions (width for up to ~2 wrap rows still uses base PRESENCE_COL_WIDTH floor)
-  const flagSlots = 9 + maxFlagActionButtons;
-  const presenceW =
-    flagSlots * PRESENCE_ICON_SIZE_PX + Math.max(0, flagSlots - 1) * PRESENCE_ICON_GAP_PX + 12;
-
   timeGaugeW = Math.max(timeGaugeW, 68);
 
+  // Width = one row of 8 icons; extras wrap to row 2/3 (do not widen the column to fit one long strip).
   return {
-    presence: clampAutoColumnWidth('presence', Math.max(PRESENCE_COL_WIDTH, presenceW)),
+    presence: clampAutoColumnWidth('presence', PRESENCE_COL_WIDTH),
     category: clampAutoColumnWidth('category', Math.ceil(categoryW) + AUTO_COL_HPAD + 8),
     status: clampAutoColumnWidth('status', Math.ceil(statusW) + AUTO_COL_HPAD + 28),
     buyPrice: clampAutoColumnWidth('buyPrice', Math.ceil(buyPriceW) + AUTO_COL_HPAD),
@@ -3102,7 +3078,7 @@ const InventoryList: React.FC<Props> = ({
         return (
           <td key={id} className="inv-col-icons border-r border-slate-100/90 align-middle" style={style} onClick={(e) => e.stopPropagation()}>
             <div
-              className={`flex flex-wrap ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-start min-w-0 max-w-full`}
+              className={`grid grid-cols-8 ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-items-start w-full min-w-0`}
             >
               {/* Physical presence: present → lost → defective → unknown */}
               {(() => {
