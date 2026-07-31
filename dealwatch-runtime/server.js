@@ -12,7 +12,13 @@ const EBAY_MARKETPLACE_ID = process.env.EBAY_MARKETPLACE_ID || 'EBAY_DE';
 const EBAY_APPLICATION_TOKEN = process.env.EBAY_APPLICATION_TOKEN;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const MONITOR_INTERVAL_MINUTES = numberInRange(process.env.MONITOR_INTERVAL_MINUTES, 3, 1, 60);
+/** Full monitor cycle — keep ≥10–15 min with many eBay filters to avoid Browse API 429s. */
+const MONITOR_INTERVAL_MINUTES = numberInRange(process.env.MONITOR_INTERVAL_MINUTES, 15, 1, 120);
+/** Minimum gap between eBay Browse API calls (ms). */
+const EBAY_MIN_GAP_MS = numberInRange(process.env.EBAY_MIN_GAP_MS, 500, 100, 10000);
+/** Pause between monitored searches inside one cycle (ms). */
+const MONITOR_SEARCH_GAP_MS = numberInRange(process.env.MONITOR_SEARCH_GAP_MS, 1500, 0, 30000);
+const EBAY_MAX_RETRIES_ON_429 = numberInRange(process.env.EBAY_MAX_RETRIES_ON_429, 4, 0, 8);
 const DATA_DIR = path.join(__dirname, 'data');
 const STORE_SEED_PATH = path.join(DATA_DIR, 'store.seed.json');
 const STORE_PATH = process.env.VERCEL
@@ -3132,6 +3138,31 @@ async function searchSoldListings(query) {
   };
 }
 
+let ebayNextAllowedAt = 0;
+let ebayGate = Promise.resolve();
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
+/** Serialize Browse API traffic and honor a minimum gap between calls. */
+function withEbayRateLimit(fn) {
+  const run = ebayGate.then(async () => {
+    const wait = Math.max(0, ebayNextAllowedAt - Date.now());
+    if (wait > 0) await sleep(wait);
+    try {
+      return await fn();
+    } finally {
+      ebayNextAllowedAt = Date.now() + EBAY_MIN_GAP_MS;
+    }
+  });
+  ebayGate = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
 async function fetchBrowseOnce(query, searchText) {
   const searchParams = new URLSearchParams({
     limit: '100',
@@ -3147,21 +3178,47 @@ async function fetchBrowseOnce(query, searchText) {
     throw new Error('Keywords or an eBay category is required.');
   }
 
-  let token = await accessToken();
-  let response = await fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?${searchParams}`, {
-    headers: { Authorization: `Bearer ${token}`, 'X-EBAY-C-MARKETPLACE-ID': EBAY_MARKETPLACE_ID },
-  });
-  let data = await response.json();
-  if (!response.ok && /invalid.?access.?token|unauthorized|401/i.test(JSON.stringify(data) + response.status)) {
-    tokenCache = { token: '', expiresAt: 0 };
-    token = await accessToken({ forceRefresh: true });
-    response = await fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?${searchParams}`, {
+  const url = `https://api.ebay.com/buy/browse/v1/item_summary/search?${searchParams}`;
+
+  return withEbayRateLimit(async () => {
+    let token = await accessToken();
+    let response = await fetch(url, {
       headers: { Authorization: `Bearer ${token}`, 'X-EBAY-C-MARKETPLACE-ID': EBAY_MARKETPLACE_ID },
     });
-    data = await response.json();
-  }
-  if (!response.ok) throw new Error(data.errors?.[0]?.message || 'eBay did not return search results.');
-  return data;
+    let data = await response.json().catch(() => ({}));
+
+    if (!response.ok && /invalid.?access.?token|unauthorized|401/i.test(JSON.stringify(data) + response.status)) {
+      tokenCache = { token: '', expiresAt: 0 };
+      token = await accessToken({ forceRefresh: true });
+      response = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}`, 'X-EBAY-C-MARKETPLACE-ID': EBAY_MARKETPLACE_ID },
+      });
+      data = await response.json().catch(() => ({}));
+    }
+
+    // Retry after rate-limit with Retry-After / exponential backoff.
+    for (let attempt = 0; response.status === 429 && attempt < EBAY_MAX_RETRIES_ON_429; attempt++) {
+      const headerWait = Number(response.headers.get('retry-after'));
+      const waitSec = Number.isFinite(headerWait) && headerWait > 0
+        ? Math.min(120, headerWait)
+        : Math.min(90, 5 * (2 ** attempt));
+      console.warn(`[dealwatch] eBay 429 on browse — waiting ${waitSec}s (retry ${attempt + 1}/${EBAY_MAX_RETRIES_ON_429})`);
+      ebayNextAllowedAt = Date.now() + waitSec * 1000;
+      await sleep(waitSec * 1000);
+      response = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}`, 'X-EBAY-C-MARKETPLACE-ID': EBAY_MARKETPLACE_ID },
+      });
+      data = await response.json().catch(() => ({}));
+    }
+
+    if (response.status === 429) {
+      throw new Error(
+        'eBay API: Too many requests. Raise MONITOR_INTERVAL_MINUTES (e.g. 20), pause unused eBay filters, or wait a few minutes.'
+      );
+    }
+    if (!response.ok) throw new Error(data.errors?.[0]?.message || 'eBay did not return search results.');
+    return data;
+  });
 }
 
 async function fetchBrowseItemSummaries(query) {
@@ -3170,7 +3227,15 @@ async function fetchBrowseItemSummaries(query) {
     return fetchBrowseOnce(query, queries[0]);
   }
 
-  const pages = await Promise.all(queries.map(q => fetchBrowseOnce(query, q).catch(() => ({ itemSummaries: [] }))));
+  // Sequential merges — parallel Promise.all stacks Browse calls and trips rate limits.
+  const pages = [];
+  for (const q of queries) {
+    try {
+      pages.push(await fetchBrowseOnce(query, q));
+    } catch {
+      pages.push({ itemSummaries: [] });
+    }
+  }
   const byId = new Map();
   for (const page of pages) {
     for (const item of page.itemSummaries || []) {
@@ -3562,7 +3627,8 @@ async function searchListings(query) {
 
   let suggestions = [];
   let suggestionMeta = null;
-  if (!resultItems.length) {
+  // Background monitor skips nearby upsell searches — they double Browse API usage.
+  if (!resultItems.length && !query.skipSuggestions) {
     try {
       const nearby = await searchNearbySuggestions(query);
       suggestions = nearby.suggestions;
@@ -4563,10 +4629,16 @@ async function monitorSearches() {
   let changed = false;
   const monitored = store.searches.filter(search => search.monitor !== false);
   const canTelegram = telegramConfigured();
+  let ebay429Streak = 0;
 
   for (const search of monitored) {
     try {
-      const result = await searchListings({ ...search, alerts: canTelegram });
+      const result = await searchListings({
+        ...search,
+        alerts: canTelegram,
+        skipSuggestions: true,
+      });
+      ebay429Streak = 0;
       const items = Array.isArray(result.items) ? result.items : [];
       const ids = items.map(item => String(item.id)).filter(Boolean);
       const known = store.seenBySearch[search.id];
@@ -4596,8 +4668,21 @@ async function monitorSearches() {
         console.log(`Monitor [${search.name}]: ${items.length} matches.`);
       }
     } catch (error) {
-      console.error(`Monitor failed for ${search.name}:`, error.message);
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error(`Monitor failed for ${search.name}:`, msg);
+      if (/too many requests|429/i.test(msg)) {
+        ebay429Streak += 1;
+        const coolSec = Math.min(120, 15 * ebay429Streak);
+        console.warn(`[dealwatch] monitor backing off ${coolSec}s after eBay rate limit`);
+        await sleep(coolSec * 1000);
+        if (ebay429Streak >= 3) {
+          console.warn('[dealwatch] stopping this monitor cycle early — eBay still rate-limiting');
+          break;
+        }
+      }
     }
+
+    if (MONITOR_SEARCH_GAP_MS > 0) await sleep(MONITOR_SEARCH_GAP_MS);
   }
 
   if (changed) {
