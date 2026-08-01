@@ -490,14 +490,17 @@ function showGoogleButtonOverlay(): { host: HTMLElement; cleanup: () => void } {
  * Mobile-safe Google sign-in via Google Identity Services (ID token → Firebase).
  * Prefers GIS ID credential; falls back to access-token client if needed.
  */
-async function signInWithGoogleIdentityServices(auth: Auth): Promise<User> {
+async function signInWithGoogleIdentityServices(
+  auth: Auth,
+  options?: { preferOAuthToken?: boolean }
+): Promise<User> {
   const [gis, clientId] = await Promise.all([
     loadGoogleIdentityServices(),
     resolveGoogleWebClientId(),
   ]);
 
   // Preferred: ID token (JWT) from Google Identity Services.
-  if (gis.id) {
+  if (gis.id && !options?.preferOAuthToken) {
     return new Promise<User>((resolve, reject) => {
       let settled = false;
       let cleanupOverlay: (() => void) | null = null;
@@ -620,12 +623,11 @@ async function signInWithGoogleIdentityServices(auth: Auth): Promise<User> {
 }
 
 /**
- * Google sign-in through Firebase's provider flow on every device.
+ * Google sign-in using the provider flow best supported by each device.
  *
- * Do not route phones through the GIS button/One Tap iframe: iOS WebKit can
- * throw QuotaExceededError inside that cross-origin flow even when this app's
- * own storage is available. Firebase popup avoids that iframe; redirect is a
- * last resort only when the browser refuses to open the popup.
+ * iOS WebKit can throw QuotaExceededError in both Firebase's popup resolver and
+ * the GIS ID/One Tap iframe. The GIS OAuth token client avoids both storage
+ * handshakes and returns a Google access token that Firebase accepts directly.
  */
 export async function signInWithGoogle(options?: { returnPath?: string }): Promise<User | null> {
   const ctx = init();
@@ -640,6 +642,10 @@ export async function signInWithGoogle(options?: { returnPath?: string }): Promi
     markRedirectPending();
     await signInWithRedirect(ctx.auth, provider);
     return null;
+  }
+
+  if (prefersRedirectSignIn()) {
+    return signInWithGoogleIdentityServices(ctx.auth, { preferOAuthToken: true });
   }
 
   try {
