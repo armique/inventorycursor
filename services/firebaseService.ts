@@ -41,6 +41,8 @@ import {
   onAuthStateChanged,
   setPersistence,
   browserLocalPersistence,
+  browserSessionPersistence,
+  inMemoryPersistence,
   connectAuthEmulator,
   User,
   Auth,
@@ -136,6 +138,38 @@ let app: FirebaseApp | null = null;
 let db: Firestore | null = null;
 let auth: Auth | null = null;
 let storage: FirebaseStorage | null = null;
+const authPersistenceSetup = new WeakMap<Auth, Promise<void>>();
+
+/**
+ * Prefer a durable session, but never make sign-in depend on browser storage.
+ * Mobile private modes and full localStorage quotas can make Firebase's local
+ * persistence throw QuotaExceededError. Session or memory persistence still
+ * lets the user sign in and use the app.
+ */
+function ensureAuthPersistence(authInstance: Auth): Promise<void> {
+  const existing = authPersistenceSetup.get(authInstance);
+  if (existing) return existing;
+
+  const setup = (async () => {
+    try {
+      await setPersistence(authInstance, browserLocalPersistence);
+      return;
+    } catch (err) {
+      console.warn("[firebase] Local auth persistence unavailable; trying session storage.", err);
+    }
+
+    try {
+      await setPersistence(authInstance, browserSessionPersistence);
+      return;
+    } catch (err) {
+      console.warn("[firebase] Session auth persistence unavailable; using memory.", err);
+    }
+
+    await setPersistence(authInstance, inMemoryPersistence);
+  })();
+  authPersistenceSetup.set(authInstance, setup);
+  return setup;
+}
 
 /**
  * True only for a local dev server started with VITE_FIREBASE_EMULATOR=1.
@@ -169,8 +203,8 @@ function init(): { db: Firestore; auth: Auth; storage: FirebaseStorage } | null 
     }
     auth = getAuth(app);
     // Persist Google session across Safari/Chrome restarts (phones). Without this, every
-    // panel visit can look signed-out and re-prompt Continue with Google.
-    void setPersistence(auth, browserLocalPersistence).catch((err) => {
+    // panel visit can look signed-out. Fall back safely when mobile storage is blocked/full.
+    void ensureAuthPersistence(auth).catch((err) => {
       console.warn("[firebase] Auth persistence unavailable:", err);
     });
     // Force correct bucket (Firebase default is now .firebasestorage.app, not .appspot.com)
@@ -217,6 +251,16 @@ export function getAuthErrorMessage(err: unknown): string {
   }
   if (code === 'auth/network-request-failed') {
     return 'Network error during sign-in. Check your connection and try again.';
+  }
+  if (
+    code === 'auth/quota-exceeded' ||
+    (err as { name?: string })?.name === 'QuotaExceededError' ||
+    /the quota has been exceeded|quotaexceedederror/i.test(message)
+  ) {
+    return 'This browser blocked the storage needed for Google sign-in. Close private browsing or free some browser storage, then try again.';
+  }
+  if (code === 'auth/too-many-requests') {
+    return 'Too many sign-in attempts from this device. Wait a few minutes, then try again.';
   }
   if (
     /redirect_uri_mismatch/i.test(message) ||
@@ -291,7 +335,7 @@ export function consumeAuthReturnPath(): string | null {
 export async function signInWithGooglePopup(): Promise<User> {
   const ctx = init();
   if (!ctx?.auth) throw new Error("Firebase not configured. Check Settings.");
-  await setPersistence(ctx.auth, browserLocalPersistence);
+  await ensureAuthPersistence(ctx.auth);
   const provider = new GoogleAuthProvider();
   const result = await signInWithPopup(ctx.auth, provider);
   return result.user;
@@ -576,7 +620,7 @@ async function signInWithGoogleIdentityServices(auth: Auth): Promise<User> {
 export async function signInWithGoogle(options?: { returnPath?: string }): Promise<User | null> {
   const ctx = init();
   if (!ctx?.auth) throw new Error("Firebase not configured. Check Settings.");
-  await setPersistence(ctx.auth, browserLocalPersistence);
+  await ensureAuthPersistence(ctx.auth);
   rememberAuthReturnPath(options?.returnPath);
 
   if (isUsingFirebaseEmulator()) {
@@ -623,7 +667,7 @@ export async function signInEmulatorWithEmail(email: string): Promise<User> {
   }
   const ctx = init();
   if (!ctx?.auth) throw new Error("Firebase not configured.");
-  await setPersistence(ctx.auth, browserLocalPersistence);
+  await ensureAuthPersistence(ctx.auth);
   const EMULATOR_PASSWORD = "emulator-local-only"; // meaningless outside the local emulator's throwaway store
   try {
     const result = await signInWithEmailAndPassword(ctx.auth, email, EMULATOR_PASSWORD);
@@ -647,7 +691,7 @@ export async function completeGoogleRedirectSignIn(): Promise<User | null> {
   const ctx = init();
   if (!ctx?.auth) return null;
   try {
-    await setPersistence(ctx.auth, browserLocalPersistence);
+    await ensureAuthPersistence(ctx.auth);
     const result = await getRedirectResult(ctx.auth);
     return result?.user ?? null;
   } catch (err) {

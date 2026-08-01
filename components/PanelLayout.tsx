@@ -61,6 +61,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   const { openSettings } = useSettingsModal();
   usePanelKeyboardShortcuts();
   const [signingIn, setSigningIn] = React.useState(false);
+  const [signInError, setSignInError] = React.useState<string | null>(null);
   const [emulatorEmail, setEmulatorEmail] = React.useState('abelyanarmen@gmail.com');
   const [moreNavOpen, setMoreNavOpen] = React.useState(false);
   const unreviewedAiCount = useUnreviewedAiCount();
@@ -154,6 +155,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             disabled={signingIn}
             onClick={async () => {
               setSigningIn(true);
+              setSignInError(null);
               try {
                 const user = await signInWithGoogle({
                   returnPath: `${window.location.pathname}${window.location.search}`,
@@ -161,7 +163,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
                 if (!user) return;
               } catch (e) {
                 console.error(e);
-                alert(getAuthErrorMessage(e));
+                setSignInError(getAuthErrorMessage(e));
               } finally {
                 setSigningIn(false);
               }
@@ -171,6 +173,14 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             {signingIn ? <Loader2 size={18} className="animate-spin" /> : null}
             {signingIn ? 'Waiting for Google…' : 'Sign in with Google'}
           </button>
+          {signInError && (
+            <p
+              role="alert"
+              className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-left text-xs font-semibold leading-relaxed text-red-700"
+            >
+              {signInError}
+            </p>
+          )}
           {mobileRedirectSignIn && (
             <p className="text-xs text-slate-500 mt-3">
               A Google account window will open. After you approve, your inventory downloads from the cloud onto this phone.
