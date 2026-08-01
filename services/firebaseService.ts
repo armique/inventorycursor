@@ -614,8 +614,12 @@ async function signInWithGoogleIdentityServices(auth: Auth): Promise<User> {
 }
 
 /**
- * Google sign-in. Mobile uses Google Identity Services (no /__/auth/handler redirect).
- * Desktop uses Firebase popup, with GIS fallback if the popup is blocked.
+ * Google sign-in through Firebase's provider flow on every device.
+ *
+ * Do not route phones through the GIS button/One Tap iframe: iOS WebKit can
+ * throw QuotaExceededError inside that cross-origin flow even when this app's
+ * own storage is available. Firebase popup avoids that iframe; redirect is a
+ * last resort only when the browser refuses to open the popup.
  */
 export async function signInWithGoogle(options?: { returnPath?: string }): Promise<User | null> {
   const ctx = init();
@@ -623,31 +627,25 @@ export async function signInWithGoogle(options?: { returnPath?: string }): Promi
   await ensureAuthPersistence(ctx.auth);
   rememberAuthReturnPath(options?.returnPath);
 
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
+
   if (isUsingFirebaseEmulator()) {
-    const provider = new GoogleAuthProvider();
     markRedirectPending();
     await signInWithRedirect(ctx.auth, provider);
     return null;
   }
 
-  // Phones: GIS token client — does not use Firebase redirect_uri (fixes Error 400 mismatch).
-  if (prefersRedirectSignIn()) {
-    return signInWithGoogleIdentityServices(ctx.auth);
-  }
-
   try {
-    const provider = new GoogleAuthProvider();
     const result = await signInWithPopup(ctx.auth, provider);
     return result.user;
   } catch (err: unknown) {
     const code = (err as { code?: string })?.code || "";
     if (code === "auth/unauthorized-domain") throw err;
-    if (
-      code === "auth/popup-blocked" ||
-      code === "auth/cancelled-popup-request" ||
-      code === "auth/popup-closed-by-user"
-    ) {
-      return signInWithGoogleIdentityServices(ctx.auth);
+    if (code === "auth/popup-blocked") {
+      markRedirectPending();
+      await signInWithRedirect(ctx.auth, provider);
+      return null;
     }
     throw err;
   }
