@@ -24,6 +24,7 @@ import {
   signInWithGoogle,
 } from './firebaseService';
 import { createPhotoUploadToken } from '../utils/photoUploadToken';
+import { assertStorageUploadBudget, recordStorageUploads } from './storageOpsCounter';
 
 export const PHOTO_UPLOAD_SESSIONS = 'photoUploadSessions';
 export const PHOTO_UPLOAD_TTL_MS = 25 * 60 * 1000;
@@ -188,9 +189,11 @@ export async function uploadPhonePhotoToSession(
     file instanceof Blob
       ? file
       : new Blob([file], { type: (file as File).type || 'image/jpeg' });
+  assertStorageUploadBudget();
   const snapshot = await uploadBytes(ref, blob, {
     contentType: blob.type || 'image/jpeg',
   });
+  recordStorageUploads();
   const url = await getDownloadURL(snapshot.ref);
 
   const nextUrls = [...session.uploadedUrls, url].slice(0, session.maxPhotos);

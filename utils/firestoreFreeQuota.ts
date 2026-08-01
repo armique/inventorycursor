@@ -13,9 +13,11 @@ export const FIRESTORE_FREE = {
 
 export const STORAGE_FREE = {
   storedBytes: 5 * 1024 * 1024 * 1024, // 5 GB
-  downloadBytesPerDay: 1 * 1024 * 1024 * 1024, // 1 GB/day
-  uploadOpsPerDay: 20_000,
-  downloadOpsPerDay: 50_000,
+  // `*.firebasestorage.app` buckets use Google Cloud Storage Always Free
+  // allowances (eligible US regions only), measured monthly.
+  downloadBytesPerMonth: 100 * 1024 * 1024 * 1024, // 100 GB/month
+  uploadOpsPerMonth: 5_000,
+  downloadOpsPerMonth: 50_000,
 } as const;
 
 export type QuotaMeter = {

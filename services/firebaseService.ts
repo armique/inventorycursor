@@ -60,6 +60,7 @@ import {
 } from "firebase/storage";
 import { yieldToMain } from "./backgroundPersistence";
 import type { GeneratedProductCardEntry } from "../types";
+import { assertStorageUploadBudget, recordStorageUploads } from "./storageOpsCounter";
 import {
   assertFirestoreDailyBudget,
   recordFirestoreDeletes,
@@ -768,7 +769,9 @@ export async function uploadItemImage(
   try {
     // Simple upload (single PUT) to avoid resumable-upload CORS issues; progress not available
     if (onProgress) onProgress(10); // show we started
+    assertStorageUploadBudget();
     const snapshot = await Promise.race([uploadBytes(ref, file), timeoutPromise]);
+    recordStorageUploads();
     if (onProgress) onProgress(90);
     const url = await Promise.race([getDownloadURL(snapshot.ref), timeoutPromise]);
     if (onProgress) onProgress(100);
@@ -815,7 +818,9 @@ export async function uploadProductCardBlob(
   const name = (fileName || `card-${Date.now()}.${ext}`).replace(/[^a-zA-Z0-9.\-_]/g, "_");
   const path = `product-cards/${user.uid}/${itemId || "shared"}/${Date.now()}-${name}`;
   const ref = storageRef(ctx.storage, path);
+  assertStorageUploadBudget();
   const snapshot = await uploadBytes(ref, blob);
+  recordStorageUploads();
   return getDownloadURL(snapshot.ref);
 }
 
@@ -849,7 +854,9 @@ export async function uploadExpenseAttachment(
 
   try {
     if (onProgress) onProgress(10);
+    assertStorageUploadBudget();
     const snapshot = await Promise.race([uploadBytes(ref, file), timeoutPromise]);
+    recordStorageUploads();
     if (onProgress) onProgress(90);
     const url = await Promise.race([getDownloadURL(snapshot.ref), timeoutPromise]);
     if (onProgress) onProgress(100);
@@ -890,7 +897,9 @@ export async function uploadProofAttachment(
   const timeoutPromise = new Promise<never>((_, reject) =>
     setTimeout(() => reject(new Error("Proof upload timed out after 90s.")), timeoutMs)
   );
+  assertStorageUploadBudget();
   const snapshot = await Promise.race([uploadBytes(ref, file), timeoutPromise]);
+  recordStorageUploads();
   return Promise.race([getDownloadURL(snapshot.ref), timeoutPromise]);
 }
 
@@ -1626,7 +1635,9 @@ export async function uploadStorefrontAsset(
 
   try {
     if (onProgress) onProgress(10);
+    assertStorageUploadBudget();
     const snapshot = await Promise.race([uploadBytes(ref, file), timeoutPromise]);
+    recordStorageUploads();
     if (onProgress) onProgress(90);
     const url = await Promise.race([getDownloadURL(snapshot.ref), timeoutPromise]);
     if (onProgress) onProgress(100);
@@ -2410,7 +2421,9 @@ export async function uploadBackupSnapshot(fileName: string, blob: Blob): Promis
   const user = ctx?.auth?.currentUser;
   if (!ctx?.storage || !user) throw new Error("Not signed in or Firebase Storage not configured.");
   const safe = fileName.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+  assertStorageUploadBudget();
   await uploadBytes(storageRef(ctx.storage, `${BACKUP_PREFIX}/${user.uid}/${safe}`), blob);
+  recordStorageUploads();
 }
 
 /** File names of existing backups, newest-sorting last. Empty when signed out or none yet. */
