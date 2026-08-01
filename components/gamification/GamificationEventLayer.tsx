@@ -18,7 +18,7 @@ const GamificationEventLayer: React.FC<Props> = ({ event, onDismiss, onResolveDe
   if (!event) return null;
 
   return (
-    <div className="relative fixed bottom-6 left-1/2 -translate-x-1/2 z-[500] w-[min(92vw,26rem)] rounded-2xl bg-slate-900 text-white shadow-2xl border border-slate-700 p-4 animate-in slide-in-from-bottom-4">
+    <div className="fixed bottom-24 sm:bottom-6 left-1/2 -translate-x-1/2 z-[500] w-[min(92vw,26rem)] max-h-[min(60dvh,24rem)] overflow-y-auto rounded-2xl bg-slate-900 text-white shadow-2xl border border-slate-700 p-4 animate-in slide-in-from-bottom-4">
       <button
         type="button"
         onClick={onDismiss}

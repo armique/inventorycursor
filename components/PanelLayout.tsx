@@ -104,6 +104,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     gamification: gamificationState,
     updateGamification: updateGamificationState,
     eventsArmed: gamificationEventsArmed,
+    allowProactiveEvents: !mobileRedirectSignIn,
   });
 
   /** Inventory/trash use internal scroll + docked bulk bar; eBay tools / EST use full-width workspace layout. */
