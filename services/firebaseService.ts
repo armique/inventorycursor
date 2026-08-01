@@ -60,7 +60,12 @@ import {
 } from "firebase/storage";
 import { yieldToMain } from "./backgroundPersistence";
 import type { GeneratedProductCardEntry } from "../types";
-import { recordFirestoreDeletes, recordFirestoreWrites } from "./firestoreOpsCounter";
+import {
+  assertFirestoreDailyBudget,
+  recordFirestoreDeletes,
+  recordFirestoreReads,
+  recordFirestoreWrites,
+} from "./firestoreOpsCounter";
 
 // --- CONFIG ---
 
@@ -1222,6 +1227,7 @@ async function writeShardedSyncPack(
   const corePayload = shrinkCoreUntilUnder(buildCorePayloadForShard(data), CHUNK_BODY_MAX);
 
   const existingSnap = await getDocs(colRef);
+  recordFirestoreReads(Math.max(1, existingSnap.size));
   const incomingInventory = (data.inventory || []).length;
   if (
     incomingInventory === 0 &&
@@ -1267,6 +1273,13 @@ async function writeShardedSyncPack(
   });
   ops.push((b) => b.delete(legacyRef));
 
+  const estimatedWrites = 2 + invChunks.length + trashChunks.length;
+  const estimatedDeletes = extraDeletes.length + 1;
+  assertFirestoreDailyBudget({
+    writes: estimatedWrites,
+    deletes: estimatedDeletes,
+  });
+
   const BATCH_MAX = 400;
   let batch = writeBatch(db);
   let count = 0;
@@ -1282,8 +1295,8 @@ async function writeShardedSyncPack(
   if (count > 0) await batch.commit();
 
   // meta + core + inventory/trash shards count as writes; extras + legacy as deletes
-  recordFirestoreWrites(2 + invChunks.length + trashChunks.length);
-  recordFirestoreDeletes(extraDeletes.length + 1);
+  recordFirestoreWrites(estimatedWrites);
+  recordFirestoreDeletes(estimatedDeletes);
 }
 
 // --- REAL-TIME SUBSCRIBE ---
@@ -1308,10 +1321,12 @@ export function subscribeToData(
   return onSnapshot(
     colRef,
     (snap) => {
+      recordFirestoreReads(Math.max(1, snap.size));
       void (async () => {
         try {
           if (snap.empty) {
             const leg = await getDoc(legacyRef);
+            recordFirestoreReads(1);
             onData(leg.exists() ? (leg.data() as FirestoreInventoryPayload) : null);
             return;
           }
@@ -1340,10 +1355,12 @@ export async function fetchFromCloud(): Promise<FirestoreInventoryPayload | null
 
   const colRef = syncPackCollectionRef(ctx.db, user.uid);
   const packSnap = await getDocs(colRef);
+  recordFirestoreReads(Math.max(1, packSnap.size));
   if (!packSnap.empty) {
     return assemblePayloadFromSyncSnapshot(packSnap);
   }
   const leg = await getDoc(legacyInventoryDocRef(ctx.db, user.uid));
+  recordFirestoreReads(1);
   return leg.exists() ? (leg.data() as FirestoreInventoryPayload) : null;
 }
 
@@ -1789,6 +1806,7 @@ export async function fetchEbayOrdersFromCloud(): Promise<{ orders: Record<strin
   try {
     const colRef = collection(ctx.db, "users", user.uid, EBAY_ORDERS_COLLECTION);
     const snap = await getDocs(colRef);
+    recordFirestoreReads(Math.max(1, snap.size));
     const orders: Record<string, unknown>[] = [];
     let meta: EbayOrderCloudMeta | null = null;
     snap.forEach((d) => {
@@ -1814,6 +1832,8 @@ export async function writeEbayOrdersToCloud(
   const user = ctx?.auth?.currentUser;
   if (!ctx?.db || !user) throw new Error("Not signed in");
   const colRef = collection(ctx.db, "users", user.uid, EBAY_ORDERS_COLLECTION);
+  const estimatedWrites = orders.length + (metaPatch ? 1 : 0);
+  assertFirestoreDailyBudget({ writes: estimatedWrites });
 
   const BATCH_MAX = 450;
   let batch = writeBatch(ctx.db);
@@ -1837,6 +1857,7 @@ export async function writeEbayOrdersToCloud(
     count++;
   }
   if (count > 0) await batch.commit();
+  recordFirestoreWrites(estimatedWrites);
 }
 
 /** Delete every cached eBay order doc (and meta) for this user. Requires auth. */
@@ -1846,6 +1867,8 @@ export async function clearEbayOrdersCloud(): Promise<void> {
   if (!ctx?.db || !user) return;
   const colRef = collection(ctx.db, "users", user.uid, EBAY_ORDERS_COLLECTION);
   const snap = await getDocs(colRef);
+  recordFirestoreReads(Math.max(1, snap.size));
+  assertFirestoreDailyBudget({ deletes: snap.size });
   const BATCH_MAX = 450;
   let batch = writeBatch(ctx.db);
   let count = 0;
@@ -1859,6 +1882,7 @@ export async function clearEbayOrdersCloud(): Promise<void> {
     }
   }
   if (count > 0) await batch.commit();
+  recordFirestoreDeletes(snap.size);
 }
 
 // --- BUY HELPER MARKET PRICE HISTORY (30-day eBay sold/live + Kleinanzeigen snapshots per tracked part) ---
@@ -1878,6 +1902,7 @@ export async function fetchBuyHelperPricesFromCloud(): Promise<Record<string, un
   try {
     const colRef = collection(ctx.db, "users", user.uid, BUY_HELPER_PRICES_COLLECTION);
     const snap = await getDocs(colRef);
+    recordFirestoreReads(Math.max(1, snap.size));
     const out: Record<string, unknown> = {};
     snap.forEach((d) => {
       out[d.id] = d.data();
@@ -1897,6 +1922,7 @@ export async function writeBuyHelperPricesToCloud(
   const user = ctx?.auth?.currentUser;
   if (!ctx?.db || !user) throw new Error("Not signed in");
   const colRef = collection(ctx.db, "users", user.uid, BUY_HELPER_PRICES_COLLECTION);
+  assertFirestoreDailyBudget({ writes: histories.length });
 
   const BATCH_MAX = 450;
   let batch = writeBatch(ctx.db);
@@ -1911,6 +1937,7 @@ export async function writeBuyHelperPricesToCloud(
     }
   }
   if (count > 0) await batch.commit();
+  recordFirestoreWrites(histories.length);
 }
 
 // --- REINVEST GAMIFICATION (bank ledger, quests, achievements) — one doc per user, pull-on-boot
@@ -1977,6 +2004,7 @@ export async function fetchEbayPurchasesFromCloud(): Promise<{
   try {
     const colRef = collection(ctx.db, "users", user.uid, EBAY_PURCHASES_COLLECTION);
     const snap = await getDocs(colRef);
+    recordFirestoreReads(Math.max(1, snap.size));
     const purchases: Record<string, unknown>[] = [];
     let meta: EbayPurchaseCloudMeta | null = null;
     snap.forEach((d) => {
@@ -2002,6 +2030,8 @@ export async function writeEbayPurchasesToCloud(
   const user = ctx?.auth?.currentUser;
   if (!ctx?.db || !user) throw new Error("Not signed in");
   const colRef = collection(ctx.db, "users", user.uid, EBAY_PURCHASES_COLLECTION);
+  const estimatedWrites = purchases.length + (metaPatch ? 1 : 0);
+  assertFirestoreDailyBudget({ writes: estimatedWrites });
 
   const BATCH_MAX = 450;
   let batch = writeBatch(ctx.db);
@@ -2025,6 +2055,7 @@ export async function writeEbayPurchasesToCloud(
     count++;
   }
   if (count > 0) await batch.commit();
+  recordFirestoreWrites(estimatedWrites);
 }
 
 /** Delete every cached eBay purchase doc (and meta) for this user. */
@@ -2034,6 +2065,8 @@ export async function clearEbayPurchasesCloud(): Promise<void> {
   if (!ctx?.db || !user) return;
   const colRef = collection(ctx.db, "users", user.uid, EBAY_PURCHASES_COLLECTION);
   const snap = await getDocs(colRef);
+  recordFirestoreReads(Math.max(1, snap.size));
+  assertFirestoreDailyBudget({ deletes: snap.size });
   const BATCH_MAX = 450;
   let batch = writeBatch(ctx.db);
   let count = 0;
@@ -2047,6 +2080,7 @@ export async function clearEbayPurchasesCloud(): Promise<void> {
     }
   }
   if (count > 0) await batch.commit();
+  recordFirestoreDeletes(snap.size);
 }
 
 // --- AI ACTION LOG (audit trail of assistant edits, one doc per action) ---
@@ -2211,6 +2245,7 @@ export async function fetchEbayActiveListingsFromCloud(): Promise<{
   try {
     const colRef = collection(ctx.db, "users", user.uid, EBAY_ACTIVE_LISTINGS_COLLECTION);
     const snap = await getDocs(colRef);
+    recordFirestoreReads(Math.max(1, snap.size));
     const listings: Record<string, unknown>[] = [];
     let meta: EbayActiveListingsCloudMeta | null = null;
     snap.forEach((d) => {
@@ -2243,19 +2278,24 @@ export async function writeEbayActiveListingsToCloud(
   keepIds.add(EBAY_ACTIVE_LISTINGS_META_DOC_ID);
 
   const existing = await getDocs(colRef);
+  recordFirestoreReads(Math.max(1, existing.size));
+  const staleDocs = existing.docs.filter((d) => !keepIds.has(d.id));
+  const estimatedWrites = listings.length + (metaPatch ? 1 : 0);
+  assertFirestoreDailyBudget({
+    writes: estimatedWrites,
+    deletes: staleDocs.length,
+  });
   const BATCH_MAX = 450;
   let batch = writeBatch(ctx.db);
   let count = 0;
 
-  for (const d of existing.docs) {
-    if (!keepIds.has(d.id)) {
-      batch.delete(d.ref);
-      count++;
-      if (count >= BATCH_MAX) {
-        await batch.commit();
-        batch = writeBatch(ctx.db);
-        count = 0;
-      }
+  for (const d of staleDocs) {
+    batch.delete(d.ref);
+    count++;
+    if (count >= BATCH_MAX) {
+      await batch.commit();
+      batch = writeBatch(ctx.db);
+      count = 0;
     }
   }
 
@@ -2279,6 +2319,8 @@ export async function writeEbayActiveListingsToCloud(
     count++;
   }
   if (count > 0) await batch.commit();
+  recordFirestoreWrites(estimatedWrites);
+  recordFirestoreDeletes(staleDocs.length);
 }
 
 export async function clearEbayActiveListingsCloud(): Promise<void> {
@@ -2287,6 +2329,8 @@ export async function clearEbayActiveListingsCloud(): Promise<void> {
   if (!ctx?.db || !user) return;
   const colRef = collection(ctx.db, "users", user.uid, EBAY_ACTIVE_LISTINGS_COLLECTION);
   const snap = await getDocs(colRef);
+  recordFirestoreReads(Math.max(1, snap.size));
+  assertFirestoreDailyBudget({ deletes: snap.size });
   const BATCH_MAX = 450;
   let batch = writeBatch(ctx.db);
   let count = 0;
@@ -2300,6 +2344,7 @@ export async function clearEbayActiveListingsCloud(): Promise<void> {
     }
   }
   if (count > 0) await batch.commit();
+  recordFirestoreDeletes(snap.size);
 }
 
 // --- AI product card gallery (users/{uid}/productCardGallery/{id}) ---

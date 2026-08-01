@@ -73,4 +73,25 @@ const urls = collectStorageUrlsFromItems([
 ]);
 assert.equal(urls.length, 2);
 
+const memoryStorage = new Map<string, string>();
+Object.defineProperty(globalThis, 'localStorage', {
+  configurable: true,
+  value: {
+    getItem: (key: string) => memoryStorage.get(key) ?? null,
+    setItem: (key: string, value: string) => memoryStorage.set(key, value),
+  },
+});
+const {
+  FIRESTORE_CLIENT_DAILY_BUDGET,
+  assertFirestoreDailyBudget,
+  recordFirestoreWrites,
+} = await import('../services/firestoreOpsCounter');
+assert.equal(FIRESTORE_CLIENT_DAILY_BUDGET.writes, 8_000);
+assert.doesNotThrow(() => assertFirestoreDailyBudget({ writes: 8_000 }));
+recordFirestoreWrites(7_999);
+assert.throws(
+  () => assertFirestoreDailyBudget({ writes: 2 }),
+  /free-tier safety limit reached/
+);
+
 console.log('verify-firestore-free-quota: ok');
