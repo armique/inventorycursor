@@ -379,6 +379,36 @@ const ALL_COLUMNS: { id: ColumnId; label: string }[] = [
   { id: 'actions', label: 'Actions' },
 ];
 
+const MOBILE_ACTIVE_SORT_OPTIONS = [
+  { key: 'buyDate', label: 'Acquired' },
+  { key: 'name', label: 'Name' },
+  { key: 'category', label: 'Category' },
+  { key: 'status', label: 'Status' },
+  { key: 'buyPrice', label: 'Buy price' },
+  { key: 'sellPrice', label: 'Sell price' },
+  { key: 'storePrice', label: 'Store price' },
+  { key: 'profit', label: 'Margin' },
+  { key: 'timeGauge', label: 'Time in stock' },
+] as const;
+
+const MOBILE_SOLD_SORT_OPTIONS = [
+  { key: 'sellDate', label: 'Sold date' },
+  { key: 'name', label: 'Name' },
+  { key: 'category', label: 'Category' },
+  { key: 'status', label: 'Status' },
+  { key: 'buyPrice', label: 'Buy price' },
+  { key: 'sellPrice', label: 'Sell price' },
+  { key: 'storePrice', label: 'Store price' },
+  { key: 'profit', label: 'Margin' },
+  { key: 'buyDate', label: 'Acquired' },
+] as const;
+
+function defaultMobileSortDirection(key: string): SortConfig['direction'] {
+  return ['buyDate', 'sellDate', 'buyPrice', 'sellPrice', 'storePrice', 'profit', 'timeGauge'].includes(key)
+    ? 'desc'
+    : 'asc';
+}
+
 function clampInventoryColumnWidth(colId: ColumnId, w: number): number {
   const def = DEFAULT_WIDTHS[colId];
   const floor =
@@ -5027,6 +5057,16 @@ const InventoryList: React.FC<Props> = ({
     statusFilter === 'PURCHASES'
       ? `${purchasesView.rowCount} deal${purchasesView.rowCount === 1 ? '' : 's'}`
       : `${sortedItems.length} items`;
+  const mobileSortOptions =
+    statusFilter === 'ACTIVE'
+      ? MOBILE_ACTIVE_SORT_OPTIONS
+      : statusFilter === 'SOLD'
+        ? MOBILE_SOLD_SORT_OPTIONS
+        : null;
+  const normalizedSortKey = sortConfig.key === 'item' ? 'name' : sortConfig.key;
+  const mobileSortValue = mobileSortOptions?.some((option) => option.key === normalizedSortKey)
+    ? normalizedSortKey
+    : '';
 
   return (
     <div className="flex-1 min-h-0 h-full flex flex-col gap-1 overflow-hidden relative">
@@ -5353,15 +5393,63 @@ const InventoryList: React.FC<Props> = ({
              )}
            </div>
            <div className="flex items-center justify-between gap-2 px-0.5">
-             <span className="text-[11px] font-semibold text-slate-500">
+             <span className="min-w-0 truncate text-[11px] font-semibold text-slate-500">
                {listCountLabel}
                {statusFilter !== 'PURCHASES' && categoryFilter !== 'ALL' ? ` · ${categoryFilter}` : ''}
              </span>
-             {hasActiveFilters && statusFilter !== 'PURCHASES' && (
-               <button type="button" onClick={clearAllFilters} className="text-[10px] font-black uppercase text-slate-500">
-                 Reset
-               </button>
-             )}
+             <div className="flex shrink-0 items-center gap-1">
+               {mobileSortOptions && (
+                 <>
+                   <label className="relative">
+                     <ArrowUpDown
+                       size={12}
+                       className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-slate-400"
+                     />
+                     <span className="sr-only">Sort inventory</span>
+                     <select
+                       value={mobileSortValue}
+                       onChange={(e) => {
+                         const key = e.target.value;
+                         setSortConfig((prev) => {
+                           const prevKey = prev.key === 'item' ? 'name' : prev.key;
+                           return prevKey === key
+                             ? prev
+                             : { key, direction: defaultMobileSortDirection(key) };
+                         });
+                       }}
+                       className="max-w-[8rem] appearance-none rounded-lg border border-slate-200 bg-white py-1.5 pl-6 pr-6 text-[10px] font-black uppercase text-slate-700 outline-none"
+                       aria-label={`Sort ${statusFilter.toLowerCase()} inventory by`}
+                     >
+                       {mobileSortValue === '' && <option value="">Custom sort</option>}
+                       {mobileSortOptions.map((option) => (
+                         <option key={option.key} value={option.key}>
+                           {option.label}
+                         </option>
+                       ))}
+                     </select>
+                   </label>
+                   <button
+                     type="button"
+                     onClick={() =>
+                       setSortConfig((prev) => ({
+                         ...prev,
+                         direction: prev.direction === 'asc' ? 'desc' : 'asc',
+                       }))
+                     }
+                     className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700"
+                     aria-label={`Sort ${sortConfig.direction === 'asc' ? 'descending' : 'ascending'}`}
+                     title={sortConfig.direction === 'asc' ? 'Ascending — tap for descending' : 'Descending — tap for ascending'}
+                   >
+                     {sortConfig.direction === 'asc' ? <ArrowUp size={13} /> : <ArrowDown size={13} />}
+                   </button>
+                 </>
+               )}
+               {hasActiveFilters && statusFilter !== 'PURCHASES' && (
+                 <button type="button" onClick={clearAllFilters} className="px-1 text-[10px] font-black uppercase text-slate-500">
+                   Reset
+                 </button>
+               )}
+             </div>
            </div>
            <div className="min-h-[28px]">
              {statusFilter === 'PURCHASES' ? (
