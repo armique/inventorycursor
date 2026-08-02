@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Boxes, Check, Layers, Monitor, Package, Sparkles, Trash2, X } from 'lucide-react';
 import type { InventoryItem } from '../types';
+import { ItemStatus } from '../types';
 import { formatEUR } from '../utils/formatMoney';
 import { buildContainerTitle } from '../utils/buildTitle';
 import { buildRetroContainerAndComponents } from '../utils/retroSoldCompose';
@@ -133,6 +134,9 @@ const SoldEqualSplitGroupsModal: React.FC<Props> = ({ items, onApply, onClose, o
       sellDate: active.sellDate,
       useSmartDistribution: active.useSmartDistribution,
     });
+    // Never offer this date+price bucket again after a successful compose.
+    ignoreEqualSplitGroupId(active.id);
+    onIgnored?.();
     onApply([bundle, ...updatedComponents]);
     setConfirmedMemberIds((prev) => {
       const next = new Set(prev);
@@ -148,10 +152,16 @@ const SoldEqualSplitGroupsModal: React.FC<Props> = ({ items, onApply, onClose, o
     if (!active) return [];
     const used = new Set(visibleDrafts.flatMap((d) => d.itemIds));
     for (const id of confirmedMemberIds) used.add(id);
+    const claimed = new Set<string>();
+    for (const row of items) {
+      if (!row.isPC && !row.isBundle) continue;
+      for (const id of row.componentIds || []) claimed.add(id);
+    }
     const dayKey = toLocalCalendarDateKey(active.sellDate) || active.sellDate.slice(0, 10);
     return items.filter((i) => {
-      if (used.has(i.id)) return false;
+      if (used.has(i.id) || claimed.has(i.id)) return false;
       if (!isRealizedDisposal(i) || i.isBundle || i.isPC || i.parentContainerId) return false;
+      if (i.status === ItemStatus.IN_COMPOSITION) return false;
       const sell = Number(i.sellPrice);
       if (!Number.isFinite(sell) || Math.abs(sell - active.equalSellPrice) >= 0.005) return false;
       const d = toLocalCalendarDateKey(i.sellDate || '') || String(i.sellDate || '').slice(0, 10);

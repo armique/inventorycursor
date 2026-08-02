@@ -76,9 +76,31 @@ const { bundle, updatedComponents } = buildRetroContainerAndComponents({
   useSmartDistribution: true,
 });
 assert.equal(bundle.isPC, true);
+assert.equal(bundle.isBundle, false);
 assert.equal(bundle.sellPrice, 200);
 assert.equal(updatedComponents.length, 4);
 assert.ok(updatedComponents.every((c) => c.status === ItemStatus.IN_COMPOSITION));
+
+// After compose, the same equal-split bucket must disappear (parts claimed by the PC).
+const afterCompose = [...items.filter((i) => !june!.itemIds.includes(i.id)), bundle, ...updatedComponents];
+assert.equal(
+  suggestEqualSplitSoldGroups(afterCompose).some((g) => g.sellDate === '2025-06-10' && g.equalSellPrice === 50),
+  false,
+  'already-composed equal-split group must not be suggested again'
+);
+
+// Even if child rows somehow stay SOLD without parentContainerId, componentIds on the PC claim them.
+const leakedSold = updatedComponents.map((c) => ({
+  ...c,
+  status: ItemStatus.SOLD,
+  parentContainerId: undefined,
+}));
+const leakInventory = [bundle, ...leakedSold, ...items.filter((i) => !june!.itemIds.includes(i.id))];
+assert.equal(
+  suggestEqualSplitSoldGroups(leakInventory).some((g) => g.itemIds.includes('cpu')),
+  false,
+  'parts listed on an existing PC componentIds must not re-enter suggestions'
+);
 
 ignoreEqualSplitGroupId(june!.id);
 assert.equal(countEqualSplitSoldGroupCandidates(items), 1);
