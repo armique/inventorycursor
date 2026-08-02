@@ -51,10 +51,11 @@ const ReinvestBundleRecalcModal: React.FC<Props> = ({ container, allItems, onApp
           <div className="flex items-start gap-2 bg-blue-50 p-3 rounded-xl">
             <BarChart3 size={14} className="text-blue-500 mt-0.5 shrink-0" />
             <p className="text-[10px] text-blue-700 leading-tight">
-              <strong>How it splits:</strong> each part's share comes from your own past sales of that exact
-              variant when there's enough of it (2+ sales), otherwise a typical-value prior — GPUs and CPUs
-              carry more of the total than RAM, storage, or a case. The total sell price stays the same,
-              only how it's divided across parts changes.
+              <strong>How it splits:</strong> by each part&apos;s buy cost, so a €130 CPU keeps a
+              realistic share of the bundle total instead of collapsing while the GPU takes almost
+              everything. Parts without a buy price use your own standalone sales of that variant
+              (2+), then a typical-value prior. The bundle total stays the same — only the split
+              across parts changes.
             </p>
           </div>
 
@@ -72,7 +73,9 @@ const ReinvestBundleRecalcModal: React.FC<Props> = ({ container, allItems, onApp
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-bold text-slate-700 truncate">{s.name}</p>
                       <p className="text-[9px] font-black uppercase tracking-widest mt-0.5 flex items-center gap-1">
-                        {s.weightSource === 'dealwatch' ? (
+                        {s.weightSource === 'buy' ? (
+                          <span className="text-slate-600 flex items-center gap-1"><Tag size={9} /> Buy cost share</span>
+                        ) : s.weightSource === 'dealwatch' ? (
                           <span className="text-emerald-600 flex items-center gap-1"><Tag size={9} /> Your own sales</span>
                         ) : (
                           <span className="text-slate-400 flex items-center gap-1"><Tag size={9} /> Typical value</span>
