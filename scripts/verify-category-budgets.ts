@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import { ItemStatus, type InventoryItem } from '../types';
-import { computeCategoryBudgets, getSeasonStartDate } from '../utils/categoryBudgets';
+import { computeCategoryBudgets, computeCategoryBudgetsDetailed, getSeasonStartDate } from '../utils/categoryBudgets';
 
 function item(partial: Partial<InventoryItem> & Pick<InventoryItem, 'id' | 'name'>): InventoryItem {
   return {
@@ -88,9 +88,39 @@ assert.equal(other.sold, 200);
 assert.equal(gpuFromLump?.bought ?? 0, 60);
 console.log('OK: lump-sum PC sale credits "other", while its GPU child\'s buy still debits gpu');
 
+// IN_COMPOSITION parts with attributed sell prices credit the part category (not Other).
+const attributedId = 'pc-3';
+const attributedGpu = item({
+  id: 'gpu-3',
+  name: 'RTX 3070',
+  status: ItemStatus.IN_COMPOSITION,
+  parentContainerId: attributedId,
+  buyPrice: 400,
+  buyDate: '2026-06-04',
+  sellPrice: 550,
+  sellDate: '2026-06-28',
+});
+const attributedPc = item({
+  id: attributedId,
+  name: 'Gaming PC attributed',
+  isPC: true,
+  status: ItemStatus.SOLD,
+  componentIds: [attributedGpu.id],
+  sellPrice: 550,
+  sellDate: '2026-06-28',
+});
+const b5 = computeCategoryBudgetsDetailed([attributedPc, attributedGpu], SINCE);
+const gpuAttr = b5.budgets.find((x) => x.key === 'gpu')!;
+assert.equal(gpuAttr.sold, 550);
+assert.equal(gpuAttr.bought, 400);
+assert.equal(gpuAttr.budget, 150);
+assert.equal(b5.unattributedPcSold, 0);
+console.log('OK: attributed IN_COMPOSITION GPU sell credits gpu (not Other)');
+
 // Season start date: on/after Jun 1 -> this year; before Jun 1 -> last year.
 assert.equal(getSeasonStartDate(new Date('2026-07-28')), '2026-06-01');
 assert.equal(getSeasonStartDate(new Date('2026-03-15')), '2025-06-01');
 console.log('OK: season start date resolves to Jun 1, rolling back a year before it arrives');
 
 console.log('\nAll category budget checks passed.');
+

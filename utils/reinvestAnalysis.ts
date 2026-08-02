@@ -6,7 +6,11 @@
  */
 import { InventoryItem, ItemStatus } from '../types';
 import { isRealizedDisposal } from './itemDisposition';
-import { getChildren, roundMoney } from '../services/financialAggregation';
+import {
+  getChildren,
+  getEffectiveSellPriceForProfit,
+  roundMoney,
+} from '../services/financialAggregation';
 import { extractPrimaryComponentKey, prettifyComponentKey, type ComponentCategory } from './componentKeyExtractor';
 import { resolveSalePlatform } from './salePlatform';
 
@@ -24,6 +28,14 @@ export const COMPONENT_CATEGORY_LABELS: Record<ComponentCategory, string> = {
   cooler: 'Cooler',
 };
 
+/** Pocket P&L for ranking: list sell − shipping you paid − buy − marketplace fees. */
+export function pocketProfitForReinvest(item: InventoryItem): number {
+  const sell = getEffectiveSellPriceForProfit(item);
+  const buy = Number(item.buyPrice) || 0;
+  const fee = Number(item.feeAmount) || 0;
+  return roundMoney(sell - buy - fee);
+}
+
 export type ReinvestGroupBase = {
   key: string;
   label: string;
@@ -34,10 +46,14 @@ export type ReinvestGroupBase = {
   sampleSubCategory?: string;
   soldCount: number;
   lossCount: number;
-  /** Avg (sellPrice - buyPrice) over profitable trades only; null when none were profitable. */
+  /** Avg pocket profit over profitable trades only; null when none were profitable. */
   profitOnlyAvgProfit: number | null;
-  /** Avg (sellPrice - buyPrice) over ALL realized trades, including losses. */
+  /** Avg pocket profit (sell − buy − fees − shipping) over ALL realized trades. */
   allInclAvgProfit: number;
+  /** Avg sell − buy only (no fees) — for transparency when fees were missing on some rows. */
+  grossAvgProfit: number;
+  /** True when at least one sale in the sample had feeAmount or seller shipping recorded. */
+  feesObserved: boolean;
   avgBuyPrice: number;
   avgDaysToSell: number;
   sellKaMedian: number | null;
@@ -62,6 +78,8 @@ export type ReinvestGroupBase = {
   verdict: 'restock' | 'stocked' | 'skip';
   skipReason?: string;
   sampleItemIds: string[];
+  /** How many sample sales came from sold PC/bundle attributed parts. */
+  attributedFromKitCount: number;
 };
 
 export type ReinvestGroup = ReinvestGroupBase & { kind: 'variant' | 'hypothesis' };
@@ -322,10 +340,17 @@ function buildGroupFromSales(
   seasonalityReady: boolean,
 ): ReinvestGroupBase {
   const soldCount = sold.length;
-  const profits = sold.map((i) => (Number(i.sellPrice) || 0) - (Number(i.buyPrice) || 0));
-  const profitable = profits.filter((p) => p > 0);
-  const lossCount = profits.filter((p) => p <= 0).length;
+  const pocketProfits = sold.map((i) => pocketProfitForReinvest(i));
+  const grossProfits = sold.map((i) => roundMoney((Number(i.sellPrice) || 0) - (Number(i.buyPrice) || 0)));
+  const profitable = pocketProfits.filter((p) => p > 0);
+  const lossCount = pocketProfits.filter((p) => p <= 0).length;
   const days = sold.map((i) => daysBetween(i.buyDate, i.sellDate)).filter((d): d is number => d != null);
+  const feesObserved = sold.some(
+    (i) => (Number(i.feeAmount) || 0) > 0 || Boolean(i.sellerPaidShipping && (Number(i.sellerShippingAmount) || 0) > 0),
+  );
+  const attributedFromKitCount = sold.filter(
+    (i) => Boolean(i.parentContainerId) || i.status === ItemStatus.IN_COMPOSITION,
+  ).length;
 
   const kaSells: number[] = [];
   const ebaySells: number[] = [];
@@ -351,7 +376,8 @@ function buildGroupFromSales(
   const sampleCategory = mostCommon(sold.map((i) => i.category || 'Components'));
   const subCats = sold.map((i) => i.subCategory).filter((s): s is string => !!s);
   const sampleSubCategory = subCats.length ? mostCommon(subCats) : undefined;
-  const allInclAvgProfit = average(profits);
+  const allInclAvgProfit = average(pocketProfits);
+  const grossAvgProfit = average(grossProfits);
   const targetStock = targetStockQty(soldCount, avgDaysToSell, historySpanDays, confidence);
   const { verdict, skipReason } = classifyVerdict(allInclAvgProfit, avgDaysToSell, soldCount, currentStock, targetStock);
 
@@ -365,6 +391,8 @@ function buildGroupFromSales(
     lossCount,
     profitOnlyAvgProfit: profitable.length ? average(profitable) : null,
     allInclAvgProfit,
+    grossAvgProfit,
+    feesObserved,
     avgBuyPrice: average(sold.map((i) => Number(i.buyPrice) || 0)),
     avgDaysToSell,
     sellKaMedian: median(kaSells),
@@ -384,6 +412,7 @@ function buildGroupFromSales(
     verdict,
     skipReason,
     sampleItemIds: sold.slice(0, 20).map((i) => i.id),
+    attributedFromKitCount,
   };
 }
 

@@ -20,6 +20,10 @@ import { loadReinvestMarginOverrides } from '../utils/reinvestSettings';
 import { canUseReinvestAI, generateReinvestHypotheses, hypothesisToGroup } from '../services/reinvestAI';
 import { markQuestDone, type GamificationState } from '../utils/gamification';
 import { formatEURPrefix } from '../utils/formatMoney';
+import { computeCategoryBudgetsDetailed } from '../utils/categoryBudgets';
+import { detectReinvestSuspicions, applySuspicionAnswersToGroups } from '../utils/reinvestSuspicion';
+import { loadReinvestUserAnswers, saveReinvestUserAnswer } from '../utils/reinvestUserAnswers';
+import { buildReinvestTodayBrief } from '../utils/reinvestTodayBrief';
 import ReinvestCard from './reinvest/ReinvestCard';
 import ReinvestCheatSheet from './reinvest/ReinvestCheatSheet';
 import ReinvestBestSellers from './reinvest/ReinvestBestSellers';
@@ -29,6 +33,8 @@ import ReinvestGameTab from './reinvest/ReinvestGameTab';
 import ReinvestAdvisorTab from './reinvest/ReinvestAdvisorTab';
 import ReinvestCategoryBudgets from './reinvest/ReinvestCategoryBudgets';
 import ReinvestStockGaps from './reinvest/ReinvestStockGaps';
+import ReinvestTodayBriefPanel from './reinvest/ReinvestTodayBrief';
+import ReinvestScenarios from './reinvest/ReinvestScenarios';
 
 type Props = {
   items: InventoryItem[];
@@ -47,47 +53,96 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
   const [fees, setFees] = useState<BuyHelperFees>(() => loadBuyHelperFees());
   const [aiHypotheses, setAiHypotheses] = useState<ReinvestGroup[]>([]);
   const [loadingHypotheses, setLoadingHypotheses] = useState(false);
-  // Read once — ReinvestCard persists further slider changes itself; the page doesn't need to
-  // re-render the whole grid on every tick of any one card's margin slider.
   const [marginOverrides] = useState<Record<string, number>>(() => loadReinvestMarginOverrides());
+  const [answers, setAnswers] = useState(() => loadReinvestUserAnswers());
+  const [intentFilter, setIntentFilter] = useState<'all' | 'standalone' | 'kit'>('all');
+  const [focusGroupKey, setFocusGroupKey] = useState<string | null>(null);
 
   const data = useMemo(() => buildReinvestData(items), [items]);
+  const budgetsDetailed = useMemo(() => computeCategoryBudgetsDetailed(items), [items]);
+
+  const adjustedVariants = useMemo(
+    () => applySuspicionAnswersToGroups(data.variants, answers) as ReinvestGroup[],
+    [data.variants, answers],
+  );
+  const adjustedBundles = useMemo(
+    () => applySuspicionAnswersToGroups(data.bundles, answers) as AnchorBundleGroup[],
+    [data.bundles, answers],
+  );
 
   const restock = useMemo(() => {
     const list: Array<ReinvestGroup | AnchorBundleGroup> = [
-      ...data.variants.filter((g) => g.kind === 'variant' && g.verdict === 'restock'),
-      ...data.bundles.filter((g) => g.verdict === 'restock'),
+      ...adjustedVariants.filter((g) => g.kind === 'variant' && g.verdict === 'restock'),
+      ...adjustedBundles.filter((g) => g.verdict === 'restock'),
     ];
     return list.sort((a, b) => b.profitPerDay - a.profitPerDay);
-  }, [data.variants, data.bundles]);
+  }, [adjustedVariants, adjustedBundles]);
 
   const stocked = useMemo(
     () => [
-      ...data.variants.filter((g) => g.kind === 'variant' && g.verdict === 'stocked'),
-      ...data.bundles.filter((g) => g.verdict === 'stocked'),
+      ...adjustedVariants.filter((g) => g.kind === 'variant' && g.verdict === 'stocked'),
+      ...adjustedBundles.filter((g) => g.verdict === 'stocked'),
     ],
-    [data.variants, data.bundles],
+    [adjustedVariants, adjustedBundles],
   );
 
   const skipped = useMemo(
     () => [
-      ...data.variants.filter((g) => g.kind === 'variant' && g.verdict === 'skip'),
-      ...data.bundles.filter((g) => g.verdict === 'skip'),
+      ...adjustedVariants.filter((g) => g.kind === 'variant' && g.verdict === 'skip'),
+      ...adjustedBundles.filter((g) => g.verdict === 'skip'),
     ],
-    [data.variants, data.bundles],
+    [adjustedVariants, adjustedBundles],
   );
 
-  const thinRestock = useMemo(() => data.variants.filter((g) => g.kind === 'hypothesis'), [data.variants]);
+  const thinRestock = useMemo(() => adjustedVariants.filter((g) => g.kind === 'hypothesis'), [adjustedVariants]);
   const hypotheses = useMemo(() => [...thinRestock, ...aiHypotheses], [thinRestock, aiHypotheses]);
   const bundleFocus = useMemo(
-    () => [...data.bundles].sort((a, b) => b.soldCount - a.soldCount || b.profitPerDay - a.profitPerDay).slice(0, 8),
-    [data.bundles],
+    () => [...adjustedBundles].sort((a, b) => b.soldCount - a.soldCount || b.profitPerDay - a.profitPerDay).slice(0, 8),
+    [adjustedBundles],
+  );
+
+  const suspicions = useMemo(
+    () =>
+      detectReinvestSuspicions({
+        items,
+        data: { ...data, variants: adjustedVariants, bundles: adjustedBundles },
+        budgets: budgetsDetailed,
+        answers,
+      }),
+    [items, data, adjustedVariants, adjustedBundles, budgetsDetailed, answers],
+  );
+
+  const todayBrief = useMemo(
+    () =>
+      buildReinvestTodayBrief({
+        restock,
+        skipped,
+        suspicions,
+        items,
+        fees,
+        gamification,
+        intentFilter,
+      }),
+    [restock, skipped, suspicions, items, fees, gamification, intentFilter],
   );
 
   const opportunity = useMemo(
     () => restock.reduce((sum, g) => sum + Math.max(0, g.targetStock - g.currentStock) * Math.max(0, g.allInclAvgProfit), 0),
     [restock],
   );
+
+  const displayRestock = useMemo(() => {
+    if (intentFilter === 'kit') return restock.filter((g) => g.kind === 'bundle');
+    if (intentFilter === 'standalone') return restock.filter((g) => g.kind !== 'bundle');
+    return restock;
+  }, [restock, intentFilter]);
+
+  useEffect(() => {
+    if (!focusGroupKey) return;
+    const el = document.querySelector(`[data-reinvest-group="${CSS.escape(focusGroupKey)}"]`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setFocusGroupKey(null);
+  }, [focusGroupKey, buyListMode, view]);
 
   useEffect(() => {
     if (!canUseReinvestAI()) return;
@@ -122,7 +177,7 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
     setFees(loadBuyHelperFees());
   };
 
-  const nothingToShow = !restock.length && !hypotheses.length && !loadingHypotheses;
+  const nothingToShow = !displayRestock.length && !hypotheses.length && !loadingHypotheses;
 
   const handlePurchaseConfirmed = (buyPrice: number) => {
     updateGamification((prev) => ({
@@ -202,8 +257,42 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
         </div>
       )}
 
-      {view === 'buylist' && <ReinvestCategoryBudgets items={items} />}
-      {view === 'buylist' && <ReinvestStockGaps items={items} />}
+      {view === 'buylist' && (
+        <ReinvestTodayBriefPanel
+          brief={todayBrief}
+          intentFilter={intentFilter}
+          onIntentFilterChange={setIntentFilter}
+          onFocusGroup={(key) => {
+            setBuyListMode('cards');
+            setFocusGroupKey(key);
+          }}
+          onAnswer={(suspicion, optionId) => {
+            setAnswers(saveReinvestUserAnswer(suspicion.id, optionId));
+          }}
+        />
+      )}
+
+      {view === 'buylist' && (
+        <ReinvestScenarios
+          items={items}
+          data={data}
+          budgets={budgetsDetailed}
+          restock={restock}
+          skipped={skipped}
+          fees={fees}
+          gamification={gamification}
+        />
+      )}
+
+      {view === 'buylist' && (
+        <ReinvestCategoryBudgets
+          items={items}
+          onResplitHint={() =>
+            setAnswers(saveReinvestUserAnswer('unattributed_pcs', 'recalc_pcs'))
+          }
+        />
+      )}
+      {view === 'buylist' && <ReinvestStockGaps items={items} restockHints={displayRestock} />}
 
       {view === 'buylist' && (
         <div className="flex items-center justify-between gap-3">
@@ -336,21 +425,22 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
             </p>
           )}
 
-          {restock.length > 0 && (
+          {displayRestock.length > 0 && (
             <div>
               <h2 className="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-2">
-                Restock now · buy ceiling + KA / eBay sell prices
+                Restock now · pocket profit after fees · KA / eBay
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {restock.map((g) => (
-                  <ReinvestCard
-                    key={g.key}
-                    group={g}
-                    fees={fees}
-                    initialMarginPct={marginOverrides[g.key]}
-                    onPurchaseConfirmed={handlePurchaseConfirmed}
-                    onOpenHypothesisSearch={handleHypothesisSearchOpened}
-                  />
+                {displayRestock.map((g) => (
+                  <div key={g.key} data-reinvest-group={g.key}>
+                    <ReinvestCard
+                      group={g}
+                      fees={fees}
+                      initialMarginPct={marginOverrides[g.key]}
+                      onPurchaseConfirmed={handlePurchaseConfirmed}
+                      onOpenHypothesisSearch={handleHypothesisSearchOpened}
+                    />
+                  </div>
                 ))}
               </div>
             </div>

@@ -101,6 +101,8 @@ export function hypothesisToGroup(h: ReinvestHypothesis): ReinvestGroup {
     lossCount: 0,
     profitOnlyAvgProfit: null,
     allInclAvgProfit: roundMoney(h.estSellPrice - h.estBuyPrice),
+    grossAvgProfit: roundMoney(h.estSellPrice - h.estBuyPrice),
+    feesObserved: false,
     avgBuyPrice: h.estBuyPrice,
     avgDaysToSell: 14,
     sellKaMedian: h.estSellPrice,
@@ -118,5 +120,6 @@ export function hypothesisToGroup(h: ReinvestHypothesis): ReinvestGroup {
     profitPerDay: roundMoney((h.estSellPrice - h.estBuyPrice) / 14),
     verdict: 'restock',
     sampleItemIds: [],
+    attributedFromKitCount: 0,
   };
 }

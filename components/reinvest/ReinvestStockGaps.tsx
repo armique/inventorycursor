@@ -15,6 +15,8 @@ import {
 
 type Props = {
   items: InventoryItem[];
+  /** Restock groups from Today — surface as “complete this kit” hints. */
+  restockHints?: Array<{ key: string; label: string; kind: string }>;
 };
 
 function StockChip({
@@ -84,7 +86,7 @@ function StockChip({
 /**
  * Editable hot-seller watchlist: understock + overstock, add via name search.
  */
-const ReinvestStockGaps: React.FC<Props> = ({ items }) => {
+const ReinvestStockGaps: React.FC<Props> = ({ items, restockHints = [] }) => {
   const [entries, setEntries] = useState<StockWatchEntry[]>(() => loadStockWatchEntries());
   const [addOpen, setAddOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -106,6 +108,10 @@ const ReinvestStockGaps: React.FC<Props> = ({ items }) => {
   const over = useMemo(() => rows.filter((r) => r.excess > 0), [rows]);
   const ok = useMemo(() => rows.filter((r) => r.need === 0 && r.excess === 0), [rows]);
 
+  const kitHints = useMemo(
+    () => restockHints.filter((h) => h.kind === 'bundle').slice(0, 4),
+    [restockHints],
+  );
   const suggestions = useMemo(
     () => (addOpen ? suggestStockWatch(query, items, entries) : []),
     [addOpen, query, items, entries],
@@ -137,7 +143,7 @@ const ReinvestStockGaps: React.FC<Props> = ({ items }) => {
             <PackageSearch size={13} /> Shelf watch
           </h2>
           <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
-            Live stock · edit target · + to track more
+            Live stock · edit target · complete kits from Today when listed below
           </p>
         </div>
         <button
@@ -152,6 +158,19 @@ const ReinvestStockGaps: React.FC<Props> = ({ items }) => {
           <Plus size={12} strokeWidth={2.5} /> Add
         </button>
       </div>
+
+      {kitHints.length > 0 && (
+        <div className="rounded-xl border border-violet-100 bg-violet-50/60 px-2.5 py-2">
+          <p className="text-[9px] font-black uppercase tracking-widest text-violet-700 mb-1">Complete these kits</p>
+          <ul className="space-y-0.5">
+            {kitHints.map((h) => (
+              <li key={h.key} className="text-[11px] font-bold text-violet-900 truncate">
+                {h.label}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {addOpen && (
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-2 space-y-1.5">

@@ -257,21 +257,31 @@ const ReinvestCard: React.FC<Props> = ({
           )}
 
           {group.soldCount > 0 && (
-            <div className="grid grid-cols-3 gap-2">
-              <StatTile label="Avg profit" value={formatEURPrefix(group.allInclAvgProfit)} />
-              <StatTile
-                label="Price range"
-                value={group.sellLow != null && group.sellHigh != null ? `${formatEURPrefix(group.sellLow)}–${formatEURPrefix(group.sellHigh)}` : '—'}
-              />
-              <StatTile
-                label="Trend"
-                value={
-                  <>
-                    <TrendIcon size={13} className={trendColor} />
-                    {group.trend === 'up' ? 'Up' : group.trend === 'down' ? 'Down' : 'Flat'}
-                  </>
-                }
-              />
+            <div className="space-y-2">
+              <div className="grid grid-cols-3 gap-2">
+                <StatTile
+                  label={group.feesObserved ? 'Avg pocket' : 'Avg profit'}
+                  value={formatEURPrefix(group.allInclAvgProfit)}
+                />
+                <StatTile
+                  label="Price range"
+                  value={group.sellLow != null && group.sellHigh != null ? `${formatEURPrefix(group.sellLow)}–${formatEURPrefix(group.sellHigh)}` : '—'}
+                />
+                <StatTile
+                  label="Trend"
+                  value={
+                    <>
+                      <TrendIcon size={13} className={trendColor} />
+                      {group.trend === 'up' ? 'Up' : group.trend === 'down' ? 'Down' : 'Flat'}
+                    </>
+                  }
+                />
+              </div>
+              {!group.feesObserved && (
+                <p className="text-[9px] font-semibold text-slate-400">
+                  Fees not recorded on these sales — pocket P&amp;L ≈ sell − buy. Add fees on sold rows for sharper advice.
+                </p>
+              )}
             </div>
           )}
 
