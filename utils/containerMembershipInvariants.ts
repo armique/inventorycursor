@@ -96,7 +96,9 @@ export function enforceContainerMembershipInvariants(items: InventoryItem[]): Me
     }
   }
 
-  // 3) Resolve owner per part (parentContainerId wins; else heal from listings)
+  // 3) Resolve owner per part (parentContainerId wins; else heal from listings).
+  // Do NOT attach already-sold standalone parts to a container just because of stale
+  // componentIds — that hid historical equal-split suggestions after every save.
   const ownerOf = new Map<string, string>();
   for (const item of working) {
     if (isContainerRow(item)) continue;
@@ -110,6 +112,17 @@ export function enforceContainerMembershipInvariants(items: InventoryItem[]): Me
       return Boolean(p && isContainerRow(p));
     });
     if (listed.length === 0) continue;
+
+    const isSoldStandalone =
+      (current.status === ItemStatus.SOLD ||
+        current.status === ItemStatus.TRADED ||
+        current.status === ItemStatus.GIFTED) &&
+      current.status !== ItemStatus.IN_COMPOSITION;
+    if (isSoldStandalone) {
+      // Leave unparented; step 4 will drop stale componentIds from containers.
+      continue;
+    }
+
     const winner = pickOwnerParentId(listed, byId, current);
     ownerOf.set(current.id, winner);
     if (current.parentContainerId !== winner) {

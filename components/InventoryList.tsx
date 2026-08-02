@@ -6237,19 +6237,38 @@ const InventoryList: React.FC<Props> = ({
             </div>
          )}
 
-         {(statusFilter === 'SOLD' || splitView) && equalSplitGroupCount > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 px-2 py-1 rounded-lg border border-indigo-200 bg-indigo-50 text-[10px] text-indigo-950">
-              <Layers size={12} className="text-indigo-600 shrink-0" />
+         {(statusFilter === 'SOLD' || splitView) && (
+            <div
+              className={`flex flex-wrap items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] ${
+                equalSplitGroupCount > 0
+                  ? 'border-indigo-200 bg-indigo-50 text-indigo-950'
+                  : 'border-slate-200 bg-slate-50 text-slate-700'
+              }`}
+            >
+              <Layers
+                size={12}
+                className={`shrink-0 ${equalSplitGroupCount > 0 ? 'text-indigo-600' : 'text-slate-500'}`}
+              />
               <span>
-                <strong>{equalSplitGroupCount}</strong> possible historical bundle
-                {equalSplitGroupCount === 1 ? '' : 's'} (same sell date + price)
+                {equalSplitGroupCount > 0 ? (
+                  <>
+                    <strong>{equalSplitGroupCount}</strong> possible historical bundle
+                    {equalSplitGroupCount === 1 ? '' : 's'} (same sell date + price)
+                  </>
+                ) : (
+                  <>Historical equal-split bundles</>
+                )}
               </span>
               <button
                 type="button"
                 onClick={() => setShowEqualSplitGroups(true)}
-                className="ml-auto px-1.5 py-0.5 rounded bg-indigo-200/80 font-bold hover:bg-indigo-300/80"
+                className={`ml-auto px-1.5 py-0.5 rounded font-bold ${
+                  equalSplitGroupCount > 0
+                    ? 'bg-indigo-200/80 hover:bg-indigo-300/80'
+                    : 'bg-slate-200/80 hover:bg-slate-300/80'
+                }`}
               >
-                Review
+                {equalSplitGroupCount > 0 ? 'Review' : 'Open'}
               </button>
             </div>
          )}
