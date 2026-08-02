@@ -106,6 +106,7 @@ import ContainerMembershipBadge from './ContainerMembershipBadge';
 import { buildContainerTitle } from '../utils/buildTitle';
 import { countEqualSplitSoldGroupCandidates } from '../utils/suggestEqualSplitSoldGroups';
 import { applyRetroComposeToInventory, findOrphanSoldContainerShellIds } from '../utils/retroComposeApply';
+import { filterPartsAvailableForCompose } from '../utils/containerMembershipInvariants';
 import { pickSpecsAiNameVendorUpdates } from '../utils/applySpecsAiResult';
 import {
   buildContainersById,
@@ -2735,13 +2736,24 @@ const InventoryList: React.FC<Props> = ({
   const createContainerInInventory = useCallback(
     (type: 'pc' | 'bundle' | 'mixed', parts: InventoryItem[]) => {
       if (parts.length === 0) return;
+      const { available, blocked } = filterPartsAvailableForCompose(parts, items);
+      if (blocked.length > 0) {
+        setToast(
+          `${blocked.length} part${blocked.length === 1 ? '' : 's'} already in another PC/bundle — skipped`
+        );
+        setTimeout(() => setToast(null), 2800);
+      }
+      if (available.length === 0) {
+        alert('All selected parts are already inside another PC or bundle.');
+        return;
+      }
       const kind = type === 'pc' ? 'pc' : type === 'bundle' ? 'bundle' : 'mixed';
       const parentId =
         type === 'pc' ? `pc-${Date.now()}` : `bundle-inline-${Date.now()}`;
-      const title = buildContainerTitle(kind, parts);
+      const title = buildContainerTitle(kind, available);
       const buyTotal =
-        Math.round(parts.reduce((s, i) => s + Number(i.buyPrice || 0), 0) * 100) / 100;
-      const defectiveCount = parts.filter((i) => i.isDefective).length;
+        Math.round(available.reduce((s, i) => s + Number(i.buyPrice || 0), 0) * 100) / 100;
+      const defectiveCount = available.filter((i) => i.isDefective).length;
       const parent: InventoryItem = {
         id: parentId,
         name: title,
@@ -2751,24 +2763,24 @@ const InventoryList: React.FC<Props> = ({
         buyDate: todayLocalDateKey(),
         comment1:
           type === 'pc'
-            ? `PC Build (${parts.length} parts).`
+            ? `PC Build (${available.length} parts).`
             : type === 'mixed'
-              ? `Mixed Bundle (${parts.length} items)${defectiveCount ? ` · ${defectiveCount} defekt` : ''}.`
-              : `Bundle (${parts.length} items).`,
-        comment2: parts
+              ? `Mixed Bundle (${available.length} items)${defectiveCount ? ` · ${defectiveCount} defekt` : ''}.`
+              : `Bundle (${available.length} items).`,
+        comment2: available
           .map((i) => `- ${i.name}${i.isDefective ? ' [defekt]' : ''}`)
           .join('\n')
           .slice(0, 2000),
         isPC: type === 'pc',
         isBundle: type !== 'pc',
-        componentIds: parts.map((p) => p.id),
+        componentIds: available.map((p) => p.id),
         vendor:
           type === 'pc' ? 'Custom Build' : type === 'mixed' ? 'Mixed Bundle' : 'PC Bundle',
         marketTitle: title,
-        imageUrl: parts.find((p) => p.imageUrl)?.imageUrl,
+        imageUrl: available.find((p) => p.imageUrl)?.imageUrl,
         presence: 'present',
       };
-      const updatedParts = parts.map((comp) => ({
+      const updatedParts = available.map((comp) => ({
         ...comp,
         status: ItemStatus.IN_COMPOSITION,
         parentContainerId: parentId,
@@ -2784,14 +2796,14 @@ const InventoryList: React.FC<Props> = ({
       });
       setToast(
         type === 'pc'
-          ? `PC created in inventory · ${parts.length} parts`
+          ? `PC created in inventory · ${available.length} parts`
           : type === 'mixed'
-            ? `Mixed Bundle created · ${parts.length} parts`
-            : `Bundle created · ${parts.length} parts`
+            ? `Mixed Bundle created · ${available.length} parts`
+            : `Bundle created · ${available.length} parts`
       );
       setTimeout(() => setToast(null), 2400);
     },
-    [onUpdate]
+    [items, onUpdate]
   );
 
   const focusContainerInList = useCallback(
@@ -2949,7 +2961,32 @@ const InventoryList: React.FC<Props> = ({
   };
 
   const handleCreateRetroBundle = (bundle: InventoryItem, updatedComponents: InventoryItem[]) => {
-     const { nextItems, deleteIds } = applyRetroComposeToInventory(items, bundle, updatedComponents);
+     const { available, blocked } = filterPartsAvailableForCompose(updatedComponents, items);
+     if (blocked.length > 0 && available.length < 2) {
+       alert(
+         `These parts are already inside another PC/bundle. Remove the duplicate suggestion instead of composing again.`
+       );
+       setShowRetroBundle(false);
+       return;
+     }
+     const components =
+       available.length >= 2
+         ? available.map((c) => ({
+             ...c,
+             status: c.status,
+             parentContainerId: bundle.id,
+           }))
+         : updatedComponents;
+     const nextBundle =
+       available.length >= 2
+         ? {
+             ...bundle,
+             componentIds: available.map((c) => c.id),
+             buyPrice: Math.round(available.reduce((s, i) => s + Number(i.buyPrice || 0), 0) * 100) / 100,
+             sellPrice: Math.round(available.reduce((s, i) => s + Number(i.sellPrice || 0), 0) * 100) / 100,
+           }
+         : bundle;
+     const { nextItems, deleteIds } = applyRetroComposeToInventory(items, nextBundle, components);
      const changed = nextItems.filter((n) => {
        const old = items.find((i) => i.id === n.id);
        return !old || old !== n;
@@ -2957,10 +2994,10 @@ const InventoryList: React.FC<Props> = ({
      onUpdate(changed, deleteIds);
      setShowRetroBundle(false);
      setSelectedIds([]);
-     setScrollTargetItemId(bundle.id);
+     setScrollTargetItemId(nextBundle.id);
      setCollapsedBundles((prev) => {
        const next = new Set(prev);
-       next.delete(bundle.id);
+       next.delete(nextBundle.id);
        return next;
      });
      if (deleteIds.length > 0) {

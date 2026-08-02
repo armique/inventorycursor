@@ -10,6 +10,7 @@ import {
   suggestEqualSplitSoldGroups,
   type EqualSplitSoldGroup,
 } from '../utils/suggestEqualSplitSoldGroups';
+import { filterPartsAvailableForCompose } from '../utils/containerMembershipInvariants';
 import { isRealizedDisposal } from '../utils/itemDisposition';
 import { toLocalCalendarDateKey } from '../utils/calendarDate';
 import { AddOptionTile } from './addFlowShared';
@@ -125,9 +126,17 @@ const SoldEqualSplitGroupsModal: React.FC<Props> = ({ items, onApply, onClose, o
 
   const confirmActive = () => {
     if (!active || activeParts.length < 2) return;
+    const { available, blocked } = filterPartsAvailableForCompose(activeParts, items);
+    if (blocked.length > 0 && available.length < 2) {
+      alert(
+        `These parts are already inside another PC/bundle (${blocked.length} blocked). Open Sold inventory instead of composing again.`
+      );
+      return;
+    }
+    const partsToUse = available.length >= 2 ? available : activeParts;
     const name = active.name.trim() || autoName;
     const { bundle, updatedComponents } = buildRetroContainerAndComponents({
-      items: activeParts,
+      items: partsToUse,
       allItems: items,
       kind: active.kind,
       bundleName: name,
@@ -140,7 +149,7 @@ const SoldEqualSplitGroupsModal: React.FC<Props> = ({ items, onApply, onClose, o
     onApply([bundle, ...updatedComponents]);
     setConfirmedMemberIds((prev) => {
       const next = new Set(prev);
-      for (const id of active.itemIds) next.add(id);
+      for (const id of partsToUse.map((p) => p.id)) next.add(id);
       return next;
     });
     setDismissedIds((prev) => new Set(prev).add(active.id));

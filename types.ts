@@ -591,6 +591,11 @@ export type ItemUpdateOptions = {
   skipUndo?: boolean;
   skipActionLog?: boolean;
   skipContainerSync?: boolean;
+  /**
+   * Skip one-parent / componentIds membership repair. Default runs on every save so
+   * a part cannot stay listed on two PC/bundles.
+   */
+  skipMembershipSync?: boolean;
   /** Push to cloud on the fast path (~0.4s) instead of the default debounce. */
   flushCloud?: boolean;
   /**

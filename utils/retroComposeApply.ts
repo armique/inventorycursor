@@ -6,6 +6,7 @@
 import type { InventoryItem } from '../types';
 import { isOrphanSoldContainerShell } from '../services/financialAggregation';
 import { isSoldOrTradedOnly } from './itemDisposition';
+import { enforceContainerMembershipInvariants } from './containerMembershipInvariants';
 
 /**
  * After composing a new container, strip claimed part ids from every other
@@ -37,7 +38,7 @@ export function reclaimComponentsFromOtherContainers(
 
 /**
  * Merge a freshly built retro container + its parts into inventory, reclaiming
- * those parts from any older shells (and dropping emptied sold shells).
+ * those parts from any older shells and enforcing membership invariants.
  */
 export function applyRetroComposeToInventory(
   items: InventoryItem[],
@@ -52,14 +53,14 @@ export function applyRetroComposeToInventory(
   const claimed = bundle.componentIds?.length
     ? bundle.componentIds
     : updatedComponents.map((c) => c.id);
-  const { nextItems, deleteIds } = reclaimComponentsFromOtherContainers(
-    merged,
-    claimed,
-    bundle.id
-  );
+  const reclaimed = reclaimComponentsFromOtherContainers(merged, claimed, bundle.id);
+  const enforced = enforceContainerMembershipInvariants(reclaimed.nextItems);
+  const deleteIds = [
+    ...new Set([...reclaimed.deleteIds, ...enforced.deleteIds]),
+  ];
 
   return {
-    nextItems: nextItems.filter((i) => !deleteIds.includes(i.id)),
+    nextItems: enforced.nextItems.filter((i) => !deleteIds.includes(i.id)),
     deleteIds,
   };
 }

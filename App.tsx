@@ -67,6 +67,7 @@ import { appendPriceHistoryIfChanged } from './services/priceHistory';
 import { computeItemProfitBeforeOverhead } from './services/financialAggregation';
 import { syncContainerBuyTotalsFromComponents } from './services/containerAggregates';
 import { syncContainerSaleMetaToChildren } from './utils/containerSaleCascade';
+import { enforceContainerMembershipInvariants } from './utils/containerMembershipInvariants';
 import { applyTradeRevert } from './services/tradeRevert';
 import { mergeTradeActionEntries } from './services/tradeActionHistory';
 import { applySaleRevert } from './services/saleRevert';
@@ -1553,6 +1554,24 @@ const App: React.FC = () => {
            }
            nextItems = nextItems.filter(i => !deleteIds.includes(i.id));
         }
+
+        // One parent per part; sync componentIds ↔ parentContainerId; drop emptied sold shells.
+        if (!options?.skipMembershipSync) {
+          const enforced = enforceContainerMembershipInvariants(nextItems);
+          if (enforced.changed) {
+            if (enforced.deleteIds.length > 0) {
+              const removed = nextItems.filter((i) => enforced.deleteIds.includes(i.id));
+              if (removed.length > 0) {
+                setTrash((prev) => [...prev, ...removed]);
+                if (recordAction) {
+                  removed.forEach((i) => actionEntries.push(makeActionEntry('Item moved to trash', i)));
+                }
+              }
+            }
+            nextItems = enforced.nextItems;
+          }
+        }
+
         const actionEntriesMerged = recordAction ? mergeTradeActionEntries(actionEntries, updatedItems) : [];
         const touchedIds = [
           ...updatedItems.map((u) => u.id),
