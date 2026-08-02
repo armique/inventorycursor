@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, TaxMode, BulkImportRecord } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
-import { computeItemProfitBeforeOverhead, getChildren, getItemDisplayFeeAmount, getItemDisplayShippingAmount, getSoldContainerDisplayTotals, shouldHideContainerChildInList, containerOrChildMatchesSearch } from '../services/financialAggregation';
+import { computeItemProfitBeforeOverhead, getChildren, getItemDisplayFeeAmount, getItemDisplayShippingAmount, getSoldContainerDisplayTotals, shouldHideContainerChildInList, containerOrChildMatchesSearch, shouldSurfaceSoldContainerPartInList, soldContainerPartDispositionDate } from '../services/financialAggregation';
 import { itemMatchesSalePlatformFilter, isMissingExplicitSalePlatform, MISSING_PLATFORM_FILTER, SALE_PLATFORM_OPTIONS, formatItemSalePlatform, formatSalePlatformLabel } from '../utils/salePlatform';
 import { expandUpdatesWithContainerSaleMeta } from '../utils/containerSaleCascade';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
@@ -669,6 +669,20 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
           item.status === ItemStatus.IN_COMPOSITION;
       } else if (statusFilter === 'SOLD') {
         matchesStatus = isRealizedDisposal(item);
+        // Parts inside a sold PC/bundle stay IN_COMPOSITION; surface them when the user
+        // pins their category (Components → GPU) so build sales are not invisible.
+        if (
+          !matchesStatus &&
+          shouldSurfaceSoldContainerPartInList(
+            item,
+            items,
+            statusFilter,
+            categoryFilter,
+            subCategoryFilter
+          )
+        ) {
+          matchesStatus = true;
+        }
       } else if (statusFilter === 'DRAFTS') {
         matchesStatus = item.isDraft === true;
       } else {
@@ -704,11 +718,21 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
     // Bundle/PC/mixed components always nest under the parent — never as top-level rows.
     // Search still surfaces the parent when a child matches.
     // Dedicated bulk-batch view lists every stamped member (including sold / in-composition kids).
+    // Exception: SOLD + category pin (e.g. Components/GPU) lists matching parts from sold builds.
     if (!bulkBatchActive) {
-      if (hiddenChildIds) {
-        if (!item.isBundle && !item.isPC && hiddenChildIds.has(item.id)) return false;
-      } else if (shouldHideContainerChildInList(item, items)) {
-        return false;
+      const isHiddenChild = hiddenChildIds
+        ? !item.isBundle && !item.isPC && hiddenChildIds.has(item.id)
+        : shouldHideContainerChildInList(item, items);
+      if (isHiddenChild) {
+        const surface =
+          shouldSurfaceSoldContainerPartInList(
+            item,
+            items,
+            statusFilter,
+            categoryFilter,
+            subCategoryFilter
+          );
+        if (!surface) return false;
       }
     }
     // Orphan "in composition" rows (no parent container) respect the visibility toggle.
@@ -736,8 +760,19 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
 
     // Spec and date filters are browsing aids — skip them during search so a suggestion click always reveals the row.
     if (!searchActive && timeFilter !== 'ALL') {
-      const isSalesItem = isRealizedDisposal(item);
-      const dateStr = isSalesItem ? item.sellDate : item.buyDate;
+      const surfacedSoldPart = shouldSurfaceSoldContainerPartInList(
+        item,
+        items,
+        statusFilter,
+        categoryFilter,
+        subCategoryFilter
+      );
+      const isSalesItem = isRealizedDisposal(item) || surfacedSoldPart;
+      const dateStr = isSalesItem
+        ? surfacedSoldPart
+          ? soldContainerPartDispositionDate(item, items)
+          : item.sellDate
+        : item.buyDate;
       if (!dateStr) return true;
       const itemDate = new Date(dateStr);
       if (itemDate < dateRange.start || itemDate > dateRange.end) return false;
@@ -2047,14 +2082,33 @@ const InventoryList: React.FC<Props> = ({
     return items.filter(item => {
       let matchesStatus = false;
       if (statusFilter === 'ACTIVE') matchesStatus = item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED || item.status === ItemStatus.IN_COMPOSITION;
-      else if (statusFilter === 'SOLD') matchesStatus = isRealizedDisposal(item);
-      else if (statusFilter === 'DRAFTS') matchesStatus = item.isDraft === true;
+      else if (statusFilter === 'SOLD') {
+        matchesStatus = isRealizedDisposal(item);
+        if (
+          !matchesStatus &&
+          shouldSurfaceSoldContainerPartInList(item, items, statusFilter, categoryFilter, subCategoryFilter)
+        ) {
+          matchesStatus = true;
+        }
+      } else if (statusFilter === 'DRAFTS') matchesStatus = item.isDraft === true;
       else matchesStatus = true;
       if (!matchesStatus) return false;
 
       // Optional visibility toggle for orphan "In Composition" items (container children always nest)
-      if (!showInComposition && item.status === ItemStatus.IN_COMPOSITION) return false;
-      if (shouldHideContainerChildInList(item, items)) return false;
+      if (
+        !showInComposition &&
+        item.status === ItemStatus.IN_COMPOSITION &&
+        !shouldSurfaceSoldContainerPartInList(item, items, statusFilter, categoryFilter, subCategoryFilter)
+      ) {
+        return false;
+      }
+      if (shouldHideContainerChildInList(item, items)) {
+        if (
+          !shouldSurfaceSoldContainerPartInList(item, items, statusFilter, categoryFilter, subCategoryFilter)
+        ) {
+          return false;
+        }
+      }
       if (categoryFilter !== 'ALL' || subCategoryFilter) {
         const matchParentAndSub = categoryFilter !== 'ALL' && item.category === categoryFilter && (!subCategoryFilter || item.subCategory === subCategoryFilter);
         const matchSubAsTopLevel = subCategoryFilter && item.category === subCategoryFilter;

@@ -89,6 +89,55 @@ export function shouldHideContainerChildInList(
   return true;
 }
 
+/** Same category pin rules as the inventory list (Components+GPU or top-level GPU). */
+export function matchesInventoryCategoryPin(
+  item: Pick<InventoryItem, 'category' | 'subCategory'>,
+  categoryFilter: string,
+  subCategoryFilter: string
+): boolean {
+  if (categoryFilter === 'ALL' && !subCategoryFilter) return true;
+  const matchParentAndSub =
+    categoryFilter !== 'ALL' &&
+    item.category === categoryFilter &&
+    (!subCategoryFilter || item.subCategory === subCategoryFilter);
+  const matchSubAsTopLevel = Boolean(subCategoryFilter && item.category === subCategoryFilter);
+  return Boolean(matchParentAndSub || matchSubAsTopLevel);
+}
+
+/** Part nested under a sold/traded/gifted PC/bundle (status often stays IN_COMPOSITION). */
+export function isPartOfRealizedContainer(item: InventoryItem, items: InventoryItem[]): boolean {
+  if (item.isBundle || item.isPC) return false;
+  const parent = getParentContainer(item, items);
+  return Boolean(parent && (parent.isPC || parent.isBundle) && isRealizedDisposal(parent));
+}
+
+/**
+ * On SOLD + Components/GPU (etc.), show the nested part as its own row — otherwise the pin
+ * only matches standalone GPUs and build sales look empty.
+ */
+export function shouldSurfaceSoldContainerPartInList(
+  item: InventoryItem,
+  items: InventoryItem[],
+  statusFilter: string,
+  categoryFilter: string,
+  subCategoryFilter: string
+): boolean {
+  if (statusFilter !== 'SOLD') return false;
+  if (categoryFilter === 'ALL' && !subCategoryFilter) return false;
+  if (!matchesInventoryCategoryPin(item, categoryFilter, subCategoryFilter)) return false;
+  return isPartOfRealizedContainer(item, items);
+}
+
+/** Sell/disposition date for a nested part when drilling sold category pins. */
+export function soldContainerPartDispositionDate(
+  item: InventoryItem,
+  items: InventoryItem[]
+): string | undefined {
+  if (item.sellDate) return item.sellDate;
+  const parent = getParentContainer(item, items);
+  return parent?.sellDate;
+}
+
 /** @deprecated Use shouldHideContainerChildInList — kept for call-site compatibility. */
 export function shouldHideSoldContainerChildInList(
   item: InventoryItem,
