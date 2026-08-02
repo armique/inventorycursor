@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import type { InventoryItem } from '../types';
 import { formatEURPrefix } from '../utils/formatMoney';
-import { loadFlipFees, totalEbayFeePct } from '../utils/flipCoach';
+import { loadFlipFees } from '../utils/flipCoach';
 import {
   buildPriceDropPlan,
   CLAUDE_PRICE_DROP_PROMPT,
@@ -59,7 +59,6 @@ const PriceDropPage: React.FC<Props> = ({ items }) => {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
 
   const fees = useMemo(() => loadFlipFees(), []);
-  const feePct = totalEbayFeePct(fees);
 
   const refresh = (force = false) => {
     const prev = loadPriceDropPlan();
@@ -169,7 +168,7 @@ const PriceDropPage: React.FC<Props> = ({ items }) => {
             <TrendingDown size={22} className="text-slate-700" /> Price Drop
           </h1>
           <p className="text-[13px] text-slate-500 font-medium mt-0.5">
-            −5% every 3 days · floor buy×1.30 · eBay −{feePct}% · KA whole €
+            −5% / 3 days · hard floor buy×1.30 · never &gt;8% / edit · KA whole € · Claude: skip &gt; wrong
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
