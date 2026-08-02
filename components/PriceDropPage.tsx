@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Check,
   ClipboardCopy,
   Download,
+  Loader2,
   RefreshCw,
   TrendingDown,
 } from 'lucide-react';
@@ -19,6 +20,7 @@ import {
   loadPriceDropPlan,
   markRowsApplied,
   savePriceDropPlan,
+  syncMarketplacesAndBuildPriceDropPlan,
   type MatchConfidence,
   type PriceDropChannel,
   type PriceDropPlan,
@@ -26,7 +28,11 @@ import {
   type PriceDropRowStatus,
 } from '../utils/priceDropSchedule';
 
-type Props = { items: InventoryItem[] };
+type Props = {
+  items: InventoryItem[];
+  /** Persist inventory after eBay/KA presence sync. */
+  onRestoreItems: (items: InventoryItem[]) => void;
+};
 
 type FilterId = 'all' | 'ready' | 'at_floor' | 'unmatched' | 'applied' | 'ebay' | 'kleinanzeigen';
 
@@ -60,39 +66,66 @@ function confTone(c: MatchConfidence): string {
   return 'text-slate-500 bg-slate-100';
 }
 
-const PriceDropPage: React.FC<Props> = ({ items }) => {
+const PriceDropPage: React.FC<Props> = ({ items, onRestoreItems }) => {
   const [searchParams] = useSearchParams();
   const agentMode = searchParams.get('agent') === '1';
   const agentSectionRef = useRef<HTMLElement | null>(null);
+  const autoSyncedRef = useRef(false);
 
   const [plan, setPlan] = useState<PriceDropPlan | null>(() => loadPriceDropPlan());
   const [filter, setFilter] = useState<FilterId>('all');
   const [copied, setCopied] = useState<'starter' | 'json' | null>(null);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
   const fees = useMemo(() => loadFlipFees(), []);
 
-  const refresh = (force = false) => {
+  const rebuildLocalOnly = useCallback(() => {
     const prev = loadPriceDropPlan();
-    if (!force && prev && !isPlanDue(prev)) {
-      setPlan(prev);
-      return;
-    }
     const next = buildPriceDropPlan(items, fees, { previous: prev });
     savePriceDropPlan(next);
     setPlan(next);
     setSelected(new Set());
-  };
+  }, [items, fees]);
 
+  const refreshFromMarketplaces = useCallback(async () => {
+    setSyncing(true);
+    setSyncMsg('Fetching eBay + KA profiles…');
+    try {
+      const prev = loadPriceDropPlan();
+      const result = await syncMarketplacesAndBuildPriceDropPlan(items, fees, { previous: prev });
+      onRestoreItems(result.items);
+      setPlan(result.plan);
+      setSelected(new Set());
+      const parts = [
+        `eBay ${result.sync.ebayMatched}/${result.sync.ebayTitleCount}`,
+        `KA ${result.sync.kaMatched}/${result.sync.kaTitleCount}`,
+        `plan ${result.plan.rows.length} rows`,
+      ];
+      if (result.sync.ebayError) parts.push(`eBay: ${result.sync.ebayError}`);
+      if (result.sync.kaError) parts.push(`KA: ${result.sync.kaError}`);
+      setSyncMsg(parts.join(' · '));
+    } catch (e) {
+      setSyncMsg((e as Error)?.message || 'Sync failed');
+      rebuildLocalOnly();
+    } finally {
+      setSyncing(false);
+    }
+  }, [items, fees, onRestoreItems, rebuildLocalOnly]);
+
+  // First visit / agent mode / due plan → auto-pull marketplaces then build plan
   useEffect(() => {
+    if (autoSyncedRef.current) return;
+    autoSyncedRef.current = true;
     const prev = loadPriceDropPlan();
-    if (!prev || isPlanDue(prev)) {
-      refresh(true);
+    if (agentMode || !prev || isPlanDue(prev) || !(prev.rows?.length > 0)) {
+      void refreshFromMarketplaces();
     } else {
       setPlan(prev);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items]);
+  }, []);
 
   useEffect(() => {
     if (!agentMode) return;
@@ -100,7 +133,7 @@ const PriceDropPage: React.FC<Props> = ({ items }) => {
       agentSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 120);
     return () => window.clearTimeout(t);
-  }, [agentMode, plan?.generatedAt]);
+  }, [agentMode, plan?.generatedAt, syncing]);
 
   const rows = plan?.rows ?? [];
   const filtered = useMemo(() => {
@@ -203,27 +236,38 @@ const PriceDropPage: React.FC<Props> = ({ items }) => {
             <TrendingDown size={22} className="text-slate-700" /> Price Drop
           </h1>
           <p className="text-[13px] text-slate-500 font-medium mt-0.5">
-            Claude reads this page himself · −5% / 3d · floor buy×1.30 · max 8% / edit
+            Auto-sync eBay + KA profiles → match inventory → build −5% plan
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             id="price-drop-refresh"
-            onClick={() => refresh(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 text-white text-[12px] font-semibold"
+            disabled={syncing}
+            onClick={() => void refreshFromMarketplaces()}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 text-white text-[12px] font-semibold disabled:opacity-60"
           >
-            <RefreshCw size={14} /> Refresh plan
+            {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            {syncing ? 'Syncing…' : 'Sync & rebuild'}
           </button>
         </div>
       </header>
 
-      {/* Machine-readable brief for Claude Chrome — always in the DOM */}
+      {syncMsg && (
+        <p
+          id="price-drop-sync-status"
+          className="text-[12px] font-medium text-slate-600 rounded-xl border border-slate-200 bg-white px-3 py-2"
+        >
+          {syncMsg}
+        </p>
+      )}
+
       <section
         ref={agentSectionRef}
         id="price-drop-agent"
         data-price-drop-ready={agentPayload && agentPayload.rows.length > 0 ? 'true' : 'false'}
         data-price-drop-due={due ? 'true' : 'false'}
+        data-price-drop-syncing={syncing ? 'true' : 'false'}
         className={`rounded-2xl border p-4 space-y-3 ${
           agentMode ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-white'
         }`}
@@ -232,7 +276,7 @@ const PriceDropPage: React.FC<Props> = ({ items }) => {
           <div>
             <h2 className="text-[15px] font-semibold tracking-tight">Agent brief</h2>
             <p className="text-[12px] text-slate-500 font-medium mt-0.5">
-              Claude opens this URL, reads the brief + JSON below, then edits eBay/KA. No paste needed.
+              Claude: wait until Sync finishes, then read brief + JSON. No paste needed.
             </p>
             <p className="text-[11px] font-mono text-slate-400 mt-1 break-all">{agentUrl}</p>
           </div>
@@ -240,7 +284,6 @@ const PriceDropPage: React.FC<Props> = ({ items }) => {
             type="button"
             onClick={() => copyText(CLAUDE_PRICE_DROP_STARTER, 'starter')}
             className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-semibold text-slate-600"
-            title="Only for a brand-new Claude chat — after that he uses this page"
           >
             <ClipboardCopy size={13} />
             {copied === 'starter' ? 'Copied' : 'Copy 1-line starter'}
@@ -259,7 +302,8 @@ const PriceDropPage: React.FC<Props> = ({ items }) => {
             <p className="text-[12px] font-semibold text-slate-700">
               Today&apos;s plan JSON{' '}
               <span className="font-medium text-slate-400">
-                · {agentPayload?.rows.length ?? 0} rows to apply
+                · {agentPayload?.rows.length ?? 0} rows
+                {syncing ? ' · syncing…' : ''}
               </span>
             </p>
             <div className="flex gap-1.5">
@@ -282,7 +326,7 @@ const PriceDropPage: React.FC<Props> = ({ items }) => {
           <pre
             id="price-drop-agent-json"
             data-testid="price-drop-agent-json"
-            className="whitespace-pre text-[10px] leading-snug font-mono text-slate-800 bg-slate-900 text-slate-100 rounded-xl p-3 max-h-72 overflow-auto"
+            className="whitespace-pre text-[10px] leading-snug font-mono bg-slate-900 text-slate-100 rounded-xl p-3 max-h-72 overflow-auto"
           >
             {agentJsonText}
           </pre>
@@ -362,9 +406,14 @@ const PriceDropPage: React.FC<Props> = ({ items }) => {
         ))}
       </div>
 
-      {!rows.length ? (
+      {!rows.length && !syncing ? (
         <p className="text-[13px] text-slate-500 font-medium p-8 text-center rounded-2xl border border-dashed border-slate-200">
-          No listed IN_STOCK items with eBay/KA signals. Sync listing presence first, then Refresh.
+          No matched listings yet. Set eBay seller + KA profile URL in Settings, then Sync &amp; rebuild.
+          Names must roughly match listing titles.
+        </p>
+      ) : syncing && !rows.length ? (
+        <p className="text-[13px] text-slate-500 font-medium p-8 text-center flex items-center justify-center gap-2">
+          <Loader2 size={16} className="animate-spin" /> Pulling eBay &amp; KA…
         </p>
       ) : (
         <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">

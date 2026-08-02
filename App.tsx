@@ -2177,7 +2177,10 @@ const App: React.FC = () => {
               />
             }
           />
-          <Route path="price-drop" element={<PriceDropPage items={items} />} />
+          <Route
+            path="price-drop"
+            element={<PriceDropPage items={items} onRestoreItems={handleRestoreItems} />}
+          />
           <Route
             path="combo-lab"
             element={

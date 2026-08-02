@@ -517,6 +517,48 @@ export function buildPriceDropPlan(
   };
 }
 
+export type PriceDropMarketSyncResult = {
+  plan: PriceDropPlan;
+  items: InventoryItem[];
+  sync: {
+    ebayMatched: number;
+    kaMatched: number;
+    ebayTitleCount: number;
+    kaTitleCount: number;
+    ebayError?: string;
+    kaError?: string;
+  };
+};
+
+/**
+ * Pull active eBay + KA profile listings, match into inventory, then rebuild the drop plan.
+ */
+export async function syncMarketplacesAndBuildPriceDropPlan(
+  items: InventoryItem[],
+  fees?: FlipFeeSettings,
+  opts?: { dropPct?: number; previous?: PriceDropPlan | null },
+): Promise<PriceDropMarketSyncResult> {
+  const { syncListingPresence } = await import('./syncListingPresence');
+  const sync = await syncListingPresence(items, { forceEbay: true, forceKa: true });
+  const plan = buildPriceDropPlan(sync.items, fees, {
+    dropPct: opts?.dropPct,
+    previous: opts?.previous ?? null,
+  });
+  savePriceDropPlan(plan);
+  return {
+    plan,
+    items: sync.items,
+    sync: {
+      ebayMatched: sync.ebayMatched,
+      kaMatched: sync.kaMatched,
+      ebayTitleCount: sync.ebayTitleCount,
+      kaTitleCount: sync.kaTitleCount,
+      ebayError: sync.ebayError,
+      kaError: sync.kaError,
+    },
+  };
+}
+
 export function loadPriceDropPlan(): PriceDropPlan | null {
   try {
     const raw = localStorage.getItem(PRICE_DROP_STORAGE_KEY);
@@ -651,8 +693,8 @@ BOOTSTRAP (you do this every run — no paste from me)
 2. Go to: the DeInventory app → Panel → Price Drop
    Direct path: /panel/price-drop?agent=1
    (If a DeInventory tab is already open, navigate there instead of guessing a new host.)
-3. Wait until the page shows the Agent brief and the element #price-drop-agent-json has JSON text.
-4. If the page says the plan is due / empty / stale, click “Refresh plan”, wait ~2s, re-read.
+3. Wait until #price-drop-agent has data-price-drop-syncing="false" and #price-drop-agent-json contains today's JSON (page auto-syncs eBay + KA profiles).
+4. If syncing is stuck or rows are empty, click “Sync & rebuild” (#price-drop-refresh), wait for status, re-read JSON.
 5. Read #price-drop-agent-brief (rules on the page) AND parse #price-drop-agent-json.
 6. Work ONLY from that JSON (generatedAt, nextDueAt, safety, rows[]). Ignore chat history prices.
 
