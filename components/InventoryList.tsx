@@ -73,6 +73,12 @@ import {
   countProductCardsByItemId,
 } from '../services/productCardGallery';
 import ItemAccessoryToggles from './ItemAccessoryToggles';
+import ListingPrepChecklistBar from './ListingPrepChecklistBar';
+import {
+  canMarkSaleReady,
+  listingPrepMissingLabel,
+  getListingPrepChecklist,
+} from '../utils/listingPrepChecklist';
 
 const ebaySoldSearchUrl = (query: string) =>
   `https://www.ebay.de/sch/i.html?_nkw=${encodeURIComponent(query)}&LH_Sold=1&LH_Complete=1`;
@@ -2070,14 +2076,19 @@ const InventoryList: React.FC<Props> = ({
   const markReadyForPeriod = useCallback(
     (period: Exclude<TimeFilter, 'ALL'>) => {
       const range = getTimeFilterDateRange(period);
-      const updated = items
+      const inPeriod = items
         .filter(isMarkReadyEligible)
         .filter((i) => !i.saleReady)
-        .filter((i) => itemBuyDateInRange(i, range))
-        .map((i) => ({ ...i, saleReady: true }));
+        .filter((i) => itemBuyDateInRange(i, range));
+      const updated = inPeriod.filter(canMarkSaleReady).map((i) => ({ ...i, saleReady: true }));
+      const skipped = inPeriod.length - updated.length;
       if (!updated.length) {
-        setToast(`No not-ready stock in ${READY_PERIOD_OPTIONS.find((o) => o.id === period)?.label || period}`);
-        setTimeout(() => setToast(null), 2200);
+        setToast(
+          skipped
+            ? `No List Ready yet — ${skipped} need title · description · photos`
+            : `No not-ready stock in ${READY_PERIOD_OPTIONS.find((o) => o.id === period)?.label || period}`,
+        );
+        setTimeout(() => setToast(null), 2800);
         setShowReadyPeriodMenu(false);
         return;
       }
@@ -2085,7 +2096,11 @@ const InventoryList: React.FC<Props> = ({
       setTimeFilter(period);
       setSmartPreset('sale_ready');
       setShowReadyPeriodMenu(false);
-      setToast(`Marked ${updated.length} Ready · ${READY_PERIOD_OPTIONS.find((o) => o.id === period)?.label}`);
+      setToast(
+        skipped
+          ? `List Ready ${updated.length} · skipped ${skipped} (checklist incomplete) · ${READY_PERIOD_OPTIONS.find((o) => o.id === period)?.label}`
+          : `List Ready ${updated.length} · ${READY_PERIOD_OPTIONS.find((o) => o.id === period)?.label}`,
+      );
       setTimeout(() => setToast(null), 2800);
     },
     [items, onUpdate]
@@ -2096,7 +2111,7 @@ const InventoryList: React.FC<Props> = ({
     for (const opt of READY_PERIOD_OPTIONS) {
       const range = getTimeFilterDateRange(opt.id);
       counts[opt.id] = items.filter(
-        (i) => isMarkReadyEligible(i) && !i.saleReady && itemBuyDateInRange(i, range)
+        (i) => canMarkSaleReady(i) && !i.saleReady && itemBuyDateInRange(i, range)
       ).length;
     }
     return counts;
@@ -2364,7 +2379,7 @@ const InventoryList: React.FC<Props> = ({
           .map((c) => `${c.id}:${c.sellPrice ?? ''}:${c.buyPrice ?? ''}:${c.profit ?? ''}`)
           .join(',')}`;
       }
-      return `${editingCell?.itemId === item.id ? `${editingCell.field}:${editValue}` : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${(item.isPC || item.isBundle) && collapsedBundles.has(item.id) ? 'col' : 'exp'}|${quickBundleSeed?.id === item.id ? 'qb' : ''}|${activeBgCardItemIds.has(item.id) ? 'bgcard' : ''}|${itemAiCardCounts[item.id] || 0}|${aiCardRegenConfirmId === item.id ? 'confirm' : ''}${kidsKey}`;
+      return `${editingCell?.itemId === item.id ? `${editingCell.field}:${editValue}` : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${(item.isPC || item.isBundle) && collapsedBundles.has(item.id) ? 'col' : 'exp'}|${quickBundleSeed?.id === item.id ? 'qb' : ''}|${activeBgCardItemIds.has(item.id) ? 'bgcard' : ''}|${itemAiCardCounts[item.id] || 0}|${aiCardRegenConfirmId === item.id ? 'confirm' : ''}|lr:${item.saleReady ? 1 : 0}:${(item.marketTitle || '').length}:${(item.marketDescription || '').length}:${getItemUserPhotoCount(item)}${kidsKey}`;
     },
     [editingCell, editValue, listingGenId, parsingSingleId, priceSuggestId, collapsedBundles, quickBundleSeed, activeBgCardItemIds, itemAiCardCounts, aiCardRegenConfirmId, items]
   );
@@ -3955,28 +3970,31 @@ const InventoryList: React.FC<Props> = ({
                                    : undefined
                                }
                              >
-                               <button
-                                 type="button"
-                                 title={
-                                   item.saleReady
-                                     ? 'Sale ready — watched for delisting / maybe-sold. Click to unwatch.'
-                                     : 'Mark sale ready when photos/specs are done.'
-                                 }
-                                 onClick={() =>
+                               <ListingPrepChecklistBar
+                                 item={item}
+                                 listingBusy={listingGenId === item.id}
+                                 onToast={(msg) => {
+                                   setToast(msg);
+                                   setTimeout(() => setToast(null), 2600);
+                                 }}
+                                 onGenerateListing={() => {
+                                   void handleGenerateListingDescription(item);
+                                 }}
+                                 onOpenPhotos={() => openAddPhotosModal([item.id])}
+                                 onToggleSaleReady={() => {
+                                   if (!item.saleReady && !canMarkSaleReady(item)) {
+                                     const miss = listingPrepMissingLabel(getListingPrepChecklist(item).missing);
+                                     setToast(`List Ready needs: ${miss}`);
+                                     setTimeout(() => setToast(null), 2600);
+                                     return;
+                                   }
                                    onUpdate(
                                      [{ ...item, saleReady: !item.saleReady }],
                                      undefined,
-                                     { skipActionLog: true }
-                                   )
-                                 }
-                                 className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-black uppercase tracking-wide border ${
-                                   item.saleReady
-                                     ? 'bg-violet-50 text-violet-800 border-violet-200'
-                                     : 'bg-slate-50 text-slate-400 border-slate-200'
-                                 }`}
-                               >
-                                 Ready
-                               </button>
+                                     { skipActionLog: true },
+                                   );
+                                 }}
+                               />
                                <button
                                  type="button"
                                  title={
@@ -5171,27 +5189,32 @@ const InventoryList: React.FC<Props> = ({
       { id: 'photos', label: 'Add photos', icon: <Camera size={16} />, onClick: () => openAddPhotosModal(deferredSelectedIds), variant: 'primary' },
       {
         id: 'sale_ready',
-        label: 'Mark Ready',
+        label: 'List Ready',
         icon: <ListChecks size={16} />,
         onClick: () => {
-          const updated = deferredSelectedIds
+          const selected = deferredSelectedIds
             .map((id) => itemsById.get(id))
             .filter((i): i is InventoryItem => Boolean(i))
-            .filter(
-              (i) =>
-                (i.status === ItemStatus.IN_STOCK || i.status === ItemStatus.ORDERED) &&
-                !i.isDefective &&
-                !i.parentContainerId
-            )
-            .map((i) => ({ ...i, saleReady: true }));
+            .filter(isMarkReadyEligible)
+            .filter((i) => !i.saleReady);
+          const updated = selected.filter(canMarkSaleReady).map((i) => ({ ...i, saleReady: true }));
+          const skipped = selected.length - updated.length;
           if (!updated.length) {
-            setToast('Select in-stock items (not defective / not in a kit)');
-            setTimeout(() => setToast(null), 2000);
+            setToast(
+              skipped
+                ? `${skipped} need title · description · photos before List Ready`
+                : 'Select in-stock items with checklist complete',
+            );
+            setTimeout(() => setToast(null), 2600);
             return;
           }
           onUpdate(updated, undefined, { skipActionLog: true });
-          setToast(`Marked ${updated.length} Ready for listing watch`);
-          setTimeout(() => setToast(null), 2200);
+          setToast(
+            skipped
+              ? `List Ready ${updated.length} · skipped ${skipped} (checklist incomplete)`
+              : `List Ready ${updated.length}`,
+          );
+          setTimeout(() => setToast(null), 2600);
         },
         variant: 'primary',
       },
@@ -6211,16 +6234,16 @@ const InventoryList: React.FC<Props> = ({
                    type="button"
                    onClick={() => setShowReadyPeriodMenu((v) => !v)}
                    className="px-2 py-1 rounded-lg border border-violet-200 bg-violet-50 text-violet-800 text-[9px] font-black uppercase tracking-wide hover:bg-violet-100 inline-flex items-center gap-1"
-                   title="Mark all in-stock items from a buy period as Ready for listing watch — no multi-select needed"
+                   title="Mark checklist-complete stock from a buy period as List Ready — no multi-select needed"
                  >
                    <ListChecks size={12} />
-                   Ready by period
+                   List Ready by period
                    <ChevronDown size={12} />
                  </button>
                  {showReadyPeriodMenu && (
                    <div className="absolute left-0 top-full mt-1 z-40 min-w-[200px] rounded-xl border border-slate-200 bg-white shadow-lg py-1">
                      <p className="px-3 py-1.5 text-[9px] font-black uppercase tracking-wide text-slate-400">
-                       Mark Ready · by buy date
+                       List Ready · by buy date
                      </p>
                      {READY_PERIOD_OPTIONS.map((opt) => {
                        const n = readyPeriodCounts[opt.id] ?? 0;
@@ -6554,7 +6577,7 @@ const InventoryList: React.FC<Props> = ({
           </div>
           <div className="space-y-2">
             <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-              Mark Ready by buy date
+              List Ready by buy date
             </p>
             <div className="grid grid-cols-2 gap-1.5">
               {READY_PERIOD_OPTIONS.map((opt) => {

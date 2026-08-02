@@ -354,9 +354,14 @@ const ListReadyPage: React.FC<Props> = ({ items }) => {
                       />
                     </td>
                     <td className="px-3 py-2.5 max-w-[16rem]">
-                      <p className="font-semibold text-slate-900 truncate" title={r.inventoryName}>
-                        {r.inventoryName}
+                      <p className="font-semibold text-slate-900 truncate" title={r.listingTitle || r.inventoryName}>
+                        {r.listingTitle || r.inventoryName}
                       </p>
+                      {r.listingTitle && r.listingTitle !== r.inventoryName ? (
+                        <p className="text-[10px] text-slate-400 truncate" title={r.inventoryName}>
+                          stock · {r.inventoryName}
+                        </p>
+                      ) : null}
                       <p className="text-[10px] text-slate-400 truncate">
                         {r.category}
                         {r.subCategory ? ` / ${r.subCategory}` : ''} · buy {formatEURPrefix(r.buyPrice)}

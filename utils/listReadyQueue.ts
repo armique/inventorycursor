@@ -2,7 +2,6 @@
  * List Ready queue — saleReady inventory → Claude drafts on KA + eBay (never publish).
  */
 import type { InventoryItem } from '../types';
-import { ItemStatus } from '../types';
 import { getItemUserPhotoUrls } from './imageImport';
 import { analyzeItemPhotos } from './photoQc';
 import {
@@ -12,6 +11,12 @@ import {
 } from './flipCoach';
 import { resolveSuggestedEbayList } from './flipInsights';
 import { roundMoney } from '../services/financialAggregation';
+import {
+  canMarkSaleReady,
+  getListingPrepChecklist,
+  resolveListingDescription,
+  resolveListingTitle,
+} from './listingPrepChecklist';
 
 export const LIST_READY_STORAGE_KEY = 'deinv_list_ready_v1';
 
@@ -27,6 +32,10 @@ export type ListReadyDraftStatus =
 export type ListReadyRow = {
   itemId: string;
   inventoryName: string;
+  /** Generated listing title (marketTitle) — use this on KA/eBay drafts. */
+  listingTitle: string;
+  /** Generated listing body (marketDescription). */
+  listingDescription: string;
   category: string;
   subCategory: string;
   buyPrice: number;
@@ -82,13 +91,7 @@ function saveStored(state: StoredState): void {
 }
 
 export function isListReadyCandidate(item: InventoryItem): boolean {
-  return (
-    Boolean(item.saleReady) &&
-    (item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) &&
-    !item.isDefective &&
-    !item.isDraft &&
-    !item.parentContainerId
-  );
+  return Boolean(item.saleReady) && canMarkSaleReady(item);
 }
 
 function conditionHint(item: InventoryItem): string {
@@ -108,6 +111,8 @@ function inventoryNote(item: InventoryItem): string {
 
 function computeBlockers(item: InventoryItem, priceKa: number | null, priceEbay: number | null): string[] {
   const blockers: string[] = [];
+  const prep = getListingPrepChecklist(item);
+  for (const m of prep.missing) blockers.push(`prep_${m}`);
   const photos = getItemUserPhotoUrls(item);
   if (!photos.length) blockers.push('no_photos');
   const qc = analyzeItemPhotos(item);
@@ -120,7 +125,7 @@ function computeBlockers(item: InventoryItem, priceKa: number | null, priceEbay:
   if (/re-shoot|PHOTO CHECK|missing:/i.test(inventoryNote(item))) {
     blockers.push('prep_note_blocker');
   }
-  return blockers;
+  return [...new Set(blockers)];
 }
 
 function deriveStatus(
@@ -175,6 +180,8 @@ export function buildListReadyPlan(
     return {
       itemId: item.id,
       inventoryName: item.name,
+      listingTitle: resolveListingTitle(item),
+      listingDescription: resolveListingDescription(item),
       category: item.category || '',
       subCategory: item.subCategory || '',
       buyPrice: Number(item.buyPrice) || 0,
@@ -257,6 +264,7 @@ export function exportListReadyAgentPayload(plan: ListReadyPlan): {
     category: string;
     subCategory: string;
     title: string;
+    description: string;
     priceKa: number | null;
     priceEbay: number | null;
     currency: 'EUR';
@@ -276,7 +284,8 @@ export function exportListReadyAgentPayload(plan: ListReadyPlan): {
       inventoryName: r.inventoryName,
       category: r.category,
       subCategory: r.subCategory,
-      title: r.inventoryName,
+      title: r.listingTitle || r.inventoryName,
+      description: r.listingDescription,
       priceKa: r.priceKa,
       priceEbay: r.priceEbay,
       currency: 'EUR' as const,
@@ -306,11 +315,13 @@ export const CLAUDE_LIST_READY_STARTER = `Open DeInventory → /panel/list-ready
 export const CLAUDE_LIST_READY_PROMPT = `You are my listing-draft operator for DeInventory (Germany).
 
 GOAL
-For each row in the List Ready JSON, create marketplace DRAFTS on kleinanzeigen.de and ebay.de using the exact title, prices, and photo URLs from the JSON.
+For each row in the List Ready JSON, create marketplace DRAFTS on kleinanzeigen.de and ebay.de using the exact title, description, prices, and photo URLs from the JSON.
 I will review every draft myself and publish later (especially eBay). You must NEVER publish or make a listing active.
 
-DO NOT invent titles, prices, or photos. DO NOT use APIs. Use Chrome like a human seller.
+DO NOT invent titles, descriptions, prices, or photos. DO NOT use APIs. Use Chrome like a human seller.
 DO NOT ask me to paste the JSON — read it from the DeInventory page.
+
+Only items that already passed the inventory checklist (generated title + description + photos) appear as saleReady / List Ready. Trust JSON.
 
 BOOTSTRAP (every run)
 1. Open Chrome (same profile as DeInventory).
@@ -331,22 +342,28 @@ SPEED
 - Minimal narration. One-line log per channel.
 - If stuck >60s on one step → SKIP that channel for the item.
 
+PHOTOS
+- Prefer downloading photoUrls (HTTPS from DeInventory/Firebase) to the computer Downloads folder, then upload from disk — most reliable for KA/eBay file pickers.
+- Keep JSON order (first = main / lifestyle card).
+- If download fails, open URL and Save As, or upload via drag from the open tab if the site allows.
+
 PER ROW WORKFLOW
-1. Open photoUrls in order (first = main / product card). Download or keep tabs ready for upload.
+1. Download photoUrls in order to Downloads (or tabs ready for upload).
 2. Kleinanzeigen (unless skipKa):
    - Neue Anzeige → pick best category from category/subCategory
    - Upload photos in JSON order
-   - Title = title (inventoryName)
+   - Title = title (generated marketTitle — NOT inventoryName unless they match)
    - Preis = priceKa as WHOLE euros only (49 not 49.53). If null → skip KA
-   - Beschreibung: short factual text from conditionHint + inventoryNote (no hype)
+   - Beschreibung = description from JSON exactly (marketDescription). If empty, fall back to conditionHint + inventoryNote only.
    - Save as DRAFT only
    - Record draft URL/id if visible
 3. eBay.de (unless skipEbay):
    - Create listing / Sell similar → Draft
    - Same photos in order
    - Title = title
+   - Description = description from JSON
    - Price = priceEbay (cents OK). If null → skip eBay
-   - Condition/notes from conditionHint
+   - Condition/notes from conditionHint only if description lacks them
    - Save as DRAFT only — never Publish
    - Record draft URL/id if visible
 4. Return to DeInventory List Ready and mark the item drafted (Mark drafted KA / eBay / both) when possible.
@@ -355,7 +372,7 @@ SAFETY
 - Captcha / 2FA / login → STOP and ask me once.
 - Wrong category uncertainty → use closest PC components category; note in SKIPPED.
 - Never edit already-active listings in this job (that is Price Drop).
-- Never raise or invent prices. Never list blocked rows (they are not in JSON).
+- Never raise or invent prices/titles/descriptions. Never list blocked rows (they are not in JSON).
 - Prefer SKIP over publishing.
 
 OUTPUT
