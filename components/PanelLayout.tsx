@@ -240,6 +240,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     { to: '/panel/reinvest', icon: <Coins size={18} />, label: 'Reinvest' },
     { to: '/panel/price-drop', icon: <TrendingDown size={18} />, label: 'Price Drop' },
     { to: '/panel/list-ready', icon: <Upload size={18} />, label: 'List Ready' },
+    { to: '/panel/automations', icon: <Bot size={18} />, label: 'Automations' },
     { to: '/panel/combo-lab', icon: <CircuitBoard size={18} />, label: 'Combo Lab' },
     { to: '/panel/bulk-imports', icon: <History size={18} />, label: 'Bulk imports' },
     { to: '/panel/ebay-store-pull', icon: <PackageSearch size={18} />, label: 'eBay Tools' },

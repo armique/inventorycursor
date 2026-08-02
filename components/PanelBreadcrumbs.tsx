@@ -17,6 +17,7 @@ const LABELS: Record<string, string> = {
   reinvest: 'Reinvest',
   'price-drop': 'Price Drop',
   'list-ready': 'List Ready',
+  automations: 'Automations',
   'card-gallery': 'Card gallery',
   invoices: 'Invoices',
   'action-history': 'Action history',
