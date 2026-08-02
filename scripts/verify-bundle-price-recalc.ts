@@ -76,4 +76,30 @@ assert.equal(ramWithDealwatch.weightSource, 'dealwatch');
 assert.ok(ramWithDealwatch.newSellPrice > byId.get(ramId)!.newSellPrice, 'real Dealwatch data for RAM should raise its allocated share vs the generic prior');
 console.log(`OK: RAM with real standalone sales (avg €410) gets a Dealwatch-based share (€${ramWithDealwatch.newSellPrice}), overriding the generic low prior`);
 
+// ============================================================
+// Case C: container.sellPrice cleared — still redistribute from sum of child sells.
+// ============================================================
+const proportionalOnly: InventoryItem[] = [
+  item({ id: gpuId, name: 'RTX 3070 8GB', category: 'Components', subCategory: 'GPU', status: ItemStatus.IN_COMPOSITION, parentContainerId: containerId, sellPrice: 500 }),
+  item({ id: cpuId, name: 'Ryzen 5 5600X', category: 'Components', subCategory: 'CPU', status: ItemStatus.IN_COMPOSITION, parentContainerId: containerId, sellPrice: 250 }),
+  item({ id: ramId, name: 'Corsair 16GB DDR4', category: 'Components', subCategory: 'RAM', status: ItemStatus.IN_COMPOSITION, parentContainerId: containerId, sellPrice: 150 }),
+  item({ id: caseId, name: 'Corsair 4000D Gehause', category: 'Components', subCategory: 'Case', status: ItemStatus.IN_COMPOSITION, parentContainerId: containerId, sellPrice: 100 }),
+  item({
+    id: containerId,
+    name: 'Gaming PC',
+    category: 'PCs',
+    subCategory: 'Prebuilt',
+    isPC: true,
+    componentIds: [gpuId, cpuId, ramId, caseId],
+    status: ItemStatus.SOLD,
+    sellPrice: 0,
+    sellDate: '2026-02-01',
+  }),
+];
+const fromChildrenSum = suggestBundleComponentPrices(proportionalOnly[4], proportionalOnly);
+assert.equal(fromChildrenSum.length, 4);
+const sumFromChildren = fromChildrenSum.reduce((s, x) => s + x.newSellPrice, 0);
+assert.ok(Math.abs(sumFromChildren - 1000) < 1, `should redistribute €1000 from child sells, got ${sumFromChildren}`);
+console.log(`OK: container sell 0 → uses child sell sum (€1000) for recalculation`);
+
 console.log('\nAll bundle price recalculation checks passed.');

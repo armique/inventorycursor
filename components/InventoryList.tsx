@@ -2256,14 +2256,24 @@ const InventoryList: React.FC<Props> = ({
   }, [searchTerm, timeFilter, sortConfig, statusFilter, categoryFilter, subCategoryFilter, salePlatformFilter, salePaymentFilter, amountFilter, specFilters, specRangeFilters, splitView]);
 
   const getRowActivityKey = useCallback(
-    (item: InventoryItem) =>
+    (item: InventoryItem) => {
       // Include editValue (not just which field is being edited) while this row is the one being
       // edited — otherwise the key stays identical across every keystroke, the row's React.memo
       // sees "no change," and the input silently stops updating after the very first keystroke.
       // Include quickBundleSeed so Flags “+” panel open/close re-renders the memoized row
       // (otherwise X / Cancel set state but the inline panel stays mounted).
-      `${editingCell?.itemId === item.id ? `${editingCell.field}:${editValue}` : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${(item.isPC || item.isBundle) && collapsedBundles.has(item.id) ? 'col' : 'exp'}|${quickBundleSeed?.id === item.id ? 'qb' : ''}|${activeBgCardItemIds.has(item.id) ? 'bgcard' : ''}|${itemAiCardCounts[item.id] || 0}|${aiCardRegenConfirmId === item.id ? 'confirm' : ''}`,
-    [editingCell, editValue, listingGenId, parsingSingleId, priceSuggestId, collapsedBundles, quickBundleSeed, activeBgCardItemIds, itemAiCardCounts, aiCardRegenConfirmId]
+      // Nested part buy/sell must be in the key too: React.memo compares parent `item` by
+      // reference, so recalculating only child sell prices would otherwise leave stale nested UI.
+      let kidsKey = '';
+      if (item.isPC || item.isBundle) {
+        const kids = getChildren(item, items);
+        kidsKey = `|kids:${kids
+          .map((c) => `${c.id}:${c.sellPrice ?? ''}:${c.buyPrice ?? ''}:${c.profit ?? ''}`)
+          .join(',')}`;
+      }
+      return `${editingCell?.itemId === item.id ? `${editingCell.field}:${editValue}` : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${(item.isPC || item.isBundle) && collapsedBundles.has(item.id) ? 'col' : 'exp'}|${quickBundleSeed?.id === item.id ? 'qb' : ''}|${activeBgCardItemIds.has(item.id) ? 'bgcard' : ''}|${itemAiCardCounts[item.id] || 0}|${aiCardRegenConfirmId === item.id ? 'confirm' : ''}${kidsKey}`;
+    },
+    [editingCell, editValue, listingGenId, parsingSingleId, priceSuggestId, collapsedBundles, quickBundleSeed, activeBgCardItemIds, itemAiCardCounts, aiCardRegenConfirmId, items]
   );
 
   const showFinancials =
@@ -3018,6 +3028,7 @@ const InventoryList: React.FC<Props> = ({
   );
 
   const handleApplyRecalc = (updates: Array<{ itemId: string; newSellPrice: number }>) => {
+    const container = recalcTarget;
     const byId = new Map(updates.map((u) => [u.itemId, u.newSellPrice]));
     const updatedItems = items
       .filter((i) => byId.has(i.id))
@@ -3027,8 +3038,28 @@ const InventoryList: React.FC<Props> = ({
         const fee = Number(i.feeAmount) || 0;
         return { ...i, sellPrice: newSellPrice, profit: newSellPrice - buyPrice - fee };
       });
-    onUpdate(updatedItems);
+    const changedCount = updatedItems.filter((i) => {
+      const next = byId.get(i.id)!;
+      const prev = Number(items.find((x) => x.id === i.id)?.sellPrice) || 0;
+      return Math.abs(next - prev) >= 0.005;
+    }).length;
+    onUpdate(updatedItems, undefined, { flushCloud: true, skipActionLog: true });
+    if (container) {
+      setCollapsedBundles((prev) => {
+        if (!prev.has(container.id)) return prev;
+        const next = new Set(prev);
+        next.delete(container.id);
+        return next;
+      });
+      setScrollTargetItemId(container.id);
+    }
     setRecalcTarget(null);
+    setToast(
+      changedCount > 0
+        ? `Component prices updated · ${changedCount} part${changedCount === 1 ? '' : 's'} changed`
+        : 'Component prices already match this split'
+    );
+    setTimeout(() => setToast(null), 2800);
   };
 
   /** SMART-resplit container lot buy cost across current parts (incl. items added later). */
