@@ -2416,13 +2416,17 @@ const InventoryList: React.FC<Props> = ({
       // sees "no change," and the input silently stops updating after the very first keystroke.
       // Include quickBundleSeed so Flags “+” panel open/close re-renders the memoized row
       // (otherwise X / Cancel set state but the inline panel stays mounted).
-      // Nested part buy/sell must be in the key too: React.memo compares parent `item` by
-      // reference, so recalculating only child sell prices would otherwise leave stale nested UI.
+      // Nested part buy/sell/name must be in the key too: React.memo compares parent `item` by
+      // reference, so renaming a child (or recalculating only child prices) would otherwise
+      // leave the expanded bundle body showing stale nested UI.
       let kidsKey = '';
       if (item.isPC || item.isBundle) {
         const kids = getChildren(item, items);
         kidsKey = `|kids:${kids
-          .map((c) => `${c.id}:${c.sellPrice ?? ''}:${c.buyPrice ?? ''}:${c.profit ?? ''}`)
+          .map(
+            (c) =>
+              `${c.id}:${c.name}:${c.sellPrice ?? ''}:${c.buyPrice ?? ''}:${c.profit ?? ''}:${c.status ?? ''}`,
+          )
           .join(',')}`;
       }
       return `${editingCell?.itemId === item.id ? `${editingCell.field}:${editValue}` : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${(item.isPC || item.isBundle) && collapsedBundles.has(item.id) ? 'col' : 'exp'}|${quickBundleSeed?.id === item.id ? 'qb' : ''}|${activeBgCardItemIds.has(item.id) ? 'bgcard' : ''}|${itemAiCardCounts[item.id] || 0}|${aiCardRegenConfirmId === item.id ? 'confirm' : ''}|lr:${item.saleReady ? 1 : 0}:${(item.marketTitle || '').length}:${(item.marketDescription || '').length}:${getItemUserPhotoCount(item)}${kidsKey}`;
