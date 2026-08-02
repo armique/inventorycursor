@@ -112,6 +112,7 @@ import {
   buildContainerByChildId,
   getContainerKind,
   isContainerMember,
+  normalizeExclusiveContainerFlags,
   resolveParentContainer,
 } from '../utils/containerMembership';
 import { resolveTradeReceivedItems, resolveTradeSourceItem } from '../utils/tradeLinks';
@@ -1575,6 +1576,7 @@ const InventoryList: React.FC<Props> = ({
   const [showEqualSplitGroups, setShowEqualSplitGroups] = useState(false);
   const [equalSplitIgnoreRev, setEqualSplitIgnoreRev] = useState(0);
   const orphanShellCleanupDoneRef = useRef(false);
+  const dualFlagCleanupDoneRef = useRef(false);
 
   // One-time: trash sold PC/bundle shells that still list parts now owned by another
   // container (second historical compose). Stops double revenue on the dashboard.
@@ -1591,6 +1593,17 @@ const InventoryList: React.FC<Props> = ({
       `Removed ${ids.length} duplicate sold PC/bundle shell${ids.length === 1 ? '' : 's'} that were double-counting the same sale`
     );
     setTimeout(() => setToast(null), 4200);
+  }, [items, onUpdate]);
+
+  // One-time: clear isBundle on Gaming PCs that wrongly have both badges (legacy historical compose).
+  useEffect(() => {
+    if (dualFlagCleanupDoneRef.current || items.length === 0) return;
+    const fixed = items
+      .filter((i) => i.isPC && i.isBundle)
+      .map((i) => normalizeExclusiveContainerFlags(i));
+    dualFlagCleanupDoneRef.current = true;
+    if (fixed.length === 0) return;
+    onUpdate(fixed, undefined, { skipUndo: true, skipActionLog: true, skipContainerSync: true });
   }, [items, onUpdate]);
 
   const [recalcTarget, setRecalcTarget] = useState<InventoryItem | null>(null);
@@ -4018,18 +4031,17 @@ const InventoryList: React.FC<Props> = ({
                          </span>
                       )}
                       {item.isDraft && <span className="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-black uppercase flex items-center gap-1"><StickyNote size={8}/> Draft</span>}
-                      {item.isBundle && (
-                        <span className="inline-flex items-center gap-0.5 text-[9px] bg-violet-600 text-white px-1.5 py-0.5 rounded font-black uppercase shadow-sm shadow-violet-200/80">
-                          <Layers size={9} className="shrink-0" /> Bundle
-                          {childItems.length > 0 ? ` · ${childItems.length}` : ''}
-                        </span>
-                      )}
-                      {item.isPC && (
+                      {item.isPC ? (
                         <span className="inline-flex items-center gap-0.5 text-[9px] bg-indigo-600 text-white px-1.5 py-0.5 rounded font-black uppercase shadow-sm shadow-indigo-200/80">
                           <Monitor size={9} className="shrink-0" /> PC Build
                           {childItems.length > 0 ? ` · ${childItems.length}` : ''}
                         </span>
-                      )}
+                      ) : item.isBundle ? (
+                        <span className="inline-flex items-center gap-0.5 text-[9px] bg-violet-600 text-white px-1.5 py-0.5 rounded font-black uppercase shadow-sm shadow-violet-200/80">
+                          <Layers size={9} className="shrink-0" /> Bundle
+                          {childItems.length > 0 ? ` · ${childItems.length}` : ''}
+                        </span>
+                      ) : null}
                       {!item.isPC && !item.isBundle && isInventoryContainer(item) && (
                         <span className="inline-flex items-center gap-0.5 text-[9px] bg-violet-600 text-white px-1.5 py-0.5 rounded font-black uppercase shadow-sm shadow-violet-200/80">
                           <Package size={9} className="shrink-0" /> Container

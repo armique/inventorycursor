@@ -39,8 +39,9 @@ export function buildRetroContainerAndComponents(args: {
     sellDate,
     platformSold: items[0]?.platformSold || 'Other',
     paymentType: items[0]?.paymentType || 'Other',
-    isBundle: true,
+    // Mutually exclusive — a Gaming PC must not also wear the Bundle badge.
     isPC: kind === 'pc',
+    isBundle: kind !== 'pc',
     componentIds: items.map((i) => i.id),
     comment1: `Retroactive ${containerCategory} of ${items.length} items.`,
     comment2: '',

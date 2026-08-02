@@ -36,6 +36,7 @@ const allItems = [...items];
   });
   assert.equal(bundle.category, 'PC');
   assert.equal(bundle.isPC, true);
+  assert.equal(bundle.isBundle, false, 'PC Build must not also be flagged as Bundle');
   assert.equal(bundle.sellPrice, 970);
   assert.equal(updatedComponents.length, 3);
   assert.ok(updatedComponents.every((i) => i.status === ItemStatus.IN_COMPOSITION));
@@ -51,6 +52,8 @@ const allItems = [...items];
     useSmartDistribution: true,
   });
   assert.equal(bundle.category, 'Bundle');
+  assert.equal(bundle.isBundle, true);
+  assert.equal(bundle.isPC, false, 'Bundle must not also be flagged as PC');
   const total = updatedComponents.reduce((s, i) => s + Number(i.sellPrice || 0), 0);
   assert.ok(total > 0);
 }
