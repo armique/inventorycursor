@@ -15,6 +15,7 @@ const LABELS: Record<string, string> = {
   'flip-coach': 'Flip Coach',
   est: 'Dealwatch Intelligence',
   reinvest: 'Reinvest',
+  'price-drop': 'Price Drop',
   'card-gallery': 'Card gallery',
   invoices: 'Invoices',
   'action-history': 'Action history',
