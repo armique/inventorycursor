@@ -105,6 +105,7 @@ import { applyEbayOrderMatchToItem } from '../utils/applyEbayOrderMatch';
 import ContainerMembershipBadge from './ContainerMembershipBadge';
 import { buildContainerTitle } from '../utils/buildTitle';
 import { countEqualSplitSoldGroupCandidates } from '../utils/suggestEqualSplitSoldGroups';
+import { applyRetroComposeToInventory, findOrphanSoldContainerShellIds } from '../utils/retroComposeApply';
 import { pickSpecsAiNameVendorUpdates } from '../utils/applySpecsAiResult';
 import {
   buildContainersById,
@@ -1573,6 +1574,25 @@ const InventoryList: React.FC<Props> = ({
   const [showRetroBundle, setShowRetroBundle] = useState(false);
   const [showEqualSplitGroups, setShowEqualSplitGroups] = useState(false);
   const [equalSplitIgnoreRev, setEqualSplitIgnoreRev] = useState(0);
+  const orphanShellCleanupDoneRef = useRef(false);
+
+  // One-time: trash sold PC/bundle shells that still list parts now owned by another
+  // container (second historical compose). Stops double revenue on the dashboard.
+  useEffect(() => {
+    if (orphanShellCleanupDoneRef.current || items.length === 0) return;
+    const ids = findOrphanSoldContainerShellIds(items);
+    if (ids.length === 0) {
+      orphanShellCleanupDoneRef.current = true;
+      return;
+    }
+    orphanShellCleanupDoneRef.current = true;
+    onUpdate([], ids);
+    setToast(
+      `Removed ${ids.length} duplicate sold PC/bundle shell${ids.length === 1 ? '' : 's'} that were double-counting the same sale`
+    );
+    setTimeout(() => setToast(null), 4200);
+  }, [items, onUpdate]);
+
   const [recalcTarget, setRecalcTarget] = useState<InventoryItem | null>(null);
   const [showComposeType, setShowComposeType] = useState(false);
   const [quickBundleSeed, setQuickBundleSeed] = useState<InventoryItem | null>(null);
@@ -2916,7 +2936,12 @@ const InventoryList: React.FC<Props> = ({
   };
 
   const handleCreateRetroBundle = (bundle: InventoryItem, updatedComponents: InventoryItem[]) => {
-     onUpdate([bundle, ...updatedComponents]);
+     const { nextItems, deleteIds } = applyRetroComposeToInventory(items, bundle, updatedComponents);
+     const changed = nextItems.filter((n) => {
+       const old = items.find((i) => i.id === n.id);
+       return !old || old !== n;
+     });
+     onUpdate(changed, deleteIds);
      setShowRetroBundle(false);
      setSelectedIds([]);
      setScrollTargetItemId(bundle.id);
@@ -2925,6 +2950,10 @@ const InventoryList: React.FC<Props> = ({
        next.delete(bundle.id);
        return next;
      });
+     if (deleteIds.length > 0) {
+       setToast(`Grouped — removed ${deleteIds.length} duplicate sold shell${deleteIds.length === 1 ? '' : 's'}`);
+       setTimeout(() => setToast(null), 2800);
+     }
      // Clear any horizontal scroll leftover from the modal / selection bar layout swap.
      requestAnimationFrame(() => {
        for (const ref of [tableContainerRef, activeTableRef, soldTableRef]) {
@@ -6886,16 +6915,28 @@ const InventoryList: React.FC<Props> = ({
           items={items}
           onApply={(updates) => {
             const parent = updates.find((u) => u.isBundle || u.isPC);
-            onUpdate(updates);
+            const parts = updates.filter((u) => u !== parent);
             if (parent) {
+              const { nextItems, deleteIds } = applyRetroComposeToInventory(items, parent, parts);
+              const changed = nextItems.filter((n) => {
+                const old = items.find((i) => i.id === n.id);
+                return !old || old !== n;
+              });
+              onUpdate(changed, deleteIds);
               setScrollTargetItemId(parent.id);
               setCollapsedBundles((prev) => {
                 const next = new Set(prev);
                 next.delete(parent.id);
                 return next;
               });
-              setToast(`Grouped as ${parent.isPC ? 'PC' : 'Bundle'}: ${parent.name}`);
+              setToast(
+                deleteIds.length > 0
+                  ? `Grouped as ${parent.isPC ? 'PC' : 'Bundle'} — removed ${deleteIds.length} duplicate shell${deleteIds.length === 1 ? '' : 's'}`
+                  : `Grouped as ${parent.isPC ? 'PC' : 'Bundle'}: ${parent.name}`
+              );
               setTimeout(() => setToast(null), 2400);
+            } else {
+              onUpdate(updates);
             }
           }}
           onIgnored={() => setEqualSplitIgnoreRev((n) => n + 1)}

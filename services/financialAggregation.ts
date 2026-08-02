@@ -14,7 +14,10 @@ export function roundMoney(n: number): number {
 export function getChildren(container: InventoryItem, items: InventoryItem[]): InventoryItem[] {
   const byIds = (container.componentIds || [])
     .map((id) => items.find((i) => i.id === id))
-    .filter((x): x is InventoryItem => !!x);
+    .filter((x): x is InventoryItem => !!x)
+    // Stale componentIds on an older shell must not steal parts that now belong
+    // to another PC/bundle (historical compose ran twice on the same sale).
+    .filter((c) => !c.parentContainerId || c.parentContainerId === container.id);
   if (byIds.length > 0) return byIds;
   return items.filter((i) => i.parentContainerId === container.id);
 }
@@ -48,6 +51,18 @@ export function isBundleSoldOnParentOnly(parent: InventoryItem, items: Inventory
   const children = getChildren(parent, items);
   if (children.length === 0) return false;
   return children.some((c) => c.status === ItemStatus.IN_COMPOSITION);
+}
+
+/**
+ * Sold PC/bundle still lists componentIds, but every part now belongs to another
+ * container (stale shell after a second historical compose on the same sale).
+ */
+export function isOrphanSoldContainerShell(container: InventoryItem, items: InventoryItem[]): boolean {
+  if (!container.isBundle && !container.isPC) return false;
+  if (container.status !== ItemStatus.SOLD && container.status !== ItemStatus.TRADED) return false;
+  const listed = container.componentIds || [];
+  if (listed.length === 0) return false;
+  return getChildren(container, items).length === 0;
 }
 
 export function getParentContainer(item: InventoryItem, items: InventoryItem[]): InventoryItem | undefined {
@@ -181,6 +196,8 @@ export function shouldSkipForAggregatedSaleLine(item: InventoryItem, allItems: I
   if (item.isDraft) return true;
   if (shouldSkipCompositionChild(item, allItems)) return true;
   if (shouldSkipContainerRow(item, allItems)) return true;
+  // Ghost sold PC/bundle left after a second historical compose on the same parts.
+  if (isOrphanSoldContainerShell(item, allItems)) return true;
   return false;
 }
 
