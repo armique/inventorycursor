@@ -4,7 +4,7 @@ import {
   Package, Settings, RefreshCw, Trash2, CloudUpload, LayoutDashboard,
   Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe, Layers,
   Printer, LayoutTemplate, PackageSearch, Boxes, ChevronDown, Plus, Images,
-  Target, Activity, CircuitBoard, Radar, Coins, Bot, TrendingDown,
+  Target, Activity, CircuitBoard, Radar, Coins, Bot, TrendingDown, Upload,
 } from 'lucide-react';
 import PanelBreadcrumbs from './PanelBreadcrumbs';
 import { usePanelLocale } from '../context/PanelLocaleContext';
@@ -239,6 +239,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     { to: '/panel/dealwatch', icon: <Radar size={18} />, label: 'Dealwatch' },
     { to: '/panel/reinvest', icon: <Coins size={18} />, label: 'Reinvest' },
     { to: '/panel/price-drop', icon: <TrendingDown size={18} />, label: 'Price Drop' },
+    { to: '/panel/list-ready', icon: <Upload size={18} />, label: 'List Ready' },
     { to: '/panel/combo-lab', icon: <CircuitBoard size={18} />, label: 'Combo Lab' },
     { to: '/panel/bulk-imports', icon: <History size={18} />, label: 'Bulk imports' },
     { to: '/panel/ebay-store-pull', icon: <PackageSearch size={18} />, label: 'eBay Tools' },

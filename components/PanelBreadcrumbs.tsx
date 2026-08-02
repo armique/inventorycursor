@@ -16,6 +16,7 @@ const LABELS: Record<string, string> = {
   est: 'Dealwatch Intelligence',
   reinvest: 'Reinvest',
   'price-drop': 'Price Drop',
+  'list-ready': 'List Ready',
   'card-gallery': 'Card gallery',
   invoices: 'Invoices',
   'action-history': 'Action history',
