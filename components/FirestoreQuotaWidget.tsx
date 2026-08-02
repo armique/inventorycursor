@@ -88,8 +88,6 @@ const FirestoreQuotaWidget: React.FC<Props> = ({ items = [], compact }) => {
 
   useEffect(() => {
     void refresh(false);
-    const id = window.setInterval(() => void refresh(false), 5 * 60 * 1000);
-    return () => window.clearInterval(id);
   }, [refresh]);
 
   if (!snap && loading) {

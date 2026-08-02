@@ -33,7 +33,10 @@ import {
 } from '../utils/firestoreFreeQuota';
 
 const CACHE_KEY = 'deinv_firestore_quota_cache_v2';
-const CACHE_TTL_MS = 5 * 60 * 1000;
+// A quota scan reads every mirrored eBay/order document and requests metadata
+// for Storage files. Once per Pacific day is enough; frequent scans would spend
+// the very free quota this widget is meant to protect.
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 /** Fallback average when metadata can't be read for a durable Storage URL. */
 const AVG_COMPRESSED_IMAGE_BYTES = 180_000;
 

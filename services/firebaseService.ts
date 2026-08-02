@@ -41,6 +41,8 @@ import {
   onAuthStateChanged,
   setPersistence,
   browserLocalPersistence,
+  browserSessionPersistence,
+  inMemoryPersistence,
   connectAuthEmulator,
   User,
   Auth,
@@ -58,7 +60,13 @@ import {
 } from "firebase/storage";
 import { yieldToMain } from "./backgroundPersistence";
 import type { GeneratedProductCardEntry } from "../types";
-import { recordFirestoreDeletes, recordFirestoreWrites } from "./firestoreOpsCounter";
+import { assertStorageUploadBudget, recordStorageUploads } from "./storageOpsCounter";
+import {
+  assertFirestoreDailyBudget,
+  recordFirestoreDeletes,
+  recordFirestoreReads,
+  recordFirestoreWrites,
+} from "./firestoreOpsCounter";
 
 // --- CONFIG ---
 
@@ -136,6 +144,38 @@ let app: FirebaseApp | null = null;
 let db: Firestore | null = null;
 let auth: Auth | null = null;
 let storage: FirebaseStorage | null = null;
+const authPersistenceSetup = new WeakMap<Auth, Promise<void>>();
+
+/**
+ * Prefer a durable session, but never make sign-in depend on browser storage.
+ * Mobile private modes and full localStorage quotas can make Firebase's local
+ * persistence throw QuotaExceededError. Session or memory persistence still
+ * lets the user sign in and use the app.
+ */
+function ensureAuthPersistence(authInstance: Auth): Promise<void> {
+  const existing = authPersistenceSetup.get(authInstance);
+  if (existing) return existing;
+
+  const setup = (async () => {
+    try {
+      await setPersistence(authInstance, browserLocalPersistence);
+      return;
+    } catch (err) {
+      console.warn("[firebase] Local auth persistence unavailable; trying session storage.", err);
+    }
+
+    try {
+      await setPersistence(authInstance, browserSessionPersistence);
+      return;
+    } catch (err) {
+      console.warn("[firebase] Session auth persistence unavailable; using memory.", err);
+    }
+
+    await setPersistence(authInstance, inMemoryPersistence);
+  })();
+  authPersistenceSetup.set(authInstance, setup);
+  return setup;
+}
 
 /**
  * True only for a local dev server started with VITE_FIREBASE_EMULATOR=1.
@@ -169,8 +209,8 @@ function init(): { db: Firestore; auth: Auth; storage: FirebaseStorage } | null 
     }
     auth = getAuth(app);
     // Persist Google session across Safari/Chrome restarts (phones). Without this, every
-    // panel visit can look signed-out and re-prompt Continue with Google.
-    void setPersistence(auth, browserLocalPersistence).catch((err) => {
+    // panel visit can look signed-out. Fall back safely when mobile storage is blocked/full.
+    void ensureAuthPersistence(auth).catch((err) => {
       console.warn("[firebase] Auth persistence unavailable:", err);
     });
     // Force correct bucket (Firebase default is now .firebasestorage.app, not .appspot.com)
@@ -217,6 +257,16 @@ export function getAuthErrorMessage(err: unknown): string {
   }
   if (code === 'auth/network-request-failed') {
     return 'Network error during sign-in. Check your connection and try again.';
+  }
+  if (
+    code === 'auth/quota-exceeded' ||
+    (err as { name?: string })?.name === 'QuotaExceededError' ||
+    /the quota has been exceeded|quotaexceedederror/i.test(message)
+  ) {
+    return 'This browser blocked the storage needed for Google sign-in. Close private browsing or free some browser storage, then try again.';
+  }
+  if (code === 'auth/too-many-requests') {
+    return 'Too many sign-in attempts from this device. Wait a few minutes, then try again.';
   }
   if (
     /redirect_uri_mismatch/i.test(message) ||
@@ -291,7 +341,7 @@ export function consumeAuthReturnPath(): string | null {
 export async function signInWithGooglePopup(): Promise<User> {
   const ctx = init();
   if (!ctx?.auth) throw new Error("Firebase not configured. Check Settings.");
-  await setPersistence(ctx.auth, browserLocalPersistence);
+  await ensureAuthPersistence(ctx.auth);
   const provider = new GoogleAuthProvider();
   const result = await signInWithPopup(ctx.auth, provider);
   return result.user;
@@ -440,14 +490,17 @@ function showGoogleButtonOverlay(): { host: HTMLElement; cleanup: () => void } {
  * Mobile-safe Google sign-in via Google Identity Services (ID token → Firebase).
  * Prefers GIS ID credential; falls back to access-token client if needed.
  */
-async function signInWithGoogleIdentityServices(auth: Auth): Promise<User> {
+async function signInWithGoogleIdentityServices(
+  auth: Auth,
+  options?: { preferOAuthToken?: boolean }
+): Promise<User> {
   const [gis, clientId] = await Promise.all([
     loadGoogleIdentityServices(),
     resolveGoogleWebClientId(),
   ]);
 
   // Preferred: ID token (JWT) from Google Identity Services.
-  if (gis.id) {
+  if (gis.id && !options?.preferOAuthToken) {
     return new Promise<User>((resolve, reject) => {
       let settled = false;
       let cleanupOverlay: (() => void) | null = null;
@@ -570,40 +623,41 @@ async function signInWithGoogleIdentityServices(auth: Auth): Promise<User> {
 }
 
 /**
- * Google sign-in. Mobile uses Google Identity Services (no /__/auth/handler redirect).
- * Desktop uses Firebase popup, with GIS fallback if the popup is blocked.
+ * Google sign-in using the provider flow best supported by each device.
+ *
+ * iOS WebKit can throw QuotaExceededError in both Firebase's popup resolver and
+ * the GIS ID/One Tap iframe. The GIS OAuth token client avoids both storage
+ * handshakes and returns a Google access token that Firebase accepts directly.
  */
 export async function signInWithGoogle(options?: { returnPath?: string }): Promise<User | null> {
   const ctx = init();
   if (!ctx?.auth) throw new Error("Firebase not configured. Check Settings.");
-  await setPersistence(ctx.auth, browserLocalPersistence);
+  await ensureAuthPersistence(ctx.auth);
   rememberAuthReturnPath(options?.returnPath);
 
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
+
   if (isUsingFirebaseEmulator()) {
-    const provider = new GoogleAuthProvider();
     markRedirectPending();
     await signInWithRedirect(ctx.auth, provider);
     return null;
   }
 
-  // Phones: GIS token client — does not use Firebase redirect_uri (fixes Error 400 mismatch).
   if (prefersRedirectSignIn()) {
-    return signInWithGoogleIdentityServices(ctx.auth);
+    return signInWithGoogleIdentityServices(ctx.auth, { preferOAuthToken: true });
   }
 
   try {
-    const provider = new GoogleAuthProvider();
     const result = await signInWithPopup(ctx.auth, provider);
     return result.user;
   } catch (err: unknown) {
     const code = (err as { code?: string })?.code || "";
     if (code === "auth/unauthorized-domain") throw err;
-    if (
-      code === "auth/popup-blocked" ||
-      code === "auth/cancelled-popup-request" ||
-      code === "auth/popup-closed-by-user"
-    ) {
-      return signInWithGoogleIdentityServices(ctx.auth);
+    if (code === "auth/popup-blocked") {
+      markRedirectPending();
+      await signInWithRedirect(ctx.auth, provider);
+      return null;
     }
     throw err;
   }
@@ -623,7 +677,7 @@ export async function signInEmulatorWithEmail(email: string): Promise<User> {
   }
   const ctx = init();
   if (!ctx?.auth) throw new Error("Firebase not configured.");
-  await setPersistence(ctx.auth, browserLocalPersistence);
+  await ensureAuthPersistence(ctx.auth);
   const EMULATOR_PASSWORD = "emulator-local-only"; // meaningless outside the local emulator's throwaway store
   try {
     const result = await signInWithEmailAndPassword(ctx.auth, email, EMULATOR_PASSWORD);
@@ -647,7 +701,7 @@ export async function completeGoogleRedirectSignIn(): Promise<User | null> {
   const ctx = init();
   if (!ctx?.auth) return null;
   try {
-    await setPersistence(ctx.auth, browserLocalPersistence);
+    await ensureAuthPersistence(ctx.auth);
     const result = await getRedirectResult(ctx.auth);
     return result?.user ?? null;
   } catch (err) {
@@ -721,7 +775,9 @@ export async function uploadItemImage(
   try {
     // Simple upload (single PUT) to avoid resumable-upload CORS issues; progress not available
     if (onProgress) onProgress(10); // show we started
+    assertStorageUploadBudget();
     const snapshot = await Promise.race([uploadBytes(ref, file), timeoutPromise]);
+    recordStorageUploads();
     if (onProgress) onProgress(90);
     const url = await Promise.race([getDownloadURL(snapshot.ref), timeoutPromise]);
     if (onProgress) onProgress(100);
@@ -768,7 +824,9 @@ export async function uploadProductCardBlob(
   const name = (fileName || `card-${Date.now()}.${ext}`).replace(/[^a-zA-Z0-9.\-_]/g, "_");
   const path = `product-cards/${user.uid}/${itemId || "shared"}/${Date.now()}-${name}`;
   const ref = storageRef(ctx.storage, path);
+  assertStorageUploadBudget();
   const snapshot = await uploadBytes(ref, blob);
+  recordStorageUploads();
   return getDownloadURL(snapshot.ref);
 }
 
@@ -802,7 +860,9 @@ export async function uploadExpenseAttachment(
 
   try {
     if (onProgress) onProgress(10);
+    assertStorageUploadBudget();
     const snapshot = await Promise.race([uploadBytes(ref, file), timeoutPromise]);
+    recordStorageUploads();
     if (onProgress) onProgress(90);
     const url = await Promise.race([getDownloadURL(snapshot.ref), timeoutPromise]);
     if (onProgress) onProgress(100);
@@ -843,7 +903,9 @@ export async function uploadProofAttachment(
   const timeoutPromise = new Promise<never>((_, reject) =>
     setTimeout(() => reject(new Error("Proof upload timed out after 90s.")), timeoutMs)
   );
+  assertStorageUploadBudget();
   const snapshot = await Promise.race([uploadBytes(ref, file), timeoutPromise]);
+  recordStorageUploads();
   return Promise.race([getDownloadURL(snapshot.ref), timeoutPromise]);
 }
 
@@ -1180,6 +1242,7 @@ async function writeShardedSyncPack(
   const corePayload = shrinkCoreUntilUnder(buildCorePayloadForShard(data), CHUNK_BODY_MAX);
 
   const existingSnap = await getDocs(colRef);
+  recordFirestoreReads(Math.max(1, existingSnap.size));
   const incomingInventory = (data.inventory || []).length;
   if (
     incomingInventory === 0 &&
@@ -1225,6 +1288,13 @@ async function writeShardedSyncPack(
   });
   ops.push((b) => b.delete(legacyRef));
 
+  const estimatedWrites = 2 + invChunks.length + trashChunks.length;
+  const estimatedDeletes = extraDeletes.length + 1;
+  assertFirestoreDailyBudget({
+    writes: estimatedWrites,
+    deletes: estimatedDeletes,
+  });
+
   const BATCH_MAX = 400;
   let batch = writeBatch(db);
   let count = 0;
@@ -1240,8 +1310,8 @@ async function writeShardedSyncPack(
   if (count > 0) await batch.commit();
 
   // meta + core + inventory/trash shards count as writes; extras + legacy as deletes
-  recordFirestoreWrites(2 + invChunks.length + trashChunks.length);
-  recordFirestoreDeletes(extraDeletes.length + 1);
+  recordFirestoreWrites(estimatedWrites);
+  recordFirestoreDeletes(estimatedDeletes);
 }
 
 // --- REAL-TIME SUBSCRIBE ---
@@ -1266,10 +1336,12 @@ export function subscribeToData(
   return onSnapshot(
     colRef,
     (snap) => {
+      recordFirestoreReads(Math.max(1, snap.size));
       void (async () => {
         try {
           if (snap.empty) {
             const leg = await getDoc(legacyRef);
+            recordFirestoreReads(1);
             onData(leg.exists() ? (leg.data() as FirestoreInventoryPayload) : null);
             return;
           }
@@ -1298,10 +1370,12 @@ export async function fetchFromCloud(): Promise<FirestoreInventoryPayload | null
 
   const colRef = syncPackCollectionRef(ctx.db, user.uid);
   const packSnap = await getDocs(colRef);
+  recordFirestoreReads(Math.max(1, packSnap.size));
   if (!packSnap.empty) {
     return assemblePayloadFromSyncSnapshot(packSnap);
   }
   const leg = await getDoc(legacyInventoryDocRef(ctx.db, user.uid));
+  recordFirestoreReads(1);
   return leg.exists() ? (leg.data() as FirestoreInventoryPayload) : null;
 }
 
@@ -1567,7 +1641,9 @@ export async function uploadStorefrontAsset(
 
   try {
     if (onProgress) onProgress(10);
+    assertStorageUploadBudget();
     const snapshot = await Promise.race([uploadBytes(ref, file), timeoutPromise]);
+    recordStorageUploads();
     if (onProgress) onProgress(90);
     const url = await Promise.race([getDownloadURL(snapshot.ref), timeoutPromise]);
     if (onProgress) onProgress(100);
@@ -1747,6 +1823,7 @@ export async function fetchEbayOrdersFromCloud(): Promise<{ orders: Record<strin
   try {
     const colRef = collection(ctx.db, "users", user.uid, EBAY_ORDERS_COLLECTION);
     const snap = await getDocs(colRef);
+    recordFirestoreReads(Math.max(1, snap.size));
     const orders: Record<string, unknown>[] = [];
     let meta: EbayOrderCloudMeta | null = null;
     snap.forEach((d) => {
@@ -1772,6 +1849,8 @@ export async function writeEbayOrdersToCloud(
   const user = ctx?.auth?.currentUser;
   if (!ctx?.db || !user) throw new Error("Not signed in");
   const colRef = collection(ctx.db, "users", user.uid, EBAY_ORDERS_COLLECTION);
+  const estimatedWrites = orders.length + (metaPatch ? 1 : 0);
+  assertFirestoreDailyBudget({ writes: estimatedWrites });
 
   const BATCH_MAX = 450;
   let batch = writeBatch(ctx.db);
@@ -1795,6 +1874,7 @@ export async function writeEbayOrdersToCloud(
     count++;
   }
   if (count > 0) await batch.commit();
+  recordFirestoreWrites(estimatedWrites);
 }
 
 /** Delete every cached eBay order doc (and meta) for this user. Requires auth. */
@@ -1804,6 +1884,8 @@ export async function clearEbayOrdersCloud(): Promise<void> {
   if (!ctx?.db || !user) return;
   const colRef = collection(ctx.db, "users", user.uid, EBAY_ORDERS_COLLECTION);
   const snap = await getDocs(colRef);
+  recordFirestoreReads(Math.max(1, snap.size));
+  assertFirestoreDailyBudget({ deletes: snap.size });
   const BATCH_MAX = 450;
   let batch = writeBatch(ctx.db);
   let count = 0;
@@ -1817,6 +1899,7 @@ export async function clearEbayOrdersCloud(): Promise<void> {
     }
   }
   if (count > 0) await batch.commit();
+  recordFirestoreDeletes(snap.size);
 }
 
 // --- BUY HELPER MARKET PRICE HISTORY (30-day eBay sold/live + Kleinanzeigen snapshots per tracked part) ---
@@ -1836,6 +1919,7 @@ export async function fetchBuyHelperPricesFromCloud(): Promise<Record<string, un
   try {
     const colRef = collection(ctx.db, "users", user.uid, BUY_HELPER_PRICES_COLLECTION);
     const snap = await getDocs(colRef);
+    recordFirestoreReads(Math.max(1, snap.size));
     const out: Record<string, unknown> = {};
     snap.forEach((d) => {
       out[d.id] = d.data();
@@ -1855,6 +1939,7 @@ export async function writeBuyHelperPricesToCloud(
   const user = ctx?.auth?.currentUser;
   if (!ctx?.db || !user) throw new Error("Not signed in");
   const colRef = collection(ctx.db, "users", user.uid, BUY_HELPER_PRICES_COLLECTION);
+  assertFirestoreDailyBudget({ writes: histories.length });
 
   const BATCH_MAX = 450;
   let batch = writeBatch(ctx.db);
@@ -1869,6 +1954,7 @@ export async function writeBuyHelperPricesToCloud(
     }
   }
   if (count > 0) await batch.commit();
+  recordFirestoreWrites(histories.length);
 }
 
 // --- REINVEST GAMIFICATION (bank ledger, quests, achievements) — one doc per user, pull-on-boot
@@ -1935,6 +2021,7 @@ export async function fetchEbayPurchasesFromCloud(): Promise<{
   try {
     const colRef = collection(ctx.db, "users", user.uid, EBAY_PURCHASES_COLLECTION);
     const snap = await getDocs(colRef);
+    recordFirestoreReads(Math.max(1, snap.size));
     const purchases: Record<string, unknown>[] = [];
     let meta: EbayPurchaseCloudMeta | null = null;
     snap.forEach((d) => {
@@ -1960,6 +2047,8 @@ export async function writeEbayPurchasesToCloud(
   const user = ctx?.auth?.currentUser;
   if (!ctx?.db || !user) throw new Error("Not signed in");
   const colRef = collection(ctx.db, "users", user.uid, EBAY_PURCHASES_COLLECTION);
+  const estimatedWrites = purchases.length + (metaPatch ? 1 : 0);
+  assertFirestoreDailyBudget({ writes: estimatedWrites });
 
   const BATCH_MAX = 450;
   let batch = writeBatch(ctx.db);
@@ -1983,6 +2072,7 @@ export async function writeEbayPurchasesToCloud(
     count++;
   }
   if (count > 0) await batch.commit();
+  recordFirestoreWrites(estimatedWrites);
 }
 
 /** Delete every cached eBay purchase doc (and meta) for this user. */
@@ -1992,6 +2082,8 @@ export async function clearEbayPurchasesCloud(): Promise<void> {
   if (!ctx?.db || !user) return;
   const colRef = collection(ctx.db, "users", user.uid, EBAY_PURCHASES_COLLECTION);
   const snap = await getDocs(colRef);
+  recordFirestoreReads(Math.max(1, snap.size));
+  assertFirestoreDailyBudget({ deletes: snap.size });
   const BATCH_MAX = 450;
   let batch = writeBatch(ctx.db);
   let count = 0;
@@ -2005,6 +2097,7 @@ export async function clearEbayPurchasesCloud(): Promise<void> {
     }
   }
   if (count > 0) await batch.commit();
+  recordFirestoreDeletes(snap.size);
 }
 
 // --- AI ACTION LOG (audit trail of assistant edits, one doc per action) ---
@@ -2169,6 +2262,7 @@ export async function fetchEbayActiveListingsFromCloud(): Promise<{
   try {
     const colRef = collection(ctx.db, "users", user.uid, EBAY_ACTIVE_LISTINGS_COLLECTION);
     const snap = await getDocs(colRef);
+    recordFirestoreReads(Math.max(1, snap.size));
     const listings: Record<string, unknown>[] = [];
     let meta: EbayActiveListingsCloudMeta | null = null;
     snap.forEach((d) => {
@@ -2201,19 +2295,24 @@ export async function writeEbayActiveListingsToCloud(
   keepIds.add(EBAY_ACTIVE_LISTINGS_META_DOC_ID);
 
   const existing = await getDocs(colRef);
+  recordFirestoreReads(Math.max(1, existing.size));
+  const staleDocs = existing.docs.filter((d) => !keepIds.has(d.id));
+  const estimatedWrites = listings.length + (metaPatch ? 1 : 0);
+  assertFirestoreDailyBudget({
+    writes: estimatedWrites,
+    deletes: staleDocs.length,
+  });
   const BATCH_MAX = 450;
   let batch = writeBatch(ctx.db);
   let count = 0;
 
-  for (const d of existing.docs) {
-    if (!keepIds.has(d.id)) {
-      batch.delete(d.ref);
-      count++;
-      if (count >= BATCH_MAX) {
-        await batch.commit();
-        batch = writeBatch(ctx.db);
-        count = 0;
-      }
+  for (const d of staleDocs) {
+    batch.delete(d.ref);
+    count++;
+    if (count >= BATCH_MAX) {
+      await batch.commit();
+      batch = writeBatch(ctx.db);
+      count = 0;
     }
   }
 
@@ -2237,6 +2336,8 @@ export async function writeEbayActiveListingsToCloud(
     count++;
   }
   if (count > 0) await batch.commit();
+  recordFirestoreWrites(estimatedWrites);
+  recordFirestoreDeletes(staleDocs.length);
 }
 
 export async function clearEbayActiveListingsCloud(): Promise<void> {
@@ -2245,6 +2346,8 @@ export async function clearEbayActiveListingsCloud(): Promise<void> {
   if (!ctx?.db || !user) return;
   const colRef = collection(ctx.db, "users", user.uid, EBAY_ACTIVE_LISTINGS_COLLECTION);
   const snap = await getDocs(colRef);
+  recordFirestoreReads(Math.max(1, snap.size));
+  assertFirestoreDailyBudget({ deletes: snap.size });
   const BATCH_MAX = 450;
   let batch = writeBatch(ctx.db);
   let count = 0;
@@ -2258,6 +2361,7 @@ export async function clearEbayActiveListingsCloud(): Promise<void> {
     }
   }
   if (count > 0) await batch.commit();
+  recordFirestoreDeletes(snap.size);
 }
 
 // --- AI product card gallery (users/{uid}/productCardGallery/{id}) ---
@@ -2323,7 +2427,9 @@ export async function uploadBackupSnapshot(fileName: string, blob: Blob): Promis
   const user = ctx?.auth?.currentUser;
   if (!ctx?.storage || !user) throw new Error("Not signed in or Firebase Storage not configured.");
   const safe = fileName.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+  assertStorageUploadBudget();
   await uploadBytes(storageRef(ctx.storage, `${BACKUP_PREFIX}/${user.uid}/${safe}`), blob);
+  recordStorageUploads();
 }
 
 /** File names of existing backups, newest-sorting last. Empty when signed out or none yet. */

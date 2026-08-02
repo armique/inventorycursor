@@ -18,6 +18,7 @@ import { collectStorageUrlsFromItems } from '../services/firestoreQuotaService';
 assert.equal(FIRESTORE_FREE.storedBytes, 1 * 1024 * 1024 * 1024);
 assert.equal(FIRESTORE_FREE.readsPerDay, 50_000);
 assert.equal(STORAGE_FREE.storedBytes, 5 * 1024 * 1024 * 1024);
+assert.equal(STORAGE_FREE.uploadOpsPerMonth, 5_000);
 
 const m = makeMeter(250 * 1024 * 1024, FIRESTORE_FREE.storedBytes);
 assert.ok(m.remaining > 700 * 1024 * 1024);
@@ -72,5 +73,38 @@ const urls = collectStorageUrlsFromItems([
   },
 ]);
 assert.equal(urls.length, 2);
+
+const memoryStorage = new Map<string, string>();
+Object.defineProperty(globalThis, 'localStorage', {
+  configurable: true,
+  value: {
+    getItem: (key: string) => memoryStorage.get(key) ?? null,
+    setItem: (key: string, value: string) => memoryStorage.set(key, value),
+  },
+});
+const {
+  FIRESTORE_CLIENT_DAILY_BUDGET,
+  assertFirestoreDailyBudget,
+  recordFirestoreWrites,
+} = await import('../services/firestoreOpsCounter');
+assert.equal(FIRESTORE_CLIENT_DAILY_BUDGET.writes, 8_000);
+assert.doesNotThrow(() => assertFirestoreDailyBudget({ writes: 8_000 }));
+recordFirestoreWrites(7_999);
+assert.throws(
+  () => assertFirestoreDailyBudget({ writes: 2 }),
+  /free-tier safety limit reached/
+);
+const {
+  STORAGE_CLIENT_MONTHLY_UPLOAD_BUDGET,
+  assertStorageUploadBudget,
+  recordStorageUploads,
+} = await import('../services/storageOpsCounter');
+assert.equal(STORAGE_CLIENT_MONTHLY_UPLOAD_BUDGET, 2_000);
+assert.doesNotThrow(() => assertStorageUploadBudget(2_000));
+recordStorageUploads(1_999);
+assert.throws(
+  () => assertStorageUploadBudget(2),
+  /Storage free-tier safety limit reached/
+);
 
 console.log('verify-firestore-free-quota: ok');

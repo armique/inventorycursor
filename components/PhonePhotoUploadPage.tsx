@@ -7,7 +7,7 @@ import {
   uploadPhonePhotoToSession,
   type PhotoUploadSession,
 } from '../services/photoUploadSession';
-import { getCurrentUser } from '../services/firebaseService';
+import { getAuthErrorMessage, getCurrentUser } from '../services/firebaseService';
 import { compressImageFileToBlob, INVENTORY_PHOTO_STORAGE_OPTIONS } from '../utils/imageCompress';
 
 const PhonePhotoUploadPage: React.FC = () => {
@@ -84,7 +84,7 @@ const PhonePhotoUploadPage: React.FC = () => {
       setNeedGoogle(false);
       await loadSession();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Google sign-in failed');
+      setError(getAuthErrorMessage(e));
       setNeedGoogle(true);
     } finally {
       setLoading(false);

@@ -11,6 +11,7 @@ import { buildReinvestData } from '../utils/reinvestAnalysis';
 import { computeReinvestPricing, defaultMarginForGroup } from '../utils/reinvestPricing';
 import { loadBuyHelperFees } from '../utils/buyHelper';
 import { localWeekKey } from '../utils/flipCoachMissions';
+import { todayLocalDateKey } from '../utils/calendarDate';
 import {
   addToBank,
   applyCirculationCredit,
@@ -56,6 +57,8 @@ type Options = {
    * every already-sold cloud item as a brand-new close on first sync.
    */
   eventsArmed?: boolean;
+  /** Proactive recommendations are useful on desktop but intrusive on phones. */
+  allowProactiveEvents?: boolean;
 };
 
 function isRealizedSale(item: InventoryItem): boolean {
@@ -80,6 +83,7 @@ export function useGamificationEvents({
   gamification,
   updateGamification,
   eventsArmed = true,
+  allowProactiveEvents = true,
 }: Options) {
   const [queue, setQueue] = useState<GamificationEvent[]>([]);
   const prevItemsRef = useRef<InventoryItem[] | null>(null);
@@ -166,8 +170,8 @@ export function useGamificationEvents({
 
   // "Expansion signal" — at most once per day, only when a real up-trending gap exists.
   useEffect(() => {
-    if (!eventsArmed) return;
-    const today = new Date().toISOString().slice(0, 10);
+    if (!eventsArmed || !allowProactiveEvents) return;
+    const today = todayLocalDateKey();
     if (gamification.lastExpansionSignalAt === today) return;
     const data = buildReinvestData(items);
     const candidate = data.variants.find(
@@ -192,18 +196,18 @@ export function useGamificationEvents({
     ]);
     updateGamification((prev) => ({ ...prev, lastExpansionSignalAt: today }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, gamification.lastExpansionSignalAt, eventsArmed]);
+  }, [items, gamification.lastExpansionSignalAt, eventsArmed, allowProactiveEvents]);
 
   // Weekly digest ready — once per ISO week, only once there's at least some sold history.
   useEffect(() => {
-    if (!eventsArmed) return;
+    if (!eventsArmed || !allowProactiveEvents) return;
     const week = localWeekKey();
     if (gamification.lastDigestShownWeek === week) return;
     if (!items.some((i) => isRealizedSale(i))) return;
     setQueue((q) => [...q, { kind: 'digest-ready', id: `digest-${week}` }]);
     updateGamification((prev) => ({ ...prev, lastDigestShownWeek: week }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, gamification.lastDigestShownWeek, eventsArmed]);
+  }, [items, gamification.lastDigestShownWeek, eventsArmed, allowProactiveEvents]);
 
   const current = queue[0] ?? null;
 
