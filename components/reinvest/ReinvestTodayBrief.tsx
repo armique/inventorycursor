@@ -1,5 +1,5 @@
-import React from 'react';
-import { HelpCircle, ShoppingCart, Ban, Tag, AlertTriangle } from 'lucide-react';
+import React, { useState } from 'react';
+import { AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 import type { ReinvestTodayBrief } from '../../utils/reinvestTodayBrief';
 import type { ReinvestSuspicion } from '../../utils/reinvestSuspicion';
 import { formatEURPrefix } from '../../utils/formatMoney';
@@ -12,8 +12,8 @@ type Props = {
   onIntentFilterChange: (v: 'all' | 'standalone' | 'kit') => void;
 };
 
-const channelLabel = (c: 'ka' | 'ebay' | 'either') =>
-  c === 'ka' ? 'Kleinanzeigen' : c === 'ebay' ? 'eBay' : 'Either channel';
+const channelShort = (c: 'ka' | 'ebay' | 'either') =>
+  c === 'ka' ? 'KA' : c === 'ebay' ? 'eBay' : 'Any';
 
 const ReinvestTodayBriefPanel: React.FC<Props> = ({
   brief,
@@ -22,16 +22,14 @@ const ReinvestTodayBriefPanel: React.FC<Props> = ({
   intentFilter,
   onIntentFilterChange,
 }) => {
+  const [clarifyOpen, setClarifyOpen] = useState(brief.clarify.length > 0);
+  const hero = brief.buy[0];
+
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white shadow-card overflow-hidden">
-      <div className="px-4 py-3 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="text-sm font-black text-slate-900 tracking-tight">Today</h2>
-          <p className="text-[11px] font-semibold text-slate-400">
-            Buy · skip · sell first · clarify when numbers look odd
-          </p>
-        </div>
-        <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50">
+    <div className="rx-panel overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-[var(--rx-line)]">
+        <h2 className="text-[15px] font-semibold tracking-tight text-[var(--rx-ink)]">Today</h2>
+        <div className="rx-seg" role="group" aria-label="Filter">
           {(
             [
               ['all', 'All'],
@@ -42,10 +40,8 @@ const ReinvestTodayBriefPanel: React.FC<Props> = ({
             <button
               key={id}
               type="button"
+              aria-pressed={intentFilter === id}
               onClick={() => onIntentFilterChange(id)}
-              className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider ${
-                intentFilter === id ? 'bg-slate-900 text-white' : 'text-slate-500'
-              }`}
             >
               {label}
             </button>
@@ -54,106 +50,135 @@ const ReinvestTodayBriefPanel: React.FC<Props> = ({
       </div>
 
       {brief.capitalNote && (
-        <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 text-[11px] font-semibold text-amber-900 flex items-start gap-2">
-          <AlertTriangle size={14} className="shrink-0 mt-0.5" />
-          {brief.capitalNote}
+        <div className="px-4 py-2.5 bg-[var(--rx-warn-soft)] text-[12px] font-medium text-[var(--rx-warn)] flex items-center gap-2">
+          <AlertTriangle size={14} className="shrink-0" />
+          <span className="truncate">{brief.capitalNote}</span>
         </div>
       )}
 
-      <div className="grid md:grid-cols-2 gap-0 md:divide-x divide-slate-100">
-        <section className="p-4 space-y-2">
-          <h3 className="text-[10px] font-black uppercase tracking-widest text-emerald-600 flex items-center gap-1.5">
-            <ShoppingCart size={12} /> Buy
-          </h3>
+      {/* Hero buy — one glance */}
+      <div className="px-4 pt-4 pb-3">
+        {hero ? (
+          <button
+            type="button"
+            onClick={() => onFocusGroup?.(hero.group.key)}
+            className="w-full text-left rounded-2xl bg-[var(--rx-ink)] text-white p-4 transition-transform active:scale-[0.995]"
+          >
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <span className="text-[11px] font-medium text-white/60">Top buy</span>
+              <span className="rx-pill bg-white/10 text-white/80 border-0">{channelShort(hero.channel)}</span>
+            </div>
+            <p className="text-[17px] font-semibold tracking-tight truncate">{hero.group.label}</p>
+            <div className="mt-3 flex items-end justify-between gap-3">
+              <div>
+                <p className="text-[11px] text-white/55">Max buy</p>
+                <p className="rx-num text-[28px] font-semibold leading-none tracking-tight">
+                  {hero.maxBuy != null ? formatEURPrefix(hero.maxBuy) : '—'}
+                </p>
+              </div>
+              <p className="text-[12px] text-white/65 text-right max-w-[55%] leading-snug">
+                {hero.gated || `~€${hero.group.profitPerDay.toFixed(0)}/day · ${Math.round(hero.group.avgDaysToSell)}d`}
+              </p>
+            </div>
+          </button>
+        ) : (
+          <div className="rounded-2xl bg-[var(--rx-soft)] p-4">
+            <p className="text-[13px] font-medium text-[var(--rx-muted)]">Nothing urgent to buy</p>
+          </div>
+        )}
+      </div>
+
+      {/* Three compact columns — labels only */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-[var(--rx-line)] border-t border-[var(--rx-line)]">
+        <section className="bg-white p-3 space-y-1.5">
+          <p className="text-[11px] font-medium text-[var(--rx-ok)] px-1">Buy</p>
           {brief.buy.length === 0 ? (
-            <p className="text-xs text-slate-400 font-semibold">Nothing urgent to restock.</p>
+            <p className="rx-muted text-[12px] px-1 py-2">—</p>
           ) : (
-            brief.buy.map((row) => (
+            brief.buy.slice(0, 4).map((row) => (
               <button
                 key={row.group.key}
                 type="button"
+                className="rx-row"
                 onClick={() => onFocusGroup?.(row.group.key)}
-                className="w-full text-left rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-2 hover:border-slate-300 transition-colors"
               >
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-xs font-black text-slate-800 truncate">{row.group.label}</span>
-                  <span className="text-xs font-black text-emerald-700 shrink-0">
-                    {row.maxBuy != null ? `≤ ${formatEURPrefix(row.maxBuy)}` : '—'}
-                  </span>
-                </div>
-                <p className="text-[10px] font-semibold text-slate-500 mt-0.5">
-                  {channelLabel(row.channel)} · {row.why}
-                  {row.gated ? ` · ${row.gated}` : ''}
-                </p>
+                <span className="text-[12px] font-medium truncate min-w-0">{row.group.label}</span>
+                <span className="rx-num text-[12px] font-semibold text-[var(--rx-ok)] shrink-0">
+                  {row.maxBuy != null ? formatEURPrefix(row.maxBuy) : '—'}
+                </span>
               </button>
             ))
           )}
         </section>
 
-        <section className="p-4 space-y-2 border-t md:border-t-0 border-slate-100">
-          <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-1.5">
-            <Ban size={12} /> Don&apos;t buy
-          </h3>
+        <section className="bg-white p-3 space-y-1.5">
+          <p className="text-[11px] font-medium text-[var(--rx-muted)] px-1">Skip</p>
           {brief.skip.length === 0 ? (
-            <p className="text-xs text-slate-400 font-semibold">No hard skips right now.</p>
+            <p className="rx-muted text-[12px] px-1 py-2">—</p>
           ) : (
-            brief.skip.map((row) => (
-              <div key={row.group.key} className="rounded-xl border border-slate-100 px-3 py-2">
-                <p className="text-xs font-black text-slate-700 truncate">{row.group.label}</p>
-                <p className="text-[10px] font-semibold text-slate-400 mt-0.5">{row.why}</p>
+            brief.skip.slice(0, 4).map((row) => (
+              <div key={row.group.key} className="rx-row cursor-default">
+                <span className="text-[12px] font-medium truncate min-w-0">{row.group.label}</span>
+                <span className="rx-pill rx-pill-bad shrink-0">skip</span>
               </div>
             ))
           )}
         </section>
-      </div>
 
-      <div className="grid md:grid-cols-2 gap-0 border-t border-slate-100 md:divide-x divide-slate-100">
-        <section className="p-4 space-y-2">
-          <h3 className="text-[10px] font-black uppercase tracking-widest text-violet-600 flex items-center gap-1.5">
-            <Tag size={12} /> Sell first
-          </h3>
+        <section className="bg-white p-3 space-y-1.5">
+          <p className="text-[11px] font-medium text-[var(--rx-ink)] px-1">Sell</p>
           {brief.sell.length === 0 ? (
-            <p className="text-xs text-slate-400 font-semibold">Stock looks fresh enough.</p>
+            <p className="rx-muted text-[12px] px-1 py-2">—</p>
           ) : (
-            brief.sell.map((row) => (
-              <div key={row.item.id} className="rounded-xl border border-slate-100 px-3 py-2">
-                <p className="text-xs font-black text-slate-700 truncate">{row.item.name}</p>
-                <p className="text-[10px] font-semibold text-slate-400 mt-0.5">{row.why}</p>
-              </div>
-            ))
-          )}
-        </section>
-
-        <section className="p-4 space-y-2 border-t md:border-t-0 border-slate-100">
-          <h3 className="text-[10px] font-black uppercase tracking-widest text-amber-700 flex items-center gap-1.5">
-            <HelpCircle size={12} /> Clarify
-          </h3>
-          {brief.clarify.length === 0 ? (
-            <p className="text-xs text-slate-400 font-semibold">No open questions.</p>
-          ) : (
-            brief.clarify.map((q) => (
-              <div key={q.id} className="rounded-xl border border-amber-100 bg-amber-50/50 px-3 py-2 space-y-2">
-                <div>
-                  <p className="text-xs font-black text-slate-800">{q.title}</p>
-                  <p className="text-[10px] font-semibold text-slate-500 mt-0.5 leading-snug">{q.body}</p>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {q.options.map((opt) => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => onAnswer(q, opt.id)}
-                      className="px-2 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-bold text-slate-700 hover:border-slate-400"
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
+            brief.sell.slice(0, 4).map((row) => (
+              <div key={row.item.id} className="rx-row cursor-default">
+                <span className="text-[12px] font-medium truncate min-w-0">{row.item.name}</span>
+                <span className="rx-num text-[11px] font-semibold text-[var(--rx-muted)] shrink-0">
+                  {row.ageDays}d
+                </span>
               </div>
             ))
           )}
         </section>
       </div>
+
+      {/* Clarify — collapsed by default if answered elsewhere; open when questions exist */}
+      {brief.clarify.length > 0 && (
+        <div className="border-t border-[var(--rx-line)]">
+          <button
+            type="button"
+            onClick={() => setClarifyOpen((v) => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 text-left"
+          >
+            <span className="text-[13px] font-medium flex items-center gap-2">
+              Clarify
+              <span className="rx-pill rx-pill-warn">{brief.clarify.length}</span>
+            </span>
+            {clarifyOpen ? <ChevronDown size={16} className="text-[var(--rx-muted)]" /> : <ChevronRight size={16} className="text-[var(--rx-muted)]" />}
+          </button>
+          {clarifyOpen && (
+            <div className="px-4 pb-4 space-y-2">
+              {brief.clarify.map((q) => (
+                <div key={q.id} className="rounded-xl border border-[var(--rx-line)] bg-[var(--rx-soft)] p-3">
+                  <p className="text-[13px] font-semibold tracking-tight">{q.title}</p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {q.options.map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => onAnswer(q, opt.id)}
+                        className="px-2.5 py-1.5 rounded-lg bg-white border border-[var(--rx-line)] text-[11px] font-medium hover:border-[var(--rx-ink)] transition-colors"
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

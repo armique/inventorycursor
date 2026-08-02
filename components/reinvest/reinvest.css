@@ -1,0 +1,165 @@
+/* Reinvest Advisor surface — number-first finance UI (scoped). */
+.reinvest-shell {
+  --rx-ink: #0f1419;
+  --rx-muted: #6b7280;
+  --rx-line: #e8eaed;
+  --rx-soft: #f4f5f7;
+  --rx-ok: #0f7a4c;
+  --rx-ok-soft: #e8f6ef;
+  --rx-warn: #9a6700;
+  --rx-warn-soft: #fff6e0;
+  --rx-bad: #b42318;
+  --rx-bad-soft: #fef3f2;
+  --rx-accent: #1a6b5c;
+  --rx-radius: 1rem;
+  --rx-shadow: 0 1px 2px rgba(15, 20, 25, 0.04), 0 8px 24px rgba(15, 20, 25, 0.04);
+  color: var(--rx-ink);
+}
+
+.reinvest-shell .rx-num {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.reinvest-shell .rx-panel {
+  background: #fff;
+  border: 1px solid var(--rx-line);
+  border-radius: calc(var(--rx-radius) + 4px);
+  box-shadow: var(--rx-shadow);
+}
+
+.reinvest-shell .rx-seg {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--rx-soft);
+  border: 1px solid var(--rx-line);
+}
+
+.reinvest-shell .rx-seg button {
+  border: 0;
+  background: transparent;
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 650;
+  color: var(--rx-muted);
+  transition: background 160ms ease, color 160ms ease, transform 120ms ease;
+}
+
+.reinvest-shell .rx-seg button[aria-pressed='true'] {
+  background: var(--rx-ink);
+  color: #fff;
+}
+
+.reinvest-shell .rx-seg button:active {
+  transform: scale(0.98);
+}
+
+.reinvest-shell .rx-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.7rem 0.85rem;
+  border-radius: 0.75rem;
+  border: 1px solid transparent;
+  background: var(--rx-soft);
+  transition: border-color 160ms ease, background 160ms ease, transform 120ms ease;
+}
+
+.reinvest-shell .rx-row:hover {
+  border-color: var(--rx-line);
+  background: #fff;
+}
+
+.reinvest-shell .rx-row:active {
+  transform: scale(0.995);
+}
+
+.reinvest-shell .rx-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 650;
+  background: var(--rx-soft);
+  color: var(--rx-muted);
+}
+
+.reinvest-shell .rx-pill-ok {
+  background: var(--rx-ok-soft);
+  color: var(--rx-ok);
+}
+
+.reinvest-shell .rx-pill-warn {
+  background: var(--rx-warn-soft);
+  color: var(--rx-warn);
+}
+
+.reinvest-shell .rx-pill-bad {
+  background: var(--rx-bad-soft);
+  color: var(--rx-bad);
+}
+
+.reinvest-shell .rx-cta {
+  width: 100%;
+  border: 0;
+  border-radius: 0.85rem;
+  padding: 0.7rem 1rem;
+  background: var(--rx-ink);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 650;
+  transition: opacity 160ms ease, transform 120ms ease;
+}
+
+.reinvest-shell .rx-cta:hover {
+  opacity: 0.92;
+}
+
+.reinvest-shell .rx-cta:active {
+  transform: scale(0.985);
+}
+
+.reinvest-shell .rx-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--rx-accent);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.reinvest-shell .rx-muted {
+  color: var(--rx-muted);
+}
+
+.reinvest-shell .rx-cash-rail {
+  display: flex;
+  gap: 0.65rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+  scrollbar-width: none;
+}
+
+.reinvest-shell .rx-cash-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.reinvest-shell .rx-cash-tile {
+  flex: 0 0 auto;
+  min-width: 7.5rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--rx-radius);
+  background: #fff;
+  border: 1px solid var(--rx-line);
+}
+
+.reinvest-shell .rx-cash-tile[data-best='true'] {
+  border-color: var(--rx-ink);
+}

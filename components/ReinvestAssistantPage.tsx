@@ -1,17 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  Coins,
-  Settings2,
-  Gamepad2,
-  Landmark,
-  LayoutGrid,
-  List,
-  Clock,
-  ChevronRight,
-  Target,
-  ShoppingCart,
-  Eye,
-} from 'lucide-react';
+import { Settings2, Clock, ChevronRight } from 'lucide-react';
 import type { Expense, InventoryItem, TaxMode } from '../types';
 import { buildReinvestData, type ReinvestGroup, type AnchorBundleGroup } from '../utils/reinvestAnalysis';
 import { loadBuyHelperFees, type BuyHelperFees } from '../utils/buyHelper';
@@ -35,6 +23,7 @@ import ReinvestCategoryBudgets from './reinvest/ReinvestCategoryBudgets';
 import ReinvestStockGaps from './reinvest/ReinvestStockGaps';
 import ReinvestTodayBriefPanel from './reinvest/ReinvestTodayBrief';
 import ReinvestScenarios from './reinvest/ReinvestScenarios';
+import './reinvest/reinvest.css';
 
 type Props = {
   items: InventoryItem[];
@@ -192,67 +181,39 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
   };
 
   return (
-    <div className="space-y-4 pb-10">
+    <div className="reinvest-shell space-y-5 pb-10">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-black text-slate-900 flex items-center gap-2">
-            <Coins size={20} className="text-brand-500" /> Reinvest Advisor
-          </h1>
-          <p className="text-xs text-slate-400 font-semibold flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            What to restock · buy ceiling · KA &amp; eBay sell (−{totalEbayFeePct(fees)}% eBay fees)
-          </p>
+          <h1 className="text-[22px] font-semibold tracking-tight text-[var(--rx-ink)]">Reinvest</h1>
         </div>
-        <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1">
-          <button
-            type="button"
-            onClick={() => setView('buylist')}
-            className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider ${
-              view === 'buylist' ? 'bg-slate-900 text-white' : 'text-slate-500'
-            }`}
-          >
-            Buy list
+        <div className="rx-seg">
+          <button type="button" aria-pressed={view === 'buylist'} onClick={() => setView('buylist')}>
+            Buy
           </button>
-          <button
-            type="button"
-            onClick={() => setView('progress')}
-            className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider ${
-              view === 'progress' ? 'bg-slate-900 text-white' : 'text-slate-500'
-            }`}
-          >
-            <Gamepad2 size={12} /> Progress
+          <button type="button" aria-pressed={view === 'progress'} onClick={() => setView('progress')}>
+            Progress
           </button>
-          <button
-            type="button"
-            onClick={() => setView('planning')}
-            className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider ${
-              view === 'planning' ? 'bg-slate-900 text-white' : 'text-slate-500'
-            }`}
-          >
-            <Landmark size={12} /> Planning
+          <button type="button" aria-pressed={view === 'planning'} onClick={() => setView('planning')}>
+            Plan
           </button>
         </div>
       </header>
 
       {view === 'buylist' && (
-        <div className="grid grid-cols-3 gap-2.5">
-          <div className="rounded-xl bg-white border border-slate-200 shadow-card p-3">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
-              <Target size={12} /> Opportunity
-            </p>
-            <p className="text-lg font-black text-slate-900">{formatEURPrefix(opportunity)}</p>
+        <div className="rx-panel grid grid-cols-3 divide-x divide-[var(--rx-line)] overflow-hidden">
+          <div className="p-3.5">
+            <p className="text-[11px] font-medium text-[var(--rx-muted)]">Opportunity</p>
+            <p className="rx-num text-[20px] font-semibold tracking-tight mt-1">{formatEURPrefix(opportunity)}</p>
           </div>
-          <div className="rounded-xl bg-white border border-slate-200 shadow-card p-3">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
-              <ShoppingCart size={12} /> To restock
-            </p>
-            <p className="text-lg font-black text-slate-900">{restock.length}</p>
+          <div className="p-3.5">
+            <p className="text-[11px] font-medium text-[var(--rx-muted)]">Restock</p>
+            <p className="rx-num text-[20px] font-semibold tracking-tight mt-1">{restock.length}</p>
           </div>
-          <div className="rounded-xl bg-white border border-slate-200 shadow-card p-3">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5">
-              <Eye size={12} /> To review
+          <div className="p-3.5">
+            <p className="text-[11px] font-medium text-[var(--rx-muted)]">Review</p>
+            <p className="rx-num text-[20px] font-semibold tracking-tight mt-1">
+              {skipped.length + data.agingListings.length}
             </p>
-            <p className="text-lg font-black text-slate-900">{skipped.length + data.agingListings.length}</p>
           </div>
         </div>
       )}
@@ -296,24 +257,12 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
 
       {view === 'buylist' && (
         <div className="flex items-center justify-between gap-3">
-          <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5">
-            <button
-              type="button"
-              onClick={() => setBuyListMode('cards')}
-              className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
-                buyListMode === 'cards' ? 'bg-slate-900 text-white' : 'text-slate-500'
-              }`}
-            >
-              <LayoutGrid size={12} /> Cards
+          <div className="rx-seg">
+            <button type="button" aria-pressed={buyListMode === 'cards'} onClick={() => setBuyListMode('cards')}>
+              Cards
             </button>
-            <button
-              type="button"
-              onClick={() => setBuyListMode('table')}
-              className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
-                buyListMode === 'table' ? 'bg-slate-900 text-white' : 'text-slate-500'
-              }`}
-            >
-              <List size={12} /> Table
+            <button type="button" aria-pressed={buyListMode === 'table'} onClick={() => setBuyListMode('table')}>
+              Table
             </button>
           </div>
           <div className="relative">
@@ -321,13 +270,13 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
               type="button"
               onClick={() => setSettingsOpen((v) => !v)}
               aria-label="Fee settings"
-              className="p-2 rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+              className="p-2 rounded-full border border-[var(--rx-line)] bg-white text-[var(--rx-muted)] hover:text-[var(--rx-ink)]"
             >
               <Settings2 size={14} />
             </button>
             {settingsOpen && (
-              <div className="absolute right-0 top-full mt-2 z-10 w-64 rounded-xl border border-slate-200 bg-white shadow-card-hover p-3 space-y-2">
-                <label className="flex items-center justify-between gap-2 text-xs font-bold text-slate-600">
+              <div className="absolute right-0 top-full mt-2 z-10 w-56 rounded-xl border border-[var(--rx-line)] bg-white shadow-[var(--rx-shadow)] p-3 space-y-2">
+                <label className="flex items-center justify-between gap-2 text-[12px] font-medium text-[var(--rx-muted)]">
                   eBay fee %
                   <input
                     type="number"
@@ -336,10 +285,10 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
                     step={0.5}
                     value={fees.ebayFeePct}
                     onChange={(e) => updateFees({ ebayFeePct: Number(e.target.value) })}
-                    className="w-16 px-2 py-1 rounded-lg border border-slate-200 font-bold text-xs"
+                    className="w-14 px-2 py-1 rounded-lg border border-[var(--rx-line)] font-semibold text-[12px] rx-num"
                   />
                 </label>
-                <label className="flex items-center justify-between gap-2 text-xs font-bold text-slate-600">
+                <label className="flex items-center justify-between gap-2 text-[12px] font-medium text-[var(--rx-muted)]">
                   Ads %
                   <input
                     type="number"
@@ -348,20 +297,17 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
                     step={0.5}
                     value={fees.ebayAdsPct}
                     onChange={(e) => updateFees({ ebayAdsPct: Number(e.target.value) })}
-                    className="w-16 px-2 py-1 rounded-lg border border-slate-200 font-bold text-xs"
+                    className="w-14 px-2 py-1 rounded-lg border border-[var(--rx-line)] font-semibold text-[12px] rx-num"
                   />
                 </label>
-                <p className="text-[10px] font-black text-slate-700">
-                  Total eBay cut: {totalEbayFeePct(fees)}%
-                </p>
+                <p className="text-[11px] font-semibold text-[var(--rx-ink)]">Cut {totalEbayFeePct(fees)}%</p>
                 <button
                   type="button"
                   onClick={() => updateFees({ ebayFeePct: 12.5, ebayAdsPct: 12.5 })}
-                  className="w-full py-1.5 rounded-lg bg-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-600 hover:bg-slate-200"
+                  className="w-full py-1.5 rounded-lg bg-[var(--rx-soft)] text-[11px] font-semibold text-[var(--rx-muted)]"
                 >
-                  Reset to 25%
+                  Reset 25%
                 </button>
-                <p className="text-[10px] text-slate-400 font-semibold">Shared with Flip Coach / Buy Helper.</p>
               </div>
             )}
           </div>
@@ -372,14 +318,13 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
         <button
           type="button"
           onClick={() => setView('planning')}
-          className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 transition-colors text-left"
+          className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-[var(--rx-warn-soft)] text-left"
         >
-          <span className="text-xs font-bold text-amber-800 flex items-center gap-2">
-            <Clock size={14} /> {data.agingListings.length} listing{data.agingListings.length === 1 ? '' : 's'} sitting
-            longer than usual
+          <span className="text-[13px] font-medium text-[var(--rx-warn)] flex items-center gap-2">
+            <Clock size={14} /> {data.agingListings.length} aging
           </span>
-          <span className="text-[11px] font-black text-amber-700 flex items-center gap-0.5">
-            Review in Planning <ChevronRight size={13} />
+          <span className="text-[12px] font-semibold text-[var(--rx-warn)] flex items-center gap-0.5">
+            Plan <ChevronRight size={13} />
           </span>
         </button>
       )}
@@ -404,13 +349,6 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
         <ReinvestCheatSheet variants={data.variants} bundles={data.bundles} fees={fees} />
       ) : (
         <>
-          {!data.seasonalityReady && data.historyDays > 0 && (
-            <p className="text-[11px] text-slate-400 font-semibold">
-              Seasonal timing needs ~6 months of sold history (you have ~{Math.round(data.historyDays / 30)} mo) —
-              it'll kick in automatically once there's enough.
-            </p>
-          )}
-
           <ReinvestBestSellers
             groups={[...data.variants, ...data.bundles]}
             fees={fees}
@@ -418,18 +356,14 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
           />
 
           {nothingToShow && (
-            <p className="text-sm text-slate-400 font-semibold p-6 text-center">
-              {data.variants.length
-                ? 'Everything you sell well is already stocked at target level.'
-                : 'Sell a few items to start seeing recommendations here.'}
+            <p className="text-[13px] text-[var(--rx-muted)] font-medium p-8 text-center">
+              {data.variants.length ? 'Stocked. Nothing urgent.' : 'Sell a few items to unlock buys.'}
             </p>
           )}
 
           {displayRestock.length > 0 && (
             <div>
-              <h2 className="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-2">
-                Restock now · pocket profit after fees · KA / eBay
-              </h2>
+              <h2 className="text-[13px] font-semibold tracking-tight mb-2.5">Restock</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {displayRestock.map((g) => (
                   <div key={g.key} data-reinvest-group={g.key}>
@@ -448,9 +382,7 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
 
           {bundleFocus.length > 0 && (
             <div>
-              <h2 className="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-2">
-                Bundle intelligence · cpu/platform-driven demand
-              </h2>
+              <h2 className="text-[13px] font-semibold tracking-tight mb-2.5">Kits</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {bundleFocus.map((g) => (
                   <ReinvestCard
@@ -471,11 +403,9 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
 
           {(hypotheses.length > 0 || loadingHypotheses) && (
             <div>
-              <h2 className="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-2">
-                Hypotheses — thin or no track record
-              </h2>
+              <h2 className="text-[13px] font-semibold tracking-tight mb-2.5">Ideas</h2>
               {loadingHypotheses && !hypotheses.length ? (
-                <p className="text-xs text-slate-400 font-semibold">Thinking of ideas…</p>
+                <p className="text-[12px] text-[var(--rx-muted)] font-medium">…</p>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {hypotheses.map((g) => (
