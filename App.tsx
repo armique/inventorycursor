@@ -38,6 +38,7 @@ const ReinvestAssistantPage = lazy(() => import('./components/ReinvestAssistantP
 const PriceDropPage = lazy(() => import('./components/PriceDropPage'));
 const ListReadyPage = lazy(() => import('./components/ListReadyPage'));
 const ClaudeAutomationsPage = lazy(() => import('./components/ClaudeAutomationsPage'));
+const EbayLotHuntPage = lazy(() => import('./components/EbayLotHuntPage'));
 const AiActionsPage = lazy(() => import('./components/AiActionsPage'));
 import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense, DashboardPreferences, ActionHistoryEntry, TaxMode, ItemUpdateOptions, BulkImportRecord } from './types';
 import {
@@ -2184,6 +2185,7 @@ const App: React.FC = () => {
             element={<PriceDropPage items={items} onRestoreItems={handleRestoreItems} />}
           />
           <Route path="list-ready" element={<ListReadyPage items={items} />} />
+          <Route path="ebay-hunt" element={<EbayLotHuntPage />} />
           <Route path="automations" element={<ClaudeAutomationsPage />} />
           <Route
             path="combo-lab"

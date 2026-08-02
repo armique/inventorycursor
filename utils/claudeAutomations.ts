@@ -1,24 +1,38 @@
 /**
- * Claude Computer-Use automations for DeInventory.
- * Three separate jobs — never mix in one chat (different risk + cadence).
+ * Claude Computer-Use automations for DeInventory / armiktech.
+ * ONE automation = ONE Claude chat. Never mix jobs.
  */
+import {
+  CLAUDE_EBAY_LOT_HUNT_PROMPT,
+  CLAUDE_EBAY_LOT_HUNT_STARTER,
+} from './ebayLotHunt';
 
-export type ClaudeAutomationId = 'inbound' | 'list_drafts' | 'hygiene';
+export type ClaudeAutomationId =
+  | 'inbound'
+  | 'list_drafts'
+  | 'hygiene'
+  | 'ebay_hunt';
 
 export type ClaudeAutomation = {
   id: ClaudeAutomationId;
+  number: number;
   name: string;
   cadence: string;
   does: string[];
   never: string[];
+  /** Page Claude must open and read (agent brief lives there). */
   openUrls: string[];
   starter: string;
   prompt: string;
 };
 
-/** 1) After purchases — inventory + photos + listing text. Never mark List Ready without checklist. */
+/** Universal: tell Claude to open the hub and follow what's on the page. */
+export const CLAUDE_HUB_STARTER = `Open DeInventory /panel/automations?agent=1, read #claude-automations-playbook and #claude-automations-setup. Create a SEPARATE Claude automation/chat for EACH job listed (never mix). For the job I name, open that job’s URL (?agent=1), read its brief + JSON on the page, and execute ONLY that job.`;
+
+/** 1) After purchases — inventory + photos + listing text. */
 export const CLAUDE_AUTOMATION_INBOUND: ClaudeAutomation = {
   id: 'inbound',
+  number: 1,
   name: 'Inbound (buy + photos + listing text)',
   cadence: 'After each purchase, or once daily if you bought lots',
   does: [
@@ -34,88 +48,59 @@ export const CLAUDE_AUTOMATION_INBOUND: ClaudeAutomation = {
     'Do not list on KA/eBay',
     'Do not publish anything',
     'Do not create marketplace drafts (that is List drafts)',
-    'Do not run Price Drop',
+    'Do not run Price Drop or Lot Hunt',
     'Do not mark items Sold',
     'Do not mark List Ready / saleReady unless title + description + photos are all done',
   ],
-  openUrls: ['/panel/inventory', '/panel/add', '/panel/automations'],
+  openUrls: ['/panel/automations?agent=1&job=inbound', '/panel/inventory', '/panel/add'],
   starter:
-    'Run DeInventory INBOUND only: purchases → inventory → lot photos on item → one light premium lifestyle card as main → polish usable photos → generate marketTitle + marketDescription → PHOTO CHECK notes. Do not mark List Ready unless checklist complete. No drafts, publish, price-drop, or sold.',
+    'Open DeInventory /panel/automations?agent=1&job=inbound, read the active job brief on that page, then run INBOUND only: purchases → inventory → photos → lifestyle card → marketTitle + marketDescription → PHOTO CHECK. No drafts, publish, price-drop, lot hunt, or sold.',
   prompt: `You are my DeInventory INBOUND operator (Germany). Computer use via Chrome only.
+
+HOW YOU WERE STARTED
+You should have opened /panel/automations?agent=1&job=inbound (or been given this job only).
+Do NOT run other automations in this chat.
 
 THIS JOB ONLY
 1) Parse purchases I made (Kleinanzeigen / eBay / email receipts).
 2) Create or update inventory items in DeInventory.
-3) Import photos from the purchased lot onto the item (Add photos / item image fields). Photos live on the inventory item in DeInventory (Firebase URLs) — that IS the photo store. Later List drafts / humans download those URLs to the PC for marketplace file pickers.
+3) Import photos from the purchased lot onto the item (Add photos / item image fields). Photos live on the inventory item in DeInventory (Firebase URLs).
 4) Make listing-ready visuals: ONE light premium lifestyle product card as main + lightly polished secondary photos.
-5) Fill the LISTING PREP checklist fields on the item:
-   - marketTitle (generated listing title, ≤80 chars, German marketplace style, factual)
-   - marketDescription (full listing body: condition, included, defects if any — no hype)
+5) Fill listing prep: marketTitle + marketDescription.
 6) Write PHOTO CHECK notes when gaps exist.
 
 LISTING PREP CHECKLIST (required before List Ready)
-DeInventory only enables “List Ready” when ALL three are true on the item:
-  ✓ marketTitle generated (not empty / not just the short stock name unless it already is a proper listing title ≥8 chars)
-  ✓ marketDescription generated (≥40 chars)
-  ✓ ≥1 real product photo on the item
-You may leave saleReady / List Ready OFF even when complete — I will click List Ready myself. If I ask you to mark List Ready, only do it when the checklist chips are all green.
+✓ marketTitle · ✓ marketDescription · ✓ ≥1 product photo
+Leave List Ready OFF unless I ask and checklist is green.
 
-NEVER in this job: publish, create KA/eBay drafts, Price Drop, mark Sold, invent marketplace prices.
+NEVER: publish, KA/eBay drafts, Price Drop, Lot Hunt, mark Sold, invent marketplace prices.
 
 BOOTSTRAP
-- Open DeInventory in the same Chrome profile I use.
-- Prefer /panel/inventory and /panel/add (or existing item edit / Listing Studio).
+- Prefer /panel/inventory and /panel/add.
 - Work one purchase/lot at a time. Fast, minimal narration.
 
-PURCHASES → INVENTORY
-- For each purchase: name, buy price (€), buy date, platform, vendor if visible, link if any.
-- If a lot contains multiple parts: create separate In Stock rows when clearly separate SKUs; otherwise one row + note “lot — split later”.
-- Skip duplicates (same name + similar buy date/price already in stock).
-- Do not change sell prices.
-
 PHOTOS
-- From the seller listing / purchase page: collect all images.
-- Upload into the DeInventory item (Add photos / existing photo UI). This stores them on the item — do NOT invent a separate photo folder unless downloading for your own upload later.
-- MAIN: generate exactly one AI product card in style “premium lifestyle light” / light premium lifestyle (bright clean background, product hero, no purple glow, no heavy shadows, no fake logos).
-- OTHER frames: keep only adequate shots (sharp, correct product). Light polish only (crop/exposure). Delete blur/hands/wrong item.
-- Order: card → best angles → labels/ports → box/OVP if any.
-- Optional: use “download photos” on the checklist bar to save copies to Downloads for later PC file-picker uploads.
+- Upload into the item. MAIN = premium lifestyle light card. Order: card → angles → labels → OVP.
 
 TITLE + DESCRIPTION
-- After photos are acceptable: open Listing Studio / AI listing on the item OR write into marketTitle + marketDescription fields yourself.
-- Title: specific model + key specs buyers search (e.g. “ASUS ROG Strix B550-F Gaming WiFi ATX Mainboard”). German/English mix OK if that matches how Germans search eBay/KA for PC parts.
-- Description: short factual KA/eBay body — what it is, condition, accessories (OVP/IO), known issues. No emoji spam, no fake “TOP Angebot”.
-- Prefer using the in-app AI generate if the button is available and works; otherwise write yourself and save.
+- Use Flags “Listing” button when available, or Listing Studio / write marketTitle + marketDescription.
+- Default condition Gebraucht unless Defective.
 
-PHOTO CHECK NOTE (required if anything missing)
-Write into item comments/notes exactly in this shape:
-PHOTO CHECK
-- Missing: …
-- Weak: …
-- Used seller pics: N · kept: M · card: yes/no
-- Title/Desc: yes/no
-- Action: re-shoot … / generate title … before List Ready
-If card failed or 0 usable photos OR title/desc missing: do NOT mark List Ready; Action must say blocker.
-
-OUTPUT
-- ADDED[] / UPDATED[] item name · buy €
-- PHOTO[] item · card yes/no · kept N
-- LISTING[] item · title yes/no · desc yes/no
-- NOTES[] item · missing summary
-- SKIPPED[] reason
+OUTPUT: ADDED[] · PHOTO[] · LISTING[] · NOTES[] · SKIPPED[]
 
 START
-Confirm “INBOUND only”. Then process today’s purchases. No listing drafts. No publish. No List Ready unless checklist complete and I asked.`,
+Confirm “INBOUND only”. Process today’s purchases.`,
 };
 
-/** 2) List Ready (checklist complete + saleReady) → marketplace drafts only. */
+/** 2) List Ready → marketplace drafts only. */
 export const CLAUDE_AUTOMATION_LIST_DRAFTS: ClaudeAutomation = {
   id: 'list_drafts',
+  number: 2,
   name: 'List drafts (KA + eBay)',
   cadence: 'When items show List Ready (checklist: title + description + photos)',
   does: [
-    'Read /panel/list-ready?agent=1 JSON',
-    'Download photoUrls to PC then upload (file picker friendly)',
+    'Open /panel/list-ready?agent=1 and read brief + JSON on the page',
+    'Download photoUrls to PC then upload',
     'Create DRAFTS on Kleinanzeigen and eBay',
     'Use exact title + description + prices + photo order from JSON',
     'Mark drafted in List Ready when done',
@@ -123,107 +108,103 @@ export const CLAUDE_AUTOMATION_LIST_DRAFTS: ClaudeAutomation = {
   never: [
     'NEVER publish / Veröffentlichen / Listen / activate',
     'Do not invent prices, titles, or descriptions',
-    'Do not Price Drop',
+    'Do not Price Drop / Lot Hunt / Inbound',
     'Do not mark Sold',
     'Do not touch items not in JSON',
-    'Do not mark new items List Ready (that is Inbound / human)',
   ],
-  openUrls: ['/panel/list-ready?agent=1'],
+  openUrls: ['/panel/list-ready?agent=1', '/panel/automations?agent=1&job=list_drafts'],
   starter:
-    'Open DeInventory /panel/list-ready?agent=1, read #list-ready-agent-brief and #list-ready-agent-json, create DRAFTS only on KA + eBay using JSON title, description, photoUrls. Prefer download photos to PC then upload. NEVER publish. I will publish eBay myself after review.',
+    'Open DeInventory /panel/list-ready?agent=1, read #list-ready-agent-brief and #list-ready-agent-json yourself, create DRAFTS only on KA + eBay. NEVER publish. I will publish eBay after review.',
   prompt: `You are my DeInventory LIST-DRAFTS operator (Germany).
 
-GOAL
-Create marketplace DRAFTS for List Ready items (already passed inventory checklist: generated title + description + photos). I will review and publish myself (especially eBay).
+HOW YOU WERE STARTED
+Open /panel/list-ready?agent=1 and READ the brief + JSON on the page. Do not ask me to paste.
+This chat = List drafts ONLY.
 
-BOOTSTRAP
-1. Open /panel/list-ready?agent=1
-2. Wait until #list-ready-agent-json is populated.
-3. Read #list-ready-agent-brief + parse JSON (mode must be drafts_only).
-4. Process ONLY JSON.rows. Respect skipKa / skipEbay.
+GOAL
+Create marketplace DRAFTS for List Ready items. I publish myself later.
 
 HARD RULE — DRAFTS ONLY
-- KA: save Entwurf/draft. NEVER Veröffentlichen / go live.
-- eBay: save Draft only. NEVER Publish / Listen / Angebot einstellen active.
-- If a button might publish and you are unsure → SKIP → NEEDS_MANUAL.
-
-PHOTOS
-- Download each photoUrl to Downloads (or Save As), then upload from disk — more reliable than remote URL paste.
-- Keep JSON order (first = main).
+- KA: Entwurf/draft. NEVER Veröffentlichen.
+- eBay: Draft only. NEVER Publish / Listen active.
+- Unsure if a button publishes → SKIP → NEEDS_MANUAL.
 
 PER ROW
-- Title = title from JSON (generated marketTitle).
-- Description = description from JSON (marketDescription). Do not invent; if somehow empty use conditionHint + inventoryNote only.
-- KA Preis = priceKa whole euros only. eBay = priceEbay.
-- Record draft URL/id when visible.
-- In List Ready, mark drafted KA / eBay / both when possible.
+- Download photoUrls then upload from disk.
+- Title + description from JSON.
+- KA whole euros; eBay = priceEbay.
 
-SPEED: ≤1–2 min/item when uploads work. Stuck >60s → skip channel.
-
-OUTPUT
-DRAFTED[] · NEEDS_MANUAL[] · SKIPPED[]
+OUTPUT: DRAFTED[] · NEEDS_MANUAL[] · SKIPPED[]
 
 START
-Open list-ready?agent=1 now. Drafts only. No publish.`,
+Open list-ready?agent=1 now. Read page. Drafts only.`,
 };
 
-/** 3) Sales reconcile + Price Drop maintenance. */
+/** 3) Sales reconcile + Price Drop. */
 export const CLAUDE_AUTOMATION_HYGIENE: ClaudeAutomation = {
   id: 'hygiene',
+  number: 3,
   name: 'Hygiene (sold + price drop)',
   cadence: 'Sold: daily. Price Drop: every 3 days when due',
   does: [
     'Reconcile sold orders on eBay/KA → mark Sold in DeInventory',
-    'When Price Drop is due: open price-drop?agent=1, apply nextPrice to ACTIVE listings only',
-    'Respect floors / catastrophe guards / drafts-only boundary',
+    'When due: open /panel/price-drop?agent=1, read JSON, apply nextPrice to ACTIVE listings',
+    'Respect floors / catastrophe guards',
   ],
   never: [
-    'Do not create new inventory from purchases (that is Inbound)',
-    'Do not create drafts or publish listings (that is List drafts)',
-    'Do not invent sold prices or drop prices below floor/JSON',
+    'Do not create new inventory (Inbound)',
+    'Do not create drafts or publish (List drafts)',
+    'Do not run Lot Hunt',
+    'Do not invent sold or drop prices',
     'Do not touch draft listings in Price Drop',
-    'Do not change listing prep checklist / List Ready',
   ],
-  openUrls: ['/panel/inventory', '/panel/price-drop?agent=1'],
+  openUrls: ['/panel/price-drop?agent=1', '/panel/automations?agent=1&job=hygiene', '/panel/inventory'],
   starter:
-    'Run DeInventory HYGIENE: (1) reconcile today’s sold KA/eBay into inventory Sold, (2) if Price Drop due open /panel/price-drop?agent=1 and apply JSON nextPrice to ACTIVE listings only with catastrophe guards. No drafts, no publish, no new buys, no List Ready.',
-  prompt: `You are my DeInventory HYGIENE operator (Germany). Two sub-tasks in THIS order. Do not invent numbers.
+    'Open DeInventory /panel/automations?agent=1&job=hygiene, then run HYGIENE only: (1) reconcile today’s sold into inventory, (2) if Price Drop due open /panel/price-drop?agent=1 and apply JSON nextPrice to ACTIVE listings only. No drafts, publish, inbound, or lot hunt.',
+  prompt: `You are my DeInventory HYGIENE operator (Germany). This chat = Hygiene ONLY.
 
-════════════════════════════════════
-PART 1 — SALES RECONCILE (do first)
-════════════════════════════════════
-1. Check eBay seller sold/orders + KA sold / “verkauft” messages for recent sales.
-2. Match to DeInventory In Stock (name ≈, price ≈). Prefer listing id/URL if known.
-3. Mark Sold with sell price + fees/shipping when visible.
-4. If uncertain match → SKIP (UNMATCHED). Never guess.
-5. Do not create new items. Do not change active list prices here. Do not touch listing prep / List Ready.
+PART 1 — SALES RECONCILE
+Match eBay/KA sold → DeInventory Sold. Uncertain → SKIP. Never invent.
 
-OUTPUT PART 1: SOLD[] · UNMATCHED[]
+PART 2 — PRICE DROP (if due)
+Open /panel/price-drop?agent=1. Read #price-drop-agent-brief + JSON on the page.
+Apply nextPrice to ACTIVE listings only. Catastrophe guards. KA whole euros.
 
-════════════════════════════════════
-PART 2 — PRICE DROP (only if due)
-════════════════════════════════════
-1. Open /panel/price-drop?agent=1
-2. Wait until data-price-drop-syncing="false" and #price-drop-agent-json has rows (or Sync & rebuild finished).
-3. If now < nextDueAt and user did not say FORCE → skip Part 2 (“not due”).
-4. Read #price-drop-agent-brief + JSON.
-5. For each row: lower ACTIVE eBay/KA listing to exact nextPrice.
-6. Catastrophe guards: never below minAllowedPrice/buyPrice/floor; never >~8% below current; missing digit → abort row; wrong listing drift → skip.
-7. KA whole euros only. Drafts are out of scope.
-8. Mark applied in Price Drop when done.
-
-SPEED: ≤20–40s per price edit. Not found in 20s → SKIP.
-
-OUTPUT PART 2: APPLIED[] · SKIPPED[] · or “price drop not due”
+NEVER: drafts, publish, inbound, lot hunt, List Ready changes.
 
 START
-Say “HYGIENE”. Part 1 sales, then Part 2 price drop if due. No listing drafts. No publish.`,
+Say “HYGIENE”. Part 1 then Part 2 if due.`,
+};
+
+/** 4) eBay lot hunt → filtered list on armiktech. */
+export const CLAUDE_AUTOMATION_EBAY_HUNT: ClaudeAutomation = {
+  id: 'ebay_hunt',
+  number: 4,
+  name: 'eBay Lot Hunt (filter junk → list on armiktech)',
+  cadence: 'On demand — one hunt per click / chat run',
+  does: [
+    'Read query + price min/max from /panel/ebay-hunt?agent=1',
+    'Search ebay.de for matching lots',
+    'Reject junk / wrong / konvolut / defect (unless asked)',
+    'Keep only real matching listings with price + link',
+    'Paste JSON into #ebay-hunt-results-paste and Import on armiktech',
+  ],
+  never: [
+    'Do not buy, bid, offer, or message sellers',
+    'Do not list / publish / price-drop',
+    'Do not run Inbound or List drafts in this chat',
+    'Do not invent listings — only real ebay.de URLs',
+  ],
+  openUrls: ['/panel/ebay-hunt?agent=1', '/panel/automations?agent=1&job=ebay_hunt'],
+  starter: CLAUDE_EBAY_LOT_HUNT_STARTER,
+  prompt: CLAUDE_EBAY_LOT_HUNT_PROMPT,
 };
 
 export const CLAUDE_AUTOMATIONS: ClaudeAutomation[] = [
   CLAUDE_AUTOMATION_INBOUND,
   CLAUDE_AUTOMATION_LIST_DRAFTS,
   CLAUDE_AUTOMATION_HYGIENE,
+  CLAUDE_AUTOMATION_EBAY_HUNT,
 ];
 
 export function getClaudeAutomation(id: ClaudeAutomationId): ClaudeAutomation {
@@ -232,23 +213,93 @@ export function getClaudeAutomation(id: ClaudeAutomationId): ClaudeAutomation {
   return hit;
 }
 
+export function parseClaudeAutomationJobParam(
+  raw: string | null | undefined,
+): ClaudeAutomationId | null {
+  const id = String(raw || '').trim() as ClaudeAutomationId;
+  return CLAUDE_AUTOMATIONS.some((a) => a.id === id) ? id : null;
+}
+
 /** How to run them without breaking anything. */
-export const CLAUDE_AUTOMATION_PLAYBOOK = `DeInventory × Claude — run as THREE separate chats/automations.
+export const CLAUDE_AUTOMATION_PLAYBOOK = `DeInventory × Claude — FOUR separate automations (one chat each).
 
-LISTING PREP (on each In Stock item)
-  Checklist before List Ready: generated title (marketTitle) · description (marketDescription) · photos on item
-  Photos stay on the inventory item; download to PC when uploading to KA/eBay file pickers
+HOW YOU USE THIS (human → Claude)
+1. Open /panel/automations?agent=1 on armiktech / DeInventory.
+2. Tell Claude only: “Go to that page, read the playbook, and set up / run what it says.”
+3. Or name one job: “Run ebay_hunt” / “Run inbound” — Claude opens that job’s URL and reads the brief ON THE PAGE (no paste needed).
 
+RULE: one automation = one Claude chat/automation. Mixing causes wrong clicks.
+
+JOBS
 1) INBOUND — after you buy
-   Purchases → inventory → photos on item → lifestyle card → marketTitle + marketDescription → PHOTO CHECK
-   Never drafts / publish / drop / sold. List Ready only if checklist complete and asked
+   Purchases → inventory → photos → lifestyle card → marketTitle + description → PHOTO CHECK
+   Never drafts / publish / drop / hunt / sold
 
 2) LIST DRAFTS — when List Ready
-   /panel/list-ready?agent=1 → download photos → KA+eBay DRAFTS with JSON title+description
-   You publish eBay yourself after review
+   /panel/list-ready?agent=1 → KA+eBay DRAFTS only (you publish eBay later)
 
 3) HYGIENE — daily sold + every 3 days price drop
-   Mark Sold from marketplace → then Price Drop on ACTIVE listings if due
-   Never create drafts or new purchases
+   Mark Sold → /panel/price-drop?agent=1 if due
+   Never drafts / inbound / hunt
 
-Rule: one automation = one chat. Mixing causes wrong clicks (e.g. publish while drafting, or drop while importing).`;
+4) EBAY LOT HUNT — on demand (Dealwatch-style, one shot)
+   Set product + min/max on /panel/ebay-hunt → Claude searches ebay.de → filters junk → imports clean list with links onto armiktech
+   Never buy / message sellers
+
+LISTING PREP (inventory)
+  Before List Ready: marketTitle · marketDescription · photos on item`;
+
+/** Teach Claude (and you) to create each Claude automation separately. */
+export const CLAUDE_AUTOMATION_SETUP = `CREATE EACH CLAUDE AUTOMATION SEPARATELY (do this once, then reuse)
+
+In Claude (Computer Use / Automations product):
+For EACH job below, create a NEW automation (or a dedicated Project/chat). Name it clearly. Paste ONLY that job’s starter (or tell it to open the URL). Do not put two jobs in one automation.
+
+Automation A — name: “DeInventory Inbound”
+  Starter / first message:
+  Open /panel/automations?agent=1&job=inbound on my DeInventory site, read the active job brief, execute INBOUND only.
+
+Automation B — name: “DeInventory List Drafts”
+  Starter:
+  Open /panel/list-ready?agent=1, read #list-ready-agent-brief and #list-ready-agent-json, create DRAFTS only. Never publish.
+
+Automation C — name: “DeInventory Hygiene”
+  Starter:
+  Open /panel/automations?agent=1&job=hygiene, run HYGIENE only (sold reconcile, then price-drop?agent=1 if due).
+
+Automation D — name: “DeInventory eBay Lot Hunt”
+  Starter:
+  Open /panel/ebay-hunt?agent=1, read #ebay-hunt-agent-brief and #ebay-hunt-agent-json, hunt once, import JSON into #ebay-hunt-results-paste. Do not buy.
+
+BEFORE Lot Hunt runs: you (human) fill Product name + Min/Max € on /panel/ebay-hunt and save (fields autosave).
+
+DAY-TO-DAY
+- Say: “Run Lot Hunt” → Claude uses Automation D only.
+- Say: “Go to /panel/automations?agent=1 and follow the playbook” → Claude reads the hub; if you named a job, it opens that job’s page and executes.
+- Never ask one chat to “do inbound then drafts then hunt”.`;
+
+export function exportClaudeAutomationsHubPayload(activeJob: ClaudeAutomationId): {
+  mode: 'claude_automations_hub';
+  rule: string;
+  activeJob: ClaudeAutomationId;
+  jobs: Array<{
+    id: ClaudeAutomationId;
+    number: number;
+    name: string;
+    openUrls: string[];
+    starter: string;
+  }>;
+} {
+  return {
+    mode: 'claude_automations_hub',
+    rule: 'One job = one Claude automation/chat. Open the job URL and read the brief on the page.',
+    activeJob,
+    jobs: CLAUDE_AUTOMATIONS.map((a) => ({
+      id: a.id,
+      number: a.number,
+      name: a.name,
+      openUrls: a.openUrls,
+      starter: a.starter,
+    })),
+  };
+}

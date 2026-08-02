@@ -18,6 +18,7 @@ const LABELS: Record<string, string> = {
   'price-drop': 'Price Drop',
   'list-ready': 'List Ready',
   automations: 'Automations',
+  'ebay-hunt': 'eBay Lot Hunt',
   'card-gallery': 'Card gallery',
   invoices: 'Invoices',
   'action-history': 'Action history',
