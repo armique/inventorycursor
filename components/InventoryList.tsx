@@ -114,6 +114,8 @@ import { countEqualSplitSoldGroupCandidates } from '../utils/suggestEqualSplitSo
 import { applyRetroComposeToInventory, findOrphanSoldContainerShellIds } from '../utils/retroComposeApply';
 import { filterPartsAvailableForCompose } from '../utils/containerMembershipInvariants';
 import { pickSpecsAiNameVendorUpdates } from '../utils/applySpecsAiResult';
+import { applyRamKitToSpecs } from '../utils/ramKitParse';
+import { listingAccessoriesReady } from '../utils/itemAccessoryToggles';
 import {
   buildContainersById,
   buildContainerByChildId,
@@ -1830,33 +1832,77 @@ const InventoryList: React.FC<Props> = ({
     [categoryFields]
   );
 
+  const handleGenerateListingPrep = useCallback(
+    async (item: InventoryItem) => {
+      if (!item.name?.trim()) {
+        setToast('Enter an item name first');
+        setTimeout(() => setToast(null), 2200);
+        return;
+      }
+      const children = getChildren(item, items);
+      const gate = listingAccessoriesReady(item, children);
+      if (!gate.ok) {
+        setToast(gate.reason || 'Confirm OVP / IO Blende first');
+        setTimeout(() => setToast(null), 3200);
+        return;
+      }
+
+      setListingGenId(item.id);
+      try {
+        const categoryContext = `${item.category || 'Unknown'}${item.subCategory ? ' / ' + item.subCategory : ''}`;
+        const knownKeys = resolveEssentialSpecKeys(item.category || '', item.subCategory, categoryFields);
+        const specsResult = await generateItemSpecs(item.name, categoryContext, knownKeys);
+        let newSpecs = mergeAiSpecsIntoEssential(
+          item.specs,
+          specsResult.specs,
+          item.category || '',
+          item.subCategory,
+          categoryFields,
+        );
+        newSpecs = applyRamKitToSpecs(item.name, newSpecs);
+
+        const withSpecs: InventoryItem = {
+          ...item,
+          specs: newSpecs,
+          specsAiSuggested: Object.keys(newSpecs).length ? { ...newSpecs } : undefined,
+          ...pickSpecsAiNameVendorUpdates(specsResult),
+        };
+
+        const listing = await generateMarketplaceListing(withSpecs, {
+          hasOVP: item.hasOVP,
+          hasIOShield: item.hasIOShield,
+          hasReceipt: item.hasReceipt,
+          aiDescriptionNote: item.aiDescriptionNote,
+          children,
+        });
+
+        onUpdate(
+          [
+            {
+              ...withSpecs,
+              marketTitle: listing.ebayTitle,
+              marketDescription: listing.listingText,
+            },
+          ],
+          undefined,
+          { skipActionLog: true },
+        );
+        setToast('Listing ready · title + description + specs');
+        setTimeout(() => setToast((prev) => (prev?.startsWith('Listing ready') ? null : prev)), 2800);
+      } catch (e: unknown) {
+        console.error('Listing prep generation failed', e);
+        const msg = (e as Error)?.message || 'Failed to generate listing.';
+        setToast(msg.includes('API key') ? 'Add an AI key in .env and restart' : msg.slice(0, 120));
+        setTimeout(() => setToast(null), 3600);
+      } finally {
+        setListingGenId(null);
+      }
+    },
+    [items, categoryFields, onUpdate],
+  );
+
   const handleGenerateListingDescription = async (item: InventoryItem) => {
-    if (!item.name) {
-      alert('Enter an item name first.');
-      return;
-    }
-    setListingGenId(item.id);
-    try {
-      const result = await generateMarketplaceListing(item, {
-        hasOVP: item.hasOVP,
-        hasIOShield: item.hasIOShield,
-        hasReceipt: item.hasReceipt,
-        aiDescriptionNote: item.aiDescriptionNote,
-        children: getChildren(item, items),
-      });
-      const updated: InventoryItem = {
-        ...item,
-        marketTitle: result.ebayTitle,
-        marketDescription: result.listingText,
-      };
-      onUpdate([updated]);
-    } catch (e: any) {
-      console.error('Listing description generation failed', e);
-      const msg = e?.message || 'Failed to generate listing description.';
-      alert(msg.includes('API key') ? `${msg}\n\nAdd an AI key in .env and restart the app.` : msg);
-    } finally {
-      setListingGenId(null);
-    }
+    await handleGenerateListingPrep(item);
   };
 
   const handleCopyListingDescription = async (item: InventoryItem) => {
@@ -2988,7 +3034,10 @@ const InventoryList: React.FC<Props> = ({
       const categoryContext = `${item.category || 'Unknown'}${item.subCategory ? ' / ' + item.subCategory : ''}`;
       const knownKeys = resolveEssentialSpecKeys(item.category || '', item.subCategory, categoryFields);
       const result = await generateItemSpecs(item.name, categoryContext, knownKeys);
-      const newSpecs = mergeAiSpecsIntoEssential(item.specs, result.specs, item.category || '', item.subCategory, categoryFields);
+      const newSpecs = applyRamKitToSpecs(
+        item.name,
+        mergeAiSpecsIntoEssential(item.specs, result.specs, item.category || '', item.subCategory, categoryFields),
+      );
       // Specs parse must not rename standalone items — only the explicit AI title button may.
       const updates: Partial<InventoryItem> = {
         specs: newSpecs,
@@ -4186,6 +4235,27 @@ const InventoryList: React.FC<Props> = ({
                          })
                        }
                      />
+                     <button
+                       type="button"
+                       disabled={listingGenId === item.id}
+                       onClick={(e) => {
+                         e.stopPropagation();
+                         void handleGenerateListingPrep(item);
+                       }}
+                       className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[9px] font-black uppercase tracking-wide disabled:opacity-60 ${
+                         item.marketTitle && item.marketDescription
+                           ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                           : 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100'
+                       }`}
+                       title="Generate listing title + description + tech specs (uses OVP / IO Blende; default Gebraucht unless Defective). Confirm OVP/IO first."
+                     >
+                       {listingGenId === item.id ? (
+                         <Loader2 size={10} className="animate-spin shrink-0" />
+                       ) : (
+                         <Sparkles size={10} className="shrink-0 text-amber-500" />
+                       )}
+                       Listing
+                     </button>
                       {hasUserPhotos ? (
                         <span
                           className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/80"

@@ -110,7 +110,15 @@ listingText и ebayTitle — только немецкий язык.
 ОПЕРАТИВНАЯ ПАМЯТЬ
 =========================
 
-Всегда: Hersteller, Modell, Volumen, Typ, Frequenz, ECC/Non-ECC und Registered/Unbuffered wenn bekannt.
+Всегда: Hersteller, Modell, Typ, Frequenz, ECC/Non-ECC und Registered/Unbuffered wenn bekannt.
+
+KIT / ОБЪЁМ (критично — не путать):
+- Modules = количество планок (Sticks).
+- GB per Stick = объём ОДНОЙ планки.
+- Kit Capacity = Modules × GB per Stick = общий объём комплекта.
+- В ebayTitle и в 🔧 Technische Daten ОБЯЗАТЕЛЬНО указывай общий объём И конфигурацию, например: „16GB (2x8GB)“ или „32GB (2x16GB)“.
+- Пример: specs Modules=2, GB per Stick=8GB → Kit=16GB. НИКОГДА не пиши только „8GB“ как полный объём комплекта 2x8GB.
+- Не путай складской quantity товара с Modules.
 
 =========================
 ВИДЕОКАРТЫ
@@ -166,15 +174,14 @@ ZUSTAND
 =========================
 
 Используй ✅ Zustand (НЕ "Zustandsbeschreibung").
-Пример: Gebraucht / Voll funktionsfähig
 
-Для КАЖДОГО исправного (не defective) товара ОБЯЗАТЕЛЬНО явно укажи, что нормальные следы использования возможны, например:
-„Normale Gebrauchsspuren sind möglich.“
-Это стандартный notice для покупателя — не пропускай.
+ПО УМОЛЧАНИЮ для WORKING (не defective):
+- Zustand = Gebraucht / Voll funktionsfähig (товар б/у — used)
+- ОБЯЗАТЕЛЬНО явно: „Normale Gebrauchsspuren sind möglich.“
+- НИКОГДА не писать Privatverkauf / Keine Garantie / Keine Rücknahme для исправных.
+- Не называй товар neu / OVP-neu, если Condition flag = WORKING — это б/у.
 
-Исправные товары: НИКОГДА не писать Privatverkauf / Keine Garantie / Keine Rücknahme.
-
-Дефектные: всегда
+Только если Condition flag = DEFECTIVE:
 Verkauf ausdrücklich als defekt.
 Keine Garantie und keine Rücknahme.
 (для defective можно не писать про normale Gebrauchsspuren — важнее дефект)
@@ -253,7 +260,7 @@ function buildItemContext(item: InventoryItem, hints?: MarketplaceListingHints):
     item.isBundle || item.category === 'Bundle' || item.category === 'Mixed Bundle'
       ? 'Type: PC Bundle / Komponenten-Bundle'
       : '',
-    item.isDefective ? 'Condition flag: DEFECTIVE' : 'Condition flag: WORKING',
+    item.isDefective ? 'Condition flag: DEFECTIVE — write as defekt sale' : 'Condition flag: WORKING — default Zustand is Gebraucht (used), not neu',
     `OVP: ${
       accessories.ovp === 'YES'
         ? 'YES — Originalverpackung vorhanden'
@@ -275,7 +282,7 @@ function buildItemContext(item: InventoryItem, hints?: MarketplaceListingHints):
       : '',
     item.isDefective
       ? ''
-      : 'CONDITION NOTICE (required in ✅ Zustand): Normale Gebrauchsspuren sind möglich.',
+      : 'CONDITION NOTICE (required in ✅ Zustand): Gebraucht / Voll funktionsfähig. Normale Gebrauchsspuren sind möglich.',
     aiNote
       ? `SELLER NOTE FOR AI (must incorporate — rephrase professionally in German; do not ignore):\n${aiNote}`
       : '',
