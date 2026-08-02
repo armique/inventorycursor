@@ -224,26 +224,17 @@ export function nextEbayPrice(current: number, floor: number, dropPct = DEFAULT_
 function resolveCurrentEbay(item: InventoryItem): number | null {
   const live = Number(item.liveEbayListPrice);
   if (live > 0) return roundMoney(live);
-  const sug = Number(item.suggestedEbayListPrice);
-  if (sug > 0) return roundMoney(sug);
-  const sell = Number(item.sellPrice);
-  if (sell > 0) return roundMoney(sell);
   return null;
 }
 
 function resolveCurrentKa(item: InventoryItem): number | null {
   const live = Number(item.liveKleinListPrice);
   if (live > 0) return Math.round(live);
-  const sug = Number(item.suggestedKleinListPrice);
-  if (sug > 0) return Math.round(sug);
-  const sell = Number(item.sellPrice);
-  if (sell > 0) return Math.round(sell);
   return null;
 }
 
 function ebayListingRef(item: InventoryItem): string | null {
   if (item.ebayListingId?.trim()) return item.ebayListingId.trim();
-  if (item.ebayOfferId?.trim()) return item.ebayOfferId.trim();
   return null;
 }
 
@@ -252,37 +243,73 @@ function kaListingRef(item: InventoryItem): string | null {
   return url || null;
 }
 
+/**
+ * Strict: only inventory rows that are matched to a LIVE marketplace listing
+ * (id/url + live price). No suggested/sellPrice, no manual badge-only, no kit children.
+ */
+export function isLiveEbayListingForPriceDrop(
+  item: InventoryItem,
+  activeListingIds?: Set<string> | null,
+): boolean {
+  if (item.status !== ItemStatus.IN_STOCK) return false;
+  if (item.listedViaParent) return false;
+  if (!item.listedOnEbay) return false;
+  const id = ebayListingRef(item);
+  if (!id) return false;
+  if (!(Number(item.liveEbayListPrice) > 0)) return false;
+  if (activeListingIds && activeListingIds.size > 0 && !activeListingIds.has(id)) return false;
+  return true;
+}
+
+export function isLiveKaListingForPriceDrop(
+  item: InventoryItem,
+  activeListingUrls?: Set<string> | null,
+): boolean {
+  if (item.status !== ItemStatus.IN_STOCK) return false;
+  if (item.listedViaParent) return false;
+  if (!item.listedOnKleinanzeigen) return false;
+  if (!(Number(item.liveKleinListPrice) > 0)) return false;
+  const url = kaListingRef(item);
+  if (activeListingUrls && activeListingUrls.size > 0) {
+    if (!url) return false;
+    const norm = url.replace(/\/$/, '').toLowerCase();
+    for (const u of activeListingUrls) {
+      const nu = u.replace(/\/$/, '').toLowerCase();
+      if (nu === norm || nu.includes(norm) || norm.includes(nu)) return true;
+    }
+    return false;
+  }
+  // Scrape often has title+price without href — still valid if live price was matched this sync
+  return true;
+}
+
+/** @deprecated use isLiveEbayListingForPriceDrop / isLiveKaListingForPriceDrop */
 function hasEbaySignal(item: InventoryItem): boolean {
-  return Boolean(
-    item.listedOnEbay ||
-      ebayListingRef(item) ||
-      (Number(item.liveEbayListPrice) > 0),
-  );
+  return isLiveEbayListingForPriceDrop(item);
 }
 
 function hasKaSignal(item: InventoryItem): boolean {
-  return Boolean(
-    item.listedOnKleinanzeigen ||
-      kaListingRef(item) ||
-      (Number(item.liveKleinListPrice) > 0),
-  );
+  return isLiveKaListingForPriceDrop(item);
 }
 
 /**
- * high = linked id/url; medium = listed/live without id; low = weak/no link.
- * Optional titleHint boosts score when comparing inventory name ↔ marketplace title.
+ * high = listing id/url + live price (only path we accept for drops).
  */
 export function matchConfidenceForChannel(
   item: InventoryItem,
   channel: PriceDropChannel,
   titleHint?: string,
 ): { confidence: MatchConfidence; score: number; matchedTitle: string | null } {
-  const ref = channel === 'ebay' ? ebayListingRef(item) : kaListingRef(item);
-  const listed =
-    channel === 'ebay' ? hasEbaySignal(item) : hasKaSignal(item);
-  let score = 0;
-  let matchedTitle: string | null = null;
+  const live =
+    channel === 'ebay'
+      ? isLiveEbayListingForPriceDrop(item)
+      : isLiveKaListingForPriceDrop(item);
+  if (!live) {
+    return { confidence: 'low', score: 0, matchedTitle: null };
+  }
 
+  let score = channel === 'ebay' ? 200 : 0.95;
+  let matchedTitle: string | null = item.name;
   if (titleHint?.trim()) {
     score =
       channel === 'ebay'
@@ -291,25 +318,7 @@ export function matchConfidenceForChannel(
     matchedTitle = titleHint.trim();
   }
 
-  if (ref) {
-    return {
-      confidence: 'high',
-      score: Math.max(score, channel === 'ebay' ? 200 : 0.9),
-      matchedTitle: matchedTitle || item.name,
-    };
-  }
-  if (listed) {
-    const ok =
-      channel === 'ebay'
-        ? score >= 80 || !titleHint
-        : score >= 0.45 || !titleHint;
-    return {
-      confidence: ok ? 'medium' : 'low',
-      score: titleHint ? score : channel === 'ebay' ? 90 : 0.55,
-      matchedTitle: matchedTitle || item.name,
-    };
-  }
-  return { confidence: 'low', score, matchedTitle: matchedTitle };
+  return { confidence: 'high', score, matchedTitle };
 }
 
 function buildChannelRow(
@@ -373,7 +382,7 @@ function buildChannelRow(
       listingIdOrUrl: ref,
       matchedTitle: match.matchedTitle,
       matchScore: match.score,
-      matchConfidence: match.confidence === 'low' ? 'medium' : match.confidence,
+      matchConfidence: 'high',
       currentPrice: current,
       nextPrice: current,
       floorPrice: floor,
@@ -408,7 +417,7 @@ function buildChannelRow(
       listingIdOrUrl: ref,
       matchedTitle: match.matchedTitle,
       matchScore: match.score,
-      matchConfidence: match.confidence === 'low' ? 'medium' : match.confidence,
+      matchConfidence: 'high',
       currentPrice: current,
       nextPrice: current,
       floorPrice: floor,
@@ -420,9 +429,6 @@ function buildChannelRow(
     };
   }
 
-  const status: PriceDropRowStatus =
-    match.confidence === 'low' ? 'unmatched' : 'ready';
-
   return {
     itemId: item.id,
     inventoryName: item.name,
@@ -430,21 +436,26 @@ function buildChannelRow(
     listingIdOrUrl: ref,
     matchedTitle: match.matchedTitle,
     matchScore: match.score,
-    matchConfidence: match.confidence === 'low' && status === 'ready' ? 'medium' : match.confidence,
+    matchConfidence: 'high',
     currentPrice: current,
     nextPrice: safety.safeNext,
     floorPrice: floor,
     dropPctApplied: pct,
-    status,
+    status: 'ready',
     buyPrice: buy,
     currency: 'EUR',
     kaWholeEurosOnly: channel === 'kleinanzeigen',
   };
 }
 
-export function isPriceDropEligible(item: InventoryItem): boolean {
-  if (item.status !== ItemStatus.IN_STOCK) return false;
-  return hasEbaySignal(item) || hasKaSignal(item);
+export function isPriceDropEligible(
+  item: InventoryItem,
+  active?: { ebayIds?: Set<string> | null; kaUrls?: Set<string> | null },
+): boolean {
+  return (
+    isLiveEbayListingForPriceDrop(item, active?.ebayIds) ||
+    isLiveKaListingForPriceDrop(item, active?.kaUrls)
+  );
 }
 
 export function addDaysIso(iso: string, days: number): string {
@@ -483,7 +494,15 @@ export function mergeAppliedFromPrevious(
 export function buildPriceDropPlan(
   items: InventoryItem[],
   fees?: FlipFeeSettings,
-  opts?: { dropPct?: number; now?: Date; previous?: PriceDropPlan | null },
+  opts?: {
+    dropPct?: number;
+    now?: Date;
+    previous?: PriceDropPlan | null;
+    /** When set, only rows whose listing id is in this active eBay set. */
+    activeEbayListingIds?: Set<string> | string[] | null;
+    /** When set, only rows whose KA url is in this active set. */
+    activeKaListingUrls?: Set<string> | string[] | null;
+  },
 ): PriceDropPlan {
   const feeSettings = fees ?? loadFlipFees();
   const feePct = totalEbayFeePct(feeSettings);
@@ -492,13 +511,23 @@ export function buildPriceDropPlan(
   const generatedAt = now.toISOString();
   const nextDueAt = addDaysIso(generatedAt, PRICE_DROP_CYCLE_DAYS);
 
+  const ebayIds = opts?.activeEbayListingIds
+    ? opts.activeEbayListingIds instanceof Set
+      ? opts.activeEbayListingIds
+      : new Set(opts.activeEbayListingIds)
+    : null;
+  const kaUrls = opts?.activeKaListingUrls
+    ? opts.activeKaListingUrls instanceof Set
+      ? opts.activeKaListingUrls
+      : new Set(opts.activeKaListingUrls)
+    : null;
+
   const rows: PriceDropRow[] = [];
   for (const item of items) {
-    if (!isPriceDropEligible(item)) continue;
-    if (hasEbaySignal(item)) {
+    if (isLiveEbayListingForPriceDrop(item, ebayIds)) {
       rows.push(buildChannelRow(item, 'ebay', feePct, dropPct));
     }
-    if (hasKaSignal(item)) {
+    if (isLiveKaListingForPriceDrop(item, kaUrls)) {
       rows.push(buildChannelRow(item, 'kleinanzeigen', feePct, dropPct));
     }
   }
@@ -543,6 +572,8 @@ export async function syncMarketplacesAndBuildPriceDropPlan(
   const plan = buildPriceDropPlan(sync.items, fees, {
     dropPct: opts?.dropPct,
     previous: opts?.previous ?? null,
+    activeEbayListingIds: sync.ebayListingIds,
+    activeKaListingUrls: sync.kaListingUrls,
   });
   savePriceDropPlan(plan);
   return {

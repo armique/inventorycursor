@@ -408,8 +408,8 @@ const PriceDropPage: React.FC<Props> = ({ items, onRestoreItems }) => {
 
       {!rows.length && !syncing ? (
         <p className="text-[13px] text-slate-500 font-medium p-8 text-center rounded-2xl border border-dashed border-slate-200">
-          No matched listings yet. Set eBay seller + KA profile URL in Settings, then Sync &amp; rebuild.
-          Names must roughly match listing titles.
+          No live eBay/KA matches yet. Sync pulls your ~active listings, then keeps only inventory
+          rows with listing id/url + live price. Set seller username + KA profile in Settings.
         </p>
       ) : syncing && !rows.length ? (
         <p className="text-[13px] text-slate-500 font-medium p-8 text-center flex items-center justify-center gap-2">

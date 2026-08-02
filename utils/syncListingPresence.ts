@@ -25,6 +25,10 @@ export type ListingPresenceSyncResult = {
   eligibleCount: number;
   priceHints: number;
   maybeSoldCount: number;
+  /** Active eBay listing IDs from this sync (for Price Drop intersection). */
+  ebayListingIds: string[];
+  /** Active KA listing URLs from this sync. */
+  kaListingUrls: string[];
   kaError?: string;
   ebayError?: string;
 };
@@ -46,6 +50,8 @@ export async function syncListingPresence(
   let kaMatched = 0;
   let ebayTitleCount = 0;
   let kaTitleCount = 0;
+  let ebayListingIds: string[] = [];
+  let kaListingUrls: string[] = [];
   let kaError: string | undefined;
   let ebayError: string | undefined;
   const eligibleCount = items.filter(isListingPresenceEligible).length;
@@ -55,6 +61,7 @@ export async function syncListingPresence(
     try {
       const { listings } = await ensureEbayListings({ force: Boolean(opts?.forceEbay) });
       ebayTitleCount = listings.length;
+      ebayListingIds = listings.map((l) => l.listingId).filter(Boolean);
       next = applyEbayPresenceToItems(next, listings);
       ebayMatched = next.filter(
         (i) => isListingPresenceEligible(i) && i.listedOnEbay && !i.listedViaParent
@@ -98,6 +105,9 @@ export async function syncListingPresence(
     }
     if (titles.length) {
       kaTitleCount = titles.length;
+      kaListingUrls = titles
+        .map((t) => (t.url || '').trim())
+        .filter(Boolean);
       next = applyKaPresenceToItems(next, titles);
       kaMatched = next.filter(
         (i) =>
@@ -121,6 +131,8 @@ export async function syncListingPresence(
     kaMatched,
     ebayTitleCount,
     kaTitleCount,
+    ebayListingIds,
+    kaListingUrls,
     watchCount: next.filter(isListingWatchCandidate).length,
     eligibleCount,
     priceHints,
