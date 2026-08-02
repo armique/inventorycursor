@@ -14,6 +14,7 @@ import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, Ite
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
 import { computeItemProfitBeforeOverhead, getChildren, getItemDisplayFeeAmount, getItemDisplayShippingAmount, getSoldContainerDisplayTotals, shouldHideContainerChildInList, containerOrChildMatchesSearch } from '../services/financialAggregation';
 import { itemMatchesSalePlatformFilter, isMissingExplicitSalePlatform, MISSING_PLATFORM_FILTER, SALE_PLATFORM_OPTIONS, formatItemSalePlatform, formatSalePlatformLabel } from '../utils/salePlatform';
+import { expandUpdatesWithContainerSaleMeta } from '../utils/containerSaleCascade';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { getCompatibleItemsForItem } from '../services/compatibility';
 import { generateKleinanzeigenCSV, generateEbayCSV } from '../services/ebayCsvService';
@@ -2954,11 +2955,13 @@ const InventoryList: React.FC<Props> = ({
   );
 
   const handleBulkEditSales = (platform: Platform, payment: PaymentType) => {
-     const updates = items.filter(i => selectedIds.includes(i.id)).map(i => ({
+     const selected = items.filter((i) => selectedIds.includes(i.id)).map((i) => ({
         ...i,
         platformSold: platform,
-        paymentType: payment
+        paymentType: payment,
      }));
+     // Sold PC/bundle selection also stamps every linked part with the same platform.
+     const updates = expandUpdatesWithContainerSaleMeta(selected, items);
      onUpdate(updates);
      setShowBulkSalesEdit(false);
      setSelectedIds([]);
@@ -2972,14 +2975,23 @@ const InventoryList: React.FC<Props> = ({
     if (platform === 'kleinanzeigen.de' && !next.paymentType) {
       next.paymentType = 'Kleinanzeigen (Cash)';
     }
+    const updates =
+      platform && (next.isPC || next.isBundle)
+        ? expandUpdatesWithContainerSaleMeta([next], items)
+        : [next];
     startTransition(() => {
-      onUpdate([next], undefined, {
+      onUpdate(updates, undefined, {
         skipUndo: true,
         skipActionLog: true,
         skipContainerSync: true,
       });
       if (platform) {
-        setToast(`Sold on ${formatSalePlatformLabel(platform)}`);
+        const childCount = updates.length - 1;
+        setToast(
+          childCount > 0
+            ? `Sold on ${formatSalePlatformLabel(platform)} · ${childCount} part${childCount === 1 ? '' : 's'} updated`
+            : `Sold on ${formatSalePlatformLabel(platform)}`
+        );
       }
     });
   };
@@ -7272,7 +7284,11 @@ const InventoryList: React.FC<Props> = ({
             taxMode={businessSettings.taxMode}
             mode="editBuyer"
             onSave={(updated) => {
-              onUpdate([updated]);
+              const updates =
+                updated.isPC || updated.isBundle
+                  ? expandUpdatesWithContainerSaleMeta([updated], items)
+                  : [updated];
+              onUpdate(updates);
               setItemToEditBuyer(null);
             }}
             onClose={() => setItemToEditBuyer(null)}

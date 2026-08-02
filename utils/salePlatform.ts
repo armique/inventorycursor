@@ -1,6 +1,7 @@
 import type { InventoryItem, Platform } from '../types';
 import { ItemStatus } from '../types';
 import { roundMoney } from '../services/financialAggregation';
+import { expandUpdatesWithContainerSaleMeta } from './containerSaleCascade';
 
 const PLATFORM_LABELS: Record<string, string> = {
   'ebay.de': 'eBay',
@@ -169,7 +170,7 @@ export function countMissingExplicitSalePlatform(sold: InventoryItem[]): number 
 
 /** Apply eBay platform tags where order ID / username / payment prove eBay but platformSold was empty. */
 export function buildEbayTagFixUpdates(items: InventoryItem[]): InventoryItem[] {
-  return items
+  const tagged = items
     .map((item) => {
       if (platformGroupKey(item) === 'ebay' && item.platformSold === 'ebay.de') return null;
       if (!hasEbaySaleSignals(item)) return null;
@@ -181,6 +182,8 @@ export function buildEbayTagFixUpdates(items: InventoryItem[]): InventoryItem[] 
       };
     })
     .filter((x): x is InventoryItem => x !== null);
+  // Sold PC/bundle tags also stamp every linked part.
+  return expandUpdatesWithContainerSaleMeta(tagged, items);
 }
 
 export type PlatformReconciliation = {

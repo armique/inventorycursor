@@ -66,6 +66,7 @@ import { migrateCategoriesRecord, migrateContainerItem } from './utils/container
 import { appendPriceHistoryIfChanged } from './services/priceHistory';
 import { computeItemProfitBeforeOverhead } from './services/financialAggregation';
 import { syncContainerBuyTotalsFromComponents } from './services/containerAggregates';
+import { syncContainerSaleMetaToChildren } from './utils/containerSaleCascade';
 import { applyTradeRevert } from './services/tradeRevert';
 import { mergeTradeActionEntries } from './services/tradeActionHistory';
 import { applySaleRevert } from './services/saleRevert';
@@ -1560,6 +1561,9 @@ const App: React.FC = () => {
         if (!options?.skipContainerSync) {
           nextItems = syncContainerBuyTotalsFromComponents(nextItems, touchedIds);
         }
+        // Always cascade Sold-on / payment from sold PC/bundle → parts (even when
+        // buy-total sync is skipped for lightweight platform quick-picks).
+        nextItems = syncContainerSaleMetaToChildren(nextItems, touchedIds);
         if (recordUndo) {
           let nextIdx = historyIndexRef.current;
           setHistory((prev) => {
