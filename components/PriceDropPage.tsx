@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Check,
   ClipboardCopy,
@@ -12,6 +13,7 @@ import { loadFlipFees } from '../utils/flipCoach';
 import {
   buildPriceDropPlan,
   CLAUDE_PRICE_DROP_PROMPT,
+  CLAUDE_PRICE_DROP_STARTER,
   exportAgentPayload,
   isPlanDue,
   loadPriceDropPlan,
@@ -27,6 +29,12 @@ import {
 type Props = { items: InventoryItem[] };
 
 type FilterId = 'all' | 'ready' | 'at_floor' | 'unmatched' | 'applied' | 'ebay' | 'kleinanzeigen';
+
+declare global {
+  interface Window {
+    __PRICE_DROP_AGENT__?: unknown;
+  }
+}
 
 function formatDue(iso: string): string {
   try {
@@ -53,9 +61,13 @@ function confTone(c: MatchConfidence): string {
 }
 
 const PriceDropPage: React.FC<Props> = ({ items }) => {
+  const [searchParams] = useSearchParams();
+  const agentMode = searchParams.get('agent') === '1';
+  const agentSectionRef = useRef<HTMLElement | null>(null);
+
   const [plan, setPlan] = useState<PriceDropPlan | null>(() => loadPriceDropPlan());
   const [filter, setFilter] = useState<FilterId>('all');
-  const [copied, setCopied] = useState<'prompt' | 'json' | null>(null);
+  const [copied, setCopied] = useState<'starter' | 'json' | null>(null);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
 
   const fees = useMemo(() => loadFlipFees(), []);
@@ -79,8 +91,16 @@ const PriceDropPage: React.FC<Props> = ({ items }) => {
     } else {
       setPlan(prev);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh on items identity when due
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items]);
+
+  useEffect(() => {
+    if (!agentMode) return;
+    const t = window.setTimeout(() => {
+      agentSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [agentMode, plan?.generatedAt]);
 
   const rows = plan?.rows ?? [];
   const filtered = useMemo(() => {
@@ -101,6 +121,17 @@ const PriceDropPage: React.FC<Props> = ({ items }) => {
   }, [rows]);
 
   const agentPayload = useMemo(() => (plan ? exportAgentPayload(plan) : null), [plan]);
+  const agentJsonText = useMemo(
+    () => (agentPayload ? JSON.stringify(agentPayload, null, 2) : '{"rows":[]}'),
+    [agentPayload],
+  );
+
+  useEffect(() => {
+    window.__PRICE_DROP_AGENT__ = agentPayload ?? { rows: [] };
+    return () => {
+      delete window.__PRICE_DROP_AGENT__;
+    };
+  }, [agentPayload]);
 
   const rowKey = (r: PriceDropRow) => `${r.itemId}:${r.channel}`;
 
@@ -137,7 +168,7 @@ const PriceDropPage: React.FC<Props> = ({ items }) => {
     setSelected(new Set());
   };
 
-  const copyText = async (text: string, kind: 'prompt' | 'json') => {
+  const copyText = async (text: string, kind: 'starter' | 'json') => {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(kind);
@@ -149,7 +180,7 @@ const PriceDropPage: React.FC<Props> = ({ items }) => {
 
   const downloadJson = () => {
     if (!agentPayload) return;
-    const blob = new Blob([JSON.stringify(agentPayload, null, 2)], { type: 'application/json' });
+    const blob = new Blob([agentJsonText], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -159,6 +190,10 @@ const PriceDropPage: React.FC<Props> = ({ items }) => {
   };
 
   const due = plan ? isPlanDue(plan) : true;
+  const agentUrl =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/panel/price-drop?agent=1`
+      : '/panel/price-drop?agent=1';
 
   return (
     <div className="space-y-5 pb-10 max-w-6xl">
@@ -168,12 +203,13 @@ const PriceDropPage: React.FC<Props> = ({ items }) => {
             <TrendingDown size={22} className="text-slate-700" /> Price Drop
           </h1>
           <p className="text-[13px] text-slate-500 font-medium mt-0.5">
-            −5% / 3 days · hard floor buy×1.30 · never &gt;8% / edit · KA whole € · Claude: skip &gt; wrong
+            Claude reads this page himself · −5% / 3d · floor buy×1.30 · max 8% / edit
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
+            id="price-drop-refresh"
             onClick={() => refresh(true)}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 text-white text-[12px] font-semibold"
           >
@@ -181,6 +217,77 @@ const PriceDropPage: React.FC<Props> = ({ items }) => {
           </button>
         </div>
       </header>
+
+      {/* Machine-readable brief for Claude Chrome — always in the DOM */}
+      <section
+        ref={agentSectionRef}
+        id="price-drop-agent"
+        data-price-drop-ready={agentPayload && agentPayload.rows.length > 0 ? 'true' : 'false'}
+        data-price-drop-due={due ? 'true' : 'false'}
+        className={`rounded-2xl border p-4 space-y-3 ${
+          agentMode ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-white'
+        }`}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 className="text-[15px] font-semibold tracking-tight">Agent brief</h2>
+            <p className="text-[12px] text-slate-500 font-medium mt-0.5">
+              Claude opens this URL, reads the brief + JSON below, then edits eBay/KA. No paste needed.
+            </p>
+            <p className="text-[11px] font-mono text-slate-400 mt-1 break-all">{agentUrl}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => copyText(CLAUDE_PRICE_DROP_STARTER, 'starter')}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-semibold text-slate-600"
+            title="Only for a brand-new Claude chat — after that he uses this page"
+          >
+            <ClipboardCopy size={13} />
+            {copied === 'starter' ? 'Copied' : 'Copy 1-line starter'}
+          </button>
+        </div>
+
+        <pre
+          id="price-drop-agent-brief"
+          className="whitespace-pre-wrap text-[11px] leading-snug font-mono text-slate-700 bg-white border border-slate-200 rounded-xl p-3 max-h-56 overflow-y-auto"
+        >
+          {CLAUDE_PRICE_DROP_PROMPT}
+        </pre>
+
+        <div>
+          <div className="flex items-center justify-between gap-2 mb-1.5">
+            <p className="text-[12px] font-semibold text-slate-700">
+              Today&apos;s plan JSON{' '}
+              <span className="font-medium text-slate-400">
+                · {agentPayload?.rows.length ?? 0} rows to apply
+              </span>
+            </p>
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                onClick={() => copyText(agentJsonText, 'json')}
+                className="text-[11px] font-semibold text-slate-500 hover:text-slate-800"
+              >
+                {copied === 'json' ? 'Copied' : 'Copy'}
+              </button>
+              <button
+                type="button"
+                onClick={downloadJson}
+                className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 inline-flex items-center gap-0.5"
+              >
+                <Download size={12} /> File
+              </button>
+            </div>
+          </div>
+          <pre
+            id="price-drop-agent-json"
+            data-testid="price-drop-agent-json"
+            className="whitespace-pre text-[10px] leading-snug font-mono text-slate-800 bg-slate-900 text-slate-100 rounded-xl p-3 max-h-72 overflow-auto"
+          >
+            {agentJsonText}
+          </pre>
+        </div>
+      </section>
 
       {plan && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
@@ -200,7 +307,7 @@ const PriceDropPage: React.FC<Props> = ({ items }) => {
             <p className="text-[20px] font-semibold tabular-nums tracking-tight mt-0.5">{counts.ready}</p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
-            <p className="text-[11px] font-medium text-slate-400">Export rows</p>
+            <p className="text-[11px] font-medium text-slate-400">Agent rows</p>
             <p className="text-[20px] font-semibold tabular-nums tracking-tight mt-0.5">
               {agentPayload?.rows.length ?? 0}
             </p>
@@ -211,30 +318,12 @@ const PriceDropPage: React.FC<Props> = ({ items }) => {
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={() => copyText(CLAUDE_PRICE_DROP_PROMPT, 'prompt')}
-          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-[12px] font-semibold text-slate-700"
+          id="price-drop-mark-all-applied"
+          onClick={markAllReadyApplied}
+          disabled={!counts.ready}
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-700 text-white text-[12px] font-semibold disabled:opacity-40"
         >
-          <ClipboardCopy size={14} />
-          {copied === 'prompt' ? 'Copied prompt' : 'Copy Claude prompt'}
-        </button>
-        <button
-          type="button"
-          onClick={() =>
-            agentPayload && copyText(JSON.stringify(agentPayload, null, 2), 'json')
-          }
-          disabled={!agentPayload?.rows.length}
-          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-[12px] font-semibold text-slate-700 disabled:opacity-40"
-        >
-          <ClipboardCopy size={14} />
-          {copied === 'json' ? 'Copied JSON' : 'Copy JSON'}
-        </button>
-        <button
-          type="button"
-          onClick={downloadJson}
-          disabled={!agentPayload?.rows.length}
-          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-[12px] font-semibold text-slate-700 disabled:opacity-40"
-        >
-          <Download size={14} /> Export JSON
+          <Check size={14} /> Mark all ready applied
         </button>
         <button
           type="button"
@@ -242,15 +331,7 @@ const PriceDropPage: React.FC<Props> = ({ items }) => {
           disabled={!selected.size}
           className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-[12px] font-semibold text-slate-700 disabled:opacity-40"
         >
-          <Check size={14} /> Mark selected applied
-        </button>
-        <button
-          type="button"
-          onClick={markAllReadyApplied}
-          disabled={!counts.ready}
-          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white text-[12px] font-semibold text-slate-700 disabled:opacity-40"
-        >
-          Mark all ready applied
+          Mark selected applied
         </button>
       </div>
 
