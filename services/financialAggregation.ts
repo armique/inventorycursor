@@ -96,11 +96,21 @@ export function matchesInventoryCategoryPin(
   subCategoryFilter: string
 ): boolean {
   if (categoryFilter === 'ALL' && !subCategoryFilter) return true;
+  const itemSub = item.subCategory || '';
+  const filterSub = subCategoryFilter || '';
+  const subMatches =
+    !filterSub ||
+    itemSub === filterSub ||
+    // After renaming Graphics Cards → GPU, stale rows still filter as GPU until migrated.
+    (filterSub === 'GPU' &&
+      (itemSub === 'Graphics Cards' ||
+        itemSub === 'Graphic Cards' ||
+        itemSub === 'Grafikkarten' ||
+        itemSub === 'Grafikkarte')) ||
+    ((filterSub === 'Graphics Cards' || filterSub === 'Graphic Cards') && itemSub === 'GPU');
   const matchParentAndSub =
-    categoryFilter !== 'ALL' &&
-    item.category === categoryFilter &&
-    (!subCategoryFilter || item.subCategory === subCategoryFilter);
-  const matchSubAsTopLevel = Boolean(subCategoryFilter && item.category === subCategoryFilter);
+    categoryFilter !== 'ALL' && item.category === categoryFilter && subMatches;
+  const matchSubAsTopLevel = Boolean(filterSub && item.category === filterSub);
   return Boolean(matchParentAndSub || matchSubAsTopLevel);
 }
 

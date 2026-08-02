@@ -63,6 +63,11 @@ import { pullPurchaseIndexFromCloud } from './services/ebayPurchaseIndex';
 import { pullListingIndexFromCloud } from './services/ebayListingIndex';
 import { DEFAULT_CATEGORIES } from './services/constants';
 import { migrateCategoriesRecord, migrateContainerItem } from './utils/containerTaxonomy';
+import {
+  migrateLegacyGpuSubcategoryNames,
+  renameCategoryInCatalog,
+  renameSubcategoryInCatalog,
+} from './utils/categoryRename';
 import { appendPriceHistoryIfChanged } from './services/priceHistory';
 import { computeItemProfitBeforeOverhead } from './services/financialAggregation';
 import { syncContainerBuyTotalsFromComponents } from './services/containerAggregates';
@@ -427,6 +432,41 @@ const App: React.FC = () => {
   };
   const handleUpdateCategoryStructure = (newCategories: Record<string, string[]>) => setCategories(newCategories);
   const handleUpdateCategoryFields = (newFields: Record<string, string[]>) => setCategoryFields(newFields);
+
+  const handleRenameSubCategory = useCallback(
+    (category: string, oldSubName: string, newSubName: string) => {
+      const next = renameSubcategoryInCatalog(
+        { categories, categoryFields, items },
+        category,
+        oldSubName,
+        newSubName
+      );
+      setCategories(next.categories);
+      setCategoryFields(next.categoryFields);
+      if (next.movedCount > 0) {
+        setItems(next.items);
+        hasUnsavedChanges.current = true;
+      }
+    },
+    [categories, categoryFields, items]
+  );
+
+  const handleRenameCategory = useCallback(
+    (oldName: string, newName: string) => {
+      const next = renameCategoryInCatalog(
+        { categories, categoryFields, items },
+        oldName,
+        newName
+      );
+      setCategories(next.categories);
+      setCategoryFields(next.categoryFields);
+      if (next.movedCount > 0) {
+        setItems(next.items);
+        hasUnsavedChanges.current = true;
+      }
+    },
+    [categories, categoryFields, items]
+  );
   
   const [businessSettings, setBusinessSettings] = useState<BusinessSettings>(() => {
     const saved = localStorage.getItem('business_settings');
@@ -981,6 +1021,26 @@ const App: React.FC = () => {
     saveToLocalStorage(newItems, trash, expenses, businessSettings, monthlyGoal, newCategories, newFields, recurringExpenses);
     localStorage.setItem(OPTICAL_DRIVES_MIGRATION_KEY, '1');
   }, [appState, items, categories, categoryFields, trash, expenses, businessSettings, monthlyGoal, recurringExpenses]);
+
+  // One-time: after renaming Components > Graphics Cards → GPU in Settings, remap stale item.subCategory values.
+  const GPU_SUBCATEGORY_MIGRATION_KEY = 'migration_graphics_cards_to_gpu_v1';
+  useEffect(() => {
+    if (appState !== 'READY') return;
+    if (localStorage.getItem(GPU_SUBCATEGORY_MIGRATION_KEY) === '1') return;
+    const next = migrateLegacyGpuSubcategoryNames({ categories, categoryFields, items });
+    if (!next.changed) {
+      // Only mark done when Components already has GPU (rename already happened) or there is nothing to do.
+      if ((categories.Components || []).includes('GPU') || items.length === 0) {
+        localStorage.setItem(GPU_SUBCATEGORY_MIGRATION_KEY, '1');
+      }
+      return;
+    }
+    setItems(next.items);
+    setCategories(next.categories);
+    setCategoryFields(next.categoryFields);
+    hasUnsavedChanges.current = true;
+    localStorage.setItem(GPU_SUBCATEGORY_MIGRATION_KEY, '1');
+  }, [appState, items, categories, categoryFields]);
 
   // Initial cloud sync when user signs in:
   // - FIRST pull from Firestore so a new/empty device never overwrites cloud.
@@ -2072,6 +2132,8 @@ const App: React.FC = () => {
                 categoryFields={categoryFields}
                 onUpdateCategoryStructure={handleUpdateCategoryStructure}
                 onUpdateCategoryFields={handleUpdateCategoryFields}
+                onRenameCategory={handleRenameCategory}
+                onRenameSubCategory={handleRenameSubCategory}
                 onApplyArchivedPhotos={(archivedItems, archivedTrash) => {
                   setItems(archivedItems);
                   setTrash(archivedTrash);

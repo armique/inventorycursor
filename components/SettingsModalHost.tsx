@@ -22,6 +22,8 @@ type Props = {
   categoryFields: Record<string, unknown>;
   onUpdateCategoryStructure: (...args: any[]) => void;
   onUpdateCategoryFields: (...args: any[]) => void;
+  onRenameCategory: (oldName: string, newName: string) => void;
+  onRenameSubCategory: (category: string, oldSubName: string, newSubName: string) => void;
   onApplyArchivedPhotos: (archivedItems: InventoryItem[], archivedTrash: InventoryItem[]) => void;
 };
 
@@ -65,8 +67,6 @@ const SettingsModalHost: React.FC<Props> = (props) => {
             variant="modal"
             initialTabProp={tab}
             onClose={closeSettings}
-            onRenameCategory={() => {}}
-            onRenameSubCategory={() => {}}
           />
         </Suspense>
       </div>

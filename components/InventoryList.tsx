@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, TaxMode, BulkImportRecord } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
-import { computeItemProfitBeforeOverhead, getChildren, getItemDisplayFeeAmount, getItemDisplayShippingAmount, getSoldContainerDisplayTotals, shouldHideContainerChildInList, containerOrChildMatchesSearch, shouldSurfaceSoldContainerPartInList, soldContainerPartDispositionDate } from '../services/financialAggregation';
+import { computeItemProfitBeforeOverhead, getChildren, getItemDisplayFeeAmount, getItemDisplayShippingAmount, getSoldContainerDisplayTotals, shouldHideContainerChildInList, containerOrChildMatchesSearch, shouldSurfaceSoldContainerPartInList, soldContainerPartDispositionDate, matchesInventoryCategoryPin } from '../services/financialAggregation';
 import { itemMatchesSalePlatformFilter, isMissingExplicitSalePlatform, MISSING_PLATFORM_FILTER, SALE_PLATFORM_OPTIONS, formatItemSalePlatform, formatSalePlatformLabel } from '../utils/salePlatform';
 import { expandUpdatesWithContainerSaleMeta } from '../utils/containerSaleCascade';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
@@ -326,12 +326,42 @@ function toggleSpecFilterSelection(
   return next;
 }
 
+import { resolveCategoryFromHardwareType } from './AddCategorySubcategoryPicker';
+
 const DEFAULT_QUICK_CATEGORY_PINS: QuickCategoryPin[] = [
   { id: quickCategoryPinId('Components', 'Processors'), label: 'CPU', category: 'Components', subCategory: 'Processors' },
   { id: quickCategoryPinId('Components', 'Graphics Cards'), label: 'GPU', category: 'Components', subCategory: 'Graphics Cards' },
   { id: quickCategoryPinId('Components', 'Motherboards'), label: 'Motherboards', category: 'Components', subCategory: 'Motherboards' },
   { id: quickCategoryPinId('Components', 'Storage (SSD/HDD)'), label: 'SSD/HDD', category: 'Components', subCategory: 'Storage (SSD/HDD)' },
 ];
+
+/** Keep pins pointed at the live subcategory name (e.g. Graphics Cards → GPU). */
+function resolveQuickCategoryPinsAgainstCatalog(
+  pins: QuickCategoryPin[],
+  categories: Record<string, string[]>
+): QuickCategoryPin[] {
+  return pins.map((pin) => {
+    const hwType =
+      pin.label === 'GPU' ||
+      pin.subCategory === 'Graphics Cards' ||
+      pin.subCategory === 'Graphic Cards' ||
+      pin.subCategory === 'GPU'
+        ? 'GPU'
+        : pin.label === 'CPU' || pin.subCategory === 'Processors' || pin.subCategory === 'CPU'
+          ? 'CPU'
+          : null;
+    if (!hwType) return pin;
+    const resolved = resolveCategoryFromHardwareType(hwType, categories);
+    if (!resolved.category || !resolved.subCategory) return pin;
+    if (resolved.category === pin.category && resolved.subCategory === pin.subCategory) return pin;
+    return {
+      ...pin,
+      id: quickCategoryPinId(resolved.category, resolved.subCategory),
+      category: resolved.category,
+      subCategory: resolved.subCategory,
+    };
+  });
+}
 
 interface SortConfig {
   key: string;
@@ -742,12 +772,7 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
     // contain "MT". Clear the pin (or pick All) to search across categories.
     // Dedicated bulk-batch view also ignores leftover category pins.
     if (!bulkBatchActive && (categoryFilter !== 'ALL' || subCategoryFilter)) {
-      const matchParentAndSub =
-        categoryFilter !== 'ALL' &&
-        item.category === categoryFilter &&
-        (!subCategoryFilter || item.subCategory === subCategoryFilter);
-      const matchSubAsTopLevel = subCategoryFilter && item.category === subCategoryFilter;
-      if (!matchParentAndSub && !matchSubAsTopLevel) return false;
+      if (!matchesInventoryCategoryPin(item, categoryFilter, subCategoryFilter)) return false;
     }
 
     if (searchActive) {
@@ -918,6 +943,22 @@ const InventoryList: React.FC<Props> = ({
     const saved = loadState<QuickCategoryPin[] | null>('quick_category_pins', null);
     return saved && saved.length > 0 ? saved : DEFAULT_QUICK_CATEGORY_PINS;
   });
+
+  // After Settings renames (Graphics Cards → GPU), retarget saved pins to the live subcategory.
+  useEffect(() => {
+    setQuickCategoryPins((prev) => {
+      const next = resolveQuickCategoryPinsAgainstCatalog(prev, categories);
+      const same =
+        next.length === prev.length &&
+        next.every(
+          (p, i) =>
+            p.id === prev[i].id &&
+            p.category === prev[i].category &&
+            p.subCategory === prev[i].subCategory
+        );
+      return same ? prev : next;
+    });
+  }, [categories]);
   const [showQuickCategoryPicker, setShowQuickCategoryPicker] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>(() => loadState<string>('category_filter', 'ALL'));
   const [subCategoryFilter, setSubCategoryFilter] = useState<string>(() => loadState<string>('subcategory_filter', ''));
@@ -2110,9 +2151,7 @@ const InventoryList: React.FC<Props> = ({
         }
       }
       if (categoryFilter !== 'ALL' || subCategoryFilter) {
-        const matchParentAndSub = categoryFilter !== 'ALL' && item.category === categoryFilter && (!subCategoryFilter || item.subCategory === subCategoryFilter);
-        const matchSubAsTopLevel = subCategoryFilter && item.category === subCategoryFilter;
-        if (!matchParentAndSub && !matchSubAsTopLevel) return false;
+        if (!matchesInventoryCategoryPin(item, categoryFilter, subCategoryFilter)) return false;
       }
       const matchesSearch = item.name.toLowerCase().includes(searchLower) || item.category.toLowerCase().includes(searchLower) || item.vendor?.toLowerCase().includes(searchLower);
       if (!matchesSearch) return false;
