@@ -35,6 +35,7 @@ const SoldPulsePage = lazy(() => import('./components/SoldPulsePage'));
 const ComboLabPage = lazy(() => import('./components/ComboLabPage'));
 const EstDealwatchPage = lazy(() => import('./components/EstDealwatchPage'));
 const ReinvestAssistantPage = lazy(() => import('./components/ReinvestAssistantPage'));
+const PriceDropPage = lazy(() => import('./components/PriceDropPage'));
 const AiActionsPage = lazy(() => import('./components/AiActionsPage'));
 import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense, DashboardPreferences, ActionHistoryEntry, TaxMode, ItemUpdateOptions, BulkImportRecord } from './types';
 import {
@@ -2176,6 +2177,7 @@ const App: React.FC = () => {
               />
             }
           />
+          <Route path="price-drop" element={<PriceDropPage items={items} />} />
           <Route
             path="combo-lab"
             element={
