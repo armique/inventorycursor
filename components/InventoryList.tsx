@@ -26,7 +26,7 @@ import {
   itemMatchesAmountFilter,
   amountFilterSummary,
 } from '../utils/inventoryAmountFilter';
-import { cycleInventoryItemPresence, getItemPresenceCycleState, getItemUserPhotoCount, normalizeImageList, prepareInventoryImagesForStorage } from '../utils/imageImport';
+import { cycleInventoryItemPresence, getItemPresenceCycleState, getItemUserPhotoCount, getItemUserPhotoUrls, normalizeImageList, prepareInventoryImagesForStorage } from '../utils/imageImport';
 import { photoQcSummary } from '../utils/photoQc';
 import { exportInventoryToExcel } from '../services/excelExportService';
 import { getRecentItemIds, addRecentItemId } from '../services/recentItemsService';
@@ -2430,7 +2430,9 @@ const InventoryList: React.FC<Props> = ({
           )
           .join(',')}`;
       }
-      return `${editingCell?.itemId === item.id ? `${editingCell.field}:${editValue}` : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${(item.isPC || item.isBundle) && collapsedBundles.has(item.id) ? 'col' : 'exp'}|${quickBundleSeed?.id === item.id ? 'qb' : ''}|${activeBgCardItemIds.has(item.id) ? 'bgcard' : ''}|${itemAiCardCounts[item.id] || 0}|${aiCardRegenConfirmId === item.id ? 'confirm' : ''}|lr:${item.saleReady ? 1 : 0}:${(item.marketTitle || '').length}:${(item.marketDescription || '').length}:${getItemUserPhotoCount(item)}${kidsKey}`;
+      // Thumb fingerprint: photo *count* alone is not enough (replace/reorder main with same count).
+      const thumb = getItemUserPhotoUrls(item)[0] || '';
+      return `${editingCell?.itemId === item.id ? `${editingCell.field}:${editValue}` : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${(item.isPC || item.isBundle) && collapsedBundles.has(item.id) ? 'col' : 'exp'}|${quickBundleSeed?.id === item.id ? 'qb' : ''}|${activeBgCardItemIds.has(item.id) ? 'bgcard' : ''}|${itemAiCardCounts[item.id] || 0}|${aiCardRegenConfirmId === item.id ? 'confirm' : ''}|lr:${item.saleReady ? 1 : 0}:${(item.marketTitle || '').length}:${(item.marketDescription || '').length}|ph:${getItemUserPhotoCount(item)}:${thumb.slice(-48)}${kidsKey}`;
     },
     [editingCell, editValue, listingGenId, parsingSingleId, priceSuggestId, collapsedBundles, quickBundleSeed, activeBgCardItemIds, itemAiCardCounts, aiCardRegenConfirmId, items]
   );
@@ -5222,12 +5224,13 @@ const InventoryList: React.FC<Props> = ({
       const updated = items
         .filter((i) => idSet.has(i.id))
         .map((item) => {
-          const existing = normalizeImageList([item.imageUrl, ...(item.imageUrls || [])]);
+          // Drop category SVG placeholders so new uploads become the row thumbnail.
+          const existing = getItemUserPhotoUrls(item);
           const merged = normalizeImageList([...existing, ...prepared]);
           const match = options?.ebayMatch;
           return {
             ...item,
-            imageUrl: merged[0],
+            imageUrl: merged[0] || '',
             imageUrls: merged,
             ...(match
               ? {
@@ -6801,14 +6804,10 @@ const InventoryList: React.FC<Props> = ({
           onClose={() => setGeminiCardItem(null)}
           onApplyAsMainPhoto={async (url) => {
             const base = items.find((i) => i.id === geminiCardItem.id) || geminiCardItem;
-            const merged = normalizeImageList([
-              url,
-              base.imageUrl,
-              ...(base.imageUrls || []),
-            ]);
+            const merged = normalizeImageList([url, ...getItemUserPhotoUrls(base)]);
             const next = {
               ...base,
-              imageUrl: merged[0],
+              imageUrl: merged[0] || url,
               imageUrls: merged,
             };
             // handleUpdate expects InventoryItem[] — a bare object crashed with .forEach
@@ -6819,11 +6818,8 @@ const InventoryList: React.FC<Props> = ({
           }}
           onAddToItemGallery={async (url) => {
             const base = items.find((i) => i.id === geminiCardItem.id) || geminiCardItem;
-            const merged = normalizeImageList([
-              base.imageUrl,
-              ...(base.imageUrls || []),
-              url,
-            ]);
+            const existing = getItemUserPhotoUrls(base);
+            const merged = normalizeImageList([...existing, url]);
             const next = {
               ...base,
               imageUrl: merged[0] || '',

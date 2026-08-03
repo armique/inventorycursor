@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { InventoryItem } from '../types';
 import { CATEGORY_IMAGES } from '../services/hardwareDB';
+import { getItemUserPhotoUrls } from '../utils/imageImport';
 import { getCategoryIconForItem, type IconComponent } from './categoryIcons';
 
 function getIconForItem(item: { category?: string; subCategory?: string }): IconComponent {
@@ -25,8 +26,8 @@ interface ItemThumbnailProps {
 }
 
 /**
- * Renders item thumbnail: item.imageUrl if set, else category/subcategory image (if useCategoryImage)
- * or a minimalistic Lucide icon so we never show 2-letter avatars.
+ * Renders item thumbnail: real user photos first (skips category SVG placeholders that often
+ * linger in imageUrl), then optional category image, else a Lucide icon — never 2-letter avatars.
  */
 const ItemThumbnail: React.FC<ItemThumbnailProps> = ({
   item,
@@ -35,7 +36,10 @@ const ItemThumbnail: React.FC<ItemThumbnailProps> = ({
   useCategoryImage = false,
 }) => {
   const [imageError, setImageError] = useState(false);
-  const resolvedSrc = item.imageUrl || item.imageUrls?.[0] || (useCategoryImage ? getCategoryImageUrl(item) : null) || undefined;
+  const resolvedSrc =
+    getItemUserPhotoUrls(item)[0] ||
+    (useCategoryImage ? getCategoryImageUrl(item) : null) ||
+    undefined;
   // Reset the error flag whenever the underlying photo changes (e.g. after picking a new one and
   // saving) — otherwise a row that once failed to load stays stuck on the fallback icon forever,
   // even once the item has a working photo, since the component doesn't remount for an update.

@@ -752,8 +752,8 @@ const ListingStudioModal: React.FC<Props> = ({
     try {
       const url = thumbs[entry.id] || (await resolveProductCardImageUrl(entry));
       const prepared = await resolveUrlForInventoryMainPhoto(url, item.id, entry);
-      const merged = normalizeImageList([prepared, item.imageUrl, ...(item.imageUrls || [])]);
-      await persistPatch({ imageUrl: merged[0], imageUrls: merged });
+      const merged = normalizeImageList([prepared, ...getItemUserPhotoUrls(item)]);
+      await persistPatch({ imageUrl: merged[0] || prepared, imageUrls: merged });
       setSelectedOnItem((prev) => ({ ...prev, [entry.id]: prepared }));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not set main photo');
@@ -781,7 +781,7 @@ const ListingStudioModal: React.FC<Props> = ({
       }
       const url = thumbs[entry.id] || (await resolveProductCardImageUrl(entry));
       const prepared = await resolveUrlForInventoryMainPhoto(url, item.id, entry);
-      const merged = normalizeImageList([item.imageUrl, ...(item.imageUrls || []), prepared]);
+      const merged = normalizeImageList([...getItemUserPhotoUrls(item), prepared]);
       await persistPatch({ imageUrl: merged[0] || '', imageUrls: merged });
       setSelectedOnItem((prev) => ({ ...prev, [entry.id]: prepared }));
       if (!thumbs[entry.id]) setThumbs((prev) => ({ ...prev, [entry.id]: url }));
