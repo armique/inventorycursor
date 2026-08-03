@@ -3,7 +3,7 @@ import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
   Package, Settings, RefreshCw, Trash2, CloudUpload, LayoutDashboard,
   Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe, Layers,
-  Printer, LayoutTemplate, PackageSearch, Boxes, ChevronDown, Plus, Images,
+  Printer, LayoutTemplate, PackageSearch, Boxes, ChevronDown, ChevronLeft, ChevronRight, Plus, Images,
   Target, Activity, CircuitBoard, Radar, Coins, Bot,
 } from 'lucide-react';
 import PanelBreadcrumbs from './PanelBreadcrumbs';
@@ -64,6 +64,20 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   const [signInError, setSignInError] = React.useState<string | null>(null);
   const [emulatorEmail, setEmulatorEmail] = React.useState('abelyanarmen@gmail.com');
   const [moreNavOpen, setMoreNavOpen] = React.useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = React.useState(() => {
+    try {
+      return localStorage.getItem('panel_sidebar_collapsed_v1') === '1';
+    } catch {
+      return false;
+    }
+  });
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('panel_sidebar_collapsed_v1', sidebarCollapsed ? '1' : '0');
+    } catch {
+      /* Browser storage unavailable — keep the preference for this session. */
+    }
+  }, [sidebarCollapsed]);
   const unreviewedAiCount = useUnreviewedAiCount();
   const aiSession = useAiSession();
   /** Deals unresolved for 3+ days — flagged on Inventory, since the Inbox lives there. */
@@ -275,35 +289,63 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   return (
     <div className="flex h-screen h-dvh max-h-dvh bg-slate-50 text-slate-900 font-sans overflow-hidden">
       {/* DESKTOP SIDEBAR */}
-      <aside className="w-[17.5rem] bg-slate-950 text-white flex flex-col hidden md:flex border-r border-white/5">
-        <div className="p-5 space-y-3">
-          <Link to="/panel/dashboard" className="text-lg font-display font-black tracking-tight flex items-center gap-2 text-white">
-            <span className="w-8 h-8 rounded-lg bg-brand-500/20 text-brand-300 flex items-center justify-center">
+      <aside
+        className={`shrink-0 overflow-hidden bg-slate-950 text-white flex-col hidden md:flex border-r border-white/5 transition-[width] duration-200 ease-out ${
+          sidebarCollapsed ? 'w-[4.5rem]' : 'w-[17.5rem]'
+        }`}
+      >
+        <div className={sidebarCollapsed ? 'p-3 space-y-3' : 'p-5 space-y-3'}>
+          <div className={`flex items-center ${sidebarCollapsed ? 'flex-col gap-2' : 'justify-between gap-2'}`}>
+            <Link
+              to="/panel/dashboard"
+              className="min-w-0 text-lg font-display font-black tracking-tight flex items-center gap-2 text-white"
+              title={sidebarCollapsed ? 'Dashboard' : undefined}
+            >
+            <span className="shrink-0 w-8 h-8 rounded-lg bg-brand-500/20 text-brand-300 flex items-center justify-center">
               <Package size={18} />
             </span>
-            DeInventory
-          </Link>
-          <GlobalSearch items={items} expenses={expenses} businessSettings={businessSettings} />
+              {!sidebarCollapsed && <span className="truncate">DeInventory</span>}
+            </Link>
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed((value) => !value)}
+              className="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white"
+              title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              aria-expanded={!sidebarCollapsed}
+            >
+              {sidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+            </button>
+          </div>
+          {!sidebarCollapsed && (
+            <GlobalSearch items={items} expenses={expenses} businessSettings={businessSettings} />
+          )}
         </div>
 
         {/* ADD — opens icon hub (step 1) */}
-        <div className="px-4 mb-3">
+        <div className={`${sidebarCollapsed ? 'px-2' : 'px-4'} mb-3`}>
           <Link
             to="/panel/add"
-            className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest transition-colors ${
+            title={sidebarCollapsed ? 'Add inventory' : undefined}
+            aria-label={sidebarCollapsed ? 'Add inventory' : undefined}
+            className={`w-full flex items-center rounded-xl font-black text-xs uppercase tracking-widest transition-colors ${
+              sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'justify-between gap-2 px-3 py-2.5'
+            } ${
               addHubActive
                 ? 'bg-white text-slate-900'
                 : 'bg-brand-600 hover:bg-brand-500 text-white'
             }`}
           >
             <span className="inline-flex items-center gap-2">
-              <Plus size={16} /> Add
+              <Plus size={16} /> {!sidebarCollapsed && 'Add'}
             </span>
           </Link>
         </div>
 
-        <nav className="flex-1 px-4 space-y-1 overflow-y-auto scrollbar-hide pb-4">
-          <p className="px-3 pt-1 pb-1.5 text-[9px] font-black uppercase tracking-[0.2em] text-slate-500">Navigate</p>
+        <nav className={`flex-1 space-y-1 overflow-y-auto scrollbar-hide pb-4 ${sidebarCollapsed ? 'px-2' : 'px-4'}`}>
+          {!sidebarCollapsed && (
+            <p className="px-3 pt-1 pb-1.5 text-[9px] font-black uppercase tracking-[0.2em] text-slate-500">Navigate</p>
+          )}
           {primaryNav.map((item) => {
             if ('action' in item && item.action === 'settings') {
               return (
@@ -311,10 +353,17 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
                   key="settings"
                   type="button"
                   onClick={() => openSettings()}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl font-bold text-sm transition-all relative w-full text-left text-slate-400 hover:bg-white/5 hover:text-white"
+                  title={sidebarCollapsed ? item.label : undefined}
+                  className={`flex items-center rounded-xl font-bold text-sm transition-all relative w-full text-slate-400 hover:bg-white/5 hover:text-white ${
+                    sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5 text-left'
+                  }`}
                 >
-                  {item.icon} {item.label}
-                  {item.alert && <span className="absolute right-3 top-3 w-2 h-2 bg-red-500 rounded-full animate-pulse" />}
+                  {item.icon} {!sidebarCollapsed && item.label}
+                  {item.alert && (
+                    <span className={`absolute w-2 h-2 bg-red-500 rounded-full animate-pulse ${
+                      sidebarCollapsed ? 'right-2 top-2' : 'right-3 top-3'
+                    }`} />
+                  )}
                 </button>
               );
             }
@@ -337,12 +386,16 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
               <Link
                 key={to}
                 to={to}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl font-bold text-sm transition-all relative ${
+                title={sidebarCollapsed ? label : undefined}
+                aria-label={sidebarCollapsed ? label : undefined}
+                className={`flex items-center rounded-xl font-bold text-sm transition-all relative ${
+                  sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5'
+                } ${
                   isActive ? 'bg-white/10 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'
                 }`}
               >
-                {icon} {label}
-                {typeof warnCount === 'number' && warnCount > 0 && (
+                {icon} {!sidebarCollapsed && label}
+                {!sidebarCollapsed && typeof warnCount === 'number' && warnCount > 0 && (
                   <span
                     className="ml-auto inline-flex items-center gap-0.5 min-w-[20px] h-5 px-1.5 rounded-full bg-amber-500 text-white text-[10px] font-black tabular-nums"
                     title={`${warnCount} deal${warnCount === 1 ? '' : 's'} unresolved for 3+ days — open the Inbox tab`}
@@ -350,7 +403,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
                     ⚠ {warnCount > 99 ? '99+' : warnCount}
                   </span>
                 )}
-                {typeof count === 'number' && count > 0 && (
+                {!sidebarCollapsed && typeof count === 'number' && count > 0 && (
                   <span
                     className="ml-auto min-w-[20px] h-5 px-1.5 rounded-full bg-violet-500 text-white text-[10px] font-black flex items-center justify-center tabular-nums"
                     title={`${count} AI change${count === 1 ? '' : 's'} awaiting review`}
@@ -358,7 +411,13 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
                     {count > 99 ? '99+' : count}
                   </span>
                 )}
-                {alert && <span className="absolute right-3 top-3 w-2 h-2 bg-red-500 rounded-full animate-pulse" />}
+                {sidebarCollapsed &&
+                  ((typeof warnCount === 'number' && warnCount > 0) ||
+                    (typeof count === 'number' && count > 0) ||
+                    alert) && (
+                    <span className="absolute right-2 top-2 w-2 h-2 bg-amber-400 rounded-full" />
+                  )}
+                {!sidebarCollapsed && alert && <span className="absolute right-3 top-3 w-2 h-2 bg-red-500 rounded-full animate-pulse" />}
               </Link>
             );
           })}
@@ -366,9 +425,13 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
           <button
             type="button"
             onClick={() => setMoreNavOpen((v) => !v)}
-            className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-slate-500 hover:text-slate-300 text-xs font-black uppercase tracking-widest mt-2"
+            title={sidebarCollapsed ? 'More navigation' : undefined}
+            aria-label={sidebarCollapsed ? 'More navigation' : undefined}
+            className={`w-full flex items-center rounded-xl text-slate-500 hover:text-slate-300 text-xs font-black uppercase tracking-widest mt-2 ${
+              sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'justify-between px-3 py-2.5'
+            }`}
           >
-            More
+            {!sidebarCollapsed && 'More'}
             <ChevronDown size={14} className={`transition-transform ${moreNavOpen ? 'rotate-180' : ''}`} />
           </button>
           {moreNavOpen && (
@@ -379,20 +442,26 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
                   <Link
                     key={to}
                     to={to}
-                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
+                    title={sidebarCollapsed ? label : undefined}
+                    aria-label={sidebarCollapsed ? label : undefined}
+                    className={`flex items-center rounded-lg text-xs font-bold transition-colors ${
+                      sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'gap-2.5 px-3 py-2'
+                    } ${
                       isActive ? 'bg-white/10 text-white' : 'text-slate-500 hover:bg-white/5 hover:text-slate-300'
                     }`}
                   >
-                    {icon} {label}
+                    {icon} {!sidebarCollapsed && label}
                   </Link>
                 );
               })}
             </div>
           )}
         </nav>
-        <div className="p-4 border-t border-white/5">
-          <QuotaMonitor />
-        </div>
+        {!sidebarCollapsed && (
+          <div className="p-4 border-t border-white/5">
+            <QuotaMonitor />
+          </div>
+        )}
       </aside>
       {/* MAIN AREA */}
       <main
