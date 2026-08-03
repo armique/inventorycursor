@@ -24,6 +24,11 @@ interface CategoryEditorProps {
   categoryFields: Record<string, string[]>;
   onUpdateCategoryStructure: (newCats: Record<string, string[]>) => void;
   onUpdateCategoryFields: (newFields: Record<string, string[]>) => void;
+  /** When set, renames also remapping inventory rows (avoids stale subcategory filters). */
+  onRenameCategory?: (oldName: string, newName: string) => void;
+  onRenameSubCategory?: (category: string, oldSubName: string, newSubName: string) => void;
+  /** Optional: how many items still use a subcategory (shown in rename confirm). */
+  countItemsForSubcategory?: (category: string, subCategory: string) => number;
 }
 
 const CategoryEditor: React.FC<CategoryEditorProps> = ({
@@ -31,6 +36,9 @@ const CategoryEditor: React.FC<CategoryEditorProps> = ({
   categoryFields,
   onUpdateCategoryStructure,
   onUpdateCategoryFields,
+  onRenameCategory,
+  onRenameSubCategory,
+  countItemsForSubcategory,
 }) => {
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [selectedSubKey, setSelectedSubKey] = useState<string | null>(null); // "Category:SubCategory"
@@ -69,6 +77,12 @@ const CategoryEditor: React.FC<CategoryEditorProps> = ({
     const n = newName.trim();
     if (!n || n === oldName) {
       setEditingCategory(null);
+      return;
+    }
+    if (onRenameCategory) {
+      onRenameCategory(oldName, n);
+      setEditingCategory(null);
+      if (expandedCategory === oldName) setExpandedCategory(n);
       return;
     }
     const subs = catList[oldName] || [];
@@ -117,6 +131,22 @@ const CategoryEditor: React.FC<CategoryEditorProps> = ({
     const n = newSub.trim();
     if (!n || n === oldSub) {
       setEditingSub(null);
+      return;
+    }
+    const affected = countItemsForSubcategory?.(cat, oldSub) ?? 0;
+    if (
+      affected > 0 &&
+      !window.confirm(
+        `Rename “${oldSub}” → “${n}” and update ${affected} inventory item${affected === 1 ? '' : 's'}?`
+      )
+    ) {
+      setEditingSub(null);
+      return;
+    }
+    if (onRenameSubCategory) {
+      onRenameSubCategory(cat, oldSub, n);
+      setEditingSub(null);
+      if (selectedSubKey === `${cat}:${oldSub}`) setSelectedSubKey(`${cat}:${n}`);
       return;
     }
     const subs = (catList[cat] || []).map(s => s === oldSub ? n : s);

@@ -35,6 +35,8 @@ export interface MobileStockCardActions {
   onEdit: (item: InventoryItem) => void;
   onSell: (item: InventoryItem) => void;
   onPhotos: (item: InventoryItem) => void;
+  /** Open Add photos and auto-match My eBay listing images. */
+  onEbayPhotos?: (item: InventoryItem) => void;
   /** Quick Bundle / add parts — same as desktop Flags “+”. */
   onQuickBundle?: (item: InventoryItem) => void;
   /** Split a single item into sellable parts (AIO → fans, radiator…). */
@@ -430,6 +432,14 @@ export const MobileStockCard: React.FC<{
               icon: <Camera size={16} />,
               run: () => actions.onPhotos(item),
             },
+            actions.onEbayPhotos
+              ? {
+                  key: 'ebay_photos',
+                  label: 'Parse eBay photos',
+                  icon: <ShoppingBag size={16} />,
+                  run: () => actions.onEbayPhotos?.(item),
+                }
+              : null,
             inStock && actions.onSell
               ? {
                   key: 'sell',

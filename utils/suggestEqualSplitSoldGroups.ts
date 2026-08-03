@@ -55,11 +55,33 @@ export function unignoreEqualSplitGroupId(groupId: string): void {
   persistIgnoredEqualSplitGroupIds(next);
 }
 
-function isStandaloneSoldCandidate(item: InventoryItem): boolean {
+/**
+ * Parts already inside a living PC/bundle — real ownership only.
+ * Stale componentIds alone must NOT hide sold equal-split candidates.
+ */
+export function buildClaimedContainerPartIds(items: InventoryItem[]): Set<string> {
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const claimed = new Set<string>();
+  for (const row of items) {
+    if (row.isBundle || row.isPC) continue;
+    if (row.status === ItemStatus.IN_COMPOSITION) {
+      claimed.add(row.id);
+      continue;
+    }
+    const pid = row.parentContainerId;
+    if (!pid) continue;
+    const parent = byId.get(pid);
+    if (parent && (parent.isPC || parent.isBundle)) claimed.add(row.id);
+  }
+  return claimed;
+}
+
+function isStandaloneSoldCandidate(item: InventoryItem, claimedPartIds: Set<string>): boolean {
   if (!isRealizedDisposal(item)) return false;
   if (item.isBundle || item.isPC) return false;
   if (item.parentContainerId) return false;
   if (item.status === ItemStatus.IN_COMPOSITION) return false;
+  if (claimedPartIds.has(item.id)) return false;
   const sell = Number(item.sellPrice);
   if (!Number.isFinite(sell) || sell <= 0) return false;
   if (!item.sellDate) return false;
@@ -87,8 +109,44 @@ function suggestKindFromParts(parts: InventoryItem[]): RetroComposeKind {
 }
 
 /**
+ * True when a sold PC/bundle already owns most of this equal-split group
+ * (children parentContainerId → container), so do not offer compose again.
+ */
+export function groupAlreadyComposedAsContainer(
+  groupItemIds: string[],
+  sellDate: string,
+  items: InventoryItem[]
+): boolean {
+  if (groupItemIds.length < 2) return false;
+  const day = toLocalCalendarDateKey(sellDate) || sellDate.slice(0, 10);
+  const groupSet = new Set(groupItemIds);
+
+  for (const row of items) {
+    if (!row.isPC && !row.isBundle) continue;
+    if (!isRealizedDisposal(row)) continue;
+    const rowDay = toLocalCalendarDateKey(row.sellDate || '') || String(row.sellDate || '').slice(0, 10);
+    if (rowDay && day && rowDay !== day) continue;
+
+    const ownedIds = items
+      .filter((i) => i.parentContainerId === row.id)
+      .map((i) => i.id);
+    // Only real ownership suppresses suggestions — stale componentIds alone do not.
+    if (ownedIds.length < 2) continue;
+
+    let overlap = 0;
+    for (const id of ownedIds) {
+      if (groupSet.has(id)) overlap += 1;
+    }
+    if (overlap >= 2 && overlap / groupItemIds.length >= 0.5) return true;
+    if (overlap >= 2 && overlap / ownedIds.length >= 0.5) return true;
+  }
+  return false;
+}
+
+/**
  * Find historical sold rows that look like even-split PC/bundle sales:
  * same calendar sell date + identical sell price, 2+ standalone items.
+ * Skips parts already inside a PC/bundle and groups already composed.
  * Groups marked "not a bundle" (ignored) are omitted unless includeIgnored is set.
  */
 export function suggestEqualSplitSoldGroups(
@@ -96,10 +154,11 @@ export function suggestEqualSplitSoldGroups(
   options?: { includeIgnored?: boolean }
 ): EqualSplitSoldGroup[] {
   const ignored = options?.includeIgnored ? new Set<string>() : loadIgnoredEqualSplitGroupIds();
+  const claimedPartIds = buildClaimedContainerPartIds(items);
   const buckets = new Map<string, InventoryItem[]>();
 
   for (const item of items) {
-    if (!isStandaloneSoldCandidate(item)) continue;
+    if (!isStandaloneSoldCandidate(item, claimedPartIds)) continue;
     const day = toLocalCalendarDateKey(item.sellDate!) || String(item.sellDate).slice(0, 10);
     if (!day) continue;
     const price = round2(Number(item.sellPrice));
@@ -119,12 +178,14 @@ export function suggestEqualSplitSoldGroups(
     const sorted = [...members].sort(
       (a, b) => Number(b.buyPrice || 0) - Number(a.buyPrice || 0) || a.name.localeCompare(b.name)
     );
+    const itemIds = sorted.map((m) => m.id);
+    if (groupAlreadyComposedAsContainer(itemIds, day!, items)) continue;
     groups.push({
       id,
       sellDate: day!,
       equalSellPrice,
       totalSell: round2(equalSellPrice * sorted.length),
-      itemIds: sorted.map((m) => m.id),
+      itemIds,
       suggestedKind: suggestKindFromParts(sorted),
     });
   }

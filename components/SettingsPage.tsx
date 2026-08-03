@@ -175,8 +175,9 @@ const SettingsPage: React.FC<Props> = ({
   categories = {},
   categoryFields = {},
   onUpdateCategoryStructure,
-  onUpdateCategoryFields
-  ,
+  onUpdateCategoryFields,
+  onRenameCategory,
+  onRenameSubCategory,
   actionHistory = [],
   bulkImports = [],
   onApplyArchivedPhotos,
@@ -1982,6 +1983,11 @@ const SettingsPage: React.FC<Props> = ({
                 categoryFields={categoryFields}
                 onUpdateCategoryStructure={onUpdateCategoryStructure}
                 onUpdateCategoryFields={onUpdateCategoryFields}
+                onRenameCategory={onRenameCategory}
+                onRenameSubCategory={onRenameSubCategory}
+                countItemsForSubcategory={(cat, sub) =>
+                  items.filter((i) => i.category === cat && i.subCategory === sub).length
+                }
              />
           )}
 

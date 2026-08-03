@@ -25,19 +25,33 @@ export type ListingPresenceSyncResult = {
   eligibleCount: number;
   priceHints: number;
   maybeSoldCount: number;
+  /** Active eBay listing IDs from this sync (for Price Drop intersection). */
+  ebayListingIds: string[];
+  /** Active KA listing URLs from this sync. */
+  kaListingUrls: string[];
   kaError?: string;
   ebayError?: string;
 };
 
 export async function syncListingPresence(
   items: InventoryItem[],
-  opts?: { kaTitlesOverride?: ListingTitleHit[]; skipEbay?: boolean; skipKa?: boolean }
+  opts?: {
+    kaTitlesOverride?: ListingTitleHit[];
+    skipEbay?: boolean;
+    skipKa?: boolean;
+    /** Bypass eBay listing cache (Price Drop refresh). */
+    forceEbay?: boolean;
+    /** Re-fetch KA profile even when a local title snapshot exists. */
+    forceKa?: boolean;
+  }
 ): Promise<ListingPresenceSyncResult> {
   let next = items;
   let ebayMatched = 0;
   let kaMatched = 0;
   let ebayTitleCount = 0;
   let kaTitleCount = 0;
+  let ebayListingIds: string[] = [];
+  let kaListingUrls: string[] = [];
   let kaError: string | undefined;
   let ebayError: string | undefined;
   const eligibleCount = items.filter(isListingPresenceEligible).length;
@@ -45,8 +59,9 @@ export async function syncListingPresence(
 
   if (!opts?.skipEbay) {
     try {
-      const { listings } = await ensureEbayListings();
+      const { listings } = await ensureEbayListings({ force: Boolean(opts?.forceEbay) });
       ebayTitleCount = listings.length;
+      ebayListingIds = listings.map((l) => l.listingId).filter(Boolean);
       next = applyEbayPresenceToItems(next, listings);
       ebayMatched = next.filter(
         (i) => isListingPresenceEligible(i) && i.listedOnEbay && !i.listedViaParent
@@ -61,9 +76,12 @@ export async function syncListingPresence(
   }
 
   if (!opts?.skipKa) {
-    let titles = opts?.kaTitlesOverride || loadKaListingTitles();
+    let titles = opts?.kaTitlesOverride || (!opts?.forceKa ? loadKaListingTitles() : []);
     const profileUrl = loadKaProfileUrl();
-    if ((!titles.length || opts?.kaTitlesOverride == null) && profileUrl) {
+    const shouldFetchKa =
+      Boolean(profileUrl) &&
+      (opts?.forceKa || !titles.length || opts?.kaTitlesOverride == null);
+    if (shouldFetchKa && profileUrl) {
       try {
         const res = await fetch(
           `/api/kleinanzeigen-listings?url=${encodeURIComponent(profileUrl)}`
@@ -73,7 +91,7 @@ export async function syncListingPresence(
           titles = data.titles as ListingTitleHit[];
           saveKaListingTitles(titles);
         } else if (!titles.length) {
-          kaError = data.error || 'Could not fetch KA profile — paste listing titles instead.';
+          kaError = data.error || 'Could not fetch KA profile — paste listing titles in Settings.';
         }
       } catch {
         if (!titles.length) {
@@ -81,8 +99,15 @@ export async function syncListingPresence(
         }
       }
     }
+    // Fallback to cached snapshot if live fetch failed but we still have old titles
+    if (!titles.length && !opts?.kaTitlesOverride) {
+      titles = loadKaListingTitles();
+    }
     if (titles.length) {
       kaTitleCount = titles.length;
+      kaListingUrls = titles
+        .map((t) => (t.url || '').trim())
+        .filter(Boolean);
       next = applyKaPresenceToItems(next, titles);
       kaMatched = next.filter(
         (i) =>
@@ -106,6 +131,8 @@ export async function syncListingPresence(
     kaMatched,
     ebayTitleCount,
     kaTitleCount,
+    ebayListingIds,
+    kaListingUrls,
     watchCount: next.filter(isListingWatchCandidate).length,
     eligibleCount,
     priceHints,

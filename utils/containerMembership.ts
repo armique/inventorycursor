@@ -24,6 +24,19 @@ export function getContainerKind(container: InventoryItem | undefined | null): C
   return null;
 }
 
+/**
+ * Historical compose used to set both isPC and isBundle on Gaming PCs.
+ * Keep flags mutually exclusive so the UI never shows Bundle + PC Build together.
+ */
+export function normalizeExclusiveContainerFlags(item: InventoryItem): InventoryItem {
+  if (!item.isPC || !item.isBundle) return item;
+  return {
+    ...item,
+    isBundle: false,
+    category: item.category === 'Bundle' || item.category === 'Mixed Bundle' ? 'PC' : item.category || 'PC',
+  };
+}
+
 export function getContainerKindLabel(kind: ContainerKind): string {
   switch (kind) {
     case 'mixed':

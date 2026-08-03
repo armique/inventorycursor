@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyRamKitToSpecs,
   buildRamKitSpecs,
   extractRamKitInfo,
   formatRamKitDisplayName,
@@ -98,5 +99,22 @@ describe('ramKitParse', () => {
       quantity: 1,
     });
     expect(extractRamKitInfo('Crucial 2x8GB DDR4')).toEqual({ modules: 2, gbPerStick: 8 });
+  });
+
+  it('applies kit fields so Kit Capacity is modules × GB per stick', () => {
+    const specs = applyRamKitToSpecs('Crucial 2x8GB DDR4', { Speed: '3200' });
+    expect(specs.Modules).toBe('2');
+    expect(specs['GB per Stick']).toBe('8GB');
+    expect(specs['Kit Capacity']).toBe('16GB');
+    expect(specs.Speed).toBe('3200');
+  });
+
+  it('corrects wrong AI kit capacity from name pattern', () => {
+    const specs = applyRamKitToSpecs('Corsair Vengeance 2x16GB DDR4', {
+      Modules: '2',
+      'GB per Stick': '16GB',
+      'Kit Capacity': '16GB',
+    });
+    expect(specs['Kit Capacity']).toBe('32GB');
   });
 });

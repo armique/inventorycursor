@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Boxes, Check, Layers, Monitor, Package, Sparkles, Trash2, X } from 'lucide-react';
 import type { InventoryItem } from '../types';
+import { ItemStatus } from '../types';
 import { formatEUR } from '../utils/formatMoney';
 import { buildContainerTitle } from '../utils/buildTitle';
 import { buildRetroContainerAndComponents } from '../utils/retroSoldCompose';
@@ -9,6 +10,7 @@ import {
   suggestEqualSplitSoldGroups,
   type EqualSplitSoldGroup,
 } from '../utils/suggestEqualSplitSoldGroups';
+import { filterPartsAvailableForCompose } from '../utils/containerMembershipInvariants';
 import { isRealizedDisposal } from '../utils/itemDisposition';
 import { toLocalCalendarDateKey } from '../utils/calendarDate';
 import { AddOptionTile } from './addFlowShared';
@@ -124,19 +126,30 @@ const SoldEqualSplitGroupsModal: React.FC<Props> = ({ items, onApply, onClose, o
 
   const confirmActive = () => {
     if (!active || activeParts.length < 2) return;
+    const { available, blocked } = filterPartsAvailableForCompose(activeParts, items);
+    if (blocked.length > 0 && available.length < 2) {
+      alert(
+        `These parts are already inside another PC/bundle (${blocked.length} blocked). Open Sold inventory instead of composing again.`
+      );
+      return;
+    }
+    const partsToUse = available.length >= 2 ? available : activeParts;
     const name = active.name.trim() || autoName;
     const { bundle, updatedComponents } = buildRetroContainerAndComponents({
-      items: activeParts,
+      items: partsToUse,
       allItems: items,
       kind: active.kind,
       bundleName: name,
       sellDate: active.sellDate,
       useSmartDistribution: active.useSmartDistribution,
     });
+    // Never offer this date+price bucket again after a successful compose.
+    ignoreEqualSplitGroupId(active.id);
+    onIgnored?.();
     onApply([bundle, ...updatedComponents]);
     setConfirmedMemberIds((prev) => {
       const next = new Set(prev);
-      for (const id of active.itemIds) next.add(id);
+      for (const id of partsToUse.map((p) => p.id)) next.add(id);
       return next;
     });
     setDismissedIds((prev) => new Set(prev).add(active.id));
@@ -148,10 +161,16 @@ const SoldEqualSplitGroupsModal: React.FC<Props> = ({ items, onApply, onClose, o
     if (!active) return [];
     const used = new Set(visibleDrafts.flatMap((d) => d.itemIds));
     for (const id of confirmedMemberIds) used.add(id);
+    const claimed = new Set<string>();
+    for (const row of items) {
+      if (!row.isPC && !row.isBundle) continue;
+      for (const id of row.componentIds || []) claimed.add(id);
+    }
     const dayKey = toLocalCalendarDateKey(active.sellDate) || active.sellDate.slice(0, 10);
     return items.filter((i) => {
-      if (used.has(i.id)) return false;
+      if (used.has(i.id) || claimed.has(i.id)) return false;
       if (!isRealizedDisposal(i) || i.isBundle || i.isPC || i.parentContainerId) return false;
+      if (i.status === ItemStatus.IN_COMPOSITION) return false;
       const sell = Number(i.sellPrice);
       if (!Number.isFinite(sell) || Math.abs(sell - active.equalSellPrice) >= 0.005) return false;
       const d = toLocalCalendarDateKey(i.sellDate || '') || String(i.sellDate || '').slice(0, 10);

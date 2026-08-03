@@ -6,7 +6,7 @@ import {
   ShoppingBag, Calculator, Layers, 
   Search, Database, 
   CheckCircle2,
-  Sparkles, Loader2, Package, Ban, ScanBarcode
+  Sparkles, Loader2, Package, Ban, ScanBarcode, Wrench, Globe, Upload
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, Platform, PaymentType, BulkImportRecord, BulkImportSource } from '../types';
 import {
@@ -40,6 +40,7 @@ import {
 import {
   formatDefectSplitNote,
   lineHasDefectKeyword,
+  pickBulkImportDisplayName,
   resolveDefectCounts,
   stripConditionAnnotations,
 } from '../utils/bulkTextParse';
@@ -410,10 +411,16 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
           ? resolveRamKitInfo(productFromLine || baseName, { sourceLine, specs: row.specs })
           : null;
       const inventoryQty = resolveRamInventoryQuantity(lineQty, ramKit, lineQty);
-      // Prefer original paste product name so AI can't rename "-8X 8GB" into "64GB (8x8GB)"
-      const displayName = ramKit
-        ? formatRamKitDisplayName(productFromLine || baseName, ramKit)
-        : (productFromLine || baseName);
+      // AI mode: use cleaned AI title. RAM kits keep paste-based formatting so "-8X"
+      // part numbers are never expanded into fake 8-module kits.
+      const displayName = pickBulkImportDisplayName({
+        mode: importMode,
+        pasteProductName: productFromLine || baseName,
+        aiName: baseName || productFromLine,
+        ramFormattedName: ramKit
+          ? formatRamKitDisplayName(productFromLine || baseName, ramKit)
+          : null,
+      });
       const { working, defective } = resolveDefectCounts(
         inventoryQty,
         conditionText,
@@ -530,11 +537,12 @@ Return JSON only (no markdown). Keep each item compact (omit empty strings). Pre
 {"items":[{"name":"string","quantity":1,"category":"PC|Laptops|Components|...","subCategory":"string","note":"","isDefective":false,"vendor":"","specs":{}}]}
 
 Rules:
+- name: clean short product title — brand + model + key size/capacity (e.g. "Samsung 980 Pro 1TB NVMe", "MSI GeForce RTX 3060 Gaming X 12GB", "Intel Core i7-4790K"). Fix casing, drop junk (emoji, shipping, "neu", seller fluff, trailing prices). Keep real model / P/N tokens.
 - Keep categories limited to: ${Object.keys(categories).join(', ') || 'Components'}
 - SubCategory must exist under that category in the list above (or be omitted).
 - Parse quantity from prefixes like "2x ..." or "8x4GB ...". If no quantity, use 1.
 - Leading "2x Product" / "4x Product" is a PURCHASE count (how many units bought), not a RAM kit size. Example: "2x Samsung … 4GB" → quantity=2, name without the "2x". Spaced "2x 8GB Samsung" → quantity=2, single 8GB sticks (NOT a 2x8GB kit).
-- Model codes like "ACR24D4U1S1ME-8X" or "…-8X 8GB": the "-8X" is part of the part number, NEVER modules=8. Keep the full model string in name.
+- Model codes like "ACR24D4U1S1ME-8X" or "…-8X 8GB": the "-8X" is part of the part number, NEVER modules=8. Keep the full model string in name — do NOT invent "64GB (8x8GB)".
 - IMPORTANT: Do not classify CPUs, SSD/NVMe drives, RAM, or motherboards as Graphics Cards.
 - IMPORTANT: Motherboards are often listed only by chipset/model (for example A320M, B450, B550, X570, Z690, Z790, H610) without the word "motherboard". Classify those as category "Components" and subCategory "Motherboards".
 - Pre-built desktops (ProDesk, OptiPlex, EliteDesk, "Business PC") → category "PC", subCategory "Pre-Built PC".
@@ -1018,8 +1026,8 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                      </div>
                      <p className="text-[10px] text-slate-400">
                        {bulkQtyMode === 'INDIVIDUAL'
-                         ? 'Nx lines expand to N items. “(2 working, 2 defekt)” → 2 OK + 2 Defekt.'
-                         : 'Each Nx line becomes one lot item named like “4x Product…”.'}
+                         ? 'Nx lines expand to N items. “(2 working, 2 defekt)” → 2 OK + 2 Defekt. Parse With AI also cleans product names.'
+                         : 'Each Nx line becomes one lot item named like “4x Product…”. Parse With AI also cleans product names.'}
                      </p>
                      {bulkTextStatus && <p className="text-[10px] text-slate-500">{bulkTextStatus}</p>}
                   </div>

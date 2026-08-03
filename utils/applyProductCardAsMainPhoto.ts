@@ -10,7 +10,11 @@ import {
   isProductCardIdbUrl,
   resolveProductCardImageUrl,
 } from '../services/productCardGallery';
-import { normalizeImageList, prepareInventoryImagesForStorage } from './imageImport';
+import {
+  getItemUserPhotoUrls,
+  normalizeImageList,
+  prepareInventoryImagesForStorage,
+} from './imageImport';
 
 export async function resolveUrlForInventoryMainPhoto(
   source: string,
@@ -54,7 +58,7 @@ export async function resolveUrlForInventoryMainPhoto(
 }
 
 export function mergeMainPhotoOntoItem(item: InventoryItem, photoUrl: string): InventoryItem {
-  const merged = normalizeImageList([photoUrl, item.imageUrl, ...(item.imageUrls || [])]);
+  const merged = normalizeImageList([photoUrl, ...getItemUserPhotoUrls(item)]);
   return {
     ...item,
     imageUrl: merged[0] || photoUrl,
@@ -64,7 +68,8 @@ export function mergeMainPhotoOntoItem(item: InventoryItem, photoUrl: string): I
 
 /** Append a photo to the item gallery without changing the current main (unless empty). */
 export function mergePhotoOntoItemGallery(item: InventoryItem, photoUrl: string): InventoryItem {
-  const merged = normalizeImageList([item.imageUrl, ...(item.imageUrls || []), photoUrl]);
+  const existing = getItemUserPhotoUrls(item);
+  const merged = normalizeImageList([...existing, photoUrl]);
   return {
     ...item,
     imageUrl: merged[0] || photoUrl,

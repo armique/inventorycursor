@@ -1,34 +1,34 @@
 import React, { useState } from 'react';
-import { CheckCircle2, ChevronDown } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import type { ReinvestGroup, AnchorBundleGroup } from '../../utils/reinvestAnalysis';
 
 type Props = {
   groups: Array<ReinvestGroup | AnchorBundleGroup>;
 };
 
-/** Collapsed by default — good performers that don't need buying right now shouldn't compete
- * for attention with the restock cards above them. */
 const ReinvestStockedStrip: React.FC<Props> = ({ groups }) => {
   const [open, setOpen] = useState(false);
   if (!groups.length) return null;
 
   return (
-    <div>
+    <div className="rx-panel overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3 text-left"
       >
-        <span className="text-xs font-bold text-slate-600 flex items-center gap-2">
-          <CheckCircle2 size={14} className="text-emerald-600" />
-          {groups.length} doing well, already stocked
+        <span className="text-[13px] font-semibold">
+          Stocked <span className="text-[var(--rx-muted)] font-medium">· {groups.length}</span>
         </span>
-        <ChevronDown size={14} className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown
+          size={15}
+          className={`text-[var(--rx-muted)] transition-transform ${open ? 'rotate-180' : ''}`}
+        />
       </button>
       {open && (
-        <div className="mt-2 flex flex-wrap gap-1.5 p-2.5 rounded-xl border border-slate-100">
+        <div className="px-4 pb-3 flex flex-wrap gap-1.5 border-t border-[var(--rx-line)] pt-3">
           {groups.map((g) => (
-            <span key={g.key} className="px-2.5 py-1.5 rounded-lg bg-slate-50 text-[11px] font-bold text-slate-600">
+            <span key={g.key} className="rx-pill rx-pill-ok rx-num">
               {g.label} · {g.currentStock}/{g.targetStock}
             </span>
           ))}

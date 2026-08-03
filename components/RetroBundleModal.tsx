@@ -60,8 +60,8 @@ const RetroBundleModal: React.FC<Props> = ({ items, allItems, onConfirm, onClose
       componentIds: items.map((i) => i.id),
       comment1: '',
       comment2: '',
-      isBundle: true,
       isPC: kind === 'pc',
+      isBundle: kind !== 'pc',
     } as unknown as InventoryItem;
     return suggestBundleComponentPrices(probe, allItems);
   }, [useSmartDistribution, totalSell, kind, totalBuy, sellDate, items, allItems]);

@@ -14,7 +14,10 @@ export function roundMoney(n: number): number {
 export function getChildren(container: InventoryItem, items: InventoryItem[]): InventoryItem[] {
   const byIds = (container.componentIds || [])
     .map((id) => items.find((i) => i.id === id))
-    .filter((x): x is InventoryItem => !!x);
+    .filter((x): x is InventoryItem => !!x)
+    // Stale componentIds on an older shell must not steal parts that now belong
+    // to another PC/bundle (historical compose ran twice on the same sale).
+    .filter((c) => !c.parentContainerId || c.parentContainerId === container.id);
   if (byIds.length > 0) return byIds;
   return items.filter((i) => i.parentContainerId === container.id);
 }
@@ -50,6 +53,18 @@ export function isBundleSoldOnParentOnly(parent: InventoryItem, items: Inventory
   return children.some((c) => c.status === ItemStatus.IN_COMPOSITION);
 }
 
+/**
+ * Sold PC/bundle still lists componentIds, but every part now belongs to another
+ * container (stale shell after a second historical compose on the same sale).
+ */
+export function isOrphanSoldContainerShell(container: InventoryItem, items: InventoryItem[]): boolean {
+  if (!container.isBundle && !container.isPC) return false;
+  if (container.status !== ItemStatus.SOLD && container.status !== ItemStatus.TRADED) return false;
+  const listed = container.componentIds || [];
+  if (listed.length === 0) return false;
+  return getChildren(container, items).length === 0;
+}
+
 export function getParentContainer(item: InventoryItem, items: InventoryItem[]): InventoryItem | undefined {
   if (item.parentContainerId) {
     const direct = items.find((i) => i.id === item.parentContainerId);
@@ -72,6 +87,91 @@ export function shouldHideContainerChildInList(
   const parent = getParentContainer(item, items);
   if (!parent || (!parent.isBundle && !parent.isPC)) return false;
   return true;
+}
+
+/** Same category pin rules as the inventory list (Components+GPU or top-level GPU). */
+export function matchesInventoryCategoryPin(
+  item: Pick<InventoryItem, 'category' | 'subCategory'>,
+  categoryFilter: string,
+  subCategoryFilter: string
+): boolean {
+  if (categoryFilter === 'ALL' && !subCategoryFilter) return true;
+  const itemSub = item.subCategory || '';
+  const filterSub = subCategoryFilter || '';
+  const subMatches = !filterSub || inventorySubcategoryAliasesMatch(filterSub, itemSub);
+  const matchParentAndSub =
+    categoryFilter !== 'ALL' && item.category === categoryFilter && subMatches;
+  // Top-level rows like category "Processors" / "CPU" (no Components parent)
+  const matchSubAsTopLevel = Boolean(
+    filterSub && inventorySubcategoryAliasesMatch(filterSub, item.category)
+  );
+  return Boolean(matchParentAndSub || matchSubAsTopLevel);
+}
+
+/** GPU / CPU (and DE) subcategory renames — pins and stale rows must still match. */
+export function inventorySubcategoryAliasesMatch(a: string, b: string): boolean {
+  const left = (a || '').trim();
+  const right = (b || '').trim();
+  if (!left || !right) return false;
+  if (left === right) return true;
+  const norm = (s: string) => s.trim().toLowerCase();
+  const l = norm(left);
+  const r = norm(right);
+  if (l === r) return true;
+
+  const gpu = new Set([
+    'gpu',
+    'graphics cards',
+    'graphic cards',
+    'grafikkarten',
+    'grafikkarte',
+  ]);
+  if (gpu.has(l) && gpu.has(r)) return true;
+
+  const cpu = new Set([
+    'cpu',
+    'processors',
+    'processor',
+    'prozessoren',
+    'prozessor',
+  ]);
+  if (cpu.has(l) && cpu.has(r)) return true;
+
+  return false;
+}
+
+/** Part nested under a sold/traded/gifted PC/bundle (status often stays IN_COMPOSITION). */
+export function isPartOfRealizedContainer(item: InventoryItem, items: InventoryItem[]): boolean {
+  if (item.isBundle || item.isPC) return false;
+  const parent = getParentContainer(item, items);
+  return Boolean(parent && (parent.isPC || parent.isBundle) && isRealizedDisposal(parent));
+}
+
+/**
+ * On SOLD + Components/GPU (etc.), show the nested part as its own row — otherwise the pin
+ * only matches standalone GPUs and build sales look empty.
+ */
+export function shouldSurfaceSoldContainerPartInList(
+  item: InventoryItem,
+  items: InventoryItem[],
+  statusFilter: string,
+  categoryFilter: string,
+  subCategoryFilter: string
+): boolean {
+  if (statusFilter !== 'SOLD') return false;
+  if (categoryFilter === 'ALL' && !subCategoryFilter) return false;
+  if (!matchesInventoryCategoryPin(item, categoryFilter, subCategoryFilter)) return false;
+  return isPartOfRealizedContainer(item, items);
+}
+
+/** Sell/disposition date for a nested part when drilling sold category pins. */
+export function soldContainerPartDispositionDate(
+  item: InventoryItem,
+  items: InventoryItem[]
+): string | undefined {
+  if (item.sellDate) return item.sellDate;
+  const parent = getParentContainer(item, items);
+  return parent?.sellDate;
 }
 
 /** @deprecated Use shouldHideContainerChildInList — kept for call-site compatibility. */
@@ -181,6 +281,8 @@ export function shouldSkipForAggregatedSaleLine(item: InventoryItem, allItems: I
   if (item.isDraft) return true;
   if (shouldSkipCompositionChild(item, allItems)) return true;
   if (shouldSkipContainerRow(item, allItems)) return true;
+  // Ghost sold PC/bundle left after a second historical compose on the same parts.
+  if (isOrphanSoldContainerShell(item, allItems)) return true;
   return false;
 }
 

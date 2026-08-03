@@ -177,7 +177,14 @@ RAM / MEMORY MODULES (think carefully — especially older DDR2/DDR3 OEM sticks)
 - Hynix density "351" on HMT3 modules → 4GB; "41G" → 8GB. Prefer datasheet-accurate Memory Type + GB per Stick / Kit Capacity.
 - If the title has no explicit "8GB"/"16GB" and the P/N decodes to 4GB DDR3, output 4GB DDR3.
 - When unsure between DDR3 and DDR4, omit Memory Type rather than guessing DDR4.
-- Prefer slower, older, conservative specs over "upgrading" vintage parts.`;
+- Prefer slower, older, conservative specs over "upgrading" vintage parts.
+- KIT / STICK COUNT (critical):
+  • Pattern "2x8GB", "2×16GB", "4x4GB" in the name = Modules × GB per Stick.
+  • Modules = number of sticks (planki). GB per Stick = capacity of ONE stick. Kit Capacity = Modules × GB per Stick (total kit volume).
+  • Example: "2x8GB" → Modules=2, GB per Stick=8GB, Kit Capacity=16GB. NEVER put 8GB as Kit Capacity for a 2x8GB kit.
+  • Example: "4x4GB" → Modules=4, GB per Stick=4GB, Kit Capacity=16GB.
+  • Do NOT confuse purchase quantity ("2x Crucial 8GB" meaning two separate single sticks sold as stock qty) with a glued kit "2x8GB" in the product name.
+  • Always fill Modules, GB per Stick, and Kit Capacity together when any kit pattern is known.`;
 }
 
 export interface GenerateSpecsResult {

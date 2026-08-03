@@ -76,9 +76,46 @@ const { bundle, updatedComponents } = buildRetroContainerAndComponents({
   useSmartDistribution: true,
 });
 assert.equal(bundle.isPC, true);
+assert.equal(bundle.isBundle, false);
 assert.equal(bundle.sellPrice, 200);
 assert.equal(updatedComponents.length, 4);
 assert.ok(updatedComponents.every((c) => c.status === ItemStatus.IN_COMPOSITION));
+
+// After compose, the same equal-split bucket must disappear (parts claimed by the PC).
+const afterCompose = [...items.filter((i) => !june!.itemIds.includes(i.id)), bundle, ...updatedComponents];
+assert.equal(
+  suggestEqualSplitSoldGroups(afterCompose).some((g) => g.sellDate === '2025-06-10' && g.equalSellPrice === 50),
+  false,
+  'already-composed equal-split group must not be suggested again'
+);
+
+// Stale componentIds alone must NOT hide sold equal-split candidates (button disappeared).
+const leakedSold = updatedComponents.map((c) => ({
+  ...c,
+  status: ItemStatus.SOLD,
+  parentContainerId: undefined,
+  sellPrice: 50, // still look like equal-split rows
+  sellDate: '2025-06-10',
+}));
+const leakInventory = [
+  { ...bundle, componentIds: leakedSold.map((c) => c.id) },
+  ...leakedSold,
+  ...items.filter((i) => !june!.itemIds.includes(i.id)),
+];
+assert.equal(
+  suggestEqualSplitSoldGroups(leakInventory).some((g) => g.itemIds.includes('cpu')),
+  true,
+  'sold parts without parentContainerId stay suggestable even if listed on a stale shell'
+);
+
+// Once really owned (parentContainerId), they disappear from suggestions.
+const ownedLeak = leakedSold.map((c) => ({ ...c, parentContainerId: bundle.id, status: ItemStatus.IN_COMPOSITION }));
+const ownedInventory = [{ ...bundle, componentIds: ownedLeak.map((c) => c.id) }, ...ownedLeak];
+assert.equal(
+  suggestEqualSplitSoldGroups(ownedInventory).some((g) => g.itemIds.includes('cpu')),
+  false,
+  'parts with real parentContainerId must not re-enter suggestions'
+);
 
 ignoreEqualSplitGroupId(june!.id);
 assert.equal(countEqualSplitSoldGroupCandidates(items), 1);

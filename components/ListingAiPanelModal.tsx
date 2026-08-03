@@ -17,7 +17,7 @@ interface Props {
   onApply: (patch: Pick<InventoryItem, 'marketTitle' | 'marketDescription'>) => void | Promise<void>;
 }
 
-const ListingAiPanelModal: React.FC<Props> = ({ item, onClose, onApply }) => {
+const ListingAiPanelModal: React.FC<Props> = ({ item, allItems, onClose, onApply }) => {
   const [title, setTitle] = useState(item.marketTitle?.trim() || item.name || '');
   const [description, setDescription] = useState(item.marketDescription || '');
   const [ownerHints, setOwnerHints] = useState<string | null>(null);

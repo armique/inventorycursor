@@ -1,11 +1,17 @@
 /**
  * Per-category "reinvest budget": net cash a component category has generated since a season
- * baseline (sold − bought), i.e. how much of that category's own money is free to put back into
- * buying more of it. Pure function over `items` — recomputes on every call, so it's always live.
+ * baseline (sold − bought). Attributed PC/bundle part sells credit the part category; lump-sum
+ * PC sales without part prices stay in Other (and are surfaced so the UI can explain).
  */
 import type { InventoryItem } from '../types';
 import { isRealizedDisposal } from './itemDisposition';
-import { roundMoney, shouldSkipContainerForPurchaseCogs, shouldSkipForAggregatedSaleLine } from '../services/financialAggregation';
+import {
+  getChildren,
+  getParentContainer,
+  roundMoney,
+  shouldSkipContainerForPurchaseCogs,
+  shouldSkipForAggregatedSaleLine,
+} from '../services/financialAggregation';
 import { extractPrimaryComponentKey, type ComponentCategory } from './componentKeyExtractor';
 import { COMPONENT_CATEGORY_LABELS } from './reinvestAnalysis';
 
@@ -19,6 +25,13 @@ export type CategoryBudget = {
   budget: number;
   buyCount: number;
   sellCount: number;
+};
+
+export type CategoryBudgetsResult = {
+  budgets: CategoryBudget[];
+  /** € from sold PCs/bundles that had no per-part sell prices — credited only to Other. */
+  unattributedPcSold: number;
+  unattributedPcCount: number;
 };
 
 /** Meteorological start of the current summer (Jun 1) — last year's if we haven't hit it yet. */
@@ -38,6 +51,13 @@ export function computeCategoryBudgets(
   items: InventoryItem[],
   sinceDate: string = getSeasonStartDate(),
 ): CategoryBudget[] {
+  return computeCategoryBudgetsDetailed(items, sinceDate).budgets;
+}
+
+export function computeCategoryBudgetsDetailed(
+  items: InventoryItem[],
+  sinceDate: string = getSeasonStartDate(),
+): CategoryBudgetsResult {
   const buckets = new Map<CategoryBudgetKey, { bought: number; sold: number; buyCount: number; sellCount: number }>();
   const ensure = (key: CategoryBudgetKey) => {
     let b = buckets.get(key);
@@ -47,6 +67,11 @@ export function computeCategoryBudgets(
     }
     return b;
   };
+
+  /** Containers whose children already took the sold € into part categories. */
+  const containersAttributed = new Set<string>();
+  let unattributedPcSold = 0;
+  let unattributedPcCount = 0;
 
   for (const item of items) {
     if (item.isDraft) continue;
@@ -61,19 +86,51 @@ export function computeCategoryBudgets(
       }
     }
 
+    // Parts inside a sold PC/bundle with their own sell price → credit the part category
+    // (even when status stays IN_COMPOSITION and would normally be skipped).
+    if (!item.isBundle && !item.isPC) {
+      const parent = getParentContainer(item, items);
+      const sell = Number(item.sellPrice) || 0;
+      if (parent && (parent.isPC || parent.isBundle) && isRealizedDisposal(parent) && sell > 0) {
+        const sellDate = item.sellDate || parent.sellDate;
+        if (sellDate && sellDate >= sinceDate) {
+          const partCat = categoryForBudget(item);
+          const b = ensure(partCat);
+          b.sold = roundMoney(b.sold + sell);
+          b.sellCount += 1;
+          containersAttributed.add(parent.id);
+        }
+        continue;
+      }
+    }
+
     if (isRealizedDisposal(item) && !shouldSkipForAggregatedSaleLine(item, items)) {
       const sell = Number(item.sellPrice) || 0;
-      if (sell > 0 && item.sellDate && item.sellDate >= sinceDate) {
-        const b = ensure(cat);
-        b.sold = roundMoney(b.sold + sell);
-        b.sellCount += 1;
+      if (!(sell > 0 && item.sellDate && item.sellDate >= sinceDate)) continue;
+
+      if ((item.isPC || item.isBundle) && containersAttributed.has(item.id)) {
+        // Part sells already counted — do not double-count the shell total into Other.
+        continue;
       }
+
+      if (item.isPC || item.isBundle) {
+        const children = getChildren(item, items);
+        const anyAttributed = children.some((c) => (Number(c.sellPrice) || 0) > 0);
+        if (!anyAttributed) {
+          unattributedPcSold = roundMoney(unattributedPcSold + sell);
+          unattributedPcCount += 1;
+        }
+      }
+
+      const b = ensure(cat);
+      b.sold = roundMoney(b.sold + sell);
+      b.sellCount += 1;
     }
   }
 
-  const out: CategoryBudget[] = [];
+  const budgets: CategoryBudget[] = [];
   for (const [key, b] of buckets) {
-    out.push({
+    budgets.push({
       key,
       label: key === 'other' ? 'Other' : COMPONENT_CATEGORY_LABELS[key],
       bought: b.bought,
@@ -83,5 +140,7 @@ export function computeCategoryBudgets(
       sellCount: b.sellCount,
     });
   }
-  return out.sort((a, b) => b.budget - a.budget);
+  budgets.sort((a, b) => b.budget - a.budget);
+
+  return { budgets, unattributedPcSold, unattributedPcCount };
 }

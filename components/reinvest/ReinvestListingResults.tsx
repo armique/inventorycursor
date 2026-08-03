@@ -54,6 +54,24 @@ const ReinvestListingResults: React.FC<Props> = ({ query, marketplace, maxPrice 
       ) : !state.items.length ? (
         <p className="p-4 text-xs font-semibold text-slate-400">No listings found under €{maxPrice ?? '—'}.</p>
       ) : (
+        <>
+          {maxPrice != null && state.items.length > 0 && (() => {
+            const prices = state.items.map((i) => i.price ?? i.total).filter((n): n is number => typeof n === 'number' && n > 0);
+            if (!prices.length) return null;
+            const avg = prices.reduce((a, b) => a + b, 0) / prices.length;
+            const under = prices.filter((p) => p <= maxPrice).length;
+            return (
+              <p className="px-3 py-2 text-[10px] font-semibold text-slate-600 bg-slate-50 border-b border-slate-100">
+                Market now: avg {formatEURPrefix(avg)} · {under}/{prices.length} at or under your max buy{' '}
+                {formatEURPrefix(maxPrice)}
+                {avg > maxPrice * 1.1
+                  ? ' — market runs hotter than your cap; wait or lower margin target.'
+                  : avg < maxPrice * 0.9
+                    ? ' — room to buy under your cap.'
+                    : '.'}
+              </p>
+            );
+          })()}
         <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
           {state.items.map((item) => (
             <a
@@ -85,6 +103,7 @@ const ReinvestListingResults: React.FC<Props> = ({ query, marketplace, maxPrice 
             </a>
           ))}
         </div>
+        </>
       )}
     </div>
   );

@@ -192,6 +192,21 @@ export function buildRamKitSpecs(kit: RamKitInfo): Record<string, string> {
 }
 
 /**
+ * Force Modules / GB per Stick / Kit Capacity from name+specs kit detection.
+ * Kit Capacity always = modules × gbPerStick (total volume).
+ */
+export function applyRamKitToSpecs(
+  name: string,
+  specs: Record<string, string | number> | undefined,
+  options?: { sourceLine?: string },
+): Record<string, string | number> {
+  const base: Record<string, string | number> = { ...(specs || {}) };
+  const kit = resolveRamKitInfo(name, { sourceLine: options?.sourceLine, specs: base });
+  if (!kit) return base;
+  return { ...base, ...buildRamKitSpecs(kit) };
+}
+
+/**
  * Split a bulk line into purchase quantity vs product name.
  * Purchase qty is always the leading "Nx …". Everything else (model -8X, mid-line 2x8GB kits) is ignored for qty.
  * "3x Crucial 2x8GB" → qty 3, name "Crucial 2x8GB"

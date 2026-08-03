@@ -752,8 +752,8 @@ const ListingStudioModal: React.FC<Props> = ({
     try {
       const url = thumbs[entry.id] || (await resolveProductCardImageUrl(entry));
       const prepared = await resolveUrlForInventoryMainPhoto(url, item.id, entry);
-      const merged = normalizeImageList([prepared, item.imageUrl, ...(item.imageUrls || [])]);
-      await persistPatch({ imageUrl: merged[0], imageUrls: merged });
+      const merged = normalizeImageList([prepared, ...getItemUserPhotoUrls(item)]);
+      await persistPatch({ imageUrl: merged[0] || prepared, imageUrls: merged });
       setSelectedOnItem((prev) => ({ ...prev, [entry.id]: prepared }));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not set main photo');
@@ -781,7 +781,7 @@ const ListingStudioModal: React.FC<Props> = ({
       }
       const url = thumbs[entry.id] || (await resolveProductCardImageUrl(entry));
       const prepared = await resolveUrlForInventoryMainPhoto(url, item.id, entry);
-      const merged = normalizeImageList([item.imageUrl, ...(item.imageUrls || []), prepared]);
+      const merged = normalizeImageList([...getItemUserPhotoUrls(item), prepared]);
       await persistPatch({ imageUrl: merged[0] || '', imageUrls: merged });
       setSelectedOnItem((prev) => ({ ...prev, [entry.id]: prepared }));
       if (!thumbs[entry.id]) setThumbs((prev) => ({ ...prev, [entry.id]: url }));
@@ -1047,7 +1047,17 @@ const ListingStudioModal: React.FC<Props> = ({
                 className={ADD_FLOW_INPUT}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                onBlur={() => void persistPatch({ name: name.trim() || item.name })}
+                onBlur={(e) => {
+                  const nextName = e.currentTarget.value.trim() || item.name;
+                  setName(nextName);
+                  void persistPatch({ name: nextName });
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    (e.target as HTMLInputElement).blur();
+                  }
+                }}
               />
               <div className="flex items-center gap-1.5">
                 <ItemAccessoryToggles
@@ -1066,7 +1076,7 @@ const ListingStudioModal: React.FC<Props> = ({
               aria-expanded={mobileDetailsOpen}
             >
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">
-                Inventory · Specs · purchase
+                Specs · purchase
                 {Object.keys(specs).length > 0 ? ` · ${Object.keys(specs).length}` : ''}
               </span>
               <span className="text-[10px] font-bold text-slate-400">
@@ -1173,60 +1183,9 @@ const ListingStudioModal: React.FC<Props> = ({
 
             <section>
               <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
-                Inventory
+                Details
               </h4>
               <div className="space-y-1.5 text-[11px]">
-                <div className="flex flex-wrap gap-1">
-                  {(
-                    [
-                      ItemStatus.IN_STOCK,
-                      ItemStatus.ORDERED,
-                      ItemStatus.SOLD,
-                      ItemStatus.TRADED,
-                      ItemStatus.GIFTED,
-                      ItemStatus.IN_COMPOSITION,
-                    ] as ItemStatus[]
-                  ).map((st) => (
-                    <button
-                      key={st}
-                      type="button"
-                      onClick={() => {
-                        setStatus(st);
-                        const patch: Partial<InventoryItem> = { status: st };
-                        if (
-                          st === ItemStatus.SOLD ||
-                          st === ItemStatus.TRADED ||
-                          st === ItemStatus.GIFTED
-                        ) {
-                          const nextSellDate = sellDate || new Date().toISOString().split('T')[0];
-                          setSellDate(nextSellDate);
-                          patch.sellDate = nextSellDate;
-                        }
-                        if (st === ItemStatus.TRADED) {
-                          setPaymentType('Trade');
-                          patch.paymentType = 'Trade';
-                        }
-                        if (st === ItemStatus.GIFTED) {
-                          setPaymentType('Gift');
-                          patch.paymentType = 'Gift';
-                        }
-                        if (st === ItemStatus.IN_COMPOSITION && !parentContainerId && openContainers[0]) {
-                          setParentContainerId(openContainers[0].id);
-                          patch.parentContainerId = openContainers[0].id;
-                        }
-                        void persistPatch(patch);
-                      }}
-                      className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide border ${
-                        status === st
-                          ? 'bg-slate-900 text-white border-slate-900'
-                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                      }`}
-                    >
-                      {st}
-                    </button>
-                  ))}
-                </div>
-
                 <div className="grid grid-cols-2 gap-1.5">
                   <label className="block space-y-0.5">
                     <span className="text-[9px] font-black uppercase text-slate-400">Category</span>

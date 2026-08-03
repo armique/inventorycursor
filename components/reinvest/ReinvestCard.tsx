@@ -42,43 +42,21 @@ const CONFIDENCE_DOT: Record<string, string> = {
 };
 
 const CATEGORY_ICON: Record<string, { Icon: LucideIcon; bg: string; fg: string }> = {
-  gpu: { Icon: Gamepad2, bg: 'bg-violet-100', fg: 'text-violet-700' },
-  cpu: { Icon: Cpu, bg: 'bg-blue-100', fg: 'text-blue-700' },
-  ram: { Icon: Layers, bg: 'bg-violet-100', fg: 'text-violet-700' },
-  storage: { Icon: Database, bg: 'bg-emerald-100', fg: 'text-emerald-700' },
-  motherboard: { Icon: CircuitBoard, bg: 'bg-blue-100', fg: 'text-blue-700' },
-  psu: { Icon: Zap, bg: 'bg-amber-100', fg: 'text-amber-700' },
-  case: { Icon: Box, bg: 'bg-slate-100', fg: 'text-slate-600' },
-  cooler: { Icon: Wind, bg: 'bg-sky-100', fg: 'text-sky-700' },
+  gpu: { Icon: Gamepad2, bg: 'bg-[#eef2ff]', fg: 'text-[#4338ca]' },
+  cpu: { Icon: Cpu, bg: 'bg-[#eff6ff]', fg: 'text-[#1d4ed8]' },
+  ram: { Icon: Layers, bg: 'bg-[#f5f3ff]', fg: 'text-[#6d28d9]' },
+  storage: { Icon: Database, bg: 'bg-[#ecfdf5]', fg: 'text-[#047857]' },
+  motherboard: { Icon: CircuitBoard, bg: 'bg-[#eff6ff]', fg: 'text-[#1d4ed8]' },
+  psu: { Icon: Zap, bg: 'bg-[#fffbeb]', fg: 'text-[#b45309]' },
+  case: { Icon: Box, bg: 'bg-[#f8fafc]', fg: 'text-[#475569]' },
+  cooler: { Icon: Wind, bg: 'bg-[#f0f9ff]', fg: 'text-[#0369a1]' },
 };
-const DEFAULT_ICON = { Icon: Package, bg: 'bg-slate-100', fg: 'text-slate-600' };
+const DEFAULT_ICON = { Icon: Package, bg: 'bg-[#f8fafc]', fg: 'text-[#475569]' };
 
 function iconForGroup(group: ReinvestGroup | AnchorBundleGroup) {
   const prefix = group.kind === 'bundle' ? group.siblingCategory : group.key.split(':')[0];
   return CATEGORY_ICON[prefix] || DEFAULT_ICON;
 }
-
-function buildNarrative(group: ReinvestGroup | AnchorBundleGroup): string | null {
-  if (!group.soldCount) return null;
-  const parts = [`Sold ${group.soldCount} time${group.soldCount === 1 ? '' : 's'}`];
-  parts.push(group.lossCount === 0 ? 'always at a profit' : `${group.lossCount} at a loss`);
-  let sentence = `${parts.join(', ')}.`;
-  if (group.sellEbayCount > 0 && group.sellEbayCount !== group.sellKaCount) {
-    const faster = group.sellEbayCount > group.sellKaCount ? 'eBay' : 'Kleinanzeigen';
-    sentence += ` Moves fastest on ${faster}.`;
-  }
-  if (group.currentStock < group.targetStock) {
-    sentence += ` You're at ${group.currentStock} of your usual ${group.targetStock} in stock.`;
-  }
-  return sentence;
-}
-
-const StatTile: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
-  <div className="rounded-lg bg-slate-50 px-2.5 py-2">
-    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">{label}</p>
-    <p className="text-sm font-black text-slate-900 flex items-center gap-1">{value}</p>
-  </div>
-);
 
 const ReinvestCard: React.FC<Props> = ({
   group,
@@ -95,7 +73,6 @@ const ReinvestCard: React.FC<Props> = ({
   );
 
   const calc = useMemo(() => computeReinvestPricing(group, fees, marginPct), [group, fees, marginPct]);
-  const narrative = useMemo(() => buildNarrative(group), [group]);
   const { Icon, bg, fg } = iconForGroup(group);
 
   const handleMarginChange = (value: number) => {
@@ -131,183 +108,124 @@ const ReinvestCard: React.FC<Props> = ({
 
   const TrendIcon = group.trend === 'up' ? TrendingUp : group.trend === 'down' ? TrendingDown : Minus;
   const trendColor =
-    group.trend === 'up' ? 'text-emerald-600' : group.trend === 'down' ? 'text-rose-600' : 'text-slate-400';
-
-  const kindBadge =
-    group.kind === 'hypothesis'
-      ? { label: 'Hypothesis', cls: 'bg-amber-100 text-amber-700' }
-      : group.kind === 'bundle'
-        ? { label: 'Bundle', cls: 'bg-violet-100 text-violet-700' }
-        : null;
+    group.trend === 'up' ? 'text-[var(--rx-ok)]' : group.trend === 'down' ? 'text-[var(--rx-bad)]' : 'text-[var(--rx-muted)]';
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white shadow-card hover:shadow-card-hover hover:-translate-y-0.5 transition-all p-4">
+    <div className="rx-panel p-4 flex flex-col h-full transition-shadow hover:shadow-[0_12px_32px_rgba(15,20,25,0.08)]">
       <div className="flex items-start gap-3">
-        <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${bg}`}>
-          <Icon size={18} className={fg} />
+        <span className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${bg}`}>
+          <Icon size={17} className={fg} />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
-            {kindBadge && (
-              <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${kindBadge.cls}`}>
-                {kindBadge.label}
-              </span>
-            )}
-            <span className="text-[11px] text-slate-400 font-semibold flex items-center gap-1">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {group.kind === 'hypothesis' && <span className="rx-pill rx-pill-warn">Idea</span>}
+            {group.kind === 'bundle' && <span className="rx-pill">Kit</span>}
+            <span className="text-[11px] text-[var(--rx-muted)] font-medium flex items-center gap-1">
               <span className={`w-1.5 h-1.5 rounded-full ${CONFIDENCE_DOT[group.confidence]}`} />
-              {group.soldCount > 0 ? `${group.soldCount} sold` : 'AI idea'}
+              {group.soldCount > 0 ? `${group.soldCount} sold` : 'new'}
             </span>
           </div>
-          <h3 className="font-black text-slate-900 text-sm truncate" title={group.label}>
+          <h3 className="font-semibold text-[14px] tracking-tight text-[var(--rx-ink)] truncate mt-0.5" title={group.label}>
             {group.label}
           </h3>
         </div>
         {group.kind !== 'hypothesis' && (
-          <span className="shrink-0 text-[10px] font-black px-2 py-1 rounded-full bg-amber-100 text-amber-700">
-            {group.currentStock} of {group.targetStock}
+          <span className="rx-num shrink-0 text-[12px] font-semibold text-[var(--rx-muted)]">
+            {group.currentStock}/{group.targetStock}
           </span>
         )}
       </div>
 
-      <div className="mt-3 space-y-2.5">
-        {group.verdict === 'restock' && (
-          <p className="text-[10px] font-black uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-1 inline-block">
-            Restock · sells well
+      <div className="mt-4 flex-1 space-y-3">
+        <div>
+          <p className="text-[11px] text-[var(--rx-muted)] font-medium">Buy up to</p>
+          <p className="rx-num text-[26px] font-semibold tracking-tight leading-none mt-1">
+            {calc.suggestedMaxBuy != null ? formatEURPrefix(calc.suggestedMaxBuy) : '—'}
           </p>
-        )}
-        <p className="text-xl font-black text-slate-900">
-          Buy ≤ {calc.suggestedMaxBuy != null ? formatEURPrefix(calc.suggestedMaxBuy) : '—'}
-        </p>
+        </div>
+
         <div className="grid grid-cols-2 gap-2">
-          <div className="rounded-lg bg-slate-50 border border-slate-100 px-2.5 py-2">
-            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">Sell on KA</p>
-            <p className="text-sm font-black text-slate-900">
+          <div className="rounded-xl bg-[var(--rx-soft)] px-2.5 py-2">
+            <p className="text-[10px] text-[var(--rx-muted)] font-medium">KA</p>
+            <p className="rx-num text-[14px] font-semibold mt-0.5">
               {calc.sellKa > 0 ? formatEURPrefix(calc.sellKa) : '—'}
             </p>
-            {calc.sellKaSource === 'derived' && (
-              <p className="text-[9px] font-semibold text-slate-400">from eBay pocket</p>
-            )}
           </div>
-          <div className="rounded-lg bg-slate-50 border border-slate-100 px-2.5 py-2">
-            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">
-              Sell on eBay · {calc.ebayFeePct}% fees
-            </p>
-            <p className="text-sm font-black text-slate-900">
+          <div className="rounded-xl bg-[var(--rx-soft)] px-2.5 py-2">
+            <p className="text-[10px] text-[var(--rx-muted)] font-medium">eBay</p>
+            <p className="rx-num text-[14px] font-semibold mt-0.5">
               {calc.sellEbay > 0 ? formatEURPrefix(calc.sellEbay) : '—'}
             </p>
-            {calc.pocketEbay > 0 && (
-              <p className="text-[9px] font-semibold text-slate-500">
-                → {formatEURPrefix(calc.pocketEbay)} pocket
-                {calc.sellEbaySource === 'derived' ? ' · matched to KA' : ''}
-              </p>
-            )}
           </div>
         </div>
-        <p className="text-xs text-slate-500 font-semibold flex items-center gap-1.5">
-          <TrendIcon size={13} className={trendColor} />~
-          {Math.round(group.avgDaysToSell)}d
-          {group.profitPerDay > 0 && <> · {formatEURPrefix(group.profitPerDay)}/day</>}
-          {group.soldCount > 0 && <> · {group.soldCount} sold</>}
+
+        <p className="text-[12px] text-[var(--rx-muted)] font-medium flex items-center gap-1.5">
+          <TrendIcon size={13} className={trendColor} />
+          <span className="rx-num">~{Math.round(group.avgDaysToSell)}d</span>
+          {group.profitPerDay > 0 && (
+            <span className="rx-num">· {formatEURPrefix(group.profitPerDay)}/day</span>
+          )}
         </p>
       </div>
 
-      <button
-        type="button"
-        onClick={handleFindLots}
-        className="mt-3 w-full py-2.5 rounded-xl bg-slate-900 text-white text-[11px] font-black uppercase tracking-wider"
-      >
+      <button type="button" onClick={handleFindLots} className="rx-cta mt-4">
         Find lots
       </button>
 
       <div className="mt-2 flex items-center justify-between">
-        <button
-          type="button"
-          onClick={handleConfirmPurchase}
-          className="text-[11px] font-bold text-brand-600 hover:text-brand-700"
-        >
-          Already bought it?
+        <button type="button" onClick={handleConfirmPurchase} className="rx-link">
+          Bought it
         </button>
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="text-[11px] font-bold text-slate-400 hover:text-slate-600 flex items-center gap-1"
+          className="text-[12px] font-medium text-[var(--rx-muted)] flex items-center gap-1"
         >
-          Details {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          More {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
         </button>
       </div>
 
       {expanded && (
-        <div className="mt-3 pt-3 border-t border-slate-100 space-y-3">
-          {narrative && <p className="text-xs text-slate-600 leading-relaxed">{narrative}</p>}
-
+        <div className="mt-3 pt-3 border-t border-[var(--rx-line)] space-y-3">
           {group.warning && (
-            <p className="text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 flex items-start gap-1.5">
+            <p className="text-[11px] font-medium text-[var(--rx-warn)] bg-[var(--rx-warn-soft)] rounded-lg px-2.5 py-1.5 flex items-start gap-1.5">
               <AlertTriangle size={13} className="shrink-0 mt-0.5" /> {group.warning}
             </p>
           )}
-          {group.reasonNote && (
-            <p className="text-[11px] font-semibold text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
-              {group.reasonNote}
-            </p>
-          )}
           {group.seasonalNote && (
-            <p className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 flex items-start gap-1.5">
+            <p className="text-[11px] font-medium text-[var(--rx-ok)] bg-[var(--rx-ok-soft)] rounded-lg px-2.5 py-1.5 flex items-start gap-1.5">
               <Calendar size={13} className="shrink-0 mt-0.5" /> {group.seasonalNote}
             </p>
           )}
 
           {group.soldCount > 0 && (
             <div className="grid grid-cols-3 gap-2">
-              <StatTile label="Avg profit" value={formatEURPrefix(group.allInclAvgProfit)} />
-              <StatTile
-                label="Price range"
-                value={group.sellLow != null && group.sellHigh != null ? `${formatEURPrefix(group.sellLow)}–${formatEURPrefix(group.sellHigh)}` : '—'}
-              />
-              <StatTile
-                label="Trend"
-                value={
-                  <>
-                    <TrendIcon size={13} className={trendColor} />
-                    {group.trend === 'up' ? 'Up' : group.trend === 'down' ? 'Down' : 'Flat'}
-                  </>
-                }
-              />
+              <div className="rounded-lg bg-[var(--rx-soft)] px-2 py-1.5">
+                <p className="text-[9px] text-[var(--rx-muted)]">Pocket</p>
+                <p className="rx-num text-[13px] font-semibold">{formatEURPrefix(group.allInclAvgProfit)}</p>
+              </div>
+              <div className="rounded-lg bg-[var(--rx-soft)] px-2 py-1.5">
+                <p className="text-[9px] text-[var(--rx-muted)]">Range</p>
+                <p className="rx-num text-[12px] font-semibold truncate">
+                  {group.sellLow != null && group.sellHigh != null
+                    ? `${formatEURPrefix(group.sellLow)}–${formatEURPrefix(group.sellHigh)}`
+                    : '—'}
+                </p>
+              </div>
+              <div className="rounded-lg bg-[var(--rx-soft)] px-2 py-1.5">
+                <p className="text-[9px] text-[var(--rx-muted)]">Trend</p>
+                <p className="text-[12px] font-semibold flex items-center gap-1">
+                  <TrendIcon size={12} className={trendColor} />
+                  {group.trend === 'up' ? 'Up' : group.trend === 'down' ? 'Down' : 'Flat'}
+                </p>
+              </div>
             </div>
           )}
 
-          <p className="text-[11px] font-semibold text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
-            {calc.advice}
-          </p>
-
-          <table className="w-full text-[11px]">
-            <tbody>
-              <tr>
-                <td className="text-slate-400 font-semibold py-0.5">Kleinanzeigen history</td>
-                <td className="text-right font-bold text-slate-700 py-0.5">
-                  {group.sellKaCount > 0
-                    ? `${group.sellKaCount} sold · avg ${formatEURPrefix(group.sellKaMedian!)}`
-                    : calc.sellKaSource === 'derived'
-                      ? `suggested ${formatEURPrefix(calc.sellKa)}`
-                      : 'no data'}
-                </td>
-              </tr>
-              <tr>
-                <td className="text-slate-400 font-semibold py-0.5">eBay history (list)</td>
-                <td className="text-right font-bold text-slate-700 py-0.5">
-                  {group.sellEbayCount > 0
-                    ? `${group.sellEbayCount} sold · avg ${formatEURPrefix(group.sellEbayMedian!)}`
-                    : calc.sellEbaySource === 'derived'
-                      ? `suggested ${formatEURPrefix(calc.sellEbay)} after ${calc.ebayFeePct}% fees`
-                      : 'no data'}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-
           <div>
-            <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">
-              <span>Target margin</span>
-              <span className="text-slate-900">{marginPct}%</span>
+            <div className="flex items-center justify-between text-[11px] font-medium text-[var(--rx-muted)] mb-1">
+              <span>Margin</span>
+              <span className="rx-num text-[var(--rx-ink)]">{marginPct}%</span>
             </div>
             <input
               type="range"
@@ -316,55 +234,34 @@ const ReinvestCard: React.FC<Props> = ({
               step={5}
               value={marginPct}
               onChange={(e) => handleMarginChange(Number(e.target.value))}
-              className="w-full accent-brand-500"
+              className="w-full accent-[var(--rx-ink)]"
             />
-            <div className="grid grid-cols-2 gap-2 text-[11px] mt-2">
-              <div className="rounded-lg bg-slate-50 px-2 py-1.5">
-                <p className="font-black text-slate-400 uppercase tracking-wider text-[9px]">
-                  KA @ {calc.sellKa > 0 ? formatEURPrefix(calc.sellKa) : '—'}
-                </p>
-                {calc.ka ? (
-                  <p className="font-bold text-slate-800">+{formatEURPrefix(calc.ka.netProfit)} net</p>
-                ) : (
-                  <p className="text-slate-400">no data</p>
-                )}
-              </div>
-              <div className="rounded-lg bg-slate-50 px-2 py-1.5">
-                <p className="font-black text-slate-400 uppercase tracking-wider text-[9px]">
-                  eBay @ {calc.sellEbay > 0 ? formatEURPrefix(calc.sellEbay) : '—'}
-                </p>
-                {calc.ebay ? (
-                  <p className="font-bold text-slate-800">
-                    +{formatEURPrefix(calc.ebay.netProfit)} net · {formatEURPrefix(calc.ebay.pocket)} pocket
-                  </p>
-                ) : (
-                  <p className="text-slate-400">no data</p>
-                )}
-              </div>
-            </div>
           </div>
 
-          <div className="flex gap-1.5">
+          <div className="rx-seg w-full">
             <button
               type="button"
-              onClick={() => handleSwitchMarket('ebay')}
-              className={`flex-1 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider ${
-                activeMarket === 'ebay' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'
-              }`}
+              aria-pressed={activeMarket === 'kleinanzeigen'}
+              className="flex-1"
+              onClick={() => handleSwitchMarket('kleinanzeigen')}
             >
-              eBay.de
+              KA
             </button>
             <button
               type="button"
-              onClick={() => handleSwitchMarket('kleinanzeigen')}
-              className={`flex-1 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider ${
-                activeMarket === 'kleinanzeigen' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'
-              }`}
+              aria-pressed={activeMarket === 'ebay'}
+              className="flex-1"
+              onClick={() => handleSwitchMarket('ebay')}
             >
-              Kleinanzeigen
+              eBay
             </button>
           </div>
-          <ReinvestListingResults query={group.label} marketplace={activeMarket} maxPrice={calc.suggestedMaxBuy ?? undefined} />
+
+          <ReinvestListingResults
+            query={group.label}
+            marketplace={activeMarket}
+            maxPrice={calc.suggestedMaxBuy ?? undefined}
+          />
         </div>
       )}
     </div>

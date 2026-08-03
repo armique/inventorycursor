@@ -12,8 +12,9 @@ import {
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, TaxMode, BulkImportRecord } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
-import { computeItemProfitBeforeOverhead, getChildren, getItemDisplayFeeAmount, getItemDisplayShippingAmount, getSoldContainerDisplayTotals, shouldHideContainerChildInList, containerOrChildMatchesSearch } from '../services/financialAggregation';
+import { computeItemProfitBeforeOverhead, getChildren, getItemDisplayFeeAmount, getItemDisplayShippingAmount, getSoldContainerDisplayTotals, shouldHideContainerChildInList, containerOrChildMatchesSearch, shouldSurfaceSoldContainerPartInList, soldContainerPartDispositionDate, matchesInventoryCategoryPin, inventorySubcategoryAliasesMatch } from '../services/financialAggregation';
 import { itemMatchesSalePlatformFilter, isMissingExplicitSalePlatform, MISSING_PLATFORM_FILTER, SALE_PLATFORM_OPTIONS, formatItemSalePlatform, formatSalePlatformLabel } from '../utils/salePlatform';
+import { expandUpdatesWithContainerSaleMeta } from '../utils/containerSaleCascade';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { getCompatibleItemsForItem } from '../services/compatibility';
 import { generateKleinanzeigenCSV, generateEbayCSV } from '../services/ebayCsvService';
@@ -25,7 +26,7 @@ import {
   itemMatchesAmountFilter,
   amountFilterSummary,
 } from '../utils/inventoryAmountFilter';
-import { cycleInventoryItemPresence, getItemPresenceCycleState, getItemUserPhotoCount, normalizeImageList, prepareInventoryImagesForStorage } from '../utils/imageImport';
+import { cycleInventoryItemPresence, getItemPresenceCycleState, getItemUserPhotoCount, getItemUserPhotoUrls, normalizeImageList, prepareInventoryImagesForStorage } from '../utils/imageImport';
 import { photoQcSummary } from '../utils/photoQc';
 import { exportInventoryToExcel } from '../services/excelExportService';
 import { getRecentItemIds, addRecentItemId } from '../services/recentItemsService';
@@ -72,6 +73,12 @@ import {
   countProductCardsByItemId,
 } from '../services/productCardGallery';
 import ItemAccessoryToggles from './ItemAccessoryToggles';
+import ListingPrepChecklistBar from './ListingPrepChecklistBar';
+import {
+  canMarkSaleReady,
+  listingPrepMissingLabel,
+  getListingPrepChecklist,
+} from '../utils/listingPrepChecklist';
 
 const ebaySoldSearchUrl = (query: string) =>
   `https://www.ebay.de/sch/i.html?_nkw=${encodeURIComponent(query)}&LH_Sold=1&LH_Complete=1`;
@@ -102,14 +109,19 @@ import { loadEbayOrderIndex } from '../services/ebayOrderIndex';
 import { findMatchingOrdersForItem, type EbayOrderMatch } from '../utils/ebayOrderMatch';
 import { applyEbayOrderMatchToItem } from '../utils/applyEbayOrderMatch';
 import ContainerMembershipBadge from './ContainerMembershipBadge';
-import { buildContainerTitle } from '../utils/buildTitle';
+import { buildContainerTitle, withRebuiltContainerTitle } from '../utils/buildTitle';
 import { countEqualSplitSoldGroupCandidates } from '../utils/suggestEqualSplitSoldGroups';
+import { applyRetroComposeToInventory, findOrphanSoldContainerShellIds } from '../utils/retroComposeApply';
+import { filterPartsAvailableForCompose } from '../utils/containerMembershipInvariants';
 import { pickSpecsAiNameVendorUpdates } from '../utils/applySpecsAiResult';
+import { applyRamKitToSpecs } from '../utils/ramKitParse';
+import { listingAccessoriesReady } from '../utils/itemAccessoryToggles';
 import {
   buildContainersById,
   buildContainerByChildId,
   getContainerKind,
   isContainerMember,
+  normalizeExclusiveContainerFlags,
   resolveParentContainer,
 } from '../utils/containerMembership';
 import { resolveTradeReceivedItems, resolveTradeSourceItem } from '../utils/tradeLinks';
@@ -322,12 +334,51 @@ function toggleSpecFilterSelection(
   return next;
 }
 
+import { resolveCategoryFromHardwareType } from './AddCategorySubcategoryPicker';
+
 const DEFAULT_QUICK_CATEGORY_PINS: QuickCategoryPin[] = [
   { id: quickCategoryPinId('Components', 'Processors'), label: 'CPU', category: 'Components', subCategory: 'Processors' },
   { id: quickCategoryPinId('Components', 'Graphics Cards'), label: 'GPU', category: 'Components', subCategory: 'Graphics Cards' },
   { id: quickCategoryPinId('Components', 'Motherboards'), label: 'Motherboards', category: 'Components', subCategory: 'Motherboards' },
   { id: quickCategoryPinId('Components', 'Storage (SSD/HDD)'), label: 'SSD/HDD', category: 'Components', subCategory: 'Storage (SSD/HDD)' },
 ];
+
+/** Keep pins pointed at the live subcategory name (e.g. Graphics Cards → GPU). */
+function resolveQuickCategoryPinsAgainstCatalog(
+  pins: QuickCategoryPin[],
+  categories: Record<string, string[]>
+): QuickCategoryPin[] {
+  return pins.map((pin) => {
+    const hwType =
+      pin.label === 'GPU' ||
+      pin.subCategory === 'Graphics Cards' ||
+      pin.subCategory === 'Graphic Cards' ||
+      pin.subCategory === 'GPU'
+        ? 'GPU'
+        : pin.label === 'CPU' || pin.subCategory === 'Processors' || pin.subCategory === 'CPU'
+          ? 'CPU'
+          : null;
+    if (!hwType) return pin;
+    const resolved = resolveCategoryFromHardwareType(hwType, categories);
+    if (!resolved.category || !resolved.subCategory) return pin;
+    // Ignore Components[0] fallback when Settings has no Processors/CPU (or GPU) entry —
+    // otherwise the CPU pin silently filters Graphics Cards / Cases and shows 0 CPUs.
+    const resolvedIsCorrectFamily =
+      hwType === 'CPU'
+        ? inventorySubcategoryAliasesMatch(resolved.subCategory, 'CPU')
+        : hwType === 'GPU'
+          ? inventorySubcategoryAliasesMatch(resolved.subCategory, 'GPU')
+          : true;
+    if (!resolvedIsCorrectFamily) return pin;
+    if (resolved.category === pin.category && resolved.subCategory === pin.subCategory) return pin;
+    return {
+      ...pin,
+      id: quickCategoryPinId(resolved.category, resolved.subCategory),
+      category: resolved.category,
+      subCategory: resolved.subCategory,
+    };
+  });
+}
 
 interface SortConfig {
   key: string;
@@ -665,6 +716,20 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
           item.status === ItemStatus.IN_COMPOSITION;
       } else if (statusFilter === 'SOLD') {
         matchesStatus = isRealizedDisposal(item);
+        // Parts inside a sold PC/bundle stay IN_COMPOSITION; surface them when the user
+        // pins their category (Components → GPU) so build sales are not invisible.
+        if (
+          !matchesStatus &&
+          shouldSurfaceSoldContainerPartInList(
+            item,
+            items,
+            statusFilter,
+            categoryFilter,
+            subCategoryFilter
+          )
+        ) {
+          matchesStatus = true;
+        }
       } else if (statusFilter === 'DRAFTS') {
         matchesStatus = item.isDraft === true;
       } else {
@@ -700,11 +765,21 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
     // Bundle/PC/mixed components always nest under the parent — never as top-level rows.
     // Search still surfaces the parent when a child matches.
     // Dedicated bulk-batch view lists every stamped member (including sold / in-composition kids).
+    // Exception: SOLD + category pin (e.g. Components/GPU) lists matching parts from sold builds.
     if (!bulkBatchActive) {
-      if (hiddenChildIds) {
-        if (!item.isBundle && !item.isPC && hiddenChildIds.has(item.id)) return false;
-      } else if (shouldHideContainerChildInList(item, items)) {
-        return false;
+      const isHiddenChild = hiddenChildIds
+        ? !item.isBundle && !item.isPC && hiddenChildIds.has(item.id)
+        : shouldHideContainerChildInList(item, items);
+      if (isHiddenChild) {
+        const surface =
+          shouldSurfaceSoldContainerPartInList(
+            item,
+            items,
+            statusFilter,
+            categoryFilter,
+            subCategoryFilter
+          );
+        if (!surface) return false;
       }
     }
     // Orphan "in composition" rows (no parent container) respect the visibility toggle.
@@ -714,12 +789,7 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
     // contain "MT". Clear the pin (or pick All) to search across categories.
     // Dedicated bulk-batch view also ignores leftover category pins.
     if (!bulkBatchActive && (categoryFilter !== 'ALL' || subCategoryFilter)) {
-      const matchParentAndSub =
-        categoryFilter !== 'ALL' &&
-        item.category === categoryFilter &&
-        (!subCategoryFilter || item.subCategory === subCategoryFilter);
-      const matchSubAsTopLevel = subCategoryFilter && item.category === subCategoryFilter;
-      if (!matchParentAndSub && !matchSubAsTopLevel) return false;
+      if (!matchesInventoryCategoryPin(item, categoryFilter, subCategoryFilter)) return false;
     }
 
     if (searchActive) {
@@ -732,8 +802,19 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
 
     // Spec and date filters are browsing aids — skip them during search so a suggestion click always reveals the row.
     if (!searchActive && timeFilter !== 'ALL') {
-      const isSalesItem = isRealizedDisposal(item);
-      const dateStr = isSalesItem ? item.sellDate : item.buyDate;
+      const surfacedSoldPart = shouldSurfaceSoldContainerPartInList(
+        item,
+        items,
+        statusFilter,
+        categoryFilter,
+        subCategoryFilter
+      );
+      const isSalesItem = isRealizedDisposal(item) || surfacedSoldPart;
+      const dateStr = isSalesItem
+        ? surfacedSoldPart
+          ? soldContainerPartDispositionDate(item, items)
+          : item.sellDate
+        : item.buyDate;
       if (!dateStr) return true;
       const itemDate = new Date(dateStr);
       if (itemDate < dateRange.start || itemDate > dateRange.end) return false;
@@ -879,6 +960,22 @@ const InventoryList: React.FC<Props> = ({
     const saved = loadState<QuickCategoryPin[] | null>('quick_category_pins', null);
     return saved && saved.length > 0 ? saved : DEFAULT_QUICK_CATEGORY_PINS;
   });
+
+  // After Settings renames (Graphics Cards → GPU), retarget saved pins to the live subcategory.
+  useEffect(() => {
+    setQuickCategoryPins((prev) => {
+      const next = resolveQuickCategoryPinsAgainstCatalog(prev, categories);
+      const same =
+        next.length === prev.length &&
+        next.every(
+          (p, i) =>
+            p.id === prev[i].id &&
+            p.category === prev[i].category &&
+            p.subCategory === prev[i].subCategory
+        );
+      return same ? prev : next;
+    });
+  }, [categories]);
   const [showQuickCategoryPicker, setShowQuickCategoryPicker] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>(() => loadState<string>('category_filter', 'ALL'));
   const [subCategoryFilter, setSubCategoryFilter] = useState<string>(() => loadState<string>('subcategory_filter', ''));
@@ -1035,6 +1132,7 @@ const InventoryList: React.FC<Props> = ({
   const [showAISpecsModal, setShowAISpecsModal] = useState(false);
   const [showBulkAddPhotosModal, setShowBulkAddPhotosModal] = useState(false);
   const [addPhotosTargetIds, setAddPhotosTargetIds] = useState<string[]>([]);
+  const [addPhotosAutoEbay, setAddPhotosAutoEbay] = useState(false);
   const [geminiCardItem, setGeminiCardItem] = useState<InventoryItem | null>(null);
   const [bgCardJobs, setBgCardJobs] = useState<ProductCardBgJob[]>([]);
   const bgCardNotifiedRef = useRef<Set<string>>(new Set());
@@ -1572,6 +1670,37 @@ const InventoryList: React.FC<Props> = ({
   const [showRetroBundle, setShowRetroBundle] = useState(false);
   const [showEqualSplitGroups, setShowEqualSplitGroups] = useState(false);
   const [equalSplitIgnoreRev, setEqualSplitIgnoreRev] = useState(0);
+  const orphanShellCleanupDoneRef = useRef(false);
+  const dualFlagCleanupDoneRef = useRef(false);
+
+  // One-time: trash sold PC/bundle shells that still list parts now owned by another
+  // container (second historical compose). Stops double revenue on the dashboard.
+  useEffect(() => {
+    if (orphanShellCleanupDoneRef.current || items.length === 0) return;
+    const ids = findOrphanSoldContainerShellIds(items);
+    if (ids.length === 0) {
+      orphanShellCleanupDoneRef.current = true;
+      return;
+    }
+    orphanShellCleanupDoneRef.current = true;
+    onUpdate([], ids);
+    setToast(
+      `Removed ${ids.length} duplicate sold PC/bundle shell${ids.length === 1 ? '' : 's'} that were double-counting the same sale`
+    );
+    setTimeout(() => setToast(null), 4200);
+  }, [items, onUpdate]);
+
+  // One-time: clear isBundle on Gaming PCs that wrongly have both badges (legacy historical compose).
+  useEffect(() => {
+    if (dualFlagCleanupDoneRef.current || items.length === 0) return;
+    const fixed = items
+      .filter((i) => i.isPC && i.isBundle)
+      .map((i) => normalizeExclusiveContainerFlags(i));
+    dualFlagCleanupDoneRef.current = true;
+    if (fixed.length === 0) return;
+    onUpdate(fixed, undefined, { skipUndo: true, skipActionLog: true, skipContainerSync: true });
+  }, [items, onUpdate]);
+
   const [recalcTarget, setRecalcTarget] = useState<InventoryItem | null>(null);
   const [showComposeType, setShowComposeType] = useState(false);
   const [quickBundleSeed, setQuickBundleSeed] = useState<InventoryItem | null>(null);
@@ -1713,33 +1842,77 @@ const InventoryList: React.FC<Props> = ({
     [categoryFields]
   );
 
+  const handleGenerateListingPrep = useCallback(
+    async (item: InventoryItem) => {
+      if (!item.name?.trim()) {
+        setToast('Enter an item name first');
+        setTimeout(() => setToast(null), 2200);
+        return;
+      }
+      const children = getChildren(item, items);
+      const gate = listingAccessoriesReady(item, children);
+      if (!gate.ok) {
+        setToast(gate.reason || 'Confirm OVP / IO Blende first');
+        setTimeout(() => setToast(null), 3200);
+        return;
+      }
+
+      setListingGenId(item.id);
+      try {
+        const categoryContext = `${item.category || 'Unknown'}${item.subCategory ? ' / ' + item.subCategory : ''}`;
+        const knownKeys = resolveEssentialSpecKeys(item.category || '', item.subCategory, categoryFields);
+        const specsResult = await generateItemSpecs(item.name, categoryContext, knownKeys);
+        let newSpecs = mergeAiSpecsIntoEssential(
+          item.specs,
+          specsResult.specs,
+          item.category || '',
+          item.subCategory,
+          categoryFields,
+        );
+        newSpecs = applyRamKitToSpecs(item.name, newSpecs);
+
+        const withSpecs: InventoryItem = {
+          ...item,
+          specs: newSpecs,
+          specsAiSuggested: Object.keys(newSpecs).length ? { ...newSpecs } : undefined,
+          ...pickSpecsAiNameVendorUpdates(specsResult),
+        };
+
+        const listing = await generateMarketplaceListing(withSpecs, {
+          hasOVP: item.hasOVP,
+          hasIOShield: item.hasIOShield,
+          hasReceipt: item.hasReceipt,
+          aiDescriptionNote: item.aiDescriptionNote,
+          children,
+        });
+
+        onUpdate(
+          [
+            {
+              ...withSpecs,
+              marketTitle: listing.ebayTitle,
+              marketDescription: listing.listingText,
+            },
+          ],
+          undefined,
+          { skipActionLog: true },
+        );
+        setToast('Listing ready · title + description + specs');
+        setTimeout(() => setToast((prev) => (prev?.startsWith('Listing ready') ? null : prev)), 2800);
+      } catch (e: unknown) {
+        console.error('Listing prep generation failed', e);
+        const msg = (e as Error)?.message || 'Failed to generate listing.';
+        setToast(msg.includes('API key') ? 'Add an AI key in .env and restart' : msg.slice(0, 120));
+        setTimeout(() => setToast(null), 3600);
+      } finally {
+        setListingGenId(null);
+      }
+    },
+    [items, categoryFields, onUpdate],
+  );
+
   const handleGenerateListingDescription = async (item: InventoryItem) => {
-    if (!item.name) {
-      alert('Enter an item name first.');
-      return;
-    }
-    setListingGenId(item.id);
-    try {
-      const result = await generateMarketplaceListing(item, {
-        hasOVP: item.hasOVP,
-        hasIOShield: item.hasIOShield,
-        hasReceipt: item.hasReceipt,
-        aiDescriptionNote: item.aiDescriptionNote,
-        children: getChildren(item, items),
-      });
-      const updated: InventoryItem = {
-        ...item,
-        marketTitle: result.ebayTitle,
-        marketDescription: result.listingText,
-      };
-      onUpdate([updated]);
-    } catch (e: any) {
-      console.error('Listing description generation failed', e);
-      const msg = e?.message || 'Failed to generate listing description.';
-      alert(msg.includes('API key') ? `${msg}\n\nAdd an AI key in .env and restart the app.` : msg);
-    } finally {
-      setListingGenId(null);
-    }
+    await handleGenerateListingPrep(item);
   };
 
   const handleCopyListingDescription = async (item: InventoryItem) => {
@@ -1959,14 +2132,19 @@ const InventoryList: React.FC<Props> = ({
   const markReadyForPeriod = useCallback(
     (period: Exclude<TimeFilter, 'ALL'>) => {
       const range = getTimeFilterDateRange(period);
-      const updated = items
+      const inPeriod = items
         .filter(isMarkReadyEligible)
         .filter((i) => !i.saleReady)
-        .filter((i) => itemBuyDateInRange(i, range))
-        .map((i) => ({ ...i, saleReady: true }));
+        .filter((i) => itemBuyDateInRange(i, range));
+      const updated = inPeriod.filter(canMarkSaleReady).map((i) => ({ ...i, saleReady: true }));
+      const skipped = inPeriod.length - updated.length;
       if (!updated.length) {
-        setToast(`No not-ready stock in ${READY_PERIOD_OPTIONS.find((o) => o.id === period)?.label || period}`);
-        setTimeout(() => setToast(null), 2200);
+        setToast(
+          skipped
+            ? `No List Ready yet — ${skipped} need title · description · photos`
+            : `No not-ready stock in ${READY_PERIOD_OPTIONS.find((o) => o.id === period)?.label || period}`,
+        );
+        setTimeout(() => setToast(null), 2800);
         setShowReadyPeriodMenu(false);
         return;
       }
@@ -1974,7 +2152,11 @@ const InventoryList: React.FC<Props> = ({
       setTimeFilter(period);
       setSmartPreset('sale_ready');
       setShowReadyPeriodMenu(false);
-      setToast(`Marked ${updated.length} Ready · ${READY_PERIOD_OPTIONS.find((o) => o.id === period)?.label}`);
+      setToast(
+        skipped
+          ? `List Ready ${updated.length} · skipped ${skipped} (checklist incomplete) · ${READY_PERIOD_OPTIONS.find((o) => o.id === period)?.label}`
+          : `List Ready ${updated.length} · ${READY_PERIOD_OPTIONS.find((o) => o.id === period)?.label}`,
+      );
       setTimeout(() => setToast(null), 2800);
     },
     [items, onUpdate]
@@ -1985,7 +2167,7 @@ const InventoryList: React.FC<Props> = ({
     for (const opt of READY_PERIOD_OPTIONS) {
       const range = getTimeFilterDateRange(opt.id);
       counts[opt.id] = items.filter(
-        (i) => isMarkReadyEligible(i) && !i.saleReady && itemBuyDateInRange(i, range)
+        (i) => canMarkSaleReady(i) && !i.saleReady && itemBuyDateInRange(i, range)
       ).length;
     }
     return counts;
@@ -2012,18 +2194,35 @@ const InventoryList: React.FC<Props> = ({
     return items.filter(item => {
       let matchesStatus = false;
       if (statusFilter === 'ACTIVE') matchesStatus = item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED || item.status === ItemStatus.IN_COMPOSITION;
-      else if (statusFilter === 'SOLD') matchesStatus = isRealizedDisposal(item);
-      else if (statusFilter === 'DRAFTS') matchesStatus = item.isDraft === true;
+      else if (statusFilter === 'SOLD') {
+        matchesStatus = isRealizedDisposal(item);
+        if (
+          !matchesStatus &&
+          shouldSurfaceSoldContainerPartInList(item, items, statusFilter, categoryFilter, subCategoryFilter)
+        ) {
+          matchesStatus = true;
+        }
+      } else if (statusFilter === 'DRAFTS') matchesStatus = item.isDraft === true;
       else matchesStatus = true;
       if (!matchesStatus) return false;
 
       // Optional visibility toggle for orphan "In Composition" items (container children always nest)
-      if (!showInComposition && item.status === ItemStatus.IN_COMPOSITION) return false;
-      if (shouldHideContainerChildInList(item, items)) return false;
+      if (
+        !showInComposition &&
+        item.status === ItemStatus.IN_COMPOSITION &&
+        !shouldSurfaceSoldContainerPartInList(item, items, statusFilter, categoryFilter, subCategoryFilter)
+      ) {
+        return false;
+      }
+      if (shouldHideContainerChildInList(item, items)) {
+        if (
+          !shouldSurfaceSoldContainerPartInList(item, items, statusFilter, categoryFilter, subCategoryFilter)
+        ) {
+          return false;
+        }
+      }
       if (categoryFilter !== 'ALL' || subCategoryFilter) {
-        const matchParentAndSub = categoryFilter !== 'ALL' && item.category === categoryFilter && (!subCategoryFilter || item.subCategory === subCategoryFilter);
-        const matchSubAsTopLevel = subCategoryFilter && item.category === subCategoryFilter;
-        if (!matchParentAndSub && !matchSubAsTopLevel) return false;
+        if (!matchesInventoryCategoryPin(item, categoryFilter, subCategoryFilter)) return false;
       }
       const matchesSearch = item.name.toLowerCase().includes(searchLower) || item.category.toLowerCase().includes(searchLower) || item.vendor?.toLowerCase().includes(searchLower);
       if (!matchesSearch) return false;
@@ -2221,14 +2420,30 @@ const InventoryList: React.FC<Props> = ({
   }, [searchTerm, timeFilter, sortConfig, statusFilter, categoryFilter, subCategoryFilter, salePlatformFilter, salePaymentFilter, amountFilter, specFilters, specRangeFilters, splitView]);
 
   const getRowActivityKey = useCallback(
-    (item: InventoryItem) =>
+    (item: InventoryItem) => {
       // Include editValue (not just which field is being edited) while this row is the one being
       // edited — otherwise the key stays identical across every keystroke, the row's React.memo
       // sees "no change," and the input silently stops updating after the very first keystroke.
       // Include quickBundleSeed so Flags “+” panel open/close re-renders the memoized row
       // (otherwise X / Cancel set state but the inline panel stays mounted).
-      `${editingCell?.itemId === item.id ? `${editingCell.field}:${editValue}` : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${(item.isPC || item.isBundle) && collapsedBundles.has(item.id) ? 'col' : 'exp'}|${quickBundleSeed?.id === item.id ? 'qb' : ''}|${activeBgCardItemIds.has(item.id) ? 'bgcard' : ''}|${itemAiCardCounts[item.id] || 0}|${aiCardRegenConfirmId === item.id ? 'confirm' : ''}`,
-    [editingCell, editValue, listingGenId, parsingSingleId, priceSuggestId, collapsedBundles, quickBundleSeed, activeBgCardItemIds, itemAiCardCounts, aiCardRegenConfirmId]
+      // Nested part buy/sell/name must be in the key too: React.memo compares parent `item` by
+      // reference, so renaming a child (or recalculating only child prices) would otherwise
+      // leave the expanded bundle body showing stale nested UI.
+      let kidsKey = '';
+      if (item.isPC || item.isBundle) {
+        const kids = getChildren(item, items);
+        kidsKey = `|kids:${kids
+          .map(
+            (c) =>
+              `${c.id}:${c.name}:${c.sellPrice ?? ''}:${c.buyPrice ?? ''}:${c.profit ?? ''}:${c.status ?? ''}`,
+          )
+          .join(',')}`;
+      }
+      // Thumb fingerprint: photo *count* alone is not enough (replace/reorder main with same count).
+      const thumb = getItemUserPhotoUrls(item)[0] || '';
+      return `${editingCell?.itemId === item.id ? `${editingCell.field}:${editValue}` : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${(item.isPC || item.isBundle) && collapsedBundles.has(item.id) ? 'col' : 'exp'}|${quickBundleSeed?.id === item.id ? 'qb' : ''}|${activeBgCardItemIds.has(item.id) ? 'bgcard' : ''}|${itemAiCardCounts[item.id] || 0}|${aiCardRegenConfirmId === item.id ? 'confirm' : ''}|lr:${item.saleReady ? 1 : 0}:${(item.marketTitle || '').length}:${(item.marketDescription || '').length}|ph:${getItemUserPhotoCount(item)}:${thumb.slice(-48)}${kidsKey}`;
+    },
+    [editingCell, editValue, listingGenId, parsingSingleId, priceSuggestId, collapsedBundles, quickBundleSeed, activeBgCardItemIds, itemAiCardCounts, aiCardRegenConfirmId, items]
   );
 
   const showFinancials =
@@ -2638,7 +2853,7 @@ const InventoryList: React.FC<Props> = ({
             platformSold: undefined,
             containerSoldDate: undefined,
           };
-      const updatedParent: InventoryItem = {
+      let updatedParent: InventoryItem = {
         ...parent,
         componentIds: remaining.map((p) => p.id),
         buyPrice: buyTotal,
@@ -2647,8 +2862,20 @@ const InventoryList: React.FC<Props> = ({
           .join('\n')
           .slice(0, 2000),
       };
-      onUpdate([updatedParent, restored]);
-      setToast(`Removed “${child.name}” → active inventory · container €${formatEUR(buyTotal)}`);
+      // Drop removed hardware from name/marketTitle so listing AI matches remaining parts.
+      const kind = getContainerKind(updatedParent);
+      if (kind) {
+        updatedParent = withRebuiltContainerTitle(updatedParent, kind, remaining);
+      }
+      if (remaining.length === 0) {
+        onUpdate([restored], [parent.id]);
+        setToast(`Removed “${child.name}” · last part · container removed`);
+      } else {
+        onUpdate([updatedParent, restored]);
+        setToast(
+          `Removed “${child.name}” → active · title updated · €${formatEUR(buyTotal)}`
+        );
+      }
       setTimeout(() => setToast(null), 2400);
     },
     [items, onUpdate]
@@ -2677,22 +2904,16 @@ const InventoryList: React.FC<Props> = ({
         setTimeout(() => setToast(null), 2200);
         return;
       }
-      const preferAufrustkit = /aufrustkit|aufrüstkit|aufrüst[\s-]?kit/i.test(
-        `${container.name} ${container.vendor || ''}`
-      );
-      const title = buildContainerTitle(kind, parts, { preferAufrustkit });
-      if (!title || title === container.name) {
-        setToast(title === container.name ? 'Title already up to date' : 'Could not build a new title');
+      const updated = withRebuiltContainerTitle(container, kind, parts);
+      if (!updated.name || updated.name === container.name) {
+        setToast(
+          updated.name === container.name ? 'Title already up to date' : 'Could not build a new title'
+        );
         setTimeout(() => setToast(null), 2200);
         return;
       }
-      const updated: InventoryItem = {
-        ...container,
-        name: title,
-        marketTitle: title,
-      };
       onUpdate([updated], undefined, { skipUndo: false, flushCloud: true });
-      setToast(`Title rebuilt · ${title}`);
+      setToast(`Title rebuilt · ${updated.name}`);
       setTimeout(() => setToast(null), 2800);
     },
     [items, onUpdate]
@@ -2701,13 +2922,24 @@ const InventoryList: React.FC<Props> = ({
   const createContainerInInventory = useCallback(
     (type: 'pc' | 'bundle' | 'mixed', parts: InventoryItem[]) => {
       if (parts.length === 0) return;
+      const { available, blocked } = filterPartsAvailableForCompose(parts, items);
+      if (blocked.length > 0) {
+        setToast(
+          `${blocked.length} part${blocked.length === 1 ? '' : 's'} already in another PC/bundle — skipped`
+        );
+        setTimeout(() => setToast(null), 2800);
+      }
+      if (available.length === 0) {
+        alert('All selected parts are already inside another PC or bundle.');
+        return;
+      }
       const kind = type === 'pc' ? 'pc' : type === 'bundle' ? 'bundle' : 'mixed';
       const parentId =
         type === 'pc' ? `pc-${Date.now()}` : `bundle-inline-${Date.now()}`;
-      const title = buildContainerTitle(kind, parts);
+      const title = buildContainerTitle(kind, available);
       const buyTotal =
-        Math.round(parts.reduce((s, i) => s + Number(i.buyPrice || 0), 0) * 100) / 100;
-      const defectiveCount = parts.filter((i) => i.isDefective).length;
+        Math.round(available.reduce((s, i) => s + Number(i.buyPrice || 0), 0) * 100) / 100;
+      const defectiveCount = available.filter((i) => i.isDefective).length;
       const parent: InventoryItem = {
         id: parentId,
         name: title,
@@ -2717,24 +2949,24 @@ const InventoryList: React.FC<Props> = ({
         buyDate: todayLocalDateKey(),
         comment1:
           type === 'pc'
-            ? `PC Build (${parts.length} parts).`
+            ? `PC Build (${available.length} parts).`
             : type === 'mixed'
-              ? `Mixed Bundle (${parts.length} items)${defectiveCount ? ` · ${defectiveCount} defekt` : ''}.`
-              : `Bundle (${parts.length} items).`,
-        comment2: parts
+              ? `Mixed Bundle (${available.length} items)${defectiveCount ? ` · ${defectiveCount} defekt` : ''}.`
+              : `Bundle (${available.length} items).`,
+        comment2: available
           .map((i) => `- ${i.name}${i.isDefective ? ' [defekt]' : ''}`)
           .join('\n')
           .slice(0, 2000),
         isPC: type === 'pc',
         isBundle: type !== 'pc',
-        componentIds: parts.map((p) => p.id),
+        componentIds: available.map((p) => p.id),
         vendor:
           type === 'pc' ? 'Custom Build' : type === 'mixed' ? 'Mixed Bundle' : 'PC Bundle',
         marketTitle: title,
-        imageUrl: parts.find((p) => p.imageUrl)?.imageUrl,
+        imageUrl: available.find((p) => p.imageUrl)?.imageUrl,
         presence: 'present',
       };
-      const updatedParts = parts.map((comp) => ({
+      const updatedParts = available.map((comp) => ({
         ...comp,
         status: ItemStatus.IN_COMPOSITION,
         parentContainerId: parentId,
@@ -2750,14 +2982,14 @@ const InventoryList: React.FC<Props> = ({
       });
       setToast(
         type === 'pc'
-          ? `PC created in inventory · ${parts.length} parts`
+          ? `PC created in inventory · ${available.length} parts`
           : type === 'mixed'
-            ? `Mixed Bundle created · ${parts.length} parts`
-            : `Bundle created · ${parts.length} parts`
+            ? `Mixed Bundle created · ${available.length} parts`
+            : `Bundle created · ${available.length} parts`
       );
       setTimeout(() => setToast(null), 2400);
     },
-    [onUpdate]
+    [items, onUpdate]
   );
 
   const focusContainerInList = useCallback(
@@ -2824,7 +3056,10 @@ const InventoryList: React.FC<Props> = ({
       const categoryContext = `${item.category || 'Unknown'}${item.subCategory ? ' / ' + item.subCategory : ''}`;
       const knownKeys = resolveEssentialSpecKeys(item.category || '', item.subCategory, categoryFields);
       const result = await generateItemSpecs(item.name, categoryContext, knownKeys);
-      const newSpecs = mergeAiSpecsIntoEssential(item.specs, result.specs, item.category || '', item.subCategory, categoryFields);
+      const newSpecs = applyRamKitToSpecs(
+        item.name,
+        mergeAiSpecsIntoEssential(item.specs, result.specs, item.category || '', item.subCategory, categoryFields),
+      );
       // Specs parse must not rename standalone items — only the explicit AI title button may.
       const updates: Partial<InventoryItem> = {
         specs: newSpecs,
@@ -2915,15 +3150,49 @@ const InventoryList: React.FC<Props> = ({
   };
 
   const handleCreateRetroBundle = (bundle: InventoryItem, updatedComponents: InventoryItem[]) => {
-     onUpdate([bundle, ...updatedComponents]);
+     const { available, blocked } = filterPartsAvailableForCompose(updatedComponents, items);
+     if (blocked.length > 0 && available.length < 2) {
+       alert(
+         `These parts are already inside another PC/bundle. Remove the duplicate suggestion instead of composing again.`
+       );
+       setShowRetroBundle(false);
+       return;
+     }
+     const components =
+       available.length >= 2
+         ? available.map((c) => ({
+             ...c,
+             status: c.status,
+             parentContainerId: bundle.id,
+           }))
+         : updatedComponents;
+     const nextBundle =
+       available.length >= 2
+         ? {
+             ...bundle,
+             componentIds: available.map((c) => c.id),
+             buyPrice: Math.round(available.reduce((s, i) => s + Number(i.buyPrice || 0), 0) * 100) / 100,
+             sellPrice: Math.round(available.reduce((s, i) => s + Number(i.sellPrice || 0), 0) * 100) / 100,
+           }
+         : bundle;
+     const { nextItems, deleteIds } = applyRetroComposeToInventory(items, nextBundle, components);
+     const changed = nextItems.filter((n) => {
+       const old = items.find((i) => i.id === n.id);
+       return !old || old !== n;
+     });
+     onUpdate(changed, deleteIds);
      setShowRetroBundle(false);
      setSelectedIds([]);
-     setScrollTargetItemId(bundle.id);
+     setScrollTargetItemId(nextBundle.id);
      setCollapsedBundles((prev) => {
        const next = new Set(prev);
-       next.delete(bundle.id);
+       next.delete(nextBundle.id);
        return next;
      });
+     if (deleteIds.length > 0) {
+       setToast(`Grouped — removed ${deleteIds.length} duplicate sold shell${deleteIds.length === 1 ? '' : 's'}`);
+       setTimeout(() => setToast(null), 2800);
+     }
      // Clear any horizontal scroll leftover from the modal / selection bar layout swap.
      requestAnimationFrame(() => {
        for (const ref of [tableContainerRef, activeTableRef, soldTableRef]) {
@@ -2938,6 +3207,7 @@ const InventoryList: React.FC<Props> = ({
   );
 
   const handleApplyRecalc = (updates: Array<{ itemId: string; newSellPrice: number }>) => {
+    const container = recalcTarget;
     const byId = new Map(updates.map((u) => [u.itemId, u.newSellPrice]));
     const updatedItems = items
       .filter((i) => byId.has(i.id))
@@ -2947,8 +3217,28 @@ const InventoryList: React.FC<Props> = ({
         const fee = Number(i.feeAmount) || 0;
         return { ...i, sellPrice: newSellPrice, profit: newSellPrice - buyPrice - fee };
       });
-    onUpdate(updatedItems);
+    const changedCount = updatedItems.filter((i) => {
+      const next = byId.get(i.id)!;
+      const prev = Number(items.find((x) => x.id === i.id)?.sellPrice) || 0;
+      return Math.abs(next - prev) >= 0.005;
+    }).length;
+    onUpdate(updatedItems, undefined, { flushCloud: true, skipActionLog: true });
+    if (container) {
+      setCollapsedBundles((prev) => {
+        if (!prev.has(container.id)) return prev;
+        const next = new Set(prev);
+        next.delete(container.id);
+        return next;
+      });
+      setScrollTargetItemId(container.id);
+    }
     setRecalcTarget(null);
+    setToast(
+      changedCount > 0
+        ? `Component prices updated · ${changedCount} part${changedCount === 1 ? '' : 's'} changed`
+        : 'Component prices already match this split'
+    );
+    setTimeout(() => setToast(null), 2800);
   };
 
   /** SMART-resplit container lot buy cost across current parts (incl. items added later). */
@@ -2984,11 +3274,13 @@ const InventoryList: React.FC<Props> = ({
   );
 
   const handleBulkEditSales = (platform: Platform, payment: PaymentType) => {
-     const updates = items.filter(i => selectedIds.includes(i.id)).map(i => ({
+     const selected = items.filter((i) => selectedIds.includes(i.id)).map((i) => ({
         ...i,
         platformSold: platform,
-        paymentType: payment
+        paymentType: payment,
      }));
+     // Sold PC/bundle selection also stamps every linked part with the same platform.
+     const updates = expandUpdatesWithContainerSaleMeta(selected, items);
      onUpdate(updates);
      setShowBulkSalesEdit(false);
      setSelectedIds([]);
@@ -3002,14 +3294,23 @@ const InventoryList: React.FC<Props> = ({
     if (platform === 'kleinanzeigen.de' && !next.paymentType) {
       next.paymentType = 'Kleinanzeigen (Cash)';
     }
+    const updates =
+      platform && (next.isPC || next.isBundle)
+        ? expandUpdatesWithContainerSaleMeta([next], items)
+        : [next];
     startTransition(() => {
-      onUpdate([next], undefined, {
+      onUpdate(updates, undefined, {
         skipUndo: true,
         skipActionLog: true,
         skipContainerSync: true,
       });
       if (platform) {
-        setToast(`Sold on ${formatSalePlatformLabel(platform)}`);
+        const childCount = updates.length - 1;
+        setToast(
+          childCount > 0
+            ? `Sold on ${formatSalePlatformLabel(platform)} · ${childCount} part${childCount === 1 ? '' : 's'} updated`
+            : `Sold on ${formatSalePlatformLabel(platform)}`
+        );
       }
     });
   };
@@ -3177,6 +3478,17 @@ const InventoryList: React.FC<Props> = ({
               </button>
                 );
               })()}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openAddPhotosModal([item.id], { ebay: true });
+                }}
+                className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 hover:border-sky-300 transition-colors`}
+                title="Parse photos from my eBay listings into this item"
+              >
+                <ShoppingBag size={13} strokeWidth={2.25} />
+              </button>
 
               {(() => {
                 const bgBusy = activeBgCardItemIds.has(item.id);
@@ -3740,28 +4052,31 @@ const InventoryList: React.FC<Props> = ({
                                    : undefined
                                }
                              >
-                               <button
-                                 type="button"
-                                 title={
-                                   item.saleReady
-                                     ? 'Sale ready — watched for delisting / maybe-sold. Click to unwatch.'
-                                     : 'Mark sale ready when photos/specs are done.'
-                                 }
-                                 onClick={() =>
+                               <ListingPrepChecklistBar
+                                 item={item}
+                                 listingBusy={listingGenId === item.id}
+                                 onToast={(msg) => {
+                                   setToast(msg);
+                                   setTimeout(() => setToast(null), 2600);
+                                 }}
+                                 onGenerateListing={() => {
+                                   void handleGenerateListingDescription(item);
+                                 }}
+                                 onOpenPhotos={() => openAddPhotosModal([item.id])}
+                                 onToggleSaleReady={() => {
+                                   if (!item.saleReady && !canMarkSaleReady(item)) {
+                                     const miss = listingPrepMissingLabel(getListingPrepChecklist(item).missing);
+                                     setToast(`List Ready needs: ${miss}`);
+                                     setTimeout(() => setToast(null), 2600);
+                                     return;
+                                   }
                                    onUpdate(
                                      [{ ...item, saleReady: !item.saleReady }],
                                      undefined,
-                                     { skipActionLog: true }
-                                   )
-                                 }
-                                 className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-black uppercase tracking-wide border ${
-                                   item.saleReady
-                                     ? 'bg-violet-50 text-violet-800 border-violet-200'
-                                     : 'bg-slate-50 text-slate-400 border-slate-200'
-                                 }`}
-                               >
-                                 Ready
-                               </button>
+                                     { skipActionLog: true },
+                                   );
+                                 }}
+                               />
                                <button
                                  type="button"
                                  title={
@@ -3953,6 +4268,27 @@ const InventoryList: React.FC<Props> = ({
                          })
                        }
                      />
+                     <button
+                       type="button"
+                       disabled={listingGenId === item.id}
+                       onClick={(e) => {
+                         e.stopPropagation();
+                         void handleGenerateListingPrep(item);
+                       }}
+                       className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[9px] font-black uppercase tracking-wide disabled:opacity-60 ${
+                         item.marketTitle && item.marketDescription
+                           ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                           : 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100'
+                       }`}
+                       title="Generate listing title + description + tech specs (uses OVP / IO Blende; default Gebraucht unless Defective). Confirm OVP/IO first."
+                     >
+                       {listingGenId === item.id ? (
+                         <Loader2 size={10} className="animate-spin shrink-0" />
+                       ) : (
+                         <Sparkles size={10} className="shrink-0 text-amber-500" />
+                       )}
+                       Listing
+                     </button>
                       {hasUserPhotos ? (
                         <span
                           className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/80"
@@ -3977,18 +4313,17 @@ const InventoryList: React.FC<Props> = ({
                          </span>
                       )}
                       {item.isDraft && <span className="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-black uppercase flex items-center gap-1"><StickyNote size={8}/> Draft</span>}
-                      {item.isBundle && (
-                        <span className="inline-flex items-center gap-0.5 text-[9px] bg-violet-600 text-white px-1.5 py-0.5 rounded font-black uppercase shadow-sm shadow-violet-200/80">
-                          <Layers size={9} className="shrink-0" /> Bundle
-                          {childItems.length > 0 ? ` · ${childItems.length}` : ''}
-                        </span>
-                      )}
-                      {item.isPC && (
+                      {item.isPC ? (
                         <span className="inline-flex items-center gap-0.5 text-[9px] bg-indigo-600 text-white px-1.5 py-0.5 rounded font-black uppercase shadow-sm shadow-indigo-200/80">
                           <Monitor size={9} className="shrink-0" /> PC Build
                           {childItems.length > 0 ? ` · ${childItems.length}` : ''}
                         </span>
-                      )}
+                      ) : item.isBundle ? (
+                        <span className="inline-flex items-center gap-0.5 text-[9px] bg-violet-600 text-white px-1.5 py-0.5 rounded font-black uppercase shadow-sm shadow-violet-200/80">
+                          <Layers size={9} className="shrink-0" /> Bundle
+                          {childItems.length > 0 ? ` · ${childItems.length}` : ''}
+                        </span>
+                      ) : null}
                       {!item.isPC && !item.isBundle && isInventoryContainer(item) && (
                         <span className="inline-flex items-center gap-0.5 text-[9px] bg-violet-600 text-white px-1.5 py-0.5 rounded font-black uppercase shadow-sm shadow-violet-200/80">
                           <Package size={9} className="shrink-0" /> Container
@@ -4170,12 +4505,13 @@ const InventoryList: React.FC<Props> = ({
                           : 'border-violet-300 bg-violet-50/60'
                       }`}>
                          {childItems.map((child) => {
+                            const liveChild = itemsById.get(child.id) || child;
                             const childHit =
-                              searchActiveForNest && matchesInventorySearch(child, searchQuery);
-                            const childProfit = profitForDisplay(child);
+                              searchActiveForNest && matchesInventorySearch(liveChild, searchQuery);
+                            const childProfit = profitForDisplay(liveChild);
                             return (
                             <div
-                              key={child.id}
+                              key={liveChild.id}
                               className={`flex items-center justify-between gap-1 py-1 px-1.5 rounded-md transition-colors min-w-0 max-w-full overflow-hidden ${
                                   childHit
                                     ? 'bg-amber-100/80 ring-1 ring-amber-200/80'
@@ -4188,7 +4524,7 @@ const InventoryList: React.FC<Props> = ({
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleEditClick(child);
+                                  handleEditClick(liveChild);
                                 }}
                                 className="flex-1 min-w-0 text-left group/child"
                               >
@@ -4198,17 +4534,17 @@ const InventoryList: React.FC<Props> = ({
                                     ? 'text-indigo-900 group-hover/child:text-indigo-950'
                                     : 'text-violet-900 group-hover/child:text-violet-950'
                                 }`}>
-                                  {child.name}
+                                  {liveChild.name}
                                 </span>
                                 <span className="text-[10px] font-semibold text-slate-500 shrink-0 tabular-nums flex items-center gap-1">
-                                  {!isSoldContainerRow && child.buyPrice != null && (
-                                    <span className="text-slate-600">€{formatEUR(child.buyPrice)}</span>
+                                  {!isSoldContainerRow && liveChild.buyPrice != null && (
+                                    <span className="text-slate-600">€{formatEUR(liveChild.buyPrice)}</span>
                                   )}
                                   {isSoldContainerRow && (
                                     <>
-                                      <span className="text-slate-500">€{formatEUR(child.buyPrice || 0)}</span>
+                                      <span className="text-slate-500">€{formatEUR(liveChild.buyPrice || 0)}</span>
                                       <span className="text-slate-400">/</span>
-                                      <span className="text-slate-700">€{formatEUR(child.sellPrice || 0)}</span>
+                                      <span className="text-slate-700">€{formatEUR(liveChild.sellPrice || 0)}</span>
                                       {childProfit != null && (
                                         <span
                                           className={`${
@@ -4227,23 +4563,23 @@ const InventoryList: React.FC<Props> = ({
                                     </>
                                   )}
                                   <Calendar size={9} className="opacity-60" />
-                                  {formatChildListDate(child)}
+                                  {formatChildListDate(liveChild)}
                                 </span>
                                 </div>
                               </button>
                               {!isSoldContainerRow && (
                                 <div className="flex items-center gap-0.5 shrink-0">
-                                  {child.status === ItemStatus.IN_COMPOSITION && (
+                                  {liveChild.status === ItemStatus.IN_COMPOSITION && (
                                     <button
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        addRecentItemId(child.id);
-                                        setItemToSell(child);
+                                        addRecentItemId(liveChild.id);
+                                        setItemToSell(liveChild);
                                       }}
                                       className="shrink-0 p-1 rounded-md text-emerald-600 hover:bg-emerald-50 hover:text-emerald-800 transition-colors"
                                       title="Mark this part sold — leaves the group"
-                                      aria-label={`Mark ${child.name} sold`}
+                                      aria-label={`Mark ${liveChild.name} sold`}
                                     >
                                       <ShoppingBag size={12} strokeWidth={2.25} />
                                     </button>
@@ -4252,11 +4588,11 @@ const InventoryList: React.FC<Props> = ({
                                     type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      handleRemoveFromContainer(child, item);
+                                      handleRemoveFromContainer(liveChild, item);
                                     }}
                                     className="shrink-0 p-1 rounded-md text-red-500 hover:bg-red-50 hover:text-red-700 transition-colors"
                                     title="Remove from container — back to active inventory"
-                                    aria-label={`Remove ${child.name} from container`}
+                                    aria-label={`Remove ${liveChild.name} from container`}
                                   >
                                     <Trash2 size={12} strokeWidth={2.25} />
                                   </button>
@@ -4867,15 +5203,17 @@ const InventoryList: React.FC<Props> = ({
     [addPhotosTargetIds, itemsById]
   );
 
-  const openAddPhotosModal = useCallback((ids: string[]) => {
+  const openAddPhotosModal = useCallback((ids: string[], opts?: { ebay?: boolean }) => {
     if (!ids.length) return;
     setAddPhotosTargetIds(ids);
+    setAddPhotosAutoEbay(Boolean(opts?.ebay));
     setShowBulkAddPhotosModal(true);
   }, []);
 
   const closeAddPhotosModal = useCallback(() => {
     setShowBulkAddPhotosModal(false);
     setAddPhotosTargetIds([]);
+    setAddPhotosAutoEbay(false);
   }, []);
 
   const selectedHasSoldOrTraded = useMemo(
@@ -4896,12 +5234,13 @@ const InventoryList: React.FC<Props> = ({
       const updated = items
         .filter((i) => idSet.has(i.id))
         .map((item) => {
-          const existing = normalizeImageList([item.imageUrl, ...(item.imageUrls || [])]);
+          // Drop category SVG placeholders so new uploads become the row thumbnail.
+          const existing = getItemUserPhotoUrls(item);
           const merged = normalizeImageList([...existing, ...prepared]);
           const match = options?.ebayMatch;
           return {
             ...item,
-            imageUrl: merged[0],
+            imageUrl: merged[0] || '',
             imageUrls: merged,
             ...(match
               ? {
@@ -4956,28 +5295,40 @@ const InventoryList: React.FC<Props> = ({
     return [
       { id: 'photos', label: 'Add photos', icon: <Camera size={16} />, onClick: () => openAddPhotosModal(deferredSelectedIds), variant: 'primary' },
       {
+        id: 'ebay_photos',
+        label: 'eBay photos',
+        icon: <ShoppingBag size={16} />,
+        onClick: () => openAddPhotosModal(deferredSelectedIds, { ebay: true }),
+        variant: 'primary',
+      },
+      {
         id: 'sale_ready',
-        label: 'Mark Ready',
+        label: 'List Ready',
         icon: <ListChecks size={16} />,
         onClick: () => {
-          const updated = deferredSelectedIds
+          const selected = deferredSelectedIds
             .map((id) => itemsById.get(id))
             .filter((i): i is InventoryItem => Boolean(i))
-            .filter(
-              (i) =>
-                (i.status === ItemStatus.IN_STOCK || i.status === ItemStatus.ORDERED) &&
-                !i.isDefective &&
-                !i.parentContainerId
-            )
-            .map((i) => ({ ...i, saleReady: true }));
+            .filter(isMarkReadyEligible)
+            .filter((i) => !i.saleReady);
+          const updated = selected.filter(canMarkSaleReady).map((i) => ({ ...i, saleReady: true }));
+          const skipped = selected.length - updated.length;
           if (!updated.length) {
-            setToast('Select in-stock items (not defective / not in a kit)');
-            setTimeout(() => setToast(null), 2000);
+            setToast(
+              skipped
+                ? `${skipped} need title · description · photos before List Ready`
+                : 'Select in-stock items with checklist complete',
+            );
+            setTimeout(() => setToast(null), 2600);
             return;
           }
           onUpdate(updated, undefined, { skipActionLog: true });
-          setToast(`Marked ${updated.length} Ready for listing watch`);
-          setTimeout(() => setToast(null), 2200);
+          setToast(
+            skipped
+              ? `List Ready ${updated.length} · skipped ${skipped} (checklist incomplete)`
+              : `List Ready ${updated.length}`,
+          );
+          setTimeout(() => setToast(null), 2600);
         },
         variant: 'primary',
       },
@@ -5997,16 +6348,16 @@ const InventoryList: React.FC<Props> = ({
                    type="button"
                    onClick={() => setShowReadyPeriodMenu((v) => !v)}
                    className="px-2 py-1 rounded-lg border border-violet-200 bg-violet-50 text-violet-800 text-[9px] font-black uppercase tracking-wide hover:bg-violet-100 inline-flex items-center gap-1"
-                   title="Mark all in-stock items from a buy period as Ready for listing watch — no multi-select needed"
+                   title="Mark checklist-complete stock from a buy period as List Ready — no multi-select needed"
                  >
                    <ListChecks size={12} />
-                   Ready by period
+                   List Ready by period
                    <ChevronDown size={12} />
                  </button>
                  {showReadyPeriodMenu && (
                    <div className="absolute left-0 top-full mt-1 z-40 min-w-[200px] rounded-xl border border-slate-200 bg-white shadow-lg py-1">
                      <p className="px-3 py-1.5 text-[9px] font-black uppercase tracking-wide text-slate-400">
-                       Mark Ready · by buy date
+                       List Ready · by buy date
                      </p>
                      {READY_PERIOD_OPTIONS.map((opt) => {
                        const n = readyPeriodCounts[opt.id] ?? 0;
@@ -6147,19 +6498,38 @@ const InventoryList: React.FC<Props> = ({
             </div>
          )}
 
-         {(statusFilter === 'SOLD' || splitView) && equalSplitGroupCount > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 px-2 py-1 rounded-lg border border-indigo-200 bg-indigo-50 text-[10px] text-indigo-950">
-              <Layers size={12} className="text-indigo-600 shrink-0" />
+         {(statusFilter === 'SOLD' || splitView) && (
+            <div
+              className={`flex flex-wrap items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] ${
+                equalSplitGroupCount > 0
+                  ? 'border-indigo-200 bg-indigo-50 text-indigo-950'
+                  : 'border-slate-200 bg-slate-50 text-slate-700'
+              }`}
+            >
+              <Layers
+                size={12}
+                className={`shrink-0 ${equalSplitGroupCount > 0 ? 'text-indigo-600' : 'text-slate-500'}`}
+              />
               <span>
-                <strong>{equalSplitGroupCount}</strong> possible historical bundle
-                {equalSplitGroupCount === 1 ? '' : 's'} (same sell date + price)
+                {equalSplitGroupCount > 0 ? (
+                  <>
+                    <strong>{equalSplitGroupCount}</strong> possible historical bundle
+                    {equalSplitGroupCount === 1 ? '' : 's'} (same sell date + price)
+                  </>
+                ) : (
+                  <>Historical equal-split bundles</>
+                )}
               </span>
               <button
                 type="button"
                 onClick={() => setShowEqualSplitGroups(true)}
-                className="ml-auto px-1.5 py-0.5 rounded bg-indigo-200/80 font-bold hover:bg-indigo-300/80"
+                className={`ml-auto px-1.5 py-0.5 rounded font-bold ${
+                  equalSplitGroupCount > 0
+                    ? 'bg-indigo-200/80 hover:bg-indigo-300/80'
+                    : 'bg-slate-200/80 hover:bg-slate-300/80'
+                }`}
               >
-                Review
+                {equalSplitGroupCount > 0 ? 'Review' : 'Open'}
               </button>
             </div>
          )}
@@ -6321,7 +6691,7 @@ const InventoryList: React.FC<Props> = ({
           </div>
           <div className="space-y-2">
             <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-              Mark Ready by buy date
+              List Ready by buy date
             </p>
             <div className="grid grid-cols-2 gap-1.5">
               {READY_PERIOD_OPTIONS.map((opt) => {
@@ -6430,6 +6800,7 @@ const InventoryList: React.FC<Props> = ({
         searchName={addPhotosTargetItems[0]?.name ?? ''}
         ebaySku={addPhotosTargetItems.length === 1 ? addPhotosTargetItems[0]?.ebaySku : undefined}
         storageItemId={addPhotosTargetItems.length === 1 ? addPhotosTargetItems[0]?.id : 'shared'}
+        autoEbay={addPhotosAutoEbay}
       />
 
       {geminiCardItem && (
@@ -6443,14 +6814,10 @@ const InventoryList: React.FC<Props> = ({
           onClose={() => setGeminiCardItem(null)}
           onApplyAsMainPhoto={async (url) => {
             const base = items.find((i) => i.id === geminiCardItem.id) || geminiCardItem;
-            const merged = normalizeImageList([
-              url,
-              base.imageUrl,
-              ...(base.imageUrls || []),
-            ]);
+            const merged = normalizeImageList([url, ...getItemUserPhotoUrls(base)]);
             const next = {
               ...base,
-              imageUrl: merged[0],
+              imageUrl: merged[0] || url,
               imageUrls: merged,
             };
             // handleUpdate expects InventoryItem[] — a bare object crashed with .forEach
@@ -6461,11 +6828,8 @@ const InventoryList: React.FC<Props> = ({
           }}
           onAddToItemGallery={async (url) => {
             const base = items.find((i) => i.id === geminiCardItem.id) || geminiCardItem;
-            const merged = normalizeImageList([
-              base.imageUrl,
-              ...(base.imageUrls || []),
-              url,
-            ]);
+            const existing = getItemUserPhotoUrls(base);
+            const merged = normalizeImageList([...existing, url]);
             const next = {
               ...base,
               imageUrl: merged[0] || '',
@@ -6528,6 +6892,7 @@ const InventoryList: React.FC<Props> = ({
                     setItemToSell(it);
                   },
                   onPhotos: (it) => openAddPhotosModal([it.id]),
+                  onEbayPhotos: (it) => openAddPhotosModal([it.id], { ebay: true }),
                   onQuickBundle: (it) => {
                     const parentOfItem = resolveParentContainer(
                       it,
@@ -6800,13 +7165,16 @@ const InventoryList: React.FC<Props> = ({
                  }
                  return;
                }
+               const nameChanged = !!updated && updated.name !== itemToEdit.name;
                onUpdate(updatedList, undefined, {
                  flushCloud:
                    !!updated &&
                    (updated.marketTitle !== itemToEdit.marketTitle ||
                      updated.marketDescription !== itemToEdit.marketDescription ||
-                     updated.name !== itemToEdit.name),
+                     nameChanged),
                });
+               // Keep edit target in sync so nested inventory + further patches see the new name.
+               if (updated) setItemToEdit(updated);
                if (
                  updated &&
                  (updated.marketTitle !== itemToEdit.marketTitle ||
@@ -6814,6 +7182,9 @@ const InventoryList: React.FC<Props> = ({
                ) {
                  setToast('Listing saved to item');
                  setTimeout(() => setToast(null), 1600);
+               } else if (nameChanged) {
+                 setToast('Name saved');
+                 setTimeout(() => setToast(null), 1400);
                }
             }}
             onClose={() => setItemToEdit(null)}
@@ -6874,16 +7245,28 @@ const InventoryList: React.FC<Props> = ({
           items={items}
           onApply={(updates) => {
             const parent = updates.find((u) => u.isBundle || u.isPC);
-            onUpdate(updates);
+            const parts = updates.filter((u) => u !== parent);
             if (parent) {
+              const { nextItems, deleteIds } = applyRetroComposeToInventory(items, parent, parts);
+              const changed = nextItems.filter((n) => {
+                const old = items.find((i) => i.id === n.id);
+                return !old || old !== n;
+              });
+              onUpdate(changed, deleteIds);
               setScrollTargetItemId(parent.id);
               setCollapsedBundles((prev) => {
                 const next = new Set(prev);
                 next.delete(parent.id);
                 return next;
               });
-              setToast(`Grouped as ${parent.isPC ? 'PC' : 'Bundle'}: ${parent.name}`);
+              setToast(
+                deleteIds.length > 0
+                  ? `Grouped as ${parent.isPC ? 'PC' : 'Bundle'} — removed ${deleteIds.length} duplicate shell${deleteIds.length === 1 ? '' : 's'}`
+                  : `Grouped as ${parent.isPC ? 'PC' : 'Bundle'}: ${parent.name}`
+              );
               setTimeout(() => setToast(null), 2400);
+            } else {
+              onUpdate(updates);
             }
           }}
           onIgnored={() => setEqualSplitIgnoreRev((n) => n + 1)}
@@ -7264,24 +7647,39 @@ const InventoryList: React.FC<Props> = ({
                          !i.isPC &&
                          !i.isBundle)
                    );
-                   const buyTotal =
-                     Math.round(
-                       remainingChildren.reduce((s, i) => s + Number(i.buyPrice || 0), 0) * 100
-                     ) / 100;
-                   const updatedParent: InventoryItem = {
-                     ...parent,
-                     componentIds: remainingChildren.map((c) => c.id),
-                     buyPrice: buyTotal,
-                     comment2: remainingChildren
-                       .map((i) => `- ${i.name}${i.isDefective ? ' [defekt]' : ''}`)
-                       .join('\n')
-                       .slice(0, 2000),
-                   };
-                   onUpdate([updatedParent, soldChild]);
-                   setToast(
-                     `Sold “${soldChild.name}” · left group · container now €${formatEUR(buyTotal)}`
-                   );
-                   setTimeout(() => setToast(null), 2600);
+                   if (remainingChildren.length === 0) {
+                     // Last part sold — remove empty parent shell from inventory.
+                     onUpdate([soldChild], [parent.id]);
+                     setToast(`Sold “${soldChild.name}” · last part · container removed`);
+                     setTimeout(() => setToast(null), 2800);
+                   } else {
+                     const buyTotal =
+                       Math.round(
+                         remainingChildren.reduce((s, i) => s + Number(i.buyPrice || 0), 0) * 100
+                       ) / 100;
+                     let updatedParent: InventoryItem = {
+                       ...parent,
+                       componentIds: remainingChildren.map((c) => c.id),
+                       buyPrice: buyTotal,
+                       comment2: remainingChildren
+                         .map((i) => `- ${i.name}${i.isDefective ? ' [defekt]' : ''}`)
+                         .join('\n')
+                         .slice(0, 2000),
+                     };
+                     const kind = getContainerKind(updatedParent);
+                     if (kind) {
+                       updatedParent = withRebuiltContainerTitle(
+                         updatedParent,
+                         kind,
+                         remainingChildren
+                       );
+                     }
+                     onUpdate([updatedParent, soldChild]);
+                     setToast(
+                       `Sold “${soldChild.name}” · left group · title updated · €${formatEUR(buyTotal)}`
+                     );
+                     setTimeout(() => setToast(null), 2600);
+                   }
                  } else {
                    onUpdate([soldChild]);
                  }
@@ -7360,7 +7758,11 @@ const InventoryList: React.FC<Props> = ({
             taxMode={businessSettings.taxMode}
             mode="editBuyer"
             onSave={(updated) => {
-              onUpdate([updated]);
+              const updates =
+                updated.isPC || updated.isBundle
+                  ? expandUpdatesWithContainerSaleMeta([updated], items)
+                  : [updated];
+              onUpdate(updates);
               setItemToEditBuyer(null);
             }}
             onClose={() => setItemToEditBuyer(null)}

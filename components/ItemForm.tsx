@@ -1516,7 +1516,9 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                                  placeholder="e.g. MSI GeForce RTX 3060 Gaming X — type to suggest from history"
                                  value={formData.name}
                                  onChange={e => setFormData({ ...formData, name: e.target.value })}
+                                 onFocus={() => setNameSuggestionsOpen(true)}
                                  onBlur={() => {
+                                   setTimeout(() => setNameSuggestionsOpen(false), 180);
                                    const qty = Math.max(1, Math.floor(Number(formData.quantity) || 1));
                                    if (qty <= 1) return;
                                    setFormData((prev) => ({
@@ -1524,8 +1526,6 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                                      name: applyQtyNamePrefix(prev.name || '', qty),
                                    }));
                                  }}
-                                 onFocus={() => setNameSuggestionsOpen(true)}
-                                 onBlur={() => setTimeout(() => setNameSuggestionsOpen(false), 180)}
                               />
                             </div>
                             {learnedCategory && learnedCategory !== formData.category && (
