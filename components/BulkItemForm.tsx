@@ -6,7 +6,7 @@ import {
   ShoppingBag, Calculator, Layers, 
   Search, Database, 
   CheckCircle2,
-  Sparkles, Loader2, Package, Ban, ScanBarcode, Wrench
+  Sparkles, Loader2, Package, Ban, ScanBarcode, Wrench, Globe, Upload
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, Platform, PaymentType, BulkImportRecord, BulkImportSource } from '../types';
 import {
