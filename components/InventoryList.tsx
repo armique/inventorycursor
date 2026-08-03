@@ -2850,8 +2850,13 @@ const InventoryList: React.FC<Props> = ({
           .join('\n')
           .slice(0, 2000),
       };
-      onUpdate([updatedParent, restored]);
-      setToast(`Removed “${child.name}” → active inventory · container €${formatEUR(buyTotal)}`);
+      if (remaining.length === 0) {
+        onUpdate([restored], [parent.id]);
+        setToast(`Removed “${child.name}” · last part · container removed`);
+      } else {
+        onUpdate([updatedParent, restored]);
+        setToast(`Removed “${child.name}” → active inventory · container €${formatEUR(buyTotal)}`);
+      }
       setTimeout(() => setToast(null), 2400);
     },
     [items, onUpdate]
@@ -7613,24 +7618,31 @@ const InventoryList: React.FC<Props> = ({
                          !i.isPC &&
                          !i.isBundle)
                    );
-                   const buyTotal =
-                     Math.round(
-                       remainingChildren.reduce((s, i) => s + Number(i.buyPrice || 0), 0) * 100
-                     ) / 100;
-                   const updatedParent: InventoryItem = {
-                     ...parent,
-                     componentIds: remainingChildren.map((c) => c.id),
-                     buyPrice: buyTotal,
-                     comment2: remainingChildren
-                       .map((i) => `- ${i.name}${i.isDefective ? ' [defekt]' : ''}`)
-                       .join('\n')
-                       .slice(0, 2000),
-                   };
-                   onUpdate([updatedParent, soldChild]);
-                   setToast(
-                     `Sold “${soldChild.name}” · left group · container now €${formatEUR(buyTotal)}`
-                   );
-                   setTimeout(() => setToast(null), 2600);
+                   if (remainingChildren.length === 0) {
+                     // Last part sold — remove empty parent shell from inventory.
+                     onUpdate([soldChild], [parent.id]);
+                     setToast(`Sold “${soldChild.name}” · last part · container removed`);
+                     setTimeout(() => setToast(null), 2800);
+                   } else {
+                     const buyTotal =
+                       Math.round(
+                         remainingChildren.reduce((s, i) => s + Number(i.buyPrice || 0), 0) * 100
+                       ) / 100;
+                     const updatedParent: InventoryItem = {
+                       ...parent,
+                       componentIds: remainingChildren.map((c) => c.id),
+                       buyPrice: buyTotal,
+                       comment2: remainingChildren
+                         .map((i) => `- ${i.name}${i.isDefective ? ' [defekt]' : ''}`)
+                         .join('\n')
+                         .slice(0, 2000),
+                     };
+                     onUpdate([updatedParent, soldChild]);
+                     setToast(
+                       `Sold “${soldChild.name}” · left group · container now €${formatEUR(buyTotal)}`
+                     );
+                     setTimeout(() => setToast(null), 2600);
+                   }
                  } else {
                    onUpdate([soldChild]);
                  }

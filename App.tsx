@@ -76,7 +76,7 @@ import { appendPriceHistoryIfChanged } from './services/priceHistory';
 import { computeItemProfitBeforeOverhead } from './services/financialAggregation';
 import { syncContainerBuyTotalsFromComponents } from './services/containerAggregates';
 import { syncContainerSaleMetaToChildren } from './utils/containerSaleCascade';
-import { enforceContainerMembershipInvariants } from './utils/containerMembershipInvariants';
+import { enforceContainerMembershipInvariants, findEmptyContainerShellIds } from './utils/containerMembershipInvariants';
 import { applyTradeRevert } from './services/tradeRevert';
 import { mergeTradeActionEntries } from './services/tradeActionHistory';
 import { applySaleRevert } from './services/saleRevert';
@@ -1656,6 +1656,24 @@ const App: React.FC = () => {
               }
             }
             nextItems = enforced.nextItems;
+          }
+        }
+
+        // After parts leave a PC/bundle (sold one-by-one or removed), drop the empty shell
+        // so it disappears from Active inventory.
+        if (!options?.skipMembershipSync) {
+          const emptyShellIds = findEmptyContainerShellIds(nextItems);
+          if (emptyShellIds.length > 0) {
+            const removed = nextItems.filter((i) => emptyShellIds.includes(i.id));
+            if (removed.length > 0) {
+              setTrash((prev) => [...prev, ...removed]);
+              if (recordAction) {
+                removed.forEach((i) =>
+                  actionEntries.push(makeActionEntry('Empty container removed', i)),
+                );
+              }
+            }
+            nextItems = nextItems.filter((i) => !emptyShellIds.includes(i.id));
           }
         }
 

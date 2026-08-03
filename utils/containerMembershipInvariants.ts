@@ -157,11 +157,14 @@ export function enforceContainerMembershipInvariants(items: InventoryItem[]): Me
 
     const finalContainer = byId.get(container.id)!;
     if (
-      isSoldOrTradedOnly(finalContainer) &&
       (finalContainer.componentIds || []).length === 0 &&
-      (inputSnapshot?.componentIds || []).length > 0
+      ((inputSnapshot?.componentIds || []).length > 0 || isSoldOrTradedOnly(finalContainer))
     ) {
-      deleteIds.push(finalContainer.id);
+      // Emptied sold shell OR active shell that just lost its last listed part.
+      const stillHasLinkedChild = working.some(
+        (c) => !isContainerRow(c) && c.parentContainerId === finalContainer.id,
+      );
+      if (!stillHasLinkedChild) deleteIds.push(finalContainer.id);
     }
   }
 
@@ -176,6 +179,34 @@ export function enforceContainerMembershipInvariants(items: InventoryItem[]): Me
     return { nextItems: items, deleteIds: [], changed: false };
   }
   return { nextItems, deleteIds: uniqueDelete, changed: true };
+}
+
+/**
+ * PC/bundle with no parts left in the group.
+ * Detached sold/traded children do not keep the shell alive even if stale componentIds linger.
+ */
+export function findEmptyContainerShellIds(items: InventoryItem[]): string[] {
+  return items
+    .filter((container) => {
+      if (!container.isPC && !container.isBundle) return false;
+      const listed = new Set(container.componentIds || []);
+      return !items.some((c) => {
+        if (c.isPC || c.isBundle || c.id === container.id) return false;
+        if (c.parentContainerId === container.id) return true;
+        if (!listed.has(c.id)) return false;
+        // Stale list entry for a part that already left as its own sold/traded row.
+        if (
+          !c.parentContainerId &&
+          (c.status === ItemStatus.SOLD ||
+            c.status === ItemStatus.TRADED ||
+            c.status === ItemStatus.GIFTED)
+        ) {
+          return false;
+        }
+        return true;
+      });
+    })
+    .map((c) => c.id);
 }
 
 /** Parts that already belong to another container (cannot join a new compose). */
