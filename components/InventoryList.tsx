@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, TaxMode, BulkImportRecord } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
-import { computeItemProfitBeforeOverhead, getChildren, getItemDisplayFeeAmount, getItemDisplayShippingAmount, getSoldContainerDisplayTotals, shouldHideContainerChildInList, containerOrChildMatchesSearch, shouldSurfaceSoldContainerPartInList, soldContainerPartDispositionDate, matchesInventoryCategoryPin } from '../services/financialAggregation';
+import { computeItemProfitBeforeOverhead, getChildren, getItemDisplayFeeAmount, getItemDisplayShippingAmount, getSoldContainerDisplayTotals, shouldHideContainerChildInList, containerOrChildMatchesSearch, shouldSurfaceSoldContainerPartInList, soldContainerPartDispositionDate, matchesInventoryCategoryPin, inventorySubcategoryAliasesMatch } from '../services/financialAggregation';
 import { itemMatchesSalePlatformFilter, isMissingExplicitSalePlatform, MISSING_PLATFORM_FILTER, SALE_PLATFORM_OPTIONS, formatItemSalePlatform, formatSalePlatformLabel } from '../utils/salePlatform';
 import { expandUpdatesWithContainerSaleMeta } from '../utils/containerSaleCascade';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
@@ -361,6 +361,15 @@ function resolveQuickCategoryPinsAgainstCatalog(
     if (!hwType) return pin;
     const resolved = resolveCategoryFromHardwareType(hwType, categories);
     if (!resolved.category || !resolved.subCategory) return pin;
+    // Ignore Components[0] fallback when Settings has no Processors/CPU (or GPU) entry —
+    // otherwise the CPU pin silently filters Graphics Cards / Cases and shows 0 CPUs.
+    const resolvedIsCorrectFamily =
+      hwType === 'CPU'
+        ? inventorySubcategoryAliasesMatch(resolved.subCategory, 'CPU')
+        : hwType === 'GPU'
+          ? inventorySubcategoryAliasesMatch(resolved.subCategory, 'GPU')
+          : true;
+    if (!resolvedIsCorrectFamily) return pin;
     if (resolved.category === pin.category && resolved.subCategory === pin.subCategory) return pin;
     return {
       ...pin,

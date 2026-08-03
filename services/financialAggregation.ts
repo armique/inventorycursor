@@ -98,20 +98,46 @@ export function matchesInventoryCategoryPin(
   if (categoryFilter === 'ALL' && !subCategoryFilter) return true;
   const itemSub = item.subCategory || '';
   const filterSub = subCategoryFilter || '';
-  const subMatches =
-    !filterSub ||
-    itemSub === filterSub ||
-    // After renaming Graphics Cards → GPU, stale rows still filter as GPU until migrated.
-    (filterSub === 'GPU' &&
-      (itemSub === 'Graphics Cards' ||
-        itemSub === 'Graphic Cards' ||
-        itemSub === 'Grafikkarten' ||
-        itemSub === 'Grafikkarte')) ||
-    ((filterSub === 'Graphics Cards' || filterSub === 'Graphic Cards') && itemSub === 'GPU');
+  const subMatches = !filterSub || inventorySubcategoryAliasesMatch(filterSub, itemSub);
   const matchParentAndSub =
     categoryFilter !== 'ALL' && item.category === categoryFilter && subMatches;
-  const matchSubAsTopLevel = Boolean(filterSub && item.category === filterSub);
+  // Top-level rows like category "Processors" / "CPU" (no Components parent)
+  const matchSubAsTopLevel = Boolean(
+    filterSub && inventorySubcategoryAliasesMatch(filterSub, item.category)
+  );
   return Boolean(matchParentAndSub || matchSubAsTopLevel);
+}
+
+/** GPU / CPU (and DE) subcategory renames — pins and stale rows must still match. */
+export function inventorySubcategoryAliasesMatch(a: string, b: string): boolean {
+  const left = (a || '').trim();
+  const right = (b || '').trim();
+  if (!left || !right) return false;
+  if (left === right) return true;
+  const norm = (s: string) => s.trim().toLowerCase();
+  const l = norm(left);
+  const r = norm(right);
+  if (l === r) return true;
+
+  const gpu = new Set([
+    'gpu',
+    'graphics cards',
+    'graphic cards',
+    'grafikkarten',
+    'grafikkarte',
+  ]);
+  if (gpu.has(l) && gpu.has(r)) return true;
+
+  const cpu = new Set([
+    'cpu',
+    'processors',
+    'processor',
+    'prozessoren',
+    'prozessor',
+  ]);
+  if (cpu.has(l) && cpu.has(r)) return true;
+
+  return false;
 }
 
 /** Part nested under a sold/traded/gifted PC/bundle (status often stays IN_COMPOSITION). */
