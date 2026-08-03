@@ -1609,6 +1609,29 @@ const App: React.FC = () => {
             if (recordAction) actionEntries.push(makeActionEntry('Item created', final));
           }
         });
+
+        // Bundle/PC rows are React.memo'd by parent object identity. When only a nested
+        // child changes (e.g. rename), clone the parent so the inventory nested list refreshes.
+        {
+          const parentsToRefresh = new Set<string>();
+          for (const u of itemsToApply) {
+            const cur = nextItems.find((i) => i.id === u.id);
+            if (cur?.parentContainerId) parentsToRefresh.add(cur.parentContainerId);
+            const prev = current.find((i) => i.id === u.id);
+            if (prev?.parentContainerId) parentsToRefresh.add(prev.parentContainerId);
+          }
+          for (const p of nextItems) {
+            if (!(p.isPC || p.isBundle) || !p.componentIds?.length) continue;
+            if (itemsToApply.some((u) => p.componentIds!.includes(u.id))) {
+              parentsToRefresh.add(p.id);
+            }
+          }
+          if (parentsToRefresh.size > 0) {
+            nextItems = nextItems.map((i) =>
+              parentsToRefresh.has(i.id) ? { ...i } : i,
+            );
+          }
+        }
         
         if (deleteIds && deleteIds.length > 0) {
            const toTrash = nextItems.filter(i => deleteIds.includes(i.id));

@@ -1047,7 +1047,17 @@ const ListingStudioModal: React.FC<Props> = ({
                 className={ADD_FLOW_INPUT}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                onBlur={() => void persistPatch({ name: name.trim() || item.name })}
+                onBlur={(e) => {
+                  const nextName = e.currentTarget.value.trim() || item.name;
+                  setName(nextName);
+                  void persistPatch({ name: nextName });
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    (e.target as HTMLInputElement).blur();
+                  }
+                }}
               />
               <div className="flex items-center gap-1.5">
                 <ItemAccessoryToggles

@@ -4476,12 +4476,13 @@ const InventoryList: React.FC<Props> = ({
                           : 'border-violet-300 bg-violet-50/60'
                       }`}>
                          {childItems.map((child) => {
+                            const liveChild = itemsById.get(child.id) || child;
                             const childHit =
-                              searchActiveForNest && matchesInventorySearch(child, searchQuery);
-                            const childProfit = profitForDisplay(child);
+                              searchActiveForNest && matchesInventorySearch(liveChild, searchQuery);
+                            const childProfit = profitForDisplay(liveChild);
                             return (
                             <div
-                              key={child.id}
+                              key={liveChild.id}
                               className={`flex items-center justify-between gap-1 py-1 px-1.5 rounded-md transition-colors min-w-0 max-w-full overflow-hidden ${
                                   childHit
                                     ? 'bg-amber-100/80 ring-1 ring-amber-200/80'
@@ -4494,7 +4495,7 @@ const InventoryList: React.FC<Props> = ({
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleEditClick(child);
+                                  handleEditClick(liveChild);
                                 }}
                                 className="flex-1 min-w-0 text-left group/child"
                               >
@@ -4504,17 +4505,17 @@ const InventoryList: React.FC<Props> = ({
                                     ? 'text-indigo-900 group-hover/child:text-indigo-950'
                                     : 'text-violet-900 group-hover/child:text-violet-950'
                                 }`}>
-                                  {child.name}
+                                  {liveChild.name}
                                 </span>
                                 <span className="text-[10px] font-semibold text-slate-500 shrink-0 tabular-nums flex items-center gap-1">
-                                  {!isSoldContainerRow && child.buyPrice != null && (
-                                    <span className="text-slate-600">€{formatEUR(child.buyPrice)}</span>
+                                  {!isSoldContainerRow && liveChild.buyPrice != null && (
+                                    <span className="text-slate-600">€{formatEUR(liveChild.buyPrice)}</span>
                                   )}
                                   {isSoldContainerRow && (
                                     <>
-                                      <span className="text-slate-500">€{formatEUR(child.buyPrice || 0)}</span>
+                                      <span className="text-slate-500">€{formatEUR(liveChild.buyPrice || 0)}</span>
                                       <span className="text-slate-400">/</span>
-                                      <span className="text-slate-700">€{formatEUR(child.sellPrice || 0)}</span>
+                                      <span className="text-slate-700">€{formatEUR(liveChild.sellPrice || 0)}</span>
                                       {childProfit != null && (
                                         <span
                                           className={`${
@@ -4533,23 +4534,23 @@ const InventoryList: React.FC<Props> = ({
                                     </>
                                   )}
                                   <Calendar size={9} className="opacity-60" />
-                                  {formatChildListDate(child)}
+                                  {formatChildListDate(liveChild)}
                                 </span>
                                 </div>
                               </button>
                               {!isSoldContainerRow && (
                                 <div className="flex items-center gap-0.5 shrink-0">
-                                  {child.status === ItemStatus.IN_COMPOSITION && (
+                                  {liveChild.status === ItemStatus.IN_COMPOSITION && (
                                     <button
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        addRecentItemId(child.id);
-                                        setItemToSell(child);
+                                        addRecentItemId(liveChild.id);
+                                        setItemToSell(liveChild);
                                       }}
                                       className="shrink-0 p-1 rounded-md text-emerald-600 hover:bg-emerald-50 hover:text-emerald-800 transition-colors"
                                       title="Mark this part sold — leaves the group"
-                                      aria-label={`Mark ${child.name} sold`}
+                                      aria-label={`Mark ${liveChild.name} sold`}
                                     >
                                       <ShoppingBag size={12} strokeWidth={2.25} />
                                     </button>
@@ -4558,11 +4559,11 @@ const InventoryList: React.FC<Props> = ({
                                     type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      handleRemoveFromContainer(child, item);
+                                      handleRemoveFromContainer(liveChild, item);
                                     }}
                                     className="shrink-0 p-1 rounded-md text-red-500 hover:bg-red-50 hover:text-red-700 transition-colors"
                                     title="Remove from container — back to active inventory"
-                                    aria-label={`Remove ${child.name} from container`}
+                                    aria-label={`Remove ${liveChild.name} from container`}
                                   >
                                     <Trash2 size={12} strokeWidth={2.25} />
                                   </button>
@@ -7130,13 +7131,16 @@ const InventoryList: React.FC<Props> = ({
                  }
                  return;
                }
+               const nameChanged = !!updated && updated.name !== itemToEdit.name;
                onUpdate(updatedList, undefined, {
                  flushCloud:
                    !!updated &&
                    (updated.marketTitle !== itemToEdit.marketTitle ||
                      updated.marketDescription !== itemToEdit.marketDescription ||
-                     updated.name !== itemToEdit.name),
+                     nameChanged),
                });
+               // Keep edit target in sync so nested inventory + further patches see the new name.
+               if (updated) setItemToEdit(updated);
                if (
                  updated &&
                  (updated.marketTitle !== itemToEdit.marketTitle ||
@@ -7144,6 +7148,9 @@ const InventoryList: React.FC<Props> = ({
                ) {
                  setToast('Listing saved to item');
                  setTimeout(() => setToast(null), 1600);
+               } else if (nameChanged) {
+                 setToast('Name saved');
+                 setTimeout(() => setToast(null), 1400);
                }
             }}
             onClose={() => setItemToEdit(null)}
