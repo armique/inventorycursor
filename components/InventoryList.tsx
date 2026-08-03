@@ -956,6 +956,11 @@ const InventoryList: React.FC<Props> = ({
   const [timeFilter, setTimeFilter] = useState<TimeFilter>(() => loadState<TimeFilter>('time', 'ALL'));
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => loadState<StatusFilter>('status_filter', 'ACTIVE'));
   const [splitView, setSplitView] = useState<boolean>(() => loadState<boolean>('split_view', false));
+  const [isLaptopViewport, setIsLaptopViewport] = useState(false);
+  const [showFullLaptopTable, setShowFullLaptopTable] = useState<boolean>(() =>
+    loadState<boolean>('full_laptop_table', false)
+  );
+  const laptopCompactLayout = isLaptopViewport && !showFullLaptopTable;
   const [quickCategoryPins, setQuickCategoryPins] = useState<QuickCategoryPin[]>(() => {
     const saved = loadState<QuickCategoryPin[] | null>('quick_category_pins', null);
     return saved && saved.length > 0 ? saved : DEFAULT_QUICK_CATEGORY_PINS;
@@ -1006,6 +1011,18 @@ const InventoryList: React.FC<Props> = ({
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 1023px)');
     const sync = () => {
+      if (mq.matches) setSplitView(false);
+    };
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
+
+  // 13-inch laptops need a different density tier from phones and large external displays.
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px) and (max-width: 1440px)');
+    const sync = () => {
+      setIsLaptopViewport(mq.matches);
       if (mq.matches) setSplitView(false);
     };
     sync();
@@ -1504,6 +1521,7 @@ const InventoryList: React.FC<Props> = ({
       localStorage.setItem(`${k}_column_order`, JSON.stringify(columnOrder));
       localStorage.setItem(`${k}_hidden_columns`, JSON.stringify(hiddenColumnIds));
       localStorage.setItem(`${k}_split_view`, JSON.stringify(splitView));
+      localStorage.setItem(`${k}_full_laptop_table`, JSON.stringify(showFullLaptopTable));
       localStorage.setItem(`${k}_quick_category_pins`, JSON.stringify(quickCategoryPins));
     }, 200);
     return () => {
@@ -1512,7 +1530,7 @@ const InventoryList: React.FC<Props> = ({
   }, [
     searchTerm, timeFilter, statusFilter, categoryFilter, subCategoryFilter, sortConfig, columnWidths,
     manualWidthColumns, salePlatformFilter, salePaymentFilter, sourceFilter, amountFilter, specFilters, specRangeFilters, showInComposition,
-    columnOrder, hiddenColumnIds, splitView, quickCategoryPins, persistenceKey,
+    columnOrder, hiddenColumnIds, splitView, showFullLaptopTable, quickCategoryPins, persistenceKey,
   ]);
 
   // Ensure matching nested bundles reopen if the user had collapsed them
@@ -2048,15 +2066,19 @@ const InventoryList: React.FC<Props> = ({
   // Visible Columns (from order, excluding hidden) — memoized so row renders are not invalidated every parent render
   const visibleColumns = useMemo(() => {
     const ALWAYS_HIDDEN = ['parseSpecs', 'salePlatform', 'actions'];
+    const LAPTOP_HIDDEN = ['category', 'status', 'storePrice', 'profit'];
     return columnOrder.filter((id) => {
       if (hiddenColumnIds.includes(id) || ALWAYS_HIDDEN.includes(id)) return false;
+      // Keep the primary workflow readable on 13-inch laptops. The full column set remains
+      // available from the Columns panel and is unchanged on large external displays.
+      if (laptopCompactLayout && LAPTOP_HIDDEN.includes(id)) return false;
       // In pure ACTIVE mode: hide SOLD DATE (always empty — items haven't been sold yet)
       if (id === 'sellDate' && !splitView && statusFilter === 'ACTIVE') return false;
       // In pure SOLD mode: hide STOCK AGE gauge (irrelevant once item is sold)
       if (id === 'timeGauge' && !splitView && statusFilter === 'SOLD') return false;
       return true;
     });
-  }, [columnOrder, hiddenColumnIds, statusFilter, splitView]);
+  }, [columnOrder, hiddenColumnIds, statusFilter, splitView, laptopCompactLayout]);
 
   const [draggingColumnId, setDraggingColumnId] = useState<ColumnId | null>(null);
   const [dragOverColumnId, setDragOverColumnId] = useState<ColumnId | null>(null);
@@ -2119,8 +2141,13 @@ const InventoryList: React.FC<Props> = ({
         merged[colId] = autoColumnWidths[colId]!;
       }
     }
+    if (laptopCompactLayout) {
+      // Actions stay reachable in a single horizontally scrolling rail instead of wrapping
+      // into two or three noisy rows.
+      merged.presence = 196;
+    }
     return merged;
-  }, [columnWidths, autoColumnWidths]);
+  }, [columnWidths, autoColumnWidths, laptopCompactLayout]);
   const effectiveColumnWidthsRef = useRef(effectiveColumnWidths);
   useEffect(() => {
     effectiveColumnWidthsRef.current = effectiveColumnWidths;
@@ -3411,7 +3438,12 @@ const InventoryList: React.FC<Props> = ({
         return (
           <td key={id} className="inv-col-icons border-r border-slate-100/90 align-middle" style={style} onClick={(e) => e.stopPropagation()}>
             <div
-              className={`grid grid-cols-8 ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-items-start w-full min-w-0`}
+              className={
+                laptopCompactLayout
+                  ? `flex ${dense ? 'gap-0.5' : 'gap-1'} items-center w-full min-w-0 overflow-x-auto overscroll-x-contain pb-1`
+                  : `grid grid-cols-8 ${dense ? 'gap-0.5' : 'gap-1'} items-center justify-items-start w-full min-w-0`
+              }
+              aria-label={laptopCompactLayout ? 'Row actions — scroll horizontally for more' : 'Row actions'}
             >
               {/* Physical presence: present → lost → defective → unknown */}
               {(() => {
@@ -6212,6 +6244,23 @@ const InventoryList: React.FC<Props> = ({
                            <button type="button" title="Reset column widths to defaults" onClick={() => { setColumnWidths({ ...DEFAULT_WIDTHS }); setManualWidthColumns(new Set()); }} className="text-[10px] font-bold text-slate-500 hover:text-blue-600">Widths</button>
                         </div>
                      </div>
+                     {isLaptopViewport && (
+                        <div className="mx-2 mt-2 flex items-center justify-between gap-3 rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-2">
+                           <div className="min-w-0">
+                              <p className="text-[10px] font-black uppercase tracking-wide text-blue-800">Laptop layout</p>
+                              <p className="text-[10px] leading-tight text-blue-600">
+                                 {showFullLaptopTable ? 'All columns visible' : 'Primary columns only'}
+                              </p>
+                           </div>
+                           <button
+                              type="button"
+                              onClick={() => setShowFullLaptopTable((value) => !value)}
+                              className="shrink-0 rounded-md border border-blue-200 bg-white px-2 py-1 text-[10px] font-black text-blue-700 hover:border-blue-400"
+                           >
+                              {showFullLaptopTable ? 'Compact' : 'Show all'}
+                           </button>
+                        </div>
+                     )}
                      <div className="p-2 space-y-0.5 max-h-72 overflow-y-auto">
                         {columnOrder.filter((id) => id !== 'actions').map((id, idx) => {
                            const label = ALL_COLUMNS.find((c) => c.id === id)?.label || id;
