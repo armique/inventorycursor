@@ -1123,6 +1123,7 @@ const InventoryList: React.FC<Props> = ({
   const [showAISpecsModal, setShowAISpecsModal] = useState(false);
   const [showBulkAddPhotosModal, setShowBulkAddPhotosModal] = useState(false);
   const [addPhotosTargetIds, setAddPhotosTargetIds] = useState<string[]>([]);
+  const [addPhotosAutoEbay, setAddPhotosAutoEbay] = useState(false);
   const [geminiCardItem, setGeminiCardItem] = useState<InventoryItem | null>(null);
   const [bgCardJobs, setBgCardJobs] = useState<ProductCardBgJob[]>([]);
   const bgCardNotifiedRef = useRef<Set<string>>(new Set());
@@ -3465,6 +3466,17 @@ const InventoryList: React.FC<Props> = ({
               </button>
                 );
               })()}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openAddPhotosModal([item.id], { ebay: true });
+                }}
+                className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 hover:border-sky-300 transition-colors`}
+                title="Parse photos from my eBay listings into this item"
+              >
+                <ShoppingBag size={13} strokeWidth={2.25} />
+              </button>
 
               {(() => {
                 const bgBusy = activeBgCardItemIds.has(item.id);
@@ -5179,15 +5191,17 @@ const InventoryList: React.FC<Props> = ({
     [addPhotosTargetIds, itemsById]
   );
 
-  const openAddPhotosModal = useCallback((ids: string[]) => {
+  const openAddPhotosModal = useCallback((ids: string[], opts?: { ebay?: boolean }) => {
     if (!ids.length) return;
     setAddPhotosTargetIds(ids);
+    setAddPhotosAutoEbay(Boolean(opts?.ebay));
     setShowBulkAddPhotosModal(true);
   }, []);
 
   const closeAddPhotosModal = useCallback(() => {
     setShowBulkAddPhotosModal(false);
     setAddPhotosTargetIds([]);
+    setAddPhotosAutoEbay(false);
   }, []);
 
   const selectedHasSoldOrTraded = useMemo(
@@ -5267,6 +5281,13 @@ const InventoryList: React.FC<Props> = ({
     };
     return [
       { id: 'photos', label: 'Add photos', icon: <Camera size={16} />, onClick: () => openAddPhotosModal(deferredSelectedIds), variant: 'primary' },
+      {
+        id: 'ebay_photos',
+        label: 'eBay photos',
+        icon: <ShoppingBag size={16} />,
+        onClick: () => openAddPhotosModal(deferredSelectedIds, { ebay: true }),
+        variant: 'primary',
+      },
       {
         id: 'sale_ready',
         label: 'List Ready',
@@ -6766,6 +6787,7 @@ const InventoryList: React.FC<Props> = ({
         searchName={addPhotosTargetItems[0]?.name ?? ''}
         ebaySku={addPhotosTargetItems.length === 1 ? addPhotosTargetItems[0]?.ebaySku : undefined}
         storageItemId={addPhotosTargetItems.length === 1 ? addPhotosTargetItems[0]?.id : 'shared'}
+        autoEbay={addPhotosAutoEbay}
       />
 
       {geminiCardItem && (
@@ -6864,6 +6886,7 @@ const InventoryList: React.FC<Props> = ({
                     setItemToSell(it);
                   },
                   onPhotos: (it) => openAddPhotosModal([it.id]),
+                  onEbayPhotos: (it) => openAddPhotosModal([it.id], { ebay: true }),
                   onQuickBundle: (it) => {
                     const parentOfItem = resolveParentContainer(
                       it,

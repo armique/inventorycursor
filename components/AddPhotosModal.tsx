@@ -36,6 +36,8 @@ interface Props {
   ebaySku?: string;
   /** Firebase Storage folder when uploading files (single item id or "shared"). */
   storageItemId?: string;
+  /** When true, open and immediately load matching photos from My eBay listings. */
+  autoEbay?: boolean;
 }
 
 const AddPhotosModal: React.FC<Props> = ({
@@ -46,6 +48,7 @@ const AddPhotosModal: React.FC<Props> = ({
   searchName = '',
   ebaySku,
   storageItemId = 'shared',
+  autoEbay = false,
 }) => {
   const [urlInput, setUrlInput] = useState('');
   const [imgurInput, setImgurInput] = useState('');
@@ -114,6 +117,52 @@ const AddPhotosModal: React.FC<Props> = ({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, loading, onClose]);
+
+  const autoEbayStartedRef = useRef(false);
+  useEffect(() => {
+    if (!open) {
+      autoEbayStartedRef.current = false;
+      return;
+    }
+    if (!autoEbay || autoEbayStartedRef.current) return;
+    if (!searchName.trim()) return;
+    autoEbayStartedRef.current = true;
+    let cancelled = false;
+    (async () => {
+      setEbayListingLoading(true);
+      setEbayListingError(null);
+      setEbayListingMatches(null);
+      setExpandedEbayListingId(null);
+      setSelectedEbayPhotosByListing({});
+      setPhotoSearchResults(null);
+      setPhotoSearchError(null);
+      try {
+        const { listings: all } = await ensureEbayListings();
+        if (cancelled) return;
+        if (!all.length) {
+          setEbayListingError(`No active eBay listings found for seller ${getEbayUsername()}.`);
+          return;
+        }
+        const matches = matchEbayListingsForItem(searchName.trim(), all, ebaySku);
+        if (!matches.length) {
+          setEbayListingError(
+            `No listings matched "${searchName.trim()}". You have ${all.length} active listing${all.length === 1 ? '' : 's'}.`
+          );
+          return;
+        }
+        setEbayListingMatches(matches);
+      } catch (e: unknown) {
+        if (!cancelled) {
+          setEbayListingError((e as Error)?.message || 'Failed to load your eBay listings.');
+        }
+      } finally {
+        if (!cancelled) setEbayListingLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, autoEbay, searchName, ebaySku]);
 
   const addUrls = useCallback((urls: string[]) => {
     setPendingUrls((prev) => {
