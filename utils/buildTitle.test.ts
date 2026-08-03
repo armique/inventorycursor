@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ItemStatus, type InventoryItem } from '../types';
-import { buildContainerTitle, ramBits } from './buildTitle';
+import { buildContainerTitle, MARKETPLACE_TITLE_MAX, ramBits, withRebuiltContainerTitle } from './buildTitle';
 
 function ramItem(partial: Partial<InventoryItem> & { name: string }): InventoryItem {
   return {
@@ -137,5 +137,48 @@ describe('ramBits kit expansion', () => {
     expect(title).toMatch(/Ryzen\s*5\s*5600/i);
     expect(title).toMatch(/RTX\s*3060\s*Ti/i);
     expect(title).toMatch(/16GB \(2×8GB\) DDR4/i);
+  });
+
+  it('drops GPU from Mixed title when that part is removed (≤ KA/eBay limit)', () => {
+    const base = (partial: Partial<InventoryItem> & { id: string; name: string; subCategory: string }) =>
+      ({
+        buyPrice: 0,
+        buyDate: '2026-01-01',
+        category: 'Components',
+        status: ItemStatus.IN_STOCK,
+        comment1: '',
+        comment2: '',
+        ...partial,
+      }) as InventoryItem;
+
+    const parts = [
+      base({ id: 'mobo', name: 'MSI B85-G41 PC Mate', subCategory: 'Motherboards' }),
+      base({ id: 'cpu', name: 'Intel Core i7-4790K', subCategory: 'Processors' }),
+      base({ id: 'gpu', name: 'MSI Radeon HD 7870 Twin Frozr', subCategory: 'Graphics Cards' }),
+      ramItem({ id: 'ram', name: 'DDR3 16GB (2x8GB) DDR3 RAM' }),
+    ];
+    const withGpu = buildContainerTitle('mixed', parts);
+    expect(withGpu).toMatch(/7870/i);
+    expect(withGpu.length).toBeLessThanOrEqual(MARKETPLACE_TITLE_MAX);
+
+    const withoutGpu = parts.filter((p) => p.id !== 'gpu');
+    const container: InventoryItem = {
+      id: 'mixed-1',
+      name: withGpu,
+      marketTitle: withGpu,
+      buyPrice: 100,
+      buyDate: '2026-01-01',
+      category: 'Mixed Bundle',
+      status: ItemStatus.IN_STOCK,
+      comment1: '',
+      comment2: '',
+      isBundle: true,
+      componentIds: withoutGpu.map((p) => p.id),
+    };
+    const rebuilt = withRebuiltContainerTitle(container, 'mixed', withoutGpu);
+    expect(rebuilt.name).not.toMatch(/7870/i);
+    expect(rebuilt.name).toMatch(/4790K/i);
+    expect(rebuilt.marketTitle).toBe(rebuilt.name);
+    expect(rebuilt.name.length).toBeLessThanOrEqual(MARKETPLACE_TITLE_MAX);
   });
 });

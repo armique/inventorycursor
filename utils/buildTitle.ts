@@ -313,6 +313,36 @@ export function buildContainerTitle(
   return truncateTitle(title);
 }
 
+/** Detect Aufrustkit branding from an existing container name/vendor. */
+export function preferAufrustkitFromItem(
+  container: Pick<InventoryItem, 'name' | 'vendor'>
+): boolean {
+  return /aufrustkit|aufrüstkit|aufrüst[\s-]?kit/i.test(
+    `${container.name || ''} ${container.vendor || ''}`
+  );
+}
+
+/**
+ * Rebuild marketplace name + marketTitle from current parts (KA/eBay ≤65).
+ * Used when parts are added/removed so listing AI does not cite missing hardware.
+ */
+export function withRebuiltContainerTitle(
+  container: InventoryItem,
+  kind: BuildTitleKind,
+  parts: InventoryItem[]
+): InventoryItem {
+  if (!parts.length) return container;
+  const title = buildContainerTitle(kind, parts, {
+    preferAufrustkit: preferAufrustkitFromItem(container),
+  });
+  if (!title) return container;
+  return {
+    ...container,
+    name: title,
+    marketTitle: title,
+  };
+}
+
 export function ensureBundleTitleTag(name: string, preferAufrustkit = false): string {
   const tag = preferAufrustkit ? 'Aufrustkit' : 'PC Bundle';
   if (new RegExp(tag, 'i').test(name)) return truncateTitle(name);

@@ -109,7 +109,7 @@ import { loadEbayOrderIndex } from '../services/ebayOrderIndex';
 import { findMatchingOrdersForItem, type EbayOrderMatch } from '../utils/ebayOrderMatch';
 import { applyEbayOrderMatchToItem } from '../utils/applyEbayOrderMatch';
 import ContainerMembershipBadge from './ContainerMembershipBadge';
-import { buildContainerTitle } from '../utils/buildTitle';
+import { buildContainerTitle, withRebuiltContainerTitle } from '../utils/buildTitle';
 import { countEqualSplitSoldGroupCandidates } from '../utils/suggestEqualSplitSoldGroups';
 import { applyRetroComposeToInventory, findOrphanSoldContainerShellIds } from '../utils/retroComposeApply';
 import { filterPartsAvailableForCompose } from '../utils/containerMembershipInvariants';
@@ -2844,7 +2844,7 @@ const InventoryList: React.FC<Props> = ({
             platformSold: undefined,
             containerSoldDate: undefined,
           };
-      const updatedParent: InventoryItem = {
+      let updatedParent: InventoryItem = {
         ...parent,
         componentIds: remaining.map((p) => p.id),
         buyPrice: buyTotal,
@@ -2853,12 +2853,19 @@ const InventoryList: React.FC<Props> = ({
           .join('\n')
           .slice(0, 2000),
       };
+      // Drop removed hardware from name/marketTitle so listing AI matches remaining parts.
+      const kind = getContainerKind(updatedParent);
+      if (kind) {
+        updatedParent = withRebuiltContainerTitle(updatedParent, kind, remaining);
+      }
       if (remaining.length === 0) {
         onUpdate([restored], [parent.id]);
         setToast(`Removed “${child.name}” · last part · container removed`);
       } else {
         onUpdate([updatedParent, restored]);
-        setToast(`Removed “${child.name}” → active inventory · container €${formatEUR(buyTotal)}`);
+        setToast(
+          `Removed “${child.name}” → active · title updated · €${formatEUR(buyTotal)}`
+        );
       }
       setTimeout(() => setToast(null), 2400);
     },
@@ -2888,22 +2895,16 @@ const InventoryList: React.FC<Props> = ({
         setTimeout(() => setToast(null), 2200);
         return;
       }
-      const preferAufrustkit = /aufrustkit|aufrüstkit|aufrüst[\s-]?kit/i.test(
-        `${container.name} ${container.vendor || ''}`
-      );
-      const title = buildContainerTitle(kind, parts, { preferAufrustkit });
-      if (!title || title === container.name) {
-        setToast(title === container.name ? 'Title already up to date' : 'Could not build a new title');
+      const updated = withRebuiltContainerTitle(container, kind, parts);
+      if (!updated.name || updated.name === container.name) {
+        setToast(
+          updated.name === container.name ? 'Title already up to date' : 'Could not build a new title'
+        );
         setTimeout(() => setToast(null), 2200);
         return;
       }
-      const updated: InventoryItem = {
-        ...container,
-        name: title,
-        marketTitle: title,
-      };
       onUpdate([updated], undefined, { skipUndo: false, flushCloud: true });
-      setToast(`Title rebuilt · ${title}`);
+      setToast(`Title rebuilt · ${updated.name}`);
       setTimeout(() => setToast(null), 2800);
     },
     [items, onUpdate]
@@ -7647,7 +7648,7 @@ const InventoryList: React.FC<Props> = ({
                        Math.round(
                          remainingChildren.reduce((s, i) => s + Number(i.buyPrice || 0), 0) * 100
                        ) / 100;
-                     const updatedParent: InventoryItem = {
+                     let updatedParent: InventoryItem = {
                        ...parent,
                        componentIds: remainingChildren.map((c) => c.id),
                        buyPrice: buyTotal,
@@ -7656,9 +7657,17 @@ const InventoryList: React.FC<Props> = ({
                          .join('\n')
                          .slice(0, 2000),
                      };
+                     const kind = getContainerKind(updatedParent);
+                     if (kind) {
+                       updatedParent = withRebuiltContainerTitle(
+                         updatedParent,
+                         kind,
+                         remainingChildren
+                       );
+                     }
                      onUpdate([updatedParent, soldChild]);
                      setToast(
-                       `Sold “${soldChild.name}” · left group · container now €${formatEUR(buyTotal)}`
+                       `Sold “${soldChild.name}” · left group · title updated · €${formatEUR(buyTotal)}`
                      );
                      setTimeout(() => setToast(null), 2600);
                    }
