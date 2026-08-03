@@ -12,7 +12,7 @@ import {
   splitBulkImportCosts,
   type BulkCostSplitInput,
 } from '../utils/bulkImportCostSplit';
-import { lineHasDefectKeyword, resolveDefectCounts, stripConditionAnnotations } from '../utils/bulkTextParse';
+import { lineHasDefectKeyword, pickBulkImportDisplayName, resolveDefectCounts, stripConditionAnnotations } from '../utils/bulkTextParse';
 
 function sum(map: Record<string, number>): number {
   return Math.round(Object.values(map).reduce((s, v) => s + v, 0) * 100) / 100;
@@ -85,6 +85,35 @@ assert.deepEqual(splitBulkImportCosts([{ id: 'a' }], -5, 'EQUAL'), { a: 0 });
   assert.deepEqual(resolveDefectCounts(2, 'RTX 3060 12GB'), { working: 2, defective: 0 });
   assert.deepEqual(resolveDefectCounts(2, 'RTX 3060 defekt'), { working: 0, defective: 2 });
   assert.deepEqual(resolveDefectCounts(1, 'RTX 3060 12GB', true), { working: 0, defective: 1 });
+}
+
+// --- AI parse prefers cleaned titles; As-Is keeps paste; RAM kit format wins ---
+{
+  assert.equal(
+    pickBulkImportDisplayName({
+      mode: 'AI',
+      pasteProductName: 'msi rtx 3060 gaming x 12gb neu!!!',
+      aiName: 'MSI GeForce RTX 3060 Gaming X 12GB',
+    }),
+    'MSI GeForce RTX 3060 Gaming X 12GB'
+  );
+  assert.equal(
+    pickBulkImportDisplayName({
+      mode: 'AS_IS',
+      pasteProductName: 'msi rtx 3060 gaming x 12gb neu!!!',
+      aiName: 'MSI GeForce RTX 3060 Gaming X 12GB',
+    }),
+    'msi rtx 3060 gaming x 12gb neu!!!'
+  );
+  assert.equal(
+    pickBulkImportDisplayName({
+      mode: 'AI',
+      pasteProductName: 'ACR24D4U1S1ME-8X 8GB',
+      aiName: '64GB (8x8GB) DDR4',
+      ramFormattedName: 'Crucial 8GB (1x8GB) DDR4 RAM',
+    }),
+    'Crucial 8GB (1x8GB) DDR4 RAM'
+  );
 }
 
 console.log('verify-bulk-import-unchanged: ok');

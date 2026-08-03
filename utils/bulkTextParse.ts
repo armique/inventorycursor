@@ -63,6 +63,25 @@ export function stripConditionAnnotations(name: string): string {
 }
 
 /**
+ * Choose the inventory display name after bulk paste.
+ * AI mode prefers the model's cleaned title; RAM kits keep paste/line-based formatting
+ * so part numbers like "-8X" are never expanded into fake module counts.
+ */
+export function pickBulkImportDisplayName(opts: {
+  mode: 'AI' | 'AS_IS';
+  pasteProductName: string;
+  aiName: string;
+  /** When set, use formatRamKitDisplayName(base, kit) — pass already-formatted string. */
+  ramFormattedName?: string | null;
+}): string {
+  const paste = (opts.pasteProductName || '').trim();
+  const ai = (opts.aiName || '').trim();
+  if (opts.ramFormattedName?.trim()) return opts.ramFormattedName.trim();
+  if (opts.mode === 'AI' && ai) return ai;
+  return paste || ai;
+}
+
+/**
  * Decide how many working vs defective rows to create for a purchase quantity.
  * When split numbers don't cover qty, leftover rows are treated as working
  * unless the line only has a general defect keyword (no split).
