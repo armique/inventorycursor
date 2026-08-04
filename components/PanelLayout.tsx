@@ -121,9 +121,9 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     allowProactiveEvents: !mobileRedirectSignIn,
   });
 
-  /** Inventory/trash use internal scroll + docked bulk bar; eBay tools / EST use full-width workspace layout. */
+  /** Inventory/trash use internal scroll + docked bulk bar; eBay tools / EST / bulk entry use full-width workspace layout. */
   const isDockedPanelPage =
-    /^\/panel\/(inventory|trash|ebay-store-pull|est|dealwatch)(\/|$)/.test(location.pathname);
+    /^\/panel\/(inventory|trash|ebay-store-pull|est|dealwatch|add-bulk)(\/|$)/.test(location.pathname);
 
   const requireAuth = isCloudEnabled && authReady && !authUser;
 

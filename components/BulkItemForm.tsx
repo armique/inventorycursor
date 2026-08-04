@@ -852,8 +852,8 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
   };
 
   return (
-    <div className="max-w-[1600px] mx-auto h-[calc(100dvh-5.5rem)] md:h-[calc(100vh-100px)] flex flex-col animate-in fade-in">
-      <div className="px-3 sm:px-4 shrink-0">
+    <div className="w-full min-w-0 h-[calc(100dvh-5.5rem)] md:h-[calc(100vh-5.5rem)] flex flex-col animate-in fade-in">
+      <div className="px-1 sm:px-2 shrink-0">
         <AddFlowStepHeader title="Bulk entry" />
         <AddFlowPageHeader
           icon={<Layers size={22} strokeWidth={1.75} />}
@@ -867,9 +867,9 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
           }
         />
       </div>
-      {/* HEADER totals strip */}
-      <header className="flex flex-col lg:flex-row lg:justify-end lg:items-center gap-3 mb-3 lg:mb-6 shrink-0 px-3 sm:px-4">
-        <div className={`flex flex-wrap items-end gap-2 sm:gap-3 md:gap-4 ${ADD_FLOW_PANEL} p-2 md:p-3`}>
+      {/* HEADER totals strip — full width, not shoved to the right */}
+      <header className="flex flex-col gap-3 mb-3 lg:mb-4 shrink-0 px-1 sm:px-2">
+        <div className={`w-full flex flex-wrap items-end gap-2 sm:gap-3 md:gap-4 ${ADD_FLOW_PANEL} p-2 md:p-3`}>
            <div className="px-3 border-r border-slate-100 min-w-[6rem]">
               <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest block">Total paid</label>
               <div className="flex items-center gap-1">
@@ -926,10 +926,10 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
         </div>
       </header>
 
-      <div className="flex flex-1 flex-col lg:flex-row gap-3 lg:gap-6 overflow-y-auto lg:overflow-hidden px-3 sm:px-4 pb-[max(5.5rem,calc(4rem+env(safe-area-inset-bottom)))] lg:pb-4">
+      <div className="flex flex-1 flex-col lg:flex-row gap-3 lg:gap-4 overflow-y-auto lg:overflow-hidden px-1 sm:px-2 pb-[max(5.5rem,calc(4rem+env(safe-area-inset-bottom)))] lg:pb-2">
          
          {/* LEFT: ITEM BUILDER */}
-         <div className="w-full lg:w-[450px] flex flex-col gap-4 lg:gap-6 shrink-0 lg:overflow-y-auto lg:pb-20 scrollbar-hide">
+         <div className="w-full lg:w-[min(100%,26rem)] xl:w-[28rem] flex flex-col gap-4 lg:gap-5 shrink-0 lg:overflow-y-auto lg:pb-20 scrollbar-hide">
             
             {/* INPUT MODE TABS */}
             <div className={`${ADD_FLOW_PANEL} p-2 grid grid-cols-3 gap-1`}>
