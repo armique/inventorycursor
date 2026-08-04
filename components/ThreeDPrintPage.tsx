@@ -2,9 +2,9 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Printer, ArrowLeft, Save, AlertCircle, CheckCircle2,
-  Layers, Zap, Gauge, ShieldAlert, History, Plus,
+  Layers, Zap, Gauge, ShieldAlert, History, Plus, Search, RefreshCw, Receipt,
 } from 'lucide-react';
-import { InventoryItem, ItemStatus } from '../types';
+import { CustomerInfo, InventoryItem, ItemStatus, TaxMode } from '../types';
 import FilamentStockPanel from './FilamentStockPanel';
 import {
   getRemainingGrams,
@@ -16,6 +16,13 @@ import {
 } from '../services/filamentStock';
 import { AddFlowStepHeader, AddOptionTile } from './addFlowShared';
 import { getCategoryIcon } from './categoryIcons';
+import { hasEbayToken, fetchEbayOrder } from '../services/ebayService';
+import { refreshRecentEbayOrders } from '../services/ebayOrderBackfill';
+import { findEbayOrderById, loadEbayOrderIndex } from '../services/ebayOrderIndex';
+import { listRecentEbayOrdersForSale, type EbayOrderMatch } from '../utils/ebayOrderMatch';
+import { getLinePayout } from '../utils/ebayOrderPayout';
+import { calculateSaleProfit } from '../utils/saleProfit';
+import { formatEUR } from '../utils/formatMoney';
 
 interface ThreeDPrintPageProps {
   items: InventoryItem[];
@@ -41,6 +48,19 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
   // Sells Price
   const [plannedSellPrice, setPlannedSellPrice] = useState<string>('');
   const [storeVisible, setStoreVisible] = useState(false);
+  const [markAsSoldNow, setMarkAsSoldNow] = useState(false);
+  const [soldDate, setSoldDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [orderGrossTotal, setOrderGrossTotal] = useState<string>('');
+  const [marketFeeTotal, setMarketFeeTotal] = useState<string>('');
+  const [shippingTotal, setShippingTotal] = useState<string>('');
+  const [ebayOrderId, setEbayOrderId] = useState<string>('');
+  const [ebaySku, setEbaySku] = useState<string>('');
+  const [ebayListingId, setEbayListingId] = useState<string>('');
+  const [ebayUsername, setEbayUsername] = useState<string>('');
+  const [customer, setCustomer] = useState<CustomerInfo>({ name: '', address: '' });
+  const [orderSuggestions, setOrderSuggestions] = useState<EbayOrderMatch[]>([]);
+  const [orderLookupBusy, setOrderLookupBusy] = useState(false);
+  const [orderLookupMsg, setOrderLookupMsg] = useState<string | null>(null);
 
   // Filament stock + calculator fields
   const initialStock = loadFilamentStock();
@@ -191,9 +211,16 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
     
     // Profit Calculation
     const sellPriceNum = parseFloat(plannedSellPrice) || 0;
+    const fallbackGrossTotal = sellPriceNum * quantity;
+    const grossTotal = parseFloat(orderGrossTotal) || fallbackGrossTotal;
+    const feeTotalNum = Math.max(0, parseFloat(marketFeeTotal) || 0);
+    const shippingTotalNum = Math.max(0, parseFloat(shippingTotal) || 0);
+    const netAfterMarketplaceTotal = Math.max(0, grossTotal - feeTotalNum - shippingTotalNum);
     const profitUnit = sellPriceNum > 0 ? sellPriceNum - finalUnitCost : 0;
     const profitTotal = profitUnit * quantity;
     const profitMarginPercent = sellPriceNum > 0 ? (profitUnit / sellPriceNum) * 100 : 0;
+    const realizedProfitTotal = netAfterMarketplaceTotal - totalProductionCost;
+    const realizedMarginPercent = grossTotal > 0 ? (realizedProfitTotal / grossTotal) * 100 : 0;
 
     return {
       totalHours,
@@ -206,13 +233,105 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
       totalProductionCost,
       profitUnit,
       profitTotal,
-      profitMarginPercent
+      profitMarginPercent,
+      grossTotal,
+      feeTotalNum,
+      shippingTotalNum,
+      netAfterMarketplaceTotal,
+      realizedProfitTotal,
+      realizedMarginPercent,
     };
   }, [
     filamentWeight, filamentPrice, printerCost, printerLifespan, 
     printHours, printMinutes, printerPower, electricityPrice, 
-    failMargin, laborCost, quantity, plannedSellPrice
+    failMargin, laborCost, quantity, plannedSellPrice, orderGrossTotal, marketFeeTotal, shippingTotal
   ]);
+
+  const refreshOrderSuggestions = useCallback(() => {
+    const seed: InventoryItem = {
+      id: '__3d-order-seed__',
+      name: itemName.trim(),
+      buyPrice: 0,
+      buyDate: soldDate || new Date().toISOString().split('T')[0],
+      category: selectedCategory || 'Misc',
+      status: ItemStatus.IN_STOCK,
+      comment1: '',
+      comment2: '',
+      ...(ebaySku.trim() ? { ebaySku: ebaySku.trim() } : {}),
+      ...(ebayListingId.trim() ? { ebayListingId: ebayListingId.trim() } : {}),
+    };
+    const { orders } = loadEbayOrderIndex();
+    const list = listRecentEbayOrdersForSale(seed, orders, { days: 60, limit: 12 });
+    setOrderSuggestions(list);
+    return list;
+  }, [itemName, soldDate, selectedCategory, ebaySku, ebayListingId]);
+
+  const applyOrderMatch = useCallback((match: EbayOrderMatch) => {
+    const payout = getLinePayout(match.order, match.lineItem);
+    setEbayOrderId(match.order.orderId);
+    setEbayUsername(match.order.buyer.username || '');
+    setCustomer({
+      name: match.order.buyer.fullName || '',
+      address: match.order.buyer.address || '',
+      phone: match.order.buyer.phone,
+      email: match.order.buyer.email,
+    });
+    if (match.order.creationDate) setSoldDate(match.order.creationDate);
+    if (match.lineItem.sku) setEbaySku(match.lineItem.sku);
+    if (match.lineItem.listingId) setEbayListingId(match.lineItem.listingId);
+    if (payout.gross != null && payout.gross > 0) setOrderGrossTotal(formatEUR(payout.gross));
+    if (payout.netKnown && payout.net != null && payout.gross != null && payout.gross > payout.net) {
+      setMarketFeeTotal(formatEUR(Math.max(0, payout.gross - payout.net)));
+    } else if (payout.fee > 0) {
+      setMarketFeeTotal(formatEUR(payout.fee));
+    }
+    setOrderLookupMsg('Order applied. Verify totals and click Done.');
+  }, []);
+
+  const handleLookupEbayOrder = useCallback(async () => {
+    if (!markAsSoldNow) return;
+    setOrderLookupBusy(true);
+    setOrderLookupMsg(null);
+    try {
+      if (hasEbayToken()) {
+        await refreshRecentEbayOrders(45);
+      }
+      if (ebayOrderId.trim()) {
+        const cached = findEbayOrderById(ebayOrderId.trim());
+        if (cached) {
+          const line = cached.lineItems[0];
+          if (line) {
+            applyOrderMatch({
+              order: cached,
+              lineItem: line,
+              matchKind: 'recent',
+              matchScore: 100,
+            });
+            setOrderSuggestions(refreshOrderSuggestions());
+            return;
+          }
+        }
+        if (hasEbayToken()) {
+          const live = await fetchEbayOrder(ebayOrderId.trim());
+          setEbayUsername(live.ebayUsername || '');
+          setCustomer(live.customer || { name: '', address: '' });
+          if (live.sellDate) setSoldDate(live.sellDate);
+          if (live.sellPrice != null && Number.isFinite(live.sellPrice)) {
+            setOrderGrossTotal(formatEUR(live.sellPrice));
+          }
+          setOrderLookupMsg('Order fetched from eBay. Verify totals and click Done.');
+        }
+      }
+      const suggestions = refreshOrderSuggestions();
+      if (!suggestions.length && !orderLookupMsg) {
+        setOrderLookupMsg('No matching recent eBay orders found. Enter totals manually.');
+      }
+    } catch (e) {
+      setOrderLookupMsg((e as Error)?.message || 'Could not load eBay orders.');
+    } finally {
+      setOrderLookupBusy(false);
+    }
+  }, [markAsSoldNow, ebayOrderId, applyOrderMatch, refreshOrderSuggestions, orderLookupMsg]);
 
   // Handle category changes
   const handleCategoryChange = (cat: string) => {
@@ -248,6 +367,13 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
       setErrorMsg('Weights, hours, and minutes cannot be negative.');
       return;
     }
+    if (markAsSoldNow) {
+      const gross = parseFloat(orderGrossTotal) || 0;
+      if (!(gross > 0)) {
+        setErrorMsg('Enter gross order total before marking as Done.');
+        return;
+      }
+    }
 
     const totalGramsNeeded = filamentWeight * quantity;
     if (selectedSpoolId && selectedSpool) {
@@ -268,9 +394,18 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
       return;
     }
 
-    const buyPrice = parseFloat(calculations.finalUnitCost.toFixed(2));
-    const sellPrice = plannedSellPrice ? parseFloat(plannedSellPrice) : undefined;
+    const buyPrice = parseFloat(calculations.totalProductionCost.toFixed(2));
+    const grossSale = markAsSoldNow
+      ? parseFloat(orderGrossTotal) || 0
+      : (parseFloat(plannedSellPrice) || 0) * quantity;
+    const feeTotalNum = markAsSoldNow ? Math.max(0, parseFloat(marketFeeTotal) || 0) : 0;
+    const shippingTotalNum = markAsSoldNow ? Math.max(0, parseFloat(shippingTotal) || 0) : 0;
+    const sellPrice = grossSale > 0 ? parseFloat(grossSale.toFixed(2)) : undefined;
     const buyDate = new Date().toISOString().split('T')[0];
+    const taxMode: TaxMode = 'SmallBusiness';
+    const realizedProfit = sellPrice != null
+      ? calculateSaleProfit(Math.max(0, sellPrice - shippingTotalNum), buyPrice, feeTotalNum, taxMode)
+      : undefined;
 
     const timestamp = Date.now();
     const uniqueId = `item-3d-${timestamp}-${Math.random().toString(36).substr(2, 9)}`;
@@ -283,10 +418,20 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
         buyDate,
         category: categoryToSave,
         subCategory: subCategoryToSave || undefined,
-        status: ItemStatus.IN_STOCK,
+        status: markAsSoldNow ? ItemStatus.SOLD : ItemStatus.IN_STOCK,
+        ...(markAsSoldNow ? { sellDate: soldDate || buyDate } : {}),
         comment1: `3D Printed (${filamentType} - ${filamentColor}). Weight: ${filamentWeight}g. Print time: ${printHours}h ${printMinutes}m.`,
-        comment2: `Electricity: ${electricityPrice}€/kWh (${printerPower}W). Printer: ${printerCost}€ over ${printerLifespan}h. Fail margin: ${failMargin}%.`,
+        comment2: `Electricity: ${electricityPrice}€/kWh (${printerPower}W). Printer: ${printerCost}€ over ${printerLifespan}h. Fail margin: ${failMargin}%.${markAsSoldNow ? ` Sold order: gross €${formatEUR(grossSale)} · fee €${formatEUR(feeTotalNum)} · shipping €${formatEUR(shippingTotalNum)} · net €${formatEUR(Math.max(0, grossSale - feeTotalNum - shippingTotalNum))}.` : ''}`,
         buyPaymentType: 'Other',
+        ...(markAsSoldNow ? { paymentType: 'ebay.de' as const, platformSold: 'ebay.de' as const } : {}),
+        ...(markAsSoldNow && sellPrice != null ? { profit: parseFloat(realizedProfit.toFixed(2)) } : {}),
+        ...(markAsSoldNow ? { hasFee: feeTotalNum > 0, feeAmount: feeTotalNum } : {}),
+        ...(markAsSoldNow && shippingTotalNum > 0 ? { sellerPaidShipping: true, sellerShippingAmount: shippingTotalNum } : {}),
+        ...(markAsSoldNow && ebayOrderId.trim() ? { ebayOrderId: ebayOrderId.trim() } : {}),
+        ...(markAsSoldNow && ebayUsername.trim() ? { ebayUsername: ebayUsername.trim() } : {}),
+        ...(markAsSoldNow && ebaySku.trim() ? { ebaySku: ebaySku.trim() } : {}),
+        ...(markAsSoldNow && ebayListingId.trim() ? { ebayListingId: ebayListingId.trim() } : {}),
+        ...(markAsSoldNow && (customer.name || customer.address || customer.phone || customer.email) ? { customer } : {}),
         presence: 'present',
         isDraft: false,
         storeVisible: storeVisible && sellPrice !== undefined,
@@ -320,12 +465,21 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
         }
       }
 
-      setSuccessMsg(`Successfully created ${quantity} item(s) and added them to inventory!`);
+      setSuccessMsg(markAsSoldNow
+        ? `Done — order moved to Sold with net margin calculation.`
+        : `Successfully created ${quantity} item(s) and added them to inventory!`);
       
       // Reset basic inputs but preserve calculator setup for next print
       setItemName('');
       setQuantity(1);
       setPlannedSellPrice('');
+      setOrderGrossTotal('');
+      setMarketFeeTotal('');
+      setShippingTotal('');
+      setEbayOrderId('');
+      setOrderSuggestions([]);
+      setOrderLookupMsg(null);
+      setMarkAsSoldNow(false);
       setStoreVisible(false);
 
       // Scroll to top to see success msg
@@ -462,6 +616,122 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
                   className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
                 />
               </div>
+
+              <div className="sm:col-span-2 flex items-center gap-2 mt-1">
+                <input
+                  type="checkbox"
+                  id="markAsSoldNow"
+                  checked={markAsSoldNow}
+                  onChange={(e) => setMarkAsSoldNow(e.target.checked)}
+                  className="rounded text-brand-600 focus:ring-brand-500 h-4 w-4"
+                />
+                <label htmlFor="markAsSoldNow" className="text-xs font-bold text-slate-700 select-none">
+                  Finish this order now and send directly to Sold
+                </label>
+              </div>
+
+              {markAsSoldNow && (
+                <div className="sm:col-span-2 mt-2 rounded-2xl border border-blue-200 bg-blue-50/60 p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-xs font-black uppercase tracking-widest text-blue-700 flex items-center gap-1">
+                      <Receipt size={13} />
+                      eBay order parse
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={handleLookupEbayOrder}
+                      disabled={orderLookupBusy}
+                      className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+                    >
+                      {orderLookupBusy ? <RefreshCw size={12} className="animate-spin" /> : <Search size={12} />}
+                      Parse order
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <input
+                      type="text"
+                      placeholder="eBay order ID (optional)"
+                      value={ebayOrderId}
+                      onChange={(e) => setEbayOrderId(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-blue-200 bg-white text-sm"
+                    />
+                    <input
+                      type="date"
+                      value={soldDate}
+                      onChange={(e) => setSoldDate(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-blue-200 bg-white text-sm"
+                    />
+                    <input
+                      type="text"
+                      placeholder="SKU (optional)"
+                      value={ebaySku}
+                      onChange={(e) => setEbaySku(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-blue-200 bg-white text-sm"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Listing ID (optional)"
+                      value={ebayListingId}
+                      onChange={(e) => setEbayListingId(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-blue-200 bg-white text-sm"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Gross order total (€)"
+                      value={orderGrossTotal}
+                      onChange={(e) => setOrderGrossTotal(e.target.value.replace(',', '.'))}
+                      className="w-full px-3 py-2 rounded-xl border border-blue-200 bg-white text-sm"
+                    />
+                    <input
+                      type="text"
+                      placeholder="eBay fees total (€)"
+                      value={marketFeeTotal}
+                      onChange={(e) => setMarketFeeTotal(e.target.value.replace(',', '.'))}
+                      className="w-full px-3 py-2 rounded-xl border border-blue-200 bg-white text-sm"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Shipping you paid (€)"
+                      value={shippingTotal}
+                      onChange={(e) => setShippingTotal(e.target.value.replace(',', '.'))}
+                      className="w-full px-3 py-2 rounded-xl border border-blue-200 bg-white text-sm"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Buyer username"
+                      value={ebayUsername}
+                      onChange={(e) => setEbayUsername(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-blue-200 bg-white text-sm"
+                    />
+                  </div>
+
+                  {orderLookupMsg && <p className="text-[11px] text-blue-700 font-semibold">{orderLookupMsg}</p>}
+
+                  {orderSuggestions.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-[10px] uppercase tracking-widest text-blue-500 font-black">Recent matched orders</p>
+                      <div className="max-h-40 overflow-auto space-y-1">
+                        {orderSuggestions.map((s, idx) => (
+                          <button
+                            key={`${s.order.orderId}-${idx}`}
+                            type="button"
+                            onClick={() => applyOrderMatch(s)}
+                            className="w-full text-left rounded-lg border border-blue-200 bg-white px-2.5 py-2 hover:bg-blue-100"
+                          >
+                            <div className="text-[11px] font-bold text-slate-800 truncate">
+                              {s.order.orderId} · {s.lineItem.title}
+                            </div>
+                            <div className="text-[10px] text-slate-500">
+                              {s.order.creationDate || 'date n/a'} · {s.lineItem.sku || 'no sku'}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {!showCustomCategory ? (
                 <>
@@ -918,7 +1188,7 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
             </div>
 
             {/* Profit outcomes */}
-            {parseFloat(plannedSellPrice) > 0 && (
+            {parseFloat(plannedSellPrice) > 0 && !markAsSoldNow && (
               <div className="border-t border-slate-800 pt-6 space-y-4">
                 <h3 className="text-xs font-black uppercase tracking-widest text-slate-500">Margin Predictions</h3>
                 
@@ -948,6 +1218,21 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
               </div>
             )}
 
+            {markAsSoldNow && calculations.grossTotal > 0 && (
+              <div className="border-t border-slate-800 pt-6 space-y-4">
+                <h3 className="text-xs font-black uppercase tracking-widest text-slate-500">Real sold-order margin</h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between"><span className="text-slate-400">Gross order</span><span className="font-mono">€{formatEUR(calculations.grossTotal)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">eBay fees</span><span className="font-mono">-€{formatEUR(calculations.feeTotalNum)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Shipping paid</span><span className="font-mono">-€{formatEUR(calculations.shippingTotalNum)}</span></div>
+                  <div className="flex justify-between border-t border-slate-800 pt-2"><span className="text-slate-300 font-bold">Net after marketplace</span><span className="font-mono font-bold text-emerald-300">€{formatEUR(calculations.netAfterMarketplaceTotal)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Production cost (batch)</span><span className="font-mono">-€{formatEUR(calculations.totalProductionCost)}</span></div>
+                  <div className="flex justify-between border-t border-slate-800 pt-2"><span className="text-slate-200 font-black">Clean profit</span><span className="font-mono font-black text-emerald-400">€{formatEUR(calculations.realizedProfitTotal)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Margin</span><span className="font-mono">{calculations.realizedMarginPercent.toFixed(1)}%</span></div>
+                </div>
+              </div>
+            )}
+
             {/* Action button */}
             <button
               type="button"
@@ -955,7 +1240,7 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
               className="w-full py-4 px-6 rounded-2xl bg-brand-500 hover:bg-brand-600 text-white font-black uppercase tracking-widest text-xs transition-all shadow-lg hover:shadow-brand-500/20 active:scale-95 flex items-center justify-center gap-2"
             >
               <Save size={16} />
-              Print & Add to Inventory
+              {markAsSoldNow ? 'Done · Move to Sold' : 'Print & Add to Inventory'}
             </button>
           </div>
 
