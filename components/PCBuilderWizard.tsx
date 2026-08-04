@@ -140,12 +140,21 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave, buildKind = 'pc' }) =
   /** User typed a custom name — don't overwrite when parts change (PC builder only). */
   const userEditedNameRef = useRef(false);
 
-  // Initialize
+  const itemsById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
+
+  /** Prefer live inventory row so renames/price edits show (and save) correctly. */
+  const livePart = useCallback(
+    (part: InventoryItem): InventoryItem => itemsById.get(part.id) || part,
+    [itemsById]
+  );
+
+  // Hydrate slots when opening an existing build / initial selection (not on every items tick —
+  // that would wipe in-progress slot picks). Name/price sync is handled by soft-merge below.
   useEffect(() => {
     if (editId) {
       const pc = items.find(i => i.id === editId);
       if (pc) {
-        setBuildName(pc.name);
+        if (!userEditedNameRef.current) setBuildName(pc.name);
         const existingParts: Record<string, InventoryItem[]> = {};
         
         // Find components linked to this PC
@@ -183,7 +192,34 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave, buildKind = 'pc' }) =
        });
        setParts(newParts);
     }
-  }, [editId, location.state, items]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hydrate only when opening a build
+  }, [editId, location.state]);
+
+  // Soft-sync assigned parts with live inventory (name/price) without resetting slot picks.
+  useEffect(() => {
+    setParts((prev) => {
+      let changed = false;
+      const next: Record<string, InventoryItem[]> = {};
+      for (const [slotId, list] of Object.entries(prev)) {
+        next[slotId] = (list || []).map((p) => {
+          const live = itemsById.get(p.id);
+          if (!live) return p;
+          if (
+            live.name === p.name &&
+            live.buyPrice === p.buyPrice &&
+            live.isDefective === p.isDefective &&
+            live.subCategory === p.subCategory &&
+            live.category === p.category
+          ) {
+            return p;
+          }
+          changed = true;
+          return { ...p, ...live };
+        });
+      }
+      return changed ? next : prev;
+    });
+  }, [itemsById]);
 
   // Auto-name from parts (CPU/GPU/RAM/storage/cooling) within marketplace title limit
   useEffect(() => {
@@ -273,11 +309,16 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave, buildKind = 'pc' }) =
          }
        : buildParentDraft(allParts, userPhotos);
 
-     const updatedComponents = allParts.map((comp) => ({
-        ...comp,
-        status: ItemStatus.IN_COMPOSITION,
-        parentContainerId: parentItem.id,
-     }));
+     // Merge from live inventory so a rename done outside the builder is not overwritten
+     // by a stale slot snapshot on Save.
+     const updatedComponents = allParts.map((comp) => {
+        const live = itemsById.get(comp.id) || comp;
+        return {
+           ...live,
+           status: ItemStatus.IN_COMPOSITION,
+           parentContainerId: parentItem.id,
+        };
+     });
 
      let removedComponents: InventoryItem[] = [];
      if (editId) {
@@ -490,14 +531,16 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave, buildKind = 'pc' }) =
 
         {hasItems && (
           <div className={`space-y-0.5 ${compact ? 'pl-9' : 'pl-12'}`}>
-            {assigned.map((item) => (
-              <div key={item.id} className={`font-bold text-slate-600 truncate flex justify-between items-center gap-1 group/part ${compact ? 'text-sm' : 'text-[10px]'}`}>
-                <span className="truncate">{item.name}</span>
+            {assigned.map((item) => {
+              const live = livePart(item);
+              return (
+              <div key={live.id} className={`font-bold text-slate-600 truncate flex justify-between items-center gap-1 group/part ${compact ? 'text-sm' : 'text-[10px]'}`}>
+                <span className="truncate" title={live.name}>{live.name}</span>
                 <div className="flex items-center gap-1 shrink-0">
-                  <span className="text-slate-400">€{formatEUR(Number(item.buyPrice))}</span>
+                  <span className="text-slate-400">€{formatEUR(Number(live.buyPrice))}</span>
                   <button
                     type="button"
-                    onClick={(e) => removePartFromSlot(slot.id, item.id, e)}
+                    onClick={(e) => removePartFromSlot(slot.id, live.id, e)}
                     className="p-0.5 rounded opacity-0 group-hover/part:opacity-100 hover:bg-red-100 text-red-500 transition-all"
                     title="Remove from build"
                   >
@@ -505,7 +548,8 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave, buildKind = 'pc' }) =
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

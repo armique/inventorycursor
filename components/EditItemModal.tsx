@@ -105,6 +105,7 @@ const EditItemModal: React.FC<Props> = ({
 
   return (
     <ListingStudioModal
+      key={item.id}
       item={studioItem}
       allItems={items}
       categories={categories}

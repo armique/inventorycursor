@@ -427,19 +427,6 @@ const ListingStudioModal: React.FC<Props> = ({
     void reloadGallery();
   }, [reloadGallery]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      if (previewPhotoIndex !== null) {
-        setPreviewPhotoIndex(null);
-        return;
-      }
-      onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, previewPhotoIndex]);
-
   const flashCopied = (key: string) => {
     setCopied(key);
     setTimeout(() => setCopied((c) => (c === key ? null : c)), 1400);
@@ -458,6 +445,36 @@ const ListingStudioModal: React.FC<Props> = ({
   const persistPatch = async (patch: Partial<InventoryItem>) => {
     await onUpdateItem(patch);
   };
+
+  const flushPendingName = useCallback(async () => {
+    const nextName = name.trim() || item.name;
+    if (nextName === (item.name || '')) return;
+    setName(nextName);
+    await onUpdateItem({ name: nextName });
+  }, [name, item.name, onUpdateItem]);
+
+  const handleClose = useCallback(() => {
+    void (async () => {
+      try {
+        await flushPendingName();
+      } finally {
+        onClose();
+      }
+    })();
+  }, [flushPendingName, onClose]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (previewPhotoIndex !== null) {
+        setPreviewPhotoIndex(null);
+        return;
+      }
+      handleClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [handleClose, previewPhotoIndex]);
 
   const commitMoneyField = (
     raw: string,
@@ -944,7 +961,7 @@ const ListingStudioModal: React.FC<Props> = ({
   return createPortal(
     <div
       className="fixed inset-0 z-[230] flex items-stretch sm:items-center justify-center bg-slate-900/55 backdrop-blur-sm sm:p-3"
-      onClick={onClose}
+      onClick={handleClose}
     >
       <div
         className="bg-white w-full sm:max-w-[1280px] h-[100dvh] sm:h-[min(94vh,920px)] sm:rounded-2xl shadow-2xl border-0 sm:border border-slate-200 overflow-hidden flex flex-col"
@@ -963,7 +980,7 @@ const ListingStudioModal: React.FC<Props> = ({
             {headerExtra}
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"
               aria-label="Close"
             >

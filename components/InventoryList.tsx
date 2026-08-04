@@ -2430,6 +2430,7 @@ const InventoryList: React.FC<Props> = ({
       // reference, so renaming a child (or recalculating only child prices) would otherwise
       // leave the expanded bundle body showing stale nested UI.
       let kidsKey = '';
+      let kidsEditKey = '';
       if (item.isPC || item.isBundle) {
         const kids = getChildren(item, items);
         kidsKey = `|kids:${kids
@@ -2438,10 +2439,15 @@ const InventoryList: React.FC<Props> = ({
               `${c.id}:${c.name}:${c.sellPrice ?? ''}:${c.buyPrice ?? ''}:${c.profit ?? ''}:${c.status ?? ''}`,
           )
           .join(',')}`;
+        // Nested inline rename: parent row must re-render on every keystroke (same memo trap as
+        // top-level item name edit).
+        if (editingCell && kids.some((c) => c.id === editingCell.itemId)) {
+          kidsEditKey = `|cedit:${editingCell.itemId}:${editingCell.field}:${editValue}`;
+        }
       }
       // Thumb fingerprint: photo *count* alone is not enough (replace/reorder main with same count).
       const thumb = getItemUserPhotoUrls(item)[0] || '';
-      return `${editingCell?.itemId === item.id ? `${editingCell.field}:${editValue}` : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${(item.isPC || item.isBundle) && collapsedBundles.has(item.id) ? 'col' : 'exp'}|${quickBundleSeed?.id === item.id ? 'qb' : ''}|${activeBgCardItemIds.has(item.id) ? 'bgcard' : ''}|${itemAiCardCounts[item.id] || 0}|${aiCardRegenConfirmId === item.id ? 'confirm' : ''}|lr:${item.saleReady ? 1 : 0}:${(item.marketTitle || '').length}:${(item.marketDescription || '').length}|ph:${getItemUserPhotoCount(item)}:${thumb.slice(-48)}${kidsKey}`;
+      return `${editingCell?.itemId === item.id ? `${editingCell.field}:${editValue}` : ''}|${listingGenId === item.id}|${parsingSingleId === item.id}|${priceSuggestId === item.id}|${(item.isPC || item.isBundle) && collapsedBundles.has(item.id) ? 'col' : 'exp'}|${quickBundleSeed?.id === item.id ? 'qb' : ''}|${activeBgCardItemIds.has(item.id) ? 'bgcard' : ''}|${itemAiCardCounts[item.id] || 0}|${aiCardRegenConfirmId === item.id ? 'confirm' : ''}|lr:${item.saleReady ? 1 : 0}:${(item.marketTitle || '').length}:${(item.marketDescription || '').length}|ph:${getItemUserPhotoCount(item)}:${thumb.slice(-48)}${kidsKey}${kidsEditKey}`;
     },
     [editingCell, editValue, listingGenId, parsingSingleId, priceSuggestId, collapsedBundles, quickBundleSeed, activeBgCardItemIds, itemAiCardCounts, aiCardRegenConfirmId, items]
   );
@@ -4509,9 +4515,11 @@ const InventoryList: React.FC<Props> = ({
                             const childHit =
                               searchActiveForNest && matchesInventorySearch(liveChild, searchQuery);
                             const childProfit = profitForDisplay(liveChild);
+                            const isEditingChildName =
+                              editingCell?.itemId === liveChild.id && editingCell?.field === 'item';
                             return (
                             <div
-                              key={liveChild.id}
+                              key={`${liveChild.id}:${liveChild.name}`}
                               className={`flex items-center justify-between gap-1 py-1 px-1.5 rounded-md transition-colors min-w-0 max-w-full overflow-hidden ${
                                   childHit
                                     ? 'bg-amber-100/80 ring-1 ring-amber-200/80'
@@ -4520,12 +4528,47 @@ const InventoryList: React.FC<Props> = ({
                                       : 'hover:bg-violet-100/70'
                                 }`}
                             >
+                              {isEditingChildName ? (
+                                <input
+                                  autoFocus
+                                  className="flex-1 min-w-0 text-[11px] font-medium px-1.5 py-0.5 rounded border border-indigo-300 bg-white outline-none ring-2 ring-indigo-100"
+                                  value={editValue}
+                                  onChange={(e) => setEditValue(e.target.value)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onBlur={() => saveEdit()}
+                                  onKeyDown={(e) => {
+                                    e.stopPropagation();
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      saveEdit();
+                                    }
+                                    if (e.key === 'Escape') {
+                                      e.preventDefault();
+                                      setEditingCell(null);
+                                    }
+                                  }}
+                                />
+                              ) : (
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleEditClick(liveChild);
+                                  if (rowClickTimeoutRef.current != null) return;
+                                  rowClickTimeoutRef.current = window.setTimeout(() => {
+                                    rowClickTimeoutRef.current = null;
+                                    handleEditClick(liveChild);
+                                  }, 220);
                                 }}
+                                onDoubleClick={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  if (rowClickTimeoutRef.current != null) {
+                                    window.clearTimeout(rowClickTimeoutRef.current);
+                                    rowClickTimeoutRef.current = null;
+                                  }
+                                  startEditing(liveChild, 'item', liveChild.name);
+                                }}
+                                title="Click to edit · double-click to rename"
                                 className="flex-1 min-w-0 text-left group/child"
                               >
                                 <div className="flex items-center justify-between gap-2">
@@ -4567,6 +4610,7 @@ const InventoryList: React.FC<Props> = ({
                                 </span>
                                 </div>
                               </button>
+                              )}
                               {!isSoldContainerRow && (
                                 <div className="flex items-center gap-0.5 shrink-0">
                                   {liveChild.status === ItemStatus.IN_COMPOSITION && (
