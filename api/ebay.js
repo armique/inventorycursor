@@ -37,6 +37,21 @@ function parseListingPrice(raw) {
   return n;
 }
 
+function parseLineQuantity(raw) {
+  if (raw == null) return null;
+  if (typeof raw === 'number' && Number.isFinite(raw)) return Math.max(1, Math.round(raw));
+  if (typeof raw === 'string') {
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? Math.max(1, n) : null;
+  }
+  if (typeof raw === 'object') {
+    const candidate = raw.value ?? raw.quantity ?? raw.amount;
+    const n = typeof candidate === 'string' ? parseInt(candidate, 10) : Number(candidate);
+    return Number.isFinite(n) ? Math.max(1, Math.round(n)) : null;
+  }
+  return null;
+}
+
 function ebayAppConfig() {
   return {
     clientId: pickEnv('EBAY_CLIENT_ID'),
@@ -713,6 +728,7 @@ async function handleEbayOrder(req, res) {
       .join('\n');
     const firstLine = order.lineItems?.[0];
     const lineTotal = firstLine?.lineItemCost?.value ? parseFloat(firstLine.lineItemCost.value) : null;
+    const lineQuantity = parseLineQuantity(firstLine?.quantity);
     return res.status(200).json({
       orderId: order.orderId || cleanOrderId,
       buyer: {
@@ -723,6 +739,7 @@ async function handleEbayOrder(req, res) {
         phone: shipTo?.primaryPhone?.phoneNumber || order.buyer?.buyerRegistrationAddress?.primaryPhone?.phoneNumber,
       },
       sellPrice: lineTotal,
+      quantity: lineQuantity,
       creationDate: order.creationDate ? order.creationDate.split('T')[0] : null,
       lineItemTitle: firstLine?.title,
     });
@@ -791,6 +808,7 @@ async function handleEbayOrders(req, res) {
             title: li.title || '',
             lineItemCost: li.lineItemCost?.value ? parseFloat(li.lineItemCost.value) : null,
             listingId: li.legacyItemId || null,
+            quantity: parseLineQuantity(li.quantity),
           })),
           orderTotal: order.pricingSummary?.total?.value ? parseFloat(order.pricingSummary.total.value) : null,
         });

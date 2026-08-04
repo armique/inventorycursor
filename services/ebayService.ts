@@ -302,7 +302,13 @@ export interface EbayOrderSummary {
   orderPaymentStatus?: string | null;
   cancelState?: string | null;
   buyer: { username: string; fullName?: string; address?: string; email?: string; phone?: string };
-  lineItems: { sku: string | null; title: string; lineItemCost: number | null; listingId?: string | null }[];
+  lineItems: {
+    sku: string | null;
+    title: string;
+    lineItemCost: number | null;
+    listingId?: string | null;
+    quantity?: number | null;
+  }[];
   /** Full order total (gross, before eBay fees) from the Fulfillment API pricing summary. */
   orderTotal?: number | null;
 }
@@ -364,6 +370,7 @@ export interface EbayOrderData {
   ebayOrderId: string;
   sellPrice?: number;
   sellDate?: string;
+  quantity?: number | null;
 }
 
 /** Fetch sold order from eBay Fulfillment API and return buyer + shipping address for SaleModal. */
@@ -392,6 +399,7 @@ export const fetchEbayOrder = async (orderId: string): Promise<EbayOrderData> =>
     ebayOrderId: data.orderId || orderId,
     sellPrice: data.sellPrice,
     sellDate: data.creationDate || undefined,
+    quantity: data.quantity ?? null,
   };
 };
 

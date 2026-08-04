@@ -65,7 +65,7 @@ export function ebaySummaryToRecord(o: EbayOrderSummary): EbayOrderRecord {
       title: li.title,
       lineItemCost: li.lineItemCost,
       listingId: li.listingId ?? null,
-      quantity: null,
+      quantity: li.quantity ?? null,
     })),
     grossTotal: o.orderTotal ?? (lineTotal || null),
     orderFulfillmentStatus: o.orderFulfillmentStatus ?? null,

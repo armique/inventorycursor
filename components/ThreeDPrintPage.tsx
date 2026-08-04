@@ -277,6 +277,9 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
       email: match.order.buyer.email,
     });
     if (match.order.creationDate) setSoldDate(match.order.creationDate);
+    if (match.lineItem.quantity != null && Number.isFinite(match.lineItem.quantity)) {
+      setQuantity(Math.max(1, Math.round(match.lineItem.quantity)));
+    }
     if (match.lineItem.sku) setEbaySku(match.lineItem.sku);
     if (match.lineItem.listingId) setEbayListingId(match.lineItem.listingId);
     if (payout.gross != null && payout.gross > 0) setOrderGrossTotal(formatEUR(payout.gross));
@@ -316,6 +319,9 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
           setEbayUsername(live.ebayUsername || '');
           setCustomer(live.customer || { name: '', address: '' });
           if (live.sellDate) setSoldDate(live.sellDate);
+          if (live.quantity != null && Number.isFinite(live.quantity)) {
+            setQuantity(Math.max(1, Math.round(live.quantity)));
+          }
           if (live.sellPrice != null && Number.isFinite(live.sellPrice)) {
             setOrderGrossTotal(formatEUR(live.sellPrice));
           }
