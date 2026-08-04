@@ -171,11 +171,14 @@ const LotBundleBuilder: React.FC<Props> = ({ items, onSave }) => {
         ? { ...baseParent, ...parentOverride, id: parentId, componentIds: baseParent.componentIds }
         : baseParent;
 
-      const updatedComponents = selected.map((comp) => ({
-        ...comp,
-        status: ItemStatus.IN_COMPOSITION,
-        parentContainerId: parentId,
-      }));
+      const updatedComponents = selected.map((comp) => {
+        const live = items.find((i) => i.id === comp.id) || comp;
+        return {
+          ...live,
+          status: ItemStatus.IN_COMPOSITION,
+          parentContainerId: parentId,
+        };
+      });
 
       let removedComponents: InventoryItem[] = [];
       if (editId) {
