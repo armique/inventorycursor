@@ -878,482 +878,6 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
     setItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   };
 
-  if (true) {
-    return (
-      <div className="w-full min-w-0 h-[calc(100dvh-5.5rem)] md:h-[calc(100vh-5.5rem)] flex flex-col animate-in fade-in">
-        <div className="px-1 sm:px-2 shrink-0">
-          <AddFlowStepHeader title="Bulk entry" />
-          <AddFlowPageHeader
-            icon={<Layers size={22} strokeWidth={1.75} />}
-            title="Bulk Entry"
-            subtitle="Sheet · paste fills rows · one transaction"
-            onBack={() => navigate(-1)}
-            actions={
-              <AddFlowSecondaryButton onClick={() => navigate('/panel/bulk-imports')}>
-                <Layers size={14} /> History
-              </AddFlowSecondaryButton>
-            }
-          />
-        </div>
-
-        <main className="flex flex-1 min-h-0 flex-col gap-2.5 px-1 sm:px-2 pb-[max(5.5rem,calc(4rem+env(safe-area-inset-bottom)))] lg:pb-2">
-          <section className={`${ADD_FLOW_PANEL} shrink-0 p-2 sm:p-3`}>
-            <div className="flex flex-wrap items-end gap-2 lg:flex-nowrap">
-              <div className="min-w-[8rem]">
-                <label className={ADD_FLOW_LABEL}>Total paid</label>
-                <div className="mt-1 flex h-9 items-center rounded-lg border border-slate-200 bg-white px-2 focus-within:border-slate-400">
-                  <span className="text-xs font-bold text-slate-400">€</span>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    className="min-w-0 flex-1 bg-transparent px-1 text-sm font-black text-slate-900 outline-none"
-                    placeholder="0,00"
-                    value={totalCostDraft !== null ? totalCostDraft : totalCost === 0 ? '' : String(totalCost)}
-                    onFocus={() => setTotalCostDraft(totalCost === 0 ? '' : String(totalCost))}
-                    onBlur={() => {
-                      const raw = totalCostDraft ?? '';
-                      setTotalCostDraft(null);
-                      if (!raw.trim()) {
-                        setTotalCost(0);
-                        return;
-                      }
-                      const next = parseLocaleNumber(raw);
-                      if (Number.isFinite(next)) setTotalCost(next);
-                    }}
-                    onChange={(event) => setTotalCostDraft(event.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="min-w-[9rem]">
-                <label className={ADD_FLOW_LABEL}>Buy date</label>
-                <input
-                  type="date"
-                  className={`${ADD_FLOW_INPUT} mt-1 !h-9 !rounded-lg !px-2 !py-1.5 text-xs`}
-                  value={buyDate}
-                  onChange={(event) => setBuyDate(event.target.value)}
-                />
-              </div>
-              <div className="min-w-[13rem] flex-1">
-                <BuySourcePlatformPicker
-                  size="sm"
-                  value={platform}
-                  onChange={(next) => {
-                    setPlatform(next);
-                    setPayment((prev) => paymentAfterPlatformChange(next, prev));
-                  }}
-                />
-              </div>
-              <div className="min-w-[13rem] flex-1">
-                <BuyPaymentTypePicker
-                  size="sm"
-                  platform={platform}
-                  value={payment}
-                  onChange={(next) =>
-                    setPayment(normalizeBuyPaymentForPlatform(platform, next) || next)
-                  }
-                />
-              </div>
-              <button
-                type="button"
-                onClick={() => setCostSplitMode((mode) => (mode === 'EQUAL' ? 'SMART' : 'EQUAL'))}
-                className={`h-9 whitespace-nowrap rounded-lg border px-3 text-[10px] font-black uppercase tracking-wide transition-colors ${
-                  costSplitMode === 'SMART'
-                    ? 'border-slate-900 bg-slate-900 text-white'
-                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                }`}
-                title="Smart split prioritizes expensive component types"
-              >
-                Smart split {costSplitMode === 'SMART' ? 'on' : 'off'}
-              </button>
-              <button
-                type="button"
-                onClick={distributeEvenly}
-                className="flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-wide text-slate-600 hover:bg-slate-50"
-              >
-                <Calculator size={13} /> Reset split
-              </button>
-              <AddFlowPrimaryButton
-                onClick={handleSubmit}
-                disabled={items.length === 0 || parsingSpecs}
-                className="hidden h-9 whitespace-nowrap px-4 lg:flex"
-              >
-                {parsingSpecs ? (
-                  <><Loader2 size={15} className="animate-spin" /> {parseProgress || 'Parsing…'}</>
-                ) : (
-                  <><Save size={15} /> Confirm import ({items.length})</>
-                )}
-              </AddFlowPrimaryButton>
-            </div>
-          </section>
-
-          <section className={`${ADD_FLOW_PANEL} shrink-0 p-2.5 sm:p-3`}>
-            <div className="flex flex-col gap-2 lg:flex-row lg:items-stretch">
-              <div className="min-w-0 flex-1">
-                <label className={ADD_FLOW_LABEL}>Paste seeds</label>
-                <textarea
-                  className={`${ADD_FLOW_INPUT} mt-1 min-h-16 resize-y !rounded-lg !px-3 !py-2 text-xs`}
-                  placeholder={'One item per line — paste fills editable rows below\nExample: ASUS TUF Gaming RTX 5070 12GB'}
-                  value={bulkText}
-                  onChange={(event) => setBulkText(event.target.value)}
-                />
-              </div>
-              <div className="flex flex-wrap items-end gap-2 lg:w-auto lg:max-w-[31rem]">
-                <div className="grid min-w-[13rem] flex-1 grid-cols-2 rounded-lg border border-slate-200 bg-slate-50 p-1">
-                  <button
-                    type="button"
-                    onClick={() => setBulkQtyMode('INDIVIDUAL')}
-                    className={`rounded-md px-2 py-2 text-[10px] font-black uppercase ${
-                      bulkQtyMode === 'INDIVIDUAL' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
-                    }`}
-                  >
-                    Separately
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setBulkQtyMode('LOT')}
-                    className={`rounded-md px-2 py-2 text-[10px] font-black uppercase ${
-                      bulkQtyMode === 'LOT' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
-                    }`}
-                  >
-                    Lot
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleAddBulkTextAsIs}
-                  disabled={!bulkText.trim() || bulkTextBusy}
-                  className="h-10 rounded-lg border border-slate-200 bg-white px-4 text-[10px] font-black uppercase tracking-wide text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                >
-                  Fill sheet
-                </button>
-                <button
-                  type="button"
-                  onClick={handleParseBulkTextWithAI}
-                  disabled={!bulkText.trim() || bulkTextBusy}
-                  className="flex h-10 items-center gap-2 rounded-lg bg-slate-900 px-4 text-[10px] font-black uppercase tracking-wide text-white hover:bg-slate-800 disabled:opacity-50"
-                >
-                  {bulkTextBusy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                  Parse AI
-                </button>
-              </div>
-            </div>
-            <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
-              <p className="text-[10px] font-medium text-slate-400">Paste fills rows below. Review names, categories, and costs before importing.</p>
-              {bulkTextStatus && <p className="text-[10px] text-slate-500">{bulkTextStatus}</p>}
-            </div>
-          </section>
-
-          <section className={`${ADD_FLOW_PANEL} flex min-h-[18rem] flex-1 flex-col overflow-hidden`}>
-            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50/70 px-3 py-2">
-              <div>
-                <h2 className="text-sm font-black text-slate-900">Import sheet</h2>
-                <p className="text-[10px] font-semibold text-slate-500">
-                  {items.length} row{items.length === 1 ? '' : 's'} · €{formatEUR(allocatedTotal)} allocated
-                </p>
-              </div>
-              <span className={Math.abs(allocatedTotal - totalCost) > 0.1 ? 'text-[10px] font-bold text-red-500' : 'text-[10px] font-bold text-emerald-600'}>
-                {Math.abs(allocatedTotal - totalCost) > 0.1 ? `Difference €${formatEUR(allocatedTotal - totalCost)}` : 'Costs balanced'}
-              </span>
-            </div>
-            <div className="flex-1 min-h-0 overflow-auto">
-              <table className="w-full min-w-[780px] table-fixed border-collapse text-left">
-                <colgroup>
-                  <col className="w-12" />
-                  <col />
-                  <col className="w-[21rem]" />
-                  <col className="w-28" />
-                  <col className="w-16" />
-                  <col className="w-24" />
-                </colgroup>
-                <thead className="sticky top-0 z-10 bg-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-500">
-                  <tr>
-                    <th className="border-b border-r border-slate-200 px-3 py-2.5">#</th>
-                    <th className="border-b border-r border-slate-200 px-3 py-2.5">Name</th>
-                    <th className="border-b border-r border-slate-200 px-3 py-2.5">Category</th>
-                    <th className="border-b border-r border-slate-200 px-3 py-2.5 text-right">Cost €</th>
-                    <th className="border-b border-r border-slate-200 px-3 py-2.5 text-center">Def</th>
-                    <th className="border-b border-slate-200 px-3 py-2.5 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="h-32 border-b border-slate-100 text-center text-xs font-semibold text-slate-400">
-                        Paste lines above or add a row
-                      </td>
-                    </tr>
-                  ) : (
-                    items.map((item, index) => (
-                      <tr key={item.id} className="group border-b border-slate-100 bg-white hover:bg-slate-50/70">
-                        <td className="border-r border-slate-100 px-3 py-2 align-top text-xs font-black tabular-nums text-slate-400">
-                          {index + 1}
-                        </td>
-                        <td className="border-r border-slate-100 p-1.5 align-top">
-                          <input
-                            className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-xs font-bold text-slate-900 outline-none hover:border-slate-200 focus:border-slate-400 focus:bg-white"
-                            value={item.name}
-                            onChange={(event) => updateDraft(item.id, { name: event.target.value })}
-                            placeholder="Item name"
-                          />
-                          <input
-                            className="mt-0.5 w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-[10px] font-medium text-slate-500 outline-none hover:border-slate-200 focus:border-slate-400 focus:bg-white"
-                            value={item.note}
-                            onChange={(event) => updateDraft(item.id, { note: event.target.value })}
-                            placeholder="Optional note"
-                          />
-                        </td>
-                        <td className="border-r border-slate-100 p-1.5 align-top">
-                          <div className="grid grid-cols-2 gap-1.5">
-                            <select
-                              className="min-w-0 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[10px] font-bold text-slate-700 outline-none focus:border-slate-400"
-                              value={item.category}
-                              onChange={(event) => {
-                                const category = event.target.value;
-                                updateDraft(item.id, {
-                                  category,
-                                  subCategory: normalizeSubCategory(category, '', categories),
-                                });
-                              }}
-                            >
-                              {Object.keys(categories).map((category) => (
-                                <option key={category} value={category}>{category}</option>
-                              ))}
-                            </select>
-                            <select
-                              className="min-w-0 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[10px] font-bold text-slate-700 outline-none focus:border-slate-400"
-                              value={item.subCategory || ''}
-                              onChange={(event) => updateDraft(item.id, { subCategory: event.target.value })}
-                            >
-                              {(categories[item.category] || []).map((subCategory) => (
-                                <option key={subCategory} value={subCategory}>{subCategory}</option>
-                              ))}
-                            </select>
-                          </div>
-                        </td>
-                        <td className="border-r border-slate-100 p-1.5 align-top">
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-right text-xs font-black tabular-nums text-slate-900 outline-none focus:border-slate-400"
-                            placeholder={formatEUR(autoCostsById[item.id] ?? 0)}
-                            value={rowCostDrafts[item.id] !== undefined ? rowCostDrafts[item.id] : item.manualCost !== undefined ? String(item.manualCost) : ''}
-                            onFocus={() =>
-                              setRowCostDrafts((drafts) =>
-                                drafts[item.id] !== undefined
-                                  ? drafts
-                                  : { ...drafts, [item.id]: item.manualCost !== undefined ? String(item.manualCost) : '' }
-                              )
-                            }
-                            onBlur={(event) => {
-                              const raw = event.target.value;
-                              setRowCostDrafts(({ [item.id]: _, ...rest }) => rest);
-                              commitRowCost(item.id, raw);
-                            }}
-                            onChange={(event) => setRowCostDrafts((drafts) => ({ ...drafts, [item.id]: event.target.value }))}
-                          />
-                        </td>
-                        <td className="border-r border-slate-100 px-3 py-2 text-center align-top">
-                          <input
-                            type="checkbox"
-                            checked={!!item.isDefective}
-                            onChange={(event) => updateDraft(item.id, { isDefective: event.target.checked })}
-                            className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
-                            aria-label={`Mark row ${index + 1} defective`}
-                          />
-                        </td>
-                        <td className="px-2 py-2 align-top">
-                          <div className="flex justify-end gap-1">
-                            <button
-                              type="button"
-                              title={item.skipAiSpecs ? 'Allow AI specs' : 'Skip AI specs'}
-                              onClick={() => updateDraft(item.id, { skipAiSpecs: !item.skipAiSpecs })}
-                              className={`rounded-md p-1.5 transition-colors ${
-                                item.skipAiSpecs ? 'bg-slate-900 text-white' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'
-                              }`}
-                            >
-                              <Ban size={14} />
-                            </button>
-                            <button
-                              type="button"
-                              title="Delete row"
-                              onClick={() => handleRemoveItem(item.id)}
-                              className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <div className="shrink-0 border-t border-slate-200 bg-white px-3 py-2">
-              <button
-                type="button"
-                onClick={handleAddBlankRow}
-                className="flex items-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-slate-600 hover:border-slate-500 hover:bg-slate-50"
-              >
-                <Plus size={14} /> Add row
-              </button>
-            </div>
-          </section>
-
-          <section className={`${ADD_FLOW_PANEL} shrink-0 overflow-hidden`}>
-            <button
-              type="button"
-              onClick={() => setMoreOpen((open) => !open)}
-              className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-slate-50"
-              aria-expanded={moreOpen}
-            >
-              <span>
-                <span className="block text-xs font-black text-slate-800">More tools</span>
-                <span className="block text-[10px] font-medium text-slate-400">Single-item add, source proof, photos, bundle and AI options</span>
-              </span>
-              <span className="text-lg font-medium text-slate-400">{moreOpen ? '−' : '+'}</span>
-            </button>
-            {moreOpen && (
-              <div className="max-h-[45vh] overflow-y-auto border-t border-slate-200 bg-slate-50/50 p-3 sm:p-4">
-                <div className="grid gap-4 xl:grid-cols-2">
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-3 gap-1 rounded-xl border border-slate-200 bg-white p-1">
-                      <AddOptionTile size="sm" label="Manual" hint="Single item" icon={<Plus size={17} />} selected={mode === 'MANUAL'} onClick={() => setMode('MANUAL')} className="!py-2" />
-                      <AddOptionTile size="sm" label="Scan" hint="Barcode" icon={<ScanBarcode size={17} />} selected={mode === 'SCAN'} onClick={() => setMode('SCAN')} className="!py-2" />
-                      <AddOptionTile size="sm" label="Database" hint="Hardware DB" icon={<Database size={17} />} selected={mode === 'SEARCH'} onClick={() => setMode('SEARCH')} className="!py-2" />
-                    </div>
-                    {mode === 'SCAN' ? (
-                      <div className={`${ADD_FLOW_PANEL} p-3`}><BarcodeScanPanel onProduct={handleAddFromBarcode} compact /></div>
-                    ) : mode === 'SEARCH' ? (
-                      <div className={`${ADD_FLOW_PANEL} p-3`}>
-                        <div className="relative">
-                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
-                          <input className={`${ADD_FLOW_INPUT} !py-2 pl-9 text-xs`} placeholder="Search hardware model…" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} />
-                        </div>
-                        <div className="mt-2 max-h-40 space-y-1 overflow-y-auto">
-                          {searchResults.map((result, index) => (
-                            <button key={`${result.vendor}-${result.model}-${index}`} type="button" onClick={() => handleAddFromSearch(result)} className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-bold text-slate-700 hover:border-slate-400">
-                              {result.vendor} {result.model}<Plus size={13} />
-                            </button>
-                          ))}
-                          {searchResults.length === 0 && searchQuery.length > 2 && <p className="py-3 text-center text-xs text-slate-400">No results found.</p>}
-                        </div>
-                      </div>
-                    ) : (
-                      <form className={`${ADD_FLOW_PANEL} space-y-3 p-3`} onSubmit={handleAddManual}>
-                        <AddCategorySubcategoryPicker categories={categories} category={newCategory} subCategory={newSubCategory} onChange={handleManualCategoryChange} onAddCategory={onAddCategory ? handleAddGlobalCategory : undefined} size="sm" />
-                        <input className={ADD_FLOW_INPUT} placeholder="Item name" value={newName} onChange={(event) => setNewName(event.target.value)} />
-                        <div className="grid grid-cols-[1fr_5rem] gap-2">
-                          <input className={`${ADD_FLOW_INPUT} text-xs`} placeholder="Optional details" value={newNote} onChange={(event) => setNewNote(event.target.value)} />
-                          <input type="number" min="1" className={`${ADD_FLOW_INPUT} text-center`} value={quantity} onChange={(event) => setQuantity(parseInt(event.target.value) || 1)} />
-                        </div>
-                        <label className="flex items-center gap-2 text-xs font-bold text-slate-600">
-                          <input type="checkbox" checked={newDefective} onChange={(event) => setNewDefective(event.target.checked)} className="rounded border-slate-300 text-slate-900" />
-                          Mark as defective
-                        </label>
-                        <AddFlowPrimaryButton type="submit" disabled={!newName.trim()} className="w-full"><Plus size={15} /> Add to sheet</AddFlowPrimaryButton>
-                      </form>
-                    )}
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className={`${ADD_FLOW_PANEL} space-y-3 p-3`}>
-                      <h3 className={`${ADD_FLOW_LABEL} flex items-center gap-2`}><Globe size={12} /> Source extras</h3>
-                      {(platform === 'kleinanzeigen.de' || platform === 'ebay.de') && (
-                        <BuySourceSellerField platform={platform} value={batchSeller} onChange={setBatchSeller} />
-                      )}
-                      {platform === 'kleinanzeigen.de' && (
-                        <>
-                          <input className={ADD_FLOW_INPUT} placeholder="Chat URL" value={chatUrl} onChange={(event) => setChatUrl(event.target.value)} />
-                          <input className={ADD_FLOW_INPUT} placeholder="Seller profile URL" value={sellerProfileUrl} onChange={(event) => setSellerProfileUrl(event.target.value)} />
-                          <div className="flex gap-2">
-                            <input className={`${ADD_FLOW_INPUT} flex-1`} placeholder="Chat screenshot URL" value={chatImage.startsWith('data:') ? '' : chatImage} onChange={(event) => setChatImage(event.target.value.trim())} />
-                            <label className="flex cursor-pointer items-center rounded-xl border border-slate-200 bg-white px-3 text-slate-500 hover:bg-slate-50" title="Upload chat screenshot">
-                              <Upload size={15} /><input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-                            </label>
-                          </div>
-                          {chatImage && <button type="button" onClick={() => setChatImage('')} className="text-[10px] font-black uppercase text-slate-600">Clear attached screenshot</button>}
-                        </>
-                      )}
-                    </div>
-
-                    <div className={`${ADD_FLOW_PANEL} space-y-3 p-3`}>
-                      <div className="flex items-center justify-between">
-                        <h3 className={ADD_FLOW_LABEL}>Item photos</h3>
-                        <label className="flex cursor-pointer items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[10px] font-bold text-slate-600 hover:bg-slate-50">
-                          <Upload size={12} /> Add files<input type="file" accept="image/*" multiple className="hidden" onChange={handleItemImageUpload} />
-                        </label>
-                      </div>
-                      <input
-                        className={ADD_FLOW_INPUT}
-                        placeholder="Paste image URL and press Enter"
-                        value={imageUrlInput}
-                        onChange={(event) => setImageUrlInput(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key !== 'Enter') return;
-                          event.preventDefault();
-                          const value = imageUrlInput.trim();
-                          if (!value) return;
-                          setItemImageUrls((prev) => normalizeImageList([...prev, value]));
-                          setImageUrlInput('');
-                        }}
-                      />
-                      {itemImageUrls.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {itemImageUrls.map((url, index) => (
-                            <div key={url} className={`relative h-16 w-20 overflow-hidden rounded-lg border ${index === 0 ? 'border-slate-900' : 'border-slate-200'}`}>
-                              <img src={url} alt="Imported item" className="h-full w-full object-cover" />
-                              <button type="button" onClick={() => removeItemImage(url)} className="absolute right-1 top-1 rounded bg-white/90 px-1 text-[9px] font-black text-red-600">X</button>
-                              {index > 0 && <button type="button" onClick={() => setMainItemImage(url)} className="absolute bottom-1 left-1 rounded bg-white/90 px-1 text-[8px] font-black uppercase text-slate-700">Main</button>}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className={`${ADD_FLOW_PANEL} space-y-3 p-3`}>
-                      {items.length >= 2 && (
-                        <label className="flex items-center gap-2 text-xs font-bold text-slate-700">
-                          <input type="checkbox" checked={addAsBundle} onChange={(event) => setAddAsBundle(event.target.checked)} className="rounded border-slate-300 text-slate-900" />
-                          Add as bundle
-                        </label>
-                      )}
-                      {addAsBundle && items.length >= 2 ? (
-                        <>
-                          <input className={ADD_FLOW_INPUT} placeholder="Bundle name" value={bundleName} onChange={(event) => setBundleName(event.target.value)} />
-                          <label className="flex items-center gap-2 text-xs font-bold text-slate-700"><input type="checkbox" checked={bundleHasOVP} onChange={(event) => setBundleHasOVP(event.target.checked)} /> OVP</label>
-                          <label className="flex items-center gap-2 text-xs font-bold text-slate-700"><input type="checkbox" checked={bundleHasIOShield} onChange={(event) => setBundleHasIOShield(event.target.checked)} /> IO Shield</label>
-                        </>
-                      ) : items.length > 0 ? (
-                        <label className="flex items-center gap-2 text-xs font-bold text-slate-700"><input type="checkbox" checked={allItemsHaveOVP} onChange={(event) => setAllItemsHaveOVP(event.target.checked)} /> All items have OVP</label>
-                      ) : null}
-                      {aiAvailable && (
-                        <label className="flex items-center gap-2 text-xs font-bold text-slate-700">
-                          <input type="checkbox" checked={parseSpecsBeforeImport} onChange={(event) => setParseSpecsBeforeImport(event.target.checked)} className="rounded border-slate-300 text-slate-900" />
-                          Parse tech specs with AI before import
-                        </label>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </section>
-        </main>
-
-        <div className="lg:hidden fixed inset-x-0 bottom-[calc(3.75rem+env(safe-area-inset-bottom,0px))] z-[90] border-t border-slate-200 bg-white/95 backdrop-blur-sm px-3 pt-2 pb-2 shadow-[0_-6px_20px_rgba(15,23,42,0.08)]">
-          <div className="mb-1.5 flex items-center justify-between text-[10px] font-bold text-slate-500">
-            <span>{items.length} item{items.length === 1 ? '' : 's'} · €{formatEUR(totalCost)}</span>
-            <span className={Math.abs(allocatedTotal - totalCost) > 0.1 ? 'text-red-500' : 'text-emerald-600'}>Alloc €{formatEUR(allocatedTotal)}</span>
-          </div>
-          <AddFlowPrimaryButton onClick={handleSubmit} disabled={items.length === 0 || parsingSpecs} className="w-full py-3.5">
-            {parsingSpecs ? <><Loader2 size={16} className="animate-spin" /> {parseProgress || 'Parsing…'}</> : <><Save size={16} /> {items.length === 0 ? 'Add items to import' : `Confirm import (${items.length})`}</>}
-          </AddFlowPrimaryButton>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="w-full min-w-0 h-[calc(100dvh-5.5rem)] md:h-[calc(100vh-5.5rem)] flex flex-col animate-in fade-in">
       <div className="px-1 sm:px-2 shrink-0">
@@ -1361,7 +885,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
         <AddFlowPageHeader
           icon={<Layers size={22} strokeWidth={1.75} />}
           title="Bulk Entry"
-          subtitle="Add multiple items · one transaction"
+          subtitle="Sheet · paste fills rows · one transaction"
           onBack={() => navigate(-1)}
           actions={
             <AddFlowSecondaryButton onClick={() => navigate('/panel/bulk-imports')}>
@@ -1370,45 +894,45 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
           }
         />
       </div>
-      {/* HEADER totals strip — full width, not shoved to the right */}
-      <header className="flex flex-col gap-3 mb-3 lg:mb-4 shrink-0 px-1 sm:px-2">
-        <div className={`w-full flex flex-wrap items-end gap-2 sm:gap-3 md:gap-4 ${ADD_FLOW_PANEL} p-2 md:p-3`}>
-           <div className="px-3 border-r border-slate-100 min-w-[6rem]">
-              <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest block">Total paid</label>
-              <div className="flex items-center gap-1">
-                 <span className="text-slate-400 font-bold">€</span>
-                 <input 
-                    type="text"
-                    inputMode="decimal"
-                    className="w-28 font-black text-xl outline-none text-slate-900 placeholder:text-slate-200" 
-                    placeholder="0,00"
-                    value={totalCostDraft !== null ? totalCostDraft : totalCost === 0 ? '' : String(totalCost)}
-                    onFocus={() => setTotalCostDraft(totalCost === 0 ? '' : String(totalCost))}
-                    onBlur={() => {
-                      const raw = totalCostDraft ?? '';
-                      setTotalCostDraft(null);
-                      const t = raw.trim();
-                      if (!t) {
-                        setTotalCost(0);
-                        return;
-                      }
-                      const n = parseLocaleNumber(t);
-                      if (Number.isFinite(n)) setTotalCost(n);
-                    }}
-                    onChange={(e) => setTotalCostDraft(e.target.value)}
-                 />
+
+      <main className="flex flex-1 min-h-0 flex-col gap-2.5 px-1 sm:px-2 pb-[max(5.5rem,calc(4rem+env(safe-area-inset-bottom)))] lg:pb-2">
+        <section className={`${ADD_FLOW_PANEL} shrink-0 p-2 sm:p-3`}>
+          <div className="flex flex-wrap items-end gap-2 lg:flex-nowrap">
+            <div className="min-w-[8rem]">
+              <label className={ADD_FLOW_LABEL}>Total paid</label>
+              <div className="mt-1 flex h-9 items-center rounded-lg border border-slate-200 bg-white px-2 focus-within:border-slate-400">
+                <span className="text-xs font-bold text-slate-400">€</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  className="min-w-0 flex-1 bg-transparent px-1 text-sm font-black text-slate-900 outline-none"
+                  placeholder="0,00"
+                  value={totalCostDraft !== null ? totalCostDraft : totalCost === 0 ? '' : String(totalCost)}
+                  onFocus={() => setTotalCostDraft(totalCost === 0 ? '' : String(totalCost))}
+                  onBlur={() => {
+                    const raw = totalCostDraft ?? '';
+                    setTotalCostDraft(null);
+                    if (!raw.trim()) {
+                      setTotalCost(0);
+                      return;
+                    }
+                    const next = parseLocaleNumber(raw);
+                    if (Number.isFinite(next)) setTotalCost(next);
+                  }}
+                  onChange={(event) => setTotalCostDraft(event.target.value)}
+                />
               </div>
-           </div>
-           <div className="px-3">
-              <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest block">Buy date</label>
-              <input 
-                 type="date" 
-                 className="font-bold text-sm outline-none text-slate-700 bg-transparent"
-                 value={buyDate}
-                 onChange={e => setBuyDate(e.target.value)}
+            </div>
+            <div className="min-w-[9rem]">
+              <label className={ADD_FLOW_LABEL}>Buy date</label>
+              <input
+                type="date"
+                className={`${ADD_FLOW_INPUT} mt-1 !h-9 !rounded-lg !px-2 !py-1.5 text-xs`}
+                value={buyDate}
+                onChange={(event) => setBuyDate(event.target.value)}
               />
-           </div>
-           <div className="px-3 min-w-[14rem] flex-1 max-w-md space-y-2">
+            </div>
+            <div className="min-w-[13rem] flex-1">
               <BuySourcePlatformPicker
                 size="sm"
                 value={platform}
@@ -1417,6 +941,8 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                   setPayment((prev) => paymentAfterPlatformChange(next, prev));
                 }}
               />
+            </div>
+            <div className="min-w-[13rem] flex-1">
               <BuyPaymentTypePicker
                 size="sm"
                 platform={platform}
@@ -1425,643 +951,403 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                   setPayment(normalizeBuyPaymentForPlatform(platform, next) || next)
                 }
               />
-           </div>
-        </div>
-      </header>
-
-      <div className="flex flex-1 flex-col lg:flex-row gap-3 lg:gap-4 overflow-y-auto lg:overflow-hidden px-1 sm:px-2 pb-[max(5.5rem,calc(4rem+env(safe-area-inset-bottom)))] lg:pb-2">
-         
-         {/* LEFT: ITEM BUILDER */}
-         <div className="w-full lg:w-[min(100%,26rem)] xl:w-[28rem] flex flex-col gap-4 lg:gap-5 shrink-0 lg:overflow-y-auto lg:pb-20 scrollbar-hide">
-            
-            {/* INPUT MODE TABS */}
-            <div className={`${ADD_FLOW_PANEL} p-2 grid grid-cols-3 gap-1`}>
-               <AddOptionTile
-                 size="sm"
-                 label="Manual"
-                 hint="Type / paste"
-                 icon={<Plus size={18} strokeWidth={1.75} />}
-                 selected={mode === 'MANUAL'}
-                 onClick={() => setMode('MANUAL')}
-                 className="!py-2"
-               />
-               <AddOptionTile
-                 size="sm"
-                 label="Scan"
-                 hint="Barcode"
-                 icon={<ScanBarcode size={18} strokeWidth={1.75} />}
-                 selected={mode === 'SCAN'}
-                 onClick={() => setMode('SCAN')}
-                 className="!py-2"
-               />
-               <AddOptionTile
-                 size="sm"
-                 label="Database"
-                 hint="Search parts"
-                 icon={<Database size={18} strokeWidth={1.75} />}
-                 selected={mode === 'SEARCH'}
-                 onClick={() => setMode('SEARCH')}
-                 className="!py-2"
-               />
             </div>
+            <button
+              type="button"
+              onClick={() => setCostSplitMode((mode) => (mode === 'EQUAL' ? 'SMART' : 'EQUAL'))}
+              className={`h-9 whitespace-nowrap rounded-lg border px-3 text-[10px] font-black uppercase tracking-wide transition-colors ${
+                costSplitMode === 'SMART'
+                  ? 'border-slate-900 bg-slate-900 text-white'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+              title="Smart split prioritizes expensive component types"
+            >
+              Smart split {costSplitMode === 'SMART' ? 'on' : 'off'}
+            </button>
+            <button
+              type="button"
+              onClick={distributeEvenly}
+              className="flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-wide text-slate-600 hover:bg-slate-50"
+            >
+              <Calculator size={13} /> Reset split
+            </button>
+            <AddFlowPrimaryButton
+              onClick={handleSubmit}
+              disabled={items.length === 0 || parsingSpecs}
+              className="hidden h-9 whitespace-nowrap px-4 lg:flex"
+            >
+              {parsingSpecs ? (
+                <><Loader2 size={15} className="animate-spin" /> {parseProgress || 'Parsing…'}</>
+              ) : (
+                <><Save size={15} /> Confirm import ({items.length})</>
+              )}
+            </AddFlowPrimaryButton>
+          </div>
+        </section>
 
-            {mode === 'SCAN' ? (
-               <div className={`${ADD_FLOW_PANEL} p-4 space-y-3`}>
-                  <BarcodeScanPanel onProduct={handleAddFromBarcode} compact />
-                  <p className="text-[10px] text-slate-400 px-1">
-                    Each successful scan adds a row to the list. If the name matches the hardware DB, specs are filled automatically.
-                  </p>
-               </div>
-            ) : mode === 'MANUAL' ? (
-               <div className={`${ADD_FLOW_PANEL} p-5 space-y-5`}>
-                  <div className="space-y-2">
-                     <label className={ADD_FLOW_LABEL}>Paste text (quick bulk parse)</label>
-                     <textarea
-                        className={`${ADD_FLOW_INPUT} min-h-28 font-medium text-xs`}
-                        placeholder={'Paste list lines here (one item per line)\nExample: ▸ ASUS TUF Gaming RTX 5070 12GB GDDR7'}
-                        value={bulkText}
-                        onChange={(e) => setBulkText(e.target.value)}
-                     />
-                     <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setBulkQtyMode('INDIVIDUAL')}
-                          className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${
-                            bulkQtyMode === 'INDIVIDUAL'
-                              ? 'bg-slate-900 text-white'
-                              : 'bg-slate-50 text-slate-500 border border-slate-200 hover:border-slate-300'
-                          }`}
-                          title="2x / 4x → separate inventory rows (split working vs defekt)"
-                        >
-                          Separately (Nx → N)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setBulkQtyMode('LOT')}
-                          className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${
-                            bulkQtyMode === 'LOT'
-                              ? 'bg-slate-900 text-white'
-                              : 'bg-slate-50 text-slate-500 border border-slate-200 hover:border-slate-300'
-                          }`}
-                          title="Keep each line as one lot item (e.g. 4x Kingston…)"
-                        >
-                          1 lot as written
-                        </button>
-                     </div>
-                     <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={handleAddBulkTextAsIs}
-                          disabled={!bulkText.trim() || bulkTextBusy}
-                          className="py-2.5 rounded-xl bg-slate-100 text-slate-700 text-[10px] font-black uppercase tracking-wide hover:bg-slate-200 disabled:opacity-50"
-                        >
-                          Add As-Is
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleParseBulkTextWithAI}
-                          disabled={!bulkText.trim() || bulkTextBusy}
-                          className="py-2.5 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase tracking-wide hover:bg-slate-800 disabled:opacity-50 flex items-center justify-center gap-2"
-                        >
-                          {bulkTextBusy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                          Parse With AI
-                        </button>
-                     </div>
-                     <p className="text-[10px] text-slate-400">
-                       {bulkQtyMode === 'INDIVIDUAL'
-                         ? 'Nx lines expand to N items. “(2 working, 2 defekt)” → 2 OK + 2 Defekt. Parse With AI also cleans product names.'
-                         : 'Each Nx line becomes one lot item named like “4x Product…”. Parse With AI also cleans product names.'}
-                     </p>
-                     {bulkTextStatus && <p className="text-[10px] text-slate-500">{bulkTextStatus}</p>}
-                  </div>
+        <section className={`${ADD_FLOW_PANEL} shrink-0 p-2.5 sm:p-3`}>
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-stretch">
+            <div className="min-w-0 flex-1">
+              <label className={ADD_FLOW_LABEL}>Paste seeds</label>
+              <textarea
+                className={`${ADD_FLOW_INPUT} mt-1 min-h-16 resize-y !rounded-lg !px-3 !py-2 text-xs`}
+                placeholder={'One item per line — paste fills editable rows below\nExample: ASUS TUF Gaming RTX 5070 12GB'}
+                value={bulkText}
+                onChange={(event) => setBulkText(event.target.value)}
+              />
+            </div>
+            <div className="flex flex-wrap items-end gap-2 lg:w-auto lg:max-w-[31rem]">
+              <div className="grid min-w-[13rem] flex-1 grid-cols-2 rounded-lg border border-slate-200 bg-slate-50 p-1">
+                <button
+                  type="button"
+                  onClick={() => setBulkQtyMode('INDIVIDUAL')}
+                  className={`rounded-md px-2 py-2 text-[10px] font-black uppercase ${
+                    bulkQtyMode === 'INDIVIDUAL' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
+                  }`}
+                >
+                  Separately
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBulkQtyMode('LOT')}
+                  className={`rounded-md px-2 py-2 text-[10px] font-black uppercase ${
+                    bulkQtyMode === 'LOT' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
+                  }`}
+                >
+                  Lot
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={handleAddBulkTextAsIs}
+                disabled={!bulkText.trim() || bulkTextBusy}
+                className="h-10 rounded-lg border border-slate-200 bg-white px-4 text-[10px] font-black uppercase tracking-wide text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Fill sheet
+              </button>
+              <button
+                type="button"
+                onClick={handleParseBulkTextWithAI}
+                disabled={!bulkText.trim() || bulkTextBusy}
+                className="flex h-10 items-center gap-2 rounded-lg bg-slate-900 px-4 text-[10px] font-black uppercase tracking-wide text-white hover:bg-slate-800 disabled:opacity-50"
+              >
+                {bulkTextBusy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                Parse AI
+              </button>
+            </div>
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[10px] font-medium text-slate-400">Paste fills rows below. Review names, categories, and costs before importing.</p>
+            {bulkTextStatus && <p className="text-[10px] text-slate-500">{bulkTextStatus}</p>}
+          </div>
+        </section>
 
-                  <div className="space-y-2">
-                     <AddCategorySubcategoryPicker
-                       categories={categories}
-                       category={newCategory}
-                       subCategory={newSubCategory}
-                       onChange={handleManualCategoryChange}
-                       onAddCategory={onAddCategory ? handleAddGlobalCategory : undefined}
-                       size="sm"
-                     />
-                     {(newCategory || newSubCategory) && (
-                       <p className="text-[10px] font-semibold text-slate-500 px-1">
-                         New rows use{' '}
-                         <span className="font-black text-slate-800">
-                           {newCategory}
-                           {newSubCategory ? ` / ${newSubCategory}` : ''}
-                         </span>
-                       </p>
-                     )}
-                  </div>
-
-                  <div className="space-y-4">
-                     <div className="space-y-2">
-                        <label className={ADD_FLOW_LABEL}>Item name</label>
-                        <input 
-                           autoFocus
-                           className={ADD_FLOW_INPUT}
-                           placeholder="e.g. Corsair RM850x"
-                           value={newName}
-                           onChange={e => setNewName(e.target.value)}
-                           onKeyDown={e => e.key === 'Enter' && handleAddManual()}
+        <section className={`${ADD_FLOW_PANEL} flex min-h-[18rem] flex-1 flex-col overflow-hidden`}>
+          <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50/70 px-3 py-2">
+            <div>
+              <h2 className="text-sm font-black text-slate-900">Import sheet</h2>
+              <p className="text-[10px] font-semibold text-slate-500">
+                {items.length} row{items.length === 1 ? '' : 's'} · €{formatEUR(allocatedTotal)} allocated
+              </p>
+            </div>
+            <span className={Math.abs(allocatedTotal - totalCost) > 0.1 ? 'text-[10px] font-bold text-red-500' : 'text-[10px] font-bold text-emerald-600'}>
+              {Math.abs(allocatedTotal - totalCost) > 0.1 ? `Difference €${formatEUR(allocatedTotal - totalCost)}` : 'Costs balanced'}
+            </span>
+          </div>
+          <div className="flex-1 min-h-0 overflow-auto">
+            <table className="w-full min-w-[780px] table-fixed border-collapse text-left">
+              <colgroup>
+                <col className="w-12" />
+                <col />
+                <col className="w-[21rem]" />
+                <col className="w-28" />
+                <col className="w-16" />
+                <col className="w-24" />
+              </colgroup>
+              <thead className="sticky top-0 z-10 bg-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-500">
+                <tr>
+                  <th className="border-b border-r border-slate-200 px-3 py-2.5">#</th>
+                  <th className="border-b border-r border-slate-200 px-3 py-2.5">Name</th>
+                  <th className="border-b border-r border-slate-200 px-3 py-2.5">Category</th>
+                  <th className="border-b border-r border-slate-200 px-3 py-2.5 text-right">Cost €</th>
+                  <th className="border-b border-r border-slate-200 px-3 py-2.5 text-center">Def</th>
+                  <th className="border-b border-slate-200 px-3 py-2.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="h-32 border-b border-slate-100 text-center text-xs font-semibold text-slate-400">
+                      Paste lines above or add a row
+                    </td>
+                  </tr>
+                ) : (
+                  items.map((item, index) => (
+                    <tr key={item.id} className="group border-b border-slate-100 bg-white hover:bg-slate-50/70">
+                      <td className="border-r border-slate-100 px-3 py-2 align-top text-xs font-black tabular-nums text-slate-400">
+                        {index + 1}
+                      </td>
+                      <td className="border-r border-slate-100 p-1.5 align-top">
+                        <input
+                          className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-xs font-bold text-slate-900 outline-none hover:border-slate-200 focus:border-slate-400 focus:bg-white"
+                          value={item.name}
+                          onChange={(event) => updateDraft(item.id, { name: event.target.value })}
+                          placeholder="Item name"
                         />
-                     </div>
-                     
-                     <div className="flex gap-4 items-center">
-                        <div className="flex-1 space-y-2">
-                           <label className={ADD_FLOW_LABEL}>Details (optional)</label>
-                           <input 
-                              className={`${ADD_FLOW_INPUT} font-medium text-xs`}
-                              placeholder="Condition, Specs..."
-                              value={newNote}
-                              onChange={e => setNewNote(e.target.value)}
-                              onKeyDown={e => e.key === 'Enter' && handleAddManual()}
-                           />
-                        </div>
-                        <div className="w-24 space-y-2">
-                           <label className={ADD_FLOW_LABEL}>Count</label>
-                           <input 
-                              type="text"
-                              inputMode="decimal"
-                              min="1"
-                              className={`${ADD_FLOW_INPUT} font-black text-center`}
-                              value={quantity}
-                              onChange={e => setQuantity(parseInt(e.target.value) || 1)}
-                           />
-                        </div>
-                     </div>
-
-                     {/* Defekt Checkbox */}
-                     <label className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer border border-transparent hover:border-slate-200">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${newDefective ? 'bg-red-500 text-white' : 'bg-white border text-slate-300'}`}>
-                           <Wrench size={16}/>
-                        </div>
-                        <div className="flex-1">
-                           <span className="text-xs font-bold text-slate-700 block">Mark as Defective</span>
-                           <span className="text-[9px] text-slate-400">Item needs repair / for parts</span>
-                        </div>
-                        <input type="checkbox" checked={newDefective} onChange={e => setNewDefective(e.target.checked)} className="hidden"/>
-                        {newDefective && <CheckCircle2 size={16} className="text-red-500"/>}
-                     </label>
-                  </div>
-
-                  <AddFlowPrimaryButton onClick={handleAddManual} disabled={!newName} className="w-full py-4">
-                     <Plus size={16}/> Add to List
-                  </AddFlowPrimaryButton>
-               </div>
-            ) : (
-               <div className={`${ADD_FLOW_PANEL} p-5 flex-1 flex flex-col min-h-0`}>
-                  <div className="relative mb-4">
-                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
-                     <input 
-                        autoFocus
-                        className={`${ADD_FLOW_INPUT} pl-12`}
-                        placeholder="Search model (e.g. 3060 Ti)..."
-                        value={searchQuery}
-                        onChange={e => setSearchQuery(e.target.value)}
-                     />
-                  </div>
-                  
-                  <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-                     {searchResults.map((res, idx) => (
-                        <button 
-                           key={idx}
-                           onClick={() => handleAddFromSearch(res)}
-                           className="w-full text-left p-3 rounded-xl border border-slate-100 hover:border-slate-400 hover:bg-slate-50 transition-all group"
-                        >
-                           <div className="flex justify-between items-center">
-                              <p className="font-black text-xs text-slate-900 group-hover:text-slate-700">{res.vendor} {res.model}</p>
-                              <Plus size={14} className="opacity-0 group-hover:opacity-100 text-slate-700"/>
-                           </div>
-                           <div className="flex gap-2 mt-1">
-                              <span className="text-[9px] font-bold uppercase text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">{res.type || 'Part'}</span>
-                           </div>
-                        </button>
-                     ))}
-                     {searchResults.length === 0 && searchQuery.length > 2 && (
-                        <p className="text-center text-xs text-slate-400 mt-4">No results found.</p>
-                     )}
-                  </div>
-               </div>
-            )}
-
-            {/* Optional proof — platform & payment are in the header */}
-            <div className={`${ADD_FLOW_PANEL} p-5 space-y-4 bg-slate-50/80`}>
-               <h3 className={`${ADD_FLOW_LABEL} flex items-center gap-2`}><Globe size={12}/> Source extras</h3>
-               <p className="text-[10px] text-slate-500 font-medium leading-snug">
-                 {platform === 'kleinanzeigen.de'
-                   ? 'Add chat link / screenshot for this Kleinanzeigen purchase.'
-                   : platform === 'ebay.de'
-                     ? 'eBay checkout is selected above. Item photos below apply to every imported row.'
-                     : platform === 'In Person'
-                       ? 'Cash is typical for in-person buys. Add shared item photos below if you have them.'
-                       : platform === 'Amazon'
-                         ? 'Amazon order trails go in comments later if needed. Photos below apply to all rows.'
-                         : 'Pick payment above. Photos below apply to every imported row.'}
-               </p>
-               
-               {platform === 'kleinanzeigen.de' && (
-                  <div className="pt-2 border-t border-slate-200/50 space-y-3">
-                     <BuySourceSellerField
-                       platform="kleinanzeigen.de"
-                       value={batchSeller}
-                       onChange={setBatchSeller}
-                     />
-                     <div className="flex gap-2">
-                        <input 
-                           placeholder="Chat URL (kleinanzeigen.de/…)"
-                           className="flex-1 p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
-                           value={chatUrl}
-                           onChange={e => setChatUrl(e.target.value)}
+                        <input
+                          className="mt-0.5 w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-[10px] font-medium text-slate-500 outline-none hover:border-slate-200 focus:border-slate-400 focus:bg-white"
+                          value={item.note}
+                          onChange={(event) => updateDraft(item.id, { note: event.target.value })}
+                          placeholder="Optional note"
                         />
-                        <label className="p-2 bg-white border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100" title="Upload chat screenshot">
-                           <Upload size={14} className="text-slate-400"/>
-                           <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload}/>
-                        </label>
-                     </div>
-                     <input
-                        type="url"
-                        placeholder="Seller profile URL (kleinanzeigen.de/s-bestandsliste…)"
-                        className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
-                        value={sellerProfileUrl}
-                        onChange={(e) => setSellerProfileUrl(e.target.value)}
-                     />
-                     <input
-                        type="text"
-                        placeholder="Or paste chat screenshot URL (imgur, etc.)"
-                        className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
-                        value={chatImage.startsWith('data:') ? '' : chatImage}
-                        onChange={(e) => setChatImage(e.target.value.trim())}
-                     />
-                     {chatImage && (
-                        <div className="flex items-center gap-2 text-[10px] text-slate-700 bg-slate-50 p-2 rounded-xl border border-slate-200">
-                           <CheckCircle2 size={12}/>
-                           <span className="font-bold">
-                             {chatImage.startsWith('data:')
-                               ? 'Screenshot attached'
-                               : 'Screenshot URL set'}
-                           </span>
-                           {(chatImage.startsWith('data:') || /^https?:\/\//i.test(chatImage)) && (
-                             <a
-                               href={chatImage}
-                               target="_blank"
-                               rel="noreferrer"
-                               className="ml-auto w-8 h-8 rounded-lg overflow-hidden border border-slate-200 shrink-0"
-                               onClick={(e) => e.stopPropagation()}
-                             >
-                               <img src={chatImage} alt="" className="w-full h-full object-cover" />
-                             </a>
-                           )}
-                           <button
-                             type="button"
-                             onClick={() => setChatImage('')}
-                             className="text-[9px] font-black uppercase text-slate-800 hover:underline"
-                           >
-                             Clear
-                           </button>
+                      </td>
+                      <td className="border-r border-slate-100 p-1.5 align-top">
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <select
+                            className="min-w-0 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[10px] font-bold text-slate-700 outline-none focus:border-slate-400"
+                            value={item.category}
+                            onChange={(event) => {
+                              const category = event.target.value;
+                              updateDraft(item.id, {
+                                category,
+                                subCategory: normalizeSubCategory(category, '', categories),
+                              });
+                            }}
+                          >
+                            {Object.keys(categories).map((category) => (
+                              <option key={category} value={category}>{category}</option>
+                            ))}
+                          </select>
+                          <select
+                            className="min-w-0 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[10px] font-bold text-slate-700 outline-none focus:border-slate-400"
+                            value={item.subCategory || ''}
+                            onChange={(event) => updateDraft(item.id, { subCategory: event.target.value })}
+                          >
+                            {(categories[item.category] || []).map((subCategory) => (
+                              <option key={subCategory} value={subCategory}>{subCategory}</option>
+                            ))}
+                          </select>
                         </div>
-                     )}
-                  </div>
-               )}
-
-               {platform === 'ebay.de' && (
-                  <div className="pt-2 border-t border-slate-200/50 space-y-2">
-                     <BuySourceSellerField
-                       platform="ebay.de"
-                       value={batchSeller}
-                       onChange={setBatchSeller}
-                     />
-                  </div>
-               )}
-
-               <div className="pt-2 border-t border-slate-200/50 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[9px] font-bold uppercase text-slate-400">Item photos (for all imported items)</p>
-                    <label className="inline-flex items-center gap-1 px-2 py-1 bg-white border border-slate-200 rounded-lg cursor-pointer text-[10px] font-bold text-slate-600 hover:bg-slate-50">
-                      <Upload size={12} /> Add
-                      <input type="file" accept="image/*" multiple className="hidden" onChange={handleItemImageUpload} />
-                    </label>
-                  </div>
-                  <div className="flex gap-2">
-                    <input
-                      className="flex-1 p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none"
-                      placeholder="Paste item image URL and press Enter"
-                      value={imageUrlInput}
-                      onChange={(e) => setImageUrlInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key !== 'Enter') return;
-                        e.preventDefault();
-                        const v = imageUrlInput.trim();
-                        if (!v) return;
-                        setItemImageUrls((prev) => normalizeImageList([...prev, v]));
-                        setImageUrlInput('');
-                      }}
-                    />
-                  </div>
-                  {itemImageUrls.length > 0 && (
-                    <div className="grid grid-cols-3 gap-2">
-                      {itemImageUrls.map((url, idx) => (
-                        <div key={url} className={`p-1.5 rounded-lg border ${idx === 0 ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-white'}`}>
-                          <img src={url} alt="" className="w-full h-14 object-cover rounded-md border border-slate-200 bg-slate-100" />
-                          <div className="flex justify-between mt-1 gap-1">
-                            <button
-                              type="button"
-                              onClick={() => setMainItemImage(url)}
-                              className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${idx === 0 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}
-                            >
-                              {idx === 0 ? 'Main' : 'Main'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => removeItemImage(url)}
-                              className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-red-50 text-red-600"
-                            >
-                              X
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-               </div>
-            </div>
-         </div>
-
-         {/* RIGHT: DRAFT LIST */}
-         <div className={`flex-1 min-h-[40vh] lg:min-h-0 ${ADD_FLOW_PANEL} overflow-hidden flex flex-col`}>
-            <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-               <div className="flex items-center gap-3">
-                  <div className="bg-slate-100 text-slate-700 p-2 rounded-xl border border-slate-200">
-                     <Layers size={20}/>
-                  </div>
-                  <div>
-                     <h3 className="text-base sm:text-lg font-black text-slate-900">Items to Import</h3>
-                     <p className="text-xs text-slate-500 font-bold">{items.length} items added</p>
-                  </div>
-               </div>
-               <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setCostSplitMode((m) => (m === 'EQUAL' ? 'SMART' : 'EQUAL'))}
-                    className={`text-[10px] font-black uppercase px-3 py-2 rounded-xl transition-all border ${
-                      costSplitMode === 'SMART'
-                        ? 'bg-slate-900 text-white border-slate-900'
-                        : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
-                    }`}
-                    title="Smart split prioritizes expensive component types (GPU/CPU/etc.)"
-                  >
-                    {costSplitMode === 'SMART' ? 'Smart Split: On' : 'Smart Split: Off'}
-                  </button>
-                  <button onClick={distributeEvenly} className="text-[10px] font-black uppercase text-slate-600 hover:bg-slate-100 px-3 py-2 rounded-xl transition-all flex items-center gap-2 border border-slate-200">
-                    <Calculator size={14}/> Reset Split
-                  </button>
-               </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2">
-               {items.length === 0 ? (
-                  <div className="h-full min-h-[8rem] flex flex-col items-center justify-center text-center opacity-40 py-8">
-                     <ShoppingBag size={40} className="mb-3 text-slate-300"/>
-                     <p className="font-black text-slate-400 text-sm uppercase tracking-widest">List is empty</p>
-                     <p className="text-xs text-slate-400 mt-2 max-w-xs lg:hidden">Scan a barcode or add items above.</p>
-                     <p className="text-xs text-slate-400 mt-2 max-w-xs hidden lg:block">Use the panel on the left to build your inventory list.</p>
-                  </div>
-               ) : (
-                  items.map((item, idx) => (
-                     <div key={item.id} className="p-3 bg-white border border-slate-100 rounded-2xl shadow-sm group hover:border-slate-300 transition-all relative space-y-2">
-                        {item.isDefective && <div className="absolute top-0 right-0 p-1 bg-red-100 text-red-600 text-[8px] font-black uppercase rounded-bl-lg rounded-tr-2xl">Defekt</div>}
-                        <div className="flex items-center gap-4">
-                          <div className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 border border-slate-200 flex items-center justify-center font-black text-xs shrink-0">
-                             {idx + 1}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                             <div className="flex items-center gap-2">
-                                <p className="font-black text-slate-900 text-sm truncate">{item.name}</p>
-                                <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-[9px] font-bold uppercase">{item.subCategory || item.category}</span>
-                                {item.skipAiSpecs && (
-                                  <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[8px] font-black uppercase border border-slate-200">No AI specs</span>
-                                )}
-                             </div>
-                             {item.note && <p className="text-[10px] text-slate-400 truncate">{item.note}</p>}
-                           </div>
-                          <div className="flex items-center gap-2 bg-slate-50 rounded-xl p-1 pr-3 border border-slate-200 focus-within:border-slate-400 transition-all">
-                             <span className="text-[10px] font-bold text-slate-400 pl-2">€</span>
-                             <input 
-                                type="text"
-                                inputMode="decimal"
-                                className="w-20 min-w-[4.5rem] bg-transparent text-right font-black text-sm outline-none text-slate-900"
-                                placeholder={formatEUR(autoCostsById[item.id] ?? 0)}
-                                value={
-                                  rowCostDrafts[item.id] !== undefined
-                                    ? rowCostDrafts[item.id]
-                                    : item.manualCost !== undefined
-                                      ? String(item.manualCost)
-                                      : ''
-                                }
-                                onFocus={() =>
-                                  setRowCostDrafts((d) =>
-                                    d[item.id] !== undefined
-                                      ? d
-                                      : {
-                                          ...d,
-                                          [item.id]: item.manualCost !== undefined ? String(item.manualCost) : '',
-                                        }
-                                  )
-                                }
-                                onBlur={(e) => {
-                                  const raw = e.target.value;
-                                  setRowCostDrafts(({ [item.id]: _, ...rest }) => rest);
-                                  commitRowCost(item.id, raw);
-                                }}
-                                onChange={(e) =>
-                                  setRowCostDrafts((d) => ({ ...d, [item.id]: e.target.value }))
-                                }
-                             />
-                          </div>
-
+                      </td>
+                      <td className="border-r border-slate-100 p-1.5 align-top">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-right text-xs font-black tabular-nums text-slate-900 outline-none focus:border-slate-400"
+                          placeholder={formatEUR(autoCostsById[item.id] ?? 0)}
+                          value={rowCostDrafts[item.id] !== undefined ? rowCostDrafts[item.id] : item.manualCost !== undefined ? String(item.manualCost) : ''}
+                          onFocus={() =>
+                            setRowCostDrafts((drafts) =>
+                              drafts[item.id] !== undefined
+                                ? drafts
+                                : { ...drafts, [item.id]: item.manualCost !== undefined ? String(item.manualCost) : '' }
+                            )
+                          }
+                          onBlur={(event) => {
+                            const raw = event.target.value;
+                            setRowCostDrafts(({ [item.id]: _, ...rest }) => rest);
+                            commitRowCost(item.id, raw);
+                          }}
+                          onChange={(event) => setRowCostDrafts((drafts) => ({ ...drafts, [item.id]: event.target.value }))}
+                        />
+                      </td>
+                      <td className="border-r border-slate-100 px-3 py-2 text-center align-top">
+                        <input
+                          type="checkbox"
+                          checked={!!item.isDefective}
+                          onChange={(event) => updateDraft(item.id, { isDefective: event.target.checked })}
+                          className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
+                          aria-label={`Mark row ${index + 1} defective`}
+                        />
+                      </td>
+                      <td className="px-2 py-2 align-top">
+                        <div className="flex justify-end gap-1">
                           <button
                             type="button"
-                            title={
-                              item.skipAiSpecs
-                                ? 'AI tech specs skipped — click to allow parsing'
-                                : 'Skip AI tech specs for this item'
-                            }
-                            onClick={() =>
-                              setItems((prev) =>
-                                prev.map((x) =>
-                                  x.id === item.id ? { ...x, skipAiSpecs: !x.skipAiSpecs } : x
-                                )
-                              )
-                            }
-                            className={`p-2 rounded-xl transition-all ${
-                              item.skipAiSpecs
-                                ? 'bg-slate-900 text-white hover:bg-slate-800'
-                                : 'text-slate-300 hover:text-slate-700 hover:bg-slate-100'
+                            title={item.skipAiSpecs ? 'Allow AI specs' : 'Skip AI specs'}
+                            onClick={() => updateDraft(item.id, { skipAiSpecs: !item.skipAiSpecs })}
+                            className={`rounded-md p-1.5 transition-colors ${
+                              item.skipAiSpecs ? 'bg-slate-900 text-white' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'
                             }`}
                           >
                             <Ban size={14} />
                           </button>
                           <button
                             type="button"
-                            onClick={() => setEditingItemId((curr) => (curr === item.id ? null : item.id))}
-                            className="text-[10px] font-black uppercase text-slate-600 hover:bg-slate-100 px-2 py-1 rounded-lg border border-slate-200"
+                            title="Delete row"
+                            onClick={() => handleRemoveItem(item.id)}
+                            className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
                           >
-                            {editingItemId === item.id ? 'Close' : 'Edit'}
-                          </button>
-                          <button 
-                             onClick={() => handleRemoveItem(item.id)}
-                             className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                          >
-                             <Trash2 size={16}/>
+                            <Trash2 size={14} />
                           </button>
                         </div>
-                        {editingItemId === item.id && (
-                          <div className="space-y-3 pt-2 border-t border-slate-100">
-                            <input
-                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none"
-                              value={item.name}
-                              onChange={(e) => setItems((prev) => prev.map((x) => x.id === item.id ? { ...x, name: e.target.value } : x))}
-                              placeholder="Item name"
-                            />
-                            <AddCategorySubcategoryPicker
-                              categories={categories}
-                              category={item.category}
-                              subCategory={item.subCategory || ''}
-                              size="sm"
-                              onChange={(next) =>
-                                setItems((prev) =>
-                                  prev.map((x) =>
-                                    x.id === item.id
-                                      ? { ...x, category: next.category, subCategory: next.subCategory }
-                                      : x
-                                  )
-                                )
-                              }
-                            />
-                            <input
-                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none"
-                              value={item.note}
-                              onChange={(e) => setItems((prev) => prev.map((x) => x.id === item.id ? { ...x, note: e.target.value } : x))}
-                              placeholder="Optional notes"
-                            />
-                          </div>
-                        )}
-                     </div>
+                      </td>
+                    </tr>
                   ))
-               )}
-            </div>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="shrink-0 border-t border-slate-200 bg-white px-3 py-2">
+            <button
+              type="button"
+              onClick={handleAddBlankRow}
+              className="flex items-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-slate-600 hover:border-slate-500 hover:bg-slate-50"
+            >
+              <Plus size={14} /> Add row
+            </button>
+          </div>
+        </section>
 
-            <div className="p-6 bg-slate-50 border-t border-slate-200">
-               {items.length >= 2 && (
-                  <label className="flex items-center gap-3 mb-4 p-3 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 transition-colors cursor-pointer">
-                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${addAsBundle ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}>
-                        <Package size={16}/>
-                     </div>
-                     <div className="flex-1">
-                        <span className="text-xs font-bold text-slate-700 block">Add as bundle?</span>
-                        <span className="text-[10px] text-slate-400">Creates one bundle item with child components, margin calculated from children</span>
-                     </div>
-                     <input type="checkbox" checked={addAsBundle} onChange={e => setAddAsBundle(e.target.checked)} className="hidden"/>
-                     {addAsBundle && <CheckCircle2 size={16} className="text-slate-900"/>}
-                  </label>
-               )}
-               {addAsBundle && items.length >= 2 && (
-                  <>
-                     <div className="mb-4">
-                        <label className={`${ADD_FLOW_LABEL} block mb-1`}>Bundle name</label>
-                        <input 
-                           className={ADD_FLOW_INPUT}
-                           placeholder={`Bundle: ${items[0]?.name || 'Item 1'} + ${items.length - 1} more`}
-                           value={bundleName}
-                           onChange={e => setBundleName(e.target.value)}
-                        />
-                     </div>
-                     <div className="flex flex-wrap gap-4 mb-4 p-3 bg-white rounded-xl border border-slate-200">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                           <input type="checkbox" checked={bundleHasOVP} onChange={(e) => setBundleHasOVP(e.target.checked)} className="rounded border-slate-300 text-slate-900 focus:ring-slate-500" />
-                           <span className="text-sm font-bold text-slate-700">OVP (Original Packaging)</span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                           <input type="checkbox" checked={bundleHasIOShield} onChange={(e) => setBundleHasIOShield(e.target.checked)} className="rounded border-slate-300 text-slate-900 focus:ring-slate-500" />
-                           <span className="text-sm font-bold text-slate-700">IO Shield</span>
-                        </label>
-                     </div>
-                  </>
-               )}
-               {!addAsBundle && items.length > 0 && (
-                  <label className="flex items-center gap-3 mb-4 p-3 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 transition-colors cursor-pointer">
-                     <input type="checkbox" checked={allItemsHaveOVP} onChange={e => setAllItemsHaveOVP(e.target.checked)} className="rounded border-slate-300 text-slate-900 focus:ring-slate-500" />
-                     <div className="flex-1">
-                        <span className="text-xs font-bold text-slate-700 block">OVP (Original Packaging)</span>
-                        <span className="text-[10px] text-slate-400">All items come with original packaging</span>
-                     </div>
-                  </label>
-               )}
-               {aiAvailable && (
-                  <label className="flex items-center gap-3 mb-4 p-3 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 transition-colors cursor-pointer">
-                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${parseSpecsBeforeImport ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}>
-                        <Sparkles size={16}/>
-                     </div>
-                     <div className="flex-1">
-                        <span className="text-xs font-bold text-slate-700 block">Parse tech specs with AI before import</span>
-                        <span className="text-[10px] text-slate-400">Fills specs from product knowledge so you don't need to edit later</span>
-                     </div>
-                     <input type="checkbox" checked={parseSpecsBeforeImport} onChange={e => setParseSpecsBeforeImport(e.target.checked)} className="hidden"/>
-                     {parseSpecsBeforeImport && <CheckCircle2 size={16} className="text-slate-900"/>}
-                  </label>
-               )}
-               <div className="hidden lg:flex justify-between items-center mb-6 text-xs font-bold text-slate-500">
-                  <span>Total Paid: <span className="text-slate-900">€{formatEUR(totalCost)}</span></span>
-                  <span>Allocated: <span className={Math.abs(allocatedTotal - totalCost) > 0.1 ? 'text-red-500' : 'text-emerald-500'}>€{formatEUR(allocatedTotal)}</span></span>
-               </div>
-               <AddFlowPrimaryButton
-                  onClick={handleSubmit}
-                  disabled={items.length === 0 || parsingSpecs}
-                  className="hidden lg:flex w-full py-5"
-               >
-                  {parsingSpecs ? (
-                     <>
-                        <Loader2 size={18} className="animate-spin"/> {parseProgress || 'Parsing…'}
-                     </>
-                  ) : (
-                     <>
-                        <Save size={18}/> {addAsBundle && items.length >= 2 ? `Confirm Import as Bundle (${items.length} items)` : `Confirm Import (${items.length})`}
-                     </>
-                  )}
-               </AddFlowPrimaryButton>
-            </div>
-         </div>
-      </div>
-
-      {/* Phone: sticky confirm above bottom nav */}
-      <div className="lg:hidden fixed inset-x-0 bottom-[calc(3.75rem+env(safe-area-inset-bottom,0px))] z-[90] border-t border-slate-200 bg-white/95 backdrop-blur-sm px-3 pt-2 pb-2 shadow-[0_-6px_20px_rgba(15,23,42,0.08)]">
-         <div className="flex justify-between items-center mb-1.5 text-[10px] font-bold text-slate-500">
-            <span>{items.length} item{items.length === 1 ? '' : 's'} · €{formatEUR(totalCost)}</span>
-            <span className={Math.abs(allocatedTotal - totalCost) > 0.1 ? 'text-red-500' : 'text-emerald-500'}>
-              Alloc €{formatEUR(allocatedTotal)}
+        <section className={`${ADD_FLOW_PANEL} shrink-0 overflow-hidden`}>
+          <button
+            type="button"
+            onClick={() => setMoreOpen((open) => !open)}
+            className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-slate-50"
+            aria-expanded={moreOpen}
+          >
+            <span>
+              <span className="block text-xs font-black text-slate-800">More tools</span>
+              <span className="block text-[10px] font-medium text-slate-400">Single-item add, source proof, photos, bundle and AI options</span>
             </span>
-         </div>
-         <AddFlowPrimaryButton
-            onClick={handleSubmit}
-            disabled={items.length === 0 || parsingSpecs}
-            className="w-full py-3.5"
-         >
-            {parsingSpecs ? (
-               <>
-                  <Loader2 size={16} className="animate-spin" /> {parseProgress || 'Parsing…'}
-               </>
-            ) : (
-               <>
-                  <Save size={16} />
-                  {items.length === 0
-                    ? 'Add items to import'
-                    : addAsBundle && items.length >= 2
-                      ? `Import bundle (${items.length})`
-                      : `Confirm import (${items.length})`}
-               </>
-            )}
-         </AddFlowPrimaryButton>
+            <span className="text-lg font-medium text-slate-400">{moreOpen ? '−' : '+'}</span>
+          </button>
+          {moreOpen && (
+            <div className="max-h-[45vh] overflow-y-auto border-t border-slate-200 bg-slate-50/50 p-3 sm:p-4">
+              <div className="grid gap-4 xl:grid-cols-2">
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 gap-1 rounded-xl border border-slate-200 bg-white p-1">
+                    <AddOptionTile size="sm" label="Manual" hint="Single item" icon={<Plus size={17} />} selected={mode === 'MANUAL'} onClick={() => setMode('MANUAL')} className="!py-2" />
+                    <AddOptionTile size="sm" label="Scan" hint="Barcode" icon={<ScanBarcode size={17} />} selected={mode === 'SCAN'} onClick={() => setMode('SCAN')} className="!py-2" />
+                    <AddOptionTile size="sm" label="Database" hint="Hardware DB" icon={<Database size={17} />} selected={mode === 'SEARCH'} onClick={() => setMode('SEARCH')} className="!py-2" />
+                  </div>
+                  {mode === 'SCAN' ? (
+                    <div className={`${ADD_FLOW_PANEL} p-3`}><BarcodeScanPanel onProduct={handleAddFromBarcode} compact /></div>
+                  ) : mode === 'SEARCH' ? (
+                    <div className={`${ADD_FLOW_PANEL} p-3`}>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+                        <input className={`${ADD_FLOW_INPUT} !py-2 pl-9 text-xs`} placeholder="Search hardware model…" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} />
+                      </div>
+                      <div className="mt-2 max-h-40 space-y-1 overflow-y-auto">
+                        {searchResults.map((result, index) => (
+                          <button key={`${result.vendor}-${result.model}-${index}`} type="button" onClick={() => handleAddFromSearch(result)} className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-bold text-slate-700 hover:border-slate-400">
+                            {result.vendor} {result.model}<Plus size={13} />
+                          </button>
+                        ))}
+                        {searchResults.length === 0 && searchQuery.length > 2 && <p className="py-3 text-center text-xs text-slate-400">No results found.</p>}
+                      </div>
+                    </div>
+                  ) : (
+                    <form className={`${ADD_FLOW_PANEL} space-y-3 p-3`} onSubmit={handleAddManual}>
+                      <AddCategorySubcategoryPicker categories={categories} category={newCategory} subCategory={newSubCategory} onChange={handleManualCategoryChange} onAddCategory={onAddCategory ? handleAddGlobalCategory : undefined} size="sm" />
+                      <input className={ADD_FLOW_INPUT} placeholder="Item name" value={newName} onChange={(event) => setNewName(event.target.value)} />
+                      <div className="grid grid-cols-[1fr_5rem] gap-2">
+                        <input className={`${ADD_FLOW_INPUT} text-xs`} placeholder="Optional details" value={newNote} onChange={(event) => setNewNote(event.target.value)} />
+                        <input type="number" min="1" className={`${ADD_FLOW_INPUT} text-center`} value={quantity} onChange={(event) => setQuantity(parseInt(event.target.value) || 1)} />
+                      </div>
+                      <label className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                        <input type="checkbox" checked={newDefective} onChange={(event) => setNewDefective(event.target.checked)} className="rounded border-slate-300 text-slate-900" />
+                        Mark as defective
+                      </label>
+                      <AddFlowPrimaryButton type="submit" disabled={!newName.trim()} className="w-full"><Plus size={15} /> Add to sheet</AddFlowPrimaryButton>
+                    </form>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <div className={`${ADD_FLOW_PANEL} space-y-3 p-3`}>
+                    <h3 className={`${ADD_FLOW_LABEL} flex items-center gap-2`}><Globe size={12} /> Source extras</h3>
+                    {(platform === 'kleinanzeigen.de' || platform === 'ebay.de') && (
+                      <BuySourceSellerField platform={platform} value={batchSeller} onChange={setBatchSeller} />
+                    )}
+                    {platform === 'kleinanzeigen.de' && (
+                      <>
+                        <input className={ADD_FLOW_INPUT} placeholder="Chat URL" value={chatUrl} onChange={(event) => setChatUrl(event.target.value)} />
+                        <input className={ADD_FLOW_INPUT} placeholder="Seller profile URL" value={sellerProfileUrl} onChange={(event) => setSellerProfileUrl(event.target.value)} />
+                        <div className="flex gap-2">
+                          <input className={`${ADD_FLOW_INPUT} flex-1`} placeholder="Chat screenshot URL" value={chatImage.startsWith('data:') ? '' : chatImage} onChange={(event) => setChatImage(event.target.value.trim())} />
+                          <label className="flex cursor-pointer items-center rounded-xl border border-slate-200 bg-white px-3 text-slate-500 hover:bg-slate-50" title="Upload chat screenshot">
+                            <Upload size={15} /><input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                          </label>
+                        </div>
+                        {chatImage && <button type="button" onClick={() => setChatImage('')} className="text-[10px] font-black uppercase text-slate-600">Clear attached screenshot</button>}
+                      </>
+                    )}
+                  </div>
+
+                  <div className={`${ADD_FLOW_PANEL} space-y-3 p-3`}>
+                    <div className="flex items-center justify-between">
+                      <h3 className={ADD_FLOW_LABEL}>Item photos</h3>
+                      <label className="flex cursor-pointer items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[10px] font-bold text-slate-600 hover:bg-slate-50">
+                        <Upload size={12} /> Add files<input type="file" accept="image/*" multiple className="hidden" onChange={handleItemImageUpload} />
+                      </label>
+                    </div>
+                    <input
+                      className={ADD_FLOW_INPUT}
+                      placeholder="Paste image URL and press Enter"
+                      value={imageUrlInput}
+                      onChange={(event) => setImageUrlInput(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter') return;
+                        event.preventDefault();
+                        const value = imageUrlInput.trim();
+                        if (!value) return;
+                        setItemImageUrls((prev) => normalizeImageList([...prev, value]));
+                        setImageUrlInput('');
+                      }}
+                    />
+                    {itemImageUrls.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {itemImageUrls.map((url, index) => (
+                          <div key={url} className={`relative h-16 w-20 overflow-hidden rounded-lg border ${index === 0 ? 'border-slate-900' : 'border-slate-200'}`}>
+                            <img src={url} alt="Imported item" className="h-full w-full object-cover" />
+                            <button type="button" onClick={() => removeItemImage(url)} className="absolute right-1 top-1 rounded bg-white/90 px-1 text-[9px] font-black text-red-600">X</button>
+                            {index > 0 && <button type="button" onClick={() => setMainItemImage(url)} className="absolute bottom-1 left-1 rounded bg-white/90 px-1 text-[8px] font-black uppercase text-slate-700">Main</button>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className={`${ADD_FLOW_PANEL} space-y-3 p-3`}>
+                    {items.length >= 2 && (
+                      <label className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                        <input type="checkbox" checked={addAsBundle} onChange={(event) => setAddAsBundle(event.target.checked)} className="rounded border-slate-300 text-slate-900" />
+                        Add as bundle
+                      </label>
+                    )}
+                    {addAsBundle && items.length >= 2 ? (
+                      <>
+                        <input className={ADD_FLOW_INPUT} placeholder="Bundle name" value={bundleName} onChange={(event) => setBundleName(event.target.value)} />
+                        <label className="flex items-center gap-2 text-xs font-bold text-slate-700"><input type="checkbox" checked={bundleHasOVP} onChange={(event) => setBundleHasOVP(event.target.checked)} /> OVP</label>
+                        <label className="flex items-center gap-2 text-xs font-bold text-slate-700"><input type="checkbox" checked={bundleHasIOShield} onChange={(event) => setBundleHasIOShield(event.target.checked)} /> IO Shield</label>
+                      </>
+                    ) : items.length > 0 ? (
+                      <label className="flex items-center gap-2 text-xs font-bold text-slate-700"><input type="checkbox" checked={allItemsHaveOVP} onChange={(event) => setAllItemsHaveOVP(event.target.checked)} /> All items have OVP</label>
+                    ) : null}
+                    {aiAvailable && (
+                      <label className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                        <input type="checkbox" checked={parseSpecsBeforeImport} onChange={(event) => setParseSpecsBeforeImport(event.target.checked)} className="rounded border-slate-300 text-slate-900" />
+                        Parse tech specs with AI before import
+                      </label>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+      </main>
+
+      <div className="lg:hidden fixed inset-x-0 bottom-[calc(3.75rem+env(safe-area-inset-bottom,0px))] z-[90] border-t border-slate-200 bg-white/95 backdrop-blur-sm px-3 pt-2 pb-2 shadow-[0_-6px_20px_rgba(15,23,42,0.08)]">
+        <div className="mb-1.5 flex items-center justify-between text-[10px] font-bold text-slate-500">
+          <span>{items.length} item{items.length === 1 ? '' : 's'} · €{formatEUR(totalCost)}</span>
+          <span className={Math.abs(allocatedTotal - totalCost) > 0.1 ? 'text-red-500' : 'text-emerald-600'}>Alloc €{formatEUR(allocatedTotal)}</span>
+        </div>
+        <AddFlowPrimaryButton onClick={handleSubmit} disabled={items.length === 0 || parsingSpecs} className="w-full py-3.5">
+          {parsingSpecs ? <><Loader2 size={16} className="animate-spin" /> {parseProgress || 'Parsing…'}</> : <><Save size={16} /> {items.length === 0 ? 'Add items to import' : `Confirm import (${items.length})`}</>}
+        </AddFlowPrimaryButton>
       </div>
     </div>
   );
