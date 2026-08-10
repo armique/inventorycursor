@@ -6,7 +6,7 @@ import {
   ShoppingBag, Calculator, Layers, 
   Search, Database, 
   CheckCircle2,
-  Sparkles, Loader2, Package, Ban, ScanBarcode, Wrench, Upload, ChevronDown, ChevronUp
+  Sparkles, Loader2, Package, Ban, ScanBarcode, Wrench, Upload
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, Platform, PaymentType, BulkImportRecord, BulkImportSource } from '../types';
 import {
@@ -59,6 +59,7 @@ import {
   formatCategoryTreeForPrompt,
   inferCategoryFromName,
   reconcileBulkCategory,
+  resolveSubCategory,
 } from '../utils/bulkCategoryInfer';
 import BarcodeScanPanel from './BarcodeScanPanel';
 import type { BarcodeProduct } from '../services/barcodeLookup';
@@ -179,7 +180,6 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
   const [bulkTextBusy, setBulkTextBusy] = useState(false);
   const [bulkTextStatus, setBulkTextStatus] = useState<string | null>(null);
   const [bulkQtyMode, setBulkQtyMode] = useState<BulkQtyMode>('INDIVIDUAL');
-  const [purchaseDrawerOpen, setPurchaseDrawerOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
 
@@ -821,7 +821,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
         <AddFlowPageHeader
           icon={<Layers size={22} strokeWidth={1.75} />}
           title="Bulk Entry"
-          subtitle="Paste → sheet · purchase summary above · one transaction"
+          subtitle="Purchase rail · paste · sheet"
           onBack={() => navigate(-1)}
           actions={
             <AddFlowSecondaryButton onClick={() => navigate('/panel/bulk-imports')}>
@@ -831,202 +831,187 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
         />
       </div>
 
-      <main className="flex flex-1 min-h-0 flex-col gap-2.5 px-1 sm:px-2 pb-[max(5.5rem,calc(4rem+env(safe-area-inset-bottom)))] lg:pb-2">
-        <section className={`${ADD_FLOW_PANEL} shrink-0 overflow-hidden`}>
-          <div className="flex flex-wrap items-center gap-2 p-2 sm:p-3">
-            <button
-              type="button"
-              onClick={() => setPurchaseDrawerOpen((open) => !open)}
-              className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-left transition-colors hover:border-slate-300 hover:bg-slate-100"
-              aria-expanded={purchaseDrawerOpen}
-            >
-              <span className="min-w-0 flex-1 truncate text-xs font-bold text-slate-800">{purchaseSummary}</span>
-              {purchaseDrawerOpen ? (
-                <ChevronUp size={14} className="shrink-0 text-slate-400" />
-              ) : (
-                <ChevronDown size={14} className="shrink-0 text-slate-400" />
-              )}
-            </button>
-            <AddFlowSecondaryButton
-              onClick={() => setPurchaseDrawerOpen((open) => !open)}
-              className="h-10 whitespace-nowrap px-3 text-[10px]"
-            >
-              {purchaseDrawerOpen ? 'Hide purchase' : 'Edit purchase'}
-            </AddFlowSecondaryButton>
-            <AddFlowPrimaryButton
-              onClick={handleSubmit}
-              disabled={items.length === 0 || parsingSpecs}
-              className="hidden h-10 whitespace-nowrap px-4 lg:flex"
-            >
-              {parsingSpecs ? (
-                <><Loader2 size={15} className="animate-spin" /> {parseProgress || 'Parsing…'}</>
-              ) : (
-                <><Save size={15} /> Confirm import ({items.length})</>
-              )}
-            </AddFlowPrimaryButton>
+      <main className="flex flex-1 min-h-0 flex-col gap-2 px-1 sm:px-2 pb-[max(5.5rem,calc(4rem+env(safe-area-inset-bottom)))] lg:flex-row lg:gap-2.5 lg:pb-2">
+        <aside
+          className={`${ADD_FLOW_PANEL} flex w-full shrink-0 flex-col overflow-hidden lg:max-h-full lg:w-[min(100%,22rem)] lg:max-w-[38%] lg:self-stretch`}
+        >
+          <div className="border-b border-slate-100 bg-slate-50/80 px-3 py-2">
+            <h2 className="text-xs font-black text-slate-900">Purchase</h2>
+            <p className="text-[10px] font-medium text-slate-500">{purchaseSummary}</p>
           </div>
-
-          {purchaseDrawerOpen && (
-            <div className="space-y-4 border-t border-slate-200 bg-slate-50/60 p-3 sm:p-4">
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <div>
-                  <label className={ADD_FLOW_LABEL}>Total paid</label>
-                  <div className="mt-1 flex h-9 items-center rounded-lg border border-slate-200 bg-white px-2 focus-within:border-slate-400">
-                    <span className="text-xs font-bold text-slate-400">€</span>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      className="min-w-0 flex-1 bg-transparent px-1 text-sm font-black text-slate-900 outline-none"
-                      placeholder="0,00"
-                      value={totalCostDraft !== null ? totalCostDraft : totalCost === 0 ? '' : String(totalCost)}
-                      onFocus={() => setTotalCostDraft(totalCost === 0 ? '' : String(totalCost))}
-                      onBlur={() => {
-                        const raw = totalCostDraft ?? '';
-                        setTotalCostDraft(null);
-                        if (!raw.trim()) {
-                          setTotalCost(0);
-                          return;
-                        }
-                        const next = parseLocaleNumber(raw);
-                        if (Number.isFinite(next)) setTotalCost(next);
-                      }}
-                      onChange={(event) => setTotalCostDraft(event.target.value)}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className={ADD_FLOW_LABEL}>Buy date</label>
+          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2.5 sm:p-3">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className={ADD_FLOW_LABEL}>Total paid</label>
+                <div className="mt-0.5 flex h-8 items-center rounded-lg border border-slate-200 bg-white px-2 focus-within:border-slate-400">
+                  <span className="text-[10px] font-bold text-slate-400">€</span>
                   <input
-                    type="date"
-                    className={`${ADD_FLOW_INPUT} mt-1 !h-9 !rounded-lg !px-2 !py-1.5 text-xs`}
-                    value={buyDate}
-                    onChange={(event) => setBuyDate(event.target.value)}
-                  />
-                </div>
-                <div className="flex items-end">
-                  <button
-                    type="button"
-                    onClick={() => setCostSplitMode((mode) => (mode === 'EQUAL' ? 'SMART' : 'EQUAL'))}
-                    className={`h-9 w-full whitespace-nowrap rounded-lg border px-3 text-[10px] font-black uppercase tracking-wide transition-colors ${
-                      costSplitMode === 'SMART'
-                        ? 'border-slate-900 bg-slate-900 text-white'
-                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                    }`}
-                    title="Smart split prioritizes expensive component types"
-                  >
-                    Smart split {costSplitMode === 'SMART' ? 'on' : 'off'}
-                  </button>
-                </div>
-                <div className="flex items-end">
-                  <button
-                    type="button"
-                    onClick={distributeEvenly}
-                    className="flex h-9 w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-wide text-slate-600 hover:bg-slate-50"
-                  >
-                    <Calculator size={13} /> Reset split
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid gap-3 lg:grid-cols-2">
-                <div className="rounded-xl border border-slate-200 bg-white p-3">
-                  <BuySourcePlatformPicker
-                    size="sm"
-                    value={platform}
-                    onChange={(next) => {
-                      setPlatform(next);
-                      setPayment((prev) => paymentAfterPlatformChange(next, prev));
+                    type="text"
+                    inputMode="decimal"
+                    className="min-w-0 flex-1 bg-transparent px-1 text-xs font-black text-slate-900 outline-none"
+                    placeholder="0,00"
+                    value={totalCostDraft !== null ? totalCostDraft : totalCost === 0 ? '' : String(totalCost)}
+                    onFocus={() => setTotalCostDraft(totalCost === 0 ? '' : String(totalCost))}
+                    onBlur={() => {
+                      const raw = totalCostDraft ?? '';
+                      setTotalCostDraft(null);
+                      if (!raw.trim()) {
+                        setTotalCost(0);
+                        return;
+                      }
+                      const next = parseLocaleNumber(raw);
+                      if (Number.isFinite(next)) setTotalCost(next);
                     }}
-                  />
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-white p-3">
-                  <BuyPaymentTypePicker
-                    size="sm"
-                    platform={platform}
-                    value={payment}
-                    onChange={(next) =>
-                      setPayment(normalizeBuyPaymentForPlatform(platform, next) || next)
-                    }
+                    onChange={(event) => setTotalCostDraft(event.target.value)}
                   />
                 </div>
               </div>
+              <div>
+                <label className={ADD_FLOW_LABEL}>Buy date</label>
+                <input
+                  type="date"
+                  className={`${ADD_FLOW_INPUT} mt-0.5 !h-8 !rounded-lg !px-2 !py-1 text-[11px]`}
+                  value={buyDate}
+                  onChange={(event) => setBuyDate(event.target.value)}
+                />
+              </div>
+            </div>
 
-              {(platform === 'kleinanzeigen.de' || platform === 'ebay.de') && (
-                <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-3">
-                  <h3 className={ADD_FLOW_LABEL}>Source proof</h3>
-                  <BuySourceSellerField platform={platform} value={batchSeller} onChange={setBatchSeller} />
-                  {platform === 'kleinanzeigen.de' && (
-                    <>
+            <BuySourcePlatformPicker
+              size="sm"
+              variant="chip"
+              value={platform}
+              onChange={(next) => {
+                setPlatform(next);
+                setPayment((prev) => paymentAfterPlatformChange(next, prev));
+              }}
+            />
+            <BuyPaymentTypePicker
+              size="sm"
+              variant="chip"
+              platform={platform}
+              value={payment}
+              onChange={(next) =>
+                setPayment(normalizeBuyPaymentForPlatform(platform, next) || next)
+              }
+            />
+
+            {(platform === 'kleinanzeigen.de' || platform === 'ebay.de') && (
+              <div className="space-y-1.5">
+                <p className={ADD_FLOW_LABEL}>Source proof</p>
+                <BuySourceSellerField
+                  compact
+                  platform={platform}
+                  value={batchSeller}
+                  onChange={setBatchSeller}
+                />
+                {platform === 'kleinanzeigen.de' && (
+                  <>
+                    <input
+                      className={`${ADD_FLOW_INPUT} !py-1.5 text-xs`}
+                      placeholder="Seller profile URL"
+                      value={sellerProfileUrl}
+                      onChange={(event) => setSellerProfileUrl(event.target.value)}
+                    />
+                    <input
+                      className={`${ADD_FLOW_INPUT} !py-1.5 text-xs`}
+                      placeholder="Chat URL"
+                      value={chatUrl}
+                      onChange={(event) => setChatUrl(event.target.value)}
+                    />
+                    <div className="flex gap-1.5">
                       <input
-                        className={ADD_FLOW_INPUT}
-                        placeholder="Chat URL"
-                        value={chatUrl}
-                        onChange={(event) => setChatUrl(event.target.value)}
+                        className={`${ADD_FLOW_INPUT} min-w-0 flex-1 !py-1.5 text-xs`}
+                        placeholder={chatImage.startsWith('data:') ? 'Screenshot attached' : 'Chat screenshot URL'}
+                        value={chatImage.startsWith('data:') ? '' : chatImage}
+                        onChange={(event) => setChatImage(event.target.value.trim())}
                       />
-                      <input
-                        className={ADD_FLOW_INPUT}
-                        placeholder="Seller profile URL"
-                        value={sellerProfileUrl}
-                        onChange={(event) => setSellerProfileUrl(event.target.value)}
-                      />
-                      <div className="flex gap-2">
-                        <input
-                          className={`${ADD_FLOW_INPUT} flex-1`}
-                          placeholder="Chat screenshot URL"
-                          value={chatImage.startsWith('data:') ? '' : chatImage}
-                          onChange={(event) => setChatImage(event.target.value.trim())}
-                        />
-                        <label
-                          className="flex cursor-pointer items-center rounded-xl border border-slate-200 bg-white px-3 text-slate-500 hover:bg-slate-50"
-                          title="Upload chat screenshot"
-                        >
-                          <Upload size={15} />
-                          <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-                        </label>
-                      </div>
-                      {chatImage && (
+                      <label
+                        className="flex h-8 shrink-0 cursor-pointer items-center rounded-lg border border-slate-200 bg-white px-2.5 text-[9px] font-black uppercase text-slate-600 hover:bg-slate-50"
+                        title="Upload chat screenshot"
+                      >
+                        <Upload size={13} />
+                        <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                      </label>
+                      {chatImage ? (
                         <button
                           type="button"
                           onClick={() => setChatImage('')}
-                          className="text-[10px] font-black uppercase text-slate-600"
+                          className="h-8 shrink-0 rounded-lg border border-slate-200 bg-white px-2 text-[9px] font-black uppercase text-slate-600 hover:bg-slate-50"
                         >
-                          Clear attached screenshot
+                          Clear
                         </button>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </section>
+                      ) : null}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
 
-        <section className={`${ADD_FLOW_PANEL} shrink-0 p-2.5 sm:p-3`}>
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-stretch">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setCostSplitMode((mode) => (mode === 'EQUAL' ? 'SMART' : 'EQUAL'))}
+                className={`h-8 flex-1 rounded-lg border px-2 text-[9px] font-black uppercase tracking-wide transition-colors ${
+                  costSplitMode === 'SMART'
+                    ? 'border-slate-900 bg-slate-900 text-white'
+                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                }`}
+                title="Smart split prioritizes expensive component types"
+              >
+                Smart {costSplitMode === 'SMART' ? 'on' : 'off'}
+              </button>
+              <button
+                type="button"
+                onClick={distributeEvenly}
+                className="flex h-8 flex-1 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-[9px] font-black uppercase tracking-wide text-slate-600 hover:bg-slate-50"
+              >
+                <Calculator size={12} /> Reset
+              </button>
+            </div>
+          </div>
+          <div className="hidden shrink-0 border-t border-slate-100 p-2.5 lg:block">
+            <AddFlowPrimaryButton
+              onClick={handleSubmit}
+              disabled={items.length === 0 || parsingSpecs}
+              className="h-10 w-full whitespace-nowrap text-[10px]"
+            >
+              {parsingSpecs ? (
+                <><Loader2 size={14} className="animate-spin" /> {parseProgress || 'Parsing…'}</>
+              ) : (
+                <><Save size={14} /> Confirm import ({items.length})</>
+              )}
+            </AddFlowPrimaryButton>
+          </div>
+        </aside>
+
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 lg:gap-2.5">
+        <section className={`${ADD_FLOW_PANEL} shrink-0 p-2 sm:p-2.5`}>
+          <div className="flex flex-col gap-1.5 lg:flex-row lg:items-end">
             <div className="min-w-0 flex-1">
               <label className={ADD_FLOW_LABEL}>Paste seeds</label>
               <textarea
-                className={`${ADD_FLOW_INPUT} mt-1 min-h-16 resize-y !rounded-lg !px-3 !py-2 text-xs`}
+                className={`${ADD_FLOW_INPUT} mt-0.5 min-h-[3.25rem] max-h-24 resize-y !rounded-lg !px-2.5 !py-1.5 text-xs`}
                 placeholder={'One item per line — paste fills editable rows below\nExample: ASUS TUF Gaming RTX 5070 12GB'}
                 value={bulkText}
                 onChange={(event) => setBulkText(event.target.value)}
               />
             </div>
-            <div className="flex flex-wrap items-end gap-2 lg:w-auto lg:max-w-[31rem]">
-              <div className="grid min-w-[13rem] flex-1 grid-cols-2 rounded-lg border border-slate-200 bg-slate-50 p-1">
+            <div className="flex flex-wrap items-end gap-1.5 lg:w-auto lg:shrink-0">
+              <div className="grid min-w-[11rem] grid-cols-2 rounded-lg border border-slate-200 bg-slate-50 p-0.5">
                 <button
                   type="button"
                   onClick={() => setBulkQtyMode('INDIVIDUAL')}
-                  className={`rounded-md px-2 py-2 text-[10px] font-black uppercase ${
+                  className={`rounded-md px-2 py-1.5 text-[9px] font-black uppercase ${
                     bulkQtyMode === 'INDIVIDUAL' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
                   }`}
                 >
-                  Separately
+                  Separate
                 </button>
                 <button
                   type="button"
                   onClick={() => setBulkQtyMode('LOT')}
-                  className={`rounded-md px-2 py-2 text-[10px] font-black uppercase ${
+                  className={`rounded-md px-2 py-1.5 text-[9px] font-black uppercase ${
                     bulkQtyMode === 'LOT' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
                   }`}
                 >
@@ -1037,7 +1022,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                 type="button"
                 onClick={handleAddBulkTextAsIs}
                 disabled={!bulkText.trim() || bulkTextBusy}
-                className="h-10 rounded-lg border border-slate-200 bg-white px-4 text-[10px] font-black uppercase tracking-wide text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-[9px] font-black uppercase tracking-wide text-slate-700 hover:bg-slate-50 disabled:opacity-50"
               >
                 Fill sheet
               </button>
@@ -1045,20 +1030,20 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                 type="button"
                 onClick={handleParseBulkTextWithAI}
                 disabled={!bulkText.trim() || bulkTextBusy}
-                className="flex h-10 items-center gap-2 rounded-lg bg-slate-900 px-4 text-[10px] font-black uppercase tracking-wide text-white hover:bg-slate-800 disabled:opacity-50"
+                className="flex h-8 items-center gap-1.5 rounded-lg bg-slate-900 px-3 text-[9px] font-black uppercase tracking-wide text-white hover:bg-slate-800 disabled:opacity-50"
               >
-                {bulkTextBusy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                {bulkTextBusy ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
                 Parse AI
               </button>
             </div>
           </div>
-          <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+          <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
             <p className="text-[10px] font-medium text-slate-400">Paste fills rows below. Review names, categories, and costs before importing.</p>
             {bulkTextStatus && <p className="text-[10px] text-slate-500">{bulkTextStatus}</p>}
           </div>
         </section>
 
-        <section className={`${ADD_FLOW_PANEL} flex min-h-[18rem] flex-1 flex-col overflow-hidden`}>
+        <section className={`${ADD_FLOW_PANEL} flex min-h-[14rem] flex-1 flex-col overflow-hidden lg:min-h-0`}>
           <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50/70 px-3 py-2">
             <div>
               <h2 className="text-sm font-black text-slate-900">Import sheet</h2>
@@ -1071,14 +1056,14 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
             </span>
           </div>
           <div className="flex-1 min-h-0 overflow-auto">
-            <table className="w-full min-w-[780px] table-fixed border-collapse text-left">
+            <table className="w-full min-w-[520px] table-fixed border-collapse text-left">
               <colgroup>
-                <col className="w-12" />
+                <col className="w-10" />
                 <col />
-                <col className="w-[21rem]" />
-                <col className="w-28" />
-                <col className="w-16" />
-                <col className="w-24" />
+                <col className="w-[11rem]" />
+                <col className="w-20" />
+                <col className="w-12" />
+                <col className="w-20" />
               </colgroup>
               <thead className="sticky top-0 z-10 bg-slate-100 text-[9px] font-black uppercase tracking-widest text-slate-500">
                 <tr>
@@ -1126,7 +1111,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                               const category = event.target.value;
                               updateDraft(item.id, {
                                 category,
-                                subCategory: normalizeSubCategory(category, '', categories),
+                                subCategory: resolveSubCategory(category, '', categories, onAddCategory),
                               });
                             }}
                           >
@@ -1334,17 +1319,12 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
             </div>
           )}
         </section>
+        </div>
       </main>
 
       <div className="lg:hidden fixed inset-x-0 bottom-[calc(3.75rem+env(safe-area-inset-bottom,0px))] z-[90] border-t border-slate-200 bg-white/95 backdrop-blur-sm px-3 pt-2 pb-2 shadow-[0_-6px_20px_rgba(15,23,42,0.08)]">
         <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px] font-bold text-slate-500">
-          <button
-            type="button"
-            onClick={() => setPurchaseDrawerOpen((open) => !open)}
-            className="min-w-0 flex-1 truncate text-left text-slate-600 underline decoration-slate-300 underline-offset-2"
-          >
-            {purchaseSummary}
-          </button>
+          <span className="min-w-0 truncate">{purchaseSummary}</span>
           <span className={Math.abs(allocatedTotal - totalCost) > 0.1 ? 'shrink-0 text-red-500' : 'shrink-0 text-emerald-600'}>
             Alloc €{formatEUR(allocatedTotal)}
           </span>

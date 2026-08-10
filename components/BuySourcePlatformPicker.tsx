@@ -71,6 +71,27 @@ type IconTileProps = {
   icon: React.ReactNode;
 };
 
+type PickerVariant = 'tile' | 'chip';
+
+function ChipTile({ selected, title, label, onClick, icon }: Omit<IconTileProps, 'size'>) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-pressed={selected}
+      onClick={onClick}
+      className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 ${
+        selected
+          ? 'border-slate-900 bg-slate-900 text-white'
+          : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+      }`}
+    >
+      <span className="inline-flex shrink-0 opacity-90">{icon}</span>
+      <span className="truncate">{label}</span>
+    </button>
+  );
+}
+
 function IconTile({ selected, title, label, size, onClick, icon }: IconTileProps) {
   const sm = size === 'sm';
   return (
@@ -105,6 +126,7 @@ type PlatformPickerProps = {
   value: Platform;
   onChange: (platform: Platform) => void;
   size?: 'sm' | 'md';
+  variant?: PickerVariant;
   label?: string;
   className?: string;
   platforms?: Platform[];
@@ -115,26 +137,43 @@ export function BuySourcePlatformPicker({
   value,
   onChange,
   size = 'md',
+  variant = 'tile',
   label = 'Bought on',
   className = '',
   platforms = BUY_SOURCE_PLATFORMS,
 }: PlatformPickerProps) {
+  const iconSize = size === 'sm' ? 13 : 15;
   return (
     <div className={className}>
-      {label ? <p className={`${ADD_FLOW_LABEL} mb-2`}>{label}</p> : null}
-      <div className="grid grid-cols-5 gap-1">
-        {platforms.map((platform) => (
-          <IconTile
-            key={platform}
-            selected={value === platform}
-            title={formatPlatformBoughtLabel(platform)}
-            label={formatPlatformBoughtShort(platform)}
-            size={size}
-            onClick={() => onChange(platform)}
-            icon={<PlatformGlyph platform={platform} size={size === 'sm' ? 15 : 17} />}
-          />
-        ))}
-      </div>
+      {label ? <p className={`${ADD_FLOW_LABEL} mb-1.5`}>{label}</p> : null}
+      {variant === 'chip' ? (
+        <div className="flex flex-wrap gap-1">
+          {platforms.map((platform) => (
+            <ChipTile
+              key={platform}
+              selected={value === platform}
+              title={formatPlatformBoughtLabel(platform)}
+              label={formatPlatformBoughtShort(platform)}
+              onClick={() => onChange(platform)}
+              icon={<PlatformGlyph platform={platform} size={iconSize} />}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-5 gap-1">
+          {platforms.map((platform) => (
+            <IconTile
+              key={platform}
+              selected={value === platform}
+              title={formatPlatformBoughtLabel(platform)}
+              label={formatPlatformBoughtShort(platform)}
+              size={size}
+              onClick={() => onChange(platform)}
+              icon={<PlatformGlyph platform={platform} size={iconSize + 2} />}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -144,6 +183,7 @@ type PaymentPickerProps = {
   value: PaymentType;
   onChange: (payment: PaymentType) => void;
   size?: 'sm' | 'md';
+  variant?: PickerVariant;
   label?: string;
   className?: string;
 };
@@ -154,32 +194,49 @@ export function BuyPaymentTypePicker({
   value,
   onChange,
   size = 'md',
+  variant = 'tile',
   label = 'Paid with',
   className = '',
 }: PaymentPickerProps) {
   const opts = buyPaymentOptionsForPlatform(platform);
   const list = value && !opts.includes(value) ? [value, ...opts] : opts;
   const cols = Math.min(Math.max(list.length, 2), 5);
+  const iconSize = size === 'sm' ? 13 : 15;
 
   return (
     <div className={className}>
-      {label ? <p className={`${ADD_FLOW_LABEL} mb-2`}>{label}</p> : null}
-      <div
-        className="grid gap-1"
-        style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
-      >
-        {list.map((payment) => (
-          <IconTile
-            key={payment}
-            selected={value === payment}
-            title={formatBuyPaymentLabel(payment)}
-            label={formatBuyPaymentShort(payment)}
-            size={size}
-            onClick={() => onChange(payment)}
-            icon={<PaymentGlyph payment={payment} size={size === 'sm' ? 15 : 17} />}
-          />
-        ))}
-      </div>
+      {label ? <p className={`${ADD_FLOW_LABEL} mb-1.5`}>{label}</p> : null}
+      {variant === 'chip' ? (
+        <div className="flex flex-wrap gap-1">
+          {list.map((payment) => (
+            <ChipTile
+              key={payment}
+              selected={value === payment}
+              title={formatBuyPaymentLabel(payment)}
+              label={formatBuyPaymentShort(payment)}
+              onClick={() => onChange(payment)}
+              icon={<PaymentGlyph payment={payment} size={iconSize} />}
+            />
+          ))}
+        </div>
+      ) : (
+        <div
+          className="grid gap-1"
+          style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+        >
+          {list.map((payment) => (
+            <IconTile
+              key={payment}
+              selected={value === payment}
+              title={formatBuyPaymentLabel(payment)}
+              label={formatBuyPaymentShort(payment)}
+              size={size}
+              onClick={() => onChange(payment)}
+              icon={<PaymentGlyph payment={payment} size={iconSize + 2} />}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -189,11 +246,25 @@ type SellerFieldProps = {
   onChange: (value: string) => void;
   platform: Platform;
   className?: string;
+  compact?: boolean;
 };
 
 /** Seller / shop name — only relevant for marketplace sources. */
-export function BuySourceSellerField({ value, onChange, platform, className = '' }: SellerFieldProps) {
+export function BuySourceSellerField({ value, onChange, platform, className = '', compact = false }: SellerFieldProps) {
   if (platform !== 'kleinanzeigen.de' && platform !== 'ebay.de') return null;
+  const placeholder =
+    platform === 'kleinanzeigen.de' ? 'Kleinanzeigen username' : 'eBay seller / shop';
+  if (compact) {
+    return (
+      <input
+        className={`${ADD_FLOW_INPUT} ${className}`}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        aria-label={platform === 'kleinanzeigen.de' ? 'Seller name' : 'Seller / shop'}
+      />
+    );
+  }
   return (
     <div className={className}>
       <label className={`${ADD_FLOW_LABEL} mb-2 block`}>
@@ -203,9 +274,7 @@ export function BuySourceSellerField({ value, onChange, platform, className = ''
         className={ADD_FLOW_INPUT}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={
-          platform === 'kleinanzeigen.de' ? 'Kleinanzeigen username' : 'eBay seller / shop'
-        }
+        placeholder={placeholder}
       />
     </div>
   );
