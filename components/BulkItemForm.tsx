@@ -6,13 +6,15 @@ import {
   ShoppingBag, Calculator, Layers, 
   Search, Database, 
   CheckCircle2,
-  Sparkles, Loader2, Package, Ban, ScanBarcode, Wrench, Globe, Upload
+  Sparkles, Loader2, Package, Ban, ScanBarcode, Wrench, Upload, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, Platform, PaymentType, BulkImportRecord, BulkImportSource } from '../types';
 import {
   defaultBuyPaymentForPlatform,
   normalizeBuyPaymentForPlatform,
   paymentAfterPlatformChange,
+  formatPlatformBoughtShort,
+  formatBuyPaymentShort,
 } from '../utils/purchaseSource';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
@@ -52,6 +54,12 @@ import {
   resolveBulkImportSource,
 } from '../utils/bulkImportHistory';
 import { splitBulkImportCosts, type BulkCostSplitMode } from '../utils/bulkImportCostSplit';
+import {
+  clampToLiveCategories,
+  formatCategoryTreeForPrompt,
+  inferCategoryFromName,
+  reconcileBulkCategory,
+} from '../utils/bulkCategoryInfer';
 import BarcodeScanPanel from './BarcodeScanPanel';
 import type { BarcodeProduct } from '../services/barcodeLookup';
 
@@ -104,61 +112,6 @@ interface ParsedTextItem {
   specs?: Record<string, string | number>;
 }
 
-const MOTHERBOARD_PATTERN =
-  /\b(mainboard|motherboard|mobo|chipset|form\s*factor|io[\s-]*shield|(?:a|b|h|x|z)\d{2,4}[a-z0-9-]*)\b/i;
-
-function normalizeCategory(input: string | undefined, categories: Record<string, string[]>): string {
-  const keys = Object.keys(categories || {});
-  const fallback = keys[0] || 'Components';
-  const raw = (input || '').trim().toLowerCase();
-  if (!raw) return fallback;
-  const match = keys.find((c) => c.toLowerCase() === raw);
-  return match || (keys.includes('Components') ? 'Components' : fallback);
-}
-
-function normalizeSubCategory(
-  category: string,
-  sub: string | undefined,
-  categories: Record<string, string[]>
-): string {
-  const options = categories[category] || [];
-  if (!options.length) return '';
-  const raw = (sub || '').trim().toLowerCase();
-  const match = options.find((s) => s.toLowerCase() === raw);
-  return match || options[0];
-}
-
-/** Clamp any guessed/AI pair onto the live Settings tree. */
-function clampToLiveCategories(
-  selection: { category: string; subCategory: string },
-  categories: Record<string, string[]>
-): { category: string; subCategory: string } {
-  const category = normalizeCategory(selection.category, categories);
-  const subCategory = normalizeSubCategory(category, selection.subCategory, categories);
-  return { category, subCategory };
-}
-
-function inferCategoryFromName(name: string): { category: string; subCategory: string } {
-  const n = name.toLowerCase();
-  if (/(rtx|gtx|radeon|rx\s?\d{3,5}|quadro|tesla|firepro|nvidia\s+[qkmt]|graphics card|grafikkarte)/i.test(n))
-    return { category: 'Components', subCategory: 'Graphics Cards' };
-  if (/\b(i[3579]|intel\s*core|ryzen|threadripper|cpu|prozessor)\b/i.test(n) && !/mainboard|motherboard|prodesk|optiplex|elitedesk|business\s*pc/i.test(n))
-    return { category: 'Components', subCategory: 'Processors' };
-  if (MOTHERBOARD_PATTERN.test(n) || /socket\s?(am|lga)/i.test(n)) return { category: 'Components', subCategory: 'Motherboards' };
-  if (/(ddr[2345]|ram\b|memory\b|\d+\s*[x×]\s*\d+\s*gb|12800u|10600u|1333u|2rx8|1rx8|jedec|hynix|samsung m\d|kingston (?:khx|acr)|sk hynix|crucial|mhz)/i.test(n) && !/prodesk|optiplex|elitedesk|business\s*pc|mainboard|motherboard/i.test(n))
-    return { category: 'Components', subCategory: 'RAM' };
-  if (/(prodesk|optiplex|elitedesk|business\s*pc|desktop\s*pc|mini\s*pc)\b/i.test(n))
-    return { category: 'PC', subCategory: 'Pre-Built PC' };
-  if (/(dvd|bluray|blu-ray|optical|oddd|gud\d)/i.test(n)) return { category: 'Misc', subCategory: 'Spare Parts' };
-  if (/(ssd|hdd|nvme|m\.2|\b\d+\s*tb\b)/i.test(n)) return { category: 'Components', subCategory: 'Storage (SSD/HDD)' };
-  if (/(netzteil|power supply|psu|watt|80\+)/i.test(n)) return { category: 'Components', subCategory: 'Power Supplies' };
-  if (/(geh[aä]use|case|micro-atx|matx|atx case)/i.test(n)) return { category: 'Components', subCategory: 'Cases' };
-  if (/(aio|k[uü]hler|cooler|liquid freezer|fan|l[uü]fter|120mm|140mm)/i.test(n)) return { category: 'Components', subCategory: 'Cooling' };
-  if (/(laptop|notebook|macbook)/i.test(n)) return { category: 'Laptops', subCategory: 'Gaming Laptop' };
-  if (/(monitor|display|hz|ips|oled)/i.test(n)) return { category: 'Peripherals', subCategory: 'Monitors' };
-  return { category: 'Misc', subCategory: 'Spare Parts' };
-}
-
 function parseBulkTextLines(input: string): string[] {
   return input
     .split(/\r?\n/)
@@ -168,41 +121,6 @@ function parseBulkTextLines(input: string): string[] {
 
 function parseQuantityAndName(rawLine: string): { name: string; quantity: number } {
   return parseBulkLineQuantityAndName(rawLine);
-}
-
-function reconcileCategory(
-  name: string,
-  category: string | undefined,
-  subCategory: string | undefined,
-  categories: Record<string, string[]>
-): { category: string; subCategory: string } {
-  const guessed = inferCategoryFromName(name);
-  const aiCategory = normalizeCategory(category || guessed.category, categories);
-  const aiSub = normalizeSubCategory(aiCategory, subCategory || guessed.subCategory, categories);
-
-  const n = name.toLowerCase();
-  let resolved = { category: aiCategory, subCategory: aiSub };
-  if (/(prodesk|optiplex|elitedesk|business\s*pc|desktop\s*pc|mini\s*pc)\b/i.test(n)) {
-    resolved = { category: 'PC', subCategory: 'Pre-Built PC' };
-  } else if (/(dvd|bluray|blu-ray|optical|oddd|gud\d)/i.test(n)) {
-    resolved = { category: 'Misc', subCategory: 'Spare Parts' };
-  } else if (/\b(i[3579]|intel\s*core|ryzen|threadripper|cpu|prozessor)\b/i.test(n) && !/mainboard|motherboard|prodesk|optiplex|elitedesk|business\s*pc/i.test(n)) {
-    resolved = { category: 'Components', subCategory: 'Processors' };
-  } else if (/(ssd|nvme|m\.2|hdd|sata)/i.test(n)) {
-    resolved = { category: 'Components', subCategory: 'Storage (SSD/HDD)' };
-  } else if (/(ddr4|ddr5|ram|memory|\d+\s*[x×]\s*\d+\s*gb|crucial)/i.test(n) && !/mainboard|motherboard|prodesk|business\s*pc/i.test(n)) {
-    resolved = { category: 'Components', subCategory: 'RAM' };
-  } else if (MOTHERBOARD_PATTERN.test(n)) {
-    resolved = { category: 'Components', subCategory: 'Motherboards' };
-  } else if (aiCategory !== 'Components' && guessed.category === 'Components') {
-    resolved = guessed;
-  } else if (aiCategory === 'Components' && aiSub === 'Graphics Cards' && guessed.subCategory !== 'Graphics Cards') {
-    resolved = guessed;
-  } else if (guessed.category === 'PC' && aiCategory !== 'PC') {
-    resolved = guessed;
-  }
-
-  return clampToLiveCategories(resolved, categories);
 }
 
 const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categories = HIERARCHY_CATEGORIES, onAddCategory, categoryFields = {} }) => {
@@ -261,6 +179,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
   const [bulkTextBusy, setBulkTextBusy] = useState(false);
   const [bulkTextStatus, setBulkTextStatus] = useState<string | null>(null);
   const [bulkQtyMode, setBulkQtyMode] = useState<BulkQtyMode>('INDIVIDUAL');
+  const [purchaseDrawerOpen, setPurchaseDrawerOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
 
@@ -304,6 +223,21 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
     0
   );
 
+  const purchaseSummary = useMemo(() => {
+    const parts: string[] = [];
+    parts.push(totalCost > 0 ? `€${formatEUR(totalCost)}` : '€0');
+    if (buyDate) {
+      const d = new Date(`${buyDate}T12:00:00`);
+      if (!Number.isNaN(d.getTime())) {
+        parts.push(d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }));
+      }
+    }
+    parts.push(formatPlatformBoughtShort(platform));
+    parts.push(formatBuyPaymentShort(payment));
+    parts.push(`${items.length} item${items.length === 1 ? '' : 's'}`);
+    return parts.join(' · ');
+  }, [totalCost, buyDate, platform, payment, items.length]);
+
   const handleAddManual = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!newName) return;
@@ -313,7 +247,8 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
     }
     const clamped = clampToLiveCategories(
       { category: newCategory, subCategory: newSubCategory },
-      categories
+      categories,
+      onAddCategory
     );
 
     const newItems: DraftItem[] = [];
@@ -362,7 +297,8 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
     }
     const clamped = clampToLiveCategories(
       { category: newCategory, subCategory: newSubCategory },
-      categories
+      categories,
+      onAddCategory
     );
     setItems((prev) => [
       ...prev,
@@ -388,7 +324,8 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
   const handleAddBlankRow = () => {
     const clamped = clampToLiveCategories(
       { category: newCategory, subCategory: newSubCategory },
-      categories
+      categories,
+      onAddCategory
     );
     setItems((prev) => [
       ...prev,
@@ -419,12 +356,10 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
       const lineQty = Math.max(1, Math.floor(fromLine.quantity || 1));
       const productFromLine = stripConditionAnnotations(fromLine.name) || fromLine.name;
       const baseName = stripConditionAnnotations(rawName) || rawName;
-      const rec = importMode === 'AS_IS'
-        ? clampToLiveCategories(
-            { category: newCategory, subCategory: newSubCategory },
-            categories
-          )
-        : reconcileCategory(productFromLine || baseName, row.category, row.subCategory, categories);
+      const rec =
+        importMode === 'AS_IS'
+          ? reconcileBulkCategory(productFromLine || baseName, undefined, undefined, categories, onAddCategory)
+          : reconcileBulkCategory(productFromLine || baseName, row.category, row.subCategory, categories, onAddCategory);
       const ramKit =
         rec.subCategory === 'RAM'
           ? resolveRamKitInfo(productFromLine || baseName, { sourceLine, specs: row.specs })
@@ -507,7 +442,6 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
     }
     if (!appended.length) return;
     setItems((prev) => [...prev, ...appended]);
-    setBulkText('');
     const modeLabel = bulkQtyMode === 'LOT' ? 'as lot(s)' : 'individually';
     setBulkTextStatus(
       `Added ${appended.length} item(s) ${modeLabel} to review list. Edit if needed, then confirm import.`
@@ -557,12 +491,14 @@ Return JSON only (no markdown). Keep each item compact (omit empty strings). Pre
 
 Rules:
 - name: clean short product title — brand + model + key size/capacity (e.g. "Samsung 980 Pro 1TB NVMe", "MSI GeForce RTX 3060 Gaming X 12GB", "Intel Core i7-4790K"). Fix casing, drop junk (emoji, shipping, "neu", seller fluff, trailing prices). Keep real model / P/N tokens.
-- Keep categories limited to: ${Object.keys(categories).join(', ') || 'Components'}
-- SubCategory must exist under that category in the list above (or be omitted).
+- Categories and subcategories must match the user's live tree when possible:
+${formatCategoryTreeForPrompt(categories)}
+- If the best subcategory is missing from the tree (e.g. "Displays" under Components), still output that subcategory name — the app will create it.
+- Monitors, displays, and screens are NEVER graphics cards. Use Components/Displays or Peripherals/Monitors — never Graphics Cards for a monitor.
 - Parse quantity from prefixes like "2x ..." or "8x4GB ...". If no quantity, use 1.
 - Leading "2x Product" / "4x Product" is a PURCHASE count (how many units bought), not a RAM kit size. Example: "2x Samsung … 4GB" → quantity=2, name without the "2x". Spaced "2x 8GB Samsung" → quantity=2, single 8GB sticks (NOT a 2x8GB kit).
 - Model codes like "ACR24D4U1S1ME-8X" or "…-8X 8GB": the "-8X" is part of the part number, NEVER modules=8. Keep the full model string in name — do NOT invent "64GB (8x8GB)".
-- IMPORTANT: Do not classify CPUs, SSD/NVMe drives, RAM, or motherboards as Graphics Cards.
+- IMPORTANT: Do not classify CPUs, SSD/NVMe drives, RAM, motherboards, or monitors/displays as Graphics Cards.
 - IMPORTANT: Motherboards are often listed only by chipset/model (for example A320M, B450, B550, X570, Z690, Z790, H610) without the word "motherboard". Classify those as category "Components" and subCategory "Motherboards".
 - Pre-built desktops (ProDesk, OptiPlex, EliteDesk, "Business PC") → category "PC", subCategory "Pre-Built PC".
 - RAM kits (e.g. "Crucial 2x8GB", "8x4GB Hynix"): ONE inventory line per kit with quantity=1 unless the line starts with a purchase count like "3x Crucial 2x8GB" (then quantity=3). Never set quantity to the stick/module count. In specs use Modules (number of sticks), GB per Stick, and Kit Capacity (modules × GB per stick).
@@ -885,7 +821,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
         <AddFlowPageHeader
           icon={<Layers size={22} strokeWidth={1.75} />}
           title="Bulk Entry"
-          subtitle="Sheet · paste fills rows · one transaction"
+          subtitle="Paste → sheet · purchase summary above · one transaction"
           onBack={() => navigate(-1)}
           actions={
             <AddFlowSecondaryButton onClick={() => navigate('/panel/bulk-imports')}>
@@ -896,85 +832,31 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
       </div>
 
       <main className="flex flex-1 min-h-0 flex-col gap-2.5 px-1 sm:px-2 pb-[max(5.5rem,calc(4rem+env(safe-area-inset-bottom)))] lg:pb-2">
-        <section className={`${ADD_FLOW_PANEL} shrink-0 p-2 sm:p-3`}>
-          <div className="flex flex-wrap items-end gap-2 lg:flex-nowrap">
-            <div className="min-w-[8rem]">
-              <label className={ADD_FLOW_LABEL}>Total paid</label>
-              <div className="mt-1 flex h-9 items-center rounded-lg border border-slate-200 bg-white px-2 focus-within:border-slate-400">
-                <span className="text-xs font-bold text-slate-400">€</span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  className="min-w-0 flex-1 bg-transparent px-1 text-sm font-black text-slate-900 outline-none"
-                  placeholder="0,00"
-                  value={totalCostDraft !== null ? totalCostDraft : totalCost === 0 ? '' : String(totalCost)}
-                  onFocus={() => setTotalCostDraft(totalCost === 0 ? '' : String(totalCost))}
-                  onBlur={() => {
-                    const raw = totalCostDraft ?? '';
-                    setTotalCostDraft(null);
-                    if (!raw.trim()) {
-                      setTotalCost(0);
-                      return;
-                    }
-                    const next = parseLocaleNumber(raw);
-                    if (Number.isFinite(next)) setTotalCost(next);
-                  }}
-                  onChange={(event) => setTotalCostDraft(event.target.value)}
-                />
-              </div>
-            </div>
-            <div className="min-w-[9rem]">
-              <label className={ADD_FLOW_LABEL}>Buy date</label>
-              <input
-                type="date"
-                className={`${ADD_FLOW_INPUT} mt-1 !h-9 !rounded-lg !px-2 !py-1.5 text-xs`}
-                value={buyDate}
-                onChange={(event) => setBuyDate(event.target.value)}
-              />
-            </div>
-            <div className="min-w-[13rem] flex-1">
-              <BuySourcePlatformPicker
-                size="sm"
-                value={platform}
-                onChange={(next) => {
-                  setPlatform(next);
-                  setPayment((prev) => paymentAfterPlatformChange(next, prev));
-                }}
-              />
-            </div>
-            <div className="min-w-[13rem] flex-1">
-              <BuyPaymentTypePicker
-                size="sm"
-                platform={platform}
-                value={payment}
-                onChange={(next) =>
-                  setPayment(normalizeBuyPaymentForPlatform(platform, next) || next)
-                }
-              />
-            </div>
+        <section className={`${ADD_FLOW_PANEL} shrink-0 overflow-hidden`}>
+          <div className="flex flex-wrap items-center gap-2 p-2 sm:p-3">
             <button
               type="button"
-              onClick={() => setCostSplitMode((mode) => (mode === 'EQUAL' ? 'SMART' : 'EQUAL'))}
-              className={`h-9 whitespace-nowrap rounded-lg border px-3 text-[10px] font-black uppercase tracking-wide transition-colors ${
-                costSplitMode === 'SMART'
-                  ? 'border-slate-900 bg-slate-900 text-white'
-                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-              }`}
-              title="Smart split prioritizes expensive component types"
+              onClick={() => setPurchaseDrawerOpen((open) => !open)}
+              className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-left transition-colors hover:border-slate-300 hover:bg-slate-100"
+              aria-expanded={purchaseDrawerOpen}
             >
-              Smart split {costSplitMode === 'SMART' ? 'on' : 'off'}
+              <span className="min-w-0 flex-1 truncate text-xs font-bold text-slate-800">{purchaseSummary}</span>
+              {purchaseDrawerOpen ? (
+                <ChevronUp size={14} className="shrink-0 text-slate-400" />
+              ) : (
+                <ChevronDown size={14} className="shrink-0 text-slate-400" />
+              )}
             </button>
-            <button
-              type="button"
-              onClick={distributeEvenly}
-              className="flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-wide text-slate-600 hover:bg-slate-50"
+            <AddFlowSecondaryButton
+              onClick={() => setPurchaseDrawerOpen((open) => !open)}
+              className="h-10 whitespace-nowrap px-3 text-[10px]"
             >
-              <Calculator size={13} /> Reset split
-            </button>
+              {purchaseDrawerOpen ? 'Hide purchase' : 'Edit purchase'}
+            </AddFlowSecondaryButton>
             <AddFlowPrimaryButton
               onClick={handleSubmit}
               disabled={items.length === 0 || parsingSpecs}
-              className="hidden h-9 whitespace-nowrap px-4 lg:flex"
+              className="hidden h-10 whitespace-nowrap px-4 lg:flex"
             >
               {parsingSpecs ? (
                 <><Loader2 size={15} className="animate-spin" /> {parseProgress || 'Parsing…'}</>
@@ -983,6 +865,140 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
               )}
             </AddFlowPrimaryButton>
           </div>
+
+          {purchaseDrawerOpen && (
+            <div className="space-y-4 border-t border-slate-200 bg-slate-50/60 p-3 sm:p-4">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div>
+                  <label className={ADD_FLOW_LABEL}>Total paid</label>
+                  <div className="mt-1 flex h-9 items-center rounded-lg border border-slate-200 bg-white px-2 focus-within:border-slate-400">
+                    <span className="text-xs font-bold text-slate-400">€</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      className="min-w-0 flex-1 bg-transparent px-1 text-sm font-black text-slate-900 outline-none"
+                      placeholder="0,00"
+                      value={totalCostDraft !== null ? totalCostDraft : totalCost === 0 ? '' : String(totalCost)}
+                      onFocus={() => setTotalCostDraft(totalCost === 0 ? '' : String(totalCost))}
+                      onBlur={() => {
+                        const raw = totalCostDraft ?? '';
+                        setTotalCostDraft(null);
+                        if (!raw.trim()) {
+                          setTotalCost(0);
+                          return;
+                        }
+                        const next = parseLocaleNumber(raw);
+                        if (Number.isFinite(next)) setTotalCost(next);
+                      }}
+                      onChange={(event) => setTotalCostDraft(event.target.value)}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className={ADD_FLOW_LABEL}>Buy date</label>
+                  <input
+                    type="date"
+                    className={`${ADD_FLOW_INPUT} mt-1 !h-9 !rounded-lg !px-2 !py-1.5 text-xs`}
+                    value={buyDate}
+                    onChange={(event) => setBuyDate(event.target.value)}
+                  />
+                </div>
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={() => setCostSplitMode((mode) => (mode === 'EQUAL' ? 'SMART' : 'EQUAL'))}
+                    className={`h-9 w-full whitespace-nowrap rounded-lg border px-3 text-[10px] font-black uppercase tracking-wide transition-colors ${
+                      costSplitMode === 'SMART'
+                        ? 'border-slate-900 bg-slate-900 text-white'
+                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                    title="Smart split prioritizes expensive component types"
+                  >
+                    Smart split {costSplitMode === 'SMART' ? 'on' : 'off'}
+                  </button>
+                </div>
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={distributeEvenly}
+                    className="flex h-9 w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-wide text-slate-600 hover:bg-slate-50"
+                  >
+                    <Calculator size={13} /> Reset split
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                <div className="rounded-xl border border-slate-200 bg-white p-3">
+                  <BuySourcePlatformPicker
+                    size="sm"
+                    value={platform}
+                    onChange={(next) => {
+                      setPlatform(next);
+                      setPayment((prev) => paymentAfterPlatformChange(next, prev));
+                    }}
+                  />
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-white p-3">
+                  <BuyPaymentTypePicker
+                    size="sm"
+                    platform={platform}
+                    value={payment}
+                    onChange={(next) =>
+                      setPayment(normalizeBuyPaymentForPlatform(platform, next) || next)
+                    }
+                  />
+                </div>
+              </div>
+
+              {(platform === 'kleinanzeigen.de' || platform === 'ebay.de') && (
+                <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-3">
+                  <h3 className={ADD_FLOW_LABEL}>Source proof</h3>
+                  <BuySourceSellerField platform={platform} value={batchSeller} onChange={setBatchSeller} />
+                  {platform === 'kleinanzeigen.de' && (
+                    <>
+                      <input
+                        className={ADD_FLOW_INPUT}
+                        placeholder="Chat URL"
+                        value={chatUrl}
+                        onChange={(event) => setChatUrl(event.target.value)}
+                      />
+                      <input
+                        className={ADD_FLOW_INPUT}
+                        placeholder="Seller profile URL"
+                        value={sellerProfileUrl}
+                        onChange={(event) => setSellerProfileUrl(event.target.value)}
+                      />
+                      <div className="flex gap-2">
+                        <input
+                          className={`${ADD_FLOW_INPUT} flex-1`}
+                          placeholder="Chat screenshot URL"
+                          value={chatImage.startsWith('data:') ? '' : chatImage}
+                          onChange={(event) => setChatImage(event.target.value.trim())}
+                        />
+                        <label
+                          className="flex cursor-pointer items-center rounded-xl border border-slate-200 bg-white px-3 text-slate-500 hover:bg-slate-50"
+                          title="Upload chat screenshot"
+                        >
+                          <Upload size={15} />
+                          <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                        </label>
+                      </div>
+                      {chatImage && (
+                        <button
+                          type="button"
+                          onClick={() => setChatImage('')}
+                          className="text-[10px] font-black uppercase text-slate-600"
+                        >
+                          Clear attached screenshot
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         <section className={`${ADD_FLOW_PANEL} shrink-0 p-2.5 sm:p-3`}>
@@ -1208,7 +1224,7 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
           >
             <span>
               <span className="block text-xs font-black text-slate-800">More tools</span>
-              <span className="block text-[10px] font-medium text-slate-400">Single-item add, source proof, photos, bundle and AI options</span>
+              <span className="block text-[10px] font-medium text-slate-400">Single-item add, photos, bundle and AI options</span>
             </span>
             <span className="text-lg font-medium text-slate-400">{moreOpen ? '−' : '+'}</span>
           </button>
@@ -1256,26 +1272,6 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
                 </div>
 
                 <div className="space-y-3">
-                  <div className={`${ADD_FLOW_PANEL} space-y-3 p-3`}>
-                    <h3 className={`${ADD_FLOW_LABEL} flex items-center gap-2`}><Globe size={12} /> Source extras</h3>
-                    {(platform === 'kleinanzeigen.de' || platform === 'ebay.de') && (
-                      <BuySourceSellerField platform={platform} value={batchSeller} onChange={setBatchSeller} />
-                    )}
-                    {platform === 'kleinanzeigen.de' && (
-                      <>
-                        <input className={ADD_FLOW_INPUT} placeholder="Chat URL" value={chatUrl} onChange={(event) => setChatUrl(event.target.value)} />
-                        <input className={ADD_FLOW_INPUT} placeholder="Seller profile URL" value={sellerProfileUrl} onChange={(event) => setSellerProfileUrl(event.target.value)} />
-                        <div className="flex gap-2">
-                          <input className={`${ADD_FLOW_INPUT} flex-1`} placeholder="Chat screenshot URL" value={chatImage.startsWith('data:') ? '' : chatImage} onChange={(event) => setChatImage(event.target.value.trim())} />
-                          <label className="flex cursor-pointer items-center rounded-xl border border-slate-200 bg-white px-3 text-slate-500 hover:bg-slate-50" title="Upload chat screenshot">
-                            <Upload size={15} /><input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-                          </label>
-                        </div>
-                        {chatImage && <button type="button" onClick={() => setChatImage('')} className="text-[10px] font-black uppercase text-slate-600">Clear attached screenshot</button>}
-                      </>
-                    )}
-                  </div>
-
                   <div className={`${ADD_FLOW_PANEL} space-y-3 p-3`}>
                     <div className="flex items-center justify-between">
                       <h3 className={ADD_FLOW_LABEL}>Item photos</h3>
@@ -1341,9 +1337,17 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
       </main>
 
       <div className="lg:hidden fixed inset-x-0 bottom-[calc(3.75rem+env(safe-area-inset-bottom,0px))] z-[90] border-t border-slate-200 bg-white/95 backdrop-blur-sm px-3 pt-2 pb-2 shadow-[0_-6px_20px_rgba(15,23,42,0.08)]">
-        <div className="mb-1.5 flex items-center justify-between text-[10px] font-bold text-slate-500">
-          <span>{items.length} item{items.length === 1 ? '' : 's'} · €{formatEUR(totalCost)}</span>
-          <span className={Math.abs(allocatedTotal - totalCost) > 0.1 ? 'text-red-500' : 'text-emerald-600'}>Alloc €{formatEUR(allocatedTotal)}</span>
+        <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px] font-bold text-slate-500">
+          <button
+            type="button"
+            onClick={() => setPurchaseDrawerOpen((open) => !open)}
+            className="min-w-0 flex-1 truncate text-left text-slate-600 underline decoration-slate-300 underline-offset-2"
+          >
+            {purchaseSummary}
+          </button>
+          <span className={Math.abs(allocatedTotal - totalCost) > 0.1 ? 'shrink-0 text-red-500' : 'shrink-0 text-emerald-600'}>
+            Alloc €{formatEUR(allocatedTotal)}
+          </span>
         </div>
         <AddFlowPrimaryButton onClick={handleSubmit} disabled={items.length === 0 || parsingSpecs} className="w-full py-3.5">
           {parsingSpecs ? <><Loader2 size={16} className="animate-spin" /> {parseProgress || 'Parsing…'}</> : <><Save size={16} /> {items.length === 0 ? 'Add items to import' : `Confirm import (${items.length})`}</>}
