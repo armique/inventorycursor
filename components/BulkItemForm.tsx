@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Save, Plus, Trash2, Calendar, 
@@ -177,6 +177,7 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
   const [itemImageUrls, setItemImageUrls] = useState<string[]>([]);
   const [imageUrlInput, setImageUrlInput] = useState('');
   const [bulkText, setBulkText] = useState('');
+  const bulkTextRef = useRef<HTMLTextAreaElement>(null);
   const [bulkTextBusy, setBulkTextBusy] = useState(false);
   const [bulkTextStatus, setBulkTextStatus] = useState<string | null>(null);
   const [bulkQtyMode, setBulkQtyMode] = useState<BulkQtyMode>('INDIVIDUAL');
@@ -237,6 +238,22 @@ const BulkItemForm: React.FC<Props> = ({ onSave, onBulkImportComplete, categorie
     parts.push(`${items.length} item${items.length === 1 ? '' : 's'}`);
     return parts.join(' · ');
   }, [totalCost, buyDate, platform, payment, items.length]);
+
+  const syncBulkTextHeight = useCallback(() => {
+    const el = bulkTextRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const lineCount = (el.value.match(/\n/g)?.length ?? 0) + 1;
+    const minHeight = Math.max(52, lineCount * 20 + 16);
+    const maxHeight = Math.min(Math.round(window.innerHeight * 0.42), 360);
+    const nextHeight = Math.min(Math.max(el.scrollHeight, minHeight), maxHeight);
+    el.style.height = `${nextHeight}px`;
+    el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden';
+  }, []);
+
+  useEffect(() => {
+    syncBulkTextHeight();
+  }, [bulkText, syncBulkTextHeight]);
 
   const handleAddManual = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -987,17 +1004,20 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 lg:gap-2.5">
         <section className={`${ADD_FLOW_PANEL} shrink-0 p-2 sm:p-2.5`}>
-          <div className="flex flex-col gap-1.5 lg:flex-row lg:items-end">
+          <div className="flex flex-col gap-1.5 lg:flex-row lg:items-start">
             <div className="min-w-0 flex-1">
               <label className={ADD_FLOW_LABEL}>Paste seeds</label>
               <textarea
-                className={`${ADD_FLOW_INPUT} mt-0.5 min-h-[3.25rem] max-h-24 resize-y !rounded-lg !px-2.5 !py-1.5 text-xs`}
+                ref={bulkTextRef}
+                rows={2}
+                className={`${ADD_FLOW_INPUT} mt-0.5 min-h-[3.25rem] resize-none !rounded-lg !px-2.5 !py-1.5 text-xs leading-5`}
                 placeholder={'One item per line — paste fills editable rows below\nExample: ASUS TUF Gaming RTX 5070 12GB'}
                 value={bulkText}
                 onChange={(event) => setBulkText(event.target.value)}
+                onPaste={() => requestAnimationFrame(syncBulkTextHeight)}
               />
             </div>
-            <div className="flex flex-wrap items-end gap-1.5 lg:w-auto lg:shrink-0">
+            <div className="flex flex-wrap items-end gap-1.5 lg:w-auto lg:shrink-0 lg:pt-[1.125rem]">
               <div className="grid min-w-[11rem] grid-cols-2 rounded-lg border border-slate-200 bg-slate-50 p-0.5">
                 <button
                   type="button"

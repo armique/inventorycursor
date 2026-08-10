@@ -39,6 +39,28 @@ function sum(map: Record<string, number>): number {
   assert.ok(split.psu > split.case);
 }
 
+// --- peripherals get the smallest SMART share (typically €10–15 in mixed lots) ---
+{
+  const items: BulkCostSplitInput[] = [
+    { id: 'gpu', category: 'Components', subCategory: 'Graphics Cards', name: 'RTX 3060' },
+    { id: 'ram', category: 'Components', subCategory: 'RAM', name: '16GB DDR4' },
+    { id: 'mon', category: 'Peripherals', subCategory: 'Monitors', name: 'AOC 24"' },
+    { id: 'mouse', category: 'Peripherals', subCategory: 'Mice', name: 'Logitech mouse' },
+  ];
+  const split = splitBulkImportCosts(items, 400, 'SMART');
+  assert.equal(sum(split), 400);
+  assert.ok(split.gpu > split.ram, 'GPU beats RAM');
+  assert.ok(split.ram > split.mon, 'RAM beats monitor');
+  assert.ok(split.mon >= split.mouse, 'monitor and mouse stay at the bottom');
+  assert.ok(split.mon <= 35, 'monitor share stays small vs total lot');
+  assert.ok(split.mouse <= 30, 'mouse share stays small vs total lot');
+  assert.ok(
+    estimateBulkItemWeight({ id: 'p', category: 'Peripherals', subCategory: 'Mice' }) <
+      estimateBulkItemWeight({ id: 'c', category: 'Components', subCategory: 'Cases' }),
+    'peripheral weight below case weight'
+  );
+}
+
 // --- manual (locked) costs are respected and the rest splits over what is left ---
 {
   const items: BulkCostSplitInput[] = [

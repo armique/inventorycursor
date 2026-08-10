@@ -16,8 +16,10 @@ export type BulkCostSplitInput = {
 
 /** Relative weight for SMART split (same heuristics as Bulk Entry). */
 export function estimateBulkItemWeight(item: BulkCostSplitInput): number {
+  const cat = (item.category || '').toLowerCase();
   const sub = (item.subCategory || '').toLowerCase();
   const name = (item.name || '').toLowerCase();
+
   const bySub: Record<string, number> = {
     'graphics cards': 6.0,
     processors: 4.2,
@@ -27,11 +29,28 @@ export function estimateBulkItemWeight(item: BulkCostSplitInput): number {
     'power supplies': 1.4,
     cases: 1.1,
     cooling: 1.0,
-    monitors: 1.7,
     'gaming laptop': 5.0,
     consoles: 3.2,
+    // Peripherals / small extras — usually €10–15 in mixed lots
+    monitors: 0.28,
+    displays: 0.28,
+    keyboards: 0.22,
+    mice: 0.2,
+    headsets: 0.24,
+    microphones: 0.22,
+    webcams: 0.22,
+    cables: 0.18,
+    adapters: 0.18,
+    'spare parts': 0.25,
   };
   let w = bySub[sub] ?? 1.0;
+
+  if (cat === 'peripherals') {
+    w = Math.min(w, bySub[sub] ?? 0.25);
+  }
+  if (cat === 'misc' || cat === 'network') {
+    w = Math.min(w, 0.35);
+  }
 
   if (/(rtx|radeon|rx\s?\d{4,5}|gtx)/i.test(name)) w *= 1.35;
   if (/(i9|i7|ryzen\s?9|ryzen\s?7)/i.test(name)) w *= 1.2;
@@ -39,7 +58,12 @@ export function estimateBulkItemWeight(item: BulkCostSplitInput): number {
   if (/(64gb|48gb|32gb|2tb|4tb)/i.test(name)) w *= 1.1;
   if (item.isDefective) w *= 0.6;
 
-  return Math.max(0.3, w);
+  // Peripherals must stay the lightest bucket even after name boosts
+  if (cat === 'peripherals' || /^(monitors?|displays?|keyboards?|mice|headsets?|microphones?|webcams?)$/.test(sub)) {
+    w = Math.min(w, 0.32);
+  }
+
+  return Math.max(cat === 'peripherals' ? 0.12 : 0.3, w);
 }
 
 /**
