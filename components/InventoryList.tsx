@@ -5146,7 +5146,6 @@ const InventoryList: React.FC<Props> = ({
       revealItemInList(target);
       setSearchTerm('');
       setSmartPreset(null);
-      setSourceFilter('ALL');
       setSplitView(false);
       setScrollTargetItemId(target.id);
     }
@@ -6447,12 +6446,6 @@ const InventoryList: React.FC<Props> = ({
                      {timeFilter} <button type="button" onClick={() => setTimeFilter('ALL')} className="hover:opacity-80">×</button>
                   </span>
                )}
-               {sourceFilter !== 'ALL' && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-100 text-violet-800 text-xs font-medium">
-                     {sourceFilter === 'AI' ? 'AI touched' : sourceFilter === 'AI_UNREVIEWED' ? 'AI · to review' : 'Manual only'}
-                     <button type="button" onClick={() => setSourceFilter('ALL')} className="hover:opacity-80">×</button>
-                  </span>
-               )}
                {statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS' && (salePlatformFilter !== 'ALL' || salePaymentFilter !== 'ALL') && (
                   <>
                      {salePlatformFilter !== 'ALL' && (
@@ -7097,7 +7090,6 @@ const InventoryList: React.FC<Props> = ({
           renderRowCells={renderRowCells}
           getRowActivityKey={getRowActivityKey}
           highlightedItemId={highlightedItemId}
-          aiStates={itemAiStates}
           rowHeightEstimate={rowHeightEstimate}
           collapsedBundles={collapsedBundles}
           className="flex flex-1"
