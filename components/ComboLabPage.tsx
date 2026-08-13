@@ -205,12 +205,6 @@ const ComboLabPage: React.FC<Props> = ({ items, businessSettings, onUpdate }) =>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
-            to="/panel/flip-coach"
-            className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase text-sky-700 hover:text-sky-900"
-          >
-            Flip Coach
-          </Link>
-          <Link
             to="/panel/builder"
             className="inline-flex items-center gap-1.5 text-[11px] font-black uppercase text-indigo-700 hover:text-indigo-900"
           >

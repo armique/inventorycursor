@@ -30,16 +30,9 @@ const EditItemRoute = lazy(() => import('./components/EditItemRoute'));
 const AddHubPage = lazy(() => import('./components/AddHubPage'));
 const AddItemRoute = lazy(() => import('./components/AddItemRoute'));
 const PhonePhotoUploadPage = lazy(() => import('./components/PhonePhotoUploadPage'));
-const FlipCoachPage = lazy(() => import('./components/FlipCoachPage'));
-const SoldPulsePage = lazy(() => import('./components/SoldPulsePage'));
-const ComboLabPage = lazy(() => import('./components/ComboLabPage'));
 const EstDealwatchPage = lazy(() => import('./components/EstDealwatchPage'));
 const ReinvestAssistantPage = lazy(() => import('./components/ReinvestAssistantPage'));
-const PriceDropPage = lazy(() => import('./components/PriceDropPage'));
-const ListReadyPage = lazy(() => import('./components/ListReadyPage'));
-const ClaudeAutomationsPage = lazy(() => import('./components/ClaudeAutomationsPage'));
-const EbayLotHuntPage = lazy(() => import('./components/EbayLotHuntPage'));
-const AiActionsPage = lazy(() => import('./components/AiActionsPage'));
+const ComboLabPage = lazy(() => import('./components/ComboLabPage'));
 import { InventoryItem, Expense, ItemStatus, BusinessSettings, RecurringExpense, DashboardPreferences, ActionHistoryEntry, TaxMode, ItemUpdateOptions, BulkImportRecord } from './types';
 import {
   loadDashboardPreferencesFromLocalStorage,
@@ -48,11 +41,6 @@ import {
   getDefaultDashboardPreferences,
 } from './services/dashboardPreferences';
 import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchFromCloud, fetchGamificationState, writeGamificationState, completeGoogleRedirectSignIn, consumeAuthReturnPath, consumeRedirectPending, getAuthErrorMessage } from './services/firebaseService';
-import { installAiBridge, isAiSessionActive } from './services/aiSession';
-import { installAiInboxBridge } from './services/aiInboxBridge';
-import { recordAiActions, type NewAiAction } from './services/aiActionLog';
-import { classifyAiAction, diffInventoryItems } from './utils/aiDiff';
-import { hasNoSourceLink, MissingSourceLinkError, requiresSourceChatUrl } from './utils/sourceLinks';
 import {
   defaultGamificationState,
   ensureFreshDay,
@@ -168,20 +156,6 @@ const ACCESSORY_EXPLICIT_CLEAR_KEYS: (keyof InventoryItem)[] = [
   'hasIOShield',
   'hasReceipt',
 ];
-
-/**
- * Stamp `lastModifiedBy: 'manual'` — but only on records the AI has already touched.
- * Items the assistant never saw stay untouched so the cloud payload doesn't grow by a
- * redundant field on every row.
- */
-function markManualIfAiTouched(u: InventoryItem, current: InventoryItem[]): InventoryItem {
-  const oldItem = current.find((i) => i.id === u.id);
-  const aiTouched = Boolean(
-    oldItem?.source === 'ai' || oldItem?.aiReviewStatus || u.source === 'ai' || u.aiReviewStatus
-  );
-  if (!aiTouched || u.lastModifiedBy === 'manual') return u;
-  return { ...u, lastModifiedBy: 'manual' };
-}
 
 /**
  * Re-apply fields the caller left out (forms often submit a partial item).
@@ -578,13 +552,6 @@ const App: React.FC = () => {
   const [authReady, setAuthReady] = useState<boolean>(!isCloudEnabled());
   const isRemoteUpdate = useRef(false);
   const hasUnsavedChanges = useRef(false);
-
-  // Expose window.deinventory.ai so the assistant can open/close an attribution session
-  // and write inbox deals (which have no form of their own to drive).
-  useEffect(() => {
-    installAiBridge();
-    installAiInboxBridge();
-  }, []);
 
   // One-shot: if this device had credentials only in localStorage, push them into cloud settings.
   useEffect(() => {
@@ -1522,62 +1489,8 @@ const App: React.FC = () => {
       requestFastCloudFlush();
     }
 
-    /*
-     * AI attribution pass — runs before setItems so the log is written exactly once
-     * (React may invoke a state updater twice in StrictMode). It diffs against the
-     * same merged item that will be stored, so preserved fields never look "cleared".
-     */
     const preserveMissingFields = !options?.skipFieldPreserve;
-    const attributeToAi = !options?.skipAiLog && isAiSessionActive();
-    const aiStamped = new Map<string, InventoryItem>();
-    const pendingAiActions: NewAiAction[] = [];
-    if (attributeToAi) {
-      for (const u of updatedItems) {
-        const oldItem = current.find((i) => i.id === u.id);
-        const candidate = preserveMissingFields ? applyPreservedFields(oldItem, u) : u;
-        /*
-         * Records the assistant creates must point back at a verifiable source (Finanzamt
-         * paper trail). Only creation is gated — blocking edits too would lock the AI out
-         * of every pre-existing item. eBay orders and bulk-import children are exempt:
-         * they carry ids the order link is derived from, or inherit the batch's proof.
-         * Thrown from an event handler, so the save aborts without unmounting the panel.
-         */
-        if (!oldItem && hasNoSourceLink(candidate) && requiresSourceChatUrl({
-          platform: candidate.platformBought,
-          ebayOrderId: candidate.ebayOrderId,
-          bulkImportId: candidate.bulkImportId,
-        })) {
-          throw new MissingSourceLinkError(`Item “${candidate.name}”`);
-        }
-        const diff = diffInventoryItems(oldItem, candidate);
-        if (oldItem && diff.length === 0) continue;
-        pendingAiActions.push({
-          actionType: classifyAiAction(oldItem, candidate, diff),
-          itemId: u.id,
-          itemName: candidate.name,
-          diff,
-        });
-        aiStamped.set(u.id, {
-          ...u,
-          source: oldItem?.source || (oldItem ? 'manual' : 'ai'),
-          lastModifiedBy: 'ai',
-          aiReviewStatus: 'unreviewed',
-        });
-      }
-      for (const id of deleteIds || []) {
-        const existing = current.find((i) => i.id === id);
-        if (!existing) continue;
-        pendingAiActions.push({
-          actionType: 'item_deleted',
-          itemId: id,
-          itemName: existing.name,
-          diff: [{ field: 'status', oldValue: existing.status, newValue: 'Trash' }],
-        });
-      }
-    }
-    const itemsToApply = attributeToAi
-      ? updatedItems.map((u) => aiStamped.get(u.id) || markManualIfAiTouched(u, current))
-      : updatedItems.map((u) => markManualIfAiTouched(u, current));
+    const itemsToApply = updatedItems;
 
     setItems(currentItems => {
         let nextItems = [...currentItems];
@@ -1702,8 +1615,6 @@ const App: React.FC = () => {
         if (actionEntriesMerged.length > 0) addActionEntries(actionEntriesMerged);
         return nextItems;
     });
-
-    if (pendingAiActions.length > 0) recordAiActions(pendingAiActions);
   }, [addActionEntries, businessSettings.taxMode, requestFastCloudFlush]);
 
   const handleRestoreItems = useCallback((updatedItems: InventoryItem[]) => {
@@ -2205,8 +2116,6 @@ const App: React.FC = () => {
             }
           />
           <Route path="inventory" element={<InventoryList key="inventory-main" items={items} totalCount={items.length} onUpdate={handleUpdate} onDelete={handleDelete} onUndo={handleUndo} onRedo={handleRedo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} pageTitle="Inventory" allowedStatuses={ALL_STATUSES} businessSettings={businessSettings} onBusinessSettingsChange={handleBusinessSettingsChange} categories={categories} categoryFields={categoryFields} persistenceKey="inventory_main" onPublishStoreCatalog={publishStoreCatalogNow} bulkImports={bulkImports} onUpdateBulkImport={handleUpdateBulkImport} onDeleteBulkImport={handleDeleteBulkImport} />} />
-          <Route path="flip-coach" element={<FlipCoachPage items={items} />} />
-          <Route path="sold-pulse" element={<SoldPulsePage items={items} />} />
           <Route path="dealwatch" element={<EstDealwatchPage />} />
           <Route path="est" element={<Navigate to="/panel/dealwatch" replace />} />
           <Route
@@ -2221,13 +2130,6 @@ const App: React.FC = () => {
               />
             }
           />
-          <Route
-            path="price-drop"
-            element={<PriceDropPage items={items} onRestoreItems={handleRestoreItems} />}
-          />
-          <Route path="list-ready" element={<ListReadyPage items={items} />} />
-          <Route path="ebay-hunt" element={<EbayLotHuntPage />} />
-          <Route path="automations" element={<ClaudeAutomationsPage />} />
           <Route
             path="combo-lab"
             element={
@@ -2274,7 +2176,6 @@ const App: React.FC = () => {
             }
           />
           <Route path="invoices" element={<InvoiceManager items={items} businessSettings={businessSettings} />} />
-          <Route path="ai-actions" element={<AiActionsPage items={items} onUpdate={handleUpdate} />} />
           <Route
             path="action-history"
             element={

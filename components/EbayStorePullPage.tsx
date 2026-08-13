@@ -12,7 +12,6 @@ import {
   RefreshCw,
   ShoppingBag,
   Tag,
-  Layers,
 } from 'lucide-react';
 import { InventoryItem, TaxMode } from '../types';
 import { getEbayUsername } from '../services/ebayService';
@@ -34,10 +33,9 @@ import { AddFlowStepHeader } from './addFlowShared';
 const EbayStorePullImportTab = lazy(() => import('./EbayStorePullImportTab'));
 const EbayStorePullOrdersTab = lazy(() => import('./EbayStorePullOrdersTab'));
 const EbayStorePullPurchasesTab = lazy(() => import('./EbayStorePullPurchasesTab'));
-const EbayStorePullBundlesTab = lazy(() => import('./EbayStorePullBundlesTab'));
 
 type PhotoMode = 'none' | 'all' | 'pick';
-type PullTab = 'sync' | 'import' | 'orders' | 'purchases' | 'bundles';
+type PullTab = 'sync' | 'import' | 'orders' | 'purchases';
 
 interface Props {
   items: InventoryItem[];
@@ -92,12 +90,6 @@ const PRIMARY_TABS: { id: PullTab; label: string; icon: React.ReactNode; hint: s
 
 const MORE_TABS: { id: PullTab; label: string; icon: React.ReactNode; hint: string }[] = [
   {
-    id: 'bundles',
-    label: 'Parse bundles',
-    icon: <Layers size={14} />,
-    hint: 'Match eBay bundle listings to free inventory parts',
-  },
-  {
     id: 'sync',
     label: 'Sync existing',
     icon: <RefreshCw size={14} />,
@@ -136,7 +128,7 @@ const EbayStorePullPage: React.FC<Props> = ({
     const t = searchParams.get('tab');
     if (t === 'sales' || t === 'sold' || t === 'compare') setTab('orders');
     else if (t === 'purchases') setTab('purchases');
-    else if (t === 'sync' || t === 'import' || t === 'orders' || t === 'purchases' || t === 'bundles') {
+    else if (t === 'sync' || t === 'import' || t === 'orders' || t === 'purchases') {
       setTab(t);
       if (MORE_TABS.some((x) => x.id === t)) setShowMoreTools(true);
     }
@@ -495,9 +487,7 @@ const EbayStorePullPage: React.FC<Props> = ({
       )}
 
       <Suspense fallback={<TabFallback />}>
-      {tab === 'bundles' ? (
-        <EbayStorePullBundlesTab items={items} onUpdate={onUpdate} />
-      ) : tab === 'import' ? (
+      {tab === 'import' ? (
         <EbayStorePullImportTab
           items={items}
           categories={categories}

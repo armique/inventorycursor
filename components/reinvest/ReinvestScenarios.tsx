@@ -5,7 +5,7 @@ import type { ReinvestData } from '../../utils/reinvestAnalysis';
 import type { CategoryBudgetsResult } from '../../utils/categoryBudgets';
 import { formatEURPrefix } from '../../utils/formatMoney';
 import { buildReinvestTodayBrief } from '../../utils/reinvestTodayBrief';
-import type { BuyHelperFees } from '../../utils/buyHelper';
+import type { ReinvestFees } from '../../utils/reinvestFees';
 import type { GamificationState } from '../../utils/gamification';
 import type { AnchorBundleGroup, ReinvestGroup } from '../../utils/reinvestAnalysis';
 
@@ -15,7 +15,7 @@ type Props = {
   budgets: CategoryBudgetsResult;
   restock: Array<ReinvestGroup | AnchorBundleGroup>;
   skipped: Array<ReinvestGroup | AnchorBundleGroup>;
-  fees: BuyHelperFees;
+  fees: ReinvestFees;
   gamification: GamificationState;
 };
 

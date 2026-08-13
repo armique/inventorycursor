@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Search, ChevronDown, ChevronUp, HelpCircle } from 'lucide-react';
 import type { ReinvestGroup, AnchorBundleGroup } from '../../utils/reinvestAnalysis';
-import type { BuyHelperFees } from '../../utils/buyHelper';
+import type { ReinvestFees } from '../../utils/reinvestFees';
 import { computeReinvestPricing, defaultMarginForGroup } from '../../utils/reinvestPricing';
 import { formatEURPrefix } from '../../utils/formatMoney';
 import ReinvestCard from './ReinvestCard';
@@ -9,7 +9,7 @@ import ReinvestCard from './ReinvestCard';
 type Props = {
   variants: ReinvestGroup[];
   bundles: AnchorBundleGroup[];
-  fees: BuyHelperFees;
+  fees: ReinvestFees;
 };
 
 type SortKey = 'profit' | 'speed' | 'category';

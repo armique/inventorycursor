@@ -87,9 +87,6 @@ const DashboardAnalyticsPanel: React.FC<Props> = ({ items, expenses, range, rang
       <div className="bg-white rounded-2xl border p-4">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <p className="text-xs font-black uppercase text-slate-400">Price Lab · part-level sales pool</p>
-          <Link to="/panel/flip-coach" className="text-[10px] font-black uppercase text-emerald-700 hover:underline">
-            Open Flip Coach →
-          </Link>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div>

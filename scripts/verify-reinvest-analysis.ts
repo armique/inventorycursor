@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { ItemStatus, type InventoryItem } from '../types';
 import { buildReinvestData, targetStockQty } from '../utils/reinvestAnalysis';
 import { computeReinvestPricing, defaultMarginForGroup } from '../utils/reinvestPricing';
-import { loadBuyHelperFees } from '../utils/buyHelper';
+import { loadReinvestFees } from '../utils/reinvestFees';
 
 function item(partial: Partial<InventoryItem> & Pick<InventoryItem, 'id' | 'name'>): InventoryItem {
   return {
@@ -205,7 +205,7 @@ assert.ok(targetStockQty(20, 10, 60, 'high') <= 5);
 console.log('OK: targetStockQty stays within [1,5] and low confidence pins to 1');
 
 // 6) Pricing math: KA vs eBay differ because of eBay fees, and buy cap sits below both list prices.
-const fees = { ...loadBuyHelperFees(), ebayFeePct: 12.5, ebayAdsPct: 12.5, vatOnProfitPct: 19 };
+const fees = { ...loadReinvestFees(), ebayFeePct: 12.5, ebayAdsPct: 12.5, vatOnProfitPct: 19 };
 const margin = defaultMarginForGroup(ssd512!);
 const pricing = computeReinvestPricing(ssd512!, fees, margin);
 assert.ok(pricing.suggestedMaxBuy != null && pricing.suggestedMaxBuy > 0);

@@ -5,7 +5,7 @@ import type { InventoryItem } from '../types';
 import { ItemStatus } from '../types';
 import type { AnchorBundleGroup, ReinvestGroup } from './reinvestAnalysis';
 import { computeReinvestPricing } from './reinvestPricing';
-import type { BuyHelperFees } from './buyHelper';
+import type { ReinvestFees } from './reinvestFees';
 import { defaultMarginForGroup } from './reinvestPricing';
 import { roundMoney } from '../services/financialAggregation';
 import type { ReinvestSuspicion } from './reinvestSuspicion';
@@ -87,7 +87,7 @@ export function buildReinvestTodayBrief(params: {
   skipped: Array<ReinvestGroup | AnchorBundleGroup>;
   suspicions: ReinvestSuspicion[];
   items: InventoryItem[];
-  fees: BuyHelperFees;
+  fees: ReinvestFees;
   gamification?: GamificationState;
   /** When set, prefer kit/standalone filtering for wave 2. */
   intentFilter?: 'standalone' | 'kit' | 'all';

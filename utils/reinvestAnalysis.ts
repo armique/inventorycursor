@@ -2,7 +2,7 @@
  * Reinvest Assistant analysis engine: groups realized sales (and active stock) into
  * "what to rebuy" units — either a component sub-variant (e.g. storage:ssd-512gb) or a
  * repeating "anchor bundle" (e.g. any motherboard + i7-4790K). Pure functions only; pricing
- * math itself lives in utils/buyHelper.ts and is reused by the UI layer, not duplicated here.
+ * math itself lives in utils/reinvestFees.ts and is reused by the UI layer, not duplicated here.
  */
 import { InventoryItem, ItemStatus } from '../types';
 import { isRealizedDisposal } from './itemDisposition';

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Settings2, Clock, ChevronRight } from 'lucide-react';
 import type { Expense, InventoryItem, TaxMode } from '../types';
 import { buildReinvestData, type ReinvestGroup, type AnchorBundleGroup } from '../utils/reinvestAnalysis';
-import { loadBuyHelperFees, type BuyHelperFees } from '../utils/buyHelper';
+import { loadReinvestFees, type ReinvestFees } from '../utils/reinvestFees';
 import { saveFlipFees, totalEbayFeePct, type FlipFeeSettings } from '../utils/flipCoach';
 import { loadReinvestMarginOverrides } from '../utils/reinvestSettings';
 import { canUseReinvestAI, generateReinvestHypotheses, hypothesisToGroup } from '../services/reinvestAI';
@@ -39,7 +39,7 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
   const [view, setView] = useState<View>('buylist');
   const [buyListMode, setBuyListMode] = useState<'cards' | 'table'>('cards');
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [fees, setFees] = useState<BuyHelperFees>(() => loadBuyHelperFees());
+  const [fees, setFees] = useState<ReinvestFees>(() => loadReinvestFees());
   const [aiHypotheses, setAiHypotheses] = useState<ReinvestGroup[]>([]);
   const [loadingHypotheses, setLoadingHypotheses] = useState(false);
   const [marginOverrides] = useState<Record<string, number>>(() => loadReinvestMarginOverrides());
@@ -163,7 +163,7 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
       ebayAdsPct: patch.ebayAdsPct ?? fees.ebayAdsPct,
     };
     saveFlipFees(next);
-    setFees(loadBuyHelperFees());
+    setFees(loadReinvestFees());
   };
 
   const nothingToShow = !displayRestock.length && !hypotheses.length && !loadingHypotheses;

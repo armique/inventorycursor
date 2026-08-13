@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { ItemStatus, type InventoryItem } from '../../types';
 import type { ReinvestGroup, AnchorBundleGroup } from '../../utils/reinvestAnalysis';
-import type { BuyHelperFees } from '../../utils/buyHelper';
+import type { ReinvestFees } from '../../utils/reinvestFees';
 import { computeReinvestPricing, defaultMarginForGroup } from '../../utils/reinvestPricing';
 import { formatEURPrefix } from '../../utils/formatMoney';
 import { saveReinvestMarginOverride } from '../../utils/reinvestSettings';
@@ -29,7 +29,7 @@ import ReinvestListingResults from './ReinvestListingResults';
 
 type Props = {
   group: ReinvestGroup | AnchorBundleGroup;
-  fees: BuyHelperFees;
+  fees: ReinvestFees;
   initialMarginPct?: number;
   onPurchaseConfirmed?: (buyPrice: number) => void;
   onOpenHypothesisSearch?: (groupKey: string) => void;

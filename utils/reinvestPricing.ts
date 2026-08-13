@@ -1,5 +1,5 @@
 /** Shared pricing calc for ReinvestCard and ReinvestCheatSheet — one place that turns a
- * ReinvestGroup + target margin into buy/sell numbers, reusing utils/buyHelper.ts's math.
+ * ReinvestGroup + target margin into buy/sell numbers, reusing utils/reinvestFees.ts math.
  *
  * Always suggests both Kleinanzeigen and eBay list prices. When only one platform has
  * history, the other is derived so pocket money matches (eBay list grossed up for fees).
@@ -11,9 +11,9 @@ import {
   pocketFromKaList,
   pocketFromEbayList,
   DEFAULT_DESIRED_MARGIN_PCT,
-  type BuyHelperFees,
+  type ReinvestFees,
   type ChannelNetResult,
-} from './buyHelper';
+} from './reinvestFees';
 import { listPricesForPocket, totalEbayFeePct } from './flipCoach';
 import { roundMoney } from '../services/financialAggregation';
 
@@ -57,7 +57,7 @@ export function defaultMarginForGroup(group: ReinvestGroup | AnchorBundleGroup):
  */
 export function resolveChannelListPrices(
   group: ReinvestGroup | AnchorBundleGroup,
-  fees: BuyHelperFees,
+  fees: ReinvestFees,
 ): Pick<
   ReinvestPricing,
   'sellKa' | 'sellEbay' | 'sellKaSource' | 'sellEbaySource' | 'pocketKa' | 'pocketEbay' | 'ebayFeePct'
@@ -147,7 +147,7 @@ function buildAdvice(
 
 export function computeReinvestPricing(
   group: ReinvestGroup | AnchorBundleGroup,
-  fees: BuyHelperFees,
+  fees: ReinvestFees,
   marginPct: number,
 ): ReinvestPricing {
   const channels = resolveChannelListPrices(group, fees);

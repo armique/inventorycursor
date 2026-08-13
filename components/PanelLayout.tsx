@@ -3,8 +3,8 @@ import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
   Package, Settings, RefreshCw, Trash2, CloudUpload, LayoutDashboard,
   Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe, Layers,
-  Printer, LayoutTemplate, PackageSearch, Boxes, ChevronDown, ChevronLeft, ChevronRight, Plus, Images,
-  Target, Activity, CircuitBoard, Radar, Coins, Bot, TrendingDown, Upload,
+  Printer, LayoutTemplate, PackageSearch, ChevronDown, ChevronLeft, ChevronRight, Plus, Images,
+  CircuitBoard, Radar, Coins,
 } from 'lucide-react';
 import PanelBreadcrumbs from './PanelBreadcrumbs';
 import { usePanelLocale } from '../context/PanelLocaleContext';
@@ -26,9 +26,7 @@ import { cloudSyncBadgeLabel, cloudSyncBadgeTitle } from '../utils/cloudSyncStat
 import { defaultGamificationState, type GamificationState } from '../utils/gamification';
 import { useGamificationEvents } from '../hooks/useGamificationEvents';
 import GamificationEventLayer from './gamification/GamificationEventLayer';
-import { useAiSession, useUnreviewedAiCount } from '../hooks/useAiActions';
 import { useStaleDealCount } from '../hooks/useInboxAlerts';
-import { endAiSession } from '../services/aiSession';
 
 interface SyncState {
   status: 'idle' | 'pending' | 'syncing' | 'success' | 'error';
@@ -78,8 +76,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
       /* Browser storage unavailable — keep the preference for this session. */
     }
   }, [sidebarCollapsed]);
-  const unreviewedAiCount = useUnreviewedAiCount();
-  const aiSession = useAiSession();
   /** Deals unresolved for 3+ days — flagged on Inventory, since the Inbox lives there. */
   const staleDealCount = useStaleDealCount();
   const mobileRedirectSignIn = prefersRedirectSignIn();
@@ -248,24 +244,12 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
       label: 'Inventory',
       warnCount: staleDealCount,
     },
-    { to: '/panel/flip-coach', icon: <Target size={18} />, label: 'Flip Coach' },
-    { to: '/panel/sold-pulse', icon: <Activity size={18} />, label: 'Buy Helper' },
     { to: '/panel/dealwatch', icon: <Radar size={18} />, label: 'Dealwatch' },
-    { to: '/panel/ebay-hunt', icon: <Target size={18} />, label: 'Lot Hunt' },
     { to: '/panel/reinvest', icon: <Coins size={18} />, label: 'Reinvest' },
-    { to: '/panel/price-drop', icon: <TrendingDown size={18} />, label: 'Price Drop' },
-    { to: '/panel/list-ready', icon: <Upload size={18} />, label: 'List Ready' },
-    { to: '/panel/automations', icon: <Bot size={18} />, label: 'Automations' },
     { to: '/panel/combo-lab', icon: <CircuitBoard size={18} />, label: 'Combo Lab' },
     { to: '/panel/bulk-imports', icon: <History size={18} />, label: 'Bulk imports' },
     { to: '/panel/ebay-store-pull', icon: <PackageSearch size={18} />, label: 'eBay Tools' },
-    {
-      to: '/panel/ebay-store-pull?tab=bundles',
-      icon: <Boxes size={18} />,
-      label: 'Parse Bundles',
-    },
     { to: '/panel/card-gallery', icon: <Images size={18} />, label: 'Card gallery' },
-    { to: '/panel/ai-actions', icon: <Bot size={18} />, label: 'Done by AI', count: unreviewedAiCount },
     { action: 'settings', icon: <Settings size={18} />, label: 'Settings', alert: !isCloudEnabled },
   ];
 
@@ -382,10 +366,8 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             const [navPath, navQuery] = to.split('?');
             const isActive = navQuery
               ? location.pathname === navPath && location.search.includes(navQuery)
-              : navPath === '/panel/ebay-store-pull' && location.search.includes('tab=bundles')
-                ? false
-                : location.pathname === navPath ||
-                  (navPath !== '/panel/dashboard' && location.pathname.startsWith(navPath));
+              : location.pathname === navPath ||
+                (navPath !== '/panel/dashboard' && location.pathname.startsWith(navPath));
             return (
               <Link
                 key={to}
@@ -516,32 +498,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
             )}
           </div>
         )}
-        {aiSession && (
-          <div className="mb-3 flex items-center gap-3 px-3 py-2 rounded-xl bg-violet-600 text-white shadow-lg shadow-violet-600/20">
-            <Bot size={18} className="shrink-0 animate-pulse" />
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-black uppercase tracking-widest">AI mode on</p>
-              <p className="text-[11px] font-semibold text-violet-100 truncate">
-                Every change is tagged and logged to Done by AI
-                {aiSession.context ? ` · ${aiSession.context}` : ''}
-                {aiSession.actionCount > 0 ? ` · ${aiSession.actionCount} logged` : ''}
-              </p>
-            </div>
-            <Link
-              to="/panel/ai-actions"
-              className="shrink-0 px-2.5 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-[10px] font-black uppercase tracking-wider"
-            >
-              Review
-            </Link>
-            <button
-              type="button"
-              onClick={() => endAiSession()}
-              className="shrink-0 px-2.5 py-1.5 rounded-lg bg-white text-violet-700 text-[10px] font-black uppercase tracking-wider hover:bg-violet-50"
-            >
-              Turn off
-            </button>
-          </div>
-        )}
         {!isCloudEnabled && !backupBannerDismissed && onDismissBackupBanner && (
           <div className="mb-6 flex items-start gap-4 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900">
             <Cloud className="shrink-0 mt-0.5 text-amber-600" size={20}/>
@@ -627,7 +583,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
           {[
             { to: '/panel/dashboard', icon: <LayoutDashboard size={18} />, label: 'Home' },
             { to: '/panel/inventory', icon: <Package size={18} />, label: 'Stock' },
-            { to: '/panel/flip-coach', icon: <Target size={18} />, label: 'Flip' },
+            { to: '/panel/dealwatch', icon: <Radar size={18} />, label: 'Deals' },
             { to: '/panel/add', icon: <Plus size={18} />, label: 'Add' },
             { action: 'settings' as const, icon: <Settings size={18} />, label: 'Settings' },
           ].map((item) => {

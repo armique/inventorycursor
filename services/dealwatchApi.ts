@@ -110,23 +110,6 @@ export type ListingsResult = {
   store?: DealwatchStore;
 };
 
-export type DealwatchQuoteBucket = {
-  median: number | null;
-  low: number | null;
-  high: number | null;
-  count: number;
-  items: DealwatchListing[];
-} | null;
-
-export type DealwatchBuyHelperQuote = {
-  query: string;
-  ebaySold: DealwatchQuoteBucket;
-  ebayLive: DealwatchQuoteBucket;
-  kaLive: DealwatchQuoteBucket;
-  errors?: Record<string, string>;
-  checkedAt: string;
-};
-
 async function dealwatchFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API}${path}`, {
     headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...(options.headers || {}) },
@@ -200,32 +183,6 @@ export function fetchListings(params: Record<string, string | number | boolean |
     qs.set(key, String(value));
   }
   return dealwatchFetch<ListingsResult>(`/listings?${qs.toString()}`);
-}
-
-/**
- * Read-only Buy Helper bridge: eBay sold + eBay live + Kleinanzeigen live for one query,
- * in a single call. Does not touch any saved search or its seenBySearch/freshness state —
- * see the comment on the /api/buy-helper/quote route in dealwatch-runtime/server.js.
- */
-export function fetchBuyHelperQuote(
-  query: string,
-  opts?: {
-    maxPrice?: number;
-    minPrice?: number;
-    enabledSmartFilters?: string[];
-    includeCapacities?: string[];
-    categoryId?: string;
-    kaCategory?: string;
-  },
-) {
-  const qs = new URLSearchParams({ query });
-  if (opts?.minPrice != null) qs.set('minPrice', String(opts.minPrice));
-  if (opts?.maxPrice != null) qs.set('maxPrice', String(opts.maxPrice));
-  if (opts?.enabledSmartFilters?.length) qs.set('enabledSmartFilters', opts.enabledSmartFilters.join(','));
-  if (opts?.includeCapacities?.length) qs.set('includeCapacities', opts.includeCapacities.join(','));
-  if (opts?.categoryId) qs.set('categoryId', opts.categoryId);
-  if (opts?.kaCategory) qs.set('kaCategory', opts.kaCategory);
-  return dealwatchFetch<DealwatchBuyHelperQuote>(`/buy-helper/quote?${qs.toString()}`);
 }
 
 export function fetchKaPurchases() {

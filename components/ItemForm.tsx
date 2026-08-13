@@ -17,10 +17,8 @@ import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 import { CATEGORY_IMAGES, getSpecOptions } from '../services/hardwareDB';
 import { generateItemSpecs, getSpecsAIProvider, suggestPriceFromSoldListings, type SoldPriceSuggestion } from '../services/specsAI';
 import { pickSpecsAiNameVendorUpdates } from '../utils/applySpecsAiResult';
-import { AiProvenanceNote } from './AiBadge';
 import SourceLinkIcons from './SourceLinkIcons';
 import { resolveItemSourceLinks } from '../utils/sourceLinks';
-import { useItemAiStates } from '../hooks/useAiActions';
 import { getCompatibleItemsForItem } from '../services/compatibility';
 import {
   mergeAiSpecsIntoEssential,
@@ -156,9 +154,6 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const isPcBuilderMode = searchParams.get('mode') === 'pc_builder';
-  const aiStates = useItemAiStates();
-  const itemAiState = id ? aiStates.get(id) : undefined;
-
   /** Optional partial prefill from Reinvest Assistant's "Confirm purchase" button — never a full
    * InventoryItem, so it merges over defaults instead of replacing them like `initialData`. */
   const reinvestPrefill = (location.state as { reinvestPrefill?: Partial<InventoryItem> } | null)
@@ -1412,22 +1407,6 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
             </span>
           )}
         </div>
-      )}
-
-      {id && itemAiState && (
-        <AiProvenanceNote
-          aiState={itemAiState}
-          reviewStatus={formData.aiReviewStatus}
-          className="mb-3"
-          action={
-            <Link
-              to="/panel/ai-actions"
-              className="inline-flex items-center px-2.5 py-1.5 rounded-lg bg-violet-600 text-white text-[10px] font-black uppercase tracking-wider hover:bg-violet-500"
-            >
-              Review
-            </Link>
-          }
-        />
       )}
 
       {compatWarnings.length > 0 && (

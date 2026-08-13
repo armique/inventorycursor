@@ -1,12 +1,12 @@
 import React, { useMemo } from 'react';
 import type { ReinvestGroup, AnchorBundleGroup } from '../../utils/reinvestAnalysis';
-import type { BuyHelperFees } from '../../utils/buyHelper';
+import type { ReinvestFees } from '../../utils/reinvestFees';
 import { computeReinvestPricing, defaultMarginForGroup } from '../../utils/reinvestPricing';
 import { formatEURPrefix } from '../../utils/formatMoney';
 
 type Props = {
   groups: Array<ReinvestGroup | AnchorBundleGroup>;
-  fees: BuyHelperFees;
+  fees: ReinvestFees;
   limit?: number;
 };
 

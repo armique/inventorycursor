@@ -75,7 +75,6 @@ import { matchesEbayToolSearch } from '../utils/ebayToolSearch';
 import ItemThumbnail from './ItemThumbnail';
 import MobileStockCard from './MobileStockCard';
 import { findStaleDeals, formatStaleKind } from '../utils/staleDeals';
-import AiBadge, { isAiTouched } from './AiBadge';
 import SourceLinkIcons, { PrimarySourceLinkButton } from './SourceLinkIcons';
 import EbayToolProgressBar, { type EbayToolProgress } from './EbayToolProgressBar';
 
@@ -752,9 +751,6 @@ export function useInventoryPurchases({
                   <div className="min-w-0 flex-1">
                     <p className="text-[13px] font-bold text-slate-900 leading-tight line-clamp-1">
                       {entry.title}
-                      {isAiTouched(entry) && (
-                        <AiBadge reviewStatus={entry.aiReviewStatus} className="ml-1 align-middle" />
-                      )}
                     </p>
                     <p className="text-[11px] font-semibold text-slate-500 truncate">
                       {formatPlatformShort(entry.platform)} · {formatDirection(entry.direction)}
@@ -880,9 +876,6 @@ export function useInventoryPurchases({
                           <div className="min-w-0">
                             <p className="text-sm font-bold text-slate-900 truncate flex items-center gap-1.5">
                               <span className="truncate">{entry.title}</span>
-                              {isAiTouched(entry) && (
-                                <AiBadge reviewStatus={entry.aiReviewStatus} />
-                              )}
                             </p>
                             <p className="text-[11px] text-slate-400 truncate">
                               {entry.kind === 'ebay'

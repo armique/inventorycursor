@@ -9,7 +9,7 @@ import { isRealizedDisposal } from '../utils/itemDisposition';
 import { computeItemProfitBeforeOverhead, roundMoney } from '../services/financialAggregation';
 import { buildReinvestData } from '../utils/reinvestAnalysis';
 import { computeReinvestPricing, defaultMarginForGroup } from '../utils/reinvestPricing';
-import { loadBuyHelperFees } from '../utils/buyHelper';
+import { loadReinvestFees } from '../utils/reinvestFees';
 import { localWeekKey } from '../utils/flipCoachMissions';
 import { todayLocalDateKey } from '../utils/calendarDate';
 import {
@@ -178,7 +178,7 @@ export function useGamificationEvents({
       (g) => g.kind === 'variant' && g.confidence !== 'low' && g.trend === 'up' && g.currentStock < g.targetStock,
     );
     if (!candidate) return;
-    const fees = loadBuyHelperFees();
+    const fees = loadReinvestFees();
     const pricing = computeReinvestPricing(candidate, fees, defaultMarginForGroup(candidate));
     if (pricing.suggestedMaxBuy == null) return;
     setQueue((q) => [
