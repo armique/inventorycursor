@@ -204,9 +204,6 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
   const feeTotalNum = Math.max(0, parseFloat(marketFeeTotal) || 0);
   const shippingTotalNum = Math.max(0, parseFloat(shippingTotal) || 0);
   const netAfterMarketplaceTotal = Math.max(0, grossTotal - feeTotalNum - shippingTotalNum);
-  const profitUnit = sellPriceNum > 0 && quote.valid ? sellPriceNum - quote.productionCostPerPart : 0;
-  const profitTotal = profitUnit * quantity;
-  const profitMarginPercent = sellPriceNum > 0 ? (profitUnit / sellPriceNum) * 100 : 0;
   const realizedProfitTotal = netAfterMarketplaceTotal - totalProductionCost;
   const realizedMarginPercent = grossTotal > 0 ? (realizedProfitTotal / grossTotal) * 100 : 0;
 
@@ -855,6 +852,8 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
             onColorChange={setFilamentColor}
             onFilamentPriceChange={setFilamentPrice}
             quote={quote}
+            chargedPricePerPart={plannedSellPrice}
+            onChargedPriceChange={setPlannedSellPrice}
             spoolSelect={
               isAdmin ? (
               <div className="sm:col-span-2">
@@ -898,6 +897,8 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
           <ThreeDPrintQuoteSummary
             quote={quote}
             isAdmin={isAdmin}
+            chargedPricePerPart={sellPriceNum > 0 ? sellPriceNum : null}
+            productionCostTotal={totalProductionCost}
             showStockHint={
               selectedSpool && pendingFilamentGrams > 0 ? (
                 <div className="flex justify-between items-center text-xs text-indigo-300/90 px-1 pt-2 border-t border-slate-800">
@@ -920,28 +921,6 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
                 >
                   Use recommended price per part
                 </button>
-              </div>
-            )}
-
-            {parseFloat(plannedSellPrice) > 0 && !markAsSoldNow && quote.valid && (
-              <div className="border-t border-slate-800 pt-6 space-y-4">
-                <h3 className="text-xs font-black uppercase tracking-widest text-slate-500">Margin vs planned retail</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-slate-800/30 p-3 rounded-2xl border border-slate-800/40">
-                    <span className="text-[10px] text-slate-400 block font-black uppercase">Unit profit</span>
-                    <span className="text-lg font-black text-white font-mono">€{profitUnit.toFixed(2)}</span>
-                  </div>
-                  <div className="bg-slate-800/30 p-3 rounded-2xl border border-slate-800/40">
-                    <span className="text-[10px] text-slate-400 block font-black uppercase">Margin</span>
-                    <span className="text-lg font-black text-white font-mono">{profitMarginPercent.toFixed(1)}%</span>
-                  </div>
-                </div>
-                {quantity > 1 && (
-                  <div className="flex justify-between items-center text-sm p-2 rounded-xl bg-slate-800/10 border border-slate-850">
-                    <span className="text-slate-450">Estimated total profit</span>
-                    <span className="font-mono text-emerald-400 font-bold">€{profitTotal.toFixed(2)}</span>
-                  </div>
-                )}
               </div>
             )}
 

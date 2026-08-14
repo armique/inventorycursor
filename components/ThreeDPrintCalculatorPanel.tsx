@@ -31,6 +31,8 @@ type Props = {
   onColorChange: (v: string) => void;
   onFilamentPriceChange: (v: number) => void;
   quote: ThreeDPrintCalculatorResult;
+  chargedPricePerPart: string;
+  onChargedPriceChange: (v: string) => void;
   spoolSelect?: React.ReactNode;
 };
 
@@ -115,6 +117,8 @@ export const ThreeDPrintCalculatorPanel: React.FC<Props> = ({
   onColorChange,
   onFilamentPriceChange,
   quote,
+  chargedPricePerPart,
+  onChargedPriceChange,
   spoolSelect,
 }) => {
   const [adminOpen, setAdminOpen] = useState(isAdmin);
@@ -187,6 +191,27 @@ export const ThreeDPrintCalculatorPanel: React.FC<Props> = ({
           {quote.errors.quantity && (
             <p className="mt-1 text-[11px] font-semibold text-red-600">{quote.errors.quantity}</p>
           )}
+        </div>
+
+        <div>
+          <label className={LABEL}>Price charged (€ / part)</label>
+          <input
+            type="text"
+            inputMode="decimal"
+            value={chargedPricePerPart}
+            onChange={(e) => onChargedPriceChange(e.target.value.replace(',', '.'))}
+            className={INPUT}
+            placeholder={quote.valid ? quote.effectivePricePerPart.toFixed(2) : 'e.g. 12.00'}
+          />
+          <p className="mt-1 text-[11px] font-semibold text-slate-500">
+            {(() => {
+              const n = parseFloat(chargedPricePerPart);
+              if (Number.isFinite(n) && n > 0 && quantity > 1) {
+                return `Order total: €${(n * quantity).toFixed(2)}`;
+              }
+              return 'Optional. Your actual sell price — profit updates live.';
+            })()}
+          </p>
         </div>
 
         <div>
