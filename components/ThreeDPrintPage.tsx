@@ -2,10 +2,12 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Printer, ArrowLeft, Save, AlertCircle, CheckCircle2,
-  Layers, Zap, Gauge, ShieldAlert, History, Plus, Search, RefreshCw, Receipt,
+  Layers, ShieldAlert, History, Plus, Search, RefreshCw, Receipt,
 } from 'lucide-react';
 import { CustomerInfo, InventoryItem, ItemStatus, TaxMode } from '../types';
 import FilamentStockPanel from './FilamentStockPanel';
+import ThreeDPrintCalculatorPanel from './ThreeDPrintCalculatorPanel';
+import ThreeDPrintQuoteSummary from './ThreeDPrintQuoteSummary';
 import {
   getRemainingGrams,
   gramsToKgDisplay,
@@ -14,6 +16,13 @@ import {
   spoolLabel,
   type FilamentSpool,
 } from '../services/filamentStock';
+import {
+  loadThreeDPrintSettings,
+  saveThreeDPrintSettings,
+  resolveFilamentPricePerKg,
+  type ThreeDPrintCalculatorSettings,
+} from '../services/threeDPrintDefaults';
+import { calculateThreeDPrintQuote, formatPrintTimeDisplay } from '../utils/threeDPrintCalculator';
 import { AddFlowStepHeader, AddOptionTile } from './addFlowShared';
 import { getCategoryIcon } from './categoryIcons';
 import { hasEbayToken, fetchEbayOrder } from '../services/ebayService';
@@ -29,9 +38,10 @@ interface ThreeDPrintPageProps {
   onSave: (items: InventoryItem[]) => void;
   categories: Record<string, string[]>;
   onAddExpense?: (expense: import('../types').Expense) => void;
+  isAdmin?: boolean;
 }
 
-const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, categories, onAddExpense }) => {
+const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, categories, onAddExpense, isAdmin = false }) => {
   const navigate = useNavigate();
 
   // Basic Details
@@ -78,6 +88,13 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
   const [filamentColor, setFilamentColor] = useState<string>(() => initialStock.spools[0]?.color || 'Black');
   const [filamentWeight, setFilamentWeight] = useState<number>(100);
   const [filamentPrice, setFilamentPrice] = useState<number>(() => initialStock.spools[0]?.pricePerKg || 13);
+  const [printTimeHours, setPrintTimeHours] = useState<number>(4);
+  const [calcSettings, setCalcSettings] = useState<ThreeDPrintCalculatorSettings>(() => loadThreeDPrintSettings());
+
+  const handleCalcSettingsChange = useCallback((next: ThreeDPrintCalculatorSettings) => {
+    setCalcSettings(next);
+    saveThreeDPrintSettings(next);
+  }, []);
 
   const [stockRevision, setStockRevision] = useState(0);
   useEffect(() => {
@@ -125,10 +142,13 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
     if (!isNaN(weightNum)) setFilamentWeight(weightNum);
     
     const timeStr = String(specs['Print Time'] || '');
-    const hoursMatch = timeStr.match(/(\d+)h/);
-    const minsMatch = timeStr.match(/(\d+)m/);
-    if (hoursMatch) setPrintHours(parseInt(hoursMatch[1]));
-    if (minsMatch) setPrintMinutes(parseInt(minsMatch[1]));
+    const hoursMatch = timeStr.match(/(\d+(?:\.\d+)?)\s*h/);
+    const minsMatch = timeStr.match(/(\d+)\s*m/);
+    if (hoursMatch) {
+      const h = parseFloat(hoursMatch[1]);
+      const m = minsMatch ? parseInt(minsMatch[1], 10) : 0;
+      setPrintTimeHours(h + m / 60);
+    }
     
     const fType = String(specs['Filament Type'] || '');
     const fColor = String(specs['Filament Color'] || '');
@@ -146,106 +166,49 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
       applySpoolToCalculator(matched);
     }
     
-    const comment2 = histItem.comment2 || '';
-    const printerCostMatch = comment2.match(/Printer: ([\d.]+)€/);
-    if (printerCostMatch) setPrinterCost(parseFloat(printerCostMatch[1]));
-    
-    const lifespanMatch = comment2.match(/over (\d+)h/);
-    if (lifespanMatch) setPrinterLifespan(parseInt(lifespanMatch[1]));
-    
-    const powerMatch = comment2.match(/\((\d+)W\)/);
-    if (powerMatch) setPrinterPower(parseInt(powerMatch[1]));
-    
-    const electMatch = comment2.match(/Electricity: ([\d.]+)€\/kWh/);
-    if (electMatch) setElectricityPrice(parseFloat(electMatch[1]));
-    
-    const failMatch = comment2.match(/Fail margin: ([\d.]+)%/);
-    if (failMatch) setFailMargin(parseFloat(failMatch[1]));
-    
     setSuccessMsg(`Pre-filled fields from history for "${histItem.name}"`);
     setTimeout(() => setSuccessMsg(null), 3000);
   };
-
-  // Printer Settings
-  const [printerCost, setPrinterCost] = useState<number>(300); // €
-  const [printerLifespan, setPrinterLifespan] = useState<number>(3000); // expected printing hours
-  const [printHours, setPrintHours] = useState<number>(4);
-  const [printMinutes, setPrintMinutes] = useState<number>(0);
-
-  // Electricity Settings
-  const [printerPower, setPrinterPower] = useState<number>(150); // Watts
-  const [electricityPrice, setElectricityPrice] = useState<number>(0.34); // €/kWh (Bavaria default)
-
-  // Overhead & Adjustments
-  const [failMargin, setFailMargin] = useState<number>(10); // % buffer for failed prints
-  const [laborCost, setLaborCost] = useState<number>(0); // manual labor per print (post-processing/assembly)
 
   // Success / Error status messages
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  // Calculate values
-  const calculations = useMemo(() => {
-    const totalHours = printHours + printMinutes / 60;
-    
-    // Filament Cost: weight (g) * price per kg / 1000
-    const filamentCostUnit = (filamentWeight / 1000) * filamentPrice;
-    
-    // Electricity Cost: hours * power (kW) * price per kWh
-    const electricityCostUnit = totalHours * (printerPower / 1000) * electricityPrice;
-    
-    // Depreciation: hours * printer price / lifespan hours
-    const depreciationCostUnit = totalHours * (printerCost / printerLifespan);
-    
-    // Base Subtotal (without fail rate margin)
-    const baseSubtotalUnit = filamentCostUnit + electricityCostUnit + depreciationCostUnit + laborCost;
-    
-    // Fail Margin Amount
-    const failCostUnit = baseSubtotalUnit * (failMargin / 100);
-    
-    // Final Unit Self-Cost (Production Cost)
-    const finalUnitCost = baseSubtotalUnit + failCostUnit;
-    
-    // Total production cost for all prints
-    const totalProductionCost = finalUnitCost * quantity;
-    
-    // Profit Calculation
-    const sellPriceNum = parseFloat(plannedSellPrice) || 0;
-    const fallbackGrossTotal = sellPriceNum * quantity;
-    const grossTotal = parseFloat(orderGrossTotal) || fallbackGrossTotal;
-    const feeTotalNum = Math.max(0, parseFloat(marketFeeTotal) || 0);
-    const shippingTotalNum = Math.max(0, parseFloat(shippingTotal) || 0);
-    const netAfterMarketplaceTotal = Math.max(0, grossTotal - feeTotalNum - shippingTotalNum);
-    const profitUnit = sellPriceNum > 0 ? sellPriceNum - finalUnitCost : 0;
-    const profitTotal = profitUnit * quantity;
-    const profitMarginPercent = sellPriceNum > 0 ? (profitUnit / sellPriceNum) * 100 : 0;
-    const realizedProfitTotal = netAfterMarketplaceTotal - totalProductionCost;
-    const realizedMarginPercent = grossTotal > 0 ? (realizedProfitTotal / grossTotal) * 100 : 0;
+  const filamentPricePerKg = useMemo(
+    () => resolveFilamentPricePerKg(calcSettings, filamentType, filamentColor, filamentPrice),
+    [calcSettings, filamentType, filamentColor, filamentPrice],
+  );
 
-    return {
-      totalHours,
-      filamentCostUnit,
-      electricityCostUnit,
-      depreciationCostUnit,
-      baseSubtotalUnit,
-      failCostUnit,
-      finalUnitCost,
-      totalProductionCost,
-      profitUnit,
-      profitTotal,
-      profitMarginPercent,
-      grossTotal,
-      feeTotalNum,
-      shippingTotalNum,
-      netAfterMarketplaceTotal,
-      realizedProfitTotal,
-      realizedMarginPercent,
-    };
-  }, [
-    filamentWeight, filamentPrice, printerCost, printerLifespan, 
-    printHours, printMinutes, printerPower, electricityPrice, 
-    failMargin, laborCost, quantity, plannedSellPrice, orderGrossTotal, marketFeeTotal, shippingTotal
-  ]);
+  const quote = useMemo(
+    () =>
+      calculateThreeDPrintQuote(
+        {
+          weightG: filamentWeight,
+          printTimeHours,
+          quantity,
+          filamentPricePerKg,
+        },
+        calcSettings,
+      ),
+    [filamentWeight, printTimeHours, quantity, filamentPricePerKg, calcSettings],
+  );
+
+  const totalProductionCost = useMemo(
+    () => (quote.valid ? quote.productionCostPerPart * quantity : 0),
+    [quote, quantity],
+  );
+
+  const sellPriceNum = parseFloat(plannedSellPrice) || 0;
+  const fallbackGrossTotal = quote.valid ? quote.finalPrice : sellPriceNum * quantity;
+  const grossTotal = parseFloat(orderGrossTotal) || fallbackGrossTotal;
+  const feeTotalNum = Math.max(0, parseFloat(marketFeeTotal) || 0);
+  const shippingTotalNum = Math.max(0, parseFloat(shippingTotal) || 0);
+  const netAfterMarketplaceTotal = Math.max(0, grossTotal - feeTotalNum - shippingTotalNum);
+  const profitUnit = sellPriceNum > 0 && quote.valid ? sellPriceNum - quote.productionCostPerPart : 0;
+  const profitTotal = profitUnit * quantity;
+  const profitMarginPercent = sellPriceNum > 0 ? (profitUnit / sellPriceNum) * 100 : 0;
+  const realizedProfitTotal = netAfterMarketplaceTotal - totalProductionCost;
+  const realizedMarginPercent = grossTotal > 0 ? (realizedProfitTotal / grossTotal) * 100 : 0;
 
   const refreshOrderSuggestions = useCallback(() => {
     const seed: InventoryItem = {
@@ -369,8 +332,12 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
       setErrorMsg('Quantity must be 1 or more.');
       return;
     }
-    if (filamentWeight < 0 || printHours < 0 || printMinutes < 0) {
-      setErrorMsg('Weights, hours, and minutes cannot be negative.');
+    if (filamentWeight <= 0 || printTimeHours <= 0) {
+      setErrorMsg('Enter model weight and print time greater than zero.');
+      return;
+    }
+    if (!quote.valid) {
+      setErrorMsg(Object.values(quote.errors).find(Boolean) || 'Fix calculator inputs before saving.');
       return;
     }
     if (markAsSoldNow) {
@@ -400,10 +367,14 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
       return;
     }
 
-    const buyPrice = parseFloat(calculations.totalProductionCost.toFixed(2));
+    const buyPrice = parseFloat(totalProductionCost.toFixed(2));
     const grossSale = markAsSoldNow
       ? parseFloat(orderGrossTotal) || 0
-      : (parseFloat(plannedSellPrice) || 0) * quantity;
+      : plannedSellPrice.trim()
+        ? (parseFloat(plannedSellPrice) || 0) * quantity
+        : quote.valid
+          ? quote.finalPrice
+          : 0;
     const feeTotalNum = markAsSoldNow ? Math.max(0, parseFloat(marketFeeTotal) || 0) : 0;
     const shippingTotalNum = markAsSoldNow ? Math.max(0, parseFloat(shippingTotal) || 0) : 0;
     const sellPrice = grossSale > 0 ? parseFloat(grossSale.toFixed(2)) : undefined;
@@ -426,8 +397,8 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
         subCategory: subCategoryToSave || undefined,
         status: markAsSoldNow ? ItemStatus.SOLD : ItemStatus.IN_STOCK,
         ...(markAsSoldNow ? { sellDate: soldDate || buyDate } : {}),
-        comment1: `3D Printed (${filamentType} - ${filamentColor}). Weight: ${filamentWeight}g. Print time: ${printHours}h ${printMinutes}m.`,
-        comment2: `Electricity: ${electricityPrice}€/kWh (${printerPower}W). Printer: ${printerCost}€ over ${printerLifespan}h. Fail margin: ${failMargin}%.${markAsSoldNow ? ` Sold order: gross €${formatEUR(grossSale)} · fee €${formatEUR(feeTotalNum)} · shipping €${formatEUR(shippingTotalNum)} · net €${formatEUR(Math.max(0, grossSale - feeTotalNum - shippingTotalNum))}.` : ''}`,
+        comment1: `3D Printed (${filamentType} - ${filamentColor}). Weight: ${filamentWeight}g. Print time: ${formatPrintTimeDisplay(printTimeHours)}.`,
+        comment2: `Electricity: ${calcSettings.electricityPricePerKwh}€/kWh (${calcSettings.printerPowerW}W). Printer: ${calcSettings.printerCost}€ over ${calcSettings.printerLifetimeHours}h. Waste: ${calcSettings.wastePct}%. Markup: ${calcSettings.profitMarkupPct}%.${markAsSoldNow ? ` Sold order: gross €${formatEUR(grossSale)} · fee €${formatEUR(feeTotalNum)} · shipping €${formatEUR(shippingTotalNum)} · net €${formatEUR(Math.max(0, grossSale - feeTotalNum - shippingTotalNum))}.` : ''}`,
         buyPaymentType: 'Other',
         ...(markAsSoldNow ? { paymentType: 'ebay.de' as const, platformSold: 'ebay.de' as const } : {}),
         ...(markAsSoldNow && sellPrice != null ? { profit: parseFloat(realizedProfit.toFixed(2)) } : {}),
@@ -445,8 +416,8 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
         specs: {
           'Production Method': '3D Printed',
           'Filament Weight': `${filamentWeight}g`,
-          'Print Time': `${printHours}h ${printMinutes}m`,
-          'Printer Model Cost': `${printerCost} €`,
+          'Print Time': formatPrintTimeDisplay(printTimeHours),
+          'Printer Model Cost': `${calcSettings.printerCost} €`,
           'Filament Type': filamentType,
           'Filament Color': filamentColor,
           ...(selectedSpoolId ? { 'Filament Spool ID': selectedSpoolId } : {}),
@@ -533,18 +504,20 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
         </div>
       )}
 
-      <FilamentStockPanel
-        selectedSpoolId={selectedSpoolId}
-        onSelectSpool={applySpoolToCalculator}
-        pendingGrams={pendingFilamentGrams}
-        onAddExpense={onAddExpense}
-      />
+      {isAdmin && (
+        <FilamentStockPanel
+          selectedSpoolId={selectedSpoolId}
+          onSelectSpool={applySpoolToCalculator}
+          pendingGrams={pendingFilamentGrams}
+          onAddExpense={onAddExpense}
+        />
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Form Inputs (Left) */}
         <div className="lg:col-span-7 space-y-6">
           {/* Section: Re-print from History */}
-          {recentPrints.length > 0 && (
+          {isAdmin && recentPrints.length > 0 && (
             <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4 animate-in fade-in slide-in-from-top-2 duration-250">
               <h2 className="text-lg font-black text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
                 <History size={18} className="text-brand-500" />
@@ -576,7 +549,7 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
             </div>
           )}
 
-          {/* Section 1: Print Item Basic Details */}
+          {isAdmin && (
           <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
             <h2 className="text-lg font-black text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
               <Layers size={18} className="text-brand-500" />
@@ -597,30 +570,22 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
                 />
               </div>
 
-              <div>
+              <div className="sm:col-span-2">
                 <label className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-1">
-                  Quantity to Add
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={quantity}
-                  onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-1">
-                  Planned Retail Price (€)
+                  Planned retail price (€ / part)
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. 19.99"
+                  placeholder={quote.valid ? quote.effectivePricePerPart.toFixed(2) : 'e.g. 19.99'}
                   value={plannedSellPrice}
                   onChange={(e) => setPlannedSellPrice(e.target.value.replace(',', '.'))}
                   className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
                 />
+                {quote.valid && !plannedSellPrice.trim() && (
+                  <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                    Leave empty to use recommended €{quote.finalPrice.toFixed(2)} total on save.
+                  </p>
+                )}
               </div>
 
               <div className="sm:col-span-2 flex items-center gap-2 mt-1">
@@ -869,377 +834,133 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
               )}
             </div>
           </div>
+          )}
 
-          {/* Section 2: Calculator Cost Variables */}
-          <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-6">
-            <h2 className="text-lg font-black text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
-              <Zap size={18} className="text-yellow-500" />
-              2. Cost Parameters
-            </h2>
-
-            {/* Filament */}
-            <div className="space-y-4">
-              <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Material (Filament)</h3>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-bold text-slate-600 mb-1">
-                    Active spool (deducts on save)
-                  </label>
-                  <select
-                    value={selectedSpoolId ?? ''}
-                    onChange={(e) => {
-                      const id = e.target.value;
-                      if (!id) {
-                        setSelectedSpoolId(null);
-                        return;
-                      }
-                      const spool = loadFilamentStock().spools.find((s) => s.id === id);
-                      applySpoolToCalculator(spool ?? null);
-                    }}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm bg-white font-semibold text-slate-850"
-                  >
-                    <option value="">No spool — price only, no stock deduction</option>
-                    {loadFilamentStock().spools.map((spool) => (
-                      <option key={spool.id} value={spool.id}>
-                        {spoolLabel(spool)} · {gramsToKgDisplay(getRemainingGrams(spool))} left · €
-                        {spool.pricePerKg.toFixed(2)}/kg
-                      </option>
-                    ))}
-                  </select>
-                  {selectedSpool && (
-                    <p className="text-[11px] text-slate-500 mt-1.5 font-semibold">
-                      {gramsToKgDisplay(getRemainingGrams(selectedSpool))} remaining on this spool after prior prints.
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">
-                    Filament Used per Item (g)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={filamentWeight}
-                    onChange={(e) => setFilamentWeight(Math.max(0, parseFloat(e.target.value) || 0))}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">
-                    Filament Price (€/kg)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={filamentPrice}
-                    onChange={(e) => {
-                      setFilamentPrice(Math.max(0, parseFloat(e.target.value) || 0));
-                    }}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">
-                    Filament Type
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. PLA, PETG"
-                    value={filamentType}
-                    onChange={(e) => {
-                      setFilamentType(e.target.value);
-                    }}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">
-                    Filament Color
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Black, White, Red"
-                    value={filamentColor}
-                    onChange={(e) => {
-                      setFilamentColor(e.target.value);
-                    }}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
-                  />
-                </div>
+          <ThreeDPrintCalculatorPanel
+            isAdmin={isAdmin}
+            settings={calcSettings}
+            onSettingsChange={handleCalcSettingsChange}
+            weightG={filamentWeight}
+            printTimeHours={printTimeHours}
+            quantity={quantity}
+            materialKey={filamentType}
+            color={filamentColor}
+            filamentPricePerKg={filamentPricePerKg}
+            onWeightGChange={setFilamentWeight}
+            onPrintTimeHoursChange={setPrintTimeHours}
+            onQuantityChange={setQuantity}
+            onMaterialKeyChange={(key) => {
+              setFilamentType(key);
+            }}
+            onColorChange={setFilamentColor}
+            onFilamentPriceChange={setFilamentPrice}
+            quote={quote}
+            spoolSelect={
+              isAdmin ? (
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-black uppercase tracking-widest text-slate-500 mb-1">
+                  Active spool (deducts on save)
+                </label>
+                <select
+                  value={selectedSpoolId ?? ''}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    if (!id) {
+                      setSelectedSpoolId(null);
+                      return;
+                    }
+                    const spool = loadFilamentStock().spools.find((s) => s.id === id);
+                    applySpoolToCalculator(spool ?? null);
+                  }}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm bg-white font-semibold"
+                >
+                  <option value="">No spool — price only, no stock deduction</option>
+                  {loadFilamentStock().spools.map((spool) => (
+                    <option key={spool.id} value={spool.id}>
+                      {spoolLabel(spool)} · {gramsToKgDisplay(getRemainingGrams(spool))} left · €
+                      {spool.pricePerKg.toFixed(2)}/kg
+                    </option>
+                  ))}
+                </select>
+                {selectedSpool && (
+                  <p className="text-[11px] text-slate-500 mt-1.5 font-semibold">
+                    {gramsToKgDisplay(getRemainingGrams(selectedSpool))} remaining on this spool after prior prints.
+                  </p>
+                )}
               </div>
-            </div>
-
-            {/* Print Time & Printer Cost */}
-            <div className="space-y-3 pt-2">
-              <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Time & Printer Depreciation</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">
-                    Print Time (Hours)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={printHours}
-                    onChange={(e) => setPrintHours(Math.max(0, parseInt(e.target.value) || 0))}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">
-                    Print Time (Minutes)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="59"
-                    value={printMinutes}
-                    onChange={(e) => setPrintMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">
-                    Printer Cost (€)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={printerCost}
-                    onChange={(e) => setPrinterCost(Math.max(0, parseFloat(e.target.value) || 0))}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">
-                    Printer Lifespan (Hours)
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={printerLifespan}
-                    onChange={(e) => setPrinterLifespan(Math.max(1, parseInt(e.target.value) || 1))}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Electricity */}
-            <div className="space-y-3 pt-2">
-              <div className="flex justify-between items-center">
-                <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Electricity (Bavaria, DE)</h3>
-                <span className="text-[10px] text-brand-600 font-bold bg-brand-50 px-2 py-0.5 rounded-md">Bavarian Average (~34c)</span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">
-                    Printer Power Draw (Watts)
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={printerPower}
-                    onChange={(e) => setPrinterPower(Math.max(1, parseInt(e.target.value) || 1))}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">
-                    Electricity Rate (€ / kWh)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.001"
-                    value={electricityPrice}
-                    onChange={(e) => setElectricityPrice(Math.max(0, parseFloat(e.target.value) || 0))}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Labor & Failures */}
-            <div className="space-y-3 pt-2">
-              <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Overheads & Adjustments</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">
-                    Labor / Finish Cost (€ per print)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={laborCost}
-                    onChange={(e) => setLaborCost(Math.max(0, parseFloat(e.target.value) || 0))}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">
-                    Fail Margin Rate (%)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={failMargin}
-                    onChange={(e) => setFailMargin(Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)))}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
-                  />
-                </div>
-              </div>
-            </div>
-
-          </div>
+              ) : undefined
+            }
+          />
         </div>
 
         {/* Breakdown Card (Right) */}
         <div className="lg:col-span-5 space-y-6 lg:sticky lg:top-6">
-          <div className="bg-slate-900 text-slate-100 rounded-3xl p-6 shadow-xl border border-slate-800 space-y-6">
-            <h2 className="text-lg font-black flex items-center gap-2 border-b border-slate-800 pb-3 text-white">
-              <Gauge size={18} className="text-brand-400" />
-              Cost & Profit Summary
-            </h2>
-
-            {/* Calculations Breakdown */}
-            <div className="space-y-4">
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-400">Print Time</span>
-                <span className="font-mono text-white font-bold">
-                  {printHours}h {printMinutes}m ({calculations.totalHours.toFixed(2)}h)
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-400">
-                  Filament Cost
-                  {quantity > 1 ? ` (×${quantity})` : ''}
-                </span>
-                <span className="font-mono text-white font-bold">
-                  €{calculations.filamentCostUnit.toFixed(2)}
-                  {quantity > 1 && (
-                    <span className="text-slate-400 font-normal text-xs ml-1">
-                      / €{(calculations.filamentCostUnit * quantity).toFixed(2)} total
-                    </span>
-                  )}
-                </span>
-              </div>
-              {selectedSpool && pendingFilamentGrams > 0 && (
-                <div className="flex justify-between items-center text-xs text-indigo-300/90 px-1">
+          <ThreeDPrintQuoteSummary
+            quote={quote}
+            isAdmin={isAdmin}
+            showStockHint={
+              selectedSpool && pendingFilamentGrams > 0 ? (
+                <div className="flex justify-between items-center text-xs text-indigo-300/90 px-1 pt-2 border-t border-slate-800">
                   <span>Stock use ({quantity}× {filamentWeight}g)</span>
                   <span className="font-mono font-bold">−{gramsToKgDisplay(pendingFilamentGrams)}</span>
                 </div>
-              )}
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-400">Electricity Cost</span>
-                <span className="font-mono text-white font-bold">
-                  €{calculations.electricityCostUnit.toFixed(2)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-400">Printer Depreciation</span>
-                <span className="font-mono text-white font-bold">
-                  €{calculations.depreciationCostUnit.toFixed(2)}
-                </span>
-              </div>
-              {laborCost > 0 && (
+              ) : undefined
+            }
+          >
+            {isAdmin && quote.valid && (
+              <div className="border-t border-slate-800 pt-4 space-y-2">
                 <div className="flex justify-between items-center text-sm">
-                  <span className="text-slate-400">Labor / Processing</span>
-                  <span className="font-mono text-white font-bold">
-                    €{laborCost.toFixed(2)}
-                  </span>
+                  <span className="text-slate-400">Batch production cost</span>
+                  <span className="font-mono text-emerald-400 font-bold">€{totalProductionCost.toFixed(2)}</span>
                 </div>
-              )}
-              <div className="border-t border-slate-800 my-2 pt-2 flex justify-between items-center text-sm font-semibold">
-                <span className="text-slate-350">Subtotal per Unit</span>
-                <span className="font-mono text-slate-200">
-                  €{calculations.baseSubtotalUnit.toFixed(2)}
-                </span>
+                <button
+                  type="button"
+                  onClick={() => setPlannedSellPrice(quote.effectivePricePerPart.toFixed(2))}
+                  className="w-full py-2 rounded-xl border border-slate-700 text-[11px] font-bold uppercase tracking-widest text-slate-300 hover:bg-slate-800"
+                >
+                  Use recommended price per part
+                </button>
               </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-400">Fail Buffer ({failMargin}%)</span>
-                <span className="font-mono text-white font-bold">
-                  €{calculations.failCostUnit.toFixed(2)}
-                </span>
-              </div>
+            )}
 
-              {/* Final Unit cost */}
-              <div className="bg-slate-800/50 rounded-2xl p-4 border border-slate-800 flex justify-between items-center mt-4">
-                <div>
-                  <span className="text-xs uppercase tracking-widest text-slate-400 block font-black">Production cost / unit</span>
-                  <span className="text-xs text-slate-500 font-semibold">(Себестоимость детали)</span>
-                </div>
-                <span className="text-2xl font-black text-emerald-400 font-mono">
-                  €{calculations.finalUnitCost.toFixed(2)}
-                </span>
-              </div>
-
-              {/* Total calculation (if qty > 1) */}
-              {quantity > 1 && (
-                <div className="flex justify-between items-center text-sm bg-slate-800/20 p-3 rounded-xl border border-slate-800/40">
-                  <span className="text-slate-350">Batch Sourcing Cost (x{quantity})</span>
-                  <span className="font-mono text-brand-300 font-black">
-                    €{calculations.totalProductionCost.toFixed(2)}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Profit outcomes */}
-            {parseFloat(plannedSellPrice) > 0 && !markAsSoldNow && (
+            {parseFloat(plannedSellPrice) > 0 && !markAsSoldNow && quote.valid && (
               <div className="border-t border-slate-800 pt-6 space-y-4">
-                <h3 className="text-xs font-black uppercase tracking-widest text-slate-500">Margin Predictions</h3>
-                
+                <h3 className="text-xs font-black uppercase tracking-widest text-slate-500">Margin vs planned retail</h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-slate-800/30 p-3 rounded-2xl border border-slate-800/40">
-                    <span className="text-[10px] text-slate-400 block font-black uppercase">Unit Profit</span>
-                    <span className="text-lg font-black text-white font-mono">
-                      €{calculations.profitUnit.toFixed(2)}
-                    </span>
+                    <span className="text-[10px] text-slate-400 block font-black uppercase">Unit profit</span>
+                    <span className="text-lg font-black text-white font-mono">€{profitUnit.toFixed(2)}</span>
                   </div>
                   <div className="bg-slate-800/30 p-3 rounded-2xl border border-slate-800/40">
-                    <span className="text-[10px] text-slate-400 block font-black uppercase">Profit Margin</span>
-                    <span className="text-lg font-black text-white font-mono">
-                      {calculations.profitMarginPercent.toFixed(1)}%
-                    </span>
+                    <span className="text-[10px] text-slate-400 block font-black uppercase">Margin</span>
+                    <span className="text-lg font-black text-white font-mono">{profitMarginPercent.toFixed(1)}%</span>
                   </div>
                 </div>
-
                 {quantity > 1 && (
                   <div className="flex justify-between items-center text-sm p-2 rounded-xl bg-slate-800/10 border border-slate-850">
-                    <span className="text-slate-450">Estimated Total Profit</span>
-                    <span className="font-mono text-emerald-400 font-bold">
-                      €{calculations.profitTotal.toFixed(2)}
-                    </span>
+                    <span className="text-slate-450">Estimated total profit</span>
+                    <span className="font-mono text-emerald-400 font-bold">€{profitTotal.toFixed(2)}</span>
                   </div>
                 )}
               </div>
             )}
 
-            {markAsSoldNow && calculations.grossTotal > 0 && (
+            {markAsSoldNow && grossTotal > 0 && (
               <div className="border-t border-slate-800 pt-6 space-y-4">
                 <h3 className="text-xs font-black uppercase tracking-widest text-slate-500">Real sold-order margin</h3>
                 <div className="space-y-2 text-sm">
-                  <div className="flex justify-between"><span className="text-slate-400">Gross order</span><span className="font-mono">€{formatEUR(calculations.grossTotal)}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400">eBay fees</span><span className="font-mono">-€{formatEUR(calculations.feeTotalNum)}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400">Shipping paid</span><span className="font-mono">-€{formatEUR(calculations.shippingTotalNum)}</span></div>
-                  <div className="flex justify-between border-t border-slate-800 pt-2"><span className="text-slate-300 font-bold">Net after marketplace</span><span className="font-mono font-bold text-emerald-300">€{formatEUR(calculations.netAfterMarketplaceTotal)}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400">Production cost (batch)</span><span className="font-mono">-€{formatEUR(calculations.totalProductionCost)}</span></div>
-                  <div className="flex justify-between border-t border-slate-800 pt-2"><span className="text-slate-200 font-black">Clean profit</span><span className="font-mono font-black text-emerald-400">€{formatEUR(calculations.realizedProfitTotal)}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400">Margin</span><span className="font-mono">{calculations.realizedMarginPercent.toFixed(1)}%</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Gross order</span><span className="font-mono">€{formatEUR(grossTotal)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">eBay fees</span><span className="font-mono">-€{formatEUR(feeTotalNum)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Shipping paid</span><span className="font-mono">-€{formatEUR(shippingTotalNum)}</span></div>
+                  <div className="flex justify-between border-t border-slate-800 pt-2"><span className="text-slate-300 font-bold">Net after marketplace</span><span className="font-mono font-bold text-emerald-300">€{formatEUR(netAfterMarketplaceTotal)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Production cost (batch)</span><span className="font-mono">-€{formatEUR(totalProductionCost)}</span></div>
+                  <div className="flex justify-between border-t border-slate-800 pt-2"><span className="text-slate-200 font-black">Clean profit</span><span className="font-mono font-black text-emerald-400">€{formatEUR(realizedProfitTotal)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Margin</span><span className="font-mono">{realizedMarginPercent.toFixed(1)}%</span></div>
                 </div>
               </div>
             )}
 
-            {/* Action button */}
+            {isAdmin && (
             <button
               type="button"
               onClick={handleSave}
@@ -1248,18 +969,20 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, c
               <Save size={16} />
               {markAsSoldNow ? 'Done · Move to Sold' : 'Print & Add to Inventory'}
             </button>
-          </div>
+            )}
+          </ThreeDPrintQuoteSummary>
 
-          {/* Bavaria Info Tip */}
-          <div className="bg-amber-50/50 border border-amber-200/50 rounded-3xl p-5 text-xs text-amber-900 flex gap-3 items-start">
-            <ShieldAlert size={18} className="text-amber-600 shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <p className="font-bold">Bavarian Power Rates</p>
-              <p className="text-amber-800 leading-relaxed">
-                Electricity pricing in Bavaria averages **34.0¢ per kWh** for German household tariffs in 2026. This rate is pre-loaded into the calculator, but you should adjust this if you are on a specific commercial, contract-bound, or dynamic grid tariff (e.g. Tibber/Awattar).
-              </p>
+          {isAdmin && (
+            <div className="bg-amber-50/50 border border-amber-200/50 rounded-3xl p-5 text-xs text-amber-900 flex gap-3 items-start">
+              <ShieldAlert size={18} className="text-amber-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-bold">Calculator defaults</p>
+                <p className="text-amber-800 leading-relaxed">
+                  Admin settings (electricity, depreciation, markup, discounts) are saved in this browser and used for every quote. Machine time always affects price through electricity and printer wear — not weight alone.
+                </p>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
