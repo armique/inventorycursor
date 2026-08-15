@@ -27,6 +27,9 @@ export type TaxMode = 'SmallBusiness' | 'RegularVAT' | 'DifferentialVAT';
 
 export type WorkflowStage = 'Draft' | 'Testing' | 'Ready' | 'Listed' | 'Sold' | 'Shipped';
 
+/** 3D print production queue (separate from listing workflowStage). */
+export type PrintStage = 'queued' | 'printing' | 'ready' | 'sold';
+
 export interface BusinessSettings {
   companyName: string;
   ownerName: string;
@@ -308,6 +311,13 @@ export interface InventoryItem extends AiAttribution, SourceLinks {
 
   // Workflow Pipeline
   workflowStage?: WorkflowStage;
+
+  /** 3D print queue: Job → printing → ready → sold. */
+  printStage?: PrintStage;
+  /** Held / reserved — skip on the sell-today list. */
+  reserved?: boolean;
+  /** Seller marked photos ready (quick row status, no card open). */
+  photosReady?: boolean;
 
   /**
    * Physical inventory check status.

@@ -3,7 +3,9 @@
  * Run: npx tsx scripts/verify-three-d-print-calculator.ts
  */
 import assert from 'node:assert/strict';
-import { DEFAULT_THREE_D_PRINT_SETTINGS } from '../services/threeDPrintDefaults';
+import { DEFAULT_MATERIALS, DEFAULT_THREE_D_PRINT_SETTINGS, normalizeThreeDPrintSettings } from '../services/threeDPrintDefaults';
+import { applyPrintStage, nextPrintStage, resolvePrintStage } from '../utils/printQueue';
+import { ItemStatus, type InventoryItem } from '../types';
 import { calculateThreeDPrintQuote, formatPrintTimeDisplay } from '../utils/threeDPrintCalculator';
 
 const defaults = {
@@ -66,6 +68,36 @@ function baseInput(overrides: Partial<Parameters<typeof calculateThreeDPrintQuot
   assert.ok(q.discountAmount > 0);
   assert.equal(q.finalPrice, q.subtotalAfterDiscount);
   assert.equal(q.minimumOrderAdjustment, 0);
+}
+
+{
+  const keys = DEFAULT_MATERIALS.map((m) => m.key);
+  assert.deepEqual(keys, ['PLA', 'PETG', 'ABS', 'ASA', 'TPU']);
+  const merged = normalizeThreeDPrintSettings({ materials: [{ key: 'PLA', label: 'PLA', pricePerKg: 15 }] });
+  assert.equal(merged.materials.find((m) => m.key === 'PLA')?.pricePerKg, 15);
+  assert.ok(merged.materials.some((m) => m.key === 'PETG'));
+  assert.ok(merged.materials.some((m) => m.key === 'TPU'));
+}
+
+{
+  const item = {
+    id: 'p1',
+    name: 'Bracket',
+    buyPrice: 2,
+    buyDate: '2026-01-01',
+    category: 'Misc',
+    status: ItemStatus.IN_STOCK,
+    comment1: '',
+    comment2: '',
+    specs: { 'Production Method': '3D Printed', 'Filament Weight': '100g', 'Print Time': '4 h' },
+  } as InventoryItem;
+  assert.equal(resolvePrintStage(item), 'queued');
+  assert.equal(nextPrintStage('queued'), 'printing');
+  assert.equal(nextPrintStage('printing'), 'ready');
+  assert.equal(nextPrintStage('ready'), 'sold');
+  const sold = applyPrintStage(item, 'sold');
+  assert.equal(sold.printStage, 'sold');
+  assert.equal(sold.status, ItemStatus.SOLD);
 }
 
 console.log('verify-three-d-print-calculator: all checks passed');

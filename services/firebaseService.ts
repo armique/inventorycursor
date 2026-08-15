@@ -922,6 +922,8 @@ export interface FirestoreInventoryPayload {
   goals?: { monthly?: number };
   /** Dashboard widgets, tasks, time range (DeInventory panel). */
   dashboard?: unknown;
+  /** 3D print calculator defaults + filament spools (cross-device). */
+  threeDPrint?: unknown;
   /** Timestamped audit log (item/expense actions); merged per device like expenses. */
   actionHistory?: unknown[];
   /** Bulk Entry confirm sessions (including AI text parse). */
@@ -1105,6 +1107,7 @@ function buildCorePayloadForShard(data: FirestoreInventoryPayload): Record<strin
     categories: data.categories ?? {},
     categoryFields: data.categoryFields ?? {},
     dashboard: data.dashboard != null ? sanitizeForFirestore(data.dashboard) : null,
+    threeDPrint: data.threeDPrint != null ? sanitizeForFirestore(data.threeDPrint) : null,
     actionHistory: (data.actionHistory || []).map(sanitizeForFirestore),
     bulkImports: (data.bulkImports || []).map(sanitizeForFirestore),
   };
@@ -1194,6 +1197,7 @@ function assemblePayloadFromSyncSnapshot(snap: QuerySnapshot): FirestoreInventor
     settings: core.settings,
     goals: core.goals as { monthly?: number } | undefined,
     dashboard: core.dashboard,
+    threeDPrint: core.threeDPrint,
     actionHistory: (core.actionHistory as unknown[]) || [],
     bulkImports: (core.bulkImports as unknown[]) || [],
     updatedAt: metaData?.updatedAt as string | undefined,

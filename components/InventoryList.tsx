@@ -8,7 +8,7 @@ import { createPortal } from 'react-dom';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useSettingsModal } from '../context/SettingsModalContext';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks,   Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone,   Camera, Gift, User, Images, Scissors, GripVertical, RefreshCw, Calculator, Inbox, MessageSquare, ExternalLink
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks,   Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone,   Camera, Gift, User, Images, Scissors, GripVertical, RefreshCw, Calculator, Inbox, MessageSquare, ExternalLink, Bookmark
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, TaxMode, BulkImportRecord } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
@@ -4138,6 +4138,47 @@ const InventoryList: React.FC<Props> = ({
                                  {item.liveEbayListPrice != null && ebOk
                                    ? ` €${Math.round(item.liveEbayListPrice)}`
                                    : ''}
+                               </button>
+                               {(() => {
+                                 const photoOn = item.photosReady ?? getListingPrepChecklist(item).hasPhotos;
+                                 return (
+                                   <button
+                                     type="button"
+                                     title={photoOn ? 'Photos ready' : 'Mark photos ready'}
+                                     onClick={() =>
+                                       onUpdate(
+                                         [{ ...item, photosReady: !photoOn }],
+                                         undefined,
+                                         { skipActionLog: true },
+                                       )
+                                     }
+                                     className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] font-black uppercase tracking-wide border ${
+                                       photoOn
+                                         ? 'bg-violet-50 text-violet-800 border-violet-200'
+                                         : 'bg-slate-50 text-slate-400 border-slate-200'
+                                     }`}
+                                   >
+                                     <Camera size={10} /> Photo
+                                   </button>
+                                 );
+                               })()}
+                               <button
+                                 type="button"
+                                 title={item.reserved ? 'Reserved — click to release' : 'Hold / reserved'}
+                                 onClick={() =>
+                                   onUpdate(
+                                     [{ ...item, reserved: !item.reserved }],
+                                     undefined,
+                                     { skipActionLog: true },
+                                   )
+                                 }
+                                 className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] font-black uppercase tracking-wide border ${
+                                   item.reserved
+                                     ? 'bg-amber-50 text-amber-900 border-amber-300'
+                                     : 'bg-slate-50 text-slate-400 border-slate-200'
+                                 }`}
+                               >
+                                 <Bookmark size={10} /> Hold
                                </button>
                                {viaKit && (kaOk || ebOk) && (
                                  <span className="text-[11px] font-bold text-violet-600 uppercase">

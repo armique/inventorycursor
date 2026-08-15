@@ -18,6 +18,7 @@ import {
   Sparkles,
   EyeOff,
   Undo2,
+  Bookmark,
 } from 'lucide-react';
 import type { InventoryItem } from '../types';
 import { ItemStatus } from '../types';
@@ -261,11 +262,37 @@ export const MobileStockCard: React.FC<{
               })()}
             </button>
             {actions.onPatchAccessory && !purchaseActions && (
-              <ItemAccessoryToggles
-                item={item}
-                mini
-                onPatch={(patch) => actions.onPatchAccessory?.(item, patch)}
-              />
+              <div className="mt-1 flex items-center gap-1 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                <ItemAccessoryToggles
+                  item={item}
+                  mini
+                  onPatch={(patch) => actions.onPatchAccessory?.(item, patch)}
+                />
+                <button
+                  type="button"
+                  title={item.photosReady ? 'Photos ready' : 'Mark photos ready'}
+                  onClick={() => actions.onPatchAccessory?.(item, { photosReady: !item.photosReady })}
+                  className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-black uppercase border ${
+                    item.photosReady
+                      ? 'bg-violet-50 text-violet-800 border-violet-200'
+                      : 'bg-slate-50 text-slate-400 border-slate-200'
+                  }`}
+                >
+                  <Camera size={10} /> Photo
+                </button>
+                <button
+                  type="button"
+                  title={item.reserved ? 'Reserved' : 'Hold'}
+                  onClick={() => actions.onPatchAccessory?.(item, { reserved: !item.reserved })}
+                  className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-black uppercase border ${
+                    item.reserved
+                      ? 'bg-amber-50 text-amber-900 border-amber-300'
+                      : 'bg-slate-50 text-slate-400 border-slate-200'
+                  }`}
+                >
+                  <Bookmark size={10} /> Hold
+                </button>
+              </div>
             )}
           </div>
 

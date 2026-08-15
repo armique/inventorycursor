@@ -34,12 +34,11 @@ export type ThreeDPrintCalculatorSettings = {
 export const THREE_D_PRINT_DEFAULTS_KEY = 'three_d_print_calculator_defaults_v1';
 
 export const DEFAULT_MATERIALS: FilamentMaterialEntry[] = [
-  {
-    key: 'PLA',
-    label: 'PLA',
-    pricePerKg: 13,
-    colorPrices: { Black: 13, White: 13 },
-  },
+  { key: 'PLA', label: 'PLA', pricePerKg: 13, colorPrices: { Black: 13, White: 13 } },
+  { key: 'PETG', label: 'PETG', pricePerKg: 18, colorPrices: { Black: 18, White: 18 } },
+  { key: 'ABS', label: 'ABS', pricePerKg: 20, colorPrices: { Black: 20, White: 20 } },
+  { key: 'ASA', label: 'ASA', pricePerKg: 22, colorPrices: { Black: 22, White: 22 } },
+  { key: 'TPU', label: 'TPU', pricePerKg: 28, colorPrices: { Black: 28, White: 28 } },
 ];
 
 export const DEFAULT_QUANTITY_DISCOUNT_TIERS: QuantityDiscountTier[] = [
@@ -85,52 +84,72 @@ function normalizeTiers(raw: unknown): QuantityDiscountTier[] {
 }
 
 function normalizeMaterials(raw: unknown): FilamentMaterialEntry[] {
-  if (!Array.isArray(raw) || !raw.length) return DEFAULT_MATERIALS;
   const out: FilamentMaterialEntry[] = [];
-  for (const m of raw) {
-    if (!m || typeof m !== 'object') continue;
-    const row = m as Partial<FilamentMaterialEntry>;
-    const key = String(row.key || row.label || '').trim();
-    if (!key) continue;
-    const label = String(row.label || key).trim();
-    const pricePerKg = clampNonNegative(Number(row.pricePerKg), 13);
-    const colorPrices =
-      row.colorPrices && typeof row.colorPrices === 'object'
-        ? Object.fromEntries(
-            Object.entries(row.colorPrices).map(([c, v]) => [c, clampNonNegative(Number(v), pricePerKg)]),
-          )
-        : undefined;
-    out.push({ key, label, pricePerKg, ...(colorPrices ? { colorPrices } : {}) });
+  if (Array.isArray(raw)) {
+    for (const m of raw) {
+      if (!m || typeof m !== 'object') continue;
+      const row = m as Partial<FilamentMaterialEntry>;
+      const key = String(row.key || row.label || '').trim();
+      if (!key) continue;
+      const label = String(row.label || key).trim();
+      const fallback = DEFAULT_MATERIALS.find((d) => d.key.toLowerCase() === key.toLowerCase())?.pricePerKg ?? 13;
+      const pricePerKg = clampNonNegative(Number(row.pricePerKg), fallback);
+      const colorPrices =
+        row.colorPrices && typeof row.colorPrices === 'object'
+          ? Object.fromEntries(
+              Object.entries(row.colorPrices).map(([c, v]) => [c, clampNonNegative(Number(v), pricePerKg)]),
+            )
+          : undefined;
+      out.push({ key, label, pricePerKg, ...(colorPrices ? { colorPrices } : {}) });
+    }
   }
-  return out.length ? out : DEFAULT_MATERIALS;
+  const seen = new Set(out.map((m) => m.key.toLowerCase()));
+  for (const def of DEFAULT_MATERIALS) {
+    if (!seen.has(def.key.toLowerCase())) {
+      out.push({ ...def, colorPrices: def.colorPrices ? { ...def.colorPrices } : undefined });
+    }
+  }
+  return out.length ? out : DEFAULT_MATERIALS.map((m) => ({ ...m, colorPrices: m.colorPrices ? { ...m.colorPrices } : undefined }));
+}
+
+export function normalizeThreeDPrintSettings(raw: unknown): ThreeDPrintCalculatorSettings {
+  const parsed = raw && typeof raw === 'object' ? (raw as Partial<ThreeDPrintCalculatorSettings>) : {};
+  return {
+    materials: normalizeMaterials(parsed.materials),
+    electricityPricePerKwh: clampNonNegative(Number(parsed.electricityPricePerKwh), 0.32),
+    printerPowerW: Math.max(1, Number(parsed.printerPowerW) || 100),
+    printerCost: clampNonNegative(Number(parsed.printerCost), 400),
+    printerLifetimeHours: Math.max(1, Number(parsed.printerLifetimeHours) || 5000),
+    additionalCostPerPart: clampNonNegative(Number(parsed.additionalCostPerPart), 0.3),
+    wastePct: Math.min(100, Math.max(0, Number(parsed.wastePct) ?? 10)),
+    profitMarkupPct: Math.min(500, Math.max(0, Number(parsed.profitMarkupPct) ?? 100)),
+    minimumOrderPrice: clampNonNegative(Number(parsed.minimumOrderPrice), 10),
+    quantityDiscountEnabled: parsed.quantityDiscountEnabled !== false,
+    quantityDiscountTiers: normalizeTiers(parsed.quantityDiscountTiers),
+  };
 }
 
 export function loadThreeDPrintSettings(): ThreeDPrintCalculatorSettings {
   try {
     const raw = localStorage.getItem(THREE_D_PRINT_DEFAULTS_KEY);
-    if (!raw) return { ...DEFAULT_THREE_D_PRINT_SETTINGS, materials: [...DEFAULT_MATERIALS], quantityDiscountTiers: [...DEFAULT_QUANTITY_DISCOUNT_TIERS] };
-    const parsed = JSON.parse(raw) as Partial<ThreeDPrintCalculatorSettings>;
-    return {
-      materials: normalizeMaterials(parsed.materials),
-      electricityPricePerKwh: clampNonNegative(Number(parsed.electricityPricePerKwh), 0.32),
-      printerPowerW: Math.max(1, Number(parsed.printerPowerW) || 100),
-      printerCost: clampNonNegative(Number(parsed.printerCost), 400),
-      printerLifetimeHours: Math.max(1, Number(parsed.printerLifetimeHours) || 5000),
-      additionalCostPerPart: clampNonNegative(Number(parsed.additionalCostPerPart), 0.3),
-      wastePct: Math.min(100, Math.max(0, Number(parsed.wastePct) ?? 10)),
-      profitMarkupPct: Math.min(500, Math.max(0, Number(parsed.profitMarkupPct) ?? 100)),
-      minimumOrderPrice: clampNonNegative(Number(parsed.minimumOrderPrice), 10),
-      quantityDiscountEnabled: parsed.quantityDiscountEnabled !== false,
-      quantityDiscountTiers: normalizeTiers(parsed.quantityDiscountTiers),
-    };
+    if (!raw) {
+      return normalizeThreeDPrintSettings(DEFAULT_THREE_D_PRINT_SETTINGS);
+    }
+    return normalizeThreeDPrintSettings(JSON.parse(raw));
   } catch {
-    return { ...DEFAULT_THREE_D_PRINT_SETTINGS, materials: [...DEFAULT_MATERIALS], quantityDiscountTiers: [...DEFAULT_QUANTITY_DISCOUNT_TIERS] };
+    return normalizeThreeDPrintSettings(DEFAULT_THREE_D_PRINT_SETTINGS);
   }
 }
 
-export function saveThreeDPrintSettings(settings: ThreeDPrintCalculatorSettings): void {
+export function saveThreeDPrintSettings(
+  settings: ThreeDPrintCalculatorSettings,
+  opts?: { silent?: boolean },
+): void {
   try {
     localStorage.setItem(THREE_D_PRINT_DEFAULTS_KEY, JSON.stringify(settings));
+    if (!opts?.silent && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('three-d-print-settings-updated'));
+    }
   } catch {
     /* quota / private mode */
   }

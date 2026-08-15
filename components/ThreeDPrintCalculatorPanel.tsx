@@ -100,6 +100,219 @@ function TierRow({
   );
 }
 
+export const ThreeDPrintAdminSettings: React.FC<{
+  settings: ThreeDPrintCalculatorSettings;
+  onSettingsChange: (next: ThreeDPrintCalculatorSettings) => void;
+}> = ({ settings, onSettingsChange }) => {
+  const [adminOpen, setAdminOpen] = useState(false);
+  const patchSettings = (patch: Partial<ThreeDPrintCalculatorSettings>) => {
+    onSettingsChange({ ...settings, ...patch });
+  };
+  const patchTier = (index: number, patch: Partial<QuantityDiscountTier>) => {
+    const tiers = settings.quantityDiscountTiers.map((t, i) => (i === index ? { ...t, ...patch } : t));
+    patchSettings({ quantityDiscountTiers: tiers });
+  };
+
+  return (
+    <div className="rounded-2xl border border-slate-200 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setAdminOpen((v) => !v)}
+        className="w-full flex items-center justify-between gap-2 px-4 py-3 bg-slate-50 text-left"
+      >
+        <span className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-600">
+          <Settings2 size={14} />
+          Admin calculator settings
+        </span>
+        <ChevronDown size={16} className={`text-slate-500 transition-transform ${adminOpen ? 'rotate-180' : ''}`} />
+      </button>
+      {adminOpen && (
+        <div className="p-4 space-y-4 border-t border-slate-200 bg-white">
+          <div className="space-y-2">
+            <p className="text-xs font-black uppercase tracking-widest text-slate-500">Material € / kg</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {settings.materials.map((mat, index) => (
+                <label key={mat.key} className={ADMIN_LABEL}>
+                  {mat.label}
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={mat.pricePerKg}
+                    onChange={(e) => {
+                      const pricePerKg = Math.max(0, parseFloat(e.target.value) || 0);
+                      const materials = settings.materials.map((m, i) =>
+                        i === index
+                          ? {
+                              ...m,
+                              pricePerKg,
+                              colorPrices: m.colorPrices
+                                ? Object.fromEntries(Object.keys(m.colorPrices).map((c) => [c, pricePerKg]))
+                                : undefined,
+                            }
+                          : m,
+                      );
+                      patchSettings({ materials });
+                    }}
+                    className={`${INPUT} mt-1`}
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={ADMIN_LABEL}>Electricity (€ / kWh)</label>
+              <input
+                type="number"
+                min={0}
+                step={0.001}
+                value={settings.electricityPricePerKwh}
+                onChange={(e) =>
+                  patchSettings({ electricityPricePerKwh: Math.max(0, parseFloat(e.target.value) || 0) })
+                }
+                className={INPUT}
+              />
+            </div>
+            <div>
+              <label className={ADMIN_LABEL}>Printer power (W)</label>
+              <input
+                type="number"
+                min={1}
+                value={settings.printerPowerW}
+                onChange={(e) =>
+                  patchSettings({ printerPowerW: Math.max(1, parseInt(e.target.value, 10) || 1) })
+                }
+                className={INPUT}
+              />
+            </div>
+            <div>
+              <label className={ADMIN_LABEL}>Printer cost (€)</label>
+              <input
+                type="number"
+                min={0}
+                value={settings.printerCost}
+                onChange={(e) => patchSettings({ printerCost: Math.max(0, parseFloat(e.target.value) || 0) })}
+                className={INPUT}
+              />
+            </div>
+            <div>
+              <label className={ADMIN_LABEL}>Printer lifetime (print hours)</label>
+              <input
+                type="number"
+                min={1}
+                value={settings.printerLifetimeHours}
+                onChange={(e) =>
+                  patchSettings({ printerLifetimeHours: Math.max(1, parseInt(e.target.value, 10) || 1) })
+                }
+                className={INPUT}
+              />
+            </div>
+            <div>
+              <label className={ADMIN_LABEL}>Additional cost per part (€)</label>
+              <input
+                type="number"
+                min={0}
+                step={0.01}
+                value={settings.additionalCostPerPart}
+                onChange={(e) =>
+                  patchSettings({ additionalCostPerPart: Math.max(0, parseFloat(e.target.value) || 0) })
+                }
+                className={INPUT}
+              />
+            </div>
+            <div>
+              <label className={ADMIN_LABEL}>Waste / failure allowance (%)</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={settings.wastePct}
+                onChange={(e) =>
+                  patchSettings({ wastePct: Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)) })
+                }
+                className={INPUT}
+              />
+            </div>
+            <div>
+              <label className={ADMIN_LABEL}>Profit markup (%)</label>
+              <input
+                type="number"
+                min={0}
+                max={500}
+                value={settings.profitMarkupPct}
+                onChange={(e) =>
+                  patchSettings({ profitMarkupPct: Math.min(500, Math.max(0, parseFloat(e.target.value) || 0)) })
+                }
+                className={INPUT}
+              />
+            </div>
+            <div>
+              <label className={ADMIN_LABEL}>Minimum order price (€)</label>
+              <input
+                type="number"
+                min={0}
+                step={0.01}
+                value={settings.minimumOrderPrice}
+                onChange={(e) =>
+                  patchSettings({ minimumOrderPrice: Math.max(0, parseFloat(e.target.value) || 0) })
+                }
+                className={INPUT}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-3 pt-2 border-t border-slate-100">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-black uppercase tracking-widest text-slate-500">Quantity discount</span>
+              <label className="inline-flex items-center gap-2 text-xs font-bold text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={settings.quantityDiscountEnabled}
+                  onChange={(e) => patchSettings({ quantityDiscountEnabled: e.target.checked })}
+                  className="rounded text-brand-600"
+                />
+                Enabled
+              </label>
+            </div>
+            <div className="space-y-2">
+              {settings.quantityDiscountTiers.map((tier, index) => (
+                <TierRow
+                  key={`${tier.minQty}-${index}`}
+                  tier={tier}
+                  index={index}
+                  onChange={patchTier}
+                  onRemove={(i) => {
+                    const next = settings.quantityDiscountTiers.filter((_, j) => j !== i);
+                    patchSettings({
+                      quantityDiscountTiers:
+                        next.length > 0 ? next : [{ minQty: 1, maxQty: null, discountPct: 0 }],
+                    });
+                  }}
+                />
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                patchSettings({
+                  quantityDiscountTiers: [
+                    ...settings.quantityDiscountTiers,
+                    { minQty: 1, maxQty: null, discountPct: 0 },
+                  ],
+                })
+              }
+              className="text-[11px] font-bold text-brand-600 hover:underline"
+            >
+              + Add tier
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const ThreeDPrintCalculatorPanel: React.FC<Props> = ({
   isAdmin,
   settings,
@@ -121,17 +334,6 @@ export const ThreeDPrintCalculatorPanel: React.FC<Props> = ({
   onChargedPriceChange,
   spoolSelect,
 }) => {
-  const [adminOpen, setAdminOpen] = useState(isAdmin);
-
-  const patchSettings = (patch: Partial<ThreeDPrintCalculatorSettings>) => {
-    onSettingsChange({ ...settings, ...patch });
-  };
-
-  const patchTier = (index: number, patch: Partial<QuantityDiscountTier>) => {
-    const tiers = settings.quantityDiscountTiers.map((t, i) => (i === index ? { ...t, ...patch } : t));
-    patchSettings({ quantityDiscountTiers: tiers });
-  };
-
   const materials: FilamentMaterialEntry[] =
     settings.materials.length > 0 ? settings.materials : [{ key: 'PLA', label: 'PLA', pricePerKg: 13 }];
 
@@ -279,170 +481,7 @@ export const ThreeDPrintCalculatorPanel: React.FC<Props> = ({
       </div>
 
       {isAdmin && (
-        <div className="rounded-2xl border border-slate-200 overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setAdminOpen((v) => !v)}
-            className="w-full flex items-center justify-between gap-2 px-4 py-3 bg-slate-50 text-left"
-          >
-            <span className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-600">
-              <Settings2 size={14} />
-              Admin calculator settings
-            </span>
-            <ChevronDown size={16} className={`text-slate-500 transition-transform ${adminOpen ? 'rotate-180' : ''}`} />
-          </button>
-          {adminOpen && (
-            <div className="p-4 space-y-4 border-t border-slate-200 bg-white">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className={ADMIN_LABEL}>Electricity (€ / kWh)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.001}
-                    value={settings.electricityPricePerKwh}
-                    onChange={(e) =>
-                      patchSettings({ electricityPricePerKwh: Math.max(0, parseFloat(e.target.value) || 0) })
-                    }
-                    className={INPUT}
-                  />
-                </div>
-                <div>
-                  <label className={ADMIN_LABEL}>Printer power (W)</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={settings.printerPowerW}
-                    onChange={(e) =>
-                      patchSettings({ printerPowerW: Math.max(1, parseInt(e.target.value, 10) || 1) })
-                    }
-                    className={INPUT}
-                  />
-                </div>
-                <div>
-                  <label className={ADMIN_LABEL}>Printer cost (€)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={settings.printerCost}
-                    onChange={(e) => patchSettings({ printerCost: Math.max(0, parseFloat(e.target.value) || 0) })}
-                    className={INPUT}
-                  />
-                </div>
-                <div>
-                  <label className={ADMIN_LABEL}>Printer lifetime (print hours)</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={settings.printerLifetimeHours}
-                    onChange={(e) =>
-                      patchSettings({ printerLifetimeHours: Math.max(1, parseInt(e.target.value, 10) || 1) })
-                    }
-                    className={INPUT}
-                  />
-                </div>
-                <div>
-                  <label className={ADMIN_LABEL}>Additional cost per part (€)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    value={settings.additionalCostPerPart}
-                    onChange={(e) =>
-                      patchSettings({ additionalCostPerPart: Math.max(0, parseFloat(e.target.value) || 0) })
-                    }
-                    className={INPUT}
-                  />
-                </div>
-                <div>
-                  <label className={ADMIN_LABEL}>Waste / failure allowance (%)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={settings.wastePct}
-                    onChange={(e) =>
-                      patchSettings({ wastePct: Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)) })
-                    }
-                    className={INPUT}
-                  />
-                </div>
-                <div>
-                  <label className={ADMIN_LABEL}>Profit markup (%)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={500}
-                    value={settings.profitMarkupPct}
-                    onChange={(e) =>
-                      patchSettings({ profitMarkupPct: Math.min(500, Math.max(0, parseFloat(e.target.value) || 0)) })
-                    }
-                    className={INPUT}
-                  />
-                </div>
-                <div>
-                  <label className={ADMIN_LABEL}>Minimum order price (€)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    value={settings.minimumOrderPrice}
-                    onChange={(e) =>
-                      patchSettings({ minimumOrderPrice: Math.max(0, parseFloat(e.target.value) || 0) })
-                    }
-                    className={INPUT}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-3 pt-2 border-t border-slate-100">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-black uppercase tracking-widest text-slate-500">Quantity discount</span>
-                  <label className="inline-flex items-center gap-2 text-xs font-bold text-slate-600">
-                    <input
-                      type="checkbox"
-                      checked={settings.quantityDiscountEnabled}
-                      onChange={(e) => patchSettings({ quantityDiscountEnabled: e.target.checked })}
-                      className="rounded text-brand-600"
-                    />
-                    Enabled
-                  </label>
-                </div>
-                <div className="space-y-2">
-                  {settings.quantityDiscountTiers.map((tier, index) => (
-                    <TierRow
-                      key={`${tier.minQty}-${index}`}
-                      tier={tier}
-                      index={index}
-                      onChange={patchTier}
-                      onRemove={(i) => {
-                        const next = settings.quantityDiscountTiers.filter((_, j) => j !== i);
-                        patchSettings({
-                          quantityDiscountTiers:
-                            next.length > 0 ? next : [{ minQty: 1, maxQty: null, discountPct: 0 }],
-                        });
-                      }}
-                    />
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    patchSettings({
-                      quantityDiscountTiers: [
-                        ...settings.quantityDiscountTiers,
-                        { minQty: 1, maxQty: null, discountPct: 0 },
-                      ],
-                    })
-                  }
-                  className="text-[11px] font-bold text-brand-600 hover:underline"
-                >
-                  + Add tier
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+        <ThreeDPrintAdminSettings settings={settings} onSettingsChange={onSettingsChange} />
       )}
     </div>
   );

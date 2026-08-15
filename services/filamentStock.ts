@@ -104,14 +104,14 @@ function migrateLegacyProfiles(): FilamentSpool[] {
   }
 }
 
-export function loadFilamentStock(): FilamentStockState {
+export function loadFilamentStockFull(): FilamentStockState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as FilamentStockState;
       if (Array.isArray(parsed?.spools)) {
         return {
-          spools: parsed.spools.filter((s) => !s.archived),
+          spools: parsed.spools,
           updatedAt: parsed.updatedAt || new Date().toISOString(),
         };
       }
@@ -126,6 +126,45 @@ export function loadFilamentStock(): FilamentStockState {
     /* fall through */
   }
   return emptyState();
+}
+
+export function loadFilamentStock(): FilamentStockState {
+  const full = loadFilamentStockFull();
+  return {
+    ...full,
+    spools: full.spools.filter((s) => !s.archived),
+  };
+}
+
+export function replaceFilamentStock(state: FilamentStockState): FilamentStockState {
+  const next = {
+    spools: Array.isArray(state?.spools) ? state.spools : [],
+    updatedAt: state?.updatedAt || new Date().toISOString(),
+  };
+  saveState(next);
+  return next;
+}
+
+export function undoFilamentUsageForItem(inventoryItemId: string): void {
+  if (!inventoryItemId) return;
+  const state = loadFilamentStockFull();
+  let changed = false;
+  const spools = state.spools.map((s) => {
+    const usage = [...s.usages].reverse().find((u) => u.inventoryItemId === inventoryItemId);
+    if (!usage) return s;
+    changed = true;
+    const remaining =
+      s.remainingGramsOverride != null
+        ? roundGrams(s.remainingGramsOverride + usage.grams)
+        : s.remainingGramsOverride;
+    return {
+      ...s,
+      remainingGramsOverride: remaining,
+      usages: s.usages.filter((u) => u.id !== usage.id),
+    };
+  });
+  if (!changed) return;
+  saveState({ spools, updatedAt: new Date().toISOString() });
 }
 
 export function getUsedGrams(spool: FilamentSpool): number {

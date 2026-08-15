@@ -1,9 +1,11 @@
 import React, { useState, useMemo, useEffect, useRef, useDeferredValue, startTransition } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Package, Wallet, Settings, X } from 'lucide-react';
+import { Search, Package, Wallet, Settings, X, Printer } from 'lucide-react';
 import { InventoryItem, Expense, BusinessSettings } from '../types';
 import { formatEUR } from '../utils/formatMoney';
 import { useSettingsModal } from '../context/SettingsModalContext';
+import { gramsToKgDisplay, getRemainingGrams, loadFilamentStock, spoolLabel, type FilamentSpool } from '../services/filamentStock';
+import { isThreeDPrintItem } from '../utils/printQueue';
 
 interface Props {
   items: InventoryItem[];
@@ -19,32 +21,64 @@ function matches(text: string, q: string): boolean {
   return text.toLowerCase().includes(q.toLowerCase());
 }
 
+function itemTextMatches(i: InventoryItem, qLower: string): boolean {
+  if (i.name.toLowerCase().includes(qLower)) return true;
+  if (i.category.toLowerCase().includes(qLower)) return true;
+  if ((i.subCategory || '').toLowerCase().includes(qLower)) return true;
+  if ((i.vendor || '').toLowerCase().includes(qLower)) return true;
+  if ((i.comment1 || '').toLowerCase().includes(qLower)) return true;
+  if ((i.comment2 || '').toLowerCase().includes(qLower)) return true;
+  if ((i.printStage || '').toLowerCase().includes(qLower)) return true;
+  if (i.specs) {
+    for (const [k, v] of Object.entries(i.specs)) {
+      if (k.toLowerCase().includes(qLower) || String(v).toLowerCase().includes(qLower)) return true;
+    }
+  }
+  return false;
+}
+
 const GlobalSearch: React.FC<Props> = ({ items, expenses, businessSettings, onClose }) => {
   const navigate = useNavigate();
   const { openSettings } = useSettingsModal();
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query);
   const [isOpen, setIsOpen] = useState(false);
+  const [spools, setSpools] = useState<FilamentSpool[]>(() => loadFilamentStock().spools);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    const sync = () => setSpools(loadFilamentStock().spools);
+    window.addEventListener('filament-stock-updated', sync);
+    return () => window.removeEventListener('filament-stock-updated', sync);
+  }, []);
+
   const results = useMemo(() => {
     const q = deferredQuery.trim();
-    if (q.length < 2) return { items: [] as InventoryItem[], expenses: [] as Expense[], settings: false };
+    if (q.length < 2) {
+      return {
+        items: [] as InventoryItem[],
+        jobs: [] as InventoryItem[],
+        spools: [] as FilamentSpool[],
+        expenses: [] as Expense[],
+        settings: false,
+      };
+    }
 
     const qLower = q.toLowerCase();
     const itemMatches: InventoryItem[] = [];
+    const jobMatches: InventoryItem[] = [];
     for (const i of items) {
-      if (itemMatches.length >= MAX_RESULTS) break;
-      if (
-        i.name.toLowerCase().includes(qLower) ||
-        i.category.toLowerCase().includes(qLower) ||
-        (i.subCategory || '').toLowerCase().includes(qLower) ||
-        (i.vendor || '').toLowerCase().includes(qLower) ||
-        (i.comment1 || '').toLowerCase().includes(qLower) ||
-        (i.comment2 || '').toLowerCase().includes(qLower)
-      ) {
-        itemMatches.push(i);
+      if (!itemTextMatches(i, qLower)) continue;
+      if (isThreeDPrintItem(i) && jobMatches.length < MAX_RESULTS) jobMatches.push(i);
+      if (itemMatches.length < MAX_RESULTS) itemMatches.push(i);
+    }
+    const spoolMatches: FilamentSpool[] = [];
+    for (const s of spools) {
+      if (spoolMatches.length >= MAX_RESULTS) break;
+      const hay = `${s.type} ${s.color} ${s.brand || ''} ${s.vendor || ''} ${s.note || ''}`.toLowerCase();
+      if (hay.includes(qLower) || qLower === 'filament' || qLower === 'spool' || qLower === 'spools') {
+        spoolMatches.push(s);
       }
     }
     const expenseMatches: Expense[] = [];
@@ -63,14 +97,20 @@ const GlobalSearch: React.FC<Props> = ({ items, expenses, businessSettings, onCl
       (businessSettings.address || '').toLowerCase().includes(qLower);
 
     return {
-      items: itemMatches,
+      items: itemMatches.filter((i) => !jobMatches.some((j) => j.id === i.id)),
+      jobs: jobMatches,
+      spools: spoolMatches,
       expenses: expenseMatches,
       settings: settingsMatch,
     };
-  }, [deferredQuery, items, expenses, businessSettings]);
+  }, [deferredQuery, items, expenses, businessSettings, spools]);
 
   const hasResults =
-    results.items.length > 0 || results.expenses.length > 0 || results.settings;
+    results.items.length > 0 ||
+    results.jobs.length > 0 ||
+    results.spools.length > 0 ||
+    results.expenses.length > 0 ||
+    results.settings;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -118,7 +158,7 @@ const GlobalSearch: React.FC<Props> = ({ items, expenses, businessSettings, onCl
           value={query}
           onChange={(e) => startTransition(() => setQuery(e.target.value))}
           onFocus={() => setIsOpen(true)}
-          placeholder="Search inventory, expenses…"
+          placeholder="Search items, 3D jobs, spools…"
           className="w-full pl-9 pr-3 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-white text-sm placeholder:text-slate-500 outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500"
         />
         {query && (
@@ -137,6 +177,54 @@ const GlobalSearch: React.FC<Props> = ({ items, expenses, businessSettings, onCl
             <p className="px-4 py-4 text-sm text-slate-400">No matches</p>
           ) : (
             <div className="py-2 max-h-80 overflow-y-auto">
+              {results.jobs.length > 0 && (
+                <div className="px-2 py-1">
+                  <p className="px-2 py-1 text-[10px] font-black uppercase text-slate-500 tracking-wider">3D jobs</p>
+                  {results.jobs.map((item) => (
+                    <button
+                      key={`job-${item.id}`}
+                      type="button"
+                      onClick={() => handleSelectItem(item)}
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-800 text-left"
+                    >
+                      <Printer size={14} className="text-brand-400 shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-white truncate">{item.name}</p>
+                        <p className="text-[10px] text-slate-400 truncate">
+                          {String(item.specs?.['Filament Type'] || item.subCategory || '3D')}
+                          {item.specs?.['Filament Weight'] ? ` · ${item.specs['Filament Weight']}` : ''}
+                          {item.specs?.['Print Time'] ? ` · ${item.specs['Print Time']}` : ''}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {results.spools.length > 0 && (
+                <div className="px-2 py-1 border-t border-slate-800">
+                  <p className="px-2 py-1 text-[10px] font-black uppercase text-slate-500 tracking-wider">Filament</p>
+                  {results.spools.map((spool) => (
+                    <button
+                      key={spool.id}
+                      type="button"
+                      onClick={() => {
+                        navigate('/panel/3d-print');
+                        setIsOpen(false);
+                        setQuery('');
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-800 text-left"
+                    >
+                      <Printer size={14} className="text-slate-500 shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-white truncate">{spoolLabel(spool)}</p>
+                        <p className="text-[10px] text-slate-400 truncate">
+                          €{spool.pricePerKg.toFixed(2)}/kg · {gramsToKgDisplay(getRemainingGrams(spool))} left
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
               {results.items.length > 0 && (
                 <div className="px-2 py-1">
                   <p className="px-2 py-1 text-[10px] font-black uppercase text-slate-500 tracking-wider">Inventory</p>

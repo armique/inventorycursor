@@ -14,6 +14,34 @@ function tokenize(text: string): string[] {
     .filter((t) => t.length > 1);
 }
 
+/** Shared kit/marketing words — never enough to link two different PCs. */
+export const LISTING_FLUFF_TOKENS = new Set([
+  'pc',
+  'bundle',
+  'bundel',
+  'set',
+  'kit',
+  'komplett',
+  'komplettpc',
+  'komplettsystem',
+  'gaming',
+  'office',
+  'computer',
+  'system',
+  'desktop',
+  'tower',
+]);
+
+export function isKitStyleTitle(name: string): boolean {
+  return /\b(pc\s*bundle|bundle|bundel|komplett|gaming\s*pc|office\s*pc|komplettsystem)\b/i.test(
+    name || '',
+  );
+}
+
+function isFluffToken(token: string): boolean {
+  return LISTING_FLUFF_TOKENS.has(token.toLowerCase());
+}
+
 /** CPU/GPU/RAM/mobo/storage model fragments — e.g. i7-4790k, Ryzen 5 5600, B550, 1TB */
 export function extractModelTokens(text: string): string[] {
   const compact = text.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -21,6 +49,10 @@ export function extractModelTokens(text: string): string[] {
   const patterns = [
     /\bi[3579][\s-]?\d{3,5}k?\b/gi,
     /\b\d{4,5}k\b/gi,
+    // AMD APU / FX — A10-6700 must not collapse to generic "PC Bundle"
+    /\ba(?:4|6|8|10|12)[\s-]?\d{4}[a-z]?\b/gi,
+    /\bfx[\s-]?\d{4}\b/gi,
+    /\bathlon\s+\d{3,4}[a-z]?\b/gi,
     /\bryzen\s*[3579]\s*\d{3,4}[a-z]{0,3}\b/gi,
     /\br[3579][\s-]?\d{3,4}[a-z]{0,3}\b/gi,
     /\bthreadripper\s*\d{4}[a-z]?\b/gi,
@@ -96,6 +128,34 @@ export function missingProductHints(itemName: string, listingTitle: string): str
   return productHintsIn(itemName).filter((h) => !titleNorm.includes(h));
 }
 
+function isWeakModelToken(token: string): boolean {
+  return /^\d+(gb|tb)$/i.test(token);
+}
+
+function hardwareModelKeys(text: string): string[] {
+  const compact = text.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return extractModelTokens(text).filter(
+    (k) => k !== compact && k.length >= 4 && !isFluffToken(k) && !isWeakModelToken(k),
+  );
+}
+
+/**
+ * False when two kit/PC titles name different CPUs, boards, or GPUs.
+ * "PC Bundle · A10-6700" must not match an i7-4790K bundle.
+ */
+export function listingHardwareCompatible(itemName: string, listingTitle: string): boolean {
+  const q = hardwareModelKeys(itemName);
+  const c = hardwareModelKeys(listingTitle);
+  if (q.length && c.length) {
+    return q.some((a) => c.some((b) => a === b || a.includes(b) || b.includes(a)));
+  }
+  if (isKitStyleTitle(itemName) || isKitStyleTitle(listingTitle)) {
+    if (q.length && !c.length) return false;
+    if (!q.length && c.length) return false;
+  }
+  return true;
+}
+
 /** Score how well an eBay listing title matches an inventory item name (higher = better). */
 export function scoreListingTitleMatch(
   itemName: string,
@@ -105,6 +165,9 @@ export function scoreListingTitleMatch(
 ): number {
   if (itemSku && listingSku && itemSku.trim().toLowerCase() === listingSku.trim().toLowerCase()) {
     return 1000;
+  }
+  if (!listingHardwareCompatible(itemName, listingTitle)) {
+    return 0;
   }
 
   const itemTokens = tokenize(itemName);
@@ -138,7 +201,9 @@ export function scoreListingTitleMatch(
     }
   }
 
-  const allTokens = [...new Set([...itemTokens, ...extractModelTokens(itemName)])];
+  const allTokens = [...new Set([...itemTokens, ...extractModelTokens(itemName)])].filter(
+    (t) => !isFluffToken(t),
+  );
   let matched = 0;
   for (const token of allTokens) {
     if (titleNorm.includes(token) || titleContainsModel(titleNorm, token)) matched++;

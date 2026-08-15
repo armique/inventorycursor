@@ -26,6 +26,7 @@ const EbayStorePullPage = lazy(() => import('./components/EbayStorePullPage'));
 const ThreeDPrintPage = lazy(() => import('./components/ThreeDPrintPage'));
 const ProductCardGalleryPage = lazy(() => import('./components/ProductCardGalleryPage'));
 const BulkImportHistoryPage = lazy(() => import('./components/BulkImportHistoryPage'));
+const SellTodayPage = lazy(() => import('./components/SellTodayPage'));
 const EditItemRoute = lazy(() => import('./components/EditItemRoute'));
 const AddHubPage = lazy(() => import('./components/AddHubPage'));
 const AddItemRoute = lazy(() => import('./components/AddItemRoute'));
@@ -40,6 +41,13 @@ import {
   normalizeDashboardPreferences,
   getDefaultDashboardPreferences,
 } from './services/dashboardPreferences';
+import {
+  composeThreeDPrintCloudFromLocal,
+  mergeThreeDPrintCloud,
+  persistThreeDPrintCloudState,
+  snapshotThreeDPrintCloudNow,
+  type ThreeDPrintCloudState,
+} from './services/threeDPrintCloud';
 import { isCloudEnabled, onAuthChange, subscribeToData, writeToCloud, writeStoreCatalog, getSyncErrorMessage, CLOUD_OMITTED_PLACEHOLDER, fetchFromCloud, fetchGamificationState, writeGamificationState, completeGoogleRedirectSignIn, consumeAuthReturnPath, consumeRedirectPending, getAuthErrorMessage } from './services/firebaseService';
 import {
   defaultGamificationState,
@@ -130,6 +138,7 @@ type AppSyncSnapshot = {
   dashboardPrefs: DashboardPreferences;
   actionHistory: ActionHistoryEntry[];
   bulkImports: BulkImportRecord[];
+  threeDPrint: ThreeDPrintCloudState;
 };
 
 /** When merging an update into an existing item, preserve these from the old item if the update
@@ -144,6 +153,7 @@ const PRESERVE_FROM_OLD_IF_UPDATE_MISSING: (keyof InventoryItem)[] = [
   'kleinanzeigenSellerProfileUrl',
   'bulkImportId',
   'source', 'lastModifiedBy', 'aiReviewStatus',
+  'printStage', 'reserved', 'photosReady',
 ];
 
 /**
@@ -497,6 +507,8 @@ const App: React.FC = () => {
   });
 
   const [dashboardPrefs, setDashboardPrefs] = useState<DashboardPreferences>(() => loadDashboardPreferencesFromLocalStorage());
+  const [threeDPrintCloud, setThreeDPrintCloud] = useState<ThreeDPrintCloudState>(() => composeThreeDPrintCloudFromLocal());
+  const applyingRemote3dRef = useRef(false);
   const [gamification, setGamificationState] = useState<GamificationState>(() =>
     ensureFreshMonth(ensureFreshDay(loadGamificationStateLocal())),
   );
@@ -517,11 +529,15 @@ const App: React.FC = () => {
     });
   }, []);
   const dashboardPrefsRef = useRef(dashboardPrefs);
+  const threeDPrintCloudRef = useRef(threeDPrintCloud);
   const actionHistoryRef = useRef<ActionHistoryEntry[]>(loadActionHistoryFromStorage());
   const bulkImportsRef = useRef<BulkImportRecord[]>(loadBulkImportsFromStorage());
   useEffect(() => {
     dashboardPrefsRef.current = dashboardPrefs;
   }, [dashboardPrefs]);
+  useEffect(() => {
+    threeDPrintCloudRef.current = threeDPrintCloud;
+  }, [threeDPrintCloud]);
   useEffect(() => {
     actionHistoryRef.current = actionHistory;
   }, [actionHistory]);
@@ -611,6 +627,7 @@ const App: React.FC = () => {
     dashboardPrefs: dashboardPrefsRef.current,
     actionHistory: actionHistoryRef.current,
     bulkImports: bulkImportsRef.current,
+    threeDPrint: threeDPrintCloudRef.current,
   }), []);
 
   const requestFastCloudFlush = useCallback(() => {
@@ -619,6 +636,23 @@ const App: React.FC = () => {
       FAST_CLOUD_FLUSH_MS
     );
   }, []);
+
+  useEffect(() => {
+    const syncLocal3d = () => {
+      if (applyingRemote3dRef.current) return;
+      const next = snapshotThreeDPrintCloudNow();
+      setThreeDPrintCloud(next);
+      threeDPrintCloudRef.current = next;
+      hasUnsavedChanges.current = true;
+      requestFastCloudFlush();
+    };
+    window.addEventListener('filament-stock-updated', syncLocal3d);
+    window.addEventListener('three-d-print-settings-updated', syncLocal3d);
+    return () => {
+      window.removeEventListener('filament-stock-updated', syncLocal3d);
+      window.removeEventListener('three-d-print-settings-updated', syncLocal3d);
+    };
+  }, [requestFastCloudFlush]);
 
   const shouldApplyRemoteSnapshot = useCallback((data: { updatedAt?: string } | null) => {
     if (!data) return false;
@@ -822,6 +856,21 @@ const App: React.FC = () => {
     bulkImportsRef.current = mergedBI;
     // If this device had history (or richer rows) the cloud snapshot lacked, push after apply.
     if (localBulkImportsNeedCloudPush(mergedBI, remoteBI)) {
+      pendingCloudPushAfterRemoteRef.current = true;
+      hasUnsavedChanges.current = true;
+    }
+    if (data.threeDPrint != null) {
+      const merged3d = mergeThreeDPrintCloud(data.threeDPrint, threeDPrintCloudRef.current);
+      applyingRemote3dRef.current = true;
+      const saved3d = persistThreeDPrintCloudState(merged3d.state);
+      applyingRemote3dRef.current = false;
+      setThreeDPrintCloud(saved3d);
+      threeDPrintCloudRef.current = saved3d;
+      if (merged3d.localNewer) {
+        pendingCloudPushAfterRemoteRef.current = true;
+        hasUnsavedChanges.current = true;
+      }
+    } else {
       pendingCloudPushAfterRemoteRef.current = true;
       hasUnsavedChanges.current = true;
     }
@@ -1242,6 +1291,7 @@ const App: React.FC = () => {
       dashboard: snap.dashboardPrefs,
       actionHistory: snap.actionHistory.slice(-ACTION_HISTORY_LIMIT),
       bulkImports: snap.bulkImports.slice(0, BULK_IMPORTS_LIMIT),
+      threeDPrint: snap.threeDPrint,
     };
     try {
       await writeToCloud(payload);
@@ -1416,6 +1466,7 @@ const App: React.FC = () => {
       dashboard: snap.dashboardPrefs,
       actionHistory: snap.actionHistory.slice(-ACTION_HISTORY_LIMIT),
       bulkImports: snap.bulkImports.slice(0, BULK_IMPORTS_LIMIT),
+      threeDPrint: snap.threeDPrint,
     };
     try {
       cloudSyncInFlightRef.current = true;
@@ -1732,6 +1783,7 @@ const App: React.FC = () => {
           dashboard: wipedDash,
           actionHistory: [],
           bulkImports: [],
+          threeDPrint: threeDPrintCloudRef.current,
         });
         await writeStoreCatalog(buildStoreCatalog(emptyInventory, categoryFields)).catch(() => {});
       } catch (_) {}
@@ -1801,6 +1853,7 @@ const App: React.FC = () => {
           dashboard: restoredDash,
           actionHistory: mergedAH,
           bulkImports: mergedBI,
+          threeDPrint: threeDPrintCloudRef.current,
         });
         await writeStoreCatalog(buildStoreCatalog(inv, fields)).catch(() => {});
       } catch (_) {}
@@ -1824,6 +1877,7 @@ const App: React.FC = () => {
         dashboard: dashboardPrefs,
         actionHistory: actionHistoryRef.current.slice(-ACTION_HISTORY_LIMIT),
         bulkImports: bulkImportsRef.current.slice(0, BULK_IMPORTS_LIMIT),
+        threeDPrint: threeDPrintCloudRef.current,
       }).catch(() => {});
     }
     setRefreshKey((k) => k + 1);
@@ -2116,7 +2170,7 @@ const App: React.FC = () => {
             }
           />
           <Route path="inventory" element={<InventoryList key="inventory-main" items={items} totalCount={items.length} onUpdate={handleUpdate} onDelete={handleDelete} onUndo={handleUndo} onRedo={handleRedo} canUndo={historyIndex > 0} canRedo={historyIndex < history.length - 1} pageTitle="Inventory" allowedStatuses={ALL_STATUSES} businessSettings={businessSettings} onBusinessSettingsChange={handleBusinessSettingsChange} categories={categories} categoryFields={categoryFields} persistenceKey="inventory_main" onPublishStoreCatalog={publishStoreCatalogNow} bulkImports={bulkImports} onUpdateBulkImport={handleUpdateBulkImport} onDeleteBulkImport={handleDeleteBulkImport} />} />
-          <Route path="dealwatch" element={<EstDealwatchPage />} />
+          <Route path="dealwatch" element={<EstDealwatchPage items={items} />} />
           <Route path="est" element={<Navigate to="/panel/dealwatch" replace />} />
           <Route
             path="reinvest"
@@ -2156,7 +2210,8 @@ const App: React.FC = () => {
           <Route path="add-bulk" element={<BulkItemForm onSave={handleUpdate} onBulkImportComplete={handleBulkImportComplete} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="edit/:id" element={<EditItemRoute onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="builder" element={<BuilderEntry items={items} onSave={handleUpdate} />} />
-          <Route path="3d-print" element={<ThreeDPrintPage items={items} onSave={handleUpdate} categories={categories} onAddExpense={handleAddExpense} isAdmin={isAdminUser} />} />
+          <Route path="3d-print" element={<ThreeDPrintPage items={items} onSave={handleUpdate} onRemoveItems={(ids) => handleUpdate([], ids, { skipUndo: true })} categories={categories} onAddExpense={handleAddExpense} isAdmin={isAdminUser} />} />
+          <Route path="sell-today" element={<SellTodayPage items={items} onUpdate={handleUpdate} />} />
           <Route path="ebay-store-pull" element={<EbayStorePullPage items={items} categories={categories} categoryFields={categoryFields} taxMode={businessSettings.taxMode} onUpdate={handleUpdate} onPublishCatalog={publishStoreCatalogNow} onAddExpense={handleAddExpense} />} />
           <Route
             path="card-gallery"

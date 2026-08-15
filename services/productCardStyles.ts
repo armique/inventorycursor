@@ -17,6 +17,7 @@ export type ProductCardStyleId =
 export interface ProductCardStyle {
   id: ProductCardStyleId;
   name: string;
+  shortName?: string;
   blurb: string;
   prompt: string;
 }

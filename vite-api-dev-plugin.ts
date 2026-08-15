@@ -61,6 +61,10 @@ async function loadHandler(pathname: string): Promise<{ handler: (req: ApiReques
     const mod = await import('./api/barcode.js');
     return { handler: mod.default };
   }
+  if (pathname === '/api/ai-text') {
+    const mod = await import('./api/ai-text.js');
+    return { handler: mod.default };
+  }
   if (pathname === '/api/gemini' || pathname === '/api/parse-ebay-order-screenshot' || pathname === '/api/parse-kleinanzeigen-chat-screenshot') {
     const mod = await import('./api/gemini.js');
     const route =
@@ -81,6 +85,7 @@ export function viteApiDevPlugin(): Plugin {
     configureServer(server) {
       dotenv.config({ path: '.env.local' });
       dotenv.config();
+      dotenv.config({ path: 'dealwatch-runtime/.env' });
 
       server.middlewares.use(async (req, res, next) => {
         const rawUrl = req.url || '';

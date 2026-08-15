@@ -3,10 +3,8 @@ import { createPortal } from 'react-dom';
 import {
   Camera,
   Check,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ChevronUp,
   Copy,
   FolderOpen,
   Image as ImageIcon,
@@ -19,6 +17,8 @@ import {
   Upload,
   X,
   Download,
+  Search,
+  ShoppingBag,
 } from 'lucide-react';
 import { prefersNativePhotoCapture } from '../utils/deviceUi';
 import type { GeneratedProductCardEntry, InventoryItem, PaymentType, Platform } from '../types';
@@ -79,6 +79,10 @@ import SourceLinkIcons from './SourceLinkIcons';
 import ProofAttachmentsPanel from './ProofAttachmentsPanel';
 import { resolveItemSourceLinks } from '../utils/sourceLinks';
 import { ADD_FLOW_INPUT, ADD_FLOW_LABEL, ADD_FLOW_PANEL } from './addFlowShared';
+import { searchProductPhotos, type ImageSearchResult } from '../services/imageSearchService';
+import { getEbayUsername, type EbayMyListing } from '../services/ebayService';
+import { ensureEbayListings } from '../services/ebayListingIndex';
+import { matchEbayListingsForItem } from '../utils/ebayListingMatch';
 
 const BUY_PLATFORMS: Platform[] = [
   'kleinanzeigen.de',
@@ -144,8 +148,6 @@ const ListingStudioModal: React.FC<Props> = ({
   const [title, setTitle] = useState(item.marketTitle?.trim() || item.name || '');
   const [description, setDescription] = useState(item.marketDescription || '');
   const [aiDescriptionNote, setAiDescriptionNote] = useState(item.aiDescriptionNote || '');
-  /** Mobile: specs / purchase collapsed so Cards + Listing sit higher. */
-  const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false);
   const studioScrollRef = useRef<HTMLDivElement>(null);
 
   const [vendor, setVendor] = useState(item.vendor || '');
@@ -217,11 +219,20 @@ const ListingStudioModal: React.FC<Props> = ({
   const [providers, setProviders] = useState<ProductCardProviderInfo[]>([]);
   const [styleId, setStyleId] = useState<ProductCardStyleId>(DEFAULT_PRODUCT_CARD_STYLE_ID);
   const [photoSource, setPhotoSource] = useState<'none' | 'iphone' | 'folder'>('none');
+  const [photoSearching, setPhotoSearching] = useState(false);
+  const [photoSearchError, setPhotoSearchError] = useState<string | null>(null);
+  const [photoSearchResults, setPhotoSearchResults] = useState<ImageSearchResult[] | null>(null);
+  const [ebayPhotoLoading, setEbayPhotoLoading] = useState(false);
+  const [ebayPhotoError, setEbayPhotoError] = useState<string | null>(null);
+  const [ebayPhotoMatches, setEbayPhotoMatches] = useState<
+    Array<EbayMyListing & { matchScore: number }> | null
+  >(null);
+  const [ebayImportingId, setEbayImportingId] = useState<string | null>(null);
   /** Card provider/style panel — collapsed by default on narrow screens. */
-  const [cardOptionsOpen, setCardOptionsOpen] = useState(() =>
-    typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)').matches : false
-  );
   const [previewPhotoIndex, setPreviewPhotoIndex] = useState<number | null>(null);
+  type StudioQuad = 'item' | 'photos' | 'specs' | 'listing';
+  const [mobileQuad, setMobileQuad] = useState<StudioQuad>('item');
+  const [dealOpen, setDealOpen] = useState(false);
 
   const workingItem = useMemo(
     () => ({
@@ -331,11 +342,20 @@ const ListingStudioModal: React.FC<Props> = ({
     };
   }, [item.hasReceipt, containerChildren, workingItem.hasOVP, workingItem.hasIOShield]);
 
-  const reloadGallery = useCallback(async () => {
-    setGalleryLoading(true);
+  const allItemsRef = useRef(allItems);
+  allItemsRef.current = allItems;
+  const itemRef = useRef(item);
+  itemRef.current = item;
+  const galleryHasRowsRef = useRef(false);
+
+  const reloadGallery = useCallback(async (opts?: { silent?: boolean }) => {
+    const current = itemRef.current;
+    const silent = Boolean(opts?.silent) || galleryHasRowsRef.current;
+    if (!silent) setGalleryLoading(true);
     try {
-      const ids = productCardGalleryItemIds(allItems || [], item);
+      const ids = productCardGalleryItemIds(allItemsRef.current || [], current);
       const list = await listProductCardGalleryForItemIds(ids);
+      galleryHasRowsRef.current = list.length > 0;
       setGallery(list);
       const nextThumbs: Record<string, string> = {};
       await Promise.all(
@@ -349,7 +369,7 @@ const ListingStudioModal: React.FC<Props> = ({
       );
       setThumbs(nextThumbs);
       const onItem = new Set(
-        [item.imageUrl, ...(item.imageUrls || [])].filter(
+        [current.imageUrl, ...(current.imageUrls || [])].filter(
           (u): u is string => typeof u === 'string' && u.trim().length > 0
         )
       );
@@ -367,9 +387,9 @@ const ListingStudioModal: React.FC<Props> = ({
     } catch (e) {
       console.warn(e);
     } finally {
-      setGalleryLoading(false);
+      if (!silent) setGalleryLoading(false);
     }
-  }, [item, allItems]);
+  }, []);
 
   // Hydrate local studio fields only when switching items.
   // Re-running this on every vendor/spec/photo patch was wiping unsaved Generate listing text
@@ -380,7 +400,6 @@ const ListingStudioModal: React.FC<Props> = ({
     setTitle(item.marketTitle?.trim() || item.name || '');
     setDescription(item.marketDescription || '');
     setAiDescriptionNote(item.aiDescriptionNote || '');
-    setMobileDetailsOpen(false);
     setVendor(item.vendor || '');
     setPlatformBought((item.platformBought as Platform) || 'kleinanzeigen.de');
     setBuyPaymentType(
@@ -411,6 +430,12 @@ const ListingStudioModal: React.FC<Props> = ({
     setHasReceipt(!!item.hasReceipt);
     setPreviewPhotoIndex(null);
     setError(null);
+    setMobileQuad('item');
+    setDealOpen(false);
+    setPhotoSearchResults(null);
+    setPhotoSearchError(null);
+    setEbayPhotoMatches(null);
+    setEbayPhotoError(null);
     // intentionally only item.id — local draft fields are source of truth while studio is open
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.id]);
@@ -424,8 +449,26 @@ const ListingStudioModal: React.FC<Props> = ({
         list[0];
       if (preferred?.id) setProvider(preferred.id);
     });
+  }, []);
+
+  useEffect(() => {
+    galleryHasRowsRef.current = false;
     void reloadGallery();
-  }, [reloadGallery]);
+  }, [item.id, reloadGallery]);
+
+  useEffect(() => {
+    if (!gallery.length) return;
+    const onItem = new Set(photos);
+    const selected: Record<string, string> = {};
+    for (const e of gallery) {
+      const candidates = [e.imageUrl, thumbs[e.id]].filter(
+        (u): u is string => typeof u === 'string' && u.trim().length > 0
+      );
+      const hit = candidates.find((u) => onItem.has(u));
+      if (hit) selected[e.id] = hit;
+    }
+    setSelectedOnItem(selected);
+  }, [photos, gallery, thumbs]);
 
   const flashCopied = (key: string) => {
     setCopied(key);
@@ -465,16 +508,35 @@ const ListingStudioModal: React.FC<Props> = ({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
       if (previewPhotoIndex !== null) {
-        setPreviewPhotoIndex(null);
+        if (e.key === 'Escape') {
+          setPreviewPhotoIndex(null);
+          return;
+        }
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          setPreviewPhotoIndex((i) => (i === null ? i : Math.max(0, i - 1)));
+          return;
+        }
+        if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          setPreviewPhotoIndex((i) =>
+            i === null ? i : Math.min(photos.length - 1, i + 1)
+          );
+          return;
+        }
+        return;
+      }
+      if (e.key !== 'Escape') return;
+      if (dealOpen) {
+        setDealOpen(false);
         return;
       }
       handleClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [handleClose, previewPhotoIndex]);
+  }, [handleClose, previewPhotoIndex, dealOpen, photos.length]);
 
   const commitMoneyField = (
     raw: string,
@@ -605,12 +667,6 @@ const ListingStudioModal: React.FC<Props> = ({
     } finally {
       setGenListing(false);
     }
-  };
-
-  const scrollStudioTo = (id: string) => {
-    const root = studioScrollRef.current;
-    const el = root?.querySelector(`#${id}`) as HTMLElement | null;
-    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   const handleApplyListing = async () => {
@@ -875,22 +931,96 @@ const ListingStudioModal: React.FC<Props> = ({
             });
           },
         });
-        const existing = getItemUserPhotoUrls(item);
-        const merged = normalizeImageList([...existing, ...prepared]);
+        const merged = normalizeImageList([...photos, ...prepared]);
         await persistPatch({ imageUrl: merged[0] || '', imageUrls: merged });
+        return true;
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not attach iPhone photos');
+        return false;
       } finally {
         setPhotoUpload(null);
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [item.id, item.imageUrl, item.imageUrls, onUpdateItem]
+    [item.id, photos, onUpdateItem]
   );
 
   const handleFolderFiles = async (files: File[]) => {
     if (!files.length) return;
     await runPhotoImport(files, 'Folder photo import failed');
+  };
+
+  const handleFindWebPhotos = async () => {
+    const q = (name || item.name || '').trim();
+    if (!q) {
+      setPhotoSearchError('Enter an item name first.');
+      return;
+    }
+    setPhotoSearching(true);
+    setPhotoSearchError(null);
+    setPhotoSearchResults(null);
+    setEbayPhotoMatches(null);
+    setEbayPhotoError(null);
+    try {
+      const results = await searchProductPhotos(q, 8);
+      if (!results.length) {
+        setPhotoSearchError('No stock photos found for that name.');
+        return;
+      }
+      setPhotoSearchResults(results);
+    } catch (e) {
+      setPhotoSearchError(e instanceof Error ? e.message : 'Photo search failed.');
+    } finally {
+      setPhotoSearching(false);
+    }
+  };
+
+  const handleFindEbayPhotos = async () => {
+    const q = (name || item.name || '').trim();
+    if (!q) {
+      setEbayPhotoError('Enter an item name first.');
+      return;
+    }
+    setEbayPhotoLoading(true);
+    setEbayPhotoError(null);
+    setEbayPhotoMatches(null);
+    setPhotoSearchResults(null);
+    setPhotoSearchError(null);
+    try {
+      const { listings: all } = await ensureEbayListings();
+      if (!all.length) {
+        setEbayPhotoError(`No active eBay listings for ${getEbayUsername()}.`);
+        return;
+      }
+      const matches = matchEbayListingsForItem(q, all, item.ebaySku);
+      if (!matches.length) {
+        setEbayPhotoError(`No listings matched “${q}” (${all.length} active).`);
+        return;
+      }
+      setEbayPhotoMatches(matches);
+    } catch (e) {
+      setEbayPhotoError(e instanceof Error ? e.message : 'Failed to load eBay listings.');
+    } finally {
+      setEbayPhotoLoading(false);
+    }
+  };
+
+  const importEbayListingPhotos = async (listing: EbayMyListing & { matchScore: number }) => {
+    if (!listing.imageUrls.length) return;
+    setEbayImportingId(listing.listingId);
+    try {
+      await mergeRemotePhotoUrls(listing.imageUrls);
+      await persistPatch({
+        listedOnEbay: true,
+        ebayListingId: listing.listingId,
+        ...(listing.sku ? { ebaySku: listing.sku } : {}),
+      });
+      setEbayPhotoMatches(null);
+    } catch (e) {
+      setEbayPhotoError(e instanceof Error ? e.message : 'Could not import eBay photos.');
+    } finally {
+      setEbayImportingId(null);
+    }
   };
 
   const updateSpecValue = (key: string, value: string) => {
@@ -945,8 +1075,6 @@ const ListingStudioModal: React.FC<Props> = ({
     });
   };
 
-  const selectedEntry = gallery.find((e) => e.id === selectedCardId) || null;
-  const selectedThumb = selectedEntry ? thumbs[selectedEntry.id] : null;
   const titleLen = [...title].length;
   const plannedCards = resolveCardBatchCount(photos.length);
 
@@ -964,16 +1092,16 @@ const ListingStudioModal: React.FC<Props> = ({
       onClick={handleClose}
     >
       <div
-        className="bg-white w-full sm:max-w-[1280px] h-[100dvh] sm:h-[min(94vh,920px)] sm:rounded-2xl shadow-2xl border-0 sm:border border-slate-200 overflow-hidden flex flex-col"
+        className="relative bg-white w-full sm:max-w-[1360px] h-[100dvh] sm:h-[min(96vh,860px)] sm:rounded-2xl shadow-2xl border-0 sm:border border-slate-200 overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-2 bg-white shrink-0 pt-[max(0.75rem,env(safe-area-inset-top))]">
+        <header className="px-3 py-2 border-b border-slate-100 flex items-center justify-between gap-2 bg-white shrink-0 pt-[max(0.5rem,env(safe-area-inset-top))]">
           <div className="min-w-0">
             <h3 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
               <Sparkles size={14} className="text-slate-700" /> Listing Studio
             </h3>
             <p className="hidden sm:block text-[11px] text-slate-500 font-medium truncate">
-              Photos · Card gallery · Listing
+              Item · Photos · Specs · Listing
             </p>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -989,19 +1117,96 @@ const ListingStudioModal: React.FC<Props> = ({
           </div>
         </header>
 
+        <div className="hidden lg:flex shrink-0 flex-wrap items-center gap-1.5 px-3 py-2 border-b border-slate-100 bg-white">
+          <button
+            type="button"
+            disabled={parsingSpecs}
+            onClick={() => void handleParseSpecs()}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-800 text-[9px] font-black uppercase disabled:opacity-50"
+          >
+            {parsingSpecs ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+            Parse AI
+          </button>
+          <button
+            type="button"
+            disabled={generatingTitle || parsingSpecs}
+            onClick={() => void handleGenerateItemTitle()}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-[9px] font-black uppercase disabled:opacity-50"
+          >
+            {generatingTitle ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+            AI title
+          </button>
+          {genCards ? (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-[9px] font-black uppercase">
+              <Loader2 size={11} className="animate-spin" />
+              {cardProgress || '…'}
+            </span>
+          ) : (
+            ([1, 2, 3] as const).map((n) => (
+              <button
+                key={n}
+                type="button"
+                disabled={genCards}
+                onClick={() => handleGenerateCards(n)}
+                className={`inline-flex items-center justify-center min-w-[2.4rem] px-2 py-1.5 rounded-lg text-[9px] font-black uppercase disabled:opacity-50 ${
+                  n === plannedCards
+                    ? 'bg-slate-900 text-white'
+                    : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                GEN{n}
+              </button>
+            ))
+          )}
+          <button
+            type="button"
+            disabled={genListing || saving}
+            onClick={() => void handleGenerateListing()}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-[9px] font-black uppercase disabled:opacity-50"
+          >
+            {genListing ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+            Generate listing
+          </button>
+          <button
+            type="button"
+            disabled={saving || genListing}
+            onClick={() => void handleApplyListing()}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-800 text-[9px] font-black uppercase disabled:opacity-50"
+          >
+            {saving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+            Apply
+          </button>
+          <button
+            type="button"
+            onClick={() => setDealOpen(true)}
+            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase ${
+              dealOpen
+                ? 'bg-slate-900 text-white'
+                : 'border border-slate-200 text-slate-700 hover:bg-slate-50'
+            }`}
+          >
+            Deal / proof
+          </button>
+        </div>
+
         <nav className="lg:hidden shrink-0 flex border-b border-slate-200 bg-white">
           {(
             [
-              { id: 'studio-item', label: 'Item' },
-              { id: 'studio-photos', label: 'Photos' },
-              { id: 'studio-listing', label: 'Listing' },
+              { id: 'item' as const, label: 'Item' },
+              { id: 'photos' as const, label: 'Photos' },
+              { id: 'specs' as const, label: 'Specs' },
+              { id: 'listing' as const, label: 'Listing' },
             ] as const
           ).map((tab) => (
             <button
               key={tab.id}
               type="button"
-              onClick={() => scrollStudioTo(tab.id)}
-              className="flex-1 py-2 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              onClick={() => setMobileQuad(tab.id)}
+              className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest ${
+                mobileQuad === tab.id
+                  ? 'text-slate-900 bg-slate-50'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+              }`}
             >
               {tab.label}
             </button>
@@ -1010,10 +1215,16 @@ const ListingStudioModal: React.FC<Props> = ({
 
         <div
           ref={studioScrollRef}
-          className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(220px,0.85fr)_minmax(300px,1.2fr)_minmax(260px,1fr)] overflow-y-auto lg:overflow-hidden bg-slate-50/50"
+          className="flex-1 min-h-0 overflow-y-auto bg-slate-50/50 lg:grid lg:grid-cols-2 lg:items-start"
         >
-          {/* LEFT — item / specs / trade */}
-          <aside className="border-r border-slate-100 overflow-y-auto p-3 space-y-3 lg:p-3.5 bg-transparent">
+          <div className="lg:border-r lg:border-slate-100">
+          {/* ITEM */}
+          <aside
+            id="studio-item"
+            className={`flex-col border-b border-slate-100 p-2.5 ${
+              mobileQuad === 'item' ? 'flex' : 'hidden'
+            } lg:flex`}
+          >
             {/* Where this deal came from — one click to the chat / order / profile. */}
             {itemSourceLinks.list.length > 0 && (
               <section className="flex flex-wrap items-center gap-1.5">
@@ -1027,16 +1238,9 @@ const ListingStudioModal: React.FC<Props> = ({
               </section>
             )}
 
-            <ProofAttachmentsPanel
-              recordId={item.id}
-              attachments={item.proofAttachments}
-              record={item as unknown as Record<string, unknown>}
-              onChange={(next) => void onUpdateItem({ proofAttachments: next })}
-            />
-
-            <section id="studio-item" className={`scroll-mt-2 ${ADD_FLOW_PANEL} p-3 space-y-2`}>
+            <section className={`${ADD_FLOW_PANEL} p-2.5 space-y-2 shrink-0`}>
               <div className="flex items-center justify-between mb-0.5 gap-2">
-                <h4 className={ADD_FLOW_LABEL}>Item name</h4>
+                <h4 className={ADD_FLOW_LABEL}>Item</h4>
                 <div className="flex items-center gap-1 shrink-0">
                   <button
                     type="button"
@@ -1050,10 +1254,9 @@ const ListingStudioModal: React.FC<Props> = ({
                   </button>
                   <button
                     type="button"
+                    className="lg:hidden inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900 text-white text-[9px] font-black uppercase disabled:opacity-50"
                     disabled={generatingTitle || parsingSpecs}
                     onClick={() => void handleGenerateItemTitle()}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-900 text-white text-[9px] font-black uppercase tracking-wider disabled:opacity-50"
-                    title="Generate a cleaned item title only (does not change specs)"
                   >
                     {generatingTitle ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
                     AI title
@@ -1061,7 +1264,7 @@ const ListingStudioModal: React.FC<Props> = ({
                 </div>
               </div>
               <input
-                className={ADD_FLOW_INPUT}
+                className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-slate-400 focus:bg-white"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 onBlur={(e) => {
@@ -1086,29 +1289,139 @@ const ListingStudioModal: React.FC<Props> = ({
               </div>
             </section>
 
-            <button
-              type="button"
-              className="lg:hidden w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl border border-slate-200 bg-white text-left"
-              onClick={() => setMobileDetailsOpen((o) => !o)}
-              aria-expanded={mobileDetailsOpen}
-            >
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">
-                Specs · purchase
-                {Object.keys(specs).length > 0 ? ` · ${Object.keys(specs).length}` : ''}
-              </span>
-              <span className="text-[10px] font-bold text-slate-400">
-                {mobileDetailsOpen ? 'Hide' : 'Show'}
-              </span>
-            </button>
+            <div className={`${ADD_FLOW_PANEL} p-2.5 space-y-1.5`}>
+              <div className="grid grid-cols-3 gap-1.5 text-[11px]">
+                <label className="block space-y-0.5">
+                  <span className="text-[9px] font-black uppercase text-slate-400">Buy €</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-bold text-slate-900 outline-none focus:border-rose-400"
+                    value={buyPriceText}
+                    placeholder="0"
+                    onChange={(e) => setBuyPriceText(e.target.value)}
+                    onBlur={() => commitMoneyField(buyPriceText, 'buyPrice', setBuyPriceText)}
+                  />
+                </label>
+                <label className="block space-y-0.5">
+                  <span className="text-[9px] font-black uppercase text-slate-400">Sold €</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-bold text-slate-900 outline-none focus:border-rose-400"
+                    value={sellPriceText}
+                    placeholder="—"
+                    onChange={(e) => setSellPriceText(e.target.value)}
+                    onBlur={() => commitMoneyField(sellPriceText, 'sellPrice', setSellPriceText)}
+                  />
+                </label>
+                <label className="block space-y-0.5">
+                  <span className="text-[9px] font-black uppercase text-slate-400">Store €</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-bold text-slate-900 outline-none focus:border-rose-400"
+                    value={storePriceText}
+                    placeholder="—"
+                    onChange={(e) => setStorePriceText(e.target.value)}
+                    onBlur={() => commitMoneyField(storePriceText, 'storePrice', setStorePriceText)}
+                  />
+                </label>
+              </div>
+              <div className="grid grid-cols-3 gap-1.5 text-[11px]">
+                <label className="block space-y-0.5">
+                  <span className="text-[9px] font-black uppercase text-slate-400">Buy date</span>
+                  <input
+                    type="date"
+                    className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-semibold text-slate-900 outline-none"
+                    value={buyDate}
+                    onChange={(e) => {
+                      setBuyDate(e.target.value);
+                      void persistPatch({ buyDate: e.target.value });
+                    }}
+                  />
+                </label>
+                <label className="block space-y-0.5">
+                  <span className="text-[9px] font-black uppercase text-slate-400">Sell date</span>
+                  <input
+                    type="date"
+                    className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-semibold text-slate-900 outline-none"
+                    value={sellDate}
+                    onChange={(e) => {
+                      setSellDate(e.target.value);
+                      void persistPatch({ sellDate: e.target.value || undefined });
+                    }}
+                  />
+                </label>
+                <label className="block space-y-0.5">
+                  <span className="text-[9px] font-black uppercase text-slate-400">Qty</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-bold text-slate-900 outline-none focus:border-rose-400"
+                    value={quantityText}
+                    placeholder="1"
+                    onChange={(e) => setQuantityText(e.target.value)}
+                    onBlur={() => {
+                      if (quantityText.trim() === '') {
+                        setQuantityText('');
+                        void persistPatch({ quantity: undefined });
+                        return;
+                      }
+                      const n = Math.max(1, Math.floor(Number(quantityText)));
+                      if (!Number.isFinite(n)) return;
+                      setQuantityText(String(n));
+                      void persistPatch({ quantity: n });
+                    }}
+                  />
+                </label>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 pt-0.5">
+                <label className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={isDefective}
+                    onChange={(e) => {
+                      setIsDefective(e.target.checked);
+                      void persistPatch({ isDefective: e.target.checked || undefined });
+                    }}
+                    className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                  />
+                  Defective
+                </label>
+                <label className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={usesDifferentialVat}
+                    onChange={(e) => {
+                      setUsesDifferentialVat(e.target.checked);
+                      void persistPatch({ usesDifferentialVat: e.target.checked || undefined });
+                    }}
+                    className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                  />
+                  Diff. VAT
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setDealOpen(true)}
+                  className="ml-auto text-[9px] font-black uppercase tracking-wider text-slate-600 hover:text-slate-900"
+                >
+                  Deal / proof
+                </button>
+              </div>
+            </div>
+          </aside>
 
-            <div
-              className={`space-y-2.5 lg:space-y-3 ${
-                mobileDetailsOpen ? 'block' : 'hidden'
-              } lg:block`}
-            >
-            <section className="hidden lg:block">
+          <section
+            id="studio-specs"
+            className={`flex-col p-2.5 ${
+              mobileQuad === 'specs' ? 'flex' : 'hidden'
+            } lg:flex`}
+          >
+            <div className={`${ADD_FLOW_PANEL} p-2.5 space-y-1.5`}>
+            <section className="shrink-0">
               <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
-                Specs on the card
+                Specs
               </h4>
               <div className="flex flex-wrap gap-1 mb-2">
                 {cardSpecChips.length ? (
@@ -1127,7 +1440,7 @@ const ListingStudioModal: React.FC<Props> = ({
             </section>
 
             <section>
-              <div className="flex items-center justify-between mb-1 gap-2">
+              <div className="flex items-center justify-between mb-1 gap-2 shrink-0">
                 <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                   Tech specs
                 </h4>
@@ -1153,22 +1466,19 @@ const ListingStudioModal: React.FC<Props> = ({
                   </button>
                 </div>
               </div>
-              <p className="hidden sm:block text-[10px] text-slate-400 font-medium mb-1.5">
-                Edit any AI value or rename the field if you disagree.
-              </p>
-              <div className="space-y-1 max-h-40 lg:max-h-56 overflow-y-auto pr-0.5">
+              <div className="grid grid-cols-2 gap-1 content-start pr-0.5">
                 {Object.keys(specs).length === 0 && (
-                  <p className="text-[10px] text-slate-400 font-medium py-2">
+                  <p className="col-span-2 text-[10px] text-slate-400 font-medium py-2">
                     No specs yet — run Parse AI or add your own.
                   </p>
                 )}
                 {Object.entries(specs).map(([key, value]) => (
                   <div
                     key={key}
-                    className="flex items-center gap-1 rounded-lg bg-white border border-slate-200 px-1.5 py-1"
+                    className="min-w-0 flex items-center gap-1 rounded-lg bg-white border border-slate-200 px-1.5 py-1"
                   >
                     <input
-                      className="w-[38%] min-w-0 text-[10px] font-bold text-slate-500 outline-none bg-transparent truncate"
+                      className="w-[42%] min-w-0 text-[10px] font-bold text-slate-500 outline-none bg-transparent truncate"
                       defaultValue={key}
                       title="Spec name (editable)"
                       onBlur={(e) => renameSpecKey(key, e.target.value)}
@@ -1187,7 +1497,7 @@ const ListingStudioModal: React.FC<Props> = ({
                     />
                     <button
                       type="button"
-                      className="p-0.5 text-slate-300 hover:text-rose-500"
+                      className="p-0.5 text-slate-300 hover:text-rose-500 shrink-0"
                       onClick={() => removeSpecKey(key)}
                       title="Remove spec"
                     >
@@ -1250,133 +1560,49 @@ const ListingStudioModal: React.FC<Props> = ({
                   </label>
                 </div>
 
-                <div className="grid grid-cols-3 gap-1.5">
-                  <label className="block space-y-0.5">
-                    <span className="text-[9px] font-black uppercase text-slate-400">Buy €</span>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-bold text-slate-900 outline-none focus:border-rose-400"
-                      value={buyPriceText}
-                      placeholder="0"
-                      onChange={(e) => setBuyPriceText(e.target.value)}
-                      onBlur={() => commitMoneyField(buyPriceText, 'buyPrice', setBuyPriceText)}
-                    />
-                  </label>
-                  <label className="block space-y-0.5">
-                    <span className="text-[9px] font-black uppercase text-slate-400">Sold €</span>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-bold text-slate-900 outline-none focus:border-rose-400"
-                      value={sellPriceText}
-                      placeholder="—"
-                      onChange={(e) => setSellPriceText(e.target.value)}
-                      onBlur={() => commitMoneyField(sellPriceText, 'sellPrice', setSellPriceText)}
-                    />
-                  </label>
-                  <label className="block space-y-0.5">
-                    <span className="text-[9px] font-black uppercase text-slate-400">Store €</span>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-bold text-slate-900 outline-none focus:border-rose-400"
-                      value={storePriceText}
-                      placeholder="—"
-                      onChange={(e) => setStorePriceText(e.target.value)}
-                      onBlur={() => commitMoneyField(storePriceText, 'storePrice', setStorePriceText)}
-                    />
-                  </label>
-                </div>
-
-                <div className="grid grid-cols-3 gap-1.5">
-                  <label className="block space-y-0.5">
-                    <span className="text-[9px] font-black uppercase text-slate-400">Buy date</span>
-                    <input
-                      type="date"
-                      className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-semibold text-slate-900 outline-none"
-                      value={buyDate}
-                      onChange={(e) => {
-                        setBuyDate(e.target.value);
-                        void persistPatch({ buyDate: e.target.value });
-                      }}
-                    />
-                  </label>
-                  <label className="block space-y-0.5">
-                    <span className="text-[9px] font-black uppercase text-slate-400">Sell date</span>
-                    <input
-                      type="date"
-                      className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-semibold text-slate-900 outline-none"
-                      value={sellDate}
-                      onChange={(e) => {
-                        setSellDate(e.target.value);
-                        void persistPatch({ sellDate: e.target.value || undefined });
-                      }}
-                    />
-                  </label>
-                  <label className="block space-y-0.5">
-                    <span className="text-[9px] font-black uppercase text-slate-400">Qty</span>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-bold text-slate-900 outline-none focus:border-rose-400"
-                      value={quantityText}
-                      placeholder="1"
-                      onChange={(e) => setQuantityText(e.target.value)}
-                      onBlur={() => {
-                        if (quantityText.trim() === '') {
-                          setQuantityText('');
-                          void persistPatch({ quantity: undefined });
-                          return;
-                        }
-                        const n = Math.max(1, Math.floor(Number(quantityText)));
-                        if (!Number.isFinite(n)) return;
-                        setQuantityText(String(n));
-                        void persistPatch({ quantity: n });
-                      }}
-                    />
-                  </label>
-                </div>
-
                 <label className="block space-y-0.5">
                   <span className="text-[9px] font-black uppercase text-slate-400">Notes / condition</span>
                   <textarea
-                    className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-semibold text-slate-900 outline-none focus:border-rose-400 min-h-[48px] resize-y"
+                    className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 font-semibold text-slate-900 outline-none focus:border-rose-400 min-h-[40px] resize-none"
                     value={notes}
                     placeholder="Condition, defects, accessories…"
                     onChange={(e) => setNotes(e.target.value)}
                     onBlur={() => void persistPatch({ comment1: notes.trim() || undefined })}
                   />
                 </label>
+              </div>
+            </section>
+            </div>
+          </section>
+          </div>
 
-                <div className="flex flex-wrap gap-3 pt-0.5">
-                  <label className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600">
-                    <input
-                      type="checkbox"
-                      checked={isDefective}
-                      onChange={(e) => {
-                        setIsDefective(e.target.checked);
-                        void persistPatch({ isDefective: e.target.checked || undefined });
-                      }}
-                      className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
-                    />
-                    Defective
-                  </label>
-                  <label className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600">
-                    <input
-                      type="checkbox"
-                      checked={usesDifferentialVat}
-                      onChange={(e) => {
-                        setUsesDifferentialVat(e.target.checked);
-                        void persistPatch({ usesDifferentialVat: e.target.checked || undefined });
-                      }}
-                      className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
-                    />
-                    Diff. VAT
-                  </label>
+          {dealOpen && (
+            <div
+              className="absolute inset-0 z-[15] flex items-end sm:items-center justify-center bg-slate-900/40 p-3"
+              onClick={() => setDealOpen(false)}
+            >
+              <div
+                className="bg-white w-full sm:max-w-xl max-h-[85%] overflow-y-auto rounded-2xl border border-slate-200 p-3 space-y-3"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="text-sm font-black text-slate-900">Deal / proof</h4>
+                  <button
+                    type="button"
+                    onClick={() => setDealOpen(false)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"
+                    aria-label="Close deal"
+                  >
+                    <X size={16} />
+                  </button>
                 </div>
-
-                <div className="grid grid-cols-1 gap-1.5 pt-1 border-t border-slate-200/80">
+                <ProofAttachmentsPanel
+                  recordId={item.id}
+                  attachments={item.proofAttachments}
+                  record={item as unknown as Record<string, unknown>}
+                  onChange={(next) => void onUpdateItem({ proofAttachments: next })}
+                />
+                <div className="grid grid-cols-1 gap-1.5 pt-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-[9px] font-black uppercase text-slate-400">Receipt</span>
                     <label className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-slate-200 text-[9px] font-black uppercase text-slate-600 cursor-pointer hover:bg-slate-50">
@@ -1451,8 +1677,6 @@ const ListingStudioModal: React.FC<Props> = ({
                     </select>
                   </label>
                 </div>
-              </div>
-            </section>
 
             <section>
               <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
@@ -1616,16 +1840,20 @@ const ListingStudioModal: React.FC<Props> = ({
                 </div>
               </div>
             </section>
+              </div>
             </div>
-          </aside>
+          )}
 
-          {/* MIDDLE — photos (top) → card gallery → generator */}
+          <div>
+          {/* PHOTOS + CARDS */}
           <section
             id="studio-photos"
-            className="border-r border-slate-100 overflow-y-auto p-3 space-y-3 lg:p-3.5 bg-transparent scroll-mt-2"
+            className={`flex-col border-b border-slate-100 p-2.5 space-y-2 ${
+              mobileQuad === 'photos' ? 'flex' : 'hidden'
+            } lg:flex`}
           >
             {/* 1. Product photos */}
-            <div className={`${ADD_FLOW_PANEL} p-3 space-y-2.5`}>
+            <div className={`${ADD_FLOW_PANEL} p-2.5 space-y-2 shrink-0`}>
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
                   <h4 className={ADD_FLOW_LABEL}>Product photos</h4>
@@ -1661,6 +1889,24 @@ const ListingStudioModal: React.FC<Props> = ({
                       >
                         <Smartphone size={11} /> Phone
                       </button>
+                      <button
+                        type="button"
+                        disabled={photoSearching || !!photoUpload}
+                        onClick={() => void handleFindWebPhotos()}
+                        className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-slate-600 hover:text-slate-900 disabled:opacity-50"
+                      >
+                        {photoSearching ? <Loader2 size={11} className="animate-spin" /> : <Search size={11} />}
+                        Web
+                      </button>
+                      <button
+                        type="button"
+                        disabled={ebayPhotoLoading || !!photoUpload}
+                        onClick={() => void handleFindEbayPhotos()}
+                        className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-slate-600 hover:text-slate-900 disabled:opacity-50"
+                      >
+                        {ebayPhotoLoading ? <Loader2 size={11} className="animate-spin" /> : <ShoppingBag size={11} />}
+                        eBay
+                      </button>
                     </>
                   ) : (
                     <>
@@ -1691,6 +1937,24 @@ const ListingStudioModal: React.FC<Props> = ({
                         {photoUpload ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
                         {photoUpload ? '…' : 'Add'}
                       </button>
+                      <button
+                        type="button"
+                        disabled={photoSearching || !!photoUpload}
+                        onClick={() => void handleFindWebPhotos()}
+                        className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-slate-600 hover:text-slate-900 disabled:opacity-50"
+                      >
+                        {photoSearching ? <Loader2 size={11} className="animate-spin" /> : <Search size={11} />}
+                        Web
+                      </button>
+                      <button
+                        type="button"
+                        disabled={ebayPhotoLoading || !!photoUpload}
+                        onClick={() => void handleFindEbayPhotos()}
+                        className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-slate-600 hover:text-slate-900 disabled:opacity-50"
+                      >
+                        {ebayPhotoLoading ? <Loader2 size={11} className="animate-spin" /> : <ShoppingBag size={11} />}
+                        eBay
+                      </button>
                     </>
                   )}
                 </div>
@@ -1711,6 +1975,96 @@ const ListingStudioModal: React.FC<Props> = ({
                   onChange={(e) => void handleAddPhotos(e.target.files)}
                 />
               </div>
+
+              {(photoSearchError || ebayPhotoError) && (
+                <p className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+                  {photoSearchError || ebayPhotoError}
+                </p>
+              )}
+
+              {photoSearchResults && photoSearchResults.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      Web · tap to add
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setPhotoSearchResults(null)}
+                      className="text-[9px] font-bold text-slate-400 hover:text-slate-700"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                  <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+                    {photoSearchResults.map((r) => (
+                      <button
+                        key={r.url}
+                        type="button"
+                        title={r.title}
+                        disabled={!!photoUpload}
+                        onClick={() => {
+                          void mergeRemotePhotoUrls([r.url]).then((ok) => {
+                            if (!ok) return;
+                            setPhotoSearchResults((prev) =>
+                              prev ? prev.filter((x) => x.url !== r.url) : null
+                            );
+                          });
+                        }}
+                        className="shrink-0 w-14 h-14 rounded-lg overflow-hidden border border-slate-200 bg-slate-50 hover:border-slate-400 disabled:opacity-50"
+                      >
+                        <img src={r.thumbnail || r.url} alt="" className="w-full h-full object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {ebayPhotoMatches && ebayPhotoMatches.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      eBay listings
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setEbayPhotoMatches(null)}
+                      className="text-[9px] font-bold text-slate-400 hover:text-slate-700"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                  <div className="space-y-1 max-h-28 overflow-y-auto pr-0.5">
+                    {ebayPhotoMatches.map((listing) => (
+                      <div
+                        key={listing.listingId}
+                        className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-1.5 py-1"
+                      >
+                        {listing.thumbnail ? (
+                          <img
+                            src={listing.thumbnail}
+                            alt=""
+                            className="w-9 h-9 rounded-md object-cover shrink-0"
+                          />
+                        ) : (
+                          <div className="w-9 h-9 rounded-md bg-slate-100 shrink-0" />
+                        )}
+                        <p className="flex-1 min-w-0 text-[10px] font-semibold text-slate-800 truncate">
+                          {listing.title}
+                        </p>
+                        <button
+                          type="button"
+                          disabled={ebayImportingId === listing.listingId || !listing.imageUrls.length}
+                          onClick={() => void importEbayListingPhotos(listing)}
+                          className="shrink-0 text-[9px] font-black uppercase text-slate-700 hover:text-slate-900 disabled:opacity-40"
+                        >
+                          {ebayImportingId === listing.listingId ? '…' : 'Add'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {photoUpload && (
                 <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 space-y-1.5">
@@ -1788,7 +2142,7 @@ const ListingStudioModal: React.FC<Props> = ({
               )}
 
               {photos.length === 0 && !(nativePhoto && photoSource === 'none') ? (
-                <div className="h-24 rounded-xl border border-dashed border-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-400">
+                <div className="h-16 rounded-xl border border-dashed border-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-400">
                   No photos yet
                 </div>
               ) : photos.length === 0 ? null : (
@@ -1812,9 +2166,8 @@ const ListingStudioModal: React.FC<Props> = ({
               )}
             </div>
 
-            {/* 2. Card gallery — select which cards appear on the item */}
-            {(photos.length > 0 || galleryLoading || gallery.length > 0 || genCards) && (
-              <div className={`${ADD_FLOW_PANEL} p-3 space-y-2`}>
+            {/* 2. Card gallery — always mounted so GEN / photos don't shove this block around */}
+            <div className={`${ADD_FLOW_PANEL} p-2.5 space-y-2 shrink-0`}>
                 <div>
                   <h4 className={ADD_FLOW_LABEL}>Card gallery</h4>
                   <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
@@ -1822,20 +2175,12 @@ const ListingStudioModal: React.FC<Props> = ({
                   </p>
                 </div>
 
-                {selectedThumb && (
-                  <img
-                    src={selectedThumb}
-                    alt="Selected card"
-                    className="hidden sm:block w-full max-h-48 object-contain rounded-xl border border-slate-200 bg-slate-50"
-                  />
-                )}
-
-                {galleryLoading ? (
-                  <div className="flex justify-center py-6 text-slate-400">
-                    <Loader2 size={20} className="animate-spin" />
+                {galleryLoading && gallery.length === 0 ? (
+                  <div className="h-[4.75rem] flex items-center justify-center text-slate-400">
+                    <Loader2 size={18} className="animate-spin" />
                   </div>
                 ) : gallery.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-slate-200 py-5 text-center text-[11px] text-slate-400 font-medium">
+                  <div className="h-[4.75rem] rounded-xl border border-dashed border-slate-200 flex items-center justify-center text-[11px] text-slate-400 font-medium">
                     Cards land here after generate
                   </div>
                 ) : (
@@ -1915,21 +2260,15 @@ const ListingStudioModal: React.FC<Props> = ({
                     })}
                   </div>
                 )}
-              </div>
-            )}
+            </div>
 
             {/* 3. Card generator */}
-            <div className={`${ADD_FLOW_PANEL} p-3 space-y-2.5`}>
+            <div className={`${ADD_FLOW_PANEL} p-2.5 space-y-1.5 shrink-0`}>
               <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <h4 className={`${ADD_FLOW_LABEL} flex items-center gap-1.5`}>
-                    <Sparkles size={11} /> AI card studio
-                  </h4>
-                  <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
-                    Cards save to gallery · pick which ones go on the item
-                  </p>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
+                <h4 className={`${ADD_FLOW_LABEL} flex items-center gap-1.5`}>
+                  <Sparkles size={11} /> Cards
+                </h4>
+                <div className="flex items-center gap-1 shrink-0 lg:hidden">
                   {genCards ? (
                     <span className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-900 text-white text-[9px] font-black uppercase">
                       <Loader2 size={11} className="animate-spin" />
@@ -1962,9 +2301,7 @@ const ListingStudioModal: React.FC<Props> = ({
                 </p>
               )}
 
-              <div className="space-y-1.5">
-                <p className={ADD_FLOW_LABEL}>AI</p>
-                <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-1.5">
                   {providerList.map((p) => {
                     const active = provider === p.id;
                     return (
@@ -1973,76 +2310,41 @@ const ListingStudioModal: React.FC<Props> = ({
                         type="button"
                         disabled={!p.available || genCards}
                         onClick={() => setProvider(p.id)}
-                        className={`text-left rounded-xl border px-2.5 py-2 transition-all ${
+                        className={`rounded-lg border px-2 py-1 text-[10px] font-black ${
                           active
-                            ? 'border-teal-400 bg-teal-50 text-teal-950 ring-1 ring-teal-200/80'
+                            ? 'border-teal-400 bg-teal-50 text-teal-950'
                             : 'border-slate-200 bg-white text-slate-800 hover:border-slate-300'
                         } ${!p.available || genCards ? 'opacity-40 cursor-not-allowed' : ''}`}
                       >
-                        <span className="block text-[11px] font-black">{p.name}</span>
-                        <span className={`block text-[10px] font-semibold mt-0.5 ${active ? 'text-teal-700/80' : 'text-slate-500'}`}>
-                          {p.blurb}
-                        </span>
+                        {p.name}
+                      </button>
+                    );
+                  })}
+              </div>
+
+              <div className="space-y-1">
+                <p className={ADD_FLOW_LABEL}>Style</p>
+                <div className="flex flex-wrap gap-1">
+                  {PRODUCT_CARD_STYLES.map((s) => {
+                    const active = styleId === s.id;
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        disabled={genCards}
+                        title={s.name}
+                        onClick={() => setStyleId(s.id)}
+                        className={`px-2 py-1 rounded-md border text-[10px] font-black leading-none ${
+                          active
+                            ? 'border-teal-400 bg-teal-50 text-teal-950'
+                            : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                        } ${genCards ? 'opacity-40 cursor-not-allowed' : ''}`}
+                      >
+                        {s.shortName || s.name}
                       </button>
                     );
                   })}
                 </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <button
-                  type="button"
-                  onClick={() => setCardOptionsOpen((o) => !o)}
-                  className="w-full flex items-center justify-between gap-2 text-left"
-                  aria-expanded={cardOptionsOpen}
-                >
-                  <p className={ADD_FLOW_LABEL}>Style · choose before generate</p>
-                  <span className="text-[9px] font-black uppercase text-slate-500 inline-flex items-center gap-0.5">
-                    {cardOptionsOpen ? (
-                      <>
-                        Hide <ChevronUp size={12} />
-                      </>
-                    ) : (
-                      <>
-                        Show <ChevronDown size={12} />
-                      </>
-                    )}
-                  </span>
-                </button>
-                {cardOptionsOpen && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-0.5">
-                    {PRODUCT_CARD_STYLES.map((s) => {
-                      const active = styleId === s.id;
-                      return (
-                        <button
-                          key={s.id}
-                          type="button"
-                          disabled={genCards}
-                          onClick={() => setStyleId(s.id)}
-                          className={`text-left rounded-xl border px-2.5 py-2 transition-all ${
-                            active
-                              ? 'border-teal-400 bg-teal-50 text-teal-950 ring-1 ring-teal-200/80'
-                              : 'border-slate-200 bg-white text-slate-800 hover:border-slate-300'
-                          } ${genCards ? 'opacity-40 cursor-not-allowed' : ''}`}
-                        >
-                          <span className="block text-[11px] font-black leading-snug">{s.name}</span>
-                          <span
-                            className={`block text-[10px] font-semibold mt-0.5 leading-snug ${
-                              active ? 'text-teal-700/80' : 'text-slate-500'
-                            }`}
-                          >
-                            {s.blurb}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-                {!cardOptionsOpen && (
-                  <p className="text-[10px] text-slate-500 font-semibold truncate">
-                    {PRODUCT_CARD_STYLES.find((s) => s.id === styleId)?.name || styleId}
-                  </p>
-                )}
               </div>
             </div>
           </section>
@@ -2050,49 +2352,36 @@ const ListingStudioModal: React.FC<Props> = ({
           {/* RIGHT — title + description */}
           <section
             id="studio-listing"
-            className="overflow-y-auto p-3 space-y-3 lg:p-3.5 bg-transparent flex flex-col scroll-mt-2"
+            className={`p-2.5 space-y-2 bg-transparent flex-col ${
+              mobileQuad === 'listing' ? 'flex' : 'hidden'
+            } lg:flex`}
           >
             {soldPriceBand && (
-              <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-2.5 py-2 space-y-1.5 shrink-0">
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-2.5 py-1.5 shrink-0 flex flex-wrap items-center gap-2">
                 <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">
-                  Your sold comps ({soldPriceBand.count})
+                  Sold {soldPriceBand.count}
                 </p>
-                <p className="text-xs text-slate-700 font-bold">
-                  €{formatEUR(soldPriceBand.low)} – €{formatEUR(soldPriceBand.high)}
-                  <span className="text-slate-400 font-medium"> · median </span>
+                <p className="text-[11px] text-slate-700 font-bold">
+                  €{formatEUR(soldPriceBand.low)}–{formatEUR(soldPriceBand.high)}
+                  <span className="text-slate-400 font-medium"> · med </span>
                   €{formatEUR(soldPriceBand.median)}
-                  <span className="text-slate-400 font-medium"> · avg sold </span>
-                  €{formatEUR(soldPriceBand.average)}
                 </p>
-                <div className="flex flex-wrap gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const m = soldPriceBand.median;
-                      setSellPriceText(String(m));
-                      setStorePriceText(String(m));
-                      void persistPatch({
-                        sellPrice: m,
-                        storePrice: m,
-                      });
-                    }}
-                    className="px-2 py-1 rounded-md bg-emerald-600 text-white text-[10px] font-bold"
-                    title="Set target sell + store price to your median sold price"
-                  >
-                    Use median as target
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const m = soldPriceBand.median;
-                      setStorePriceText(String(m));
-                      void persistPatch({ storePrice: m });
-                    }}
-                    className="px-2 py-1 rounded-md bg-white border border-emerald-200 text-emerald-800 text-[10px] font-bold"
-                  >
-                    Use as store price
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const m = soldPriceBand.median;
+                    setSellPriceText(String(m));
+                    setStorePriceText(String(m));
+                    void persistPatch({
+                      sellPrice: m,
+                      storePrice: m,
+                    });
+                  }}
+                  className="px-2 py-1 rounded-md bg-emerald-600 text-white text-[10px] font-bold"
+                  title="Set target sell + store price to your median sold price"
+                >
+                  Use median
+                </button>
               </div>
             )}
 
@@ -2126,7 +2415,7 @@ const ListingStudioModal: React.FC<Props> = ({
               />
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-white overflow-hidden flex-1 min-h-[140px] lg:min-h-[200px] flex flex-col">
+            <div className="rounded-xl border border-slate-200 bg-white overflow-hidden min-h-[140px] flex flex-col">
               <div className="px-2.5 py-1.5 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
                 <div>
                   <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">
@@ -2163,7 +2452,7 @@ const ListingStudioModal: React.FC<Props> = ({
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                className="w-full flex-1 min-h-[120px] lg:min-h-[180px] px-2.5 py-2 text-xs text-slate-800 outline-none resize-none leading-relaxed"
+                className="w-full flex-1 min-h-[80px] lg:min-h-0 px-2.5 py-2 text-xs text-slate-800 outline-none resize-none leading-relaxed"
                 placeholder="Generate German listing…"
               />
             </div>
@@ -2174,7 +2463,7 @@ const ListingStudioModal: React.FC<Props> = ({
               </div>
             )}
 
-            <div className="hidden lg:flex flex-wrap gap-1.5 pt-1 shrink-0">
+            <div className="lg:hidden flex flex-wrap gap-1.5 pt-1 shrink-0">
               <button
                 type="button"
                 disabled={genListing || saving}
@@ -2195,9 +2484,17 @@ const ListingStudioModal: React.FC<Props> = ({
               </button>
             </div>
           </section>
+          </div>
         </div>
 
         <footer className="lg:hidden shrink-0 border-t border-slate-200 bg-white px-2.5 py-2 flex gap-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+          <button
+            type="button"
+            onClick={() => setDealOpen(true)}
+            className="inline-flex items-center justify-center px-3 py-2.5 rounded-xl border border-slate-200 text-slate-800 text-[10px] font-black uppercase"
+          >
+            Deal
+          </button>
           <button
             type="button"
             disabled={genListing || saving}
@@ -2221,95 +2518,131 @@ const ListingStudioModal: React.FC<Props> = ({
 
       {previewPhotoIndex !== null && photos[previewPhotoIndex] && (
         <div
-          className="absolute inset-0 z-[20] flex flex-col bg-slate-950/95"
+          className="absolute inset-0 z-[20] flex items-center justify-center p-3 sm:p-5 bg-slate-900/50 backdrop-blur-[3px]"
           onClick={() => setPreviewPhotoIndex(null)}
           role="dialog"
           aria-modal="true"
           aria-label="Photo preview"
         >
           <div
-            className="flex items-center justify-between gap-2 px-3 py-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] shrink-0"
+            className="w-full max-w-[440px] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="text-xs font-black uppercase tracking-widest text-white/80">
-              Photo {previewPhotoIndex + 1} / {photos.length}
-              {previewPhotoIndex === 0 ? ' · Main' : ''}
-            </p>
-            <button
-              type="button"
-              onClick={() => setPreviewPhotoIndex(null)}
-              className="p-2 rounded-xl bg-white/10 text-white hover:bg-white/20"
-              aria-label="Close preview"
-            >
-              <X size={18} />
-            </button>
-          </div>
+            <div className="flex items-center gap-2 px-3 py-2.5 border-b border-slate-100">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                Photo {previewPhotoIndex + 1} / {photos.length}
+              </p>
+              {previewPhotoIndex === 0 && (
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-teal-50 text-teal-700 text-[9px] font-black uppercase tracking-wider">
+                  <Star size={9} className="fill-teal-500 text-teal-600" />
+                  Main
+                </span>
+              )}
+              <div className="ml-auto flex items-center gap-1">
+                <a
+                  href={photos[previewPhotoIndex]}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100"
+                  title="Open original"
+                  aria-label="Open original"
+                >
+                  <Download size={14} />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setPreviewPhotoIndex(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100"
+                  aria-label="Close preview"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
 
-          <div
-            className="flex-1 min-h-0 flex items-center justify-center px-3 py-2"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <img
-              src={photos[previewPhotoIndex]}
-              alt=""
-              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
-              draggable={false}
-            />
-          </div>
+            <div className="relative bg-slate-950">
+              <img
+                src={photos[previewPhotoIndex]}
+                alt=""
+                className="w-full max-h-[min(52vh,360px)] object-contain bg-slate-950"
+                draggable={false}
+              />
+              {photos.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    disabled={previewPhotoIndex <= 0}
+                    onClick={() => setPreviewPhotoIndex((i) => (i === null ? i : Math.max(0, i - 1)))}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full bg-white/90 text-slate-800 shadow-md hover:bg-white disabled:opacity-25"
+                    aria-label="Previous photo"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={previewPhotoIndex >= photos.length - 1}
+                    onClick={() =>
+                      setPreviewPhotoIndex((i) =>
+                        i === null ? i : Math.min(photos.length - 1, i + 1)
+                      )
+                    }
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full bg-white/90 text-slate-800 shadow-md hover:bg-white disabled:opacity-25"
+                    aria-label="Next photo"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </>
+              )}
+            </div>
 
-          <div
-            className="shrink-0 px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex gap-2"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              type="button"
-              disabled={previewPhotoIndex === 0 || saving}
-              onClick={() => void handleSetPhotoMain(photos[previewPhotoIndex])}
-              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-3 rounded-xl bg-white text-slate-900 text-[10px] font-black uppercase disabled:opacity-40"
-            >
-              <Star size={14} className={previewPhotoIndex === 0 ? 'fill-teal-500 text-teal-600' : ''} />
-              {previewPhotoIndex === 0 ? 'Main photo' : 'Make main'}
-            </button>
-            <button
-              type="button"
-              disabled={saving}
-              onClick={() => void handleRemovePhoto(photos[previewPhotoIndex])}
-              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-3 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50"
-            >
-              <Trash2 size={14} />
-              Remove
-            </button>
-          </div>
+            {photos.length > 1 && (
+              <div className="flex gap-1.5 overflow-x-auto px-3 pt-2.5">
+                {photos.map((url, i) => (
+                  <button
+                    key={url}
+                    type="button"
+                    onClick={() => setPreviewPhotoIndex(i)}
+                    className={`shrink-0 w-10 h-10 rounded-lg overflow-hidden border-2 ${
+                      i === previewPhotoIndex
+                        ? 'border-slate-900'
+                        : 'border-transparent opacity-70 hover:opacity-100'
+                    }`}
+                    aria-label={`Photo ${i + 1}`}
+                  >
+                    <img src={url} alt="" className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
 
-          {photos.length > 1 && (
-            <div
-              className="absolute left-0 right-0 top-1/2 -translate-y-1/2 flex justify-between px-1 pointer-events-none"
-              onClick={(e) => e.stopPropagation()}
-            >
+            <div className="p-3 flex gap-2">
               <button
                 type="button"
-                disabled={previewPhotoIndex <= 0}
-                onClick={() => setPreviewPhotoIndex((i) => (i === null ? i : Math.max(0, i - 1)))}
-                className="pointer-events-auto p-2.5 rounded-full bg-black/40 text-white disabled:opacity-20"
-                aria-label="Previous photo"
+                disabled={previewPhotoIndex === 0 || saving}
+                onClick={() => void handleSetPhotoMain(photos[previewPhotoIndex])}
+                className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider disabled:opacity-45 ${
+                  previewPhotoIndex === 0
+                    ? 'bg-teal-50 text-teal-800 border border-teal-200'
+                    : 'bg-slate-900 text-white hover:bg-slate-800'
+                }`}
               >
-                <ChevronLeft size={20} />
+                <Star
+                  size={13}
+                  className={previewPhotoIndex === 0 ? 'fill-teal-500 text-teal-600' : ''}
+                />
+                {previewPhotoIndex === 0 ? 'Main photo' : 'Make main'}
               </button>
               <button
                 type="button"
-                disabled={previewPhotoIndex >= photos.length - 1}
-                onClick={() =>
-                  setPreviewPhotoIndex((i) =>
-                    i === null ? i : Math.min(photos.length - 1, i + 1)
-                  )
-                }
-                className="pointer-events-auto p-2.5 rounded-full bg-black/40 text-white disabled:opacity-20"
-                aria-label="Next photo"
+                disabled={saving}
+                onClick={() => void handleRemovePhoto(photos[previewPhotoIndex])}
+                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black uppercase tracking-wider hover:bg-rose-100 disabled:opacity-50"
               >
-                <ChevronRight size={20} />
+                <Trash2 size={13} />
+                Remove
               </button>
             </div>
-          )}
+          </div>
         </div>
       )}
     </div>,

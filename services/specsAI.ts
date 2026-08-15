@@ -134,6 +134,41 @@ function getProvider(): Provider | null {
   return list.length > 0 ? list[0] : null;
 }
 
+const NO_AI_MESSAGE =
+  'No AI configured. Add GEMINI_API_KEY, GROQ_API_KEY or OPENAI_API_KEY to .env (same keys as product cards), or VITE_GROQ_API_KEY / VITE_GEMINI_API_KEY, then restart npm run dev.';
+
+async function callServerAI(
+  prompt: string,
+  opts?: { json?: boolean; maxTokens?: number }
+): Promise<string> {
+  const res = await fetch('/api/ai-text', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      prompt,
+      mode: opts?.json ? 'json' : 'text',
+      maxTokens: opts?.maxTokens ?? 1024,
+    }),
+  });
+  const data = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
+  if (!res.ok) {
+    throw new Error(data.error || `Server AI ${res.status}`);
+  }
+  const text = String(data.text || '').trim();
+  if (!text) throw new Error('Server AI returned empty text');
+  return text;
+}
+
+function parseSpecsJson(text: string): GenerateSpecsResult {
+  const clean = text.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
+  const parsed = JSON.parse(clean) as GenerateSpecsResult;
+  return {
+    specs: parsed.specs || {},
+    standardizedName: parsed.standardizedName,
+    vendor: parsed.vendor,
+  };
+}
+
 function buildPrompt(name: string, rawCategory: string, knownKeys: string[]): string {
   let fieldInstruction = '';
   if (knownKeys.length > 0) {
@@ -379,41 +414,54 @@ export async function generateItemSpecs(
   knownKeys: string[] = []
 ): Promise<GenerateSpecsResult> {
   const providers = getAvailableProviders();
-  if (providers.length === 0) {
-    throw new Error(
-      'No AI configured. Add one or more to .env: VITE_GROQ_API_KEY, VITE_OLLAMA_URL, VITE_GEMINI_API_KEY, VITE_TOGETHER_API_KEY, VITE_MISTRAL_API_KEY.'
-    );
-  }
   const prompt = buildPrompt(name, rawCategory, knownKeys);
+  if (providers.length === 0) {
+    try {
+      const raw = parseSpecsJson(await callServerAI(prompt, { json: true, maxTokens: 1536 }));
+      return finalizeGeneratedSpecs(name, rawCategory, knownKeys, raw);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new Error(msg.includes('No AI configured') ? NO_AI_MESSAGE : msg);
+    }
+  }
   let lastError: Error | null = null;
   for (const provider of providers) {
     try {
       const raw = await callProviderSpecs(provider, prompt);
-      const afterGpu = correctGpuVramInSpecs(name, raw.standardizedName, raw.specs || {});
-      const corrected = correctRamSpecsFromPartNumber(
-        name,
-        raw.standardizedName,
-        afterGpu,
-        rawCategory
-      );
-      const storageFixed = applyStorageKindToParsedItem({
-        name: raw.standardizedName || name,
-        category: rawCategory,
-        subCategory: rawCategory,
-        specs: corrected,
-        sourceText: name,
-      });
-      return {
-        ...raw,
-        standardizedName: storageFixed.name,
-        specs: filterSpecsToEssentialKeys(storageFixed.specs, knownKeys),
-      };
+      return finalizeGeneratedSpecs(name, rawCategory, knownKeys, raw);
     } catch (e) {
       lastError = e instanceof Error ? e : new Error(String(e));
       console.warn(`Specs AI [${provider}] failed, trying next:`, lastError.message);
     }
   }
   throw lastError ?? new Error('All AI providers failed.');
+}
+
+function finalizeGeneratedSpecs(
+  name: string,
+  rawCategory: string,
+  knownKeys: string[],
+  raw: GenerateSpecsResult
+): GenerateSpecsResult {
+  const afterGpu = correctGpuVramInSpecs(name, raw.standardizedName, raw.specs || {});
+  const corrected = correctRamSpecsFromPartNumber(
+    name,
+    raw.standardizedName,
+    afterGpu,
+    rawCategory
+  );
+  const storageFixed = applyStorageKindToParsedItem({
+    name: raw.standardizedName || name,
+    category: rawCategory,
+    subCategory: rawCategory,
+    specs: corrected,
+    sourceText: name,
+  });
+  return {
+    ...raw,
+    standardizedName: storageFixed.name,
+    specs: filterSpecsToEssentialKeys(storageFixed.specs, knownKeys),
+  };
 }
 
 async function getRawJsonFromProvider(provider: Provider, prompt: string, maxTokens: number = 512): Promise<string> {
@@ -531,7 +579,14 @@ async function getRawJsonFromProvider(provider: Provider, prompt: string, maxTok
 /** Call AI with a custom prompt; tries each configured provider until one succeeds. */
 async function getRawJsonFromAI(prompt: string, maxTokens: number = 512): Promise<string> {
   const providers = getAvailableProviders();
-  if (providers.length === 0) throw new Error('No AI configured. Add at least one key to .env.');
+  if (providers.length === 0) {
+    try {
+      return await callServerAI(prompt, { json: true, maxTokens });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new Error(msg.includes('No AI configured') ? NO_AI_MESSAGE : msg);
+    }
+  }
   let lastError: Error | null = null;
   for (const provider of providers) {
     try {
@@ -676,7 +731,14 @@ async function getRawTextFromProvider(provider: Provider, prompt: string, maxTok
 
 async function getRawTextFromAI(prompt: string, maxTokens: number = DEFAULT_TEXT_MAX_TOKENS): Promise<string> {
   const providers = getAvailableProviders();
-  if (providers.length === 0) throw new Error('No AI configured. Add at least one key to .env.');
+  if (providers.length === 0) {
+    try {
+      return await callServerAI(prompt, { maxTokens });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new Error(msg.includes('No AI configured') ? NO_AI_MESSAGE : msg);
+    }
+  }
   let lastError: Error | null = null;
   for (const provider of providers) {
     try {

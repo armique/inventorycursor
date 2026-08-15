@@ -3,7 +3,22 @@ import type { StoreCatalogPayload } from '../../services/firebaseService';
 
 export type StoreItem = NonNullable<StoreCatalogPayload['items']>[number];
 
+export function getStorefrontPrintMeta(item: {
+  specs?: Record<string, string | number>;
+}): { weight?: string; time?: string } | null {
+  const specs = item.specs;
+  if (!specs) return null;
+  const weight = specs['Filament Weight'];
+  const time = specs['Print Time'];
+  if (weight == null && time == null) return null;
+  return {
+    ...(weight != null ? { weight: String(weight) } : {}),
+    ...(time != null ? { time: String(time) } : {}),
+  };
+}
+
 export const PREFERRED_SPEC_ORDER = [
+  'Filament Weight', 'Print Time', 'Filament Type', 'Filament Color',
   'CPU', 'Prozessor', 'Processor', 'GPU', 'Grafikkarte', 'Graphics', 'RAM', 'Memory', 'Speicher',
   'Motherboard', 'Mainboard', 'Board', 'Storage', 'SSD', 'HDD', 'Festplatte', 'PSU', 'Netzteil', 'Power',
   'Case', 'Gehäuse', 'Cooler', 'Kühler', 'CPU Cooler', 'Cores', 'Threads', 'Socket', 'Chipset',

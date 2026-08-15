@@ -4,7 +4,7 @@ import {
   Package, Settings, RefreshCw, Trash2, CloudUpload, LayoutDashboard,
   Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe, Layers,
   Printer, LayoutTemplate, PackageSearch, ChevronDown, ChevronLeft, ChevronRight, Plus, Images,
-  CircuitBoard, Radar, Coins,
+  CircuitBoard, Radar, Coins, ShoppingBag,
 } from 'lucide-react';
 import PanelBreadcrumbs from './PanelBreadcrumbs';
 import { usePanelLocale } from '../context/PanelLocaleContext';
@@ -119,7 +119,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
 
   /** Inventory/trash use internal scroll + docked bulk bar; eBay tools / EST / bulk entry use full-width workspace layout. */
   const isDockedPanelPage =
-    /^\/panel\/(inventory|trash|ebay-store-pull|est|dealwatch|add-bulk)(\/|$)/.test(location.pathname);
+    /^\/panel\/(inventory|trash|ebay-store-pull|est|dealwatch|add-bulk|3d-print)(\/|$)/.test(location.pathname);
 
   const requireAuth = isCloudEnabled && authReady && !authUser;
 
@@ -244,6 +244,8 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
       label: 'Inventory',
       warnCount: staleDealCount,
     },
+    { to: '/panel/sell-today', icon: <ShoppingBag size={18} />, label: 'Sell today' },
+    { to: '/panel/3d-print', icon: <Printer size={18} />, label: '3D Print' },
     { to: '/panel/dealwatch', icon: <Radar size={18} />, label: 'Dealwatch' },
     { to: '/panel/reinvest', icon: <Coins size={18} />, label: 'Reinvest' },
     { to: '/panel/combo-lab', icon: <CircuitBoard size={18} />, label: 'Combo Lab' },
@@ -254,7 +256,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   ];
 
   const moreNav = [
-    { to: '/panel/3d-print', icon: <Printer size={16} />, label: '3D Print' },
     { to: '/panel/add-bulk', icon: <Layers size={16} />, label: 'Bulk entry' },
     { to: '/panel/invoices', icon: <Receipt size={16} />, label: 'Invoices' },
     { to: '/panel/action-history', icon: <History size={16} />, label: 'Action history' },
@@ -270,7 +271,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     location.pathname.startsWith('/panel/add/') ||
     location.pathname.startsWith('/panel/builder') ||
     location.pathname === '/panel/add-bulk' ||
-    location.pathname === '/panel/3d-print' ||
     location.pathname === '/panel/import' ||
     (location.pathname === '/panel/ebay-store-pull' && location.search.includes('tab=import'));
 
@@ -460,7 +460,8 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
         {/* Mobile global search — skip on Stock (has its own search) */}
         {!location.pathname.startsWith('/panel/inventory') &&
           !location.pathname.startsWith('/panel/edit') &&
-          !location.pathname.startsWith('/panel/dealwatch') && (
+          !location.pathname.startsWith('/panel/dealwatch') &&
+          !location.pathname.startsWith('/panel/3d-print') && (
           <div className="md:hidden mb-4">
             <GlobalSearch items={items} expenses={expenses} businessSettings={businessSettings} />
           </div>
@@ -583,7 +584,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
           {[
             { to: '/panel/dashboard', icon: <LayoutDashboard size={18} />, label: 'Home' },
             { to: '/panel/inventory', icon: <Package size={18} />, label: 'Stock' },
-            { to: '/panel/dealwatch', icon: <Radar size={18} />, label: 'Deals' },
+            { to: '/panel/3d-print', icon: <Printer size={18} />, label: '3D' },
             { to: '/panel/add', icon: <Plus size={18} />, label: 'Add' },
             { action: 'settings' as const, icon: <Settings size={18} />, label: 'Settings' },
           ].map((item) => {

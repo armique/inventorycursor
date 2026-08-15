@@ -12,7 +12,7 @@ export const DEFAULT_CATEGORIES: Record<string, string[]> = {
   'Peripherals': ['Monitors', 'Keyboards', 'Mice', 'Headsets', 'Microphones', 'Webcams'],
   'Network': ['Routers', 'Switches', 'NAS', 'Cables'],
   'Software': ['OS Licenses', 'Office', 'Antivirus'],
-  'Misc': ['Cables', 'Adapters', 'Tools', 'Merchandise', 'Spare Parts']
+  'Misc': ['Cables', 'Adapters', 'Tools', 'Merchandise', 'Spare Parts', '3D Printed']
 };
 
 export const HIERARCHY_CATEGORIES = DEFAULT_CATEGORIES;

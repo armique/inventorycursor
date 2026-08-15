@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { formatEUR } from '../../utils/formatMoney';
 import { ChevronLeft, ChevronRight, Heart, MessageCircle, Share2 } from 'lucide-react';
 import type { StorefrontTexts } from './storefrontTexts';
-import { catalogItemImageList, type StoreItem } from './storefrontUtils';
+import { catalogItemImageList, getStorefrontPrintMeta, type StoreItem } from './storefrontUtils';
 import ResilientStoreImage from './ResilientStoreImage';
 
 interface Props {
@@ -33,7 +33,11 @@ const ProductCard: React.FC<Props> = ({
 }) => {
   const [galleryIndex, setGalleryIndex] = useState(0);
   const images = useMemo(() => catalogItemImageList(item), [item.imageUrl, item.storeGalleryUrls]);
+  const printMeta = useMemo(() => getStorefrontPrintMeta(item), [item.specs]);
   const isList = layout === 'list';
+  const printLine = printMeta
+    ? [printMeta.weight, printMeta.time].filter(Boolean).join(' · ')
+    : '';
 
   const cardShell = darkMode
     ? 'bg-zinc-900 border-zinc-800 hover:border-zinc-700'
@@ -162,6 +166,9 @@ const ProductCard: React.FC<Props> = ({
           <h2 className={`font-semibold mt-1 line-clamp-2 text-base leading-snug ${darkMode ? 'text-white' : 'text-zinc-900'}`}>
             {item.name}
           </h2>
+          {printLine && (
+            <p className={`text-xs mt-1 ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>{printLine}</p>
+          )}
           <div className="mt-3 flex items-center justify-between gap-3">
             {priceBlock}
             <div className="w-40 shrink-0">{contactButton}</div>
@@ -184,6 +191,7 @@ const ProductCard: React.FC<Props> = ({
       </h2>
       <p className={`text-xs mt-1 ${darkMode ? 'text-zinc-500' : 'text-zinc-500'}`}>
         {item.category}{item.subCategory ? ` · ${item.subCategory}` : ''}
+        {printLine ? ` · ${printLine}` : ''}
       </p>
       <div className="mt-auto pt-4 space-y-3">
         {priceBlock}

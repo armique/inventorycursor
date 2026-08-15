@@ -4,7 +4,7 @@
  */
 
 import type { InventoryItem } from '../types';
-import { normalizeListingText, scoreListingTitleMatch } from './ebayListingMatch';
+import { listingHardwareCompatible, normalizeListingText, scoreListingTitleMatch } from './ebayListingMatch';
 import { nameSimilarity, productModelKeys, soldCompsModelCompatible } from './inventorySoldComps';
 import type { EbayMyListing } from '../services/ebayService';
 import { isListingPresenceEligible, isListingWatchCandidate } from './listingWatch';
@@ -226,8 +226,12 @@ export function bestTitleMatch(
   if (name.length < 3 || !titles.length) return null;
   let best: { hit: ListingTitleHit; score: number } | null = null;
   for (const hit of titles) {
+    if (!listingHardwareCompatible(name, hit.title) && !opts?.sku) continue;
     const score = scoreListingTitleMatch(name, hit.title, undefined, opts?.sku);
-    const simBoost = nameSimilarity(name, hit.title) * 80;
+    if (score <= 0) continue;
+    const simBoost = listingHardwareCompatible(name, hit.title)
+      ? nameSimilarity(name, hit.title) * 80
+      : 0;
     const combined = Math.max(score, simBoost);
     if (!best || combined > best.score) best = { hit, score: combined };
   }
@@ -337,6 +341,37 @@ export function assignKaTitlesToItems(
   return out;
 }
 
+/**
+ * Greedy 1:1 — each eBay listing links to at most one inventory row.
+ * Stops two "PC Bundle …" rows from claiming the same live listing.
+ */
+export function assignEbayTitlesToItems(
+  items: InventoryItem[],
+  titles: ListingTitleHit[],
+): Map<string, { hit: ListingTitleHit; score: number }> {
+  type Pair = { itemId: string; titleIdx: number; score: number; hit: ListingTitleHit };
+  const pairs: Pair[] = [];
+  const eligible = items.filter(isListingPresenceEligible);
+  for (const item of eligible) {
+    titles.forEach((hit, titleIdx) => {
+      const m = bestTitleMatch(item.name, [hit], { sku: item.ebaySku });
+      if (!m) return;
+      pairs.push({ itemId: item.id, titleIdx, score: m.score, hit });
+    });
+  }
+  pairs.sort((a, b) => b.score - a.score);
+  const usedItems = new Set<string>();
+  const usedTitles = new Set<number>();
+  const out = new Map<string, { hit: ListingTitleHit; score: number }>();
+  for (const p of pairs) {
+    if (usedItems.has(p.itemId) || usedTitles.has(p.titleIdx)) continue;
+    usedItems.add(p.itemId);
+    usedTitles.add(p.titleIdx);
+    out.set(p.itemId, { hit: p.hit, score: p.score });
+  }
+  return out;
+}
+
 function findListingPrice(
   listings: EbayMyListing[],
   listingId?: string
@@ -384,11 +419,13 @@ export function applyEbayPresenceToItems(
   }));
   const parentMatched = new Set<string>();
   const syncedAt = new Date().toISOString();
+  const assigned = assignEbayTitlesToItems(items, titles);
+  const liveListingIds = new Set(listings.map((l) => l.listingId).filter(Boolean));
 
   const next = items.map((item) => {
     if (!isListingPresenceEligible(item)) return item;
 
-    const m = bestTitleMatch(item.name, titles, { sku: item.ebaySku });
+    const m = assigned.get(item.id);
     if (m) {
       if (item.isPC || item.isBundle) parentMatched.add(item.id);
       const live =
@@ -406,6 +443,18 @@ export function applyEbayPresenceToItems(
         maybeSoldHint: cleared,
         listingDisappearedAt: cleared ? item.listingDisappearedAt : undefined,
         maybeSoldDismissedAt: cleared ? item.maybeSoldDismissedAt : undefined,
+      };
+    }
+
+    // Wrong auto-link: listing is still live but is a different product (e.g. another PC Bundle).
+    if (item.ebayListingId && liveListingIds.has(item.ebayListingId)) {
+      return {
+        ...item,
+        listedOnEbay: false,
+        listedViaParent: false,
+        ebayListingId: undefined,
+        liveEbayListPrice: undefined,
+        listingPresenceSyncedAt: syncedAt,
       };
     }
 

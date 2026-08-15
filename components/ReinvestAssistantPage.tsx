@@ -23,6 +23,9 @@ import ReinvestCategoryBudgets from './reinvest/ReinvestCategoryBudgets';
 import ReinvestStockGaps from './reinvest/ReinvestStockGaps';
 import ReinvestTodayBriefPanel from './reinvest/ReinvestTodayBrief';
 import ReinvestScenarios from './reinvest/ReinvestScenarios';
+import CapitalReserveCard from './CapitalReserveCard';
+import MaxBuyPanel from './MaxBuyPanel';
+import { computeRepeatWinners } from '../utils/repeatWinners';
 import './reinvest/reinvest.css';
 
 type Props = {
@@ -120,6 +123,8 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
     [restock],
   );
 
+  const winners = useMemo(() => computeRepeatWinners(items, 6), [items]);
+
   const displayRestock = useMemo(() => {
     if (intentFilter === 'kit') return restock.filter((g) => g.kind === 'bundle');
     if (intentFilter === 'standalone') return restock.filter((g) => g.kind !== 'bundle');
@@ -198,6 +203,23 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
           </button>
         </div>
       </header>
+
+      {view === 'buylist' && (
+        <div className="space-y-3">
+          <CapitalReserveCard cashOnHand={(gamification.bankBalance || 0) + (gamification.circulationBalance || 0)} />
+          <MaxBuyPanel items={items} compact />
+          {winners.length > 0 && (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+              <p className="text-[10px] font-black uppercase tracking-widest text-emerald-800 mb-1.5">
+                Repeat winners · &gt;30% in &lt;14d
+              </p>
+              <p className="text-[12px] font-semibold text-emerald-950">
+                {winners.map((w) => `${w.label} (${w.soldCount}× · ${w.avgDays}d)`).join(' · ')}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {view === 'buylist' && (
         <div className="rx-panel grid grid-cols-3 divide-x divide-[var(--rx-line)] overflow-hidden">

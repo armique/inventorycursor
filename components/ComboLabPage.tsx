@@ -30,6 +30,7 @@ import {
   type SkippedComboKit,
 } from '../utils/cpuMoboComboAnalytics';
 import { getContainerKindLabel } from '../utils/containerMembership';
+import { suggestDeadStockCombos } from '../utils/deadStockCombos';
 
 interface Props {
   items: InventoryItem[];
@@ -111,6 +112,7 @@ const ComboLabPage: React.FC<Props> = ({ items, businessSettings, onUpdate }) =>
     [items, summary.rows]
   );
   const rebuySuggestions = rebuyAnalysis.suggestions;
+  const sittingCombos = useMemo(() => suggestDeadStockCombos(items, 4), [items]);
 
   const includedKits = useMemo(() => {
     const out: Array<{
@@ -212,6 +214,20 @@ const ComboLabPage: React.FC<Props> = ({ items, businessSettings, onUpdate }) =>
           </Link>
         </div>
       </header>
+
+      {sittingCombos.length > 0 && (
+        <div className="rounded-2xl border border-violet-200 bg-violet-50 p-3 space-y-1.5">
+          <p className="text-[10px] font-black uppercase tracking-widest text-violet-800">
+            Sitting stock that should be a kit
+          </p>
+          {sittingCombos.map((c) => (
+            <p key={c.id} className="text-xs font-bold text-violet-950">
+              {c.items.map((i) => i.name).join(' + ')}
+              <span className="font-semibold text-violet-700"> · {c.liftNote}</span>
+            </p>
+          ))}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2 items-center">
         <select
