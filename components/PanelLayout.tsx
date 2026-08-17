@@ -4,7 +4,7 @@ import {
   Package, Settings, RefreshCw, Trash2, CloudUpload, LayoutDashboard,
   Loader2, Cloud, CheckCircle2, X, Receipt, History, Globe, Layers,
   Printer, LayoutTemplate, PackageSearch, ChevronDown, ChevronLeft, ChevronRight, Plus, Images,
-  CircuitBoard, Radar, Coins, ShoppingBag,
+  CircuitBoard, Radar, Coins, ShoppingBag, ShoppingCart,
 } from 'lucide-react';
 import PanelBreadcrumbs from './PanelBreadcrumbs';
 import { usePanelLocale } from '../context/PanelLocaleContext';
@@ -27,6 +27,8 @@ import { defaultGamificationState, type GamificationState } from '../utils/gamif
 import { useGamificationEvents } from '../hooks/useGamificationEvents';
 import GamificationEventLayer from './gamification/GamificationEventLayer';
 import { useStaleDealCount } from '../hooks/useInboxAlerts';
+import { loadEbayOrderIndex } from '../services/ebayOrderIndex';
+import { countOpenEbayOrderLines } from '../utils/ebayOpenOrders';
 
 interface SyncState {
   status: 'idle' | 'pending' | 'syncing' | 'success' | 'error';
@@ -78,6 +80,19 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   }, [sidebarCollapsed]);
   /** Deals unresolved for 3+ days — flagged on Inventory, since the Inbox lives there. */
   const staleDealCount = useStaleDealCount();
+  const [orderCacheTick, setOrderCacheTick] = React.useState(0);
+  React.useEffect(() => {
+    const bump = () => setOrderCacheTick((n) => n + 1);
+    window.addEventListener('ebay-order-index-updated', bump);
+    return () => window.removeEventListener('ebay-order-index-updated', bump);
+  }, []);
+  const openEbayOrderCount = React.useMemo(() => {
+    try {
+      return countOpenEbayOrderLines(items, loadEbayOrderIndex().orders);
+    } catch {
+      return 0;
+    }
+  }, [items, orderCacheTick]);
   const mobileRedirectSignIn = prefersRedirectSignIn();
 
   // Lock document scroll while the panel shell owns nested scroll regions (esp. inventory on mobile).
@@ -119,7 +134,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
 
   /** Inventory/trash use internal scroll + docked bulk bar; eBay tools / EST / bulk entry use full-width workspace layout. */
   const isDockedPanelPage =
-    /^\/panel\/(inventory|trash|ebay-store-pull|est|dealwatch|add-bulk|3d-print)(\/|$)/.test(location.pathname);
+    /^\/panel\/(inventory|trash|ebay-store-pull|ebay-orders|est|dealwatch|add-bulk|3d-print)(\/|$)/.test(location.pathname);
 
   const requireAuth = isCloudEnabled && authReady && !authUser;
 
@@ -245,6 +260,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
       warnCount: staleDealCount,
     },
     { to: '/panel/sell-today', icon: <ShoppingBag size={18} />, label: 'Sell today' },
+    { to: '/panel/ebay-orders', icon: <ShoppingCart size={18} />, label: 'eBay Orders', count: openEbayOrderCount, countTitle: 'Open eBay orders to bind' },
     { to: '/panel/3d-print', icon: <Printer size={18} />, label: '3D Print' },
     { to: '/panel/dealwatch', icon: <Radar size={18} />, label: 'Dealwatch' },
     { to: '/panel/reinvest', icon: <Coins size={18} />, label: 'Reinvest' },
@@ -355,13 +371,14 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
                 </button>
               );
             }
-            const { to, icon, label, alert, count, warnCount } = item as {
+            const { to, icon, label, alert, count, warnCount, countTitle } = item as {
               to: string;
               icon: React.ReactNode;
               label: string;
               alert?: boolean;
               count?: number;
               warnCount?: number;
+              countTitle?: string;
             };
             const [navPath, navQuery] = to.split('?');
             const isActive = navQuery
@@ -392,7 +409,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
                 {!sidebarCollapsed && typeof count === 'number' && count > 0 && (
                   <span
                     className="ml-auto min-w-[20px] h-5 px-1.5 rounded-full bg-violet-500 text-white text-[10px] font-black flex items-center justify-center tabular-nums"
-                    title={`${count} AI change${count === 1 ? '' : 's'} awaiting review`}
+                    title={countTitle || `${count} AI change${count === 1 ? '' : 's'} awaiting review`}
                   >
                     {count > 99 ? '99+' : count}
                   </span>

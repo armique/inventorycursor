@@ -125,7 +125,7 @@ function orderRecencyBonus(orderDate: string | null): number {
   return 0;
 }
 
-function buildClaimedLineKeys(items: InventoryItem[], orders: EbayOrderRecord[]): Set<string> {
+export function buildClaimedLineKeys(items: InventoryItem[], orders: EbayOrderRecord[]): Set<string> {
   const ordersById = new Map(orders.map((o) => [o.orderId, o]));
   const claimed = new Set<string>();
 

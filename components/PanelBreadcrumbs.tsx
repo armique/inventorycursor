@@ -11,6 +11,7 @@ const LABELS: Record<string, string> = {
   'bulk-imports': 'Bulk imports',
   builder: 'Builder',
   'ebay-store-pull': 'eBay Store Pull',
+  'ebay-orders': 'eBay Orders',
   dealwatch: 'Dealwatch',
   reinvest: 'Reinvest',
   'card-gallery': 'Card gallery',

@@ -27,6 +27,7 @@ const ThreeDPrintPage = lazy(() => import('./components/ThreeDPrintPage'));
 const ProductCardGalleryPage = lazy(() => import('./components/ProductCardGalleryPage'));
 const BulkImportHistoryPage = lazy(() => import('./components/BulkImportHistoryPage'));
 const SellTodayPage = lazy(() => import('./components/SellTodayPage'));
+const EbayOrdersPage = lazy(() => import('./components/EbayOrdersPage'));
 const EditItemRoute = lazy(() => import('./components/EditItemRoute'));
 const AddHubPage = lazy(() => import('./components/AddHubPage'));
 const AddItemRoute = lazy(() => import('./components/AddItemRoute'));
@@ -2212,6 +2213,16 @@ const App: React.FC = () => {
           <Route path="builder" element={<BuilderEntry items={items} onSave={handleUpdate} />} />
           <Route path="3d-print" element={<ThreeDPrintPage items={items} onSave={handleUpdate} onRemoveItems={(ids) => handleUpdate([], ids, { skipUndo: true })} categories={categories} onAddExpense={handleAddExpense} isAdmin={isAdminUser} />} />
           <Route path="sell-today" element={<SellTodayPage items={items} onUpdate={handleUpdate} />} />
+          <Route
+            path="ebay-orders"
+            element={
+              <EbayOrdersPage
+                items={items}
+                taxMode={businessSettings.taxMode}
+                onUpdate={handleUpdate}
+              />
+            }
+          />
           <Route path="ebay-store-pull" element={<EbayStorePullPage items={items} categories={categories} categoryFields={categoryFields} taxMode={businessSettings.taxMode} onUpdate={handleUpdate} onPublishCatalog={publishStoreCatalogNow} onAddExpense={handleAddExpense} />} />
           <Route
             path="card-gallery"

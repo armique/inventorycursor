@@ -66,6 +66,15 @@ function annotateLineMatch(
   };
 }
 
+/** Score one inventory row against a specific eBay order line. */
+export function scoreItemAgainstOrderLine(
+  item: InventoryItem,
+  order: EbayOrderRecord,
+  line: EbayOrderLineItem
+): Pick<EbayOrderMatch, 'matchScore' | 'matchKind'> {
+  return annotateLineMatch(item, order, line);
+}
+
 /**
  * Recent order line-items for Mark-as-sold: newest first so the seller can tap the right one.
  * Match badges are hints only — ranking is by order date.

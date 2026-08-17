@@ -8,7 +8,7 @@ import { createPortal } from 'react-dom';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useSettingsModal } from '../context/SettingsModalContext';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks,   Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone,   Camera, Gift, User, Images, Scissors, GripVertical, RefreshCw, Calculator, Inbox, MessageSquare, ExternalLink, Bookmark
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks,   Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone,   Camera, Gift, User, Images, Scissors, GripVertical, RefreshCw, Calculator, Inbox, MessageSquare, ExternalLink, Bookmark, ShoppingCart
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, TaxMode, BulkImportRecord } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
@@ -83,6 +83,7 @@ import {
 const ebaySoldSearchUrl = (query: string) =>
   `https://www.ebay.de/sch/i.html?_nkw=${encodeURIComponent(query)}&LH_Sold=1&LH_Complete=1`;
 import SaleModal from './SaleModal';
+import EbayOrdersBindModal from './EbayOrdersBindModal';
 import ReturnModal from './ReturnModal';
 import TradeModal from './TradeModal';
 import GiftModal from './GiftModal';
@@ -106,6 +107,7 @@ import { getStorefrontHiddenReason, isPublishedOnStorefront } from '../utils/sto
 import { fetchEbayListingPriceForItem, type EbayListingPriceMatch } from '../services/ebayService';
 import { hasEbayStorefrontPriceSynced } from '../utils/ebayPrice';
 import { loadEbayOrderIndex } from '../services/ebayOrderIndex';
+import { countOpenEbayOrderLines } from '../utils/ebayOpenOrders';
 import { findMatchingOrdersForItem, type EbayOrderMatch } from '../utils/ebayOrderMatch';
 import { applyEbayOrderMatchToItem } from '../utils/applyEbayOrderMatch';
 import ContainerMembershipBadge from './ContainerMembershipBadge';
@@ -1100,6 +1102,8 @@ const InventoryList: React.FC<Props> = ({
   const [showReadyPeriodMenu, setShowReadyPeriodMenu] = useState(false);
   const readyPeriodMenuRef = useRef<HTMLDivElement | null>(null);
   const [showAISpecsModal, setShowAISpecsModal] = useState(false);
+  const [showEbayOrdersModal, setShowEbayOrdersModal] = useState(false);
+  const [ebayOrderTick, setEbayOrderTick] = useState(0);
   const [showBulkAddPhotosModal, setShowBulkAddPhotosModal] = useState(false);
   const [addPhotosTargetIds, setAddPhotosTargetIds] = useState<string[]>([]);
   const [addPhotosAutoEbay, setAddPhotosAutoEbay] = useState(false);
@@ -1128,6 +1132,19 @@ const InventoryList: React.FC<Props> = ({
       window.removeEventListener('keydown', onKey);
     };
   }, [showReadyPeriodMenu]);
+
+  useEffect(() => {
+    const bump = () => setEbayOrderTick((n) => n + 1);
+    window.addEventListener('ebay-order-index-updated', bump);
+    return () => window.removeEventListener('ebay-order-index-updated', bump);
+  }, []);
+  const openEbayOrderCount = useMemo(() => {
+    try {
+      return countOpenEbayOrderLines(items, loadEbayOrderIndex().orders);
+    } catch {
+      return 0;
+    }
+  }, [items, ebayOrderTick]);
 
   const refreshAiCardCounts = useCallback(() => {
     setItemAiCardCounts(countLocalProductCardsByItemId());
@@ -5731,6 +5748,20 @@ const InventoryList: React.FC<Props> = ({
              </button>
              <button
                type="button"
+               onClick={() => setShowEbayOrdersModal(true)}
+               className="shrink-0 inline-flex items-center gap-1 px-2.5 py-2 rounded-lg border border-slate-200 bg-white text-[11px] font-black uppercase text-slate-700"
+               title="Bind eBay orders to inventory"
+             >
+               <ShoppingCart size={13} />
+               eBay
+               {openEbayOrderCount > 0 && (
+                 <span className="min-w-[16px] px-1 rounded-full bg-violet-500 text-white text-[9px] tabular-nums">
+                   {openEbayOrderCount > 99 ? '99+' : openEbayOrderCount}
+                 </span>
+               )}
+             </button>
+             <button
+               type="button"
                onClick={() => navigate('/panel/bulk-imports')}
                className="shrink-0 inline-flex items-center gap-1 px-2.5 py-2 rounded-lg border border-violet-200 bg-violet-50 text-[11px] font-black uppercase text-violet-900"
                title="Bulk import / parse history — reopen a batch"
@@ -5930,6 +5961,20 @@ const InventoryList: React.FC<Props> = ({
                     )}
                   </button>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setShowEbayOrdersModal(true)}
+                  className="inline-flex items-center justify-center gap-1 px-2 py-1 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase text-slate-600 hover:bg-slate-50"
+                  title="Bind eBay orders to inventory"
+                >
+                  <ShoppingCart size={12} className="shrink-0" />
+                  eBay Orders
+                  {openEbayOrderCount > 0 && (
+                    <span className="min-w-[16px] px-1 rounded-full bg-violet-500 text-white text-[9px] tabular-nums">
+                      {openEbayOrderCount > 99 ? '99+' : openEbayOrderCount}
+                    </span>
+                  )}
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -7622,6 +7667,21 @@ const InventoryList: React.FC<Props> = ({
             </div>
          </div>,
          document.body
+      )}
+
+      {showEbayOrdersModal && (
+        <EbayOrdersBindModal
+          items={items}
+          taxMode={businessSettings.taxMode}
+          onUpdate={onUpdate}
+          onClose={() => setShowEbayOrdersModal(false)}
+          onBound={(_updated, remainingOpen) => {
+            if (remainingOpen > 0) return;
+            setShowEbayOrdersModal(false);
+            setSplitView(false);
+            setStatusFilter('SOLD');
+          }}
+        />
       )}
 
       {itemToSell && (
