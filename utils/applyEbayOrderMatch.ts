@@ -4,6 +4,7 @@ import { customerFromEbayOrder } from './ebayOrderBuyerData';
 import { getLinePayout } from './ebayOrderPayout';
 import { calculateSaleProfit } from './saleProfit';
 import { hasPostSaleRefund, sumOrderSaleProceeds } from './ebayOrderFinancial';
+import { lineItemClaimKey } from './ebayOrderLinkAnalysis';
 
 /** True when linking an eBay order should correct platform/payment to eBay. */
 export function shouldCorrectSalePlatformToEbay(item: InventoryItem): boolean {
@@ -50,6 +51,7 @@ export function applyEbayOrderMatchToItem(
       customer.name || customer.address || customer.phone || customer.email ? customer : item.customer,
     ebayUsername: order.buyer.username || item.ebayUsername,
     ebayOrderId: order.orderId,
+    ebayOrderLineKey: lineItemClaimKey(order.orderId, lineItem),
     ebaySku: lineItem.sku || item.ebaySku,
     ebayListingId: lineItem.listingId || item.ebayListingId,
     hasFee: !payout.netKnown && Boolean(payout.fee),

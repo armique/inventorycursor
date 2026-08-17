@@ -1,6 +1,6 @@
 import { InventoryItem, ItemStatus, type EbaySaleAdjustment } from '../types';
 import type { EbayOrderLineItem, EbayOrderRecord } from '../services/ebayOrderIndex';
-import { findMatchingOrdersForItem, type EbayOrderMatch } from './ebayOrderMatch';
+import { findMatchingOrdersForItem, scoreItemAgainstOrderLine, type EbayOrderMatch } from './ebayOrderMatch';
 import { getLinePayout } from './ebayOrderPayout';
 import { sellPriceAlignsWithPayout, sellPriceMatchBonus } from './ebayOrderPriceMatch';
 import { getOrderEffectiveNet, isOrderCancelled, isOrderFullyRefunded, unappliedOrderEvents, hasPostSaleRefund } from './ebayOrderFinancial';
@@ -125,20 +125,80 @@ function orderRecencyBonus(orderDate: string | null): number {
   return 0;
 }
 
-export function buildClaimedLineKeys(items: InventoryItem[], orders: EbayOrderRecord[]): Set<string> {
-  const ordersById = new Map(orders.map((o) => [o.orderId, o]));
-  const claimed = new Set<string>();
+function normalizeEbayOrderId(id: string): string {
+  return id.trim().toLowerCase().replace(/[\s_]/g, '');
+}
 
+function lineClaimScore(item: InventoryItem, order: EbayOrderRecord, line: EbayOrderLineItem): number {
+  const key = lineItemClaimKey(order.orderId, line);
+  if (item.ebayOrderLineKey?.trim() && item.ebayOrderLineKey.trim() === key) return 1_000_000;
+  const listingItem = (item.ebayListingId || '').trim().toLowerCase();
+  const listingLine = (line.listingId || '').trim().toLowerCase();
+  if (listingItem && listingLine && listingItem === listingLine) return 100_000;
+  const skuItem = (item.ebaySku || '').trim().toLowerCase();
+  const skuLine = (line.sku || '').trim().toLowerCase();
+  if (skuItem && skuLine && skuItem === skuLine) return 90_000;
+  const { matchScore, matchKind } = scoreItemAgainstOrderLine(item, order, line);
+  if (matchKind === 'listingId') return 80_000 + matchScore;
+  if (matchKind === 'sku') return 70_000 + matchScore;
+  if (matchKind === 'title') return matchScore;
+  return 0;
+}
+
+/**
+ * Each inventory row with ebayOrderId consumes one line of that order so it
+ * cannot reappear as an open order or as a bind suggestion.
+ */
+export function buildClaimedLineKeys(items: InventoryItem[], orders: EbayOrderRecord[]): Set<string> {
+  const ordersByNormId = new Map<string, EbayOrderRecord>();
+  for (const order of orders) {
+    ordersByNormId.set(normalizeEbayOrderId(order.orderId), order);
+  }
+
+  const linkedByOrderId = new Map<string, InventoryItem[]>();
   for (const item of items) {
-    if (!item.ebayOrderId?.trim()) continue;
-    const order = ordersById.get(item.ebayOrderId.trim());
+    const raw = item.ebayOrderId?.trim();
+    if (!raw) continue;
+    const order = ordersByNormId.get(normalizeEbayOrderId(raw));
     if (!order) continue;
-    const matches = findMatchingOrdersForItem(item, [order], 0);
-    const best = matches[0];
-    if (best) {
-      claimed.add(lineItemClaimKey(best.order.orderId, best.lineItem));
-    } else if (order.lineItems.length === 1) {
-      claimed.add(lineItemClaimKey(order.orderId, order.lineItems[0]));
+    const list = linkedByOrderId.get(order.orderId);
+    if (list) list.push(item);
+    else linkedByOrderId.set(order.orderId, [item]);
+  }
+
+  const claimed = new Set<string>();
+  for (const [orderId, linked] of linkedByOrderId) {
+    const order = ordersByNormId.get(normalizeEbayOrderId(orderId));
+    if (!order) continue;
+    const lines = order.lineItems.length ? order.lineItems : [{ sku: null, title: '(no title)' }];
+
+    const pairs: { item: InventoryItem; line: EbayOrderLineItem; score: number }[] = [];
+    for (const item of linked) {
+      for (const line of lines) {
+        pairs.push({ item, line, score: lineClaimScore(item, order, line) });
+      }
+    }
+    pairs.sort((a, b) => b.score - a.score);
+
+    const usedItems = new Set<string>();
+    const usedKeys = new Set<string>();
+    for (const pair of pairs) {
+      if (pair.score <= 0) continue;
+      const key = lineItemClaimKey(order.orderId, pair.line);
+      if (usedItems.has(pair.item.id) || usedKeys.has(key)) continue;
+      usedItems.add(pair.item.id);
+      usedKeys.add(key);
+      claimed.add(key);
+    }
+
+    for (const item of linked) {
+      if (usedItems.has(item.id)) continue;
+      const leftover = lines.find((line) => !usedKeys.has(lineItemClaimKey(order.orderId, line)));
+      if (!leftover) break;
+      const key = lineItemClaimKey(order.orderId, leftover);
+      usedItems.add(item.id);
+      usedKeys.add(key);
+      claimed.add(key);
     }
   }
   return claimed;

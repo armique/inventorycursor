@@ -220,6 +220,8 @@ export interface InventoryItem extends AiAttribution, SourceLinks {
   ebayOrderScreenshotUrl?: string;
   ebayUsername?: string;
   ebayOrderId?: string;
+  /** Line claim key (`orderId::sku|title`) set when this row is bound to an eBay order line. */
+  ebayOrderLineKey?: string;
   /** First recorded net/gross sell price when linked via eBay sync — never overwritten (Finanzamt audit). */
   originalSellPrice?: number;
   /** Documented post-sale payout changes (returns, refunds, cancellations). */

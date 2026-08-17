@@ -131,6 +131,7 @@ function runSaleRevertTests(): void {
   assert(next.status === ItemStatus.IN_STOCK, 'sale revert to in stock');
   assert(next.sellPrice === undefined, 'clears sell price');
   assert(next.ebayOrderId === undefined, 'clears ebay order id');
+  assert(next.ebayOrderLineKey === undefined, 'clears ebay order line key');
   assert(next.profit === undefined, 'clears profit');
   assert(next.customer === undefined, 'clears customer');
 }

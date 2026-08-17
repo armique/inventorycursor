@@ -16,9 +16,11 @@ import { invalidateEbaySalesSyncPeekCache, runEbaySalesSync } from '../services/
 import type { BackfillProgress } from '../services/ebayOrderBackfill';
 import { applyEbayOrderMatchToItem } from '../utils/applyEbayOrderMatch';
 import {
-  buildOpenEbayOrderLines,
+  buildBindCandidateIndex,
   countOpenEbayOrderLines,
+  findItemsForOpenOrderLine,
   isEbayBindCandidate,
+  listOpenEbayOrderLines,
   type OpenEbayOrderLine,
 } from '../utils/ebayOpenOrders';
 import { formatEUR } from '../utils/formatMoney';
@@ -56,6 +58,9 @@ const EbayOrdersPage: React.FC<Props> = ({ items, taxMode, onUpdate, embedded = 
   const [tokenReady, setTokenReady] = useState(() => hasEbayToken());
   const cancelRef = useRef({ cancelled: false });
 
+  const [visibleLimit, setVisibleLimit] = useState(30);
+  const [scoreReady, setScoreReady] = useState(false);
+
   const bumpCache = useCallback(() => setCacheTick((n) => n + 1), []);
 
   useEffect(() => {
@@ -87,9 +92,23 @@ const EbayOrdersPage: React.FC<Props> = ({ items, taxMode, onUpdate, embedded = 
 
   const { orders, meta } = useMemo(() => loadEbayOrderIndex(), [cacheTick]);
 
-  const rows = useMemo(() => buildOpenEbayOrderLines(items, orders), [items, orders]);
+  const rows = useMemo(() => listOpenEbayOrderLines(items, orders), [items, orders]);
+  const bindIndex = useMemo(
+    () => (scoreReady ? buildBindCandidateIndex(items) : null),
+    [items, scoreReady]
+  );
 
-  const visible = useMemo(
+  useEffect(() => {
+    setScoreReady(false);
+    const id = window.requestAnimationFrame(() => setScoreReady(true));
+    return () => window.cancelAnimationFrame(id);
+  }, [items, orders]);
+
+  useEffect(() => {
+    setVisibleLimit(30);
+  }, [search]);
+
+  const filteredRows = useMemo(
     () =>
       rows.filter((row) =>
         matchesEbayToolSearch(search, [
@@ -98,10 +117,20 @@ const EbayOrdersPage: React.FC<Props> = ({ items, taxMode, onUpdate, embedded = 
           row.order.buyer.fullName,
           row.lineItem.title,
           row.lineItem.sku,
-          ...row.suggestions.map((s) => s.item.name),
         ])
       ),
     [rows, search]
+  );
+  const filteredCount = filteredRows.length;
+  const visible = useMemo(
+    () =>
+      filteredRows.slice(0, visibleLimit).map((row) => ({
+        ...row,
+        suggestions: bindIndex
+          ? findItemsForOpenOrderLine(row.lineItem, row.order, bindIndex)
+          : [],
+      })),
+    [filteredRows, visibleLimit, bindIndex]
   );
 
   const bindPool = useMemo(() => items.filter(isEbayBindCandidate), [items]);
@@ -225,7 +254,7 @@ const EbayOrdersPage: React.FC<Props> = ({ items, taxMode, onUpdate, embedded = 
           value={search}
           onChange={setSearch}
           placeholder="Search order, buyer, title, SKU…"
-          matchCount={visible.length}
+          matchCount={filteredCount}
           totalCount={rows.length}
         />
         {fetchProgress && (
@@ -305,7 +334,9 @@ const EbayOrdersPage: React.FC<Props> = ({ items, taxMode, onUpdate, embedded = 
                 </p>
                 {row.suggestions.length === 0 ? (
                   <p className="text-[11px] font-semibold text-slate-400">
-                    No close title/SKU match — search stock below.
+                    {bindIndex
+                      ? 'No close title/SKU match — search stock below.'
+                      : 'Matching inventory…'}
                   </p>
                 ) : (
                   <div className="flex flex-col gap-1.5">
@@ -387,6 +418,15 @@ const EbayOrdersPage: React.FC<Props> = ({ items, taxMode, onUpdate, embedded = 
             </article>
           );
         })}
+        {filteredCount > visible.length && (
+          <button
+            type="button"
+            onClick={() => setVisibleLimit((n) => n + 30)}
+            className="w-full py-2.5 rounded-2xl border border-slate-200 bg-white text-[11px] font-black uppercase tracking-wider text-slate-600 hover:border-slate-400 hover:text-slate-900"
+          >
+            Show more ({visible.length} / {filteredCount})
+          </button>
+        )}
       </div>
     </div>
   );
