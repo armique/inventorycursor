@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { InventoryItem } from '../types';
 import { CATEGORY_IMAGES } from '../services/hardwareDB';
 import { getItemUserPhotoUrls } from '../utils/imageImport';
+import { toListImageUrl } from '../utils/displayImageUrl';
 import { getCategoryIconForItem, type IconComponent } from './categoryIcons';
 
 function getIconForItem(item: { category?: string; subCategory?: string }): IconComponent {
@@ -23,6 +24,8 @@ interface ItemThumbnailProps {
   size?: number;
   /** If true, use category image URL when no item.imageUrl (SVG placeholders). If false, use icon only when no image. */
   useCategoryImage?: boolean;
+  /** First visible row / hero: skip lazy loading. */
+  priority?: boolean;
 }
 
 /**
@@ -34,19 +37,20 @@ const ItemThumbnail: React.FC<ItemThumbnailProps> = ({
   className = 'w-12 h-12 rounded-xl object-cover shadow-sm border border-slate-100',
   size = 48,
   useCategoryImage = false,
+  priority = false,
 }) => {
   const [imageError, setImageError] = useState(false);
+  const [useOriginal, setUseOriginal] = useState(false);
   const resolvedSrc =
     getItemUserPhotoUrls(item)[0] ||
     (useCategoryImage ? getCategoryImageUrl(item) : null) ||
     undefined;
-  // Reset the error flag whenever the underlying photo changes (e.g. after picking a new one and
-  // saving) — otherwise a row that once failed to load stays stuck on the fallback icon forever,
-  // even once the item has a working photo, since the component doesn't remount for an update.
+  const listSrc = resolvedSrc ? toListImageUrl(resolvedSrc, Math.max(256, size * 2)) : undefined;
+  const imgSrc = imageError ? undefined : useOriginal ? resolvedSrc : listSrc;
   useEffect(() => {
     setImageError(false);
+    setUseOriginal(false);
   }, [resolvedSrc]);
-  const imgSrc = !imageError ? resolvedSrc : undefined;
   const Icon = getIconForItem(item);
 
   if (imgSrc) {
@@ -54,8 +58,19 @@ const ItemThumbnail: React.FC<ItemThumbnailProps> = ({
       <img
         src={imgSrc}
         alt=""
+        width={size}
+        height={size}
         className={className}
-        onError={() => setImageError(true)}
+        loading={priority ? 'eager' : 'lazy'}
+        decoding="async"
+        fetchPriority={priority ? 'high' : 'auto'}
+        onError={() => {
+          if (!useOriginal && resolvedSrc && imgSrc !== resolvedSrc) {
+            setUseOriginal(true);
+            return;
+          }
+          setImageError(true);
+        }}
       />
     );
   }
@@ -89,5 +104,5 @@ export function CategoryIconBox({
   );
 }
 
-export default ItemThumbnail;
+export default React.memo(ItemThumbnail);
 export { getIconForItem };

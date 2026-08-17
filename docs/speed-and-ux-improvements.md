@@ -271,14 +271,14 @@
 
 Делать пачками, чтобы каждый релиз ощущался быстрее.
 
-### Волна A. Быстрее открывается (витрина + панель)
+### Волна A. Быстрее открывается (витрина + панель) — сделано
 
-- Локальные шрифты, убрать importmap и глобальный GSI.
-- Thumbnails 256 px + lazy на `ItemThumbnail`.
-- Отдельный бандл витрины.
-- Skeleton маршрутов.
-- Удалить мёртвый `@imgly/background-removal`.
-- Ленивый `xlsx` / recharts.
+- Локальные шрифты Outfit / JetBrains Mono (`@fontsource`, `font-display: swap`), без Google Fonts, без importmap и без глобального GSI.
+- Превью 256 px: eBay/Imgur rewrite, Firebase `_256.jpg` при новой загрузке, `loading="lazy"` на `ItemThumbnail` и витрине.
+- Отдельный boot: витрина (`bootStorefront`) не поднимает панель и `InventoryList`.
+- Skeleton маршрутов панели и витрины вместо спиннера.
+- Удалён мёртвый `@imgly/background-removal`.
+- `xlsx` и Recharts грузятся только на импорте / графиках.
 
 ### Волна B. Быстрее склад
 

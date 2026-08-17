@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, lazy, Suspense } from 'react';
 import { Settings2, Clock, ChevronRight } from 'lucide-react';
 import type { Expense, InventoryItem, TaxMode } from '../types';
 import { buildReinvestData, type ReinvestGroup, type AnchorBundleGroup } from '../utils/reinvestAnalysis';
@@ -18,7 +18,6 @@ import ReinvestBestSellers from './reinvest/ReinvestBestSellers';
 import ReinvestStockedStrip from './reinvest/ReinvestStockedStrip';
 import ReinvestSkipList from './reinvest/ReinvestSkipList';
 import ReinvestGameTab from './reinvest/ReinvestGameTab';
-import ReinvestAdvisorTab from './reinvest/ReinvestAdvisorTab';
 import ReinvestCategoryBudgets from './reinvest/ReinvestCategoryBudgets';
 import ReinvestStockGaps from './reinvest/ReinvestStockGaps';
 import ReinvestTodayBriefPanel from './reinvest/ReinvestTodayBrief';
@@ -37,6 +36,8 @@ type Props = {
 };
 
 type View = 'buylist' | 'progress' | 'planning';
+
+const ReinvestAdvisorTab = lazy(() => import('./reinvest/ReinvestAdvisorTab'));
 
 const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gamification, updateGamification }) => {
   const [view, setView] = useState<View>('buylist');
@@ -359,14 +360,16 @@ const ReinvestAssistantPage: React.FC<Props> = ({ items, expenses, taxMode, gami
           updateGamification={updateGamification}
         />
       ) : view === 'planning' ? (
-        <ReinvestAdvisorTab
-          items={items}
-          expenses={expenses}
-          taxMode={taxMode}
-          reinvestData={data}
-          gamification={gamification}
-          updateGamification={updateGamification}
-        />
+        <Suspense fallback={<div className="h-64 rounded-xl bg-[var(--rx-soft)] animate-pulse" />}>
+          <ReinvestAdvisorTab
+            items={items}
+            expenses={expenses}
+            taxMode={taxMode}
+            reinvestData={data}
+            gamification={gamification}
+            updateGamification={updateGamification}
+          />
+        </Suspense>
       ) : buyListMode === 'table' ? (
         <ReinvestCheatSheet variants={data.variants} bundles={data.bundles} fees={fees} />
       ) : (
