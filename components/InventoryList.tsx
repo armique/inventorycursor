@@ -6,9 +6,8 @@ import { toLocalCalendarDateKey, todayLocalDateKey } from '../utils/calendarDate
 import { getTimeGaugeRow, resolveContainerChildItems, stressToRgb, timeGaugeSortKey, buildTimeGaugeSortKeyMap } from '../utils/inventoryTimeGauge';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { useSettingsModal } from '../context/SettingsModalContext';
 import { 
-  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks,   Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone,   Camera, Gift, User, Images, Scissors, GripVertical, RefreshCw, Calculator, Inbox, MessageSquare, ExternalLink, Bookmark, ShoppingCart
+  Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone,   Camera, Gift, User, Images, Scissors, GripVertical, RefreshCw, Calculator, Inbox, MessageSquare, ExternalLink, Bookmark, ShoppingCart
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, TaxMode, BulkImportRecord } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
@@ -58,10 +57,8 @@ import {
   isMaybeSoldCandidate,
   isSaleReadyUnlisted,
   isSaleReadyWatch,
-  maybeSoldLabel,
   type PriceAnalyzerAction,
 } from '../utils/listingWatch';
-import { teachKaListingFromManualLink } from '../utils/listingPresence';
 import {
   enqueueProductCardBackgroundJob,
   isItemProductCardJobActive,
@@ -73,11 +70,8 @@ import {
   countProductCardsByItemId,
 } from '../services/productCardGallery';
 import ItemAccessoryToggles from './ItemAccessoryToggles';
-import ListingPrepChecklistBar from './ListingPrepChecklistBar';
 import {
   canMarkSaleReady,
-  listingPrepMissingLabel,
-  getListingPrepChecklist,
 } from '../utils/listingPrepChecklist';
 
 const ebaySoldSearchUrl = (query: string) =>
@@ -119,9 +113,11 @@ import { pickSpecsAiNameVendorUpdates } from '../utils/applySpecsAiResult';
 import { applyRamKitToSpecs } from '../utils/ramKitParse';
 import { listingAccessoriesReady } from '../utils/itemAccessoryToggles';
 import {
+  applyContainerKind,
   buildContainersById,
   buildContainerByChildId,
   getContainerKind,
+  getContainerKindShortLabel,
   isContainerMember,
   normalizeExclusiveContainerFlags,
   resolveParentContainer,
@@ -163,15 +159,6 @@ const EMPTY_COMPAT_COUNT_MAP = new Map<string, number>();
 
 type ColumnId = 'select' | 'item' | 'presence' | 'parseSpecs' | 'category' | 'status' | 'buyPrice' | 'sellPrice' | 'storePrice' | 'profit' | 'buyDate' | 'timeGauge' | 'sellDate' | 'salePlatform' | 'actions';
 type TimeFilter = 'ALL' | 'THIS_WEEK' | 'LAST_WEEK' | 'THIS_MONTH' | 'LAST_MONTH' | 'LAST_30' | 'LAST_90' | 'THIS_YEAR' | 'LAST_YEAR';
-
-const READY_PERIOD_OPTIONS: { id: Exclude<TimeFilter, 'ALL'>; label: string }[] = [
-  { id: 'THIS_WEEK', label: 'This week' },
-  { id: 'LAST_WEEK', label: 'Last week' },
-  { id: 'THIS_MONTH', label: 'This month' },
-  { id: 'LAST_MONTH', label: 'Last month' },
-  { id: 'LAST_30', label: 'Last 30 days' },
-  { id: 'LAST_90', label: 'Last 90 days' },
-];
 
 function getTimeFilterDateRange(timeFilter: TimeFilter, nowInput = new Date()): { start: Date; end: Date } {
   const now = new Date(nowInput);
@@ -227,13 +214,6 @@ function getTimeFilterDateRange(timeFilter: TimeFilter, nowInput = new Date()): 
   return { start, end };
 }
 
-function itemBuyDateInRange(item: InventoryItem, range: { start: Date; end: Date }): boolean {
-  if (!item.buyDate) return false;
-  const itemDate = new Date(item.buyDate);
-  if (Number.isNaN(itemDate.getTime())) return false;
-  return itemDate >= range.start && itemDate <= range.end;
-}
-
 function isMarkReadyEligible(item: InventoryItem): boolean {
   return (
     (item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) &&
@@ -242,6 +222,7 @@ function isMarkReadyEligible(item: InventoryItem): boolean {
     !item.parentContainerId
   );
 }
+
 type StatusFilter = 'ACTIVE' | 'SOLD' | 'DRAFTS' | 'ALL' | 'PURCHASES';
 
 type QuickCategoryPin = {
@@ -883,7 +864,6 @@ const InventoryList: React.FC<Props> = ({
   onDeleteBulkImport,
 }) => {
   const navigate = useNavigate();
-  const { openSettings } = useSettingsModal();
   const [searchParams, setSearchParams] = useSearchParams();
   
   // -- PERSISTENT STATE LOADING --
@@ -1099,8 +1079,6 @@ const InventoryList: React.FC<Props> = ({
     localStorage.setItem('panel_list_density', listDensity);
   }, [listDensity, persistenceKey]);
   const [smartPreset, setSmartPreset] = useState<SmartPreset>(null);
-  const [showReadyPeriodMenu, setShowReadyPeriodMenu] = useState(false);
-  const readyPeriodMenuRef = useRef<HTMLDivElement | null>(null);
   const [showAISpecsModal, setShowAISpecsModal] = useState(false);
   const [showEbayOrdersModal, setShowEbayOrdersModal] = useState(false);
   const [ebayOrderTick, setEbayOrderTick] = useState(0);
@@ -1114,24 +1092,6 @@ const InventoryList: React.FC<Props> = ({
     countLocalProductCardsByItemId()
   );
   const [aiCardRegenConfirmId, setAiCardRegenConfirmId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!showReadyPeriodMenu) return;
-    const onDoc = (e: MouseEvent) => {
-      if (!readyPeriodMenuRef.current?.contains(e.target as Node)) {
-        setShowReadyPeriodMenu(false);
-      }
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setShowReadyPeriodMenu(false);
-    };
-    document.addEventListener('mousedown', onDoc);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDoc);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [showReadyPeriodMenu]);
 
   useEffect(() => {
     const bump = () => setEbayOrderTick((n) => n + 1);
@@ -2034,13 +1994,27 @@ const InventoryList: React.FC<Props> = ({
     const ALWAYS_HIDDEN = ['parseSpecs', 'salePlatform', 'actions'];
     return columnOrder.filter((id) => {
       if (hiddenColumnIds.includes(id) || ALWAYS_HIDDEN.includes(id)) return false;
-      // In pure ACTIVE mode: hide SOLD DATE (always empty — items haven't been sold yet)
-      if (id === 'sellDate' && !splitView && statusFilter === 'ACTIVE') return false;
+      // Active stock: no State / Sell / Margin / Sold Date (those belong on Sold)
+      if (
+        (id === 'sellDate' || id === 'status' || id === 'sellPrice' || id === 'profit') &&
+        !splitView &&
+        statusFilter === 'ACTIVE'
+      ) {
+        return false;
+      }
       // In pure SOLD mode: hide STOCK AGE gauge (irrelevant once item is sold)
       if (id === 'timeGauge' && !splitView && statusFilter === 'SOLD') return false;
       return true;
     });
   }, [columnOrder, hiddenColumnIds, statusFilter, splitView]);
+
+  const activeInventoryColumns = useMemo(
+    () =>
+      visibleColumns.filter(
+        (id) => id !== 'status' && id !== 'sellPrice' && id !== 'profit' && id !== 'sellDate'
+      ),
+    [visibleColumns]
+  );
 
   const [draggingColumnId, setDraggingColumnId] = useState<ColumnId | null>(null);
   const [dragOverColumnId, setDragOverColumnId] = useState<ColumnId | null>(null);
@@ -2112,50 +2086,6 @@ const InventoryList: React.FC<Props> = ({
 
   // Calculate Date Range based on filter
   const dateRange = useMemo(() => getTimeFilterDateRange(timeFilter), [timeFilter]);
-
-  const markReadyForPeriod = useCallback(
-    (period: Exclude<TimeFilter, 'ALL'>) => {
-      const range = getTimeFilterDateRange(period);
-      const inPeriod = items
-        .filter(isMarkReadyEligible)
-        .filter((i) => !i.saleReady)
-        .filter((i) => itemBuyDateInRange(i, range));
-      const updated = inPeriod.filter(canMarkSaleReady).map((i) => ({ ...i, saleReady: true }));
-      const skipped = inPeriod.length - updated.length;
-      if (!updated.length) {
-        setToast(
-          skipped
-            ? `No List Ready yet — ${skipped} need title · description · photos`
-            : `No not-ready stock in ${READY_PERIOD_OPTIONS.find((o) => o.id === period)?.label || period}`,
-        );
-        setTimeout(() => setToast(null), 2800);
-        setShowReadyPeriodMenu(false);
-        return;
-      }
-      onUpdate(updated, undefined, { skipActionLog: true });
-      setTimeFilter(period);
-      setSmartPreset('sale_ready');
-      setShowReadyPeriodMenu(false);
-      setToast(
-        skipped
-          ? `List Ready ${updated.length} · skipped ${skipped} (checklist incomplete) · ${READY_PERIOD_OPTIONS.find((o) => o.id === period)?.label}`
-          : `List Ready ${updated.length} · ${READY_PERIOD_OPTIONS.find((o) => o.id === period)?.label}`,
-      );
-      setTimeout(() => setToast(null), 2800);
-    },
-    [items, onUpdate]
-  );
-
-  const readyPeriodCounts = useMemo(() => {
-    const counts: Partial<Record<Exclude<TimeFilter, 'ALL'>, number>> = {};
-    for (const opt of READY_PERIOD_OPTIONS) {
-      const range = getTimeFilterDateRange(opt.id);
-      counts[opt.id] = items.filter(
-        (i) => canMarkSaleReady(i) && !i.saleReady && itemBuyDateInRange(i, range)
-      ).length;
-    }
-    return counts;
-  }, [items]);
 
   const isQuickCategoryPinActive = useCallback(
     (pin: QuickCategoryPin) => {
@@ -2539,8 +2469,15 @@ const InventoryList: React.FC<Props> = ({
     if (colId !== 'item') return;
     e.preventDefault();
     e.stopPropagation();
+    const th = (e.currentTarget as HTMLElement).closest('th');
+    const measured = th?.getBoundingClientRect().width ?? 0;
+    const fallback =
+      effectiveColumnWidthsRef.current[colId] ??
+      columnWidthsRef.current[colId] ??
+      DEFAULT_WIDTHS[colId];
+    const startW = clampInventoryColumnWidth(colId, measured > 40 ? measured : fallback);
     setManualWidthColumns((prev) => (prev.has(colId) ? prev : new Set(prev).add(colId)));
-    const startW = effectiveColumnWidthsRef.current[colId] ?? columnWidthsRef.current[colId] ?? DEFAULT_WIDTHS[colId];
+    setColumnWidths((prev) => (prev[colId] === startW ? prev : { ...prev, [colId]: startW }));
     columnResizeRef.current = { colId, startX: e.clientX, startW };
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
@@ -2563,6 +2500,16 @@ const InventoryList: React.FC<Props> = ({
 
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
+  }, []);
+
+  const handleResetItemColumnWidth = useCallback(() => {
+    setColumnWidths((prev) => ({ ...prev, item: DEFAULT_WIDTHS.item }));
+    setManualWidthColumns((prev) => {
+      if (!prev.has('item')) return prev;
+      const next = new Set(prev);
+      next.delete('item');
+      return next;
+    });
   }, []);
 
   const startEditing = (item: InventoryItem, field: ColumnId, value: string | number) => {
@@ -3374,11 +3321,10 @@ const InventoryList: React.FC<Props> = ({
 
   const renderCell = (item: InventoryItem, id: ColumnId, isSelected: boolean, _itemFlexWidth?: number | null) => {
     const width = effectiveColumnWidths[id] || columnWidths[id] || DEFAULT_WIDTHS[id];
-    // Item soaks leftover viewport space via CSS (no explicit px width). Fixed width/maxWidth
-    // here left a dead strip on the right after sold-bundle compose when auto column widths changed.
+    const itemLocked = id === 'item' && manualWidthColumns.has('item');
     const style =
-      id === 'item'
-        ? { minWidth: `${DEFAULT_WIDTHS.item}px`, width: 'auto' as const, maxWidth: 'none' as const }
+      id === 'item' && !itemLocked
+        ? { minWidth: `${width}px`, width: 'auto' as const, maxWidth: 'none' as const }
         : { width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px` };
     const dense = listDensity === 'compact';
     const iconBtn = dense ? 'h-6 w-6' : 'h-7 w-7';
@@ -3832,12 +3778,6 @@ const InventoryList: React.FC<Props> = ({
         const isGroupedContainerRow = isContainerRow && childItems.length > 0;
         const isBundleBodyExpanded = isGroupedContainerRow && !collapsedBundles.has(item.id);
         const isSoldContainerRow = isGroupedContainerRow && isRealizedDisposal(item);
-        const formatChildListDate = (child: InventoryItem) => {
-          const raw = isSoldContainerRow
-            ? child.sellDate || child.containerSoldDate || child.buyDate
-            : child.buyDate || child.sellDate;
-          return raw ? new Date(raw).toLocaleDateString() : '—';
-        };
         const parentContainer = resolveParentContainer(item, containersById, containerByChildId);
         const parentKind = getContainerKind(parentContainer);
         const showMembershipBadge = Boolean(parentKind && parentContainer && !item.isPC && !item.isBundle);
@@ -3950,31 +3890,54 @@ const InventoryList: React.FC<Props> = ({
                         </p>
                       )}
                    </div>
-                   {(item.status === ItemStatus.IN_STOCK ||
-                     item.status === ItemStatus.ORDERED) &&
-                     !item.isDefective &&
-                     !item.parentContainerId && (
-                     <div
-                       className="mt-0.5 max-w-full"
-                       onClick={(e) => e.stopPropagation()}
-                     >
-                       {(() => {
-                         const kaOk = Boolean(item.listedOnKleinanzeigen);
-                         const ebOk = Boolean(item.listedOnEbay);
-                         const viaKit = Boolean(item.listedViaParent);
-                         const syncHint = item.listingPresenceSyncedAt
-                           ? ` · synced ${item.listingPresenceSyncedAt.slice(0, 16).replace('T', ' ')}`
-                           : '';
-                         const kaLive =
-                           item.liveKleinListPrice != null
-                             ? ` · live €${Math.round(item.liveKleinListPrice)}`
-                             : '';
-                         const ebLive =
-                           item.liveEbayListPrice != null
-                             ? ` · live €${Math.round(item.liveEbayListPrice)}`
-                             : '';
+                   <div
+                     className="flex items-center gap-1 flex-wrap mt-0.5"
+                     onClick={(e) => e.stopPropagation()}
+                   >
+                     <ItemAccessoryToggles
+                       item={item}
+                       children={isContainerRow ? childItems : undefined}
+                       labeled
+                       dense
+                       onPatch={(patch) =>
+                         onUpdate([{ ...item, ...patch }], undefined, {
+                           skipActionLog: true,
+                           skipUndo: true,
+                         })
+                       }
+                     />
+                     {isContainerRow &&
+                       (['pc', 'bundle', 'mixed'] as const).map((kind) => {
+                         const active = getContainerKind(item) === kind;
+                         return (
+                           <button
+                             key={kind}
+                             type="button"
+                             title={`Set type: ${getContainerKindShortLabel(kind)}`}
+                             onClick={() => {
+                               if (active) return;
+                               onUpdate([applyContainerKind(item, kind)]);
+                             }}
+                             className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[9px] font-black uppercase tracking-wide ${
+                               active
+                                 ? kind === 'pc'
+                                   ? 'bg-indigo-600 text-white border-indigo-700'
+                                   : kind === 'mixed'
+                                     ? 'bg-amber-500 text-white border-amber-600'
+                                     : 'bg-violet-600 text-white border-violet-700'
+                                 : 'bg-slate-50 text-slate-500 border-slate-200'
+                             }`}
+                           >
+                             {getContainerKindShortLabel(kind)}
+                           </button>
+                         );
+                       })}
+                     {(item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) &&
+                       !item.parentContainerId &&
+                       (() => {
                          const sugg = suggestedEbayById.get(item.id) || null;
                          const analyzer = computePriceAnalyzer(item, sugg, items);
+                         if (!analyzer) return null;
                          const channelBadgeClass = (
                            channel: 'KA' | 'EB',
                            action: PriceAnalyzerAction,
@@ -3983,7 +3946,6 @@ const InventoryList: React.FC<Props> = ({
                              return 'bg-amber-50 text-amber-950 border-amber-300';
                            if (action === 'raise')
                              return 'bg-sky-50 text-sky-950 border-sky-300';
-                           // Recommended sell + OK: option 3 — KA green, eBay orange
                            if (channel === 'KA')
                              return 'bg-emerald-100 text-emerald-950 border-emerald-400';
                            return 'bg-orange-100 text-orange-800 border-orange-300';
@@ -4003,14 +3965,9 @@ const InventoryList: React.FC<Props> = ({
                            return `${ch.channel} €${Math.round(ch.suggest)}`;
                          };
                          const saveSuggest = () => {
-                           if (!analyzer) return;
                            const fresh =
-                             resolveSuggestedEbayList(
-                               item,
-                               items,
-                               loadFlipFees(),
-                               childItems
-                             ) || sugg;
+                             resolveSuggestedEbayList(item, items, loadFlipFees(), childItems) ||
+                             sugg;
                            if (!fresh) return;
                            onUpdate(
                              [{ ...item, ...suggestionPatchFromPrice(fresh) }],
@@ -4022,371 +3979,18 @@ const InventoryList: React.FC<Props> = ({
                            );
                            setTimeout(() => setToast(null), 2600);
                          };
-                         return (
-                           <>
-                             <div
-                               className="flex items-center gap-1.5 flex-wrap leading-tight"
-                               title={
-                                 analyzer
-                                   ? `Age-aware price from buy €${formatEUR(analyzer.buy || item.buyPrice || 0)}. Floor 30%; age target decays 60%→30%. ${analyzer.marginReason ? `Now: ${analyzer.marginReason}.` : ''} Click price chips to save.`
-                                   : undefined
-                               }
-                             >
-                               <ListingPrepChecklistBar
-                                 item={item}
-                                 listingBusy={listingGenId === item.id}
-                                 onToast={(msg) => {
-                                   setToast(msg);
-                                   setTimeout(() => setToast(null), 2600);
-                                 }}
-                                 onGenerateListing={() => {
-                                   void handleGenerateListingDescription(item);
-                                 }}
-                                 onOpenPhotos={() => openAddPhotosModal([item.id])}
-                                 onToggleSaleReady={() => {
-                                   if (!item.saleReady && !canMarkSaleReady(item)) {
-                                     const miss = listingPrepMissingLabel(getListingPrepChecklist(item).missing);
-                                     setToast(`List Ready needs: ${miss}`);
-                                     setTimeout(() => setToast(null), 2600);
-                                     return;
-                                   }
-                                   onUpdate(
-                                     [{ ...item, saleReady: !item.saleReady }],
-                                     undefined,
-                                     { skipActionLog: true },
-                                   );
-                                 }}
-                               />
-                               <button
-                                 type="button"
-                                 title={
-                                   kaOk
-                                     ? `Listed on Kleinanzeigen${kaLive}${syncHint}`
-                                     : `Not posted on Kleinanzeigen${syncHint || ' · run Listings sync in Settings'}`
-                                 }
-                                 onClick={() => {
-                                   if (item.kleinanzeigenListingUrl) {
-                                     window.open(
-                                       item.kleinanzeigenListingUrl,
-                                       '_blank',
-                                       'noopener,noreferrer'
-                                     );
-                                     return;
-                                   }
-                                   const turningOn = !item.listedOnKleinanzeigen;
-                                   if (!turningOn) {
-                                     onUpdate(
-                                       [
-                                         {
-                                           ...item,
-                                           listedOnKleinanzeigen: false,
-                                           listedViaParent: false,
-                                         },
-                                       ],
-                                       undefined,
-                                       { skipActionLog: true }
-                                     );
-                                     return;
-                                   }
-                                   const hit = teachKaListingFromManualLink(item);
-                                   onUpdate(
-                                     [
-                                       {
-                                         ...item,
-                                         listedOnKleinanzeigen: true,
-                                         listedViaParent: false,
-                                         saleReady: true,
-                                         kleinanzeigenListingUrl:
-                                           hit?.url || item.kleinanzeigenListingUrl,
-                                         liveKleinListPrice:
-                                           hit?.price ?? item.liveKleinListPrice,
-                                       },
-                                     ],
-                                     undefined,
-                                     { skipActionLog: true }
-                                   );
-                                 }}
-                                 className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-black uppercase tracking-wide border ${
-                                   kaOk
-                                     ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                     : 'bg-slate-50 text-slate-400 border-slate-200 line-through decoration-slate-300'
-                                 }`}
-                               >
-                                 KA
-                                 {item.liveKleinListPrice != null && kaOk
-                                   ? ` €${Math.round(item.liveKleinListPrice)}`
-                                   : ''}
-                               </button>
-                               <button
-                                 type="button"
-                                 title={
-                                   ebOk
-                                     ? `Listed on eBay${ebLive}${syncHint}`
-                                     : `Not posted on eBay${syncHint || ' · run Listings sync in Settings'}`
-                                 }
-                                 onClick={() => {
-                                   if (item.ebayListingId) {
-                                     window.open(
-                                       `https://www.ebay.de/itm/${item.ebayListingId}`,
-                                       '_blank',
-                                       'noopener,noreferrer'
-                                     );
-                                     return;
-                                   }
-                                   onUpdate(
-                                     [
-                                       {
-                                         ...item,
-                                         listedOnEbay: !item.listedOnEbay,
-                                         listedViaParent: false,
-                                       },
-                                     ],
-                                     undefined,
-                                     { skipActionLog: true }
-                                   );
-                                 }}
-                                 className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-black uppercase tracking-wide border ${
-                                   ebOk
-                                     ? 'bg-sky-50 text-sky-800 border-sky-200'
-                                     : 'bg-slate-50 text-slate-400 border-slate-200 line-through decoration-slate-300'
-                                 }`}
-                               >
-                                 EB
-                                 {item.liveEbayListPrice != null && ebOk
-                                   ? ` €${Math.round(item.liveEbayListPrice)}`
-                                   : ''}
-                               </button>
-                               {(() => {
-                                 const photoOn = item.photosReady ?? getListingPrepChecklist(item).hasPhotos;
-                                 return (
-                                   <button
-                                     type="button"
-                                     title={photoOn ? 'Photos ready' : 'Mark photos ready'}
-                                     onClick={() =>
-                                       onUpdate(
-                                         [{ ...item, photosReady: !photoOn }],
-                                         undefined,
-                                         { skipActionLog: true },
-                                       )
-                                     }
-                                     className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] font-black uppercase tracking-wide border ${
-                                       photoOn
-                                         ? 'bg-violet-50 text-violet-800 border-violet-200'
-                                         : 'bg-slate-50 text-slate-400 border-slate-200'
-                                     }`}
-                                   >
-                                     <Camera size={10} /> Photo
-                                   </button>
-                                 );
-                               })()}
-                               <button
-                                 type="button"
-                                 title={item.reserved ? 'Reserved — click to release' : 'Hold / reserved'}
-                                 onClick={() =>
-                                   onUpdate(
-                                     [{ ...item, reserved: !item.reserved }],
-                                     undefined,
-                                     { skipActionLog: true },
-                                   )
-                                 }
-                                 className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] font-black uppercase tracking-wide border ${
-                                   item.reserved
-                                     ? 'bg-amber-50 text-amber-900 border-amber-300'
-                                     : 'bg-slate-50 text-slate-400 border-slate-200'
-                                 }`}
-                               >
-                                 <Bookmark size={10} /> Hold
-                               </button>
-                               {viaKit && (kaOk || ebOk) && (
-                                 <span className="text-[11px] font-bold text-violet-600 uppercase">
-                                   via kit
-                                 </span>
-                               )}
-                               {analyzer && (
-                                 <>
-                                   <span className="text-[11px] font-bold text-slate-500 tabular-nums">
-                                     d{analyzer.daysHeld} · {analyzer.targetMarginPct}%
-                                     {analyzer.buy > 0
-                                       ? ` · €${formatEUR(analyzer.buy)}`
-                                       : ''}
-                                   </span>
-                                   {analyzer.minKlein > 0 && analyzer.minEbay > 0 && (
-                                     <span
-                                       className="inline-flex items-center px-1.5 py-0.5 rounded border border-rose-200 bg-rose-50 text-[11px] font-black uppercase text-rose-900 tabular-nums"
-                                       title={`Hard floor ${analyzer.minMarginPct}%: KA €${formatEUR(analyzer.minKlein)} · EB €${formatEUR(analyzer.minEbay)}`}
-                                     >
-                                       min €{Math.round(analyzer.minKlein)}/€
-                                       {Math.round(analyzer.minEbay)}
-                                     </span>
-                                   )}
-                                   {analyzer.channels.map((ch) => (
-                                     <button
-                                       key={ch.channel}
-                                       type="button"
-                                       onClick={saveSuggest}
-                                       title={ch.label}
-                                       className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[11px] font-black uppercase tracking-wide tabular-nums ${channelBadgeClass(ch.channel, ch.action)}`}
-                                     >
-                                       {shortChannelLabel(ch)}
-                                     </button>
-                                   ))}
-                                 </>
-                               )}
-                             </div>
-                             {isMaybeSoldCandidate(item) && (
-                               <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                                 <button
-                                   type="button"
-                                   className="text-[11px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded border bg-rose-50 text-rose-900 border-rose-200"
-                                   title="Listing vanished from your seller profile while still In Stock"
-                                   onClick={() => {
-                                     addRecentItemId(item.id);
-                                     setItemToSell(item);
-                                   }}
-                                 >
-                                   {maybeSoldLabel(item.maybeSoldHint)}
-                                 </button>
-                                 <button
-                                   type="button"
-                                   className="text-[11px] font-bold uppercase text-slate-500 hover:text-slate-800"
-                                   title="Dismiss nudge"
-                                   onClick={() =>
-                                     onUpdate(
-                                       [
-                                         {
-                                           ...item,
-                                           maybeSoldDismissedAt: new Date().toISOString(),
-                                           maybeSoldHint: undefined,
-                                         },
-                                       ],
-                                       undefined,
-                                       { skipActionLog: true }
-                                     )
-                                   }
-                                 >
-                                   Dismiss
-                                 </button>
-                               </div>
-                             )}
-                           </>
-                         );
+                         return analyzer.channels.map((ch) => (
+                           <button
+                             key={ch.channel}
+                             type="button"
+                             onClick={saveSuggest}
+                             title={ch.label}
+                             className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[9px] font-black uppercase tracking-wide tabular-nums ${channelBadgeClass(ch.channel, ch.action)}`}
+                           >
+                             {shortChannelLabel(ch)}
+                           </button>
+                         ));
                        })()}
-                     </div>
-                   )}
-                   <div
-                     className="flex items-center gap-1.5 flex-wrap mt-0.5"
-                     onClick={(e) => e.stopPropagation()}
-                   >
-                     <ItemAccessoryToggles
-                       item={item}
-                       children={isContainerRow ? childItems : undefined}
-                       mini={dense}
-                       dense={!dense}
-                       onPatch={(patch) =>
-                         onUpdate([{ ...item, ...patch }], undefined, {
-                           skipActionLog: true,
-                           skipUndo: true,
-                         })
-                       }
-                     />
-                     <button
-                       type="button"
-                       disabled={listingGenId === item.id}
-                       onClick={(e) => {
-                         e.stopPropagation();
-                         void handleGenerateListingPrep(item);
-                       }}
-                       className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[9px] font-black uppercase tracking-wide disabled:opacity-60 ${
-                         item.marketTitle && item.marketDescription
-                           ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
-                           : 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100'
-                       }`}
-                       title="Generate listing title + description + tech specs (uses OVP / IO Blende; default Gebraucht unless Defective). Confirm OVP/IO first."
-                     >
-                       {listingGenId === item.id ? (
-                         <Loader2 size={10} className="animate-spin shrink-0" />
-                       ) : (
-                         <Sparkles size={10} className="shrink-0 text-amber-500" />
-                       )}
-                       Listing
-                     </button>
-                      {hasUserPhotos ? (
-                        <span
-                          className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/80"
-                          title={`${userPhotoCount} photo${userPhotoCount === 1 ? '' : 's'}`}
-                        >
-                          <Camera size={9} className="shrink-0" />
-                          {userPhotoCount > 1 ? `${userPhotoCount} photos` : 'Photo'}
-                        </span>
-                      ) : (
-                        <span
-                          className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/80"
-                          title="No item photos yet"
-                        >
-                          <ImageOff size={9} className="shrink-0" />
-                          No photo
-                        </span>
-                      )}
-                      {item.specs && Object.keys(item.specs).length > 0 && (
-                         <span className="inline-flex items-center gap-1 text-emerald-600" title="Tech specs filled — open to edit or re-parse">
-                            <ListChecks size={12} className="shrink-0" />
-                            <span className="text-[9px] font-bold uppercase text-emerald-600">Specs</span>
-                         </span>
-                      )}
-                      {item.isDraft && <span className="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-black uppercase flex items-center gap-1"><StickyNote size={8}/> Draft</span>}
-                      {item.isPC ? (
-                        <span className="inline-flex items-center gap-0.5 text-[9px] bg-indigo-600 text-white px-1.5 py-0.5 rounded font-black uppercase shadow-sm shadow-indigo-200/80">
-                          <Monitor size={9} className="shrink-0" /> PC Build
-                          {childItems.length > 0 ? ` · ${childItems.length}` : ''}
-                        </span>
-                      ) : item.isBundle ? (
-                        <span className="inline-flex items-center gap-0.5 text-[9px] bg-violet-600 text-white px-1.5 py-0.5 rounded font-black uppercase shadow-sm shadow-violet-200/80">
-                          <Layers size={9} className="shrink-0" /> Bundle
-                          {childItems.length > 0 ? ` · ${childItems.length}` : ''}
-                        </span>
-                      ) : null}
-                      {!item.isPC && !item.isBundle && isInventoryContainer(item) && (
-                        <span className="inline-flex items-center gap-0.5 text-[9px] bg-violet-600 text-white px-1.5 py-0.5 rounded font-black uppercase shadow-sm shadow-violet-200/80">
-                          <Package size={9} className="shrink-0" /> Container
-                          {item.componentIds?.length ? ` · ${item.componentIds.length}` : ''}
-                        </span>
-                      )}
-                      {isContainerMember(item) && !showMembershipBadge && (
-                        <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-black uppercase">
-                          In composition
-                        </span>
-                      )}
-                      {item.isDefective && <span className="text-[9px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-black uppercase">Defective</span>}
-                      {item.quantity != null && item.quantity > 1 && (
-                        <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-black uppercase">
-                          Qty: {item.quantity}
-                        </span>
-                      )}
-                      {showFinancials && isMissingExplicitSalePlatform(item) && (
-                        <span
-                          className="inline-flex items-center gap-0.5 text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-black uppercase"
-                          title="Platform not set — choose Sold on in the row or use bulk edit"
-                        >
-                          <AlertTriangle size={9} className="shrink-0" /> No platform
-                        </span>
-                      )}
-                      {(item.platformBought || item.buyPaymentType) && (
-                        <span
-                          className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200/80 max-w-[14rem] truncate"
-                          title={[
-                            item.platformBought
-                              ? `Bought on: ${formatPlatformBoughtLabel(item.platformBought)}`
-                              : null,
-                            item.buyPaymentType ? `Paid with: ${item.buyPaymentType}` : null,
-                          ]
-                            .filter(Boolean)
-                            .join(' · ')}
-                        >
-                          {formatPlatformBoughtLabel(item.platformBought) || 'Bought'}
-                          {item.buyPaymentType ? ` · ${item.buyPaymentType}` : ''}
-                        </span>
-                      )}
-                      <span className="text-[10px] text-slate-400 font-bold uppercase truncate">{item.vendor}</span>
                    </div>
                    {item.status === ItemStatus.SOLD && (() => {
                       const hasBuyerInfo = Boolean(item.customer?.name || item.ebayUsername || item.ebayOrderId);
@@ -4457,16 +4061,6 @@ const InventoryList: React.FC<Props> = ({
                         </span>
                       </p>
                    )}
-                   {item.specs && Object.keys(item.specs).length > 0 && (
-                      <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-snug truncate pb-0.5" title={Object.entries(item.specs).map(([k, v]) => `${k}: ${v}`).join(' • ')}>
-                         {Object.entries(item.specs).slice(0, 4).map(([k, v]) => `${k}: ${v}`).join(' · ')}
-                      </p>
-                   )}
-                   {compatibleCountByItemId.get(item.id) != null && (
-                      <p className="text-[9px] text-blue-600 font-bold mt-1 flex items-center gap-1" title="Compatible parts in inventory — open item to see list">
-                         <Layers size={10} /> Works with {compatibleCountByItemId.get(item.id)} item{compatibleCountByItemId.get(item.id) === 1 ? '' : 's'}
-                      </p>
-                   )}
                    {showMembershipBadge && parentKind && parentContainer && (
                       <div className="mt-1.5">
                         <ContainerMembershipBadge
@@ -4520,10 +4114,10 @@ const InventoryList: React.FC<Props> = ({
                       />
                    )}
                    {isBundleBodyExpanded && (
-                  <div className={`mt-2 ml-0.5 pl-3 border-l-2 rounded-r-lg py-1 space-y-0.5 max-w-full min-w-0 overflow-hidden ${
+                  <div className={`mt-1 ml-0.5 pl-2 border-l-2 py-0 space-y-0 max-w-full min-w-0 overflow-hidden ${
                         item.isPC
-                          ? 'border-indigo-300 bg-indigo-50/60'
-                          : 'border-violet-300 bg-violet-50/60'
+                          ? 'border-indigo-300 bg-indigo-50/40'
+                          : 'border-violet-300 bg-violet-50/40'
                       }`}>
                          {childItems.map((child) => {
                             const liveChild = itemsById.get(child.id) || child;
@@ -4535,7 +4129,7 @@ const InventoryList: React.FC<Props> = ({
                             return (
                             <div
                               key={`${liveChild.id}:${liveChild.name}`}
-                              className={`flex items-center justify-between gap-1 py-1 px-1.5 rounded-md transition-colors min-w-0 max-w-full overflow-hidden ${
+                              className={`flex items-center gap-1 py-px px-1 rounded-sm transition-colors w-full min-w-0 ${
                                   childHit
                                     ? 'bg-amber-100/80 ring-1 ring-amber-200/80'
                                     : item.isPC
@@ -4586,7 +4180,7 @@ const InventoryList: React.FC<Props> = ({
                                 title="Click to edit · double-click to rename"
                                 className="flex-1 min-w-0 text-left group/child"
                               >
-                                <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-1.5 min-w-0">
                                 <span className={`text-[11px] font-medium truncate min-w-0 ${
                                   item.isPC
                                     ? 'text-indigo-900 group-hover/child:text-indigo-950'
@@ -4620,15 +4214,13 @@ const InventoryList: React.FC<Props> = ({
                                       )}
                                     </>
                                   )}
-                                  <Calendar size={9} className="opacity-60" />
-                                  {formatChildListDate(liveChild)}
                                 </span>
                                 </div>
                               </button>
                               )}
                               {!isSoldContainerRow && (
-                                <div className="flex items-center gap-0.5 shrink-0">
-                                  {liveChild.status === ItemStatus.IN_COMPOSITION && (
+                                <div className="ml-auto flex items-center gap-0.5 shrink-0">
+                                  {liveChild.status === ItemStatus.IN_COMPOSITION ? (
                                     <button
                                       type="button"
                                       onClick={(e) => {
@@ -4636,12 +4228,14 @@ const InventoryList: React.FC<Props> = ({
                                         addRecentItemId(liveChild.id);
                                         setItemToSell(liveChild);
                                       }}
-                                      className="shrink-0 p-1 rounded-md text-emerald-600 hover:bg-emerald-50 hover:text-emerald-800 transition-colors"
+                                      className="h-6 w-6 inline-flex items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-900 transition-colors"
                                       title="Mark this part sold — leaves the group"
                                       aria-label={`Mark ${liveChild.name} sold`}
                                     >
                                       <ShoppingBag size={12} strokeWidth={2.25} />
                                     </button>
+                                  ) : (
+                                    <span className="h-6 w-6" aria-hidden />
                                   )}
                                   <button
                                     type="button"
@@ -4649,7 +4243,7 @@ const InventoryList: React.FC<Props> = ({
                                       e.stopPropagation();
                                       handleRemoveFromContainer(liveChild, item);
                                     }}
-                                    className="shrink-0 p-1 rounded-md text-red-500 hover:bg-red-50 hover:text-red-700 transition-colors"
+                                    className="h-6 w-6 inline-flex items-center justify-center rounded-md border border-slate-200 bg-white text-slate-400 hover:border-red-300 hover:bg-red-50 hover:text-red-600 transition-colors"
                                     title="Remove from container — back to active inventory"
                                     aria-label={`Remove ${liveChild.name} from container`}
                                   >
@@ -6381,7 +5975,20 @@ const InventoryList: React.FC<Props> = ({
                   </div>
                )}
             </div>
-            <div className="flex flex-wrap items-center gap-1">
+            <button
+               type="button"
+               onClick={() => navigate('/panel/add')}
+               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold uppercase tracking-wide transition-all bg-white text-slate-600 border-slate-200 hover:border-blue-300 hover:text-blue-600"
+               title="Add — choose type"
+            >
+               <Plus size={12} strokeWidth={2.25} /> Add
+            </button>
+            {hasActiveFilters && (
+               <button type="button" onClick={clearAllFilters} className="text-[10px] font-bold uppercase text-slate-500 hover:text-red-600">Reset all</button>
+            )}
+         </div>
+
+         <div className="flex flex-wrap items-center gap-1">
                {(
                  [
                    ['no_photo', 'No photo'],
@@ -6389,10 +5996,6 @@ const InventoryList: React.FC<Props> = ({
                    ['no_specs', 'No specs'],
                    ['defective', 'Defekt'],
                    ['aging', '>90d'],
-                   ['sale_ready', 'Sale ready'],
-                   ['sale_ready_unlisted', 'Ready · not listed'],
-                   ['maybe_sold', 'Maybe sold'],
-                   ['price_change', 'Change price'],
                  ] as const
                ).map(([id, label]) => (
                  <button
@@ -6404,58 +6007,37 @@ const InventoryList: React.FC<Props> = ({
                        ? 'bg-amber-500 text-white border-amber-500'
                        : 'bg-white text-slate-500 border-slate-200 hover:border-amber-300'
                    }`}
-                   title={
-                     id === 'sale_ready'
-                       ? 'Sale-ready watchlist. Combine with Time (This week / Month / …) to track items added in a period.'
-                       : `Smart filter: ${label}`
-                   }
+                   title={`Smart filter: ${label}`}
                  >
                    {label}
                  </button>
                ))}
-               <div className="relative" ref={readyPeriodMenuRef}>
-                 <button
-                   type="button"
-                   onClick={() => setShowReadyPeriodMenu((v) => !v)}
-                   className="px-2 py-1 rounded-lg border border-violet-200 bg-violet-50 text-violet-800 text-[9px] font-black uppercase tracking-wide hover:bg-violet-100 inline-flex items-center gap-1"
-                   title="Mark checklist-complete stock from a buy period as List Ready — no multi-select needed"
-                 >
-                   <ListChecks size={12} />
-                   List Ready by period
-                   <ChevronDown size={12} />
-                 </button>
-                 {showReadyPeriodMenu && (
-                   <div className="absolute left-0 top-full mt-1 z-40 min-w-[200px] rounded-xl border border-slate-200 bg-white shadow-lg py-1">
-                     <p className="px-3 py-1.5 text-[9px] font-black uppercase tracking-wide text-slate-400">
-                       List Ready · by buy date
-                     </p>
-                     {READY_PERIOD_OPTIONS.map((opt) => {
-                       const n = readyPeriodCounts[opt.id] ?? 0;
-                       return (
-                         <button
-                           key={opt.id}
-                           type="button"
-                           disabled={n === 0}
-                           onClick={() => markReadyForPeriod(opt.id)}
-                           className="w-full text-left px-3 py-2 text-xs font-bold text-slate-700 hover:bg-violet-50 disabled:opacity-40 disabled:hover:bg-white flex items-center justify-between gap-3"
-                         >
-                           <span>{opt.label}</span>
-                           <span className="text-[10px] font-black text-violet-600 tabular-nums">
-                             {n}
-                           </span>
-                         </button>
-                       );
-                     })}
-                   </div>
-                 )}
-               </div>
+               {quickCategoryPins.map((pin) => {
+                 const active = isQuickCategoryPinActive(pin);
+                 return (
+                   <button
+                     key={pin.id}
+                     type="button"
+                     onClick={() => applyQuickCategoryPin(pin)}
+                     className={`px-2 py-1 rounded-lg border text-[9px] font-black uppercase tracking-wide ${
+                       active
+                         ? 'bg-blue-600 text-white border-blue-600'
+                         : 'bg-white text-slate-500 border-slate-200 hover:border-blue-300 hover:text-blue-700'
+                     }`}
+                     title={pin.subCategory ? `${pin.category} › ${pin.subCategory}` : pin.category}
+                   >
+                     {pin.label}
+                   </button>
+                 );
+               })}
                <button
                  type="button"
-                 onClick={() => openSettings('EBAY')}
-                 className="px-2 py-1 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-800 text-[9px] font-black uppercase tracking-wide hover:bg-indigo-100"
-                 title="Paste KA profile URL + eBay username, then Refresh listing presence"
+                 onClick={() => setShowQuickCategoryPicker(true)}
+                 className="inline-flex items-center justify-center h-[26px] w-[26px] rounded-lg border border-dashed border-slate-300 bg-white text-slate-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50"
+                 title="Add category shortcut"
+                 aria-label="Add category shortcut"
                >
-                 Listings sync
+                 <Plus size={12} />
                </button>
                <button
                  type="button"
@@ -6492,21 +6074,6 @@ const InventoryList: React.FC<Props> = ({
                  <button onClick={onUndo} disabled={!canUndo} className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-900 disabled:opacity-50" title="Undo"><RotateCcw size={14} /></button>
                  <button onClick={onRedo} disabled={!canRedo} className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-900 disabled:opacity-50" title="Redo"><RotateCw size={14} /></button>
                </div>
-               <button
-                 type="button"
-                 onClick={() => navigate('/panel/add')}
-                 className="group inline-flex flex-col items-center justify-center gap-1 px-2.5 py-1.5 rounded-xl hover:bg-slate-100/80 transition-colors"
-                 title="Add — choose type"
-               >
-                 <span className="w-8 h-8 rounded-xl bg-white border border-slate-200 text-slate-700 shadow-[0_1px_0_rgba(15,23,42,0.04)] inline-flex items-center justify-center group-hover:-translate-y-0.5 group-hover:border-slate-300 group-hover:text-slate-900 transition-transform">
-                   <Plus size={14} strokeWidth={1.75} />
-                 </span>
-                 <span className="text-[10px] font-bold text-slate-900 uppercase tracking-wide">Add</span>
-               </button>
-            </div>
-            {hasActiveFilters && (
-               <button type="button" onClick={clearAllFilters} className="text-[10px] font-bold uppercase text-slate-500 hover:text-red-600">Reset all</button>
-            )}
          </div>
 
          {/* Desktop purchase subfilters — same slot height as mobile pin row */}
@@ -6612,39 +6179,7 @@ const InventoryList: React.FC<Props> = ({
             </div>
          )}
 
-         <div className="space-y-2">
-           <div className="flex flex-wrap items-center gap-1">
-            <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider shrink-0">Cat</span>
-            {quickCategoryPins.map((pin) => {
-              const active = isQuickCategoryPinActive(pin);
-              return (
-                <button
-                  key={pin.id}
-                  type="button"
-                  onClick={() => applyQuickCategoryPin(pin)}
-                  className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all border ${
-                    active
-                      ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                      : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200 hover:border-slate-300'
-                  }`}
-                  title={pin.subCategory ? `${pin.category} › ${pin.subCategory}` : pin.category}
-                >
-                  {pin.label}
-                </button>
-              );
-            })}
-            <button
-              type="button"
-              onClick={() => setShowQuickCategoryPicker(true)}
-              className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-dashed border-slate-300 bg-white text-slate-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-all"
-              title="Add category shortcut"
-              aria-label="Add category shortcut"
-            >
-              <Plus size={14} />
-            </button>
-           </div>
-
-           {activeQuickPin && (
+         {activeQuickPin && (
              <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-2.5 space-y-2">
                <div className="flex items-center justify-between gap-2">
                  <span className="text-[9px] font-black uppercase tracking-wider text-blue-700">
@@ -6700,7 +6235,6 @@ const InventoryList: React.FC<Props> = ({
              </div>
            )}
          </div>
-         </div>
       </header>
 
       <MobileSheetShell
@@ -6753,31 +6287,6 @@ const InventoryList: React.FC<Props> = ({
               <option value="LAST_YEAR">Last year</option>
             </select>
           </div>
-          <div className="space-y-2">
-            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-              List Ready by buy date
-            </p>
-            <div className="grid grid-cols-2 gap-1.5">
-              {READY_PERIOD_OPTIONS.map((opt) => {
-                const n = readyPeriodCounts[opt.id] ?? 0;
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    disabled={n === 0}
-                    onClick={() => {
-                      markReadyForPeriod(opt.id);
-                      setShowMobileFiltersSheet(false);
-                    }}
-                    className="px-3 py-2.5 rounded-xl border border-violet-200 bg-violet-50 text-violet-900 text-[11px] font-black uppercase disabled:opacity-40 flex items-center justify-between gap-2"
-                  >
-                    <span className="truncate">{opt.label}</span>
-                    <span className="tabular-nums text-violet-600">{n}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
           <div className="flex flex-wrap gap-1.5">
             {(
               [
@@ -6786,10 +6295,6 @@ const InventoryList: React.FC<Props> = ({
                 ['no_specs', 'No specs'],
                 ['defective', 'Defekt'],
                 ['aging', '>90d'],
-                ['sale_ready', 'Sale ready'],
-                ['sale_ready_unlisted', 'Ready · not listed'],
-                ['maybe_sold', 'Maybe sold'],
-                ['price_change', 'Change price'],
               ] as const
             ).map(([id, label]) => (
               <button
@@ -6803,13 +6308,6 @@ const InventoryList: React.FC<Props> = ({
                 {label}
               </button>
             ))}
-            <button
-              type="button"
-              onClick={() => openSettings('EBAY')}
-              className="px-3 py-2 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-800 text-[11px] font-black uppercase"
-            >
-              Listings sync
-            </button>
           </div>
           <button
             type="button"
@@ -7055,6 +6553,8 @@ const InventoryList: React.FC<Props> = ({
       <style>{`
         [data-inventory-table] tbody > tr > td { padding: 0.28rem 0.75rem !important; vertical-align: top !important; text-align: left !important; }
         [data-inventory-table] tbody > tr > td.inv-col-icons { padding: 0.25rem 0.5rem !important; }
+        [data-inventory-table] tbody > tr > td.inv-col-soak,
+        [data-inventory-table] thead th.inv-col-soak { padding: 0 !important; }
         [data-inventory-table] thead th > div:first-of-type { padding: 0.28rem 0.75rem !important; min-height: 1.65rem !important; }
         [data-inventory-table] thead th { font-size: 0.625rem; letter-spacing: 0.04em; text-align: left; }
         [data-density="compact"][data-inventory-table] tbody > tr > td { padding: 0.16rem 0.625rem !important; }
@@ -7074,13 +6574,14 @@ const InventoryList: React.FC<Props> = ({
             paneStatus="ACTIVE"
             paneLabel="Active"
             scrollRef={activeTableRef}
-            visibleColumns={visibleColumns}
+            visibleColumns={activeInventoryColumns}
             columnWidths={effectiveColumnWidths}
             manualWidthColumns={manualWidthColumns}
             listDensity={listDensity}
             sortConfig={sortConfig}
             handleHeaderSort={handleHeaderSort}
             handleColumnResizeStart={handleColumnResizeStart}
+            onResetItemColumnWidth={handleResetItemColumnWidth}
             draggingColumnId={draggingColumnId}
             dragOverColumnId={dragOverColumnId}
             onColumnDragStart={handleColumnDragStart}
@@ -7120,6 +6621,7 @@ const InventoryList: React.FC<Props> = ({
             sortConfig={sortConfig}
             handleHeaderSort={handleHeaderSort}
             handleColumnResizeStart={handleColumnResizeStart}
+            onResetItemColumnWidth={handleResetItemColumnWidth}
             draggingColumnId={draggingColumnId}
             dragOverColumnId={dragOverColumnId}
             onColumnDragStart={handleColumnDragStart}
@@ -7165,6 +6667,7 @@ const InventoryList: React.FC<Props> = ({
           sortConfig={sortConfig}
           handleHeaderSort={handleHeaderSort}
           handleColumnResizeStart={handleColumnResizeStart}
+          onResetItemColumnWidth={handleResetItemColumnWidth}
           draggingColumnId={draggingColumnId}
           dragOverColumnId={dragOverColumnId}
           onColumnDragStart={handleColumnDragStart}
@@ -8007,6 +7510,7 @@ type InventoryTableBodyProps = {
   rowHeightEstimate: number;
   collapsedBundles: Set<string>;
   itemFlexWidth?: number | null;
+  soakSpacer?: boolean;
 };
 
 const InventoryTableBody = React.memo(function InventoryTableBody({
@@ -8020,6 +7524,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
   rowHeightEstimate,
   collapsedBundles,
   itemFlexWidth,
+  soakSpacer = false,
 }: InventoryTableBodyProps) {
   const useVirtual = sortedItems.length > INVENTORY_VIRTUAL_THRESHOLD;
 
@@ -8030,9 +7535,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
       const item = sortedItems[index];
       if (!item) return rowHeightEstimate;
       let h = rowHeightEstimate;
-      // OVP / Rechnung + photo/specs chips share one under-name row
-      h += 18;
-      if (item.specs && Object.keys(item.specs).length > 0) h += 14;
+      h += 20;
       if (
         isRealizedDisposal(item) &&
         (item.customer?.name || item.giftRecipient || item.ebayUsername || item.ebayOrderId)
@@ -8045,7 +7548,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
       if (item.parentContainerId || item.status === ItemStatus.IN_COMPOSITION) h += 22;
       if (!collapsedBundles.has(item.id) && (item.isPC || item.isBundle)) {
         const childCount = Math.max(1, item.componentIds?.length ?? 3);
-        h += childCount * 28 + 20;
+        h += childCount * 18 + 10;
       }
       return h;
     },
@@ -8090,6 +7593,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
             visibleColumns={visibleColumns}
             renderRowCells={renderRowCells}
             itemFlexWidth={itemFlexWidth}
+            soakSpacer={soakSpacer}
             rowActivityKey={getRowActivityKey(item)}
             highlighted={highlightedItemId === item.id}
           />
@@ -8098,6 +7602,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
     );
   }
 
+  const colCount = visibleColumns.length + (soakSpacer ? 1 : 0);
   const virtualItems = rowVirtualizer.getVirtualItems();
   const topSpacer = virtualItems.length > 0 ? virtualItems[0].start : 0;
   const bottomSpacer =
@@ -8109,7 +7614,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
     <tbody className="divide-y divide-slate-50">
       {topSpacer > 0 && (
         <tr aria-hidden="true" className="pointer-events-none border-0">
-          <td colSpan={visibleColumns.length} className="!p-0 !border-0" style={{ height: `${topSpacer}px` }} />
+          <td colSpan={colCount} className="!p-0 !border-0" style={{ height: `${topSpacer}px` }} />
         </tr>
       )}
       {virtualItems.map((virtualRow) => {
@@ -8122,6 +7627,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
             visibleColumns={visibleColumns}
             renderRowCells={renderRowCells}
             itemFlexWidth={itemFlexWidth}
+            soakSpacer={soakSpacer}
             rowActivityKey={getRowActivityKey(item)}
             highlighted={highlightedItemId === item.id}
             virtualIndex={virtualRow.index}
@@ -8131,7 +7637,7 @@ const InventoryTableBody = React.memo(function InventoryTableBody({
       })}
       {bottomSpacer > 0 && (
         <tr aria-hidden="true" className="pointer-events-none border-0">
-          <td colSpan={visibleColumns.length} className="!p-0 !border-0" style={{ height: `${bottomSpacer}px` }} />
+          <td colSpan={colCount} className="!p-0 !border-0" style={{ height: `${bottomSpacer}px` }} />
         </tr>
       )}
     </tbody>
@@ -8149,10 +7655,11 @@ type InventoryTableRowProps = {
   virtualIndex?: number;
   measureRef?: (node: Element | null) => void;
   itemFlexWidth?: number | null;
+  soakSpacer?: boolean;
 };
 
 const InventoryTableRow = React.memo(
-  function InventoryTableRow({ item, isSelected, renderRowCells, highlighted, virtualIndex, measureRef, itemFlexWidth }: InventoryTableRowProps) {
+  function InventoryTableRow({ item, isSelected, renderRowCells, highlighted, virtualIndex, measureRef, itemFlexWidth, soakSpacer }: InventoryTableRowProps) {
     return (
       <tr
         ref={measureRef}
@@ -8162,6 +7669,7 @@ const InventoryTableRow = React.memo(
         className={containerRowClassName(item, isSelected, Boolean(highlighted))}
       >
         {renderRowCells(item, isSelected, itemFlexWidth)}
+        {soakSpacer ? <td className="inv-col-soak" aria-hidden /> : null}
       </tr>
     );
   },
@@ -8172,7 +7680,8 @@ const InventoryTableRow = React.memo(
     prev.rowActivityKey === next.rowActivityKey &&
     prev.highlighted === next.highlighted &&
     prev.renderRowCells === next.renderRowCells &&
-    prev.itemFlexWidth === next.itemFlexWidth
+    prev.itemFlexWidth === next.itemFlexWidth &&
+    prev.soakSpacer === next.soakSpacer
 );
 
 type SoldFinancialBarProps = {
@@ -8287,6 +7796,7 @@ type InventoryListTablePaneProps = {
   sortConfig: SortConfig;
   handleHeaderSort: (columnId: ColumnId) => void;
   handleColumnResizeStart: (e: React.MouseEvent, colId: ColumnId) => void;
+  onResetItemColumnWidth: () => void;
   draggingColumnId: ColumnId | null;
   dragOverColumnId: ColumnId | null;
   onColumnDragStart: (colId: ColumnId) => void;
@@ -8312,11 +7822,12 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
   scrollRef,
   visibleColumns,
   columnWidths,
-  manualWidthColumns: _manualWidthColumns,
+  manualWidthColumns,
   listDensity,
   sortConfig,
   handleHeaderSort,
   handleColumnResizeStart,
+  onResetItemColumnWidth,
   draggingColumnId,
   dragOverColumnId,
   onColumnDragStart,
@@ -8345,9 +7856,9 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
     [scrollRef]
   );
 
-  // Fixed sibling columns + a flexible item column. Table min-width = siblings + item floor so
-  // item never collapses to 0 when siblings are wide; leftover viewport space always goes to item
-  // (no fragile px math — that left a dead strip after sold-bundle auto-width changes).
+  // Default: Asset Name soaks leftover space. After a drag-resize it is locked to a px width
+  // and a trailing soak column absorbs leftover so the name can actually get narrower.
+  const itemLocked = manualWidthColumns.has('item');
   const itemFloor = columnWidths['item'] || DEFAULT_WIDTHS['item'];
   const othersWidth = useMemo(
     () =>
@@ -8391,7 +7902,11 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
           <colgroup>
             {visibleColumns.map((colId) =>
               colId === 'item' ? (
-                <col key={colId} style={{ minWidth: itemFloor }} />
+                itemLocked ? (
+                  <col key={colId} style={{ width: itemFloor, minWidth: itemFloor }} />
+                ) : (
+                  <col key={colId} style={{ minWidth: itemFloor }} />
+                )
               ) : (
                 <col
                   key={colId}
@@ -8401,6 +7916,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
                 />
               )
             )}
+            {itemLocked ? <col key="soak" /> : null}
           </colgroup>
           <thead className="sticky top-0 z-10 bg-white">
             <tr className="bg-slate-50/80 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-widest backdrop-blur-sm">
@@ -8412,7 +7928,9 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
                 const isDragOver = dragOverColumnId === colId && draggingColumnId !== colId;
                 const thStyle =
                   colId === 'item'
-                    ? { minWidth: itemFloor }
+                    ? itemLocked
+                      ? { width: itemFloor, minWidth: itemFloor, maxWidth: itemFloor }
+                      : { minWidth: itemFloor }
                     : { width: rawW, minWidth: rawW, maxWidth: rawW };
                 return (
                   <th
@@ -8511,16 +8029,23 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
                         role="separator"
                         aria-orientation="vertical"
                         aria-label={`Resize ${ALL_COLUMNS.find((c) => c.id === colId)?.label || colId} column`}
-                        title="Drag to resize column"
-                        className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize z-20 shrink-0 hover:bg-blue-500/35 active:bg-blue-500/50 border-r border-transparent hover:border-blue-400/40"
+                        title="Drag to resize name column · double-click to reset"
+                        className="absolute right-0 top-0 bottom-0 w-2.5 cursor-col-resize z-20 shrink-0 group/resize"
                         onMouseDown={(e) => handleColumnResizeStart(e, colId)}
                         onClick={(e) => e.stopPropagation()}
-                      />
+                        onDoubleClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onResetItemColumnWidth();
+                        }}
+                      >
+                        <span className="absolute right-[4px] top-1 bottom-1 w-px bg-slate-300 group-hover/resize:bg-blue-500 group-active/resize:bg-blue-600" />
+                      </div>
                     )}
                   </th>
                 );
               })}
-              {/* Item column has no fixed width (see colgroup) so it soaks leftover viewport space. */}
+              {itemLocked ? <th className="inv-col-soak p-0 bg-slate-50/80" aria-hidden /> : null}
             </tr>
           </thead>
           <InventoryTableBody
@@ -8533,6 +8058,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
             scrollElement={scrollElement}
             rowHeightEstimate={rowHeightEstimate}
             collapsedBundles={collapsedBundles}
+            soakSpacer={itemLocked}
           />
         </table>
       </div>

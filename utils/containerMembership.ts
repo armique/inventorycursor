@@ -24,6 +24,42 @@ export function getContainerKind(container: InventoryItem | undefined | null): C
   return null;
 }
 
+/** Switch a PC / Bundle / Mixed Bundle between the three container types. */
+export function applyContainerKind(item: InventoryItem, kind: ContainerKind): InventoryItem {
+  if (kind === 'pc') {
+    return {
+      ...item,
+      category: 'PC',
+      isPC: true,
+      isBundle: false,
+      subCategory: undefined,
+    };
+  }
+  if (kind === 'mixed') {
+    const vendorIsTaxonomy =
+      !item.vendor ||
+      item.vendor === 'Lot Bundle' ||
+      item.vendor === 'PC Bundle' ||
+      item.vendor === 'Custom Build' ||
+      item.vendor === 'Mixed Bundle';
+    return {
+      ...item,
+      category: 'Mixed Bundle',
+      isPC: false,
+      isBundle: true,
+      subCategory: undefined,
+      vendor: vendorIsTaxonomy ? 'Mixed Bundle' : item.vendor,
+    };
+  }
+  return {
+    ...item,
+    category: 'Bundle',
+    isPC: false,
+    isBundle: true,
+    subCategory: undefined,
+  };
+}
+
 /**
  * Historical compose used to set both isPC and isBundle on Gaming PCs.
  * Keep flags mutually exclusive so the UI never shows Bundle + PC Build together.
@@ -51,7 +87,7 @@ export function getContainerKindLabel(kind: ContainerKind): string {
 export function getContainerKindShortLabel(kind: ContainerKind): string {
   switch (kind) {
     case 'mixed':
-      return 'Mixed';
+      return 'Mix';
     case 'bundle':
       return 'Bundle';
     case 'pc':

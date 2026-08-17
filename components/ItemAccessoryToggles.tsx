@@ -31,6 +31,8 @@ interface Props {
   dense?: boolean;
   /** Extra-tight icon chips (Listing Studio / mobile). */
   mini?: boolean;
+  /** Show OVP / IO labels next to the icon (inventory under-title row). */
+  labeled?: boolean;
 }
 
 function AccessoryIcon({ id, size }: { id: AccessoryToggleId; size: number }) {
@@ -54,15 +56,19 @@ const FLUSH_MS = 280;
  * OVP / IO Blende chips. Optimistic local state + debounced persist so rapid clicks
  * don't flood inventory updates / undo history / re-renders.
  */
-const ItemAccessoryToggles: React.FC<Props> = ({ item, children, onPatch, dense, mini }) => {
+const ItemAccessoryToggles: React.FC<Props> = ({ item, children, onPatch, dense, mini, labeled }) => {
   const ids = accessoryTogglesForItem(item, children);
   const iconSize = mini ? 10 : dense ? 11 : 12;
   const chip =
-    mini
-      ? 'h-5 w-5 rounded-md'
-      : dense
-        ? 'h-5 min-w-[1.25rem] px-1 rounded-md'
-        : 'h-6 min-w-[1.5rem] px-1.5 rounded-lg';
+    labeled
+      ? dense
+        ? 'h-5 px-1.5 rounded-md gap-0.5'
+        : 'h-6 px-1.5 rounded-lg gap-0.5'
+      : mini
+        ? 'h-5 w-5 rounded-md'
+        : dense
+          ? 'h-5 min-w-[1.25rem] px-1 rounded-md'
+          : 'h-6 min-w-[1.5rem] px-1.5 rounded-lg';
 
   const [draft, setDraft] = useState<{ hasOVP?: boolean; hasIOShield?: boolean } | null>(null);
   const pendingRef = useRef<Partial<InventoryItem>>({});
@@ -138,6 +144,11 @@ const ItemAccessoryToggles: React.FC<Props> = ({ item, children, onPatch, dense,
             aria-pressed={state === 'present' ? true : state === 'missing' ? false : undefined}
           >
             <AccessoryIcon id={id} size={iconSize} />
+            {labeled ? (
+              <span className="text-[9px] font-black uppercase tracking-wide leading-none">
+                {label}
+              </span>
+            ) : null}
           </button>
         );
       })}
