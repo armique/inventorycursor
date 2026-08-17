@@ -20,6 +20,14 @@ export const INVENTORY_PHOTO_STORAGE_OPTIONS: CompressImageOptions = {
   maxBlobBytes: 520_000,
 };
 
+/** List/card preview next to the full JPEG. */
+export const INVENTORY_PHOTO_THUMB_OPTIONS: CompressImageOptions = {
+  maxWidth: 256,
+  maxHeight: 256,
+  quality: 0.72,
+  maxBlobBytes: 28_000,
+};
+
 /** Fallback when signed out — compressed data URL in localStorage. */
 export const INVENTORY_PHOTO_LOCAL_OPTIONS: CompressImageOptions = {
   maxWidth: 1600,

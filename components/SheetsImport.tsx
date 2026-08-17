@@ -2,7 +2,6 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { formatEUR } from '../utils/formatMoney';
 
-import { read, utils } from 'xlsx';
 import { Upload, FileSpreadsheet, CheckCircle2, Info, Loader2, AlertCircle, Eye, HelpCircle, Trash2, AlertTriangle, RefreshCcw, ArrowRight, TrendingUp, Wallet, ListX, Table, Search, Globe, ChevronDown, ChevronUp, FileText, Settings2, Columns } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
 import { LOCAL_HARDWARE_INDEX, CATEGORY_MAP, VENDOR_LIST, CATEGORY_IMAGES } from '../services/hardwareDB';
@@ -262,11 +261,12 @@ const SheetsImport: React.FC<Props> = ({ onImport, onClearData }) => {
     setLoading(true);
     
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       const data = e.target?.result;
       if (!data) return;
 
       try {
+        const { read, utils } = await import('xlsx');
         const workbook = read(data, { type: 'array' });
         const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];

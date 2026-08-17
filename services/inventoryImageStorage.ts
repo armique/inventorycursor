@@ -13,7 +13,9 @@ import {
   dataUrlFromBlob,
   INVENTORY_PHOTO_LOCAL_OPTIONS,
   INVENTORY_PHOTO_STORAGE_OPTIONS,
+  INVENTORY_PHOTO_THUMB_OPTIONS,
 } from '../utils/imageCompress';
+import { rememberPhotoThumb } from '../utils/photoThumbCache';
 import { CLOUD_OMITTED_PLACEHOLDER, getCurrentUser, isCloudEnabled, uploadItemImageBlob } from './firebaseService';
 import type { InventoryItem } from '../types';
 
@@ -433,14 +435,25 @@ async function fetchRemoteImageBlob(url: string): Promise<Blob> {
   throw new Error(`Could not download image: ${lastError}`);
 }
 
+async function uploadJpegWithOptionalThumb(jpeg: Blob, itemId: string): Promise<string> {
+  const hash = await hashBlob(jpeg);
+  const folder = itemId.trim() || 'shared';
+  const originalUrl = await uploadItemImageBlob(jpeg, folder, `${hash}.jpg`);
+  try {
+    const thumb = await compressBlobToJpeg(jpeg, INVENTORY_PHOTO_THUMB_OPTIONS);
+    const thumbUrl = await uploadItemImageBlob(thumb, folder, `${hash}_256.jpg`);
+    rememberPhotoThumb(originalUrl, thumbUrl);
+  } catch (err) {
+    console.warn('inventory thumb upload failed', err);
+  }
+  return originalUrl;
+}
+
 async function blobToPersistedUrl(blob: Blob, itemId: string): Promise<string> {
   const jpeg = await compressBlobToJpeg(blob, INVENTORY_PHOTO_STORAGE_OPTIONS);
 
   if (canUploadToCloud()) {
-    const hash = await hashBlob(jpeg);
-    const folder = itemId.trim() || 'shared';
-    const fileName = `${hash}.jpg`;
-    return uploadItemImageBlob(jpeg, folder, fileName);
+    return uploadJpegWithOptionalThumb(jpeg, itemId);
   }
 
   return compressBlobToLocalDataUrl(jpeg, INVENTORY_PHOTO_LOCAL_OPTIONS);
@@ -473,8 +486,7 @@ async function persistOneInventoryImageUrl(
     if (isDataImageUrl(trimmed)) {
       if (canUploadToCloud()) {
         const blob = await compressDataUrlToBlob(trimmed, INVENTORY_PHOTO_STORAGE_OPTIONS);
-        const hash = await hashBlob(blob);
-        result = await uploadItemImageBlob(blob, itemId.trim() || 'shared', `${hash}.jpg`);
+        result = await uploadJpegWithOptionalThumb(blob, itemId.trim() || 'shared');
       } else {
         const blob = await compressDataUrlToBlob(trimmed, INVENTORY_PHOTO_LOCAL_OPTIONS);
         result = await dataUrlFromBlob(blob);
@@ -539,8 +551,7 @@ export async function persistInventoryImageFiles(
     try {
       const blob = await compressImageFileToBlob(file, INVENTORY_PHOTO_STORAGE_OPTIONS);
       if (canUploadToCloud()) {
-        const hash = await hashBlob(blob);
-        out.push(await uploadItemImageBlob(blob, itemId, `${hash}.jpg`));
+        out.push(await uploadJpegWithOptionalThumb(blob, itemId));
       } else {
         out.push(await dataUrlFromBlob(blob));
       }

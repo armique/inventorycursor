@@ -1,9 +1,6 @@
 import React, { useMemo, useState, useEffect, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { formatEUR } from '../utils/formatMoney';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell
-} from 'recharts';
 import {
   TrendingUp, Target, Package, TrendingDown, Trophy, Star, Crown, Zap,
   Edit3, Check, CalendarDays, ArrowRight, CheckCircle2, Plus, X, Activity, AlertCircle,
@@ -29,6 +26,12 @@ import { countSalesByPlatform, formatItemSalePlatform, groupSalesByPlatform, PLA
 import { ADD_OPTIONS, AddOptionTile } from './addFlowShared';
 
 const DashboardAnalyticsPanel = lazy(() => import('./DashboardAnalyticsPanel'));
+const DashboardPerformanceChart = lazy(() =>
+  import('./DashboardRecharts').then((m) => ({ default: m.DashboardPerformanceChart }))
+);
+const DashboardStockPie = lazy(() =>
+  import('./DashboardRecharts').then((m) => ({ default: m.DashboardStockPie }))
+);
 interface Props {
   items: InventoryItem[];
   expenses?: Expense[];
@@ -1478,66 +1481,9 @@ const Dashboard: React.FC<Props> = ({
          <div className={`xl:col-span-7 ${DASH_CARD} ${CARD_PAD} ${CHART_PANEL_H} flex flex-col`}>
             <h3 className={`${SECTION_TITLE} mb-2 lg:mb-3`}>Performance</h3>
             <div className="flex-1 min-h-0 [&_rect]:cursor-pointer">
-               <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData} margin={{ top: 8, right: 12, left: -16, bottom: 0 }}>
-                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                     <XAxis 
-                        dataKey="name" 
-                        axisLine={false} 
-                        tickLine={false} 
-                        tick={(props: { x: number; y: number; payload?: { value?: string }; index?: number }) => {
-                          const { x, y, payload, index } = props;
-                          const point = typeof index === 'number' ? chartData[index] : chartData.find(d => d.name === payload?.value);
-                          return (
-                            <g transform={`translate(${x},${y})`} style={{ cursor: 'pointer' }}>
-                              <text
-                                x={0}
-                                y={0}
-                                dy={8}
-                                textAnchor="middle"
-                                fill="#64748b"
-                                fontSize={12}
-                                fontWeight="bold"
-                                onClick={() => point && openDayDetail({ dayLabel: point.dayLabel, dateStr: point.dateStr, items: point.soldItems ?? [], revenue: point.revenue, itemProfit: point.itemProfit, expTotal: point.expTotal, netProfit: point.netProfit })}
-                                role="button"
-                                tabIndex={0}
-                              >
-                                {payload?.value}
-                              </text>
-                            </g>
-                          );
-                        }}
-                     />
-                     <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} width={48} />
-                     <Tooltip 
-                        cursor={{ fill: '#f8fafc' }} 
-                        contentStyle={{ borderRadius: '12px', border: 'none', fontSize: '12px' }} 
-                        content={({ active, payload }) => {
-                          if (!active || !payload?.length) return null;
-                          const p = payload[0]?.payload;
-                          const sold = p?.soldItems ?? [];
-                          const itemProfit = Number(p?.itemProfit) || 0;
-                          const expTotal = Number(p?.expTotal) || 0;
-                          return (
-                            <div className="bg-white rounded-lg border border-slate-200 shadow-lg p-2 text-xs">
-                              <p className="font-bold text-slate-500 mb-1">{p?.dayLabel ?? p?.name}</p>
-                              {payload.map((entry) => (
-                                <p key={entry.dataKey} className="font-bold">€{formatEUR(Number(entry.value))} ({entry.name})</p>
-                              ))}
-                              <p className="text-slate-500 mt-1">Sale €{formatEUR(itemProfit)}{expTotal > 0 ? ` · Exp −€${formatEUR(expTotal)}` : ''}</p>
-                              {sold.length > 0 && (
-                                <button type="button" onClick={() => openDayDetail({ dayLabel: p?.dayLabel ?? p?.name, dateStr: p?.dateStr ?? '', items: sold, revenue: p?.revenue, itemProfit: p?.itemProfit, expTotal: p?.expTotal, netProfit: p?.netProfit })} className="mt-1 font-bold text-blue-600 hover:underline">
-                                  {sold.length} sold →
-                                </button>
-                              )}
-                            </div>
-                          );
-                        }}
-                     />
-                     <Bar dataKey="revenue" fill="#3B82F6" radius={[4, 4, 0, 0]} name="Revenue" maxBarSize={40} onClick={(data: any) => { const p = data?.payload ?? data; openDayDetail({ dayLabel: p?.dayLabel ?? '', dateStr: p?.dateStr ?? '', items: p?.soldItems ?? [], revenue: p?.revenue, itemProfit: p?.itemProfit, expTotal: p?.expTotal, netProfit: p?.netProfit }); }} />
-                     <Bar dataKey="netProfit" fill="#10B981" radius={[4, 4, 0, 0]} name="Net" maxBarSize={40} onClick={(data: any) => { const p = data?.payload ?? data; openDayDetail({ dayLabel: p?.dayLabel ?? '', dateStr: p?.dateStr ?? '', items: p?.soldItems ?? [], revenue: p?.revenue, itemProfit: p?.itemProfit, expTotal: p?.expTotal, netProfit: p?.netProfit }); }} />
-                  </BarChart>
-               </ResponsiveContainer>
+               <Suspense fallback={<div className="h-full min-h-[180px] rounded-xl bg-slate-100 animate-pulse" />}>
+                  <DashboardPerformanceChart chartData={chartData} onOpenDay={openDayDetail} />
+               </Suspense>
             </div>
          </div>
          )}
@@ -1552,16 +1498,9 @@ const Dashboard: React.FC<Props> = ({
             {categoryData.length > 0 ? (
                <>
                <div className="flex-1 min-h-0 relative">
-                  <ResponsiveContainer width="100%" height="100%">
-                     <PieChart>
-                        <Pie data={categoryData} cx="50%" cy="50%" innerRadius="42%" outerRadius="68%" paddingAngle={3} dataKey="value">
-                           {categoryData.map((_, index) => (
-                              <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} stroke="none" />
-                           ))}
-                        </Pie>
-                        <Tooltip formatter={(value: number) => `€${formatEUR(value)}`} contentStyle={{ borderRadius: '12px', fontSize: '13px' }} />
-                     </PieChart>
-                  </ResponsiveContainer>
+                  <Suspense fallback={<div className="h-full min-h-[180px] rounded-xl bg-slate-100 animate-pulse" />}>
+                     <DashboardStockPie categoryData={categoryData} />
+                  </Suspense>
                </div>
                <div className="flex flex-wrap gap-x-3 gap-y-1 max-h-[56px] lg:max-h-[72px] overflow-hidden mt-1">
                   {categoryData.slice(0, 5).map((cat, idx) => (

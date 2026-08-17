@@ -4,6 +4,7 @@ import type { StorefrontTexts } from './storefrontTexts';
 import type { StoreItem } from './storefrontUtils';
 import { catalogItemImageList } from './storefrontUtils';
 import { formatEUR } from '../../utils/formatMoney';
+import { toHeroImageUrl } from '../../utils/displayImageUrl';
 
 interface Props {
   texts: StorefrontTexts;
@@ -65,12 +66,14 @@ const StorefrontHero: React.FC<Props> = ({
       <div className="absolute inset-0" aria-hidden="true">
         {featuredImageUrl ? (
           <img
-            src={featuredImageUrl}
+            src={toHeroImageUrl(featuredImageUrl)}
             alt=""
             className={`h-full w-full object-cover scale-105 transition-transform duration-[1.4s] ${
               entered ? 'scale-100' : 'scale-105'
             }`}
             style={{ transitionTimingFunction: EASE }}
+            fetchPriority="high"
+            decoding="async"
           />
         ) : (
           <div

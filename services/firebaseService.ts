@@ -60,6 +60,7 @@ import {
 } from "firebase/storage";
 import { yieldToMain } from "./backgroundPersistence";
 import type { GeneratedProductCardEntry } from "../types";
+import { AUTH_REDIRECT_PENDING_KEY } from "../utils/bootRoute";
 import { assertStorageUploadBudget, recordStorageUploads } from "./storageOpsCounter";
 import {
   assertFirestoreDailyBudget,
@@ -281,7 +282,7 @@ export function getAuthErrorMessage(err: unknown): string {
 /** sessionStorage key for post-OAuth return path (panel or phone upload). */
 export const AUTH_RETURN_PATH_KEY = 'deinventory_auth_return';
 /** Set before redirect so we can show an error if the return has no session. */
-export const AUTH_REDIRECT_PENDING_KEY = 'deinventory_auth_redirect_pending';
+export { AUTH_REDIRECT_PENDING_KEY };
 
 /** Phones/tablets: Google popup auth is unreliable — use full-page redirect. */
 export function prefersRedirectSignIn(): boolean {
@@ -451,7 +452,7 @@ function loadGoogleIdentityServices(): Promise<{ id?: GisId; oauth2?: GisOauth2 
     if (prev) {
       prev.addEventListener("load", done);
       prev.addEventListener("error", () => reject(new Error("Failed to load Google sign-in script.")));
-      // Script may already be loaded (index.html).
+      // Script may already be in-flight from a previous sign-in attempt.
       if (getGisApi()?.id || getGisApi()?.oauth2) done();
       return;
     }

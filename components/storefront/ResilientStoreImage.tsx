@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Package } from 'lucide-react';
 import { isUsableProductImageUrl } from '../../services/storefrontImageUtils';
+import { toListImageUrl } from '../../utils/displayImageUrl';
 import { getCategoryImageUrl } from '../ItemThumbnail';
 
 const ResilientStoreImage: React.FC<{
@@ -11,17 +12,23 @@ const ResilientStoreImage: React.FC<{
   subCategory?: string;
   className?: string;
   imgStyle?: React.CSSProperties;
-}> = ({ urls, index, alt, category, subCategory, className, imgStyle }) => {
+  priority?: boolean;
+}> = ({ urls, index, alt, category, subCategory, className, imgStyle, priority = false }) => {
   const safeUrls = useMemo(() => urls.filter(isUsableProductImageUrl), [urls]);
   const primary = safeUrls.length ? safeUrls[Math.min(Math.max(0, index), safeUrls.length - 1)] : null;
   const catUrl = getCategoryImageUrl({ category, subCategory }) || undefined;
-  const [stage, setStage] = useState<'primary' | 'category' | 'none'>('primary');
+  const [stage, setStage] = useState<'thumb' | 'primary' | 'category' | 'none'>('thumb');
 
   useEffect(() => {
-    setStage('primary');
+    setStage('thumb');
   }, [primary, index]);
 
-  const src = stage === 'primary' ? primary : stage === 'category' ? catUrl ?? null : null;
+  const thumbSrc = primary ? toListImageUrl(primary) : null;
+  const src =
+    stage === 'thumb' ? thumbSrc || primary :
+    stage === 'primary' ? primary :
+    stage === 'category' ? catUrl ?? null :
+    null;
 
   if (!src) {
     return (
@@ -38,10 +45,12 @@ const ResilientStoreImage: React.FC<{
       alt={alt}
       className={className}
       style={imgStyle}
-      loading="lazy"
+      loading={priority ? 'eager' : 'lazy'}
       decoding="async"
+      fetchPriority={priority ? 'high' : 'auto'}
       onError={() => {
-        if (stage === 'primary' && catUrl) setStage('category');
+        if (stage === 'thumb' && primary && src !== primary) setStage('primary');
+        else if ((stage === 'thumb' || stage === 'primary') && catUrl) setStage('category');
         else setStage('none');
       }}
     />

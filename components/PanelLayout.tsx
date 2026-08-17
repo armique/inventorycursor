@@ -21,6 +21,7 @@ import {
 import QuotaMonitor from './QuotaMonitor';
 import FirestoreQuotaWidget from './FirestoreQuotaWidget';
 import GlobalSearch from './GlobalSearch';
+import { panelSuspenseFallback } from './RouteSkeletons';
 import { InventoryItem, Expense, BusinessSettings } from '../types';
 import { cloudSyncBadgeLabel, cloudSyncBadgeTitle } from '../utils/cloudSyncStatus';
 import { defaultGamificationState, type GamificationState } from '../utils/gamification';
@@ -562,11 +563,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
                 : 'flex flex-col min-w-0'
             }
           >
-            <Suspense fallback={
-              <div className="flex items-center justify-center min-h-[300px] flex-1">
-                <Loader2 size={32} className="animate-spin text-slate-400" />
-              </div>
-            }>
+            <Suspense fallback={panelSuspenseFallback(location.pathname)}>
               <Outlet />
             </Suspense>
           </div>

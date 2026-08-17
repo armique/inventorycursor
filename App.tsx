@@ -7,6 +7,7 @@ import QuotaMonitor from './components/QuotaMonitor';
 import { SettingsModalProvider } from './context/SettingsModalContext';
 import SettingsModalHost from './components/SettingsModalHost';
 import OpenSettingsFromRoute from './components/OpenSettingsFromRoute';
+import { StorefrontPageSkeleton } from './components/RouteSkeletons';
 
 const StorefrontPage = lazy(() => import('./components/StorefrontPage'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
@@ -2085,7 +2086,7 @@ const App: React.FC = () => {
         <Route
           path="/"
           element={
-            <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+            <Suspense fallback={<StorefrontPageSkeleton />}>
               <StorefrontPage />
             </Suspense>
           }
@@ -2093,7 +2094,7 @@ const App: React.FC = () => {
         <Route
           path="/item/:id"
           element={
-            <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+            <Suspense fallback={<StorefrontPageSkeleton />}>
               <StorefrontPage />
             </Suspense>
           }
