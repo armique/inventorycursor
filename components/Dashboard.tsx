@@ -26,6 +26,7 @@ import { countSalesByPlatform, formatItemSalePlatform, groupSalesByPlatform, PLA
 import { ADD_OPTIONS, AddOptionTile } from './addFlowShared';
 
 const DashboardAnalyticsPanel = lazy(() => import('./DashboardAnalyticsPanel'));
+const DealwatchWorkspace = lazy(() => import('./dealwatch/DealwatchWorkspace'));
 const DashboardPerformanceChart = lazy(() =>
   import('./DashboardRecharts').then((m) => ({ default: m.DashboardPerformanceChart }))
 );
@@ -1587,12 +1588,15 @@ const Dashboard: React.FC<Props> = ({
 
       {mainTab === 'dealwatch' && (
         <div className="flex-1 min-h-[min(70vh,720px)] flex flex-col min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white">
-          <iframe
-            title="Dealwatch"
-            src="/dealwatch/index.html"
-            className="flex-1 min-h-0 w-full border-0 bg-white"
-            allow="clipboard-read; clipboard-write"
-          />
+          <Suspense
+            fallback={
+              <div className="flex-1 flex items-center justify-center text-sm font-semibold text-slate-400">
+                Loading Dealwatch…
+              </div>
+            }
+          >
+            <DealwatchWorkspace embedded />
+          </Suspense>
         </div>
       )}
     </div>
