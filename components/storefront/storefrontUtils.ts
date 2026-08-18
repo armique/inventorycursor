@@ -3,6 +3,9 @@ import type { StoreCatalogPayload } from '../../services/firebaseService';
 
 export type StoreItem = NonNullable<StoreCatalogPayload['items']>[number];
 
+/** Fixed showroom hero (PC in front, hardware shelves behind) — not a catalog photo. */
+export const STOREFRONT_HERO_IMAGE_URL = '/storefront/hero-showroom.jpg';
+
 export function getStorefrontPrintMeta(item: {
   specs?: Record<string, string | number>;
 }): { weight?: string; time?: string } | null {

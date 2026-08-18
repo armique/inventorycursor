@@ -4,13 +4,12 @@
 
 import type { InventoryItem } from '../types';
 import { ensureEbayListings } from '../services/ebayListingIndex';
+import { ensureKaListings } from '../services/kleinanzeigenListingIndex';
 import {
   applyEbayPresenceToItems,
   applyKaPresenceToItems,
   loadKaListingTitles,
-  loadKaProfileUrl,
   markPresenceMeta,
-  saveKaListingTitles,
   type ListingTitleHit,
 } from './listingPresence';
 import { computePriceChangeHint, isListingPresenceEligible, isListingWatchCandidate } from './listingWatch';
@@ -76,26 +75,20 @@ export async function syncListingPresence(
   }
 
   if (!opts?.skipKa) {
-    let titles = opts?.kaTitlesOverride || (!opts?.forceKa ? loadKaListingTitles() : []);
-    const profileUrl = loadKaProfileUrl();
-    const shouldFetchKa =
-      Boolean(profileUrl) &&
-      (opts?.forceKa || !titles.length || opts?.kaTitlesOverride == null);
-    if (shouldFetchKa && profileUrl) {
+    let titles = opts?.kaTitlesOverride || [];
+    if (!opts?.kaTitlesOverride) {
       try {
-        const res = await fetch(
-          `/api/kleinanzeigen-listings?url=${encodeURIComponent(profileUrl)}`
-        );
-        const data = await res.json();
-        if (res.ok && Array.isArray(data.titles) && data.titles.length) {
-          titles = data.titles as ListingTitleHit[];
-          saveKaListingTitles(titles);
-        } else if (!titles.length) {
-          kaError = data.error || 'Could not fetch KA profile — paste listing titles in Settings.';
-        }
-      } catch {
+        const { listings } = await ensureKaListings({ force: Boolean(opts?.forceKa) });
+        titles = listings.map((listing) => ({
+          title: listing.title,
+          url: listing.listingUrl || undefined,
+          listingId: listing.listingId,
+          price: listing.price,
+        }));
+      } catch (e) {
+        titles = loadKaListingTitles();
         if (!titles.length) {
-          kaError = 'KA profile fetch failed — paste listing titles in Settings.';
+          kaError = (e as Error)?.message || 'Could not fetch KA profile — paste listing titles in Settings.';
         }
       }
     }

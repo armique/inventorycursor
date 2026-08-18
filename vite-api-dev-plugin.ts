@@ -61,6 +61,10 @@ async function loadHandler(pathname: string): Promise<{ handler: (req: ApiReques
     const mod = await import('./api/barcode.js');
     return { handler: mod.default };
   }
+  if (pathname === '/api/kleinanzeigen-listings') {
+    const mod = await import('./api/kleinanzeigen-listings.js');
+    return { handler: mod.default };
+  }
   if (pathname === '/api/ai-text') {
     const mod = await import('./api/ai-text.js');
     return { handler: mod.default };

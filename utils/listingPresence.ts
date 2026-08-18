@@ -216,6 +216,24 @@ export function scoreKaTitleMatch(itemName: string, listingTitle: string): numbe
   return Math.min(1, score);
 }
 
+/** Match inventory name to cached Kleinanzeigen listings for photo import. */
+export function matchKaListingsForItem<T extends { title: string }>(
+  itemName: string,
+  listings: T[],
+  minSim = MIN_KA_SIM
+): Array<T & { matchScore: number }> {
+  const name = (itemName || '').trim();
+  if (name.length < 3 || !listings.length) return [];
+  return listings
+    .map((listing) => ({
+      ...listing,
+      matchScore: Math.round(scoreKaTitleMatch(name, listing.title) * 1000),
+    }))
+    .filter((listing) => listing.matchScore >= Math.round(minSim * 1000))
+    .sort((a, b) => b.matchScore - a.matchScore)
+    .slice(0, 8);
+}
+
 /** Best title match for an inventory name against a list of listing titles. */
 export function bestTitleMatch(
   itemName: string,

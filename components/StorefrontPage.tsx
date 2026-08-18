@@ -33,6 +33,7 @@ import {
   priceDisplay,
   hasActiveFilters,
   clearFilters,
+  STOREFRONT_HERO_IMAGE_URL,
   type StoreItem,
   type FilterState,
 } from './storefront/storefrontUtils';
@@ -174,13 +175,7 @@ const StorefrontPage: React.FC = () => {
 
   const items = useMemo(() => (catalog?.items ?? []).filter((i) => i.storeVisible !== false), [catalog]);
   const saleCount = useMemo(() => items.filter((i) => i.storeOnSale).length, [items]);
-  const featuredHeroImage = useMemo(() => {
-    const preferred =
-      items.find((i) => i.storeOnSale && catalogItemImageList(i).some(isUsableProductImageUrl)) ||
-      items.find((i) => catalogItemImageList(i).some(isUsableProductImageUrl));
-    if (!preferred) return null;
-    return catalogItemImageList(preferred).find(isUsableProductImageUrl) || null;
-  }, [items]);
+  const featuredHeroImage = STOREFRONT_HERO_IMAGE_URL;
 
   useEffect(() => {
     if (!catalogLoaded) return;

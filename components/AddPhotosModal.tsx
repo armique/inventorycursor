@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Camera, CheckCircle2, Loader2, Search, ShoppingBag, Upload, X, Link2, Images } from 'lucide-react';
+import { Camera, CheckCircle2, Loader2, Search, ShoppingBag, Store, Upload, X, Link2, Images } from 'lucide-react';
 import { prefersNativePhotoCapture } from '../utils/deviceUi';
 import {
   filesToDataUrls,
@@ -26,6 +26,14 @@ import {
 import { ensureEbayListings } from '../services/ebayListingIndex';
 import { matchEbayListingsForItem } from '../utils/ebayListingMatch';
 import { formatEUR } from '../utils/formatMoney';
+import {
+  fetchKaListingByUrl,
+  hydrateKaListingsPhotos,
+  isKaListingUrl,
+  type KaMyListing,
+} from '../services/kleinanzeigenListingService';
+import { ensureKaListings, upsertKaListings } from '../services/kleinanzeigenListingIndex';
+import { loadKaProfileUrl, matchKaListingsForItem } from '../utils/listingPresence';
 
 export type AddPhotosApplyOptions = {
   ebayMatch?: EbayListingPriceMatch;
@@ -84,6 +92,16 @@ const AddPhotosModal: React.FC<Props> = ({
   const [ebayImportingId, setEbayImportingId] = useState<string | null>(null);
   const [manualEbayListingInput, setManualEbayListingInput] = useState('');
 
+  const [kaListingMatches, setKaListingMatches] = useState<Array<KaMyListing & { matchScore: number }> | null>(
+    null
+  );
+  const [kaListingLoading, setKaListingLoading] = useState(false);
+  const [kaListingError, setKaListingError] = useState<string | null>(null);
+  const [expandedKaListingId, setExpandedKaListingId] = useState<string | null>(null);
+  const [selectedKaPhotosByListing, setSelectedKaPhotosByListing] = useState<Record<string, string[]>>({});
+  const [kaImportingId, setKaImportingId] = useState<string | null>(null);
+  const [manualKaListingInput, setManualKaListingInput] = useState('');
+
   const storageOptions = { itemId: storageItemId };
   const canSearch = Boolean(searchName.trim());
   const singleItemMode = itemCount === 1;
@@ -110,6 +128,13 @@ const AddPhotosModal: React.FC<Props> = ({
     setSelectedEbayPhotosByListing({});
     setEbayImportingId(null);
     setManualEbayListingInput('');
+    setKaListingMatches(null);
+    setKaListingLoading(false);
+    setKaListingError(null);
+    setExpandedKaListingId(null);
+    setSelectedKaPhotosByListing({});
+    setKaImportingId(null);
+    setManualKaListingInput('');
   }, [open]);
 
   useEffect(() => {
@@ -449,13 +474,148 @@ const AddPhotosModal: React.FC<Props> = ({
     setSelectedEbayPhotosByListing((prev) => ({ ...prev, [listingId]: [] }));
   };
 
+  const applyKaMatches = (matches: Array<KaMyListing & { matchScore: number }>) => {
+    setKaListingMatches(matches);
+    if (matches.length === 1) {
+      setExpandedKaListingId(matches[0].listingId);
+      setSelectedKaPhotosByListing({ [matches[0].listingId]: [...matches[0].imageUrls] });
+    }
+  };
+
+  const handleFromMyKaListings = async () => {
+    if (!canSearch) return;
+    setKaListingLoading(true);
+    setKaListingError(null);
+    setKaListingMatches(null);
+    setExpandedKaListingId(null);
+    setSelectedKaPhotosByListing({});
+    setPhotoSearchResults(null);
+    setPhotoSearchError(null);
+    try {
+      const profileUrl = loadKaProfileUrl();
+      if (!profileUrl) {
+        setKaListingError('Set your Kleinanzeigen profile URL in Settings first.');
+        return;
+      }
+      const { listings: all } = await ensureKaListings();
+      if (!all.length) {
+        setKaListingError('No Kleinanzeigen listings found on your profile. Refresh in Settings or paste an ad link below.');
+        return;
+      }
+      const matches = matchKaListingsForItem(searchName.trim(), all);
+      if (!matches.length) {
+        setKaListingError(
+          `No listings matched "${searchName.trim()}". You have ${all.length} KA listing${all.length === 1 ? '' : 's'}. Paste a Kleinanzeigen ad link below to pick it manually.`
+        );
+        return;
+      }
+      const hydrated = await hydrateKaListingsPhotos(matches);
+      upsertKaListings(hydrated);
+      applyKaMatches(hydrated.map((listing, idx) => ({ ...listing, matchScore: matches[idx].matchScore })));
+    } catch (e: unknown) {
+      setKaListingError((e as Error)?.message || 'Failed to load your Kleinanzeigen listings.');
+    } finally {
+      setKaListingLoading(false);
+    }
+  };
+
+  const handleManualKaListingLookup = async () => {
+    const raw = manualKaListingInput.trim();
+    if (!raw) return;
+
+    if (!isKaListingUrl(raw)) {
+      setKaListingError('Paste a valid Kleinanzeigen ad URL (…/s-anzeige/…) or ad ID.');
+      return;
+    }
+
+    setKaListingLoading(true);
+    setKaListingError(null);
+    setKaListingMatches(null);
+    setExpandedKaListingId(null);
+    setSelectedKaPhotosByListing({});
+    setPhotoSearchResults(null);
+    setPhotoSearchError(null);
+
+    try {
+      const exact = await fetchKaListingByUrl(raw);
+      if (!exact) {
+        setKaListingError('That Kleinanzeigen listing was not found or has no photos.');
+        return;
+      }
+      if (!exact.imageUrls?.length) {
+        setKaListingError(`Listing ${exact.listingId} has no photos available to import.`);
+        return;
+      }
+      upsertKaListings([exact]);
+      applyKaMatches([{ ...exact, matchScore: 1000 }]);
+      setManualKaListingInput('');
+    } catch (e: unknown) {
+      setKaListingError((e as Error)?.message || 'Failed to load that Kleinanzeigen listing.');
+    } finally {
+      setKaListingLoading(false);
+    }
+  };
+
+  const toggleKaPhotoSelection = (listingId: string, url: string) => {
+    setSelectedKaPhotosByListing((prev) => {
+      const current = new Set(prev[listingId] || []);
+      if (current.has(url)) current.delete(url);
+      else current.add(url);
+      return { ...prev, [listingId]: Array.from(current) };
+    });
+  };
+
+  const importKaListing = async (listing: KaMyListing & { matchScore: number }, urls: string[]) => {
+    if (!urls.length) return;
+    setKaImportingId(listing.listingId);
+    setLoading(true);
+    setError(null);
+    try {
+      const prepared = await prepareInventoryImagesForStorage(urls, storageOptions);
+      if (!prepared.length) {
+        setError('Could not import photos from this listing.');
+        return;
+      }
+      if (singleItemMode) {
+        await onApply(prepared);
+        onClose();
+        return;
+      }
+      addUrls(prepared);
+      setKaListingMatches(null);
+      setExpandedKaListingId(null);
+      setSelectedKaPhotosByListing({});
+    } catch {
+      setError('Could not import photos from this listing.');
+    } finally {
+      setKaImportingId(null);
+      setLoading(false);
+    }
+  };
+
+  const selectAllKaPhotos = (listing: KaMyListing) => {
+    setSelectedKaPhotosByListing((prev) => ({
+      ...prev,
+      [listing.listingId]: [...listing.imageUrls],
+    }));
+  };
+
+  const clearKaPhotoSelection = (listingId: string) => {
+    setSelectedKaPhotosByListing((prev) => ({ ...prev, [listingId]: [] }));
+  };
+
   const selectedEbayUrls = useMemo(() => {
     const all = Object.values(selectedEbayPhotosByListing).flat();
     return normalizeImageList(all);
   }, [selectedEbayPhotosByListing]);
 
+  const selectedKaUrls = useMemo(() => {
+    const all = Object.values(selectedKaPhotosByListing).flat();
+    return normalizeImageList(all);
+  }, [selectedKaPhotosByListing]);
+
   const handleApply = async () => {
-    const combined = normalizeImageList([...pendingUrls, ...selectedEbayUrls]);
+    const combined = normalizeImageList([...pendingUrls, ...selectedEbayUrls, ...selectedKaUrls]);
     if (!combined.length) {
       setError('Add at least one photo first.');
       return;
@@ -636,6 +796,15 @@ const AddPhotosModal: React.FC<Props> = ({
                 <ShoppingBag size={12} />
                 {ebayListingLoading ? 'Loading…' : 'My eBay photos'}
               </button>
+              <button
+                type="button"
+                onClick={handleFromMyKaListings}
+                disabled={kaListingLoading || !canSearch || loading}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-emerald-200 text-emerald-800 text-[10px] font-black uppercase tracking-widest hover:bg-emerald-50 disabled:opacity-50"
+              >
+                <Store size={12} />
+                {kaListingLoading ? 'Loading…' : 'My KA photos'}
+              </button>
             </div>
             <div className="rounded-lg border border-slate-200 bg-white p-2.5 space-y-2">
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
@@ -661,6 +830,35 @@ const AddPhotosModal: React.FC<Props> = ({
                 Use this when title matching misses the correct listing.
               </p>
             </div>
+            <div className="rounded-lg border border-slate-200 bg-white p-2.5 space-y-2">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                Kleinanzeigen listing link
+              </p>
+              <div className="flex gap-2">
+                <input
+                  value={manualKaListingInput}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      void handleManualKaListingLookup();
+                    }
+                  }}
+                  placeholder="https://www.kleinanzeigen.de/s-anzeige/… or ad ID"
+                  className="flex-1 min-w-0 px-2.5 py-2 rounded-lg border border-slate-200 bg-white text-[11px] font-medium outline-none focus:ring-2 focus:ring-emerald-500/20"
+                />
+                <button
+                  type="button"
+                  onClick={handleManualKaListingLookup}
+                  disabled={loading || kaListingLoading || !manualKaListingInput.trim()}
+                  className="shrink-0 px-3 py-2 rounded-lg border border-emerald-200 text-emerald-800 text-[10px] font-black uppercase tracking-wide hover:bg-emerald-50 disabled:opacity-50"
+                >
+                  Use link
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-500">
+                Parses all gallery photos from a public Kleinanzeigen ad.
+              </p>
+            </div>
             {itemCount > 1 && canSearch && (
               <p className="text-[10px] text-slate-500">Search uses the first selected item name for all targets.</p>
             )}
@@ -672,6 +870,11 @@ const AddPhotosModal: React.FC<Props> = ({
             {ebayListingError && (
               <p className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
                 {ebayListingError}
+              </p>
+            )}
+            {kaListingError && (
+              <p className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                {kaListingError}
               </p>
             )}
             {photoSearchResults && photoSearchResults.length > 0 && (
@@ -808,6 +1011,110 @@ const AddPhotosModal: React.FC<Props> = ({
                 })}
               </div>
             )}
+            {kaListingMatches && kaListingMatches.length > 0 && (
+              <div className="space-y-2 max-h-52 overflow-y-auto">
+                {kaListingMatches.map((listing) => {
+                  const expanded = expandedKaListingId === listing.listingId;
+                  const selected = selectedKaPhotosByListing[listing.listingId] || [];
+                  const selectedSet = new Set(selected);
+                  const importing = kaImportingId === listing.listingId;
+                  return (
+                    <div key={listing.listingId} className="rounded-xl bg-white border border-emerald-200 p-2.5 space-y-2">
+                      <div className="flex gap-2">
+                        {listing.thumbnail ? (
+                          <img src={listing.thumbnail} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0" />
+                        ) : (
+                          <div className="w-12 h-12 rounded-lg bg-slate-100 shrink-0" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-slate-900 line-clamp-2">{listing.title}</p>
+                          <div className="flex flex-wrap gap-1.5 mt-1.5">
+                            <button
+                              type="button"
+                              disabled={importing || loading || listing.imageUrls.length === 0}
+                              onClick={() => void importKaListing(listing, listing.imageUrls)}
+                              className="px-2 py-1 rounded-md bg-emerald-600 text-white text-[9px] font-black uppercase disabled:opacity-50"
+                            >
+                              {importing ? 'Importing…' : `Import all ${listing.imageUrls.length}`}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={importing || loading}
+                              onClick={() =>
+                                setExpandedKaListingId(expanded ? null : listing.listingId)
+                              }
+                              className="px-2 py-1 rounded-md border border-emerald-200 text-emerald-800 text-[9px] font-black uppercase disabled:opacity-50"
+                            >
+                              {expanded ? 'Hide' : 'Pick'}
+                            </button>
+                          </div>
+                          {listing.price != null && listing.price > 0 && (
+                            <p className="text-[10px] text-slate-500 mt-1">
+                              €{formatEUR(listing.price)} on Kleinanzeigen
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      {expanded && (
+                        <div className="space-y-2 border-t border-emerald-100 pt-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-[10px] font-bold text-slate-500">
+                              {selected.length} selected
+                            </p>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => selectAllKaPhotos(listing)}
+                                className="text-[10px] font-bold text-emerald-700 hover:underline"
+                              >
+                                Select all
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => clearKaPhotoSelection(listing.listingId)}
+                                className="text-[10px] font-bold text-slate-400 hover:text-slate-700"
+                              >
+                                Clear
+                              </button>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-4 gap-1.5">
+                            {listing.imageUrls.map((url) => {
+                              const isSelected = selectedSet.has(url);
+                              return (
+                                <button
+                                  key={url}
+                                  type="button"
+                                  onClick={() => toggleKaPhotoSelection(listing.listingId, url)}
+                                  className={`relative aspect-square rounded-lg overflow-hidden ring-2 ${
+                                    isSelected ? 'ring-emerald-500' : 'ring-slate-200'
+                                  }`}
+                                >
+                                  <img src={url} alt="" className="w-full h-full object-cover" />
+                                  {isSelected && (
+                                    <span className="absolute top-0.5 right-0.5 bg-emerald-600 text-white rounded-full p-0.5">
+                                      <CheckCircle2 size={10} />
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <button
+                            type="button"
+                            disabled={!selected.length || importing || loading}
+                            onClick={() => void importKaListing(listing, selected)}
+                            className="w-full py-1.5 rounded-lg bg-emerald-600 text-white text-[9px] font-black uppercase disabled:opacity-50"
+                          >
+                            {importing ? 'Importing…' : `Add ${selected.length} selected`}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {!nativePhoto && (
@@ -893,7 +1200,7 @@ const AddPhotosModal: React.FC<Props> = ({
             <textarea
               value={urlInput}
               onChange={(e) => setUrlInput(e.target.value)}
-              placeholder="Paste one or more direct image URLs (one per line)"
+              placeholder="Paste image URLs, or a Kleinanzeigen ad link (one per line)"
               rows={2}
               className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
             />
@@ -973,7 +1280,7 @@ const AddPhotosModal: React.FC<Props> = ({
           <button
             type="button"
             onClick={handleApply}
-            disabled={loading || (pendingUrls.length === 0 && selectedEbayUrls.length === 0)}
+            disabled={loading || (pendingUrls.length === 0 && selectedEbayUrls.length === 0 && selectedKaUrls.length === 0)}
             className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-black uppercase tracking-wide hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {loading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}

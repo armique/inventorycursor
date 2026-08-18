@@ -6,6 +6,10 @@ import {
   type PersistInventoryImagesOptions,
 } from '../services/inventoryImageStorage';
 import { filterUsableImageUrls } from '../services/storefrontImageUtils';
+import {
+  fetchKaListingByUrl,
+  isKaListingUrl,
+} from '../services/kleinanzeigenListingService';
 import type { InventoryItem } from '../types';
 
 export type { PersistInventoryImagesOptions };
@@ -102,6 +106,12 @@ export async function resolveImageUrlsFromInput(input: string): Promise<string[]
   for (const line of lines) {
     if (isImgurAlbumOrGalleryUrl(line)) {
       out.push(...(await fetchImgurAlbumImageUrls(line)));
+    } else if (isKaListingUrl(line)) {
+      const listing = await fetchKaListingByUrl(line);
+      if (!listing?.imageUrls?.length) {
+        throw new Error('No photos found on that Kleinanzeigen listing.');
+      }
+      out.push(...listing.imageUrls);
     } else {
       out.push(normalizeImgurImageUrl(line));
     }

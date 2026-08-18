@@ -21,7 +21,7 @@ interface Props {
   /** Top matches for the current search text, shown live below the input as you type. */
   liveResults?: StoreItem[];
   onSelectResult?: (item: StoreItem) => void;
-  /** Full-bleed hero plane — first catalog image with usable photo. */
+  /** Full-bleed hero plane — fixed showroom photo. */
   featuredImageUrl?: string | null;
 }
 
