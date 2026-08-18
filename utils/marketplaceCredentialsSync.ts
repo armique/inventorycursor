@@ -155,13 +155,20 @@ export function withDealwatchplaceCredentials(
 /** Snapshot current local eBay OAuth fields into business settings for cloud sync. */
 export function withLocalEbayOAuthOnSettings(settings: BusinessSettings): BusinessSettings {
   const cfg = getEbayConfig();
-  const next = withDealwatchplaceCredentials(settings, {
-    ebaySellerUsername: cfg.username,
-    ebayOAuthToken: cfg.token || '',
-    ebayOAuthRefreshToken: cfg.refreshToken || '',
-    ebayOAuthExpiresAt: cfg.expiresAt,
-    ebayOAuthRefreshExpiresAt: cfg.refreshExpiresAt,
-  });
+  const patch: {
+    ebaySellerUsername?: string;
+    ebayOAuthToken?: string;
+    ebayOAuthRefreshToken?: string;
+    ebayOAuthExpiresAt?: number;
+    ebayOAuthRefreshExpiresAt?: number;
+  } = {};
+  if (cfg.username?.trim()) patch.ebaySellerUsername = cfg.username;
+  if (cfg.token?.trim()) patch.ebayOAuthToken = cfg.token;
+  if (cfg.refreshToken?.trim()) patch.ebayOAuthRefreshToken = cfg.refreshToken;
+  if (cfg.expiresAt) patch.ebayOAuthExpiresAt = cfg.expiresAt;
+  if (cfg.refreshExpiresAt) patch.ebayOAuthRefreshExpiresAt = cfg.refreshExpiresAt;
+  if (Object.keys(patch).length === 0) return settings;
+  const next = withDealwatchplaceCredentials(settings, patch);
   if (
     next.ebaySellerUsername === settings.ebaySellerUsername &&
     next.ebayOAuthToken === settings.ebayOAuthToken &&

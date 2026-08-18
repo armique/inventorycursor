@@ -111,6 +111,11 @@ import {
   preferFilledContainerBuyDate,
 } from './utils/backfillContainerBuyDates';
 import { applyHealthInsuranceLedger } from './utils/healthInsuranceLedger';
+import { mergeBusinessSettings } from './utils/mergeBusinessSettings';
+import {
+  markInvoiceBusinessProfileDone,
+  stampInvoiceBusinessProfile,
+} from './utils/invoiceBusinessProfile';
 import {
   WRITE_DEBOUNCE_MS,
   FAST_CLOUD_FLUSH_MS,
@@ -479,7 +484,15 @@ const App: React.FC = () => {
           bankName: '',
           taxMode: 'SmallBusiness',
         };
-    return mergeLocalMarketplaceCredentialsIntoSettings(base);
+    const stamped = stampInvoiceBusinessProfile(base);
+    if (stamped.changed) {
+      try {
+        localStorage.setItem('business_settings', JSON.stringify(stamped.settings));
+      } catch {
+        /* ignore quota */
+      }
+    }
+    return mergeLocalMarketplaceCredentialsIntoSettings(stamped.settings);
   });
 
   // Keep this browser’s eBay/KA local keys in sync when cloud settings arrive / change.
@@ -893,7 +906,22 @@ const App: React.FC = () => {
     setTrash(tr.map(migrateContainerItem));
     setExpenses(exp);
     setRecurringExpenses(recurring);
-    setBusinessSettings(prev => ({ ...prev, ...sets }));
+    const { settings: mergedSettings, keptLocalFilled } = mergeBusinessSettings(
+      businessSettingsRef.current,
+      sets
+    );
+    const stampedSettings = stampInvoiceBusinessProfile(mergedSettings);
+    const nextSettings = stampedSettings.settings;
+    businessSettingsRef.current = nextSettings;
+    setBusinessSettings(nextSettings);
+    if (!stampedSettings.changed) {
+      markInvoiceBusinessProfileDone();
+    }
+    if (keptLocalFilled || stampedSettings.changed) {
+      pendingCloudPushAfterRemoteRef.current = true;
+      hasUnsavedChanges.current = true;
+      requestFastCloudFlush();
+    }
     setMonthlyGoal(goal);
     setCategories(migrateCategoriesRecord(cats));
     setCategoryFields(fields);
@@ -902,7 +930,7 @@ const App: React.FC = () => {
         itemsJson: JSON.stringify(inv),
         trashJson: JSON.stringify(tr),
         expensesJson: JSON.stringify(exp),
-        settingsJson: JSON.stringify({ ...businessSettingsRef.current, ...sets }),
+        settingsJson: JSON.stringify(nextSettings),
         monthlyGoal: goal.toString(),
         categoriesJson: JSON.stringify(cats),
         categoryFieldsJson: JSON.stringify(fields),
@@ -1569,6 +1597,16 @@ const App: React.FC = () => {
       /* ignore quota */
     }
   }, [requestFastCloudFlush]);
+
+  // Stamp seller name + N26 bank details for invoices (once; later Settings edits stick).
+  useEffect(() => {
+    if (appState !== 'READY') return;
+    const next = stampInvoiceBusinessProfile(businessSettings);
+    if (next.changed) {
+      handleBusinessSettingsChange(next.settings);
+    }
+    if (!isCloudEnabled()) markInvoiceBusinessProfileDone();
+  }, [appState, businessSettings, handleBusinessSettingsChange]);
 
   const handleForcePush = async () => {
     if (!isCloudEnabled() || !authUser) return false;

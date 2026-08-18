@@ -269,26 +269,57 @@ const SettingsPage: React.FC<Props> = ({
     setBusinessDraft((prev) => ({ ...prev, ...patch }));
   };
 
-  const handleSaveBusinessProfile = async () => {
-    const next: BusinessSettings = {
-      ...businessSettings,
-      companyName: businessDraft.companyName.trim(),
-      ownerName: businessDraft.ownerName.trim(),
-      address: businessDraft.address.trim(),
-      phone: businessDraft.phone.trim(),
-      taxId: businessDraft.taxId.trim(),
-      vatId: (businessDraft.vatId || '').trim() || undefined,
-      iban: businessDraft.iban.trim(),
-      bic: businessDraft.bic.trim(),
-      bankName: businessDraft.bankName.trim(),
-    };
-    const profile = businessProfileFromSettings(next);
-    setIsSavingBusiness(true);
-    try {
+  const persistBusinessDraft = useCallback(
+    (draft: BusinessProfileDraft) => {
+      const next: BusinessSettings = {
+        ...businessSettings,
+        companyName: draft.companyName.trim(),
+        ownerName: draft.ownerName.trim(),
+        address: draft.address.trim(),
+        phone: draft.phone.trim(),
+        taxId: draft.taxId.trim(),
+        vatId: (draft.vatId || '').trim() || undefined,
+        iban: draft.iban.trim(),
+        bic: draft.bic.trim(),
+        bankName: draft.bankName.trim(),
+      };
+      const profile = businessProfileFromSettings(next);
       pendingBusinessSaveFp.current = JSON.stringify(profile);
       onBusinessSettingsChange(next);
       setBusinessDraft(profile);
       setBusinessDraftDirty(false);
+      return next;
+    },
+    [businessSettings, onBusinessSettingsChange]
+  );
+
+  const businessDraftRef = useRef(businessDraft);
+  const businessDraftDirtyRef = useRef(businessDraftDirty);
+  useEffect(() => {
+    businessDraftRef.current = businessDraft;
+  }, [businessDraft]);
+  useEffect(() => {
+    businessDraftDirtyRef.current = businessDraftDirty;
+  }, [businessDraftDirty]);
+
+  useEffect(() => {
+    if (!businessDraftDirty) return;
+    const t = window.setTimeout(() => {
+      persistBusinessDraft(businessDraftRef.current);
+    }, 600);
+    return () => window.clearTimeout(t);
+  }, [businessDraft, businessDraftDirty, persistBusinessDraft]);
+
+  useEffect(() => {
+    return () => {
+      if (businessDraftDirtyRef.current) persistBusinessDraft(businessDraftRef.current);
+    };
+  }, [persistBusinessDraft]);
+
+  const handleSaveBusinessProfile = async () => {
+    persistBusinessDraft(businessDraft);
+    setIsSavingBusiness(true);
+    try {
       if (onForcePush && isCloudEnabled() && user) {
         await onForcePush();
         showToast('Business profile saved & synced', 'success');
@@ -923,7 +954,10 @@ const SettingsPage: React.FC<Props> = ({
         {isModal && onClose && (
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => {
+              if (businessDraftDirtyRef.current) persistBusinessDraft(businessDraftRef.current);
+              onClose();
+            }}
             className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-900"
             aria-label="Close settings"
           >
@@ -967,7 +1001,7 @@ const SettingsPage: React.FC<Props> = ({
              <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
                 <h3 className="text-xl font-black text-slate-900">Business Profile</h3>
                 <p className="text-sm text-slate-500">
-                   Used on invoices and exports. Click Save to store locally and sync to all signed-in devices.
+                   Used on invoices and exports. Changes save automatically on this device and sync to the cloud.
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                    <InputField label="Company Name" value={businessDraft.companyName} onChange={v => updateBusinessDraft({ companyName: v })} placeholder="My Company" />
@@ -990,10 +1024,10 @@ const SettingsPage: React.FC<Props> = ({
                       {isSavingBusiness ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}
                       Save business profile
                    </button>
-                   {businessDraftDirty ? (
-                      <span className="text-xs font-bold text-amber-700">Unsaved changes</span>
+                      {businessDraftDirty ? (
+                      <span className="text-xs font-bold text-amber-700">Saving…</span>
                    ) : (
-                      <span className="text-xs text-slate-400">Saved on this device{user ? ' · cloud sync on Save' : ''}</span>
+                      <span className="text-xs text-slate-400">Saved{user ? ' · syncing to other devices' : ' on this device'}</span>
                    )}
                 </div>
              </div>
