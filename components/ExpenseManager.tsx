@@ -4,7 +4,7 @@ import { formatEUR, parseLocaleMoney } from '../utils/formatMoney';
 
 import { 
   Plus, Trash2, Calendar, Tag, CreditCard, Search, Wallet, 
-  TrendingDown, TrendingUp, Filter, Receipt, ShoppingBag, Package,
+  TrendingDown, TrendingUp, Filter, Receipt, ShoppingBag, Package, Loader2, Smartphone,
   Wrench, Truck, Percent, Briefcase, X, Repeat, Sparkles, Edit3, Copy, Paperclip, FileText as FileTextIcon
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
@@ -12,6 +12,8 @@ import { Expense, ExpenseCategory, RecurringExpense } from '../types';
 import { sumInventoryStockExpenseAmount, sumOperatingExpenseAmount } from '../utils/expenseCategories';
 import { uploadExpenseAttachment } from '../services/firebaseService';
 import { VirtualList } from './VirtualList';
+import PhoneUploadQrPanel from './PhoneUploadQrPanel';
+import { parseFuelReceiptFromImageInput } from '../services/fuelReceiptAI';
 
 interface Props {
   expenses: Expense[];
@@ -81,6 +83,11 @@ const ExpenseManager: React.FC<Props> = ({
   const [customRecurringCategory, setCustomRecurringCategory] = useState<string>('');
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [showFuelQr, setShowFuelQr] = useState(false);
+  const [fuelParsingCount, setFuelParsingCount] = useState(0);
+  const [fuelImportLog, setFuelImportLog] = useState<
+    { id: string; ok: boolean; message: string; amount?: number; date?: string }[]
+  >([]);
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter(e => {
@@ -210,6 +217,48 @@ const ExpenseManager: React.FC<Props> = ({
     ) : <Tag size={16} />;
   };
 
+  const handleFuelReceiptUrls = async (urls: string[]) => {
+    for (const url of urls) {
+      setFuelParsingCount((c) => c + 1);
+      try {
+        const parsed = await parseFuelReceiptFromImageInput(url);
+        const description = parsed.stationName
+          ? `Fuel (${parsed.stationName})${parsed.fuelLabel ? ` · ${parsed.fuelLabel}` : ''}`
+          : parsed.fuelLabel
+            ? `Fuel (${parsed.fuelLabel})`
+            : 'Fuel';
+        const expense: Expense = {
+          id: `exp-fuel-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          description,
+          amount: Number(parsed.fuelAmountEur),
+          date: parsed.receiptDate,
+          category: 'Fuel',
+          attachmentUrl: url,
+          attachmentName: `fuel-receipt-${parsed.receiptDate}.jpg`,
+        };
+        onAddExpense(expense);
+        setFuelImportLog((prev) => [
+          {
+            id: expense.id,
+            ok: true,
+            message: `${parsed.receiptDate} · €${formatEUR(parsed.fuelAmountEur || 0)} added`,
+            amount: parsed.fuelAmountEur || 0,
+            date: parsed.receiptDate || undefined,
+          },
+          ...prev,
+        ].slice(0, 8));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Fuel receipt parse failed';
+        setFuelImportLog((prev) => [
+          { id: `fuel-fail-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, ok: false, message },
+          ...prev,
+        ].slice(0, 8));
+      } finally {
+        setFuelParsingCount((c) => Math.max(0, c - 1));
+      }
+    }
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-32">
       <header className="flex justify-between items-center">
@@ -218,6 +267,13 @@ const ExpenseManager: React.FC<Props> = ({
           <p className="text-sm text-slate-500 font-medium italic">Track shipping, packaging, and operational costs</p>
         </div>
         <div className="flex gap-3">
+          <button
+            onClick={() => setShowFuelQr((v) => !v)}
+            className="bg-emerald-600 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg hover:bg-emerald-700 transition-all flex items-center gap-2"
+          >
+            {fuelParsingCount > 0 ? <Loader2 size={16} className="animate-spin" /> : <Smartphone size={16} />}
+            Fuel from phone
+          </button>
           <button 
             onClick={() => setIsRecurringModalOpen(true)}
             className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg hover:bg-blue-700 transition-all flex items-center gap-2"
@@ -232,6 +288,42 @@ const ExpenseManager: React.FC<Props> = ({
           </button>
         </div>
       </header>
+
+      {showFuelQr && (
+        <div className="bg-white rounded-[2rem] border border-emerald-100 shadow-sm p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-wide">Fuel receipt scanner</h3>
+              <p className="text-xs text-slate-500 font-medium">
+                Open this URL on phone, take receipt photo, and only fuel amount/date will be added.
+              </p>
+            </div>
+            {fuelParsingCount > 0 && (
+              <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg">
+                <Loader2 size={12} className="animate-spin" /> Parsing {fuelParsingCount}
+              </span>
+            )}
+          </div>
+          <PhoneUploadQrPanel
+            itemId="expense-fuel-receipts"
+            itemName="Fuel receipts"
+            onUrls={handleFuelReceiptUrls}
+            onClose={() => setShowFuelQr(false)}
+          />
+          {fuelImportLog.length > 0 && (
+            <div className="space-y-1.5 border-t border-slate-100 pt-2">
+              {fuelImportLog.map((row) => (
+                <p
+                  key={row.id}
+                  className={`text-[11px] font-semibold ${row.ok ? 'text-emerald-700' : 'text-rose-700'}`}
+                >
+                  {row.ok ? 'OK' : 'Error'}: {row.message}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
          <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">

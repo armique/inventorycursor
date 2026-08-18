@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Camera, CheckCircle2, Loader2, Search, ShoppingBag, Upload, X, Link2, Images } from 'lucide-react';
 import { prefersNativePhotoCapture } from '../utils/deviceUi';
@@ -159,6 +159,10 @@ const AddPhotosModal: React.FC<Props> = ({
           return;
         }
         setEbayListingMatches(matches);
+        if (matches.length === 1) {
+          setExpandedEbayListingId(matches[0].listingId);
+          setSelectedEbayPhotosByListing({ [matches[0].listingId]: [...matches[0].imageUrls] });
+        }
       } catch (e: unknown) {
         if (!cancelled) {
           setEbayListingError((e as Error)?.message || 'Failed to load your eBay listings.');
@@ -295,6 +299,10 @@ const AddPhotosModal: React.FC<Props> = ({
         return;
       }
       setEbayListingMatches(matches);
+      if (matches.length === 1) {
+        setExpandedEbayListingId(matches[0].listingId);
+        setSelectedEbayPhotosByListing({ [matches[0].listingId]: [...matches[0].imageUrls] });
+      }
     } catch (e: unknown) {
       setEbayListingError((e as Error)?.message || 'Failed to load your eBay listings.');
     } finally {
@@ -369,6 +377,7 @@ const AddPhotosModal: React.FC<Props> = ({
 
       setEbayListingMatches([{ ...exact, matchScore: 1000 }]);
       setExpandedEbayListingId(exact.listingId);
+      setSelectedEbayPhotosByListing({ [exact.listingId]: [...exact.imageUrls] });
       setManualEbayListingInput('');
     } catch (e: unknown) {
       setEbayListingError((e as Error)?.message || 'Failed to load your eBay listings.');
@@ -440,20 +449,43 @@ const AddPhotosModal: React.FC<Props> = ({
     setSelectedEbayPhotosByListing((prev) => ({ ...prev, [listingId]: [] }));
   };
 
+  const selectedEbayUrls = useMemo(() => {
+    const all = Object.values(selectedEbayPhotosByListing).flat();
+    return normalizeImageList(all);
+  }, [selectedEbayPhotosByListing]);
+
   const handleApply = async () => {
-    if (!pendingUrls.length) {
+    const combined = normalizeImageList([...pendingUrls, ...selectedEbayUrls]);
+    if (!combined.length) {
       setError('Add at least one photo first.');
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      const prepared = await prepareInventoryImagesForStorage(pendingUrls, storageOptions);
+      const prepared = await prepareInventoryImagesForStorage(combined, storageOptions);
       if (!prepared.length) {
         setError('Could not prepare photos for storage.');
         return;
       }
-      await onApply(prepared);
+      let applyOptions: AddPhotosApplyOptions | undefined;
+      if (singleItemMode && ebayListingMatches && ebayListingMatches.length) {
+        const selectedListingIds = Object.entries(selectedEbayPhotosByListing)
+          .filter(([, urls]) => Array.isArray(urls) && urls.length > 0)
+          .map(([listingId]) => listingId);
+        if (selectedListingIds.length === 1) {
+          const listing = ebayListingMatches.find((l) => l.listingId === selectedListingIds[0]);
+          if (listing) {
+            const ebayMatch = ebayListingToPriceMatch(listing);
+            applyOptions = ebayMatch
+              ? { ebayMatch, offerId: listing.offerId }
+              : listing.offerId
+                ? { offerId: listing.offerId }
+                : undefined;
+          }
+        }
+      }
+      await onApply(prepared, applyOptions);
       onClose();
     } catch {
       setError('Could not add photos. Try again.');
@@ -941,7 +973,7 @@ const AddPhotosModal: React.FC<Props> = ({
           <button
             type="button"
             onClick={handleApply}
-            disabled={loading || pendingUrls.length === 0}
+            disabled={loading || (pendingUrls.length === 0 && selectedEbayUrls.length === 0)}
             className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-black uppercase tracking-wide hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {loading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}

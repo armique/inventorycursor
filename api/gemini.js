@@ -5,6 +5,7 @@
 import { handleDealSearch } from '../lib/apiHandlers/dealSearchHandler.js';
 import { handleEbayScreenshot } from '../lib/apiHandlers/ebayScreenshotHandler.js';
 import { handleKaScreenshot } from '../lib/apiHandlers/kaScreenshotHandler.js';
+import { handleFuelReceipt } from '../lib/apiHandlers/fuelReceiptHandler.js';
 
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -28,6 +29,7 @@ export default async function handler(req, res) {
       route = 'ebay-screenshot';
     else if (path.includes('ka-screenshot') || path.includes('kleinanzeigen-chat'))
       route = 'ka-screenshot';
+    else if (path.includes('fuel-receipt')) route = 'fuel-receipt';
   }
 
   switch (route) {
@@ -37,9 +39,11 @@ export default async function handler(req, res) {
       return handleEbayScreenshot(req, res);
     case 'ka-screenshot':
       return handleKaScreenshot(req, res);
+    case 'fuel-receipt':
+      return handleFuelReceipt(req, res);
     default:
       return res.status(400).json({
-        error: 'Unknown route. Use ?route=deal-search|ebay-screenshot|ka-screenshot',
+        error: 'Unknown route. Use ?route=deal-search|ebay-screenshot|ka-screenshot|fuel-receipt',
       });
   }
 }

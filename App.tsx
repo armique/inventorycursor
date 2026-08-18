@@ -1228,17 +1228,50 @@ const App: React.FC = () => {
     if (appState !== 'READY' || recurringExpenses.length === 0) return;
     
     // Create a signature of current recurring expenses to detect changes
-    const signature = recurringExpenses.map(r => `${r.id}:${r.startDate}:${r.lastGeneratedDate || ''}`).join('|');
+    const signature = recurringExpenses
+      .map((r) => `${r.id}:${r.startDate}:${r.monthlyAmount}:${r.category}:${r.description}:${r.lastGeneratedDate || ''}`)
+      .join('|');
     if (signature === recurringGenRef.current) return; // Already processed this state
     
     let hasNewExpenses = false;
     const newExpenses: Expense[] = [];
     const updatedRecurring: RecurringExpense[] = [];
     
-    // Use current expenses state to check for duplicates
+    const toDateOnlyLocal = (date: Date): string => {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    };
+    const plusOneDay = (dateStr: string): string => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+      if (!m) return dateStr;
+      const shifted = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + 1);
+      return toDateOnlyLocal(shifted);
+    };
+
+    // Use current expenses state to check for duplicates and to self-heal legacy UTC-shifted recurring dates.
     setExpenses(currentExpenses => {
+      let workingExpenses = currentExpenses.map((expense) => {
+        if (!expense.recurringExpenseId || !expense.date) return expense;
+        const shifted = plusOneDay(expense.date);
+        // Legacy bug wrote recurring rows as last day of previous month (UTC shift from local 1st).
+        if (!shifted.endsWith('-01')) return expense;
+        return { ...expense, date: shifted };
+      });
+
+      // De-duplicate possible collisions after date normalization.
+      const normalizedDedup = new Set<string>();
+      workingExpenses = workingExpenses.filter((expense) => {
+        if (!expense.recurringExpenseId) return true;
+        const key = `${expense.recurringExpenseId}:${expense.date}:${expense.description}:${Number(expense.amount) || 0}`;
+        if (normalizedDedup.has(key)) return false;
+        normalizedDedup.add(key);
+        return true;
+      });
+
       for (const recurring of recurringExpenses) {
-        const { expenses: generated, lastGeneratedDate } = generateExpensesFromRecurring(recurring, currentExpenses);
+        const { expenses: generated, lastGeneratedDate } = generateExpensesFromRecurring(recurring, workingExpenses);
         if (generated.length > 0) {
           hasNewExpenses = true;
           newExpenses.push(...generated);
@@ -1247,19 +1280,41 @@ const App: React.FC = () => {
           updatedRecurring.push(recurring);
         }
       }
+
+      // Keep already generated rows in sync when recurring details are edited.
+      workingExpenses = workingExpenses.map((expense) => {
+        if (!expense.recurringExpenseId) return expense;
+        const recurring = recurringExpenses.find((r) => r.id === expense.recurringExpenseId);
+        if (!recurring) return expense;
+        if (
+          expense.amount === recurring.monthlyAmount &&
+          expense.description === recurring.description &&
+          expense.category === recurring.category
+        ) {
+          return expense;
+        }
+        return {
+          ...expense,
+          amount: recurring.monthlyAmount,
+          description: recurring.description,
+          category: recurring.category,
+        };
+      });
       
       if (hasNewExpenses) {
         // Update recurring expenses with new lastGeneratedDate values
         setRecurringExpenses(updatedRecurring);
-        recurringGenRef.current = updatedRecurring.map(r => `${r.id}:${r.startDate}:${r.lastGeneratedDate || ''}`).join('|');
+        recurringGenRef.current = updatedRecurring
+          .map((r) => `${r.id}:${r.startDate}:${r.monthlyAmount}:${r.category}:${r.description}:${r.lastGeneratedDate || ''}`)
+          .join('|');
         
         // Add new generated expenses
-        const existingIds = new Set(currentExpenses.map(e => e.id));
+        const existingIds = new Set(workingExpenses.map(e => e.id));
         const uniqueNew = newExpenses.filter(e => !existingIds.has(e.id));
-        return [...currentExpenses, ...uniqueNew];
+        return [...workingExpenses, ...uniqueNew];
       }
       
-      return currentExpenses;
+      return workingExpenses;
     });
   }, [appState, recurringExpenses]); // Only depend on recurringExpenses, use functional setState for expenses
 

@@ -1,5 +1,12 @@
 import { RecurringExpense, Expense } from '../types';
 
+function toDateOnlyLocal(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 /**
  * Generate monthly expense entries from a recurring expense.
  * 
@@ -48,7 +55,7 @@ export function generateExpensesFromRecurring(
   while (current <= endDate) {
     // Use first day of month for the expense date
     const expenseDate = new Date(current.getFullYear(), current.getMonth(), 1);
-    const dateStr = expenseDate.toISOString().split('T')[0];
+    const dateStr = toDateOnlyLocal(expenseDate);
     
     // Skip if this month's expense already exists
     if (!existingByDate.has(dateStr)) {
