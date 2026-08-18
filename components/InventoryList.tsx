@@ -12,6 +12,7 @@ import {
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, TaxMode, BulkImportRecord } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
 import { computeItemProfitBeforeOverhead, getChildren, getItemDisplayFeeAmount, getItemDisplayShippingAmount, getSoldContainerDisplayTotals, shouldHideContainerChildInList, containerOrChildMatchesSearch, shouldSurfaceSoldContainerPartInList, soldContainerPartDispositionDate, matchesInventoryCategoryPin, inventorySubcategoryAliasesMatch } from '../services/financialAggregation';
+import { SaleProceedsTrigger } from './SaleProceedsPopover';
 import { itemMatchesSalePlatformFilter, isMissingExplicitSalePlatform, MISSING_PLATFORM_FILTER, SALE_PLATFORM_OPTIONS, formatItemSalePlatform, formatSalePlatformLabel } from '../utils/salePlatform';
 import { expandUpdatesWithContainerSaleMeta } from '../utils/containerSaleCascade';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
@@ -4393,9 +4394,7 @@ const InventoryList: React.FC<Props> = ({
             title={
               soldContainerSell != null
                 ? 'Bundle total sell price (sum of components)'
-                : feeAmt > 0 || shipAmt > 0
-                  ? `Sold amount before marketplace fees/shipping. ${feeAmt > 0 ? `Fees −€${formatEUR(feeAmt)}` : ''}${feeAmt > 0 && shipAmt > 0 ? ' and ' : ''}${shipAmt > 0 ? `Shipping you paid −€${formatEUR(shipAmt)}` : ''} are deducted in Margin (sell − buy − fees − shipping).`
-                  : 'Double click to edit'
+                : 'Click for fees & shipping split · double-click to edit'
             }
             onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, 'sellPrice', item.sellPrice || 0); }}
           >
@@ -4412,8 +4411,12 @@ const InventoryList: React.FC<Props> = ({
                  onClick={e => e.stopPropagation()}
                />
             ) : displaySellPrice ? (
-              <div className="flex flex-col items-start leading-tight gap-0.5">
-                <span>€{formatEUR(displaySellPrice)}</span>
+              <SaleProceedsTrigger
+                item={item}
+                className="flex flex-col items-start leading-tight gap-0.5 text-left w-full"
+                onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, 'sellPrice', item.sellPrice || 0); }}
+              >
+                <span className="underline decoration-dotted decoration-slate-300 underline-offset-2">€{formatEUR(displaySellPrice)}</span>
                 {feeAmt > 0 && (
                   <span className="text-[9px] font-bold text-amber-700 tabular-nums whitespace-nowrap">
                     −€{formatEUR(feeAmt)} fees
@@ -4424,7 +4427,7 @@ const InventoryList: React.FC<Props> = ({
                     −€{formatEUR(shipAmt)} shipping
                   </span>
                 )}
-              </div>
+              </SaleProceedsTrigger>
             ) : (
               '-'
             )}

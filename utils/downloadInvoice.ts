@@ -12,6 +12,20 @@ export function invoiceFileStem(invoiceNumber: string): string {
   return `Rechnung-${safe || 'download'}`;
 }
 
+/** Scale a captured invoice image so it always occupies a single A4 page. */
+export function fitInvoiceImageOnA4(
+  canvasWidth: number,
+  canvasHeight: number,
+  pageWidth: number,
+  pageHeight: number
+): { width: number; height: number } {
+  const imgWidth = pageWidth;
+  const imgHeight = (canvasHeight * pageWidth) / canvasWidth;
+  if (imgHeight <= pageHeight) return { width: imgWidth, height: imgHeight };
+  const scale = pageHeight / imgHeight;
+  return { width: imgWidth * scale, height: pageHeight };
+}
+
 function triggerAnchorDownload(blob: Blob, fileName: string): void {
   const objectUrl = URL.createObjectURL(blob);
   try {
@@ -85,19 +99,8 @@ async function renderInvoicePdfBlob(source: HTMLElement): Promise<Blob> {
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
-  const imgWidth = pageWidth;
-  const imgHeight = (canvas.height * pageWidth) / canvas.width;
-
-  let heightLeft = imgHeight;
-  let position = 0;
-  pdf.addImage(img, 'JPEG', 0, position, imgWidth, imgHeight);
-  heightLeft -= pageHeight;
-  while (heightLeft > 0.5) {
-    position = heightLeft - imgHeight;
-    pdf.addPage();
-    pdf.addImage(img, 'JPEG', 0, position, imgWidth, imgHeight);
-    heightLeft -= pageHeight;
-  }
+  const fit = fitInvoiceImageOnA4(canvas.width, canvas.height, pageWidth, pageHeight);
+  pdf.addImage(img, 'JPEG', 0, 0, fit.width, fit.height);
 
   return pdf.output('blob');
 }

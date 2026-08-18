@@ -4,6 +4,7 @@ import { InventoryItem, BusinessSettings, CustomerInfo } from '../types';
 import { formatEUR } from '../utils/formatMoney';
 import { X, Printer, Edit2, Check, User, Phone, Info, CreditCard, Receipt, Download, Loader2 } from 'lucide-react';
 import { saveInvoiceElementToPc } from '../utils/downloadInvoice';
+import { getInvoiceDocumentTotals, getInvoiceItemAmounts } from '../utils/invoiceAmounts';
 
 interface Props {
   items: InventoryItem[];
@@ -40,13 +41,12 @@ const InvoiceGenerator: React.FC<Props> = ({ items, business, type, onClose }) =
 
   // Math Logic for VAT Extraction
   // Stored price is always considered GROSS (Total)
-  const totalGross = items.reduce((acc, i) => acc + (i.sellPrice || 0), 0);
+  const { itemGross: itemsGross, shippingGross, totalGross } = getInvoiceDocumentTotals(items);
   
   let netTotal = totalGross;
   let vatAmount = 0;
   
   if (editableBusiness.taxMode === 'RegularVAT') {
-     // Extract 19% VAT from Gross
      netTotal = totalGross / 1.19;
      vatAmount = totalGross - netTotal;
   }
@@ -112,7 +112,7 @@ const InvoiceGenerator: React.FC<Props> = ({ items, business, type, onClose }) =
               background: white;
               overflow: visible !important;
             }
-            @page { margin: 0; size: auto; }
+            @page { margin: 10mm; size: A4; }
             /* Hide scrollbars in print */
             ::-webkit-scrollbar { display: none; }
           }
@@ -151,12 +151,12 @@ const InvoiceGenerator: React.FC<Props> = ({ items, business, type, onClose }) =
            </div>
         </header>
 
-        <div data-invoice-sheet className="p-16 print:p-12 space-y-12 flex-1 relative h-auto">
+        <div data-invoice-sheet className="p-8 print:p-0 space-y-6 flex-1 relative h-auto">
            
            {/* Seller Header */}
            <div className="flex justify-between items-start">
               <div className="space-y-1">
-                 <div className="text-3xl font-black text-slate-900 uppercase tracking-tighter">
+                 <div className="text-2xl font-black text-slate-900 uppercase tracking-tighter">
                    {renderEditable('biz-name', editableBusiness.companyName || editableBusiness.ownerName, v => setEditableBusiness({...editableBusiness, companyName: v}))}
                  </div>
                  <div className="text-xs text-slate-500 whitespace-pre-line leading-relaxed max-w-xs">
@@ -168,7 +168,7 @@ const InvoiceGenerator: React.FC<Props> = ({ items, business, type, onClose }) =
                  </div>
               </div>
               <div className="text-right">
-                 <h2 className="text-4xl font-black text-slate-900 mb-4 tracking-tight">{type === 'FINAL' ? 'RECHNUNG' : 'VORAB-RECHNUNG'}</h2>
+                 <h2 className="text-2xl font-black text-slate-900 mb-2 tracking-tight">{type === 'FINAL' ? 'RECHNUNG' : 'VORAB-RECHNUNG'}</h2>
                  <div className="space-y-1 text-right">
                     <div className="flex items-center justify-end gap-2 text-xs font-bold text-slate-400">
                        <span>Rechnungs-Nr.:</span>
@@ -187,10 +187,10 @@ const InvoiceGenerator: React.FC<Props> = ({ items, business, type, onClose }) =
            </div>
 
            {/* Buyer Address Section */}
-           <div className="flex gap-16">
+           <div className="flex gap-8">
               <div className="w-1/2">
-                 <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-4 flex items-center gap-2"><User size={12}/> Rechnungsempfänger:</p>
-                 <div className="p-8 bg-slate-50 rounded-[2.5rem] border border-slate-100 print:bg-transparent print:border-none print:p-0">
+                 <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest mb-2 flex items-center gap-2"><User size={12}/> Rechnungsempfänger:</p>
+                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 print:bg-transparent print:border-none print:p-0">
                     <div className="text-sm font-black text-slate-900 mb-1">
                       {renderEditable('cust-name', customer.name, v => setCustomer({...customer, name: v}))}
                     </div>
@@ -219,7 +219,7 @@ const InvoiceGenerator: React.FC<Props> = ({ items, business, type, onClose }) =
               </div>
 
               {type === 'PAYMENT_REQUEST' && (
-                 <div className="w-1/2 flex items-center p-8 bg-blue-50 rounded-[2.5rem] border border-blue-100 print:border-slate-100">
+                 <div className="w-1/2 flex items-center p-4 bg-blue-50 rounded-2xl border border-blue-100 print:border-slate-100">
                     <div className="space-y-2">
                        <div className="flex items-center gap-2 text-blue-600 mb-2">
                           <Info size={18}/>
@@ -233,7 +233,7 @@ const InvoiceGenerator: React.FC<Props> = ({ items, business, type, onClose }) =
            </div>
 
            {/* Table of Positions */}
-           <div className="border-t-2 border-slate-900 pt-8">
+           <div className="border-t-2 border-slate-900 pt-4">
               <table className="w-full text-left">
                  <thead>
                     <tr className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] border-b border-slate-100">
@@ -244,33 +244,49 @@ const InvoiceGenerator: React.FC<Props> = ({ items, business, type, onClose }) =
                     </tr>
                  </thead>
                  <tbody className="divide-y divide-slate-50">
-                    {items.map((item, index) => {
-                      const itemGross = item.sellPrice || 0;
-                      // Back-calculate Net from Gross for line item display
+                    {items.map((item) => {
+                      const { itemGross } = getInvoiceItemAmounts(item);
                       const itemNet = editableBusiness.taxMode === 'RegularVAT' ? itemGross / 1.19 : itemGross;
                       return (
                         <tr key={item.id} className="text-sm">
-                          <td className="py-6 pr-4">
+                          <td className="py-3 pr-4">
                              <p className="font-black text-slate-900">{item.name}</p>
                              <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">Ref-ID: {item.id.slice(-6).toUpperCase()}</p>
                           </td>
-                          <td className="py-6 text-center font-bold">1</td>
-                          <td className="py-6 text-right font-bold">€{formatEUR(itemNet)}</td>
-                          <td className="py-6 text-right font-black">€{formatEUR(itemNet)}</td>
+                          <td className="py-3 text-center font-bold">1</td>
+                          <td className="py-3 text-right font-bold">€{formatEUR(itemNet)}</td>
+                          <td className="py-3 text-right font-black">€{formatEUR(itemNet)}</td>
                         </tr>
                       );
                     })}
+                    {shippingGross > 0 && (
+                        <tr className="text-sm">
+                          <td className="py-3 pr-4">
+                             <p className="font-black text-slate-900">Versand</p>
+                             <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">Lieferkosten</p>
+                          </td>
+                          <td className="py-3 text-center font-bold">1</td>
+                          <td className="py-3 text-right font-bold">€{formatEUR(editableBusiness.taxMode === 'RegularVAT' ? shippingGross / 1.19 : shippingGross)}</td>
+                          <td className="py-3 text-right font-black">€{formatEUR(editableBusiness.taxMode === 'RegularVAT' ? shippingGross / 1.19 : shippingGross)}</td>
+                        </tr>
+                    )}
                  </tbody>
               </table>
            </div>
 
            {/* Calculation Summary */}
-           <div className="flex justify-end pt-8">
-              <div className="w-80 space-y-4">
+           <div className="flex justify-end pt-4">
+              <div className="w-80 space-y-2">
                  <div className="flex justify-between text-xs font-bold text-slate-400">
                     <span>Zwischensumme {editableBusiness.taxMode === 'RegularVAT' ? '(Netto)' : ''}:</span>
-                    <span>€{formatEUR(netTotal)}</span>
+                    <span>€{formatEUR(editableBusiness.taxMode === 'RegularVAT' ? netTotal : itemsGross)}</span>
                  </div>
+                 {shippingGross > 0 && editableBusiness.taxMode !== 'RegularVAT' && (
+                    <div className="flex justify-between text-xs font-bold text-slate-400">
+                       <span>Versand:</span>
+                       <span>€{formatEUR(shippingGross)}</span>
+                    </div>
+                 )}
                  {editableBusiness.taxMode === 'RegularVAT' && (
                     <div className="flex justify-between text-xs font-bold text-slate-400">
                        <span>Umsatzsteuer (19%):</span>
@@ -279,17 +295,14 @@ const InvoiceGenerator: React.FC<Props> = ({ items, business, type, onClose }) =
                  )}
                  <div className="flex justify-between items-center pt-5 border-t-2 border-slate-900">
                     <span className="text-sm font-black text-slate-900">RECHNUNGSBETRAG:</span>
-                    <span className="text-3xl font-black text-slate-900">€{formatEUR(totalGross)}</span>
+                    <span className="text-xl font-black text-slate-900">€{formatEUR(totalGross)}</span>
                  </div>
               </div>
            </div>
 
            {/* Legal & Payment Details Footer */}
-           <div className="pt-16 space-y-8 border-t border-slate-50">
+           <div className="pt-6 space-y-4 border-t border-slate-50">
               <div className="text-[10px] text-slate-400 leading-relaxed italic">
-                {editableBusiness.taxMode === 'SmallBusiness' && (
-                  <p>Gemäß § 19 UStG (Kleinunternehmerregelung) wird keine Umsatzsteuer berechnet.</p>
-                )}
                 {editableBusiness.taxMode === 'DifferentialVAT' && (
                   <p>Differenzbesteuerung gemäß § 25a UStG. Die Umsatzsteuer wird nicht gesondert ausgewiesen.</p>
                 )}
@@ -298,8 +311,8 @@ const InvoiceGenerator: React.FC<Props> = ({ items, business, type, onClose }) =
                 )}
               </div>
 
-              <div className="grid grid-cols-3 gap-8 text-[10px] text-slate-400 font-bold not-italic">
-                 <div className="space-y-1.5 p-6 bg-slate-50 rounded-2xl print:bg-transparent print:p-0">
+              <div className="grid grid-cols-3 gap-4 text-[10px] text-slate-400 font-bold not-italic">
+                 <div className="space-y-1 p-3 bg-slate-50 rounded-xl print:bg-transparent print:p-0">
                     <p className="text-slate-900 font-black uppercase tracking-widest mb-2">Steuerdetails:</p>
                     <div className="flex justify-between">
                        <span>Steuer-Nr:</span>
@@ -313,7 +326,7 @@ const InvoiceGenerator: React.FC<Props> = ({ items, business, type, onClose }) =
                     )}
                  </div>
 
-                 <div className="space-y-1.5 p-6 bg-blue-50/50 rounded-2xl border border-blue-100 print:bg-transparent print:p-0">
+                 <div className="space-y-1 p-3 bg-blue-50/50 rounded-xl border border-blue-100 print:bg-transparent print:p-0">
                     <p className="text-blue-600 font-black uppercase tracking-widest mb-2">Bankverbindung:</p>
                     <div className="flex justify-between">
                        <span>Bank:</span>
@@ -329,7 +342,7 @@ const InvoiceGenerator: React.FC<Props> = ({ items, business, type, onClose }) =
                     </div>
                  </div>
 
-                 <div className="space-y-1.5 p-6 text-right">
+                 <div className="space-y-1 p-3 text-right">
                     <p className="text-slate-900 font-black uppercase tracking-widest mb-2">Kontakt:</p>
                     <p className="text-slate-700">{editableBusiness.ownerName}</p>
                     <p className="text-slate-700">{editableBusiness.phone}</p>

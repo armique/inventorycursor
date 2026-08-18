@@ -1,4 +1,5 @@
 import { InventoryItem } from '../types';
+import { getInvoiceDocumentTotals } from './invoiceAmounts';
 
 export type BuyerInvoiceGroup = {
   key: string;
@@ -42,7 +43,7 @@ export function buildBuyerInvoiceGroups(items: InventoryItem[]): BuyerInvoiceGro
       label,
       sublabel,
       itemIds: groupItems.map((i) => i.id),
-      total: groupItems.reduce((s, i) => s + (i.sellPrice || 0), 0),
+      total: getInvoiceDocumentTotals(groupItems).totalGross,
     });
   }
   return groups.sort((a, b) => b.total - a.total);

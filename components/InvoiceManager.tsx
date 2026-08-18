@@ -5,6 +5,7 @@ import { formatEUR } from '../utils/formatMoney';
 import InvoiceGenerator from './InvoiceGenerator';
 import { VirtualList } from './VirtualList';
 import { buildBuyerInvoiceGroups } from '../utils/invoiceBuyerGroups';
+import { getInvoiceDocumentTotals } from '../utils/invoiceAmounts';
 import { Users } from 'lucide-react';
 
 type TimeFilter = 'ALL' | 'THIS_WEEK' | 'LAST_WEEK' | 'THIS_MONTH' | 'LAST_MONTH' | 'LAST_30' | 'LAST_90' | 'THIS_YEAR' | 'LAST_YEAR';
@@ -228,7 +229,7 @@ const InvoiceManager: React.FC<Props> = ({ items, businessSettings }) => {
                 <div className="space-y-4 animate-in slide-in-from-right-4">
                    <div className="p-4 bg-white/10 rounded-2xl border border-white/10 space-y-2">
                       <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Selected Total</p>
-                      <p className="text-2xl font-black text-blue-400">€{formatEUR(selectedItems.reduce((acc, i) => acc + (i.sellPrice || 0), 0))}</p>
+                      <p className="text-2xl font-black text-blue-400">€{formatEUR(getInvoiceDocumentTotals(selectedItems).totalGross)}</p>
                       <p className="text-xs font-bold text-slate-500">{selectedIds.length} position(s)</p>
                    </div>
 

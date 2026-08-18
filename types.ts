@@ -25,6 +25,22 @@ export type PaymentType =
 
 export type TaxMode = 'SmallBusiness' | 'RegularVAT' | 'DifferentialVAT';
 
+export type SaleProceedsSource = 'ebay_screenshot' | 'ebay_seller_hub' | 'ebay_order' | 'inferred';
+
+/** Snapshot of where a sold price went after eBay fees / shipping. */
+export interface SaleProceedsBreakdown {
+  capturedAt: string;
+  source: SaleProceedsSource;
+  itemGrossEur?: number | null;
+  buyerShippingEur?: number | null;
+  buyerTotalEur?: number | null;
+  transactionFeeEur?: number | null;
+  adFeeEur?: number | null;
+  shippingLabelEur?: number | null;
+  otherFeeEur?: number | null;
+  netPayoutEur?: number | null;
+}
+
 export type WorkflowStage = 'Draft' | 'Testing' | 'Ready' | 'Listed' | 'Sold' | 'Shipped';
 
 /** 3D print production queue (separate from listing workflowStage). */
@@ -310,6 +326,8 @@ export interface InventoryItem extends AiAttribution, SourceLinks {
   /** Buyer paid this gross amount; when sellerPaidShipping, shipping is deducted for profit only. */
   sellerPaidShipping?: boolean;
   sellerShippingAmount?: number;
+  /** Parsed eBay payout split (fees, Versand, Auszahlung) — shown when clicking sell price. */
+  saleProceeds?: SaleProceedsBreakdown;
   
   // Receipt / Proof of Purchase (Rechnung flag also feeds AI listing as a buyer-facing hint)
   hasReceipt?: boolean;

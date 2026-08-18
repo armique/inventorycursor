@@ -14,6 +14,7 @@ import { prefersNativePhotoCapture } from '../utils/deviceUi';
 import { InventoryItem, ItemStatus, Platform, PaymentType } from '../types';
 import { SALE_PLATFORM_OPTIONS } from '../utils/salePlatform';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
+import { SaleProceedsTrigger } from './SaleProceedsPopover';
 import { buildCostOrigin } from '../utils/costOrigin';
 import { CATEGORY_IMAGES, getSpecOptions } from '../services/hardwareDB';
 import { generateItemSpecs, getSpecsAIProvider, suggestPriceFromSoldListings, type SoldPriceSuggestion } from '../services/specsAI';
@@ -1691,9 +1692,18 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                           <div className="space-y-1.5 flex-1 min-w-0">
                              <label
                                className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest"
-                               title={showSaleFields ? 'Sold price' : 'Target sell price'}
+                               title={showSaleFields ? 'Sold price — click for eBay fee split' : 'Target sell price'}
                              >
-                               {showSaleFields ? 'Sold (€)' : 'Sell (€)'}
+                               {showSaleFields ? (
+                                 <SaleProceedsTrigger
+                                   item={formData}
+                                   className="underline decoration-dotted underline-offset-2"
+                                 >
+                                   Sold (€)
+                                 </SaleProceedsTrigger>
+                               ) : (
+                                 'Sell (€)'
+                               )}
                              </label>
                              <input
                                 type="text"

@@ -5,6 +5,8 @@ import { getLinePayout } from './ebayOrderPayout';
 import { calculateSaleProfit } from './saleProfit';
 import { hasPostSaleRefund, sumOrderSaleProceeds } from './ebayOrderFinancial';
 import { lineItemClaimKey } from './ebayOrderLinkAnalysis';
+import { saleProceedsFromOrder } from './saleProceeds';
+import { isCrucialRamListingText, patchCrucialRamInvoiceSale } from './crucialRamInvoiceSaleFix';
 
 /** True when linking an eBay order should correct platform/payment to eBay. */
 export function shouldCorrectSalePlatformToEbay(item: InventoryItem): boolean {
@@ -56,11 +58,22 @@ export function applyEbayOrderMatchToItem(
     ebayListingId: lineItem.listingId || item.ebayListingId,
     hasFee: !payout.netKnown && Boolean(payout.fee),
     feeAmount: payout.netKnown ? 0 : payout.fee,
+    saleProceeds: saleProceedsFromOrder(order, lineItem),
   };
 
   if (hadKleinanzeigenSale) {
     next.kleinanzeigenChatUrl = undefined;
     next.kleinanzeigenChatImage = undefined;
+  }
+
+  if (
+    !hasPostSaleRefund(order) &&
+    isCrucialRamListingText(lineItem.title) &&
+    (Math.abs((payout.net ?? payout.sellPrice) - 107.73) < 0.02 ||
+      Math.abs((order.grossTotal ?? 0) - 138.93) < 0.02 ||
+      Math.abs((item.sellPrice ?? 0) - 107.73) < 0.02)
+  ) {
+    return patchCrucialRamInvoiceSale(next, taxMode);
   }
 
   return next;

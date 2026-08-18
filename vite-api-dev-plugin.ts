@@ -69,6 +69,10 @@ async function loadHandler(pathname: string): Promise<{ handler: (req: ApiReques
     const mod = await import('./api/ai-text.js');
     return { handler: mod.default };
   }
+  if (pathname === '/api/ebay-seller-hub-fetch') {
+    const mod = await import('./api/ebay-seller-hub-fetch.js');
+    return { handler: mod.default };
+  }
   if (pathname === '/api/gemini' || pathname === '/api/parse-ebay-order-screenshot' || pathname === '/api/parse-kleinanzeigen-chat-screenshot') {
     const mod = await import('./api/gemini.js');
     const route =

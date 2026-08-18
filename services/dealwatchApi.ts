@@ -28,6 +28,7 @@ export type DealwatchSearch = {
   monitor?: boolean;
   createdAt?: string;
   updatedAt?: string;
+  constructor?: { categoryId: string; facetIds: string[] };
 };
 
 export type DealwatchListing = {
@@ -209,6 +210,7 @@ export function listingParamsFromSearch(search: DealwatchSearch, alerts = true):
     locationLabel: search.locationLabel || '',
     radiusKm: search.radiusKm || 0,
     shippingOnly: search.shippingOnly ? '1' : '0',
+    ...(search.searchVariants?.length ? { searchVariants: search.searchVariants.join('|') } : {}),
     ...(search.categoryId ? { categoryId: search.categoryId } : {}),
   };
 }

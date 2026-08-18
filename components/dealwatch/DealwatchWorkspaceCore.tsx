@@ -6,7 +6,6 @@ import {
   Plus,
   Radar,
   RefreshCw,
-  Search,
   Star,
   Trash2,
   RotateCcw,
@@ -31,6 +30,18 @@ import {
   type DealwatchSearch,
   type DealwatchStore,
 } from '../../services/dealwatchApi';
+import SearchBuilder from './SearchBuilder';
+import {
+  compileSearchBuilder,
+  draftFromSearch,
+  emptySearchBuilderDraft,
+  ensureLibraryHasSelection,
+  isBuilderDirty,
+  loadBuilderLibrary,
+  saveBuilderLibrary,
+  type BuilderLibrary,
+  type SearchBuilderDraft,
+} from '../../utils/dealwatchSearchBuilder';
 
 type DealwatchTab = 'matches' | 'watchlist' | 'trash' | 'ka-buys' | 'ka-sales';
 
@@ -72,10 +83,8 @@ const DealwatchWorkspaceCore: React.FC<DealwatchWorkspaceProps> = ({ embedded = 
   const [note, setNote] = useState('');
   const [lastScan, setLastScan] = useState<string | null>(null);
 
-  const [draftQuery, setDraftQuery] = useState('');
-  const [draftMin, setDraftMin] = useState(1);
-  const [draftMax, setDraftMax] = useState(80);
-  const [draftMarketplace, setDraftMarketplace] = useState<'ebay' | 'kleinanzeigen'>('ebay');
+  const [library, setLibrary] = useState<BuilderLibrary>(() => loadBuilderLibrary());
+  const [draft, setDraft] = useState<SearchBuilderDraft>(() => emptySearchBuilderDraft());
 
   const searches = store?.searches || [];
   const trash = store?.trash || [];
@@ -85,7 +94,30 @@ const DealwatchWorkspaceCore: React.FC<DealwatchWorkspaceProps> = ({ embedded = 
     () => searches.find((s) => s.id === activeId) || searches[0] || null,
     [searches, activeId],
   );
+  const compiled = useMemo(() => compileSearchBuilder(draft, library), [draft, library]);
+  const dirty = useMemo(() => isBuilderDirty(draft, library, active), [draft, library, active]);
   const alertsOn = store?.alerts !== false;
+
+  const payloadFromDraft = useCallback(
+    (base?: DealwatchSearch | null) => ({
+      ...(base || {}),
+      search: compiled.search,
+      searchVariants: compiled.searchVariants,
+      name: compiled.name,
+      minPrice: compiled.minPrice,
+      maxPrice: compiled.maxPrice,
+      marketplace: compiled.marketplace,
+      radiusKm: compiled.radiusKm,
+      locationId: compiled.locationId,
+      locationLabel: compiled.locationLabel,
+      constructor: compiled.constructor,
+    }),
+    [compiled]
+  );
+
+  useEffect(() => {
+    saveBuilderLibrary(library);
+  }, [library]);
 
   const applyStore = useCallback((next: DealwatchStore) => {
     setStore(next);
@@ -95,11 +127,11 @@ const DealwatchWorkspaceCore: React.FC<DealwatchWorkspaceProps> = ({ embedded = 
   }, []);
 
   const syncDraftFromSearch = useCallback((search: DealwatchSearch | null) => {
-    if (!search) return;
-    setDraftQuery(String(search.search || ''));
-    setDraftMin(Number(search.minPrice) || 1);
-    setDraftMax(Number(search.maxPrice) || 80);
-    setDraftMarketplace(search.marketplace === 'kleinanzeigen' ? 'kleinanzeigen' : 'ebay');
+    const loaded = loadBuilderLibrary();
+    const inferred = draftFromSearch(search, loaded);
+    const nextLibrary = ensureLibraryHasSelection(loaded, inferred);
+    setLibrary(nextLibrary);
+    setDraft(draftFromSearch(search, nextLibrary));
   }, []);
 
   const scan = useCallback(
@@ -177,39 +209,47 @@ const DealwatchWorkspaceCore: React.FC<DealwatchWorkspaceProps> = ({ embedded = 
     }
   };
 
-  const onSaveAndScan = async () => {
+  const onScanDraft = async () => {
+    if (!compiled.search) {
+      setError('Pick a part type first.');
+      return;
+    }
+    const adHoc: DealwatchSearch = {
+      id: active?.id || 'draft',
+      name: compiled.name,
+      ...payloadFromDraft(active),
+    };
+    await scan(adHoc);
+  };
+
+  const onSaveChanges = async () => {
     if (!active) return;
+    if (!compiled.search) {
+      setError('Pick a part type first.');
+      return;
+    }
     setError('');
-    setScanning(true);
     try {
-      const payload = {
-        ...active,
-        search: draftQuery.trim(),
-        minPrice: draftMin,
-        maxPrice: draftMax,
-        marketplace: draftMarketplace,
-      };
-      if (!payload.search) throw new Error('Enter search keywords.');
-      const next = await updateSearch(active.id, payload);
+      const next = await updateSearch(active.id, payloadFromDraft(active));
       applyStore(next);
       const updated = next.search || active;
       syncDraftFromSearch(updated);
-      await scan(updated);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
-      setScanning(false);
     }
   };
 
-  const onNewSearch = async () => {
+  const onSaveAsNew = async () => {
+    if (!compiled.search) {
+      setError('Pick a part type first.');
+      return;
+    }
     setError('');
     try {
       const next = await createSearch({
-        search: draftQuery.trim() || 'new search',
-        minPrice: draftMin,
-        maxPrice: draftMax,
-        marketplace: draftMarketplace,
-        minFeedback: draftMarketplace === 'ebay' ? 90 : 0,
+        ...payloadFromDraft(null),
+        search: compiled.search,
+        minFeedback: compiled.marketplace === 'ebay' ? 90 : 0,
         condition: 'any',
         enabledSmartFilters: [],
         includeCapacities: [],
@@ -218,10 +258,14 @@ const DealwatchWorkspaceCore: React.FC<DealwatchWorkspaceProps> = ({ embedded = 
       const created = next.search;
       syncDraftFromSearch(created);
       setTab('matches');
-      await scan(created);
+      if (created) await scan(created);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
+  };
+
+  const onNewSearch = async () => {
+    await onSaveAsNew();
   };
 
   const onDeleteSearch = async (id: string) => {
@@ -419,75 +463,33 @@ const DealwatchWorkspaceCore: React.FC<DealwatchWorkspaceProps> = ({ embedded = 
 
           {tab === 'matches' && (
             <div className="shrink-0 border-b border-slate-100 p-3 space-y-2 bg-white">
-              <div className="flex flex-wrap gap-2 items-end">
-                <div className="flex rounded-lg border border-slate-200 p-0.5 bg-slate-50">
-                  {(['ebay', 'kleinanzeigen'] as const).map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setDraftMarketplace(m)}
-                      className={`px-2.5 py-1.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
-                        draftMarketplace === m ? 'bg-slate-900 text-white' : 'text-slate-600'
-                      }`}
-                    >
-                      {m === 'ebay' ? 'eBay.de' : 'KA'}
-                    </button>
-                  ))}
-                </div>
-                <label className="flex-1 min-w-[12rem]">
-                  <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Search</span>
-                  <input
-                    value={draftQuery}
-                    onChange={(e) => setDraftQuery(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-900"
-                    placeholder="e.g. GTX 1080"
-                  />
-                </label>
-                <label className="w-20">
-                  <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Min €</span>
-                  <input
-                    type="number"
-                    min={1}
-                    value={draftMin}
-                    onChange={(e) => setDraftMin(Number(e.target.value) || 1)}
-                    className="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm font-semibold"
-                  />
-                </label>
-                <label className="w-20">
-                  <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Max €</span>
-                  <input
-                    type="number"
-                    min={1}
-                    value={draftMax}
-                    onChange={(e) => setDraftMax(Number(e.target.value) || 80)}
-                    className="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm font-semibold"
-                  />
-                </label>
-                <button
-                  type="button"
-                  disabled={scanning || !active}
-                  onClick={() => void onSaveAndScan()}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-black uppercase tracking-wider disabled:opacity-50"
-                >
-                  {scanning ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
-                  Scan
-                </button>
-                <button
-                  type="button"
-                  disabled={scanning || !active}
-                  onClick={() => active && void scan(active)}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-black uppercase tracking-wider text-slate-700 disabled:opacity-50"
-                >
-                  <RefreshCw size={14} />
-                  Rescan
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-3 text-[11px] font-semibold text-slate-500">
+              <SearchBuilder
+                draft={draft}
+                library={library}
+                dirty={dirty}
+                scanning={scanning}
+                canSave={Boolean(active)}
+                onChange={setDraft}
+                onLibraryChange={setLibrary}
+                onScan={() => void onScanDraft()}
+                onSaveChanges={() => void onSaveChanges()}
+                onSaveAsNew={() => void onSaveAsNew()}
+              />
+              <div className="flex flex-wrap gap-3 text-[11px] font-semibold text-slate-500 items-center">
                 <span>Lots <strong className="text-slate-800">{metrics.matched || items.length}</strong></span>
                 <span>Best <strong className="text-slate-800">{metrics.best || '—'}</strong></span>
                 <span>Rejected <strong className="text-slate-800">{metrics.rejected || '—'}</strong></span>
                 <span>Last scan {lastScan ? new Date(lastScan).toLocaleTimeString() : '—'}</span>
                 {note && <span className="text-slate-700">{note}</span>}
+                <button
+                  type="button"
+                  disabled={scanning || !active}
+                  onClick={() => active && void scan(active)}
+                  className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase tracking-wider text-slate-600 disabled:opacity-50"
+                >
+                  <RefreshCw size={12} />
+                  Rescan saved
+                </button>
               </div>
               {error && <p className="text-xs font-bold text-rose-600">{error}</p>}
             </div>

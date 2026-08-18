@@ -1531,11 +1531,28 @@ function resolveSearchVariants(input = {}) {
   if (Array.isArray(input.searchVariants)) {
     return [...new Set(input.searchVariants.map(item => String(item || '').trim()).filter(Boolean))].slice(0, 6);
   }
+  const fromParam = String(input.searchVariants || '').trim();
+  if (fromParam) {
+    return [...new Set(fromParam.split(/[|,]/).map((part) => part.trim()).filter(Boolean))].slice(0, 6);
+  }
   const raw = String(input.search || '');
   if (raw.includes('|')) {
     return [...new Set(raw.split('|').map(part => part.trim()).filter(Boolean))].slice(0, 6);
   }
   return [];
+}
+
+function readSearchConstructor(input = {}) {
+  if (!input || typeof input !== 'object') return undefined;
+  if (!Object.prototype.hasOwnProperty.call(input, 'constructor')) return undefined;
+  const raw = input.constructor;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || typeof raw === 'function') return undefined;
+  const categoryId = String(raw.categoryId || '').trim().slice(0, 80);
+  const facetIds = Array.isArray(raw.facetIds)
+    ? [...new Set(raw.facetIds.map((id) => String(id || '').trim()).filter(Boolean))].slice(0, 6)
+    : [];
+  if (!categoryId) return undefined;
+  return { categoryId, facetIds };
 }
 
 function isBundleOrUpgradeKit(haystack) {
@@ -1723,6 +1740,7 @@ function createTrackedSearch(input = {}, { touch = true } = {}) {
   const monitor = Object.prototype.hasOwnProperty.call(input, 'monitor')
     ? !(input.monitor === false || input.monitor === 0 || input.monitor === '0')
     : true;
+  const searchConstructor = readSearchConstructor(input);
   return {
     id: input.id || crypto.randomUUID(),
     name: rawName || makeSearchName(filters),
@@ -1730,6 +1748,7 @@ function createTrackedSearch(input = {}, { touch = true } = {}) {
     monitor,
     smartFilters: smartFilterDefs(filters.search, filters.categoryId),
     capacityIncludes: capacityIncludeDefs(filters.search, filters.categoryId),
+    ...(searchConstructor ? { constructor: searchConstructor } : {}),
     createdAt: input.createdAt || now,
     updatedAt: touch ? now : (input.updatedAt || now),
   };
@@ -4540,6 +4559,9 @@ async function handleDealwatchRequest(request, response) {
             shippingOnly: url.searchParams.has('shippingOnly')
               ? url.searchParams.get('shippingOnly') === '1'
               : active.shippingOnly,
+            searchVariants: url.searchParams.has('searchVariants')
+              ? String(url.searchParams.get('searchVariants') || '').split(/[|,]/).map((part) => part.trim()).filter(Boolean)
+              : (Array.isArray(active.searchVariants) ? active.searchVariants : []),
           }),
           alerts: url.searchParams.has('alerts')
             ? url.searchParams.get('alerts') !== '0'

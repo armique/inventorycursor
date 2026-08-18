@@ -19,7 +19,6 @@ import {
   prefersRedirectSignIn,
 } from '../services/firebaseService';
 import QuotaMonitor from './QuotaMonitor';
-import FirestoreQuotaWidget from './FirestoreQuotaWidget';
 import GlobalSearch from './GlobalSearch';
 import { panelSuspenseFallback } from './RouteSkeletons';
 import { InventoryItem, Expense, BusinessSettings } from '../types';
@@ -486,14 +485,6 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
         )}
         {isCloudEnabled && authUser && (
           <div className="fixed bottom-3 left-3 z-[80] flex flex-col gap-1.5 items-start pointer-events-none max-w-[min(18rem,calc(100vw-1.5rem))]">
-            <div className="pointer-events-auto">
-              <div className="hidden md:block">
-                <FirestoreQuotaWidget
-                  items={items}
-                  compact={location.pathname.startsWith('/panel/inventory')}
-                />
-              </div>
-            </div>
             {syncState.status !== 'idle' && (
               <button
                 type="button"

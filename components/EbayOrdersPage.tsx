@@ -325,10 +325,17 @@ const EbayOrdersPage: React.FC<Props> = ({ items, taxMode, onUpdate, embedded = 
                   </p>
                 </div>
                 <div className="text-right shrink-0">
-                  <p className="text-sm font-black text-slate-900">€{formatEUR(row.payout.sellPrice)}</p>
-                  <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">
-                    {row.payout.netKnown ? 'Net' : 'Gross'}
+                  <p className="text-sm font-black text-slate-900">
+                    €{formatEUR(row.payout.buyerTotal ?? row.payout.gross ?? row.payout.sellPrice)}
                   </p>
+                  <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">
+                    {row.payout.buyerTotal != null || row.payout.gross != null ? 'Käufer' : row.payout.netKnown ? 'Net' : 'Gross'}
+                  </p>
+                  {row.payout.netKnown && row.payout.net != null && (
+                    <p className="text-[9px] font-bold text-emerald-700 tabular-nums">
+                      Net €{formatEUR(row.payout.net)}
+                    </p>
+                  )}
                 </div>
               </div>
 

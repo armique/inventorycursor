@@ -111,6 +111,7 @@ import {
   preferFilledContainerBuyDate,
 } from './utils/backfillContainerBuyDates';
 import { applyHealthInsuranceLedger } from './utils/healthInsuranceLedger';
+import { applyCrucialRamInvoiceSaleFix } from './utils/crucialRamInvoiceSaleFix';
 import { mergeBusinessSettings } from './utils/mergeBusinessSettings';
 import {
   markInvoiceBusinessProfileDone,
@@ -898,11 +899,13 @@ const App: React.FC = () => {
     }
     const migratedInv = inv.map(migrateContainerItem);
     const { items: filledInv, updatedCount: filledCount } = backfillContainerBuyDates(migratedInv);
-    if (filledCount > 0) {
+    const ramFix = applyCrucialRamInvoiceSaleFix(filledInv, businessSettingsRef.current.taxMode);
+    if (filledCount > 0 || ramFix.changed) {
       requestFastCloudFlush();
       hasUnsavedChanges.current = true;
+      if (ramFix.changed) pendingCloudPushAfterRemoteRef.current = true;
     }
-    setItems(filledInv);
+    setItems(ramFix.changed ? ramFix.items : filledInv);
     setTrash(tr.map(migrateContainerItem));
     setExpenses(exp);
     setRecurringExpenses(recurring);
@@ -1035,6 +1038,16 @@ const App: React.FC = () => {
     hasUnsavedChanges.current = true;
     requestFastCloudFlush();
   }, [appState, expenses, recurringExpenses, requestFastCloudFlush]);
+
+  // One historical RAM sale stored eBay net payout as sellPrice — restore buyer total for invoices.
+  useEffect(() => {
+    if (appState !== 'READY' || items.length === 0) return;
+    const next = applyCrucialRamInvoiceSaleFix(items, businessSettings.taxMode);
+    if (!next.changed) return;
+    setItems(next.items);
+    hasUnsavedChanges.current = true;
+    requestFastCloudFlush();
+  }, [appState, items, businessSettings.taxMode, requestFastCloudFlush]);
 
   // Enrich history rows with chat URL / screenshot from member items (legacy sessions).
   useEffect(() => {

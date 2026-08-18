@@ -6,8 +6,10 @@ export interface LinePayout {
   gross: number | null;
   net: number | null;
   fee: number;
-  /** Amount to store as sellPrice — net (payout) when known, otherwise gross (buyer item total). */
+  /** Amount historically stored as sellPrice — net when known, otherwise gross. */
   sellPrice: number;
+  /** What the buyer paid (order/line gross). Use for invoices and order cards. */
+  buyerTotal: number | null;
   netKnown: boolean;
   /**
    * True when fee came from Flip Coach % (API orders have no fee breakdown).
@@ -70,11 +72,14 @@ export function getLinePayout(order: EbayOrderRecord, line: EbayOrderLineItem): 
   }
 
   const sellPrice = net ?? gross ?? 0;
+  const buyerTotal =
+    order.lineItems.length <= 1 ? order.grossTotal ?? gross : gross;
   return {
     gross,
     net,
     fee: fee || 0,
     sellPrice,
+    buyerTotal: buyerTotal ?? null,
     netKnown: net != null,
     feeEstimated,
   };

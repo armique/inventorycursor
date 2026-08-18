@@ -1,6 +1,6 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { X, Euro, CheckCircle2, ChevronDown, Upload, ImagePlus, Loader2, Truck, Receipt } from 'lucide-react';
+import { X, Euro, CheckCircle2, ChevronDown, Upload, ImagePlus, Loader2, Truck, Receipt, ExternalLink } from 'lucide-react';
 import { parseEbayOrderFromImageInput } from '../services/ebayOrderScreenshotAI';
 import { mapKleinanzeigenPaymentMethod, parseKleinanzeigenChatFromImageInput } from '../services/kleinanzeigenChatScreenshotAI';
 import { fetchEbayOrder, hasEbayToken } from '../services/ebayService';
@@ -11,9 +11,20 @@ import { ebayScreenshotSaleFields } from '../utils/ebayScreenshotSaleFields';
 import { listRecentEbayOrdersForSale, type EbayOrderMatch } from '../utils/ebayOrderMatch';
 import { getLinePayout, estimateEbayMarketplaceFee } from '../utils/ebayOrderPayout';
 import { persistSaleProofImage, urlNeedsPhotoArchive } from '../services/inventoryImageStorage';
-import { InventoryItem, ItemStatus, PaymentType, CustomerInfo, Platform, TaxMode } from '../types';
+import { InventoryItem, ItemStatus, PaymentType, CustomerInfo, Platform, TaxMode, SaleProceedsBreakdown } from '../types';
 import { SALE_PLATFORM_OPTIONS } from '../utils/salePlatform';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
+import { saleProceedsFromOrder, saleProceedsFromScreenshot, resolveSaleProceeds, saleProceedsHasDetail } from '../utils/saleProceeds';
+import {
+  EBAY_SELLER_HUB_ORDERS_URL,
+  parseEbaySellerHubPayoutText,
+  payoutLooksComplete,
+  saleFieldsFromHubPayout,
+} from '../utils/ebaySellerHubSaleFields';
+import type { EbaySellerHubPayout } from '../lib/ebaySellerHubPayout';
+import { fetchEbaySellerHubPayout, type SellerHubFetchCandidate } from '../services/ebaySellerHubFetch';
+import { buildEbayOrderUrl } from '../utils/sourceLinks';
+import { SaleProceedsDialog } from './SaleProceedsPopover';
 
 interface Props {
   item: InventoryItem;
@@ -51,6 +62,10 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
     amountReceivedNetEur: number | null;
     buyerShippingEur: number | null;
   } | null>(null);
+  const [saleProceedsDraft, setSaleProceedsDraft] = useState<SaleProceedsBreakdown | null>(
+    item.saleProceeds || null
+  );
+  const [proceedsOpen, setProceedsOpen] = useState(false);
   const [sellerPaidShipping, setSellerPaidShipping] = useState(item.sellerPaidShipping || false);
   const [sellerShippingAmount, setSellerShippingAmount] = useState(
     item.sellerShippingAmount != null ? String(item.sellerShippingAmount) : ''
@@ -87,6 +102,10 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
   const [orderIdLookupMessage, setOrderIdLookupMessage] = useState<string | null>(null);
   const [orderMatchSuggestions, setOrderMatchSuggestions] = useState<EbayOrderMatch[]>([]);
   const [orderRefreshLoading, setOrderRefreshLoading] = useState(false);
+  const [hubFetching, setHubFetching] = useState(false);
+  const [hubPaste, setHubPaste] = useState('');
+  const [hubMessage, setHubMessage] = useState<string | null>(null);
+  const [hubCandidates, setHubCandidates] = useState<SellerHubFetchCandidate[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const didLiveOrderFetchRef = useRef(false);
@@ -123,6 +142,7 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
       setSalePrice(fmt);
       setUnitPrice(fmt);
     }
+    setSaleProceedsDraft(saleProceedsFromOrder(match.order, match.lineItem));
     if (payout.netKnown) {
       setHasFee(false);
       setFeeAmount(0);
@@ -265,6 +285,7 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
             }
             if (line.sku) setEbaySku(line.sku);
             if (line.listingId) setEbayListingId(line.listingId);
+            setSaleProceedsDraft(saleProceedsFromOrder(cached, line));
           }
           setPlatformSold('ebay.de');
           setPaymentType('ebay.de');
@@ -448,12 +469,90 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
         amountReceivedNetEur: money.amountReceivedNetEur,
         buyerShippingEur: money.buyerShippingEur,
       });
+      setSaleProceedsDraft(saleProceedsFromScreenshot(money));
       if (data.saleDate) setSaleDate(data.saleDate);
     } catch (err: unknown) {
       setOrderScreenshotError(err instanceof Error ? err.message : 'Parse failed');
     } finally {
       setOrderScreenshotParsing(false);
     }
+  };
+
+  const applyHubPayout = useCallback((payout: EbaySellerHubPayout, sourceLabel: string) => {
+    const fields = saleFieldsFromHubPayout(payout);
+    if (fields.sellPrice != null) {
+      const fmt = formatEUR(fields.sellPrice);
+      setSalePrice(fmt);
+      setUnitPrice(fmt);
+    }
+    setHasFee(fields.hasFee);
+    setFeeAmount(fields.feeAmount);
+    if (fields.sellerPaidShipping) {
+      setSellerPaidShipping(true);
+      setSellerShippingAmount(formatEUR(fields.sellerShippingAmount));
+    }
+    setEbayFeeNote({
+      ebayFeeEur: payout.transactionFeeEur,
+      adFeeEur: payout.adFeeEur,
+      amountReceivedNetEur: payout.netPayoutEur,
+      buyerShippingEur: payout.buyerShippingEur,
+    });
+    setSaleProceedsDraft(fields.saleProceeds);
+    if (fields.ebayOrderId) setEbayOrderId(fields.ebayOrderId);
+    setPlatformSold('ebay.de');
+    setPaymentType('ebay.de');
+    const net = payout.netPayoutEur != null ? formatEUR(payout.netPayoutEur) : '—';
+    const gross = fields.sellPrice != null ? formatEUR(fields.sellPrice) : '—';
+    setHubMessage(
+      `Filled ${sourceLabel}: buyer €${gross} − eBay €${formatEUR(payout.transactionFeeEur ?? 0)} − ads €${formatEUR(payout.adFeeEur ?? 0)} − label €${formatEUR(fields.sellerShippingAmount)} = net €${net}`
+    );
+    setHubCandidates([]);
+  }, []);
+
+  const handleFetchSellerHub = async (orderIdOverride?: string) => {
+    setHubFetching(true);
+    setHubMessage(null);
+    try {
+      const result = await fetchEbaySellerHubPayout({
+        orderId: (orderIdOverride || ebayOrderId).trim(),
+        title: item.name,
+        sku: (ebaySku || item.ebaySku || '').trim(),
+        listingId: (ebayListingId || item.ebayListingId || '').trim(),
+        query: item.name,
+      });
+      if (result.ok) {
+        applyHubPayout(result.payout, result.source === 'paste' ? 'from paste' : 'from Seller Hub');
+        return;
+      }
+      setHubCandidates(result.candidates || []);
+      const openOnFail =
+        result.code === 'cdp_unavailable' ||
+        result.code === 'not_logged_in' ||
+        result.code === 'local_only' ||
+        result.code === 'parse_failed';
+      if (openOnFail && result.openUrl) {
+        window.open(result.openUrl, '_blank', 'noopener');
+      }
+      setHubMessage(result.hint || result.error || `Seller Hub: ${result.code}`);
+    } catch (err: unknown) {
+      window.open(EBAY_SELLER_HUB_ORDERS_URL, '_blank', 'noopener');
+      setHubMessage(
+        err instanceof Error
+          ? err.message
+          : 'Could not reach Seller Hub scrape. Paste the payout block, or run npm run dev with Chrome on port 9222.'
+      );
+    } finally {
+      setHubFetching(false);
+    }
+  };
+
+  const handleParseHubPaste = () => {
+    const payout = parseEbaySellerHubPayoutText(hubPaste);
+    if (!payoutLooksComplete(payout)) {
+      setHubMessage('Paste the block from Vom Käufer bezahlt through Bestelleinnahmen.');
+      return;
+    }
+    applyHubPayout(payout, 'from pasted payout');
   };
 
   const handleParseKleinanzeigenChat = async () => {
@@ -549,6 +648,13 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
         feeAmount: finalFee,
         sellerPaidShipping: finalShipping > 0,
         sellerShippingAmount: finalShipping > 0 ? finalShipping : undefined,
+        saleProceeds: saleProceedsDraft
+          ? {
+              ...saleProceedsDraft,
+              shippingLabelEur:
+                finalShipping > 0 ? finalShipping : saleProceedsDraft.shippingLabelEur,
+            }
+          : item.saleProceeds,
         comment2: comment,
         customer,
         ebayUsername,
@@ -602,6 +708,8 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
           kleinanzeigenChatImage: archivedKaImage || undefined,
           ebayOrderScreenshotUrl,
           storeVisible: false,
+          ...buyerFields,
+          saleProceeds: buyerFields.saleProceeds,
         };
 
         await onSave(updatedOriginal, splitOffSold);
@@ -611,22 +719,10 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
           buyPrice: isBatchItem ? totalBuyPrice : item.buyPrice,
           sellPrice: totalSellPrice,
           sellDate: saleDate,
-          paymentType,
-          platformSold,
-          hasFee,
-          feeAmount: finalFee,
-          comment2: comment,
-          customer,
+          ...buyerFields,
           status: ItemStatus.SOLD,
           storeVisible: false,
           profit: profit != null ? parseFloat(profit.toFixed(2)) : undefined,
-          ebayUsername,
-          ebayOrderId,
-          ebaySku: ebaySku || undefined,
-          ebayListingId: ebayListingId || undefined,
-          kleinanzeigenChatUrl,
-          kleinanzeigenChatImage: archivedKaImage || undefined,
-          ebayOrderScreenshotUrl,
           quantity: qtySold,
         });
       }
@@ -656,6 +752,18 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
   const previewFee = hasFee ? feeAmount : 0;
   const previewProfit =
     previewRevenue != null ? calculateProfit(previewRevenue, previewBuy, previewFee) : null;
+  const previewProceeds = resolveSaleProceeds({
+    ...item,
+    sellPrice: previewReceived ?? item.sellPrice,
+    feeAmount: previewFee,
+    hasFee: previewFee > 0,
+    sellerPaidShipping: previewShipping > 0,
+    sellerShippingAmount: previewShipping > 0 ? previewShipping : undefined,
+    saleProceeds: saleProceedsDraft
+      ? { ...saleProceedsDraft, shippingLabelEur: previewShipping || saleProceedsDraft.shippingLabelEur }
+      : item.saleProceeds,
+  });
+  const canOpenProceeds = saleProceedsHasDetail(previewProceeds);
 
   const isBatchItem = !isEditBuyer && item.quantity != null && item.quantity > 1;
   const quickPlatforms = SALE_PLATFORM_OPTIONS.filter((p) =>
@@ -698,8 +806,20 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
           {/* Option E: top triad — Price(+date) · Profit · Shipping */}
           <div className={`grid gap-2 ${isEditBuyer ? 'grid-cols-2' : 'grid-cols-3'}`}>
             <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 min-h-[72px]">
-              <label className="text-[8px] font-black uppercase tracking-wider text-slate-400">
-                {isBatchItem ? 'Unit price' : platformSold === 'ebay.de' ? 'Sold price' : 'Price'}
+              <label className="text-[8px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                {canOpenProceeds ? (
+                  <button
+                    type="button"
+                    onClick={() => setProceedsOpen(true)}
+                    className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 underline decoration-dotted underline-offset-2"
+                    title="Show fees, shipping and payout"
+                  >
+                    {isBatchItem ? 'Unit price' : platformSold === 'ebay.de' ? 'Sold price' : 'Price'}
+                    <Receipt size={10} />
+                  </button>
+                ) : (
+                  <>{isBatchItem ? 'Unit price' : platformSold === 'ebay.de' ? 'Sold price' : 'Price'}</>
+                )}
               </label>
               {isBatchItem ? (
                 <div className="mt-1 flex gap-1 items-center">
@@ -1027,6 +1147,80 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
                 )}
               </div>
 
+              <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-2.5 space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <ExternalLink size={12} className="text-amber-700 shrink-0" />
+                  <p className="text-[9px] font-black uppercase tracking-wider text-amber-900">
+                    Seller Hub payout
+                  </p>
+                </div>
+                <p className="text-[10px] text-amber-950/70 leading-snug">
+                  Opens this year’s orders, finds this listing, and fills buyer total, eBay fee, ads, shipping
+                  label, and net remainder.
+                </p>
+                <div className="grid grid-cols-[1.4fr_1fr] gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => void handleFetchSellerHub()}
+                    disabled={hubFetching}
+                    className="py-2.5 min-h-[44px] rounded-xl bg-amber-700 text-white text-[9px] font-extrabold uppercase hover:bg-amber-800 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  >
+                    {hubFetching ? <Loader2 size={14} className="animate-spin" /> : <ExternalLink size={14} />}
+                    {hubFetching ? 'Reading Hub…' : 'From Seller Hub'}
+                  </button>
+                  <a
+                    href={
+                      (ebayOrderId.trim() && buildEbayOrderUrl(ebayOrderId.trim())) ||
+                      EBAY_SELLER_HUB_ORDERS_URL
+                    }
+                    target="_blank"
+                    rel="noreferrer"
+                    className="py-2.5 min-h-[44px] rounded-xl border border-amber-200 bg-white text-amber-800 text-[9px] font-extrabold uppercase hover:bg-amber-50 flex items-center justify-center"
+                  >
+                    Open Hub
+                  </a>
+                </div>
+                <textarea
+                  rows={3}
+                  placeholder="Or paste: Vom Käufer bezahlt … Bestelleinnahmen"
+                  className="w-full px-2.5 py-2 bg-white border border-amber-100 rounded-xl text-[10px] font-semibold resize-none outline-none focus:border-amber-400"
+                  value={hubPaste}
+                  onChange={(e) => setHubPaste(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={handleParseHubPaste}
+                  disabled={!hubPaste.trim()}
+                  className="w-full py-2 min-h-[40px] rounded-xl border border-amber-200 bg-white text-amber-900 text-[9px] font-extrabold uppercase hover:bg-amber-50 disabled:opacity-50"
+                >
+                  Parse pasted payout
+                </button>
+                {hubCandidates.length > 0 && (
+                  <div className="space-y-1">
+                    {hubCandidates.map((c) => (
+                      <button
+                        key={c.orderId}
+                        type="button"
+                        onClick={() => void handleFetchSellerHub(c.orderId)}
+                        className="w-full text-left rounded-lg border border-amber-100 bg-white px-2 py-1.5 hover:border-amber-300"
+                      >
+                        <p className="text-[10px] font-bold text-slate-800">{c.orderId}</p>
+                        <p className="text-[9px] text-slate-500 line-clamp-2">{c.snippet}</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {hubMessage && (
+                  <p
+                    className={`text-[9px] font-bold ${
+                      hubMessage.startsWith('Filled') ? 'text-emerald-700' : 'text-amber-900'
+                    }`}
+                  >
+                    {hubMessage}
+                  </p>
+                )}
+              </div>
+
               <div className="grid grid-cols-[1.4fr_1fr] gap-2">
                 <div
                   className={`p-2 rounded-xl border-2 border-dashed min-h-[52px] flex flex-col justify-center ${
@@ -1085,9 +1279,13 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
                   ebayFeeNote.adFeeEur != null ||
                   ebayFeeNote.amountReceivedNetEur != null ||
                   ebayFeeNote.buyerShippingEur != null) && (
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 space-y-1">
-                    <p className="text-[8px] font-black uppercase tracking-wider text-slate-400">
-                      eBay fees (info) · sell price is item sold amount, not Auszahlung
+                  <button
+                    type="button"
+                    onClick={() => setProceedsOpen(true)}
+                    className="w-full text-left rounded-xl border border-indigo-100 bg-indigo-50/60 px-2.5 py-2 space-y-1 hover:bg-indigo-50"
+                  >
+                    <p className="text-[8px] font-black uppercase tracking-wider text-indigo-500">
+                      eBay payout · tap for full split
                     </p>
                     <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] font-bold text-slate-600">
                       {ebayFeeNote.ebayFeeEur != null && (
@@ -1100,8 +1298,8 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
                         <span className="text-slate-800">Fees total €{formatEUR(feeAmount)}</span>
                       )}
                       {ebayFeeNote.buyerShippingEur != null && (
-                        <span className="text-slate-400">
-                          Buyer Versand €{formatEUR(ebayFeeNote.buyerShippingEur)} (excluded)
+                        <span className="text-slate-500">
+                          Versand €{formatEUR(ebayFeeNote.buyerShippingEur)}
                         </span>
                       )}
                       {ebayFeeNote.amountReceivedNetEur != null && (
@@ -1110,7 +1308,7 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
                         </span>
                       )}
                     </div>
-                  </div>
+                  </button>
                 )}
               <div className="grid grid-cols-2 gap-2">
                 <input
@@ -1237,6 +1435,9 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
           </div>
         </footer>
       </div>
+      {proceedsOpen && previewProceeds ? (
+        <SaleProceedsDialog breakdown={previewProceeds} onClose={() => setProceedsOpen(false)} />
+      ) : null}
     </div>
   );
 };
