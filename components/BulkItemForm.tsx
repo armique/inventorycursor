@@ -17,6 +17,8 @@ import {
   formatBuyPaymentShort,
 } from '../utils/purchaseSource';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
+import { buildCostOrigin } from '../utils/costOrigin';
+import { estimateBulkItemWeight } from '../utils/bulkImportCostSplit';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
 import { CATEGORY_IMAGES, searchAllHardware, HardwareMetadata } from '../services/hardwareDB';
 import { AddFlowStepHeader, AddFlowPageHeader, AddFlowSecondaryButton, AddFlowPrimaryButton, AddOptionTile, ADD_FLOW_PANEL, ADD_FLOW_LABEL, ADD_FLOW_INPUT } from './addFlowShared';
@@ -738,6 +740,17 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
         ? archivedChatImage
         : undefined;
 
+    const siblingRows = itemsToImport.map((draft, index) => {
+      const cost = draft.manualCost !== undefined ? draft.manualCost : (autoCostsById[draft.id] ?? 0);
+      return {
+        id: `bulk-${timestamp}-${index}`,
+        name: draft.name,
+        allocatedEur: parseFloat(Number(cost).toFixed(2)),
+        weight: estimateBulkItemWeight(draft),
+        locked: draft.manualCost !== undefined,
+      };
+    });
+
     const childItems: InventoryItem[] = itemsToImport.map((draft, index) => {
       const finalCost = draft.manualCost !== undefined ? draft.manualCost : (autoCostsById[draft.id] ?? 0);
       const fallbackImage =
@@ -748,10 +761,11 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
         : draft.imageUrl
           ? [draft.imageUrl]
           : [fallbackImage];
+      const allocatedEur = parseFloat(finalCost.toFixed(2));
       return {
         id: `bulk-${timestamp}-${index}`,
         name: draft.name,
-        buyPrice: parseFloat(finalCost.toFixed(2)),
+        buyPrice: allocatedEur,
         buyDate: buyDate,
         category: draft.category,
         subCategory: draft.subCategory,
@@ -771,6 +785,22 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
         imageUrl: rowImage,
         imageUrls: rowImages,
         bulkImportId,
+        costOrigin: buildCostOrigin({
+          kind: 'bulk_import',
+          addedAs: addAsBundle ? 'Bulk entry as bundle part' : 'Bulk entry',
+          bundleName: addAsBundle
+            ? (bundleName.trim() || `Bundle: ${itemsToImport[0].name}${itemsToImport.length > 1 ? ` + ${itemsToImport.length - 1} more` : ''}`)
+            : undefined,
+          bundleId: addAsBundle ? `bundle-${timestamp}` : undefined,
+          bulkImportId,
+          lotTotalEur: totalCost,
+          allocatedEur,
+          allocationMethod: draft.manualCost !== undefined ? 'manual' : (costSplitMode === 'EQUAL' ? 'equal' : 'smart'),
+          allocationMode: draft.manualCost !== undefined ? 'MANUAL' : costSplitMode,
+          weight: estimateBulkItemWeight(draft),
+          manualLocked: draft.manualCost !== undefined,
+          siblings: siblingRows,
+        }),
       };
     });
 
@@ -801,6 +831,17 @@ ${lines.map((l, idx) => `${idx + 1}. ${l}`).join('\n')}`;
             imageUrl: childItems[0]?.imageUrl || CATEGORY_IMAGES['Components'],
             imageUrls: childItems[0]?.imageUrls || [CATEGORY_IMAGES['Components']],
             bulkImportId,
+            costOrigin: buildCostOrigin({
+              kind: 'bulk_import',
+              addedAs: 'Bulk entry bundle shell',
+              bundleName: nameToUse,
+              bundleId,
+              bulkImportId,
+              lotTotalEur: totalCost,
+              allocatedEur: totalBuy,
+              allocationMethod: 'sum_parts',
+              siblings: siblingRows,
+            }),
           };
           return [parentBundle, ...childItems];
         })()

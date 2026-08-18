@@ -179,6 +179,72 @@ export interface AiAttribution {
   proofAttachments?: ProofAttachment[];
 }
 
+/** How an inventory row first entered the stock list. */
+export type CostOriginKind =
+  | 'single_add'
+  | 'bulk_import'
+  | 'compose_pc'
+  | 'compose_bundle'
+  | 'compose_mixed'
+  | 'split_identical'
+  | 'split_parts'
+  | 'trade_in'
+  | 'ebay_purchase'
+  | 'inbox_purchase'
+  | 'ebay_listing_import'
+  | 'csv_import'
+  | 'print_3d'
+  | 'reinvest_prefill'
+  | 'quick_bundle_add';
+
+export type CostAllocationMethod =
+  | 'manual'
+  | 'equal'
+  | 'smart'
+  | 'weighted'
+  | 'sum_parts'
+  | 'trade_equal'
+  | 'trade_smart'
+  | 'calculator_3d'
+  | 'import_zero'
+  | 'unknown';
+
+/** One other part in the same purchase / split at the moment this row was created. */
+export interface CostOriginSibling {
+  id?: string;
+  name: string;
+  allocatedEur: number;
+  weight?: number;
+  locked?: boolean;
+}
+
+/**
+ * Immutable cost provenance. Explains why buyPrice was set when the item was added.
+ * Later buy-price edits go to priceHistory — they must not rewrite this snapshot.
+ */
+export interface ItemCostOrigin {
+  kind: CostOriginKind;
+  capturedAt: string;
+  /** Short UI line, e.g. "Bulk entry · SMART · €300 ÷ 8 → €42". */
+  label: string;
+  addedAs: string;
+  bundleName?: string;
+  bundleId?: string;
+  sourceItemId?: string;
+  sourceItemName?: string;
+  bulkImportId?: string;
+  partCount: number;
+  lotTotalEur: number;
+  allocatedEur: number;
+  allocationMethod: CostAllocationMethod;
+  allocationMode?: 'EQUAL' | 'SMART' | 'WEIGHTED' | 'MANUAL';
+  weight?: number;
+  weightSharePct?: number;
+  manualLocked?: boolean;
+  siblings?: CostOriginSibling[];
+  notes?: string;
+}
+
 export interface InventoryItem extends AiAttribution, SourceLinks {
   id: string;
   name: string;
@@ -382,6 +448,12 @@ export interface InventoryItem extends AiAttribution, SourceLinks {
   suggestedCompCount?: number;
   suggestedPriceSource?: 'flip_coach' | 'inventory_sold_comps' | 'cost_fallback' | 'manual';
   suggestedPriceUpdatedAt?: string;
+
+  /**
+   * Frozen snapshot of how this row entered inventory and how its first buy price
+   * was derived (bundle split, bulk import, trade, etc.). Never overwrite after first save.
+   */
+  costOrigin?: ItemCostOrigin;
 }
 
 /** Saved AI-generated product card (gallery history — paid generations kept for reuse). */

@@ -11,8 +11,10 @@ import { getLinePayout, type LinePayout } from './ebayOrderPayout';
 import { isOrderCancelled, isOrderFullyRefunded } from './ebayOrderFinancial';
 import {
   buildClaimedLineKeys,
+  itemIsLinkedToEbayOrder,
   lineItemClaimKey,
 } from './ebayOrderLinkAnalysis';
+import { isRealizedDisposal } from './itemDisposition';
 import {
   scoreItemAgainstOrderLine,
   type EbayOrderMatchKind,
@@ -38,18 +40,37 @@ export interface BindCandidateIndex {
   bySku: Map<string, InventoryItem[]>;
   byListingId: Map<string, InventoryItem[]>;
   byToken: Map<string, InventoryItem[]>;
+  blockedParentIds: Set<string>;
 }
 
-export function isEbayBindCandidate(item: InventoryItem): boolean {
-  if (item.ebayOrderId?.trim()) return false;
-  if (item.ebayOrderLineKey?.trim()) return false;
-  if (
-    item.status === ItemStatus.SOLD ||
-    item.status === ItemStatus.TRADED ||
-    item.status === ItemStatus.GIFTED
-  ) {
-    return false;
+function isDisposedStatus(item: InventoryItem): boolean {
+  if (isRealizedDisposal(item)) return true;
+  const status = String(item.status || '').trim().toLowerCase();
+  return status === 'sold' || status === 'traded' || status === 'gifted';
+}
+
+/** Sold PC/bundle (or already order-linked) — its parts must not be bind suggestions. */
+export function blockedEbayBindParentIds(items: InventoryItem[]): Set<string> {
+  const blocked = new Set<string>();
+  for (const item of items) {
+    if (!item.isPC && !item.isBundle) continue;
+    if (isDisposedStatus(item) || itemIsLinkedToEbayOrder(item)) blocked.add(item.id);
   }
+  return blocked;
+}
+
+/**
+ * In-stock / ordered rows that are not already sold or bound to an order.
+ * `blockedParentIds` hides parts of a PC/bundle that already sold.
+ */
+export function isEbayBindCandidate(
+  item: InventoryItem,
+  blockedParentIds?: Set<string>
+): boolean {
+  if (itemIsLinkedToEbayOrder(item)) return false;
+  if (isDisposedStatus(item)) return false;
+  if (item.containerSoldDate && String(item.containerSoldDate).trim()) return false;
+  if (item.parentContainerId && blockedParentIds?.has(item.parentContainerId)) return false;
   if (item.status !== ItemStatus.IN_STOCK && item.status !== ItemStatus.ORDERED) return false;
   return true;
 }
@@ -74,7 +95,8 @@ export function bindIndexTokens(text: string): string[] {
 }
 
 export function buildBindCandidateIndex(items: InventoryItem[]): BindCandidateIndex {
-  const pool = items.filter(isEbayBindCandidate);
+  const blockedParentIds = blockedEbayBindParentIds(items);
+  const pool = items.filter((item) => isEbayBindCandidate(item, blockedParentIds));
   const bySku = new Map<string, InventoryItem[]>();
   const byListingId = new Map<string, InventoryItem[]>();
   const byToken = new Map<string, InventoryItem[]>();
@@ -83,7 +105,7 @@ export function buildBindCandidateIndex(items: InventoryItem[]): BindCandidateIn
     if (item.ebayListingId) pushMap(byListingId, item.ebayListingId, item);
     for (const tok of bindIndexTokens(item.name || '')) pushMap(byToken, tok, item);
   }
-  return { items: pool, bySku, byListingId, byToken };
+  return { items: pool, bySku, byListingId, byToken, blockedParentIds };
 }
 
 function candidatesForLine(line: EbayOrderLineItem, index: BindCandidateIndex): InventoryItem[] {
@@ -119,7 +141,7 @@ export function findItemsForOpenOrderLine(
     : itemsOrIndex;
   const scored: OpenEbayItemSuggestion[] = [];
   for (const item of candidatesForLine(line, index)) {
-    if (!isEbayBindCandidate(item)) continue;
+    if (!isEbayBindCandidate(item, index.blockedParentIds)) continue;
     const { matchScore, matchKind } = scoreItemAgainstOrderLine(item, order, line);
     if (matchKind === 'recent') continue;
     if (matchKind === 'listingId' || matchKind === 'sku' || matchScore >= minScore) {

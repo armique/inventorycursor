@@ -8,6 +8,7 @@ import {
   AlertTriangle, Hammer, Info, Lock, Boxes, Package
 } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
+import { buildCostOrigin } from '../utils/costOrigin';
 import { estimatePCPerformance, PerformanceEstimate } from '../services/geminiService';
 import ItemThumbnail, { getCategoryImageUrl } from './ItemThumbnail';
 import { isCompatibleWithBuild } from '../services/compatibility';
@@ -278,6 +279,20 @@ const PCBuilderWizard: React.FC<Props> = ({ items, onSave, buildKind = 'pc' }) =
         marketTitle: title,
         imageUrl,
         imageUrls: imageUrls?.length ? imageUrls : undefined,
+        costOrigin: existingParent?.costOrigin || buildCostOrigin({
+          kind: isBundleKind ? 'compose_bundle' : 'compose_pc',
+          addedAs: isBundleKind ? 'Bundle composed from existing parts' : 'PC composed from existing parts',
+          bundleName: title,
+          bundleId: parentId,
+          lotTotalEur: totalCost,
+          allocatedEur: totalCost,
+          allocationMethod: 'sum_parts',
+          siblings: allParts.map((part) => ({
+            id: part.id,
+            name: part.name,
+            allocatedEur: Number(part.buyPrice) || 0,
+          })),
+        }),
      };
      delete parent.subCategory;
      return parent;

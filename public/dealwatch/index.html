@@ -12,20 +12,45 @@
   </head>
   <body>
     <div class="app-shell">
-      <aside class="sidebar">
+      <div id="sidebarBackdrop" class="sidebar-backdrop" hidden></div>
+      <aside class="sidebar" id="dealwatchSidebar">
+        <button
+          id="sidebarToggle"
+          class="sidebar-toggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="dealwatchSidebar"
+          title="Show searches"
+        >
+          <span class="sidebar-toggle-chevron" aria-hidden="true"></span>
+          <span class="sidebar-toggle-text">Searches</span>
+        </button>
         <a class="brand" href="#top" aria-label="Dealwatch home">
           <span class="brand-mark">D</span><span>dealwatch</span>
         </a>
-        <nav aria-label="Main navigation">
-          <a class="nav-item active" href="#results" data-nav="results">Matches <span id="resultCount" class="count">0</span></a>
-          <a class="nav-item" href="#filters" data-nav="filters">Searches <span id="filterCount" class="count">1</span></a>
-          <a class="nav-item" href="#watchlist" data-nav="watchlist">Watchlist <span id="watchCount" class="count">0</span></a>
-          <a class="nav-item" href="#ka-purchases" data-nav="ka-purchases">KA buys <span id="kaPurchaseCount" class="count">0</span></a>
-          <a class="nav-item" href="#ka-sales" data-nav="ka-sales">KA sales <span id="kaSaleCount" class="count">0</span></a>
-          <a class="nav-item" href="#trash" data-nav="trash">Trash <span id="trashCount" class="count">0</span></a>
-          <a class="nav-item" href="./explore.html">Free search</a>
-          <a class="nav-item" href="./compare.html">Parts compare</a>
-        </nav>
+        <div class="sidebar-nav-wrap" id="sidebarNavWrap">
+          <button
+            id="sidebarNavToggle"
+            class="sidebar-nav-toggle"
+            type="button"
+            aria-expanded="false"
+            aria-controls="sidebarNav"
+            title="Show Matches, Watchlist, Trash"
+          >
+            <span>Menu</span>
+            <span class="sidebar-nav-toggle-hint">Matches · Watchlist · Trash</span>
+          </button>
+          <nav id="sidebarNav" aria-label="Main navigation">
+            <a class="nav-item active" href="#results" data-nav="results">Matches <span id="resultCount" class="count">0</span></a>
+            <a class="nav-item" href="#filters" data-nav="filters">Searches <span id="filterCount" class="count">1</span></a>
+            <a class="nav-item" href="#watchlist" data-nav="watchlist">Watchlist <span id="watchCount" class="count">0</span></a>
+            <a class="nav-item" href="#ka-purchases" data-nav="ka-purchases">KA buys <span id="kaPurchaseCount" class="count">0</span></a>
+            <a class="nav-item" href="#ka-sales" data-nav="ka-sales">KA sales <span id="kaSaleCount" class="count">0</span></a>
+            <a class="nav-item" href="#trash" data-nav="trash">Trash <span id="trashCount" class="count">0</span></a>
+            <a class="nav-item" href="./explore.html">Free search</a>
+            <a class="nav-item" href="./compare.html">Parts compare</a>
+          </nav>
+        </div>
 
         <div class="tracked-block">
           <div class="tracked-heading">
@@ -49,7 +74,7 @@
         <section id="results" class="results-section" aria-labelledby="results-title">
           <div class="filter-workspace">
             <aside class="scan-rail" aria-label="Scan status">
-              <button class="menu-button" type="button" aria-label="Open menu">Menu</button>
+              <button class="menu-button" type="button" aria-label="Show searches" aria-expanded="false">Searches</button>
               <div id="connectionStatus" class="connection"><i></i> Loading…</div>
               <span id="lastScan" class="scan-rail-meta">Last scan: —</span>
               <div class="scan-rail-metrics" aria-label="Search stats">
@@ -200,10 +225,26 @@
                 <button id="viewTiles" class="view-button active" type="button" data-view="tiles" aria-pressed="true">Tiles</button>
                 <button id="viewLarge" class="view-button" type="button" data-view="large" aria-pressed="false">Large</button>
               </div>
+              <div class="view-toggle" role="group" aria-label="Result scope">
+                <button id="scopeActive" class="view-button active" type="button" data-scope="active" aria-pressed="true">This search</button>
+                <button id="scopeAll" class="view-button" type="button" data-scope="all" aria-pressed="false" title="Show unique lots across all tracked searches">All tracked</button>
+              </div>
+              <div class="view-toggle" role="group" aria-label="Shipping filter">
+                <button
+                  id="hidePickupOnly"
+                  class="view-button"
+                  type="button"
+                  aria-pressed="false"
+                  title="Hide Nur Abholung and listings without shipping"
+                >Hide Nur Abholung</button>
+              </div>
               <div class="sort-control">
                 <label for="sort">Sort</label>
                 <select id="sort">
                   <option value="deal">Best deals first</option>
+                  <option value="spread">Best spread first</option>
+                  <option value="listed">Newest listed</option>
+                  <option value="distance">Closest first</option>
                   <option value="offer">Best Offer first</option>
                   <option value="price">Cheapest first</option>
                   <option value="ending">Ending soon</option>
@@ -318,7 +359,8 @@
           <h3 class="listing-title"></h3>
           <p class="meta-line"><span class="seller"></span><span class="meta-sep"> · </span><span class="condition"></span></p>
           <p class="offer-hint" hidden>Accepts offers</p>
-          <div class="price-line"><strong class="total-price"></strong><span class="shipping"></span></div>
+          <div class="price-line"><strong class="total-price"></strong><span class="spread-line" hidden></span><span class="shipping"></span></div>
+          <p class="matched-searches" hidden></p>
         </div>
         <div class="card-actions">
           <button class="send-offer-button" type="button" hidden>Offer</button>
@@ -479,6 +521,6 @@
       </article>
     </template>
 
-    <script src="./app.js"></script>
+    <script src="./app.js?v=2026-08-18-spread-dedup"></script>
   </body>
 </html>

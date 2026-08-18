@@ -14,6 +14,7 @@ import { prefersNativePhotoCapture } from '../utils/deviceUi';
 import { InventoryItem, ItemStatus, Platform, PaymentType } from '../types';
 import { SALE_PLATFORM_OPTIONS } from '../utils/salePlatform';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
+import { buildCostOrigin } from '../utils/costOrigin';
 import { CATEGORY_IMAGES, getSpecOptions } from '../services/hardwareDB';
 import { generateItemSpecs, getSpecsAIProvider, suggestPriceFromSoldListings, type SoldPriceSuggestion } from '../services/specsAI';
 import { pickSpecsAiNameVendorUpdates } from '../utils/applySpecsAiResult';
@@ -1074,6 +1075,33 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
       kleinanzeigenSellerProfileUrl: sellerProfileUrl || undefined,
       aiDescriptionNote: (formData.aiDescriptionNote || '').trim(),
     };
+
+    if (!isEditingExisting) {
+      const container = parentContainerId ? items.find((i) => i.id === parentContainerId) : undefined;
+      const siblings = container
+        ? [
+            ...(items.filter((i) => i.parentContainerId === parentContainerId).map((i) => ({
+              id: i.id,
+              name: i.name,
+              allocatedEur: Number(i.buyPrice) || 0,
+            }))),
+            { id: base.id, name: base.name, allocatedEur: buyPriceResolved },
+          ]
+        : [{ id: base.id, name: base.name, allocatedEur: buyPriceResolved }];
+      const lotTotal = siblings.reduce((sum, row) => sum + row.allocatedEur, 0);
+      base.costOrigin = buildCostOrigin({
+        kind: parentContainerId ? 'quick_bundle_add' : 'single_add',
+        addedAs: parentContainerId
+          ? `Added into ${container?.name || 'PC / bundle'}`
+          : 'Single item add',
+        bundleName: container?.name,
+        bundleId: parentContainerId,
+        lotTotalEur: lotTotal || buyPriceResolved,
+        allocatedEur: buyPriceResolved,
+        allocationMethod: 'manual',
+        siblings,
+      });
+    }
 
     if (status === ItemStatus.SOLD || status === ItemStatus.TRADED || status === ItemStatus.GIFTED) {
       if (!base.sellDate) base.sellDate = new Date().toISOString().split('T')[0];

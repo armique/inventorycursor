@@ -7,58 +7,70 @@ function toDateOnlyLocal(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+function parseYmd(iso: string): { y: number; m: number; d: number } | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || '').trim());
+  if (!match) return null;
+  return { y: Number(match[1]), m: Number(match[2]), d: Number(match[3]) };
+}
+
+function daysInMonth(year: number, month1to12: number): number {
+  return new Date(year, month1to12, 0).getDate();
+}
+
+function ymd(year: number, month1to12: number, day: number): string {
+  const d = Math.min(Math.max(1, day), daysInMonth(year, month1to12));
+  return `${year}-${String(month1to12).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
+/** Billing day from startDate (e.g. 2026-08-17 → 17). */
+export function recurringDayOfMonth(recurring: Pick<RecurringExpense, 'startDate'>): number {
+  const parsed = parseYmd(recurring.startDate);
+  if (!parsed || parsed.d < 1) return 1;
+  return Math.min(31, parsed.d);
+}
+
 /**
  * Generate monthly expense entries from a recurring expense.
- * 
- * - If startDate is in the past, generates all months from startDate to current month
- * - If startDate is in the future, generates nothing until that month arrives
- * - Uses lastGeneratedDate to avoid regenerating months that were already created
- * 
- * @param recurring The recurring expense definition
- * @param existingExpenses Existing expenses (to check for duplicates)
- * @returns Array of generated Expense objects and the updated lastGeneratedDate
+ *
+ * Uses the day-of-month from startDate (not always the 1st).
+ * If startDate is in the future, generates nothing until that date arrives.
  */
 export function generateExpensesFromRecurring(
   recurring: RecurringExpense,
-  existingExpenses: Expense[]
+  existingExpenses: Expense[],
+  now: Date = new Date()
 ): { expenses: Expense[]; lastGeneratedDate: string } {
-  const startDate = new Date(recurring.startDate);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  
-  // Determine where to start generating from
-  let generateFrom = new Date(startDate);
-  if (recurring.lastGeneratedDate) {
-    const lastGen = new Date(recurring.lastGeneratedDate);
-    // Start from the month after lastGeneratedDate
-    generateFrom = new Date(lastGen.getFullYear(), lastGen.getMonth() + 1, 1);
-  }
-  
-  // Don't generate if start date is in the future
-  if (generateFrom > today) {
+  const start = parseYmd(recurring.startDate);
+  if (!start) {
     return { expenses: [], lastGeneratedDate: recurring.lastGeneratedDate || recurring.startDate };
   }
-  
-  // Generate up to current month (inclusive)
-  const endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0); // Last day of current month
-  
-  const generated: Expense[] = [];
+
+  const todayStr = toDateOnlyLocal(now);
+  const day = recurringDayOfMonth(recurring);
+
+  let year = start.y;
+  let month = start.m;
+  const lastGen = parseYmd(recurring.lastGeneratedDate || '');
+  if (lastGen) {
+    year = lastGen.y;
+    month = lastGen.m + 1;
+    if (month > 12) {
+      month = 1;
+      year += 1;
+    }
+  }
+
   const existingByDate = new Set(
-    existingExpenses
-      .filter(e => e.recurringExpenseId === recurring.id)
-      .map(e => e.date)
+    existingExpenses.filter((e) => e.recurringExpenseId === recurring.id).map((e) => e.date)
   );
-  
-  let current = new Date(generateFrom);
-  current.setDate(1); // First day of month
-  
-  while (current <= endDate) {
-    // Use first day of month for the expense date
-    const expenseDate = new Date(current.getFullYear(), current.getMonth(), 1);
-    const dateStr = toDateOnlyLocal(expenseDate);
-    
-    // Skip if this month's expense already exists
-    if (!existingByDate.has(dateStr)) {
+
+  const generated: Expense[] = [];
+  let cursorYear = year;
+  let cursorMonth = month;
+  for (let i = 0; i < 48; i++) {
+    const dateStr = ymd(cursorYear, cursorMonth, day);
+    if (dateStr > todayStr) break;
+    if (dateStr >= recurring.startDate && !existingByDate.has(dateStr)) {
       generated.push({
         id: `exp-recurring-${recurring.id}-${dateStr}`,
         description: recurring.description,
@@ -68,36 +80,30 @@ export function generateExpensesFromRecurring(
         recurringExpenseId: recurring.id,
       });
     }
-    
-    // Move to next month
-    current.setMonth(current.getMonth() + 1);
+    cursorMonth += 1;
+    if (cursorMonth > 12) {
+      cursorMonth = 1;
+      cursorYear += 1;
+    }
   }
-  
-  // Update lastGeneratedDate to the last month we processed
-  const lastGenerated = generated.length > 0
-    ? generated[generated.length - 1].date
-    : (recurring.lastGeneratedDate || recurring.startDate);
-  
+
+  const lastGenerated =
+    generated.length > 0
+      ? generated[generated.length - 1].date
+      : recurring.lastGeneratedDate || recurring.startDate;
+
   return { expenses: generated, lastGeneratedDate: lastGenerated };
 }
 
-/**
- * Generate expenses for all recurring expenses.
- * 
- * @param recurringExpenses Array of recurring expense definitions
- * @param existingExpenses Existing expenses (to avoid duplicates)
- * @returns Array of all generated Expense objects
- */
 export function generateAllRecurringExpenses(
   recurringExpenses: RecurringExpense[],
-  existingExpenses: Expense[]
+  existingExpenses: Expense[],
+  now: Date = new Date()
 ): Expense[] {
   const allGenerated: Expense[] = [];
-  
   for (const recurring of recurringExpenses) {
-    const { expenses } = generateExpensesFromRecurring(recurring, existingExpenses);
+    const { expenses } = generateExpensesFromRecurring(recurring, existingExpenses, now);
     allGenerated.push(...expenses);
   }
-  
   return allGenerated;
 }

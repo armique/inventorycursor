@@ -46,6 +46,10 @@ const VIEW_MODES = ['list', 'compact', 'tiles', 'large'];
 let viewMode = VIEW_MODES.includes(localStorage.getItem('dealwatchViewMode'))
   ? localStorage.getItem('dealwatchViewMode')
   : 'tiles';
+let hidePickupOnly = localStorage.getItem('dealwatchHidePickupOnly') === '1';
+let listingsScope = localStorage.getItem('dealwatchListingsScope') === 'all' ? 'all' : 'active';
+let currentSoldMedian = null;
+let seenBySearch = {};
 
 function timeLeft(date) {
   if (!date) return 'no end date';
@@ -500,6 +504,7 @@ function applyStore(store, { syncForm = true } = {}) {
   activeId = store.activeId || searches[0]?.id || '';
   alertsOn = store.alerts !== false;
   if (Array.isArray(store.notifications)) notifications = store.notifications;
+  if (store.seenBySearch && typeof store.seenBySearch === 'object') seenBySearch = store.seenBySearch;
   el('alertButton').textContent = `Alerts: ${alertsOn ? 'on' : 'off'}`;
   if (Number.isFinite(store.monitorIntervalMinutes)) monitorIntervalMinutes = store.monitorIntervalMinutes;
   if (typeof store.telegramConfigured === 'boolean') telegramConfigured = store.telegramConfigured;
@@ -1077,10 +1082,16 @@ function refreshMessageCashButtons(item) {
   });
 }
 
+function isKleinanzeigenListing(item) {
+  return item?.marketplace === 'kleinanzeigen' || String(item?.id || '').startsWith('ka|');
+}
+
 function isPickupOnlyListing(item) {
   if (!item) return false;
   if (item.pickupOnly === true) return true;
   if (item.shippingPossible === true) return false;
+  // KA search cards often omit a "Nur Abholung" tag. No Versand badge means pickup / see ad.
+  if (isKleinanzeigenListing(item)) return true;
   const text = [
     item.sourceText,
     item.title,
@@ -1089,6 +1100,70 @@ function isPickupOnlyListing(item) {
     item.seller,
   ].filter(Boolean).join(' ');
   return /\bnur\s*(selbst)?abholung\b|\bpick[\s-]?up\s*only\b|\bselbstabholung\b|\bkeine[rn]?\s*versand\b|\bversand\s*(nicht|ausgeschlossen)\b|\bohne\s*versand\b/i.test(text);
+}
+
+function listingsWithoutPickupOnly(list) {
+  return (list || []).filter((item) => !isPickupOnlyListing(item));
+}
+
+function applyHidePickupOnlyUi() {
+  const btn = el('hidePickupOnly');
+  if (!btn) return;
+  btn.classList.toggle('active', hidePickupOnly);
+  btn.setAttribute('aria-pressed', hidePickupOnly ? 'true' : 'false');
+  btn.textContent = hidePickupOnly ? 'Showing shipping only' : 'Hide Nur Abholung';
+}
+
+function applyListingsScopeUi() {
+  document.querySelectorAll('.view-button[data-scope]').forEach((button) => {
+    const active = (button.dataset.scope || 'active') === listingsScope;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+}
+
+function setListingsScope(next) {
+  listingsScope = next === 'all' ? 'all' : 'active';
+  try {
+    localStorage.setItem('dealwatchListingsScope', listingsScope);
+  } catch {
+    // ignore
+  }
+  applyListingsScopeUi();
+  fetchListings({ quiet: false }).catch((error) => {
+    if (el('dataNote')) el('dataNote').textContent = error.message;
+  });
+}
+
+function attachSpreadFields(item, median) {
+  const ask = Number(item?.price ?? item?.total);
+  if (!item || !Number.isFinite(median) || !Number.isFinite(ask) || ask <= 0) return item;
+  const spreadEur = Math.round((median - ask) * 100) / 100;
+  const spreadPct = Math.round((spreadEur / median) * 1000) / 10;
+  return { ...item, soldMedian: median, spreadEur, spreadPct };
+}
+
+function applySoldMedianToLists(median) {
+  if (!Number.isFinite(median)) return;
+  currentSoldMedian = median;
+  currentListings = currentListings.map((item) => attachSpreadFields(item, median));
+  currentSuggestions = currentSuggestions.map((item) => attachSpreadFields(item, median));
+}
+
+function listingAgeMs(item) {
+  const at = new Date(item?.originDate || 0).getTime();
+  return Number.isFinite(at) && at > 0 ? Date.now() - at : Number.POSITIVE_INFINITY;
+}
+
+function setHidePickupOnly(next) {
+  hidePickupOnly = Boolean(next);
+  try {
+    localStorage.setItem('dealwatchHidePickupOnly', hidePickupOnly ? '1' : '0');
+  } catch {
+    // ignore
+  }
+  applyHidePickupOnlyUi();
+  render();
 }
 
 function syncMessagePickupTemplates(item) {
@@ -1455,6 +1530,7 @@ function fillListingCard(node, item, { watched = false, onWatch } = {}) {
   if (item.isAuction) parts.push('Auction');
   if (hasOffer && !isKa) parts.push('Best Offer');
   if (offerSent && !isKa) parts.push('Offer sent');
+  if (watched && Number(item.priceDropEur) >= 1) parts.push(`↓€${Math.round(item.priceDropEur)}`);
   parts.push(heat.label);
   node.querySelector('.deal-label').textContent = parts.join(' · ');
   node.querySelector('.deal-label').classList.toggle('has-offer', hasOffer && !isKa);
@@ -1474,13 +1550,52 @@ function fillListingCard(node, item, { watched = false, onWatch } = {}) {
     : sellerFeedbackLabel(item);
   node.querySelector('.condition').textContent = item.condition;
   node.querySelector('.total-price').textContent = euros(item.total);
+  const spreadEl = node.querySelector('.spread-line');
+  if (spreadEl) {
+    const median = Number(item.soldMedian);
+    const spreadEur = Number(item.spreadEur);
+    const spreadPct = Number(item.spreadPct);
+    const showSpread = Number.isFinite(median) && Number.isFinite(spreadEur);
+    spreadEl.hidden = !showSpread;
+    if (showSpread) {
+      const sign = spreadEur > 0 ? '+' : '';
+      spreadEl.textContent = `eBay sold ${euros(median)} · ${sign}${Math.round(spreadEur)}€ (${sign}${spreadPct}%)`;
+      spreadEl.classList.toggle('is-positive', spreadEur > 0);
+      spreadEl.classList.toggle('is-negative', spreadEur < 0);
+      spreadEl.title = spreadEur > 0
+        ? `${Math.round(spreadEur)}€ under eBay sold median`
+        : `${Math.abs(Math.round(spreadEur))}€ over eBay sold median`;
+    }
+  }
   node.querySelector('.shipping').textContent = isKa
-    ? (item.pickupOnly
-      ? 'pickup only'
-      : (item.shippingPossible ? 'shipping possible' : 'pickup / see ad'))
+    ? [
+      Number.isFinite(Number(item.distanceKm)) ? `~${Math.round(item.distanceKm)} km` : '',
+      item.pickupOnly
+        ? 'pickup only'
+        : (item.shippingPossible ? 'shipping possible' : 'pickup / see ad'),
+    ].filter(Boolean).join(' · ')
     : (item.shippingKnown === false
       ? 'shipping not listed'
       : `incl. shipping ${euros(item.shipping)}`);
+  const matchedEl = node.querySelector('.matched-searches');
+  if (matchedEl) {
+    const names = [...new Set((item.matchedSearchNames || []).map(String).filter(Boolean))];
+    matchedEl.hidden = names.length < 2;
+    if (names.length >= 2) {
+      matchedEl.textContent = `Also in ${names.slice(0, 4).join(' · ')}${names.length > 4 ? ` +${names.length - 4}` : ''}`;
+      matchedEl.title = names.join(' · ');
+    }
+  }
+  const dropEur = Number(item.priceDropEur);
+  const watchPrice = Number(item.watchPrice);
+  if (watched && Number.isFinite(dropEur) && dropEur >= 1 && Number.isFinite(watchPrice)) {
+    card.classList.add('is-price-drop');
+    if (spreadEl && spreadEl.hidden) {
+      spreadEl.hidden = false;
+      spreadEl.classList.add('is-positive');
+      spreadEl.textContent = `↓ ${euros(dropEur)} off saved ${euros(watchPrice)}`;
+    }
+  }
   node.querySelector('.offer-link').href = item.url;
   node.querySelector('.offer-link').textContent = isKa ? 'Open ad' : 'Open';
   setListingImage(node, item);
@@ -1832,6 +1947,15 @@ async function openFilterFromSidebar(searchId) {
 }
 
 async function openFirstUnreadFilter() {
+  const firstDrop = notifications.find(item => !item.read && item.type === 'price_drop');
+  if (firstDrop) {
+    await markFilterNotificationsRead('watchlist');
+    document.querySelectorAll('[data-nav]').forEach(link => {
+      link.classList.toggle('active', link.dataset.nav === 'watchlist');
+    });
+    el('watchlist')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
   const first = notifications.find(item => !item.read && item.searchId);
   if (!first) return;
   await openFilterFromSidebar(first.searchId);
@@ -1842,7 +1966,7 @@ function applyViewMode() {
   grids.forEach(grid => {
     VIEW_MODES.forEach(mode => grid.classList.toggle(`view-${mode}`, viewMode === mode));
   });
-  document.querySelectorAll('.view-toggle .view-button').forEach(button => {
+  document.querySelectorAll('.view-toggle .view-button[data-view]').forEach(button => {
     const mode = button.dataset.view || button.id?.replace(/^view/, '').toLowerCase();
     const active = mode === viewMode;
     button.classList.toggle('active', active);
@@ -1860,7 +1984,8 @@ function renderWatchlist() {
   const grid = el('watchlistGrid');
   const template = el('listingTemplate');
   grid.replaceChildren();
-  watchlist.forEach(item => {
+  const rows = [...watchlist].sort((a, b) => (Number(b.priceDropEur) || 0) - (Number(a.priceDropEur) || 0));
+  rows.forEach(item => {
     const node = template.content.cloneNode(true);
     fillListingCard(node, item, {
       watched: true,
@@ -1996,24 +2121,26 @@ function renderSold(stats = {}) {
   if (el('soldEmpty')) el('soldEmpty').hidden = soldListings.length !== 0;
 }
 
-async function fetchSoldListings() {
+async function fetchSoldListings({ quiet = false } = {}) {
   const filters = currentFilters();
   const note = el('soldNote');
   const button = el('loadSoldButton');
   const topNote = el('dataNote');
-  if (!button) return;
+  if (!button && !quiet) return currentSoldMedian;
   if (window.location.protocol === 'file:') {
     const msg = 'Open the app at http://localhost:3000 to load sold comps.';
     if (note) note.textContent = msg;
-    if (topNote) topNote.textContent = msg;
-    return;
+    if (topNote && !quiet) topNote.textContent = msg;
+    return null;
   }
-  if (soldFetching) return;
+  if (soldFetching) return currentSoldMedian;
   soldFetching = true;
-  button.textContent = 'Loading sold…';
-  button.disabled = true;
-  if (note) note.textContent = 'Loading sold comps from eBay.de…';
-  if (topNote) topNote.textContent = 'Loading sold comps from eBay.de…';
+  if (button) {
+    button.textContent = 'Loading sold…';
+    button.disabled = true;
+  }
+  if (note && !quiet) note.textContent = 'Loading sold comps from eBay.de…';
+  if (topNote && !quiet) topNote.textContent = 'Loading sold comps from eBay.de…';
   try {
     const params = new URLSearchParams({
       query: filters.search,
@@ -2032,20 +2159,26 @@ async function fetchSoldListings() {
       rejected: data.rejected,
       median: data.median,
     });
+    applySoldMedianToLists(data.median);
+    if (!quiet) render();
     const msg = `Sold comps: kept ${soldListings.length}, rejected ${data.rejected ?? 0}, median ${Number.isFinite(data.median) ? euros(data.median) : '—'}.`;
     if (note) note.textContent = `Sold comps from eBay.de. Scanned: ${data.scanned}; kept after filters: ${soldListings.length}; rejected: ${data.rejected}.`;
-    if (topNote) topNote.textContent = msg;
-    el('sold')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (topNote && !quiet) topNote.textContent = msg;
+    if (!quiet) el('sold')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return data.median;
   } catch (error) {
     soldListings = [];
     renderSold({ kept: 0, rejected: 0, median: null });
     const msg = `Sold comps error: ${error.message}`;
     if (note) note.textContent = msg;
-    if (topNote) topNote.textContent = msg;
+    if (topNote && !quiet) topNote.textContent = msg;
+    return null;
   } finally {
     soldFetching = false;
-    button.textContent = 'Load sold comps';
-    button.disabled = false;
+    if (button) {
+      button.textContent = 'Load sold comps';
+      button.disabled = false;
+    }
   }
 }
 
@@ -2075,7 +2208,9 @@ function renderSuggestions() {
   if (!block || !grid) return;
 
   const filters = currentFilters();
-  const hasSuggestions = currentSuggestions.length > 0 && currentListings.length === 0;
+  const visibleListings = hidePickupOnly ? listingsWithoutPickupOnly(currentListings) : currentListings;
+  const visibleSuggestions = hidePickupOnly ? listingsWithoutPickupOnly(currentSuggestions) : currentSuggestions;
+  const hasSuggestions = visibleSuggestions.length > 0 && visibleListings.length === 0;
   block.hidden = !hasSuggestions;
   if (!hasSuggestions) {
     grid.replaceChildren();
@@ -2084,11 +2219,11 @@ function renderSuggestions() {
   }
 
   const max = filters.maxPrice;
-  const cheapest = suggestionMeta?.cheapestAbove || currentSuggestions[0]?.price;
+  const cheapest = suggestionMeta?.cheapestAbove || visibleSuggestions[0]?.price;
   const upTo = suggestionMeta?.searchedUpTo;
   el('suggestTitle').textContent = `Closest lots above €${max}`;
   el('suggestCopy').textContent = cheapest
-    ? `No matches in budget. Showing ${currentSuggestions.length} nearby lot${currentSuggestions.length === 1 ? '' : 's'} from €${Math.ceil(cheapest)}${upTo ? ` (checked up to €${upTo})` : ''}.`
+    ? `No matches in budget. Showing ${visibleSuggestions.length} nearby lot${visibleSuggestions.length === 1 ? '' : 's'} from €${Math.ceil(cheapest)}${upTo ? ` (checked up to €${upTo})` : ''}.`
     : 'No matches in budget. Nearby lots above your max:';
 
   if (raiseBtn) {
@@ -2100,7 +2235,7 @@ function renderSuggestions() {
 
   const template = el('listingTemplate');
   grid.replaceChildren();
-  currentSuggestions.forEach(item => {
+  visibleSuggestions.forEach(item => {
     const node = template.content.cloneNode(true);
     fillListingCard(node, item, {
       watched: watchlistIds.has(item.id),
@@ -2118,7 +2253,20 @@ function renderSuggestions() {
 
 function render() {
   const sort = el('sort').value;
-  const valid = [...currentListings].sort((a, b) => {
+  const source = hidePickupOnly ? listingsWithoutPickupOnly(currentListings) : currentListings;
+  const hiddenPickup = Math.max(0, currentListings.length - source.length);
+  const valid = [...source].sort((a, b) => {
+    if (sort === 'listed') return listingAgeMs(a) - listingAgeMs(b);
+    if (sort === 'distance') {
+      const da = Number.isFinite(Number(a.distanceKm)) ? Number(a.distanceKm) : Number.POSITIVE_INFINITY;
+      const db = Number.isFinite(Number(b.distanceKm)) ? Number(b.distanceKm) : Number.POSITIVE_INFINITY;
+      return da - db || listingAgeMs(a) - listingAgeMs(b);
+    }
+    if (sort === 'spread') {
+      const sa = Number.isFinite(Number(a.spreadPct)) ? Number(a.spreadPct) : -9999;
+      const sb = Number.isFinite(Number(b.spreadPct)) ? Number(b.spreadPct) : -9999;
+      return sb - sa || a.total - b.total;
+    }
     const newDelta = Number(Boolean(b.isNew)) - Number(Boolean(a.isNew));
     if (newDelta) return newDelta;
     if (sort === 'price') return a.total - b.total;
@@ -2140,18 +2288,24 @@ function render() {
   el('resultCount').textContent = valid.length;
   if (el('matchingCount')) {
     el('matchingCount').textContent = String(valid.length);
-    el('matchingCount').title = lastRejected
-      ? `${valid.length} shown · ${lastRejected} rejected by filters`
-      : `${valid.length} matching offer${valid.length === 1 ? '' : 's'}`;
+    el('matchingCount').title = [
+      lastRejected ? `${valid.length} shown · ${lastRejected} rejected by filters` : `${valid.length} matching offer${valid.length === 1 ? '' : 's'}`,
+      listingsScope === 'all' ? 'unique across tracked searches' : '',
+      hiddenPickup ? `${hiddenPickup} pickup-only hidden` : '',
+    ].filter(Boolean).join(' · ');
   }
   el('metricMatches').textContent = valid.length;
   el('metricBest').textContent = valid.length ? euros(Math.min(...valid.map(item => item.total))) : '—';
   el('metricRejected').textContent = lastRejected;
   el('emptyState').hidden = valid.length !== 0;
   if (el('emptyStateCopy')) {
-    el('emptyStateCopy').textContent = currentSuggestions.length
-      ? `Nothing under €${currentFilters().maxPrice}. Nearby options are listed below.`
-      : 'Raise the budget or loosen one of the filters.';
+    if (valid.length === 0 && hiddenPickup > 0) {
+      el('emptyStateCopy').textContent = `${hiddenPickup} lot${hiddenPickup === 1 ? '' : 's'} hidden as Nur Abholung / pickup-only. Turn the filter off to see them.`;
+    } else {
+      el('emptyStateCopy').textContent = currentSuggestions.length
+        ? `Nothing under €${currentFilters().maxPrice}. Nearby options are listed below.`
+        : 'Raise the budget or loosen one of the filters.';
+    }
   }
   renderSuggestions();
   applyViewMode();
@@ -2747,22 +2901,32 @@ async function fetchListings({
       locationLabel: filters.locationLabel || '',
       radiusKm: String(filters.radiusKm || 0),
       shippingOnly: filters.shippingOnly ? '1' : '0',
+      scope: listingsScope,
     });
     if (filters.categoryId) params.set('categoryId', String(filters.categoryId));
     else params.set('categoryId', '');
     const data = await api(`/api/listings?${params}`);
     if (generation !== fetchGeneration) return;
-    currentListings = data.items || [];
-    currentSuggestions = Array.isArray(data.suggestions) ? data.suggestions : [];
+    currentListings = (data.items || []).filter((item) => !/\bsuche\b/i.test(String(item?.title || '')));
+    currentSuggestions = (Array.isArray(data.suggestions) ? data.suggestions : []).filter(
+      (item) => !/\bsuche\b/i.test(String(item?.title || '')),
+    );
     suggestionMeta = data.suggestionMeta || null;
     lastRejected = data.rejected ?? 0;
     if (Array.isArray(data.offersSent)) offersSentIds = new Set(data.offersSent.map(String));
+    if (Array.isArray(data.watchlist)) {
+      watchlist = data.watchlist;
+      watchlistIds = new Set(watchlist.map((item) => item.id));
+    }
     if (data.store) {
       searches = data.store.searches || searches;
       trash = data.store.trash || trash;
       watchlist = data.store.watchlist || watchlist;
       watchlistIds = new Set(watchlist.map(item => item.id));
       if (Array.isArray(data.store.offersSent)) offersSentIds = new Set(data.store.offersSent.map(String));
+      if (data.store.seenBySearch && typeof data.store.seenBySearch === 'object') {
+        seenBySearch = data.store.seenBySearch;
+      }
       activeId = data.store.activeId || activeId;
       if (typeof data.store.alerts === 'boolean') alertsOn = data.store.alerts;
       if (Array.isArray(data.store.notifications)) notifications = data.store.notifications;
@@ -2772,6 +2936,8 @@ async function fetchListings({
     } else if (Array.isArray(data.watchlistIds)) {
       watchlistIds = new Set(data.watchlistIds);
     }
+    if (Number.isFinite(data.soldMedian)) applySoldMedianToLists(data.soldMedian);
+    else if (Number.isFinite(currentSoldMedian)) applySoldMedianToLists(currentSoldMedian);
     if (Number.isFinite(data.monitorIntervalMinutes)) monitorIntervalMinutes = data.monitorIntervalMinutes;
     if (typeof data.telegramConfigured === 'boolean') telegramConfigured = data.telegramConfigured;
     // Only restore the form when a one-shot override intentionally left it (e.g. All eBay.de).
@@ -2780,6 +2946,15 @@ async function fetchListings({
       if (active) applySearchToForm(active);
     }
     render();
+    if (!Number.isFinite(data.soldMedian)) {
+      fetchSoldListings({ quiet: true }).then((median) => {
+        if (generation !== fetchGeneration) return;
+        if (Number.isFinite(median)) {
+          applySoldMedianToLists(median);
+          render();
+        }
+      }).catch(() => {});
+    }
     el('lastScan').textContent = `Last scan: ${new Date(data.checkedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
     const telegramStatus = !alertsOn
       ? ' Alerts are off.'
@@ -3083,8 +3258,22 @@ el('kaRadius')?.addEventListener('change', () => scheduleAutoSave());
 el('kaCategory')?.addEventListener('change', () => scheduleAutoSave());
 el('kaShippingOnly')?.addEventListener('change', () => scheduleAutoSave());
 
-el('sort').addEventListener('change', render);
-document.querySelectorAll('.view-toggle .view-button').forEach(button => {
+el('sort')?.addEventListener('change', render);
+document.addEventListener('click', (event) => {
+  const scopeBtn = event.target?.closest?.('[data-scope]');
+  if (scopeBtn) {
+    event.preventDefault();
+    setListingsScope(scopeBtn.dataset.scope);
+    return;
+  }
+  const btn = event.target?.closest?.('#hidePickupOnly');
+  if (!btn) return;
+  event.preventDefault();
+  setHidePickupOnly(!hidePickupOnly);
+});
+applyHidePickupOnlyUi();
+applyListingsScopeUi();
+document.querySelectorAll('.view-toggle .view-button[data-view]').forEach(button => {
   button.addEventListener('click', () => {
     const mode = button.dataset.view || 'tiles';
     setViewMode(mode);
@@ -3285,7 +3474,89 @@ el('sidebarNewMatches')?.addEventListener('click', () => {
   });
 });
 
+const SIDEBAR_OPEN_KEY = 'dealwatch_sidebar_open_v1';
+
+function isSidebarOpen() {
+  return Boolean(document.querySelector('.app-shell')?.classList.contains('sidebar-open'));
+}
+
+function setSidebarOpen(open) {
+  const shell = document.querySelector('.app-shell');
+  const toggle = el('sidebarToggle');
+  const menu = document.querySelector('.menu-button');
+  const backdrop = el('sidebarBackdrop');
+  if (shell) shell.classList.toggle('sidebar-open', open);
+  if (toggle) {
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    toggle.title = open ? 'Hide searches' : 'Show searches';
+    const label = toggle.querySelector('.sidebar-toggle-text');
+    if (label) label.textContent = open ? 'Hide' : 'Searches';
+  }
+  if (menu) {
+    menu.setAttribute('aria-expanded', open ? 'true' : 'false');
+    menu.setAttribute('aria-label', open ? 'Hide searches' : 'Show searches');
+    menu.textContent = open ? 'Hide' : 'Searches';
+  }
+  if (backdrop) backdrop.hidden = !open;
+  try {
+    localStorage.setItem(SIDEBAR_OPEN_KEY, open ? '1' : '0');
+  } catch {
+    // ignore
+  }
+}
+
+function initSidebarToggle() {
+  let saved = '0';
+  try {
+    saved = localStorage.getItem(SIDEBAR_OPEN_KEY) || '0';
+  } catch {
+    saved = '0';
+  }
+  setSidebarOpen(saved === '1');
+  el('sidebarToggle')?.addEventListener('click', () => setSidebarOpen(!isSidebarOpen()));
+  document.querySelector('.menu-button')?.addEventListener('click', () => setSidebarOpen(!isSidebarOpen()));
+  el('sidebarBackdrop')?.addEventListener('click', () => setSidebarOpen(false));
+}
+
+initSidebarToggle();
+
+const SIDEBAR_NAV_KEY = 'dealwatch_sidebar_nav_open_v1';
+
+function setSidebarNavOpen(open) {
+  const wrap = el('sidebarNavWrap');
+  const toggle = el('sidebarNavToggle');
+  wrap?.classList.toggle('is-open', open);
+  if (toggle) {
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    toggle.title = open ? 'Hide menu' : 'Show Matches, Watchlist, Trash';
+  }
+  try {
+    localStorage.setItem(SIDEBAR_NAV_KEY, open ? '1' : '0');
+  } catch {
+    // ignore
+  }
+}
+
+function initSidebarNavToggle() {
+  let saved = '0';
+  try {
+    saved = localStorage.getItem(SIDEBAR_NAV_KEY) || '0';
+  } catch {
+    saved = '0';
+  }
+  setSidebarNavOpen(saved === '1');
+  el('sidebarNavToggle')?.addEventListener('click', () => {
+    setSidebarNavOpen(!el('sidebarNavWrap')?.classList.contains('is-open'));
+  });
+}
+
+initSidebarNavToggle();
+
 document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && isSidebarOpen() && !pendingDeleteId) {
+    setSidebarOpen(false);
+    return;
+  }
   if (event.key !== 'Escape' || !pendingDeleteId) return;
   pendingDeleteId = '';
   renderSidebar();
@@ -3295,6 +3566,7 @@ document.querySelectorAll('[data-nav]').forEach(link => {
   link.addEventListener('click', () => {
     document.querySelectorAll('[data-nav]').forEach(item => item.classList.remove('active'));
     link.classList.add('active');
+    if (window.matchMedia('(max-width: 900px)').matches) setSidebarOpen(false);
   });
 });
 

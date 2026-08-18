@@ -1,8 +1,9 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { InventoryItem, BusinessSettings } from '../types';
 import { formatEUR } from '../utils/formatMoney';
-import { X, Printer, Download } from 'lucide-react';
+import { X, Printer, Download, Loader2 } from 'lucide-react';
+import { saveInvoiceElementToPc } from '../utils/downloadInvoice';
 
 interface Props {
   item: InventoryItem;
@@ -24,8 +25,25 @@ const InvoiceView: React.FC<Props> = ({ item, business, onClose }) => {
      vatAmount = totalGross - subTotal;
   }
 
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleSavePdf = async () => {
+    const root = document.getElementById('invoice-view-printable');
+    if (!root || saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await saveInvoiceElementToPc(root, rechnungsNummer);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'PDF speichern fehlgeschlagen');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -56,17 +74,32 @@ const InvoiceView: React.FC<Props> = ({ item, business, onClose }) => {
         `}
       </style>
       <div id="invoice-view-printable" className="bg-white w-full max-w-[800px] h-[95vh] overflow-y-auto rounded-[2rem] shadow-2xl flex flex-col scrollbar-hide">
-        <header className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 print:hidden">
-           <h2 className="text-xl font-black uppercase tracking-widest text-slate-900">Invoice Preview</h2>
+        <header data-invoice-toolbar className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 print:hidden">
+           <div>
+             <h2 className="text-xl font-black uppercase tracking-widest text-slate-900">Invoice Preview</h2>
+             {saveError ? (
+               <p className="text-[11px] font-semibold text-rose-600 mt-1">{saveError}</p>
+             ) : null}
+           </div>
            <div className="flex gap-2">
-              <button onClick={handlePrint} className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-black transition-all">
+              <button
+                type="button"
+                onClick={() => void handleSavePdf()}
+                disabled={saving}
+                className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-700 transition-all disabled:opacity-60"
+                title="Rechnung als PDF auf diesem PC speichern"
+              >
+                {saving ? <Loader2 size={16} className="animate-spin"/> : <Download size={16}/>}
+                {saving ? 'Speichern…' : 'PDF speichern'}
+              </button>
+              <button type="button" onClick={handlePrint} className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-black transition-all">
                 <Printer size={16}/> Print PDF
               </button>
-              <button onClick={onClose} className="p-2.5 bg-slate-100 text-slate-500 rounded-xl hover:bg-slate-200 transition-all"><X size={20}/></button>
+              <button type="button" onClick={onClose} className="p-2.5 bg-slate-100 text-slate-500 rounded-xl hover:bg-slate-200 transition-all"><X size={20}/></button>
            </div>
         </header>
 
-        <div className="p-16 print:p-12 space-y-12 flex-1">
+        <div data-invoice-sheet className="p-16 print:p-12 space-y-12 flex-1">
            {/* Invoice Header */}
            <div className="flex justify-between items-start">
               <div className="space-y-2">

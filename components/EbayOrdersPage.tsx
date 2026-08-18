@@ -19,6 +19,7 @@ import {
   buildBindCandidateIndex,
   countOpenEbayOrderLines,
   findItemsForOpenOrderLine,
+  blockedEbayBindParentIds,
   isEbayBindCandidate,
   listOpenEbayOrderLines,
   type OpenEbayOrderLine,
@@ -133,7 +134,10 @@ const EbayOrdersPage: React.FC<Props> = ({ items, taxMode, onUpdate, embedded = 
     [filteredRows, visibleLimit, bindIndex]
   );
 
-  const bindPool = useMemo(() => items.filter(isEbayBindCandidate), [items]);
+  const bindPool = useMemo(() => {
+    const blockedParents = blockedEbayBindParentIds(items);
+    return items.filter((item) => isEbayBindCandidate(item, blockedParents));
+  }, [items]);
 
   const pickHits = useMemo(() => {
     const q = pickQuery.trim().toLowerCase();

@@ -46,6 +46,10 @@ a { color: inherit; }
 .app-shell {
   min-height: 100dvh;
   display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  transition: grid-template-columns .2s ease;
+}
+.app-shell.sidebar-open {
   grid-template-columns: 340px minmax(0, 1fr);
 }
 
@@ -61,6 +65,76 @@ a { color: inherit; }
   backdrop-filter: blur(14px);
   overflow: hidden;
 }
+
+.sidebar-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin: 0 0 16px;
+  padding: 6px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.sidebar-toggle:hover { background: rgb(15 23 42 / .05); }
+.sidebar-toggle-chevron {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.sidebar-toggle-chevron::before {
+  content: '›';
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 700;
+}
+.app-shell.sidebar-open .sidebar-toggle-chevron::before { content: '‹'; }
+.sidebar-toggle-text {
+  letter-spacing: .02em;
+}
+
+.app-shell:not(.sidebar-open) .sidebar {
+  padding: 14px 8px;
+  align-items: stretch;
+}
+.app-shell:not(.sidebar-open) .sidebar-toggle {
+  flex: 1;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 14px;
+  margin: 0;
+  padding: 4px 0;
+}
+.app-shell:not(.sidebar-open) .sidebar-toggle-text {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  text-transform: uppercase;
+  letter-spacing: .16em;
+  font-size: 11px;
+  color: var(--muted);
+}
+.app-shell:not(.sidebar-open) .brand,
+.app-shell:not(.sidebar-open) .sidebar-nav-wrap,
+.app-shell:not(.sidebar-open) nav,
+.app-shell:not(.sidebar-open) .tracked-block,
+.app-shell:not(.sidebar-open) .sidebar-footer {
+  display: none;
+}
+
+.sidebar-backdrop { display: none; }
 
 .brand {
   display: flex;
@@ -95,6 +169,45 @@ nav {
   gap: 4px;
   flex-shrink: 0;
 }
+
+.sidebar-nav-wrap {
+  flex-shrink: 0;
+}
+
+.sidebar-nav-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.sidebar-nav-toggle:hover { color: var(--text); background: var(--surface-2); }
+.sidebar-nav-toggle-hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: #9aa7b0;
+}
+.sidebar-nav-wrap:not(.is-open) nav { display: none; }
+.sidebar-nav-wrap.is-open .sidebar-nav-toggle-hint { display: none; }
+.sidebar-nav-wrap:not(.is-open) + .tracked-block { margin-top: 10px; }
 
 .nav-item {
   display: flex;
@@ -2034,10 +2147,35 @@ body[data-marketplace="ebay"] .ka-distance-fields {
 
 .listing-card.has-best-offer .total-price { color: var(--accent); }
 
-.shipping {
+.spread-line {
   color: var(--muted);
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.spread-line.is-positive {
+  color: #1f7a4d;
+}
+
+.spread-line.is-negative {
+  color: #b42318;
+}
+
+.matched-searches {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.listing-card.is-price-drop {
+  border-color: #1f7a4d;
+}
+
+.listing-card.is-price-drop .deal-label {
+  color: #1f7a4d;
 }
 
 .card-actions {
@@ -2833,8 +2971,56 @@ body[data-marketplace="ebay"] .ka-distance-fields {
 }
 
 @media (max-width: 900px) {
-  .app-shell { grid-template-columns: 1fr; }
-  .sidebar { display: none; }
+  .app-shell,
+  .app-shell.sidebar-open { grid-template-columns: 1fr; }
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 50;
+    width: min(340px, 90vw);
+    height: 100dvh;
+    padding: 28px 18px;
+    transform: translateX(-100%);
+    transition: transform .2s ease;
+    display: flex;
+    box-shadow: none;
+  }
+  .app-shell.sidebar-open .sidebar {
+    transform: translateX(0);
+    box-shadow: 16px 0 40px rgb(15 23 42 / .18);
+  }
+  .app-shell:not(.sidebar-open) .sidebar {
+    padding: 28px 18px;
+    align-items: stretch;
+  }
+  .app-shell:not(.sidebar-open) .sidebar-toggle {
+    flex: 0 0 auto;
+    flex-direction: row;
+    margin: 0 0 16px;
+    padding: 6px;
+  }
+  .app-shell:not(.sidebar-open) .sidebar-toggle-text {
+    writing-mode: horizontal-tb;
+    transform: none;
+    text-transform: none;
+    letter-spacing: .02em;
+    font-size: 13px;
+    color: var(--text);
+  }
+  .app-shell:not(.sidebar-open) .brand,
+  .app-shell:not(.sidebar-open) nav,
+  .app-shell:not(.sidebar-open) .tracked-block,
+  .app-shell:not(.sidebar-open) .sidebar-footer {
+    display: flex;
+  }
+  .app-shell:not(.sidebar-open) nav { display: grid; }
+  .app-shell.sidebar-open .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: rgb(15 23 42 / .35);
+  }
   .menu-button { display: block; }
   main { padding: 8px 14px 48px; }
   .scan-rail-metrics { margin-left: 0; }

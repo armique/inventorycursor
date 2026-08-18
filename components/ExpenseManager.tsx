@@ -390,7 +390,7 @@ const ExpenseManager: React.FC<Props> = ({
                         <div className="flex items-center gap-3 mt-1">
                           <span className="text-[10px] font-bold text-slate-500">€{formatEUR(recurring.monthlyAmount)}/month</span>
                           <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
-                            <Calendar size={10}/> Since {startDate.toLocaleDateString('de-DE', { month: 'short', year: 'numeric' })}
+                            <Calendar size={10}/> Every {Number(recurring.startDate?.slice(8, 10) || 1)}. · since {startDate.toLocaleDateString('de-DE', { month: 'short', year: 'numeric' })}
                           </span>
                           <span className="text-[10px] font-bold text-emerald-600">
                             {monthsSinceStart} month{monthsSinceStart !== 1 ? 's' : ''} generated

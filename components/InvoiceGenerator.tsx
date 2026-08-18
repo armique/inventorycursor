@@ -1,8 +1,9 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { InventoryItem, BusinessSettings, CustomerInfo } from '../types';
 import { formatEUR } from '../utils/formatMoney';
-import { X, Printer, Edit2, Check, User, MapPin, Phone, Info, CreditCard, Receipt } from 'lucide-react';
+import { X, Printer, Edit2, Check, User, Phone, Info, CreditCard, Receipt, Download, Loader2 } from 'lucide-react';
+import { saveInvoiceElementToPc } from '../utils/downloadInvoice';
 
 interface Props {
   items: InventoryItem[];
@@ -29,6 +30,8 @@ const InvoiceGenerator: React.FC<Props> = ({ items, business, type, onClose }) =
   });
 
   const [activeEditField, setActiveEditField] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Extract primary marketplace reference (eBay username / order ID) from selected items
   const firstWithEbay = items.find(i => i.ebayUsername || i.ebayOrderId);
@@ -50,6 +53,20 @@ const InvoiceGenerator: React.FC<Props> = ({ items, business, type, onClose }) =
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleSavePdf = async () => {
+    const root = document.getElementById('invoice-printable');
+    if (!root || saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await saveInvoiceElementToPc(root, invoiceMetadata.number);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'PDF speichern fehlgeschlagen');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const renderEditable = (id: string, value: string, onUpdate: (v: string) => void, type: 'text' | 'textarea' = 'text') => {
@@ -103,7 +120,7 @@ const InvoiceGenerator: React.FC<Props> = ({ items, business, type, onClose }) =
       </style>
       <div id="invoice-printable" className="bg-white w-full max-w-[900px] h-[95vh] overflow-y-auto rounded-[3rem] shadow-2xl flex flex-col scrollbar-hide animate-in zoom-in-95 duration-500">
         
-        <header className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 print:hidden shrink-0">
+        <header data-invoice-toolbar className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 print:hidden shrink-0">
            <div className="flex items-center gap-4">
               <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg ${type === 'FINAL' ? 'bg-emerald-600 shadow-emerald-200' : 'bg-blue-600 shadow-blue-200'}`}>
                  {type === 'FINAL' ? <Receipt size={24} className="text-white"/> : <CreditCard size={24} className="text-white"/>}
@@ -111,17 +128,30 @@ const InvoiceGenerator: React.FC<Props> = ({ items, business, type, onClose }) =
               <div>
                  <h2 className="text-xl font-black text-slate-900 tracking-tight">{type === 'FINAL' ? 'Professional Invoice' : 'Payment Request'}</h2>
                  <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest italic">WYSIWYG Interactive Editor</p>
+                 {saveError ? (
+                   <p className="text-[11px] font-semibold text-rose-600 mt-1 normal-case tracking-normal">{saveError}</p>
+                 ) : null}
               </div>
            </div>
            <div className="flex gap-2">
-              <button onClick={handlePrint} className="flex items-center gap-3 px-8 py-3 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-black transition-all shadow-xl">
-                <Printer size={18}/> Generate PDF
+              <button
+                type="button"
+                onClick={() => void handleSavePdf()}
+                disabled={saving}
+                className="flex items-center gap-3 px-8 py-3 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-xl disabled:opacity-60"
+                title="Rechnung als PDF auf diesem PC speichern"
+              >
+                {saving ? <Loader2 size={18} className="animate-spin"/> : <Download size={18}/>}
+                {saving ? 'Speichern…' : 'PDF speichern'}
               </button>
-              <button onClick={onClose} className="p-3 bg-white text-slate-500 rounded-2xl hover:shadow-md transition-all border border-slate-100"><X size={24}/></button>
+              <button type="button" onClick={handlePrint} className="flex items-center gap-3 px-6 py-3 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-black transition-all shadow-xl">
+                <Printer size={18}/> Drucken
+              </button>
+              <button type="button" onClick={onClose} className="p-3 bg-white text-slate-500 rounded-2xl hover:shadow-md transition-all border border-slate-100"><X size={24}/></button>
            </div>
         </header>
 
-        <div className="p-16 print:p-12 space-y-12 flex-1 relative h-auto">
+        <div data-invoice-sheet className="p-16 print:p-12 space-y-12 flex-1 relative h-auto">
            
            {/* Seller Header */}
            <div className="flex justify-between items-start">

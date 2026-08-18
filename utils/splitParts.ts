@@ -9,6 +9,7 @@ import {
   suggestionPatchFromPrice,
 } from './flipInsights';
 import { loadFlipFees } from './flipCoach';
+import { buildCostOrigin } from './costOrigin';
 
 export type SplitPartPresetId =
   | 'ovp'
@@ -535,6 +536,14 @@ export function buildSplitApplyItems(
   const ts = Date.now();
   const children: InventoryItem[] = drafts.map((d, idx) => {
     const id = `split-${source.id}-${d.key}-${ts}-${idx}`;
+    const siblings = drafts.map((part, partIdx) => ({
+      id: `split-${source.id}-${part.key}-${ts}-${partIdx}`,
+      name: part.name.trim() || buildPartName(source.name, part.label),
+      allocatedEur: roundMoney(part.buyPrice),
+      weight: part.weight,
+      locked: Boolean(part.buyLocked),
+    }));
+    const kind = d.presetId === 'identical' ? 'split_identical' as const : 'split_parts' as const;
     let child: InventoryItem = {
       id,
       name: d.name.trim() || buildPartName(source.name, d.label),
@@ -549,6 +558,24 @@ export function buildSplitApplyItems(
       vendor: source.vendor,
       presence: source.presence || 'present',
       isDefective: d.isDefective === true,
+      costOrigin: buildCostOrigin({
+        kind,
+        addedAs: kind === 'split_identical'
+          ? `Identical split ${idx + 1}/${drafts.length}`
+          : `Split part (${d.label})`,
+        bundleName: source.name,
+        bundleId: source.id,
+        sourceItemId: source.id,
+        sourceItemName: source.name,
+        bulkImportId: source.bulkImportId,
+        lotTotalEur: Number(source.buyPrice) || 0,
+        allocatedEur: roundMoney(d.buyPrice),
+        allocationMethod: kind === 'split_identical' ? 'equal' : (d.buyLocked ? 'manual' : 'weighted'),
+        allocationMode: kind === 'split_identical' ? 'EQUAL' : 'WEIGHTED',
+        weight: d.weight,
+        manualLocked: Boolean(d.buyLocked),
+        siblings,
+      }),
     };
     if (d.presetId === 'fans' && d.quantity && d.quantity > 1) {
       child = { ...child, quantity: d.quantity };

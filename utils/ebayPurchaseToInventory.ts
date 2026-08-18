@@ -20,6 +20,7 @@ import { cleanEbayListingTitle } from './ebayBulkSyncPlan';
 import { applyStorageKindToParsedItem } from './ensureStorageKindInName';
 import { formatEUR } from './formatMoney';
 import { formatPlatformBoughtLabel } from './purchaseSource';
+import { buildCostOrigin } from './costOrigin';
 
 export interface PurchaseInventoryDraft {
   name: string;
@@ -305,6 +306,15 @@ export function buildInventoryItemFromPurchase(
     imageUrls: fallbackImage ? [fallbackImage] : [],
     comment1,
     comment2,
+    costOrigin: buildCostOrigin({
+      kind: 'ebay_purchase',
+      addedAs: formatPurchaseBuySummary(purchase),
+      lotTotalEur: buyPrice,
+      allocatedEur: buyPrice,
+      allocationMethod: 'manual',
+      siblings: [{ id, name: draft.name.trim() || purchase.title, allocatedEur: buyPrice }],
+      notes: comment2,
+    }),
   };
 }
 

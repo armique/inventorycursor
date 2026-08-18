@@ -1,7 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { InventoryItem } from '../types';
-import DealwatchVerdictBar from './DealwatchVerdictBar';
-import MaxBuyPanel from './MaxBuyPanel';
 
 type DealwatchStorePayload = {
   searches?: unknown[];
@@ -13,7 +11,7 @@ type DealwatchStorePayload = {
  * Panel route /panel/dealwatch — embeds the full Dealwatch runtime UI and
  * hydrates it with the live store (saved searches) from /api/dealwatch/store.
  */
-const EstDealwatchPage: React.FC<{ items?: InventoryItem[] }> = ({ items = [] }) => {
+const EstDealwatchPage: React.FC<{ items?: InventoryItem[] }> = () => {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [bootError, setBootError] = useState('');
   const [searchCount, setSearchCount] = useState<number | null>(null);
@@ -89,10 +87,6 @@ const EstDealwatchPage: React.FC<{ items?: InventoryItem[] }> = ({ items = [] })
 
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
-      <div className="shrink-0 p-2 border-b border-slate-100">
-        <MaxBuyPanel items={items} compact />
-      </div>
-      <DealwatchVerdictBar />
       {bootError ? (
         <div className="shrink-0 px-4 py-2 bg-amber-50 border-b border-amber-100 text-amber-900 text-xs font-semibold">
           {bootError}
@@ -105,7 +99,7 @@ const EstDealwatchPage: React.FC<{ items?: InventoryItem[] }> = ({ items = [] })
       <iframe
         ref={iframeRef}
         title="Dealwatch"
-        src={`/dealwatch/index.html?v=${encodeURIComponent('2026-07-30-searches')}`}
+        src={`/dealwatch/index.html?v=${encodeURIComponent('2026-08-18-spread-dedup')}`}
         className="flex-1 min-h-0 w-full border-0 bg-white"
         allow="clipboard-read; clipboard-write"
         onLoad={postHydrate}

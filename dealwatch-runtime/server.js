@@ -2,6 +2,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { extractPlz, estimatePlzDistanceKm } = require('./plz-distance');
 
 loadEnv(path.join(__dirname, '.env'));
 
@@ -300,6 +301,11 @@ function normalizeListingText(text) {
     .replace(/[^a-z0-9]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/** Wanted ads ("Suche GTX 1080", "RTX 3070 suche") — never show in Dealwatch results. */
+function titleHasSuche(title) {
+  return /\bsuche\b/i.test(String(title || ''));
 }
 
 function isFaultyCondition(condition, conditionId) {
@@ -2098,12 +2104,15 @@ function normalizeNotifications(raw = []) {
     .filter(item => item && item.id && item.itemId)
     .map(item => ({
       id: String(item.id),
+      type: item.type === 'price_drop' ? 'price_drop' : 'new_match',
       searchId: String(item.searchId || ''),
       searchName: String(item.searchName || '').slice(0, 80),
       itemId: String(item.itemId),
       title: String(item.title || '').slice(0, 200),
       price: Number(item.price) || 0,
       total: Number(item.total) || 0,
+      previousPrice: Number.isFinite(Number(item.previousPrice)) ? Number(item.previousPrice) : null,
+      watchPrice: Number.isFinite(Number(item.watchPrice)) ? Number(item.watchPrice) : null,
       url: String(item.url || ''),
       image: String(item.image || ''),
       createdAt: item.createdAt || new Date().toISOString(),
@@ -2176,25 +2185,44 @@ function normalizeStore(raw = {}) {
     ? raw.trash.map(item => ({ ...createTrackedSearch(item, { touch: false }), deletedAt: item.deletedAt || new Date().toISOString() }))
     : [];
   const watchlist = Array.isArray(raw.watchlist)
-    ? raw.watchlist.filter(item => item && item.id).map(item => ({
-      id: String(item.id),
-      legacyItemId: String(item.legacyItemId || ''),
-      title: String(item.title || ''),
-      seller: String(item.seller || ''),
-      feedback: Number(item.feedback) || 0,
-      feedbackScore: Number.isFinite(Number(item.feedbackScore)) ? Number(item.feedbackScore) : null,
-      condition: String(item.condition || ''),
-      price: Number(item.price) || 0,
-      shipping: Number(item.shipping) || 0,
-      total: Number(item.total) || 0,
-      image: String(item.image || ''),
-      endDate: item.endDate || null,
-      url: String(item.url || ''),
-      isAuction: Boolean(item.isAuction),
-      bestOffer: Boolean(item.bestOffer),
-      dealScore: Number(item.dealScore) || 0,
-      savedAt: item.savedAt || new Date().toISOString(),
-    }))
+    ? raw.watchlist.filter(item => item && item.id).map(item => {
+      const price = Number(item.price) || 0;
+      const watchPrice = Number.isFinite(Number(item.watchPrice)) && Number(item.watchPrice) > 0
+        ? Number(item.watchPrice)
+        : price;
+      const lastSeenPrice = Number.isFinite(Number(item.lastSeenPrice)) && Number(item.lastSeenPrice) > 0
+        ? Number(item.lastSeenPrice)
+        : price;
+      return {
+        id: String(item.id),
+        legacyItemId: String(item.legacyItemId || ''),
+        title: String(item.title || ''),
+        seller: String(item.seller || ''),
+        feedback: Number(item.feedback) || 0,
+        feedbackScore: Number.isFinite(Number(item.feedbackScore)) ? Number(item.feedbackScore) : null,
+        condition: String(item.condition || ''),
+        price,
+        shipping: Number(item.shipping) || 0,
+        total: Number(item.total) || 0,
+        image: String(item.image || ''),
+        endDate: item.endDate || null,
+        url: String(item.url || ''),
+        isAuction: Boolean(item.isAuction),
+        bestOffer: Boolean(item.bestOffer),
+        dealScore: Number(item.dealScore) || 0,
+        marketplace: item.marketplace === 'kleinanzeigen' || String(item.id).startsWith('ka|')
+          ? 'kleinanzeigen'
+          : (item.marketplace || 'ebay'),
+        location: String(item.location || ''),
+        pickupOnly: Boolean(item.pickupOnly),
+        shippingPossible: Boolean(item.shippingPossible),
+        watchPrice,
+        lastSeenPrice,
+        lastCheckedAt: item.lastCheckedAt || null,
+        priceDropEur: Math.max(0, Math.round((watchPrice - lastSeenPrice) * 100) / 100),
+        savedAt: item.savedAt || new Date().toISOString(),
+      };
+    })
     : [];
 
   let store = {
@@ -2233,7 +2261,12 @@ function normalizeStore(raw = {}) {
   store.seenBySearch = Object.fromEntries(
     Object.entries(store.seenBySearch).filter(([id]) => liveIds.has(id)),
   );
-  store.notifications = store.notifications.filter(item => !item.searchId || liveIds.has(item.searchId));
+  store.notifications = store.notifications.filter(item => (
+    item.type === 'price_drop'
+    || item.searchId === 'watchlist'
+    || !item.searchId
+    || liveIds.has(item.searchId)
+  ));
   return store;
 }
 
@@ -2987,6 +3020,288 @@ function parseEuroAmount(text) {
   return Number.isFinite(value) ? value : null;
 }
 
+function berlinDateParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Berlin',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const pick = (type) => Number(parts.find((part) => part.type === type)?.value);
+  return {
+    year: pick('year'),
+    month: pick('month'),
+    day: pick('day'),
+    hour: pick('hour'),
+    minute: pick('minute'),
+  };
+}
+
+function berlinPartsToIso(year, month, day, hour = 12, minute = 0) {
+  const offset = month >= 4 && month <= 10 ? '+02:00' : '+01:00';
+  const iso = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00${offset}`;
+  const parsed = new Date(iso);
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
+}
+
+function parseKaListedDate(dateText) {
+  const raw = String(dateText || '').replace(/\s+/g, ' ').trim();
+  if (!raw) return null;
+  const now = berlinDateParts();
+  let { year, month, day } = now;
+  let hour = 12;
+  let minute = 0;
+  const time = raw.match(/(\d{1,2}):(\d{2})/);
+  if (time) {
+    hour = Number(time[1]);
+    minute = Number(time[2]);
+  }
+  if (/^heute\b/i.test(raw)) {
+    return berlinPartsToIso(year, month, day, hour, minute);
+  }
+  if (/^gestern\b/i.test(raw)) {
+    const d = new Date(Date.UTC(year, month - 1, day));
+    d.setUTCDate(d.getUTCDate() - 1);
+    return berlinPartsToIso(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), hour, minute);
+  }
+  const dated = raw.match(/(\d{1,2})\.(\d{1,2})\.(\d{2,4})?/);
+  if (!dated) return null;
+  day = Number(dated[1]);
+  month = Number(dated[2]);
+  if (dated[3]) year = Number(dated[3].length === 2 ? `20${dated[3]}` : dated[3]);
+  const candidate = Date.UTC(year, month - 1, day);
+  const today = Date.UTC(now.year, now.month - 1, now.day);
+  if (candidate > today) year -= 1;
+  return berlinPartsToIso(year, month, day, hour, minute);
+}
+
+const lastListingsBySearch = new Map();
+const soldMedianCache = new Map();
+const SOLD_MEDIAN_TTL_MS = 30 * 60 * 1000;
+
+function rememberSearchResults(searchId, items = []) {
+  const id = String(searchId || '');
+  if (!id) return;
+  lastListingsBySearch.set(id, {
+    at: Date.now(),
+    items: (items || []).map((item) => ({ ...item, searchId: id })),
+  });
+}
+
+function soldMedianCacheKey(query = {}) {
+  return [
+    String(query.search || '').trim().toLowerCase(),
+    String(query.condition || 'any'),
+    String(query.categoryId || ''),
+    [...(query.enabledSmartFilters || [])].map(String).sort().join(','),
+  ].join('|');
+}
+
+function readSoldMedianCache(query) {
+  const hit = soldMedianCache.get(soldMedianCacheKey(query));
+  if (!hit || Date.now() - hit.at > SOLD_MEDIAN_TTL_MS) return null;
+  return hit;
+}
+
+function writeSoldMedianCache(query, result) {
+  if (!Number.isFinite(result?.median)) return;
+  soldMedianCache.set(soldMedianCacheKey(query), {
+    at: Date.now(),
+    median: result.median,
+    low: result.medianLow,
+    high: result.medianHigh,
+    count: result.medianSampleSize,
+  });
+}
+
+function attachSpread(item, median) {
+  const ask = Number(item?.price ?? item?.total);
+  if (!Number.isFinite(median) || !Number.isFinite(ask) || ask <= 0) return item;
+  const spreadEur = Math.round((median - ask) * 100) / 100;
+  const spreadPct = Math.round((spreadEur / median) * 1000) / 10;
+  return { ...item, soldMedian: median, spreadEur, spreadPct };
+}
+
+function attachMatchedSearches(store, items = []) {
+  const namesById = new Map();
+  const add = (listingId, searchId, searchName) => {
+    const key = String(listingId || '');
+    if (!key || !searchId) return;
+    if (!namesById.has(key)) namesById.set(key, []);
+    const list = namesById.get(key);
+    if (!list.some((entry) => entry.id === searchId)) {
+      list.push({ id: searchId, name: searchName || searchId });
+    }
+  };
+  for (const search of store.searches || []) {
+    const cached = lastListingsBySearch.get(search.id);
+    for (const item of cached?.items || []) add(item.id, search.id, search.name);
+    for (const seenId of store.seenBySearch?.[search.id] || []) add(seenId, search.id, search.name);
+  }
+  return (items || []).map((item) => {
+    const matched = namesById.get(String(item.id)) || [];
+    return {
+      ...item,
+      matchedSearchIds: matched.map((entry) => entry.id),
+      matchedSearchNames: matched.map((entry) => entry.name),
+    };
+  });
+}
+
+function mergeCachedListings(store, liveItems = [], liveSearchId = '') {
+  const byId = new Map();
+  const ingest = (item, searchId, searchName) => {
+    const id = String(item?.id || '');
+    if (!id) return;
+    const prev = byId.get(id);
+    if (!prev) {
+      byId.set(id, {
+        ...item,
+        searchId: searchId || item.searchId || '',
+        matchedSearchIds: searchId ? [searchId] : [],
+        matchedSearchNames: searchName ? [searchName] : [],
+      });
+      return;
+    }
+    if (searchId && !prev.matchedSearchIds.includes(searchId)) {
+      prev.matchedSearchIds.push(searchId);
+      prev.matchedSearchNames.push(searchName || searchId);
+    }
+    if (item.isNew) prev.isNew = true;
+    if (Number.isFinite(item.price) && item.price < (Number(prev.price) || Infinity)) {
+      prev.price = item.price;
+      prev.total = item.total;
+    }
+    if (!prev.originDate && item.originDate) prev.originDate = item.originDate;
+    if (prev.distanceKm == null && item.distanceKm != null) prev.distanceKm = item.distanceKm;
+    if (item.soldMedian != null) {
+      prev.soldMedian = item.soldMedian;
+      prev.spreadEur = item.spreadEur;
+      prev.spreadPct = item.spreadPct;
+    }
+  };
+  for (const search of store.searches || []) {
+    const cached = lastListingsBySearch.get(search.id);
+    for (const item of cached?.items || []) ingest(item, search.id, search.name);
+  }
+  const liveSearch = (store.searches || []).find((item) => item.id === liveSearchId);
+  for (const item of liveItems || []) ingest(item, liveSearchId, liveSearch?.name || '');
+  return attachMatchedSearches(store, [...byId.values()]);
+}
+
+function isKaWatchItem(item) {
+  return item?.marketplace === 'kleinanzeigen'
+    || String(item?.id || '').startsWith('ka|')
+    || /kleinanzeigen\.de/i.test(String(item?.url || ''));
+}
+
+function recordWatchlistPrice(watchItem, livePrice) {
+  if (!watchItem || !Number.isFinite(livePrice) || livePrice <= 0) return null;
+  const watchPrice = Number.isFinite(Number(watchItem.watchPrice)) && watchItem.watchPrice > 0
+    ? Number(watchItem.watchPrice)
+    : Number(watchItem.price) || livePrice;
+  const prev = Number.isFinite(Number(watchItem.lastSeenPrice)) && watchItem.lastSeenPrice > 0
+    ? Number(watchItem.lastSeenPrice)
+    : watchPrice;
+  watchItem.watchPrice = watchPrice;
+  watchItem.lastCheckedAt = new Date().toISOString();
+  watchItem.price = livePrice;
+  watchItem.total = livePrice + (Number(watchItem.shipping) || 0);
+  watchItem.lastSeenPrice = livePrice;
+  watchItem.priceDropEur = Math.max(0, Math.round((watchPrice - livePrice) * 100) / 100);
+  const dropped = livePrice <= prev - 1 && livePrice <= watchPrice - 1;
+  return dropped ? { from: prev, to: livePrice, vsSaved: watchPrice } : null;
+}
+
+function applyWatchlistPricesFromListings(store, items = []) {
+  if (!store?.watchlist?.length || !items?.length) return [];
+  const byId = new Map(items.map((item) => [String(item.id), item]));
+  const drops = [];
+  for (const watch of store.watchlist) {
+    const live = byId.get(String(watch.id));
+    const livePrice = Number(live?.price ?? live?.total);
+    const drop = recordWatchlistPrice(watch, livePrice);
+    if (drop) drops.push({ watch, ...drop });
+  }
+  return drops;
+}
+
+function parseKaAdPrice(html) {
+  if (!html) return { gone: true, price: null };
+  if (/anzeige\s+(ist\s+)?(nicht mehr verf|gelöscht|bereits\s+verkauft)|viewad-notfound/i.test(html)) {
+    return { gone: true, price: null };
+  }
+  const boxed = html.match(/id="viewad-price"[^>]*>([\s\S]*?)<\//i)
+    || html.match(/boxedarticle--price[^>]*>([\s\S]*?)<\//i);
+  const ld = html.match(/"price"\s*:\s*"?(EUR\s*)?(\d+(?:[.,]\d{1,2})?)"?/i);
+  const price = parseEuroAmount(stripHtml(boxed?.[1] || ''))
+    || parseEuroAmount(`${ld?.[2] || ''} €`);
+  return { gone: false, price: Number.isFinite(price) ? price : null };
+}
+
+async function fetchKaAdLivePrice(item) {
+  const url = String(item?.url || '');
+  if (!url) return { gone: true, price: null };
+  const html = await fetchKleinanzeigenHtml(url);
+  return parseKaAdPrice(html);
+}
+
+async function monitorWatchlistGaps(store, alreadyCheckedIds = new Set()) {
+  const pending = (store.watchlist || []).filter((item) => (
+    isKaWatchItem(item)
+    && item.url
+    && !alreadyCheckedIds.has(String(item.id))
+  )).slice(0, 8);
+  const drops = [];
+  for (const watch of pending) {
+    try {
+      const live = await fetchKaAdLivePrice(watch);
+      if (live.gone) {
+        watch.lastCheckedAt = new Date().toISOString();
+        continue;
+      }
+      const drop = recordWatchlistPrice(watch, live.price);
+      if (drop) drops.push({ watch, ...drop });
+    } catch (error) {
+      console.warn(`[dealwatch] watchlist price check failed for ${watch.id}:`, error.message);
+    }
+  }
+  return drops;
+}
+
+function pushPriceDropNotifications(store, drops = []) {
+  let added = 0;
+  for (const drop of drops) {
+    const itemId = String(drop.watch.id);
+    const already = store.notifications.some((note) => (
+      !note.read && note.type === 'price_drop' && note.itemId === itemId
+    ));
+    if (already) continue;
+    pushNotification(store, {
+      id: 'watchlist',
+      name: 'Watchlist',
+    }, {
+      ...drop.watch,
+      price: drop.to,
+      total: drop.to,
+    }, {
+      type: 'price_drop',
+      previousPrice: drop.from,
+      watchPrice: drop.vsSaved,
+    });
+    added += 1;
+    if (telegramConfigured()) {
+      sendTelegram(
+        `Price drop:\n${drop.watch.title}\n${drop.from}€ → ${drop.to}€ (saved at ${drop.vsSaved}€)\n${drop.watch.url || ''}`,
+      ).catch((error) => console.warn('[dealwatch] telegram price-drop failed:', error.message));
+    }
+  }
+  return added;
+}
+
 function parseSoldDate(text) {
   const match = String(text || '').match(/Verkauft\s+(\d{1,2}\.\s*[A-Za-zäöüÄÖÜ]{3,}\.?\s*\d{4})/i);
   if (!match) return null;
@@ -3322,6 +3637,7 @@ function mapBrowseItems(rawItems = []) {
 }
 
 function passesListingRules(item, query, { ignoreBudget = false } = {}) {
+  if (titleHasSuche(item.title)) return false;
   if (!ignoreBudget) {
     if (item.price < (query.minPrice || 1) || item.price > query.maxPrice) return false;
   }
@@ -3346,6 +3662,7 @@ function passesListingRules(item, query, { ignoreBudget = false } = {}) {
 }
 
 function passesExploreRules(item, query) {
+  if (titleHasSuche(item.title)) return false;
   const minPrice = Number.isFinite(query.minPrice) ? query.minPrice : 0;
   const maxPrice = Number.isFinite(query.maxPrice) ? query.maxPrice : 10000;
   if (item.price < minPrice || item.price > maxPrice) return false;
@@ -3514,8 +3831,10 @@ function parseKleinanzeigenPrice(text) {
   return parseEuroAmount(raw);
 }
 
-function parseKleinanzeigenAds(html) {
+function parseKleinanzeigenAds(html, query = {}) {
   const ads = [];
+  const centerPlz = extractPlz(query.locationLabel || '')
+    || (String(query.locationId || '') === '6699' ? '89367' : '');
   const re = /<article class="aditem"[^>]*data-adid="(\d+)"[^>]*data-href="([^"]+)"[^>]*>([\s\S]*?)<\/article>/gi;
   let match;
   while ((match = re.exec(html))) {
@@ -3528,8 +3847,9 @@ function parseKleinanzeigenAds(html) {
       (body.match(/<h2[^>]*>[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/i) || [])[1] || '',
     );
     if (!title || title.length < 4) continue;
-    // Wanted / empty / placeholder noise
-    if (/^\s*(suche|gesucht|gesuch)\b/i.test(title)) continue;
+    // Wanted ads: drop any title that contains the word "suche"
+    if (titleHasSuche(title)) continue;
+    if (/^\s*(gesucht|gesuch)\b/i.test(title)) continue;
     if (/^(n\/?a|test|asdf|\.+)$/i.test(title)) continue;
 
     const description = stripHtml(
@@ -3548,6 +3868,9 @@ function parseKleinanzeigenAds(html) {
     const dateText = stripHtml(
       (body.match(/aditem-main--top--right[^>]*>([\s\S]*?)<\/div>/i) || [])[1] || '',
     );
+    const originDate = parseKaListedDate(dateText);
+    const listingPlz = extractPlz(location);
+    const distanceKm = centerPlz && listingPlz ? estimatePlzDistanceKm(centerPlz, listingPlz) : null;
     const image = decodeHtmlEntities(
       (body.match(/img\.kleinanzeigen\.de[^"'\s>]+/) || [])[0]
       || (body.match(/src="(https:\/\/img\.kleinanzeigen\.de[^"]+)"/i) || [])[1]
@@ -3558,12 +3881,11 @@ function parseKleinanzeigenAds(html) {
       .filter(Boolean);
     const tagText = tags.join(' ');
     const offerText = `${title} ${description} ${tagText}`;
-    const pickupOnly = /\bnur\s*(selbst)?abholung\b|\bpick[\s-]?up\s*only\b|\bselbstabholung\b|\bkeine[rn]?\s*versand\b|\bversand\s*(nicht|ausgeschlossen)\b|\bohne\s*versand\b/i.test(offerText)
-      || tags.some(tag => /nur\s*(selbst)?abholung|pick[\s-]?up\s*only|selbstabholung/i.test(tag));
-    const shippingPossible = !pickupOnly && (
-      tags.some(tag => /versand/i.test(tag))
-      || /versand\s*m[oö]glich/i.test(offerText)
-    );
+    const hasShippingTag = tags.some(tag => /\bversand\b/i.test(tag) && !/\b(kein|ohne|nicht)\b/i.test(tag));
+    const hasPickupTag = tags.some(tag => /\b(nur\s*)?(selbst)?abholung\b|\bpick[\s-]?up(\s*only)?\b/i.test(tag));
+    const pickupPhrase = /\bnur\s*(selbst)?abholung\b|\bpick[\s-]?up\s*only\b|\bselbstabholung\b|\bkeine[rn]?\s*versand\b|\bversand\s*(nicht|ausgeschlossen)\b|\bohne\s*versand\b/i.test(offerText);
+    const shippingPossible = (hasShippingTag || /versand\s*m[oö]glich/i.test(offerText)) && !pickupPhrase;
+    const pickupOnly = !shippingPossible && (hasPickupTag || pickupPhrase);
     const sourceText = offerText;
 
     // Drop empty-box / packaging junk even before smart filters.
@@ -3588,8 +3910,10 @@ function parseKleinanzeigenAds(html) {
       total: price,
       image: image.startsWith('http') ? image : (image ? `https://${image}` : ''),
       endDate: null,
-      originDate: null,
       listedLabel: dateText || '',
+      originDate,
+      listingPlz,
+      distanceKm,
       url: href.startsWith('http') ? href : `${KA_BASE}${href}`,
       isAuction: false,
       bestOffer: /direkt kaufen|vb|verhandlungsbasis/i.test(`${title} ${description} ${tags.join(' ')}`),
@@ -3611,7 +3935,7 @@ async function searchKleinanzeigenListings(query) {
     const url = buildKleinanzeigenSearchUrl(query, page);
     try {
       const html = await fetchKleinanzeigenHtml(url);
-      const ads = parseKleinanzeigenAds(html);
+      const ads = parseKleinanzeigenAds(html, query);
       if (!ads.length) break;
       scanned.push(...ads);
       if (ads.length < 10) break;
@@ -4152,6 +4476,16 @@ async function handleDealwatchRequest(request, response) {
         isAuction: Boolean(body.isAuction),
         bestOffer: Boolean(body.bestOffer),
         dealScore: Number(body.dealScore) || 0,
+        marketplace: body.marketplace === 'kleinanzeigen' || String(body.id).startsWith('ka|')
+          ? 'kleinanzeigen'
+          : (body.marketplace || 'ebay'),
+        location: String(body.location || ''),
+        pickupOnly: Boolean(body.pickupOnly),
+        shippingPossible: Boolean(body.shippingPossible),
+        watchPrice: Number(body.price) || 0,
+        lastSeenPrice: Number(body.price) || 0,
+        lastCheckedAt: new Date().toISOString(),
+        priceDropEur: 0,
         savedAt: new Date().toISOString(),
       });
       sendJson(response, 201, { watchlist: store.watchlist, ...storeMeta(saveStore(store)) });
@@ -4224,15 +4558,31 @@ async function handleDealwatchRequest(request, response) {
             isNew: false,
             offerSent: Boolean(item.id && (store.offersSent || []).includes(String(item.id))),
           }));
+        if (active?.id) rememberSearchResults(active.id, items);
+        const watchDrops = applyWatchlistPricesFromListings(store, items);
+        if (watchDrops.length) pushPriceDropNotifications(store, watchDrops);
         // After tagging isNew, remember current matches so the next scan only highlights fresh lots.
         if (active?.id && ids.length) {
           rememberSeenIds(store, active.id, ids);
-          saveStore(store);
         }
+        const soldHit = readSoldMedianCache(query);
+        const withSpread = soldHit?.median
+          ? items.map((item) => attachSpread(item, soldHit.median))
+          : items;
+        const scope = String(url.searchParams.get('scope') || 'active');
+        const merged = scope === 'all'
+          ? mergeCachedListings(store, withSpread, active?.id || '')
+          : attachMatchedSearches(store, withSpread);
+        saveStore(store);
         sendJson(response, 200, {
           ...result,
-          items,
+          items: merged,
+          scope,
+          cachedSearches: lastListingsBySearch.size,
+          soldMedian: soldHit?.median ?? null,
+          soldMedianCount: soldHit?.count ?? null,
           activeSearch: active,
+          watchlist: store.watchlist,
           watchlistIds: store.watchlist.map(item => item.id),
           offersSent: store.offersSent || [],
           store: storeMeta(store),
@@ -4331,6 +4681,7 @@ async function handleDealwatchRequest(request, response) {
           categoryPath: active.categoryPath,
         });
         const result = await searchSoldListings(query);
+        writeSoldMedianCache(query, result);
         sendJson(response, 200, {
           ...result,
           activeSearch: active,
@@ -4601,15 +4952,18 @@ async function handleDealwatchRequest(request, response) {
   fs.createReadStream(filePath).pipe(response);
 }
 
-function pushNotification(store, search, item) {
+function pushNotification(store, search, item, extra = {}) {
   store.notifications.unshift({
     id: crypto.randomUUID(),
+    type: extra.type || 'new_match',
     searchId: search.id,
     searchName: search.name,
     itemId: String(item.id),
     title: String(item.title || '').slice(0, 200),
     price: Number(item.price) || 0,
     total: Number(item.total) || Number(item.price) || 0,
+    previousPrice: Number.isFinite(Number(extra.previousPrice)) ? Number(extra.previousPrice) : null,
+    watchPrice: Number.isFinite(Number(extra.watchPrice)) ? Number(extra.watchPrice) : null,
     url: String(item.url || ''),
     image: String(item.image || ''),
     createdAt: new Date().toISOString(),
@@ -4694,6 +5048,12 @@ async function monitorSearches() {
       const items = Array.isArray(result.items) ? result.items : [];
       const ids = items.map(item => String(item.id)).filter(Boolean);
       const known = store.seenBySearch[search.id];
+      rememberSearchResults(search.id, items);
+      const watchDrops = applyWatchlistPricesFromListings(store, items);
+      if (watchDrops.length) {
+        pushPriceDropNotifications(store, watchDrops);
+        changed = true;
+      }
 
       if (!known) {
         // First pass: seed seen IDs so existing matches are not treated as "new".
@@ -4703,6 +5063,18 @@ async function monitorSearches() {
         const seen = new Set(known);
         const fresh = items.filter(item => item.id && !seen.has(String(item.id)));
         for (const item of fresh) {
+          const unreadDup = store.notifications.some((note) => (
+            !note.read && note.itemId === String(item.id) && note.type !== 'price_drop'
+          ));
+          if (unreadDup) {
+            const existing = store.notifications.find((note) => (
+              !note.read && note.itemId === String(item.id) && note.type !== 'price_drop'
+            ));
+            if (existing && search.name && !String(existing.searchName).includes(search.name)) {
+              existing.searchName = `${existing.searchName} · ${search.name}`.slice(0, 80);
+            }
+            continue;
+          }
           pushNotification(store, search, item);
           changed = true;
         }
@@ -4737,10 +5109,22 @@ async function monitorSearches() {
     if (MONITOR_SEARCH_GAP_MS > 0) await sleep(MONITOR_SEARCH_GAP_MS);
   }
 
-  if (changed) {
-    store.notifications = store.notifications.slice(0, 100);
-    saveStore(store);
+  const checkedIds = new Set();
+  for (const cache of lastListingsBySearch.values()) {
+    for (const item of cache.items || []) checkedIds.add(String(item.id));
   }
+  try {
+    const gapDrops = await monitorWatchlistGaps(store, checkedIds);
+    if (gapDrops.length) {
+      pushPriceDropNotifications(store, gapDrops);
+      changed = true;
+    }
+  } catch (error) {
+    console.warn('[dealwatch] watchlist monitor failed:', error.message);
+  }
+
+  store.notifications = store.notifications.slice(0, 100);
+  saveStore(store);
 }
 
 let marketRuntimeStarted = false;

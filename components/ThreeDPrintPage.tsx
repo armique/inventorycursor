@@ -4,6 +4,7 @@ import {
   History, Plus, Search, RefreshCw, Receipt, Package,
 } from 'lucide-react';
 import { CustomerInfo, InventoryItem, ItemStatus, TaxMode } from '../types';
+import { buildCostOrigin } from '../utils/costOrigin';
 import FilamentStockPanel from './FilamentStockPanel';
 import { ThreeDPrintAdminSettings } from './ThreeDPrintCalculatorPanel';
 import ThreeDPrintQuoteSummary from './ThreeDPrintQuoteSummary';
@@ -439,6 +440,15 @@ const ThreeDPrintPage: React.FC<ThreeDPrintPageProps> = ({ items = [], onSave, o
         isDraft: false,
         storeVisible: storeVisible && sellPrice !== undefined,
         quantity,
+        costOrigin: buildCostOrigin({
+          kind: 'print_3d',
+          addedAs: '3D print production',
+          lotTotalEur: buyPrice,
+          allocatedEur: buyPrice,
+          allocationMethod: 'calculator_3d',
+          siblings: [{ id: uniqueId, name: itemName, allocatedEur: buyPrice }],
+          notes: `Filament ${filamentWeight}g ${filamentType} ${filamentColor} · ${formatPrintTimeDisplay(printTimeHours)} · qty ${quantity}`,
+        }),
         specs: {
           'Production Method': '3D Printed',
           'Filament Weight': `${filamentWeight}g`,

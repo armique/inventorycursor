@@ -13,6 +13,7 @@ import {
   Wand2,
 } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
+import { buildCostOrigin } from '../utils/costOrigin';
 import { getEbayUsername } from '../services/ebayService';
 import { ensureEbayListings } from '../services/ebayListingIndex';
 import {
@@ -313,7 +314,17 @@ const EbayStorePullImportTab: React.FC<Props> = ({
           specsAiSuggested: row.fetchSpecs ? draft.specsAiSuggested : undefined,
           imageUrl: normalizedImages[0] || fallbackImage,
           imageUrls: normalizedImages.length ? normalizedImages : [fallbackImage],
+          comment1: '',
           comment2: `Imported from eBay listing ${listing.listingId}`,
+          costOrigin: buildCostOrigin({
+            kind: 'ebay_listing_import',
+            addedAs: 'Imported from your eBay listing',
+            lotTotalEur: 0,
+            allocatedEur: 0,
+            allocationMethod: 'import_zero',
+            siblings: [{ id, name: row.name.trim() || draft.parsedName, allocatedEur: 0 }],
+            notes: `Listing ${listing.listingId}${listing.sku ? ` · SKU ${listing.sku}` : ''}. Buy price was not on the listing — fill it in.`,
+          }),
         };
 
         newItems.push(item);

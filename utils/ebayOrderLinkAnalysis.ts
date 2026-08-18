@@ -58,6 +58,17 @@ export function lineItemClaimKey(orderId: string, line: EbayOrderLineItem): stri
   return `${orderId}::${part}`;
 }
 
+/** Order id / line key / generic external id — works even if a number slipped into JSON. */
+export function linkedEbayOrderRef(item: InventoryItem): string {
+  const raw = item.ebayOrderId ?? item.ebayOrderLineKey ?? item.externalOrderId ?? '';
+  return String(raw).trim();
+}
+
+/** True when this row is already bound to an eBay (or other) order. */
+export function itemIsLinkedToEbayOrder(item: InventoryItem): boolean {
+  return Boolean(linkedEbayOrderRef(item));
+}
+
 export function isEbayRelatedItem(item: InventoryItem): boolean {
   const platform = (item.platformSold || '').toLowerCase();
   const payment = (item.paymentType || '').toLowerCase();
@@ -84,7 +95,7 @@ function isClearlyNonEbaySale(item: InventoryItem): boolean {
 function isPriceLinkSoldCandidate(item: InventoryItem): boolean {
   if (item.isPC || item.isBundle) return false;
   if (item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED) return false;
-  if (item.ebayOrderId?.trim()) return false;
+  if (itemIsLinkedToEbayOrder(item)) return false;
   if (isEbayRelatedItem(item)) return false;
   if (item.sellPrice == null || item.sellPrice <= 0) return false;
   if (isClearlyNonEbaySale(item)) return false;
@@ -100,7 +111,8 @@ function isSoldEbayCandidate(item: InventoryItem): boolean {
 function isMarkSoldCandidate(item: InventoryItem): boolean {
   if (item.isPC || item.isBundle) return false;
   if (item.status !== ItemStatus.IN_STOCK && item.status !== ItemStatus.ORDERED) return false;
-  if (item.ebayOrderId?.trim()) return false;
+  if (itemIsLinkedToEbayOrder(item)) return false;
+  if (item.containerSoldDate?.trim()) return false;
   return true;
 }
 
@@ -491,8 +503,8 @@ function findAdjustmentSuggestions(
 export function buildOrderLinkAnalysis(items: InventoryItem[], orders: EbayOrderRecord[]): OrderLinkAnalysisResult {
   const inStockItems = items.filter(isMarkSoldCandidate);
   const soldEbay = items.filter(isSoldEbayCandidate);
-  const alreadyLinked = soldEbay.filter((i) => Boolean(i.ebayOrderId?.trim()));
-  const unlinkedSold = soldEbay.filter((i) => !i.ebayOrderId?.trim());
+  const alreadyLinked = soldEbay.filter((i) => itemIsLinkedToEbayOrder(i));
+  const unlinkedSold = soldEbay.filter((i) => !itemIsLinkedToEbayOrder(i));
   const ordersById = new Map(orders.map((o) => [o.orderId, o]));
   const reservedLines = buildClaimedLineKeys(items, orders);
 

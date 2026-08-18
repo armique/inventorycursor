@@ -4,6 +4,7 @@ import { formatEUR } from '../utils/formatMoney';
 
 import { Upload, FileSpreadsheet, CheckCircle2, Info, Loader2, AlertCircle, Eye, HelpCircle, Trash2, AlertTriangle, RefreshCcw, ArrowRight, TrendingUp, Wallet, ListX, Table, Search, Globe, ChevronDown, ChevronUp, FileText, Settings2, Columns } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
+import { buildCostOrigin } from '../utils/costOrigin';
 import { LOCAL_HARDWARE_INDEX, CATEGORY_MAP, VENDOR_LIST, CATEGORY_IMAGES } from '../services/hardwareDB';
 import { AddFlowStepHeader } from './addFlowShared';
 
@@ -232,7 +233,15 @@ const SheetsImport: React.FC<Props> = ({ onImport, onClearData }) => {
         comment2,
         vendor: analysis.vendor,
         specs: analysis.specs,
-        imageUrl: CATEGORY_IMAGES[analysis.category] || undefined
+        imageUrl: CATEGORY_IMAGES[analysis.category] || undefined,
+        costOrigin: buildCostOrigin({
+          kind: 'csv_import',
+          addedAs: 'Spreadsheet import',
+          lotTotalEur: buyPrice,
+          allocatedEur: buyPrice,
+          allocationMethod: 'manual',
+          siblings: [{ name: rawName, allocatedEur: buyPrice }],
+        }),
       };
 
       importedItems.push(item);

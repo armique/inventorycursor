@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Search, Trash2, X, AlertTriangle, Boxes } from 'lucide-react';
 import { InventoryItem, ItemStatus } from '../types';
+import { buildCostOrigin } from '../utils/costOrigin';
 import { formatEUR } from '../utils/formatMoney';
 import ItemThumbnail, { getCategoryImageUrl } from './ItemThumbnail';
 import BuildItemPhotosPanel from './BuildItemPhotosPanel';
@@ -165,6 +166,20 @@ const LotBundleBuilder: React.FC<Props> = ({ items, onSave }) => {
         marketTitle: title,
         imageUrl: userPhotos[0] || selected[0]?.imageUrl || getCategoryImageUrl({ category: 'Components' }) || undefined,
         imageUrls: userPhotos.length ? userPhotos : undefined,
+        costOrigin: editingContainer?.costOrigin || buildCostOrigin({
+          kind: 'compose_mixed',
+          addedAs: 'Mixed lot composed from existing parts',
+          bundleName: title,
+          bundleId: parentId,
+          lotTotalEur: Math.round(total * 100) / 100,
+          allocatedEur: Math.round(total * 100) / 100,
+          allocationMethod: 'sum_parts',
+          siblings: selected.map((part) => ({
+            id: part.id,
+            name: part.name,
+            allocatedEur: Number(part.buyPrice) || 0,
+          })),
+        }),
       };
 
       const parentItem = parentOverride

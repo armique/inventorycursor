@@ -30,6 +30,7 @@ import { resolveEssentialSpecKeys, mergeAiSpecsIntoEssential } from '../services
 import { toLocalCalendarDateKey } from '../utils/calendarDate';
 import { generateItemSpecs, getSpecsAIProvider } from '../services/specsAI';
 import { pickSpecsAiNameVendorUpdates } from '../utils/applySpecsAiResult';
+import { buildCostOrigin } from '../utils/costOrigin';
 import ItemThumbnail, { CategoryIconBox } from './ItemThumbnail';
 
 function localDatetimeInputValue(d = new Date()): string {
@@ -353,14 +354,22 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
     const noteSuffix = tradeNote ? `\n\n[Trade Context]: ${tradeNote}` : '';
     const tradeDate = toLocalCalendarDateKey(tradeAcquiredAt) || tradeAcquiredAt.slice(0, 10);
 
-    const newInventoryItems: InventoryItem[] = drafts.map((draft) => {
+    const tradeTs = Date.now();
+    const newInventoryItems: InventoryItem[] = drafts.map((draft, idx) => {
       const { category, subCategory } = resolveTradeIncomingCategory(draft.name, {
         hardwareDbType: draft.hardwareDbType,
         userCategory: draft.category,
         categories: HIERARCHY_CATEGORIES,
       });
+      const id = `trade-${tradeTs}-${idx}`;
+      const siblings = drafts.map((row, rowIdx) => ({
+        id: `trade-${tradeTs}-${rowIdx}`,
+        name: row.name,
+        allocatedEur: Number(row.estimatedValue) || 0,
+      }));
+      const method = splitMode === 'equal' ? 'trade_equal' as const : splitMode === 'smart' ? 'trade_smart' as const : 'manual' as const;
       return {
-        id: `trade-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        id,
         name: draft.name,
         buyPrice: draft.estimatedValue,
         buyDate: tradeDate,
@@ -372,6 +381,18 @@ const TradeModal: React.FC<Props> = ({ item, onSave, onClose, categoryFields = {
         vendor: draft.parsedVendor || 'Trade',
         tradedFromId: item.id,
         ...(draft.specs && Object.keys(draft.specs).length > 0 ? { specs: draft.specs } : {}),
+        costOrigin: buildCostOrigin({
+          kind: 'trade_in',
+          addedAs: `Trade in from ${item.name}`,
+          sourceItemId: item.id,
+          sourceItemName: item.name,
+          lotTotalEur: splitMode === 'manual' ? totalTradeValue : dealValue,
+          allocatedEur: Number(draft.estimatedValue) || 0,
+          allocationMethod: method,
+          allocationMode: splitMode === 'equal' ? 'EQUAL' : splitMode === 'smart' ? 'SMART' : 'MANUAL',
+          siblings,
+          notes: tradeNote || undefined,
+        }),
       };
     });
 

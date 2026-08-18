@@ -93,6 +93,77 @@ assert.ok(
   'already-sold linked item must not appear in bind suggestions'
 );
 
+const soldStillLooksLikeStock = {
+  ...sold,
+  status: ItemStatus.IN_STOCK,
+};
+const suggestionsSoldInStockShape = findItemsForOpenOrderLine(
+  otherOrder.lineItems[0],
+  otherOrder,
+  [soldStillLooksLikeStock, ram]
+);
+assert.ok(
+  !suggestionsSoldInStockShape.some((s) => s.item.id === 'gpu-1'),
+  'item already linked to another order must not be suggested even if status is still In Stock'
+);
+
+const linkedViaExternalId = item({
+  id: 'ram-linked',
+  name: 'Kingston Fury 16GB DDR4',
+  status: ItemStatus.IN_STOCK,
+  externalOrderId: '01-11111-22222',
+});
+const suggestionsExternal = findItemsForOpenOrderLine(
+  otherOrder.lineItems[0],
+  otherOrder,
+  [linkedViaExternalId]
+);
+assert.equal(
+  suggestionsExternal.length,
+  0,
+  'in-stock row with externalOrderId must not be suggested'
+);
+
+const soldPc = item({
+  id: 'pc-1',
+  name: 'Office PC',
+  isPC: true,
+  status: ItemStatus.SOLD,
+  ebayOrderId: 'ord-pc',
+});
+const pcRam = item({
+  id: 'pc-ram',
+  name: 'Kingston Fury 16GB DDR4',
+  parentContainerId: 'pc-1',
+  status: ItemStatus.IN_STOCK,
+});
+const suggestionsPcChild = findItemsForOpenOrderLine(
+  otherOrder.lineItems[0],
+  otherOrder,
+  [soldPc, pcRam]
+);
+assert.ok(
+  !suggestionsPcChild.some((s) => s.item.id === 'pc-ram'),
+  'part of a sold/linked PC must not be suggested for another order'
+);
+
+const childWithContainerDate = item({
+  id: 'child-sold-date',
+  name: 'Kingston Fury 16GB DDR4',
+  status: ItemStatus.IN_STOCK,
+  containerSoldDate: '2026-08-10',
+});
+const suggestionsContainerDate = findItemsForOpenOrderLine(
+  otherOrder.lineItems[0],
+  otherOrder,
+  [childWithContainerDate]
+);
+assert.equal(
+  suggestionsContainerDate.length,
+  0,
+  'row with containerSoldDate must not be suggested'
+);
+
 const twoLine: EbayOrderRecord = {
   orderId: 'ord-two',
   creationDate: '2026-08-12',

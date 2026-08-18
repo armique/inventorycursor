@@ -77,6 +77,7 @@ import LocalPhotoFolderPanel from './LocalPhotoFolderPanel';
 import KleinanzeigenBuyChatProofFields from './KleinanzeigenBuyChatProofFields';
 import SourceLinkIcons from './SourceLinkIcons';
 import ProofAttachmentsPanel from './ProofAttachmentsPanel';
+import CostOriginPanel from './CostOriginPanel';
 import { resolveItemSourceLinks } from '../utils/sourceLinks';
 import { ADD_FLOW_INPUT, ADD_FLOW_LABEL, ADD_FLOW_PANEL } from './addFlowShared';
 import { searchProductPhotos, type ImageSearchResult } from '../services/imageSearchService';
@@ -1376,6 +1377,7 @@ const ListingStudioModal: React.FC<Props> = ({
                   />
                 </label>
               </div>
+              <CostOriginPanel item={item} allItems={allItems} />
               <div className="flex flex-wrap items-center gap-3 pt-0.5">
                 <label className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600">
                   <input
@@ -1596,6 +1598,7 @@ const ListingStudioModal: React.FC<Props> = ({
                     <X size={16} />
                   </button>
                 </div>
+                <CostOriginPanel item={item} allItems={allItems} />
                 <ProofAttachmentsPanel
                   recordId={item.id}
                   attachments={item.proofAttachments}

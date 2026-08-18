@@ -110,6 +110,7 @@ import {
   backfillContainerBuyDates,
   preferFilledContainerBuyDate,
 } from './utils/backfillContainerBuyDates';
+import { applyHealthInsuranceLedger } from './utils/healthInsuranceLedger';
 import {
   WRITE_DEBOUNCE_MS,
   FAST_CLOUD_FLUSH_MS,
@@ -155,6 +156,7 @@ const PRESERVE_FROM_OLD_IF_UPDATE_MISSING: (keyof InventoryItem)[] = [
   'platformBought', 'buyPaymentType', 'kleinanzeigenBuyChatUrl', 'kleinanzeigenBuyChatImage',
   'kleinanzeigenSellerProfileUrl',
   'bulkImportId',
+  'costOrigin',
   'source', 'lastModifiedBy', 'aiReviewStatus',
   'printStage', 'reserved', 'photosReady',
 ];
@@ -995,6 +997,17 @@ const App: React.FC = () => {
     hasUnsavedChanges.current = true;
   }, [appState, items, requestFastCloudFlush]);
 
+  // Replace DAK Gesundheit history with bank-accurate rows + start AOK Bayern on the 17th.
+  useEffect(() => {
+    if (appState !== 'READY') return;
+    const next = applyHealthInsuranceLedger(expenses, recurringExpenses);
+    if (!next.changed) return;
+    setExpenses(next.expenses);
+    setRecurringExpenses(next.recurring);
+    hasUnsavedChanges.current = true;
+    requestFastCloudFlush();
+  }, [appState, expenses, recurringExpenses, requestFastCloudFlush]);
+
   // Enrich history rows with chat URL / screenshot from member items (legacy sessions).
   useEffect(() => {
     if (appState !== 'READY') return;
@@ -1661,6 +1674,9 @@ const App: React.FC = () => {
           const final0 =
             oldItem && idx >= 0 && preserveMissingFields ? applyPreservedFields(oldItem, merged) : merged;
           let final = final0;
+          if (oldItem?.costOrigin) {
+            final = { ...final, costOrigin: oldItem.costOrigin };
+          }
           const taxMode = businessSettings.taxMode || 'SmallBusiness';
           final = recomputeRealizedProfit(final, taxMode);
           if (final.status === ItemStatus.SOLD || final.status === ItemStatus.TRADED || final.status === ItemStatus.GIFTED) {

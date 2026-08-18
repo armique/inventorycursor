@@ -9,6 +9,7 @@
 
 import { ItemStatus, type InventoryItem, type ProofAttachment } from '../types';
 import type { PendingTransaction } from '../services/pendingTransactions';
+import { buildCostOrigin } from './costOrigin';
 
 /** Shipping the seller covered is deducted from profit but not from the paid amount. */
 function shippingFields(tx: PendingTransaction): Partial<InventoryItem> {
@@ -71,6 +72,15 @@ export function buildItemFromPurchaseTransaction(
     // Evidence must survive the hand-off — it is the tax proof for this purchase.
     proofAttachments: tx.proofAttachments,
     ...shippingFields(tx),
+    costOrigin: buildCostOrigin({
+      kind: 'inbox_purchase',
+      addedAs: `Inbox purchase${tx.platform ? ` · ${tx.platform}` : ''}`,
+      lotTotalEur: tx.amount ?? 0,
+      allocatedEur: tx.amount ?? 0,
+      allocationMethod: 'manual',
+      siblings: [{ name: tx.title, allocatedEur: tx.amount ?? 0 }],
+      notes: tx.counterparty ? `Seller: ${tx.counterparty}` : undefined,
+    }),
   };
 }
 
