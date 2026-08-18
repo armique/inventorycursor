@@ -26,6 +26,22 @@ function getListingsRequest(req) {
   };
 }
 
+function getListingByIdRequest(req) {
+  if (req.method === 'POST') {
+    const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+    return {
+      token: body.token || (req.headers.authorization || '').replace(/^Bearer\s+/i, ''),
+      username: body.username || body.sellerUsername,
+      listingId: body.listingId || body.itemId || body.legacyItemId,
+    };
+  }
+  return {
+    token: (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || req.query?.token,
+    username: req.query?.username || req.query?.sellerUsername,
+    listingId: req.query?.listingId || req.query?.itemId || req.query?.legacyItemId,
+  };
+}
+
 function pickEnv(name) {
   return process.env[name] || '';
 }
@@ -298,6 +314,44 @@ async function fetchSellerStoreListings(sellerUsername) {
   });
 
   return listings.filter((l) => l.title || l.imageUrls.length);
+}
+
+async function fetchSellerStoreListingById(sellerUsername, listingId) {
+  const cleanSeller = String(sellerUsername || '').trim().replace(/^@/, '');
+  const cleanId = String(listingId || '').trim();
+  if (!cleanId) throw new Error('Missing eBay listing ID.');
+  if (!/^\d{9,14}$/.test(cleanId)) {
+    throw new Error('Invalid eBay listing ID format.');
+  }
+
+  const { marketplace } = ebayAppConfig();
+  const appToken = await getEbayAppToken();
+  const url = new URL('https://api.ebay.com/buy/browse/v1/item/get_item_by_legacy_id');
+  url.searchParams.set('legacy_item_id', cleanId);
+  const data = await browseGet(appToken, url.toString(), marketplace);
+  const seller = String(data?.seller?.username || '').trim().replace(/^@/, '');
+  if (cleanSeller && seller && cleanSeller.toLowerCase() !== seller.toLowerCase()) {
+    throw new Error(`Listing ${cleanId} belongs to @${seller}, not @${cleanSeller}.`);
+  }
+
+  const imageUrls = [];
+  const push = (u) => {
+    if (u && typeof u === 'string' && !imageUrls.includes(u)) imageUrls.push(u);
+  };
+  push(data?.image?.imageUrl);
+  for (const img of data?.additionalImages || []) push(img?.imageUrl);
+  const price = parseListingPrice(data?.price?.value);
+
+  return {
+    listingId: cleanId,
+    title: data?.title || '',
+    thumbnail: imageUrls[0] || data?.image?.imageUrl,
+    imageUrls,
+    listingUrl: data?.itemWebUrl || `https://www.ebay.de/itm/${cleanId}`,
+    price,
+    currency: data?.price?.currency || 'EUR',
+    source: 'seller_store',
+  };
 }
 
 function mergeListings(primary, secondary) {
@@ -691,6 +745,55 @@ async function handleEbayListings(req, res) {
   }
 }
 
+async function handleEbayListingById(req, res) {
+  const { token, username: rawUsername, listingId: rawListingId } = getListingByIdRequest(req);
+  const username = String(rawUsername || 'rm4ik').trim().replace(/^@/, '');
+  const listingId = String(rawListingId || '').trim();
+  if (!listingId) return res.status(400).json({ error: 'Missing listingId.' });
+
+  try {
+    // Fast path: seller-store listing by legacy item id (works even if cache matcher missed it).
+    const direct = await fetchSellerStoreListingById(username, listingId);
+    if (direct?.imageUrls?.length) {
+      return res.status(200).json({ listing: direct, source: 'seller_store' });
+    }
+  } catch (e) {
+    // Fallback below tries OAuth inventory/trading merge when available.
+    if (!token) {
+      return res.status(404).json({
+        error: e instanceof Error ? e.message : `Listing ${listingId} was not found.`,
+      });
+    }
+  }
+
+  if (!token) {
+    return res.status(404).json({ error: `Listing ${listingId} was not found.` });
+  }
+
+  try {
+    let merged = [];
+    try {
+      merged = await fetchInventoryListings(token);
+    } catch (e) {
+      if (e.status === 401) return res.status(401).json({ error: e.message });
+    }
+    if (!merged.length) {
+      try {
+        merged = await fetchTradingActiveListings(token);
+      } catch (e) {
+        if (e.status === 401) return res.status(401).json({ error: e.message });
+      }
+    }
+    const listing = merged.find((l) => String(l.listingId) === listingId);
+    if (!listing) {
+      return res.status(404).json({ error: `Listing ${listingId} was not found in active listings.` });
+    }
+    return res.status(200).json({ listing, source: 'oauth' });
+  } catch (e) {
+    return res.status(500).json({ error: e instanceof Error ? e.message : 'Failed to fetch eBay listing by ID' });
+  }
+}
+
 async function handleEbayOrder(req, res) {
   let orderId, token;
   if (req.method === 'POST') {
@@ -837,6 +940,7 @@ export default async function handler(req, res) {
   if (route === 'orders') return handleEbayOrders(req, res);
   if (route === 'purchases') return handleEbayPurchases(req, res);
   if (route === 'listings') return handleEbayListings(req, res);
+  if (route === 'listing_by_id') return handleEbayListingById(req, res);
   if (route === 'oauth_authorize_url') return handleEbayOAuthAuthorizeUrl(req, res);
   if (route === 'oauth_exchange') return handleEbayOAuthExchange(req, res);
   if (route === 'oauth_refresh') return handleEbayOAuthRefresh(req, res);

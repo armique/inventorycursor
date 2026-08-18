@@ -16,7 +16,13 @@ import {
   type ImageSearchProvider,
   type ImageSearchResult,
 } from '../services/imageSearchService';
-import { getEbayUsername, ebayListingToPriceMatch, type EbayMyListing, type EbayListingPriceMatch } from '../services/ebayService';
+import {
+  getEbayUsername,
+  ebayListingToPriceMatch,
+  fetchMyEbayListingById,
+  type EbayMyListing,
+  type EbayListingPriceMatch,
+} from '../services/ebayService';
 import { ensureEbayListings } from '../services/ebayListingIndex';
 import { matchEbayListingsForItem } from '../utils/ebayListingMatch';
 import { formatEUR } from '../utils/formatMoney';
@@ -76,6 +82,7 @@ const AddPhotosModal: React.FC<Props> = ({
   const [expandedEbayListingId, setExpandedEbayListingId] = useState<string | null>(null);
   const [selectedEbayPhotosByListing, setSelectedEbayPhotosByListing] = useState<Record<string, string[]>>({});
   const [ebayImportingId, setEbayImportingId] = useState<string | null>(null);
+  const [manualEbayListingInput, setManualEbayListingInput] = useState('');
 
   const storageOptions = { itemId: storageItemId };
   const canSearch = Boolean(searchName.trim());
@@ -102,6 +109,7 @@ const AddPhotosModal: React.FC<Props> = ({
     setExpandedEbayListingId(null);
     setSelectedEbayPhotosByListing({});
     setEbayImportingId(null);
+    setManualEbayListingInput('');
   }, [open]);
 
   useEffect(() => {
@@ -282,11 +290,86 @@ const AddPhotosModal: React.FC<Props> = ({
       const matches = matchEbayListingsForItem(searchName.trim(), all, ebaySku);
       if (!matches.length) {
         setEbayListingError(
-          `No listings matched "${searchName.trim()}". You have ${all.length} active listing${all.length === 1 ? '' : 's'}.`
+          `No listings matched "${searchName.trim()}". You have ${all.length} active listing${all.length === 1 ? '' : 's'}. Paste an eBay listing link below to pick it manually.`
         );
         return;
       }
       setEbayListingMatches(matches);
+    } catch (e: unknown) {
+      setEbayListingError((e as Error)?.message || 'Failed to load your eBay listings.');
+    } finally {
+      setEbayListingLoading(false);
+    }
+  };
+
+  const extractEbayListingId = (input: string): string | null => {
+    const raw = input.trim();
+    if (!raw) return null;
+
+    const plainId = raw.match(/^\d{9,14}$/)?.[0];
+    if (plainId) return plainId;
+
+    const fromText = raw.match(/(?:itm\/|item=)(\d{9,14})/i)?.[1];
+    if (fromText) return fromText;
+
+    try {
+      const url = new URL(raw);
+      const fromPath = url.pathname.match(/\/itm\/(?:[^/]+\/)?(\d{9,14})(?:\/|$)/i)?.[1];
+      if (fromPath) return fromPath;
+      const fromQuery = url.searchParams.get('item') || url.searchParams.get('itemid');
+      if (fromQuery && /^\d{9,14}$/.test(fromQuery)) return fromQuery;
+    } catch {
+      // fall through
+    }
+
+    return null;
+  };
+
+  const handleManualEbayListingLookup = async () => {
+    const raw = manualEbayListingInput.trim();
+    if (!raw) return;
+
+    const listingId = extractEbayListingId(raw);
+    if (!listingId) {
+      setEbayListingError('Paste a valid eBay listing URL (…/itm/123456789012) or listing ID.');
+      return;
+    }
+
+    setEbayListingLoading(true);
+    setEbayListingError(null);
+    setEbayListingMatches(null);
+    setExpandedEbayListingId(null);
+    setSelectedEbayPhotosByListing({});
+    setPhotoSearchResults(null);
+    setPhotoSearchError(null);
+
+    try {
+      const { listings: all } = await ensureEbayListings();
+      if (!all.length) {
+        setEbayListingError(`No active eBay listings found for seller ${getEbayUsername()}.`);
+        return;
+      }
+
+      let exact = all.find((l) => String(l.listingId) === listingId) || null;
+      if (!exact) {
+        // Cache miss fallback: ask server for this exact active listing id.
+        exact = await fetchMyEbayListingById(listingId);
+      }
+      if (!exact) {
+        setEbayListingError(
+          `Listing ${listingId} was not found in your active eBay listings. Check the URL/ID and ensure the listing is active.`
+        );
+        return;
+      }
+
+      if (!exact.imageUrls?.length) {
+        setEbayListingError(`Listing ${listingId} has no photos available to import.`);
+        return;
+      }
+
+      setEbayListingMatches([{ ...exact, matchScore: 1000 }]);
+      setExpandedEbayListingId(exact.listingId);
+      setManualEbayListingInput('');
     } catch (e: unknown) {
       setEbayListingError((e as Error)?.message || 'Failed to load your eBay listings.');
     } finally {
@@ -521,6 +604,30 @@ const AddPhotosModal: React.FC<Props> = ({
                 <ShoppingBag size={12} />
                 {ebayListingLoading ? 'Loading…' : 'My eBay photos'}
               </button>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white p-2.5 space-y-2">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                eBay manual listing link
+              </p>
+              <div className="flex gap-2">
+                <input
+                  value={manualEbayListingInput}
+                  onChange={(e) => setManualEbayListingInput(e.target.value)}
+                  placeholder="https://www.ebay.de/itm/123456789012 or 123456789012"
+                  className="flex-1 min-w-0 px-2.5 py-2 rounded-lg border border-slate-200 bg-white text-[11px] font-medium outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+                <button
+                  type="button"
+                  onClick={handleManualEbayListingLookup}
+                  disabled={loading || ebayListingLoading || !manualEbayListingInput.trim()}
+                  className="shrink-0 px-3 py-2 rounded-lg border border-blue-200 text-blue-700 text-[10px] font-black uppercase tracking-wide hover:bg-blue-50 disabled:opacity-50"
+                >
+                  Use link
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-500">
+                Use this when title matching misses the correct listing.
+              </p>
             </div>
             {itemCount > 1 && canSearch && (
               <p className="text-[10px] text-slate-500">Search uses the first selected item name for all targets.</p>

@@ -416,6 +416,27 @@ export interface EbayMyListing {
   source: 'inventory' | 'trading' | 'seller_store';
 }
 
+/** Fetch one active listing by legacy eBay item id (manual fallback for photo import). */
+export async function fetchMyEbayListingById(listingId: string): Promise<EbayMyListing | null> {
+  const cleanId = String(listingId || '').trim();
+  if (!cleanId) return null;
+  const token = await ensureFreshEbayToken();
+  const username = getEbayUsername();
+  const res = await fetch('/api/ebay?route=listing_by_id', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ listingId: cleanId, token: token || undefined, username }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(
+      typeof data.error === 'string' ? data.error : `Failed to fetch eBay listing ${cleanId}: ${res.status}`
+    );
+  }
+  return (data.listing as EbayMyListing) || null;
+}
+
 export interface EbayListingPriceMatch {
   listingId: string;
   title: string;
