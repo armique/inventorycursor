@@ -50,8 +50,8 @@ const AboutContactModal: React.FC<AboutContactModalProps> = ({ type, onClose, on
               <p className="text-slate-700 text-sm leading-relaxed mb-4">{CONTACT_INTRO}</p>
               <p className="text-slate-600 text-sm">
                 Nutzen Sie für konkrete Artikel die „Anfrage senden“-Funktion direkt beim Produkt. Für allgemeine Anfragen:{' '}
-                <a href="mailto:kontakt@armiktech.com" className="text-slate-900 font-semibold underline hover:no-underline">
-                  kontakt@armiktech.com
+                <a href="mailto:mirana322@gmail.com" className="text-slate-900 font-semibold underline hover:no-underline">
+                  mirana322@gmail.com
                 </a>
               </p>
               {onOpenPrivacy && (

@@ -62,7 +62,7 @@ import {
 import { runDailyBackupIfDue } from './services/backupService';
 import { pullOrderIndexFromCloud } from './services/ebayOrderIndex';
 import { pullPurchaseIndexFromCloud } from './services/ebayPurchaseIndex';
-import { pullListingIndexFromCloud } from './services/ebayListingIndex';
+import { ensureEbayListings, pullListingIndexFromCloud } from './services/ebayListingIndex';
 import { DEFAULT_CATEGORIES } from './services/constants';
 import { migrateCategoriesRecord, migrateContainerItem } from './utils/containerTaxonomy';
 import {
@@ -168,6 +168,7 @@ const ACCESSORY_EXPLICIT_CLEAR_KEYS: (keyof InventoryItem)[] = [
   'hasIOShield',
   'hasReceipt',
 ];
+const EBAY_LISTINGS_DAILY_BOOT_REFRESH_KEY = 'ebay_listings_daily_boot_refresh_v1';
 
 /**
  * Re-apply fields the caller left out (forms often submit a partial item).
@@ -594,6 +595,7 @@ const App: React.FC = () => {
   /** Blocks cloud uploads until the first pull finishes (prevents empty-phone wipe). */
   const cloudHydratedRef = useRef(!isCloudEnabled());
   const ebayOrderIndexPulledRef = useRef(false);
+  const ebayListingDailyRefreshTriedRef = useRef(false);
   const storeCatalogPublishDoneRef = useRef(false);
   const catalogPublishDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cloudSyncInFlightRef = useRef(false);
@@ -924,6 +926,7 @@ const App: React.FC = () => {
         initialWriteDoneRef.current = false;
         cloudHydratedRef.current = !isCloudEnabled();
         ebayOrderIndexPulledRef.current = false;
+        ebayListingDailyRefreshTriedRef.current = false;
         setSyncState(prev => ({ ...prev, status: 'idle', message: undefined }));
         return;
       }
@@ -1140,6 +1143,27 @@ const App: React.FC = () => {
     void pullPurchaseIndexFromCloud().catch((e) => console.warn('eBay purchase index cloud pull failed:', e));
     void pullListingIndexFromCloud().catch((e) => console.warn('eBay listing index cloud pull failed:', e));
   }, [authUser]);
+
+  // Keep eBay active-listing cache fresh for photo import:
+  // once per local calendar day on app boot, run one forced refresh.
+  useEffect(() => {
+    if (appState !== 'READY' || ebayListingDailyRefreshTriedRef.current) return;
+    ebayListingDailyRefreshTriedRef.current = true;
+    const now = new Date();
+    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+      now.getDate()
+    ).padStart(2, '0')}`;
+    const lastRunKey = localStorage.getItem(EBAY_LISTINGS_DAILY_BOOT_REFRESH_KEY) || '';
+    if (lastRunKey === todayKey) return;
+    void ensureEbayListings({ force: true })
+      .then(() => {
+        localStorage.setItem(EBAY_LISTINGS_DAILY_BOOT_REFRESH_KEY, todayKey);
+      })
+      .catch((e) => {
+        // Non-blocking: user can still work, and retry happens on next launch/day.
+        console.warn('eBay daily listing refresh failed:', e);
+      });
+  }, [appState]);
 
   // Hydrate Reinvest gamification state (bank, quests, achievements) from its own doc — same
   // pull-on-boot pattern as the eBay indexes above, kept out of the main syncPack blob.

@@ -55,7 +55,7 @@ export const DATENSCHUTZ_CONTENT = `
 Verantwortlich für die Datenverarbeitung im Sinne der DSGVO ist:
 ArmikTech / Armen Abelyan
 Berlin, Deutschland
-E-Mail: kontakt@armiktech.com
+E-Mail: mirana322@gmail.com
 
 **2. Erhebung und Speicherung personenbezogener Daten**
 
@@ -99,7 +99,7 @@ Berlin, Deutschland
 **Website:** https://armiktech.com
 
 **Kontakt**
-E-Mail: kontakt@armiktech.com
+E-Mail: mirana322@gmail.com
 
 **Umsatzsteuer-ID** (falls vorhanden)
 USt-IdNr.: auf Anfrage

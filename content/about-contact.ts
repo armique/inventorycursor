@@ -18,5 +18,5 @@ Bei Fragen zu einem Artikel nutzen Sie bitte die „Anfrage senden“-Funktion d
 
 export const CONTACT_TITLE = 'Kontakt';
 export const CONTACT_INTRO = 'Allgemeine Anfragen? Schreiben Sie uns – wir melden uns schnellstmöglich.';
-export const CONTACT_EMAIL_PLACEHOLDER = 'z.B. kontakt@armiktech.com';
+export const CONTACT_EMAIL_PLACEHOLDER = 'z.B. mirana322@gmail.com';
 export const CONTACT_SUBJECT_PLACEHOLDER = 'Betreff';
