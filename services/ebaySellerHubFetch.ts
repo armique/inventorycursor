@@ -47,7 +47,7 @@ export async function fetchEbaySellerHubPayout(input: {
       ok: false,
       code: 'scrape_error',
       openUrl: EBAY_SELLER_HUB_ORDERS_URL,
-      hint: 'Seller Hub fetch did not return JSON. Use npm run dev, or paste the payout block.',
+      hint: 'Seller Hub fetch did not return JSON. Use npm run dev:ebay and click Bind again.',
     };
   }
   if ('ok' in data) return data;

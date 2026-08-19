@@ -18,7 +18,14 @@ import {
   parseEbaySellerHubPayoutText,
   payoutLooksComplete,
   pickSellerHubMatch,
+  harvestPayoutFromCapturedPayload,
+  pickRicherPayout,
+  extractHubBuyer,
+  payoutFromHubVisionJson,
+  HUB_PAYOUT_VISION_PROMPT,
 } from '../lib/ebaySellerHubPayout.js';
+import { getGeminiKeyForServer } from '../lib/geminiServerEnv.js';
+import { callGeminiVisionJson } from '../lib/geminiVisionClient.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -30,11 +37,23 @@ const CDP_URL = process.env.CDP_URL || 'http://127.0.0.1:9222';
 const ORDERS_URL = process.env.EBAY_ORDERS_URL || EBAY_SELLER_HUB_ORDERS_URL;
 const MAX_SCROLL_ROUNDS = parseInt(process.env.HUB_SCROLL_ROUNDS || '14', 10);
 const PAUSE_MS = parseInt(process.env.PAUSE_MS || '700', 10);
+const SCRAPE_BUDGET_MS = parseInt(process.env.HUB_SCRAPE_BUDGET_MS || '48000', 10);
+const GOTO_TIMEOUT_MS = parseInt(process.env.HUB_GOTO_TIMEOUT_MS || '20000', 10);
+const HARD_EXIT_MS = parseInt(process.env.HUB_HARD_EXIT_MS || '56000', 10);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+function detailsUrls(orderId) {
+  const id = encodeURIComponent(orderId);
+  return [
+    `https://www.ebay.de/sh/ord/details?orderid=${id}`,
+    `https://www.ebay.de/mesh/ord/details?orderid=${id}`,
+    `https://www.ebay.de/sh/ord/d/?orderid=${id}`,
+  ];
+}
+
 function detailsUrl(orderId) {
-  return `https://www.ebay.de/mesh/ord/details?orderid=${encodeURIComponent(orderId)}`;
+  return detailsUrls(orderId)[0];
 }
 
 function extractFromPage() {
@@ -77,34 +96,263 @@ function extractFromPage() {
 }
 
 async function collectPageText(page) {
-  const chunks = [];
-  for (const frame of page.frames()) {
-    const t = await frame.locator('body').innerText({ timeout: 4000 }).catch(() => '');
-    if (t && t.trim()) chunks.push(t);
+  const main = await Promise.race([
+    page.evaluate(() => document.body?.innerText || '').catch(() => ''),
+    sleep(2500).then(() => ''),
+  ]);
+  if (
+    /Bestelleinnahmen|Transaktionsgebühren|Lieferadresse|eBay-Nutzername|Nutzername/i.test(main)
+  ) {
+    return String(main || '');
   }
-  return chunks.sort((a, b) => b.length - a.length).join('\n\n');
+  const extra = await Promise.race([
+    page
+      .evaluate(() => {
+        const parts = [];
+        const walk = (node) => {
+          if (!node) return;
+          if (node.shadowRoot) walk(node.shadowRoot);
+          if (node.nodeType === 1) {
+            for (const child of node.childNodes) walk(child);
+          } else if (node.nodeType === 3) {
+            const text = node.textContent?.trim();
+            if (text) parts.push(text);
+          }
+        };
+        walk(document.body);
+        return parts.join('\n');
+      })
+      .catch(() => ''),
+    sleep(2000).then(() => ''),
+  ]);
+  return `${main || ''}\n${extra || ''}`.trim();
+}
+
+function attachJsonHarvest(page, bag) {
+  page.on('response', (res) => {
+    void (async () => {
+      try {
+        const url = res.url();
+        if (!/ebay\.(de|com)/i.test(url)) return;
+        if (/\.(png|jpe?g|gif|webp|css|woff2?|js|map)(\?|$)/i.test(url)) return;
+        const status = res.status();
+        if (status < 200 || status >= 300) return;
+        const ct = res.headers()['content-type'] || '';
+        const looksApi =
+          /json|graphql/i.test(ct) ||
+          /\/sh\/ord|\/mesh\/ord|order_details|selling\/order|fulfillment|finances|graphql/i.test(url);
+        if (!looksApi) return;
+        const body = await Promise.race([
+          res.text(),
+          sleep(1500).then(() => ''),
+        ]);
+        if (!body || body.length < 40 || body.length > 2_000_000) return;
+        if (!/fee|Fee|EUR|€|Betrag|payout|Bestell|transaction|adFee|net|erlös|username|address|Käufer|buyer/i.test(body)) {
+          return;
+        }
+        bag.push(body);
+      } catch {
+        /* ignore failed body reads */
+      }
+    })();
+  });
+}
+
+function mergePayoutAndBuyer(texts, orderId) {
+  let payout = bestPayoutFromCaptures(texts);
+  const buyer = extractHubBuyer(texts.filter((t) => typeof t === 'string').join('\n\n'));
+  return {
+    ...payout,
+    orderId: payout.orderId || orderId,
+    username: payout.username || buyer.username,
+    fullName: payout.fullName || buyer.fullName,
+    address: payout.address || buyer.address,
+  };
+}
+
+function hasFeeSplit(payout) {
+  return (
+    payoutLooksComplete(payout) &&
+    (payout.netPayoutEur != null || payout.transactionFeeEur != null)
+  );
+}
+
+async function revealPayoutUi(page) {
+  const labels = [
+    'Ihr Verkaufserlös',
+    'Verkaufserlös',
+    'Bestelleinnahmen',
+    'Zahlungsübersicht',
+    'Käufer',
+    'Lieferadresse',
+    'Your earnings',
+    'Mehr anzeigen',
+    'Show more',
+  ];
+  for (const label of labels) {
+    const loc = page.getByText(label, { exact: false }).first();
+    if (await loc.isVisible().catch(() => false)) {
+      await loc.click({ timeout: 800 }).catch(() => {});
+      await sleep(200);
+    }
+  }
+  const collapsed = page.locator('[aria-expanded="false"], summary');
+  const n = Math.min(await collapsed.count().catch(() => 0), 8);
+  for (let i = 0; i < n; i++) {
+    const el = collapsed.nth(i);
+    const text = ((await el.innerText().catch(() => '')) || '').slice(0, 80);
+    if (/erlös|käufer|liefer|zahlung|earning|fee|payout|finanz|details/i.test(text)) {
+      await el.click({ timeout: 600 }).catch(() => {});
+    }
+  }
+}
+
+async function gotoFast(page, url) {
+  try {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: GOTO_TIMEOUT_MS });
+    return true;
+  } catch {
+    try {
+      await page.goto(url, { waitUntil: 'commit', timeout: 8000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+async function waitForPayoutDom(page, timeoutMs = 12000) {
+  await page
+    .waitForFunction(
+      () =>
+        /Bestelleinnahmen|Transaktionsgebühren|Ihr Verkaufserlös|Your earnings|Lieferadresse|eBay-Nutzername|Käufer/i.test(
+          document.body?.innerText || ''
+        ),
+      { timeout: timeoutMs }
+    )
+    .catch(() => {});
+  await page.waitForLoadState('networkidle', { timeout: Math.min(4000, timeoutMs) }).catch(() => {});
+}
+
+function pageLooksUsable(text) {
+  if (!text) return false;
+  if (/Seite nicht gefunden|Page not found|\b404\b/i.test(text) && !/Bestellung/i.test(text)) return false;
+  return /Bestellung|Käufer|Verkaufserlös|Lieferadresse|eBay/i.test(text);
+}
+
+async function payoutFromPageScreenshot(page, orderId) {
+  const apiKey = getGeminiKeyForServer();
+  if (!apiKey) return null;
+  try {
+    await page.evaluate(() => {
+      const hit = [...document.querySelectorAll('h1,h2,h3,button,summary,div,span')].find((el) =>
+        /Bestelleinnahmen|Ihr Verkaufserlös|Lieferadresse/i.test(el.textContent || '')
+      );
+      hit?.scrollIntoView?.({ block: 'center' });
+    }).catch(() => {});
+    await sleep(300);
+    const buf = await page.screenshot({ type: 'jpeg', quality: 72, fullPage: true });
+    const { parsed } = await callGeminiVisionJson({
+      apiKey,
+      prompt: HUB_PAYOUT_VISION_PROMPT,
+      mime: 'image/jpeg',
+      base64: Buffer.from(buf).toString('base64'),
+      maxOutputTokens: 1200,
+    });
+    return payoutFromHubVisionJson(parsed, orderId);
+  } catch {
+    return null;
+  }
+}
+
+async function pickEbayPage(ctx) {
+  const pages = ctx.pages();
+  let best = null;
+  let bestScore = -1;
+  for (const page of pages) {
+    const url = page.url() || '';
+    let score = 0;
+    if (/ebay\.(de|com)/i.test(url)) score += 10;
+    if (/\/sh\/ord|\/mesh\/ord/i.test(url)) score += 25;
+    if (/\/sh\//i.test(url)) score += 8;
+    if (score > bestScore) {
+      best = page;
+      bestScore = score;
+    }
+  }
+  if (best && bestScore >= 10) return { page: best, owned: false };
+  return { page: await ctx.newPage(), owned: true };
+}
+
+function withVision(base, vision) {
+  if (!vision) return base;
+  const money = pickRicherPayout(base, vision) || base;
+  return {
+    ...money,
+    username: money.username || vision.username || base.username,
+    fullName: money.fullName || vision.fullName || base.fullName,
+    address: money.address || vision.address || base.address,
+  };
+}
+
+async function scrapeDetails(page, orderId, jsonBag = []) {
+  const urls = detailsUrls(orderId);
+  let lastText = '';
+  let lastUrl = urls[0];
+  const deadline = Date.now() + SCRAPE_BUDGET_MS;
+
+  page.setDefaultNavigationTimeout(GOTO_TIMEOUT_MS);
+  page.setDefaultTimeout(8000);
+
+  for (let i = 0; i < urls.length; i++) {
+    if (Date.now() > deadline - 6000) break;
+    const url = urls[i];
+    lastUrl = url;
+    const ok = await gotoFast(page, url);
+    if (!ok) continue;
+    const remaining = Math.max(800, deadline - Date.now() - 14000);
+    await waitForPayoutDom(page, Math.min(12000, remaining));
+    await revealPayoutUi(page);
+    lastText = await collectPageText(page);
+    const combined = mergePayoutAndBuyer([lastText, ...jsonBag], orderId);
+    if (hasFeeSplit(combined)) {
+      return { url, text: lastText, payout: combined };
+    }
+    if (pageLooksUsable(lastText)) {
+      if (Date.now() < deadline - 8000) {
+        const vision = await payoutFromPageScreenshot(page, orderId);
+        const merged = withVision(combined, vision);
+        if (hasFeeSplit(merged)) return { url, text: lastText, payout: merged };
+      }
+      break;
+    }
+  }
+
+  const combined = mergePayoutAndBuyer([lastText, ...jsonBag], orderId);
+  if (!hasFeeSplit(combined) && Date.now() < deadline - 8000) {
+    const vision = await payoutFromPageScreenshot(page, orderId);
+    return { url: lastUrl, text: lastText, payout: withVision(combined, vision) };
+  }
+  return { url: lastUrl, text: lastText, payout: combined };
+}
+
+function bestPayoutFromCaptures(texts) {
+  let best = parseEbaySellerHubPayoutText('');
+  for (const text of texts) {
+    best = pickRicherPayout(best, harvestPayoutFromCapturedPayload(text)) || best;
+    if (typeof text === 'string') {
+      best = pickRicherPayout(best, parseEbaySellerHubPayoutText(text)) || best;
+    }
+  }
+  return best;
 }
 
 function looksLoggedOut(text) {
   if (!text) return true;
-  if (/Vom Käufer bezahlt|Bestelleinnahmen|Transaktionsgebühren|Ihr Verkaufserlös/i.test(text)) {
+  if (/Vom Käufer bezahlt|Bestelleinnahmen|Transaktionsgebühren|Ihr Verkaufserlös|Lieferadresse|eBay-Nutzername/i.test(text)) {
     return false;
   }
   return /Einloggen|Sign in|Anmelden, um fortzufahren/i.test(text) && !/Bestellung/i.test(text);
-}
-
-async function scrapeDetails(page, orderId) {
-  const url = detailsUrl(orderId);
-  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
-  await sleep(2200);
-  let text = await collectPageText(page);
-  if (!payoutLooksComplete(parseEbaySellerHubPayoutText(text))) {
-    await sleep(1800);
-    text = await collectPageText(page);
-  }
-  const payout = parseEbaySellerHubPayoutText(text);
-  if (!payout.orderId) payout.orderId = orderId;
-  return { url, text, payout };
 }
 
 function parseArgs(argv) {
@@ -171,8 +419,7 @@ async function main() {
     browser = await chromium.connectOverCDP(CDP_URL);
   } catch (e) {
     fail('cdp_unavailable', {
-      hint:
-        'Start Chrome with --remote-debugging-port=9222 (quit all Chrome windows first), log into eBay, then retry. You can also paste the payout block from Seller Hub.',
+      hint: 'Start with npm run dev:ebay (or Start-eBay-dev.cmd), log into eBay.de in that Chrome window, then click Bind again.',
       error: e instanceof Error ? e.message : String(e),
     });
     process.exitCode = 3;
@@ -186,20 +433,37 @@ async function main() {
     return;
   }
 
-  const page = await ctx.newPage();
+  const jsonBag = [];
+  const pickedPage = await pickEbayPage(ctx);
+  const page = pickedPage.page;
+  attachJsonHarvest(page, jsonBag);
+  let keepOpen = !pickedPage.owned;
+  const killer = setTimeout(() => {
+    keepOpen = true;
+    fail('parse_failed', {
+      openUrl: query.orderId ? detailsUrl(query.orderId) : ORDERS_URL,
+      hint: 'Seller Hub read timed out. Stay logged into eBay in the debug Chrome window, then click Bind again.',
+    });
+    process.exit(8);
+  }, HARD_EXIT_MS);
   try {
     if (query.orderId) {
-      const details = await scrapeDetails(page, query.orderId);
+      const details = await scrapeDetails(page, query.orderId, jsonBag);
       if (looksLoggedOut(details.text)) {
-        fail('not_logged_in', { openUrl: details.url });
+        keepOpen = true;
+        fail('not_logged_in', {
+          openUrl: details.url,
+          hint: 'The eBay Chrome window is not logged in. Sign into eBay.de there, then click Bind again.',
+        });
         process.exitCode = 4;
         return;
       }
-      if (!payoutLooksComplete(details.payout)) {
+      if (!payoutLooksComplete(details.payout) || (details.payout.transactionFeeEur == null && details.payout.netPayoutEur == null)) {
+        keepOpen = true;
         fail('parse_failed', {
           openUrl: details.url,
-          hint: 'Opened the order but could not read the payout block. Paste Vom Käufer bezahlt … Bestelleinnahmen.',
-          preview: details.text.replace(/\s+/g, ' ').trim().slice(0, 400),
+          hint: 'Could not read the Hub order this time. Keep that Chrome logged into eBay.de and click Bind again.',
+          preview: details.text.replace(/\s+/g, ' ').trim().slice(0, 500),
         });
         process.exitCode = 5;
         return;
@@ -216,8 +480,8 @@ async function main() {
       return;
     }
 
-    await page.goto(ORDERS_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
-    await sleep(1800);
+    await gotoFast(page, ORDERS_URL);
+    await sleep(800);
 
     const searchText = query.query || query.sku || query.title;
     if (searchText) {
@@ -251,12 +515,13 @@ async function main() {
     if (picked.status === 'none' || !picked.candidates.length) {
       const listText = await collectPageText(page);
       if (looksLoggedOut(listText)) {
+        keepOpen = true;
         fail('not_logged_in', { openUrl: ORDERS_URL });
         process.exitCode = 4;
         return;
       }
       fail('not_found', {
-        hint: 'No matching order on this year’s list. Open Seller Hub, find the order, and paste the payout block.',
+        hint: 'No matching order on this year’s Hub list. Click Bind again after the orders list has loaded.',
         scanned: byId.size,
       });
       process.exitCode = 6;
@@ -265,7 +530,7 @@ async function main() {
 
     if (picked.status === 'ambiguous' || !picked.match) {
       fail('ambiguous', {
-        hint: 'Several orders look similar — pick one, or paste the payout block.',
+        hint: 'Several Hub orders look similar. Click the exact order in the list, then Bind again.',
         candidates: picked.candidates.map((c) => ({
           orderId: c.orderId,
           snippet: (c.snippet || '').slice(0, 220),
@@ -277,13 +542,14 @@ async function main() {
       return;
     }
 
-    const details = await scrapeDetails(page, picked.match.orderId);
-    if (!payoutLooksComplete(details.payout)) {
+    const details = await scrapeDetails(page, picked.match.orderId, jsonBag);
+    if (!payoutLooksComplete(details.payout) || (details.payout.transactionFeeEur == null && details.payout.netPayoutEur == null)) {
+      keepOpen = true;
       fail('parse_failed', {
         openUrl: details.url,
         orderId: picked.match.orderId,
-        hint: 'Found the order but could not read payout numbers. Paste the block from the order page.',
-        preview: details.text.replace(/\s+/g, ' ').trim().slice(0, 400),
+        hint: 'Found the order but could not read payout numbers. Keep Chrome logged into eBay.de and click Bind again.',
+        preview: details.text.replace(/\s+/g, ' ').trim().slice(0, 500),
       });
       process.exitCode = 5;
       return;
@@ -300,7 +566,8 @@ async function main() {
       }) + '\n'
     );
   } finally {
-    await page.close().catch(() => {});
+    clearTimeout(killer);
+    if (pickedPage.owned && !keepOpen) await page.close().catch(() => {});
   }
 }
 

@@ -38,7 +38,13 @@ export interface SaleProceedsBreakdown {
   adFeeEur?: number | null;
   shippingLabelEur?: number | null;
   otherFeeEur?: number | null;
+  refundEur?: number | null;
   netPayoutEur?: number | null;
+  /**
+   * True when marketplace fees were filled from Flip Coach % (not Seller Hub / CSV).
+   * Do not treat those fee figures as Finanzamt-grade.
+   */
+  feesEstimated?: boolean;
 }
 
 export type WorkflowStage = 'Draft' | 'Testing' | 'Ready' | 'Listed' | 'Sold' | 'Shipped';
@@ -124,6 +130,44 @@ export interface EbaySaleAdjustment {
   buyPriceAfter?: number;
   /** Positive EUR added to buy price (DHL label, cancellation fees, etc.). */
   buyPriceDelta?: number;
+}
+
+/** Why a completed eBay/sale cycle was closed so the item could return to stock. */
+export type ItemSaleCycleReason = 'erstattet' | 'return' | 'cancelled' | 'manual_unsold';
+
+/**
+ * Frozen snapshot of one completed sale (buyer, order, proceeds) before restock.
+ * Live ebayOrderId / customer always describe the CURRENT sale only, so a later
+ * eBay sale can fetch the new buyer without wiping Finanzamt history.
+ */
+export interface ItemSaleCycle {
+  id: string;
+  closedAt: string;
+  reason: ItemSaleCycleReason;
+  reasonLabel: string;
+  sellDate?: string;
+  sellPrice?: number;
+  originalSellPrice?: number;
+  profit?: number;
+  platformSold?: Platform;
+  paymentType?: PaymentType;
+  ebayOrderId?: string;
+  ebayOrderLineKey?: string;
+  ebayUsername?: string;
+  ebayListingId?: string;
+  ebaySku?: string;
+  customer?: CustomerInfo;
+  saleProceeds?: SaleProceedsBreakdown;
+  ebaySaleAdjustments?: EbaySaleAdjustment[];
+  feeAmount?: number;
+  hasFee?: boolean;
+  sellerPaidShipping?: boolean;
+  sellerShippingAmount?: number;
+  invoiceNumber?: string;
+  buyPriceAtClose: number;
+  leftoverLossEur?: number;
+  refundEur?: number;
+  refundKind?: 'full' | 'partial';
 }
 
 /** Who last touched a record: the user by hand, or the AI assistant (browser automation). */
@@ -304,10 +348,18 @@ export interface InventoryItem extends AiAttribution, SourceLinks {
   ebayOrderId?: string;
   /** Line claim key (`orderId::sku|title`) set when this row is bound to an eBay order line. */
   ebayOrderLineKey?: string;
-  /** First recorded net/gross sell price when linked via eBay sync — never overwritten (Finanzamt audit). */
+  /**
+   * First recorded net/gross of the CURRENT sale only. Prior sales are frozen in
+   * ebaySaleCycles so a restock → resale can store a new original without losing history.
+   */
   originalSellPrice?: number;
   /** Documented post-sale payout changes (returns, refunds, cancellations). */
   ebaySaleAdjustments?: EbaySaleAdjustment[];
+  /**
+   * Closed prior sales (refund / return / unsold). Live ebayOrderId is the current
+   * sale only — so a resale can bind a new buyer while this array keeps history.
+   */
+  ebaySaleCycles?: ItemSaleCycle[];
   
   // eBay API Tracking
   ebaySku?: string;
@@ -711,4 +763,9 @@ export type ItemUpdateOptions = {
    * would otherwise see them restored by the preserve step.
    */
   skipFieldPreserve?: boolean;
+  /**
+   * Replace the generic "Item updated" action-history row.
+   * `detailsByItemId` is used when several items are saved in one call.
+   */
+  actionNote?: { action: string; details?: string; detailsByItemId?: Record<string, string> };
 };

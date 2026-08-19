@@ -1,14 +1,12 @@
 /**
- * Incremental order fetch into the local/cloud cache, then analyze inventory vs orders.
+ * Match inventory against the Seller Hub order archive (Finanzamt fee split).
+ * New orders are fetched from Hub, not the Fulfillment API.
  */
 
 import { InventoryItem, ItemStatus } from '../types';
-import { hasEbayToken } from './ebayService';
-import { backfillEbayOrders, type BackfillProgress, type BackfillResult } from './ebayOrderBackfill';
-import { getSuggestedBackfillRange, loadEbayOrderIndex } from './ebayOrderIndex';
+import { loadEbayOrderIndex, type EbayOrderRecord } from './ebayOrderIndex';
+import { loadHubArchiveIndex } from './ebayHubArchiveIndex';
 import { buildOrderLinkAnalysis, type OrderLinkAnalysisResult } from '../utils/ebayOrderLinkAnalysis';
-
-const DEFAULT_HISTORY_FROM = '2025-02-01';
 
 let cachedPeek: { key: string; result: OrderLinkAnalysisResult } | null = null;
 
@@ -30,70 +28,51 @@ export function invalidateEbaySalesSyncPeekCache(): void {
   cachedPeek = null;
 }
 
-function todayISO(): string {
-  return new Date().toISOString().split('T')[0];
+/**
+ * Hub dump is the sales ledger when loaded. API cache is only a fallback
+ * before the first Hub JSON import.
+ */
+export function loadOrdersForSalesSync(): EbayOrderRecord[] {
+  const hub = loadHubArchiveIndex().orders;
+  if (hub.length) return hub;
+  return loadEbayOrderIndex().orders;
 }
 
 export interface EbaySalesSyncResult {
   analysis: OrderLinkAnalysisResult;
-  fetch: BackfillResult | null;
+  fetch: null;
   fetchSkipped: boolean;
   fetchSkippedReason?: string;
 }
 
-/** Pull new eBay orders into the cache (incremental when history exists), then match inventory. */
+/** Analyze inventory vs Hub (or API fallback) orders. Fetching new Hub sales is a separate action. */
 export async function runEbaySalesSync(
   items: InventoryItem[],
   options?: {
-    onFetchProgress?: (p: BackfillProgress) => void;
-    cancelToken?: { cancelled: boolean };
     skipFetch?: boolean;
   }
 ): Promise<EbaySalesSyncResult> {
-  let fetch: BackfillResult | null = null;
-  let fetchSkipped = false;
-  let fetchSkippedReason: string | undefined;
-
-  if (options?.skipFetch) {
-    fetchSkipped = true;
-    fetchSkippedReason = 'Fetch skipped.';
-  } else if (!hasEbayToken()) {
-    fetchSkipped = true;
-    fetchSkippedReason = 'No eBay token — using cached orders only.';
-  } else {
-    const range = getSuggestedBackfillRange(DEFAULT_HISTORY_FROM, todayISO());
-    // Skip only when resume window is empty (from after today). Same-day still fetches.
-    if (range.isIncremental && range.from > range.to) {
-      fetchSkipped = true;
-      fetchSkippedReason = 'Order cache already up to date for today.';
-    } else {
-      fetch = await backfillEbayOrders(
-        range.from,
-        range.to,
-        options?.onFetchProgress,
-        options?.cancelToken
-      );
-      if (fetch) {
-        fetch.from = range.from;
-        fetch.to = range.to;
-        fetch.isIncremental = range.isIncremental;
-      }
-    }
-  }
-
-  const { orders } = loadEbayOrderIndex();
+  const forLinking = loadOrdersForSalesSync();
   invalidateEbaySalesSyncPeekCache();
-  const analysis = buildOrderLinkAnalysis(items, orders);
-
-  return { analysis, fetch, fetchSkipped, fetchSkippedReason };
+  const analysis = buildOrderLinkAnalysis(items, forLinking);
+  return {
+    analysis,
+    fetch: null,
+    fetchSkipped: true,
+    fetchSkippedReason: options?.skipFetch
+      ? 'Rematch only.'
+      : 'Matching Hub ledger (use Fetch new Hub orders for new sales).',
+  };
 }
 
-/** Lightweight check for dashboard banner — cache only, no API. */
+/** Lightweight check for dashboard banner — cache only, no scrape. */
 export function peekEbaySalesSync(items: InventoryItem[]): OrderLinkAnalysisResult {
-  const { orders, meta } = loadEbayOrderIndex();
-  const key = peekCacheKey(items, orders.length, meta?.updatedAt || '');
+  const hub = loadHubArchiveIndex();
+  const apiMeta = loadEbayOrderIndex().meta;
+  const forLinking = loadOrdersForSalesSync();
+  const key = peekCacheKey(items, forLinking.length, `${hub.meta.updatedAt || ''}|${apiMeta?.updatedAt || ''}`);
   if (cachedPeek?.key === key) return cachedPeek.result;
-  const result = buildOrderLinkAnalysis(items, orders);
+  const result = buildOrderLinkAnalysis(items, forLinking);
   cachedPeek = { key, result };
   return result;
 }

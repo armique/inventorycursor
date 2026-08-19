@@ -1818,6 +1818,14 @@ export interface EbayOrderCloudMeta {
     isComplete?: boolean;
   };
   csvImports?: { fileName: string; rowCount: number; orderCount: number; importedAt: string }[];
+  financesBackfill?: {
+    fromDate: string;
+    toDate: string;
+    completedThroughDate?: string;
+    lastRunAt: string;
+    isComplete?: boolean;
+    transactionCount?: number;
+  };
 }
 
 /** One-time fetch of every cached eBay order (+ meta) for this user. Returns null if signed out / cloud disabled. */
@@ -1905,6 +1913,110 @@ export async function clearEbayOrdersCloud(): Promise<void> {
   }
   if (count > 0) await batch.commit();
   recordFirestoreDeletes(snap.size);
+}
+
+// --- SELLER HUB ARCHIVE (Finanzamt fee ledger, cross-device) ---
+// One doc per Hub order under users/{uid}/ebayHubArchive, plus `_meta`.
+// Incremental Seller Hub fetches upload only new/changed order IDs — not the whole dump.
+
+const EBAY_HUB_ARCHIVE_COLLECTION = "ebayHubArchive";
+const EBAY_HUB_ARCHIVE_META_DOC_ID = "_meta";
+
+function sanitizeHubArchiveDocId(orderId: string): string {
+  const cleaned = orderId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 300);
+  return cleaned || "unknown";
+}
+
+export interface EbayHubArchiveCloudMeta {
+  updatedAt?: string;
+  count?: number;
+  fromDate?: string;
+  toDate?: string;
+  fileName?: string;
+  lastIncrementalAt?: string;
+  newestDate?: string;
+}
+
+/** Meta-only read so boot can skip a full Hub rehydrate when the cloud copy is not newer. */
+export async function fetchEbayHubArchiveMetaFromCloud(): Promise<EbayHubArchiveCloudMeta | null> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) return null;
+  try {
+    const ref = doc(ctx.db, "users", user.uid, EBAY_HUB_ARCHIVE_COLLECTION, EBAY_HUB_ARCHIVE_META_DOC_ID);
+    const snap = await getDoc(ref);
+    recordFirestoreReads(1);
+    if (!snap.exists()) return null;
+    return snap.data() as EbayHubArchiveCloudMeta;
+  } catch (err) {
+    console.error("fetchEbayHubArchiveMetaFromCloud failed:", err);
+    return null;
+  }
+}
+
+export async function fetchEbayHubArchiveFromCloud(): Promise<{
+  orders: Record<string, unknown>[];
+  meta: EbayHubArchiveCloudMeta | null;
+} | null> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) return null;
+  try {
+    const colRef = collection(ctx.db, "users", user.uid, EBAY_HUB_ARCHIVE_COLLECTION);
+    const snap = await getDocs(colRef);
+    recordFirestoreReads(Math.max(1, snap.size));
+    const orders: Record<string, unknown>[] = [];
+    let meta: EbayHubArchiveCloudMeta | null = null;
+    snap.forEach((d) => {
+      if (d.id === EBAY_HUB_ARCHIVE_META_DOC_ID) {
+        meta = d.data() as EbayHubArchiveCloudMeta;
+      } else {
+        orders.push(d.data() as Record<string, unknown>);
+      }
+    });
+    return { orders, meta };
+  } catch (err) {
+    console.error("fetchEbayHubArchiveFromCloud failed:", err);
+    return null;
+  }
+}
+
+/** Upload new/changed Hub orders only (one doc per order) and merge meta. */
+export async function writeEbayHubArchiveToCloud(
+  orders: (Record<string, unknown> & { orderId: string })[],
+  metaPatch?: EbayHubArchiveCloudMeta
+): Promise<void> {
+  const ctx = init();
+  const user = ctx?.auth?.currentUser;
+  if (!ctx?.db || !user) throw new Error("Not signed in");
+  const colRef = collection(ctx.db, "users", user.uid, EBAY_HUB_ARCHIVE_COLLECTION);
+  const estimatedWrites = orders.length + (metaPatch ? 1 : 0);
+  if (estimatedWrites <= 0) return;
+  assertFirestoreDailyBudget({ writes: estimatedWrites });
+
+  const BATCH_MAX = 450;
+  let batch = writeBatch(ctx.db);
+  let count = 0;
+  for (const order of orders) {
+    const id = sanitizeHubArchiveDocId(String(order.orderId));
+    batch.set(doc(colRef, id), stripUndefined(order));
+    count++;
+    if (count >= BATCH_MAX) {
+      await batch.commit();
+      batch = writeBatch(ctx.db);
+      count = 0;
+    }
+  }
+  if (metaPatch) {
+    batch.set(
+      doc(colRef, EBAY_HUB_ARCHIVE_META_DOC_ID),
+      stripUndefined({ ...metaPatch, updatedAt: new Date().toISOString() }),
+      { merge: true }
+    );
+    count++;
+  }
+  if (count > 0) await batch.commit();
+  recordFirestoreWrites(estimatedWrites);
 }
 
 // --- BUY HELPER MARKET PRICE HISTORY (30-day eBay sold/live + Kleinanzeigen snapshots per tracked part) ---

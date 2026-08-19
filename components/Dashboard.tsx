@@ -5,7 +5,7 @@ import {
   TrendingUp, Target, Package, TrendingDown, Trophy, Star, Crown, Zap,
   Edit3, Check, CalendarDays, ArrowRight, CheckCircle2, Plus, X, Activity, AlertCircle,
   Settings2, ChevronUp, ChevronDown, ChevronRight, Download, Sparkles, BarChart3, LayoutDashboard,
-  Gift, ArrowRightLeft, Layers, History, Radar, ShoppingBag,
+  Gift, ArrowRightLeft, Layers, History, Radar, ShoppingBag, Percent,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import ItemLink from './ItemLink';
@@ -17,6 +17,7 @@ import { filterOperatingExpenses, isFilamentStockExpense, sumOperatingExpenseAmo
 import {
   roundMoney,
   computeItemProfitBeforeOverhead,
+  resolveSaleProfitParts,
   shouldSkipForAggregatedSaleLine,
   shouldSkipForInventoryCostLine,
   shouldSkipContainerForPurchaseCogs,
@@ -24,6 +25,7 @@ import {
 import { toLocalCalendarDateKey, yearMonthKeyFromDate, currentLocalYearMonth } from '../utils/calendarDate';
 import { countSalesByPlatform, formatItemSalePlatform, groupSalesByPlatform, PLATFORM_GROUP_LABEL, buildPlatformReconciliation, buildEbayTagFixUpdates, sumRevenueByPlatform, countOrdersByPlatform, groupItemsByMarketplaceOrder, countMissingExplicitSalePlatform, type PlatformGroupKey } from '../utils/salePlatform';
 import { ADD_OPTIONS, AddOptionTile } from './addFlowShared';
+import { summarizeEbayMarketplaceCosts } from '../utils/ebayMarketplaceStats';
 
 const DashboardAnalyticsPanel = lazy(() => import('./DashboardAnalyticsPanel'));
 const DealwatchWorkspace = lazy(() => import('./dealwatch/DealwatchWorkspace'));
@@ -43,6 +45,7 @@ interface Props {
   dashboardPreferences: DashboardPreferences;
   onDashboardPreferencesChange: (next: DashboardPreferences) => void;
   onUpdateItems?: (items: InventoryItem[]) => void;
+  onBusinessSettingsChange?: (next: BusinessSettings) => void;
 }
 
 const LEVELS = [
@@ -94,13 +97,18 @@ const QUICK_FILTERS: { value: string; label: string }[] = [
 
 type DashboardMainTab = 'overview' | 'charts' | 'dealwatch';
 
-function exportPeriodSalesCsv(sold: InventoryItem[], label: string) {
+function taxModeProfitCaption(mode: TaxMode): string {
+  if (mode === 'DifferentialVAT') return 'Sale profit has Differenzsteuer taken out of the cash margin.';
+  if (mode === 'RegularVAT') return 'Sale profit has 19% VAT taken out of proceeds.';
+  return 'Sale profit is pocket margin (Bestelleinnahmen − EK) — same as Sold tab.';
+}
+
+function exportPeriodSalesCsv(sold: InventoryItem[], label: string, taxMode: TaxMode) {
   const headers = ['Name', 'Category', 'Platform', 'eBayOrderId', 'SellDate', 'SellPrice', 'BuyPrice', 'Fees', 'Profit'];
   const rows = sold.map((i) => {
-    const sell = Number(i.sellPrice) || 0;
+    const { sell, fee } = resolveSaleProfitParts(i);
     const buy = Number(i.buyPrice) || 0;
-    const fee = Number(i.feeAmount) || 0;
-    const profit = roundMoney(sell - buy - fee);
+    const profit = computeItemProfitBeforeOverhead(i, taxMode);
     return [i.name, i.category || '', formatItemSalePlatform(i), i.ebayOrderId || '', i.sellDate || '', sell, buy, fee, profit]
       .map((c) => `"${String(c).replace(/"/g, '""')}"`)
       .join(';');
@@ -137,6 +145,7 @@ const Dashboard: React.FC<Props> = ({
   dashboardPreferences,
   onDashboardPreferencesChange,
   onUpdateItems,
+  onBusinessSettingsChange,
 }) => {
   const navigate = useNavigate();
   const timeFilter = dashboardPreferences.timeFilter;
@@ -729,6 +738,11 @@ const Dashboard: React.FC<Props> = ({
     };
   }, [soldInPeriod, stats.grossProfit, items, taxMode]);
 
+  const ebayFeeStats = useMemo(
+    () => summarizeEbayMarketplaceCosts(soldInPeriod),
+    [soldInPeriod]
+  );
+
   const formatPlatformChipLabel = (key: PlatformGroupKey) => {
     const stats = periodInsights.platformOrders[key];
     const rev = periodInsights.platformRevenue[key];
@@ -1002,6 +1016,33 @@ const Dashboard: React.FC<Props> = ({
               <input type="date" className="rounded-lg border border-slate-200 px-2 lg:px-3 py-1.5 lg:py-2 text-xs lg:text-sm font-bold" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} />
             </div>
           )}
+          <div
+            className="flex rounded-lg lg:rounded-xl border border-slate-200 bg-white p-0.5 lg:p-1"
+            title="Tax mode only changes Dashboard profit. Sold tab always shows pocket margin."
+          >
+            {(
+              [
+                { id: 'SmallBusiness' as const, label: 'Kleinunt.', title: 'Pocket profit — Bestelleinnahmen − EK, no VAT. Same as Sold tab.' },
+                { id: 'DifferentialVAT' as const, label: 'Diff.', title: 'Differenzbesteuerung — VAT deducted from the cash margin.' },
+                { id: 'RegularVAT' as const, label: 'VAT', title: 'Regelbesteuerung — 19% VAT deducted from proceeds.' },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                title={opt.title}
+                onClick={() => {
+                  if (!businessSettings || !onBusinessSettingsChange) return;
+                  onBusinessSettingsChange({ ...businessSettings, taxMode: opt.id });
+                }}
+                className={`px-2.5 py-1.5 lg:px-3 lg:py-2 text-[10px] lg:text-xs font-black uppercase rounded-md lg:rounded-lg transition-colors min-h-[36px] lg:min-h-[44px] ${
+                  taxMode === opt.id ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             onClick={() => setShowWidgetModal(true)}
@@ -1079,6 +1120,9 @@ const Dashboard: React.FC<Props> = ({
             </div>
           ))}
         </button>
+        <p className="px-3 lg:px-6 py-1.5 lg:py-2 text-[10px] lg:text-xs font-semibold text-slate-500 border-b border-slate-100 bg-slate-50/70">
+          {taxModeProfitCaption(taxMode)}
+        </p>
 
         {monthOverMonth && (
           <div className="px-3 lg:px-6 py-2 lg:py-3 bg-blue-50/80 border-b border-blue-100 flex items-center gap-2 text-xs lg:text-sm">
@@ -1208,12 +1252,64 @@ const Dashboard: React.FC<Props> = ({
             </div>
             <button
               type="button"
-              onClick={() => exportPeriodSalesCsv(soldInPeriod, periodLabel)}
+              onClick={() => exportPeriodSalesCsv(soldInPeriod, periodLabel, taxMode)}
               className="inline-flex items-center justify-center gap-1.5 px-3 py-2 lg:px-4 lg:py-2.5 rounded-xl bg-slate-900 text-white font-bold hover:bg-slate-800 text-xs lg:text-sm shrink-0 self-start lg:self-center"
             >
               <Download size={14} className="lg:w-4 lg:h-4" /> CSV
             </button>
           </div>
+          {ebayFeeStats.saleCount > 0 && (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 lg:gap-3">
+              <button
+                type="button"
+                onClick={() => openPlatformSales('ebay')}
+                className="rounded-xl border border-orange-200 bg-orange-50/80 px-3 py-2.5 lg:px-4 lg:py-3 text-left hover:bg-orange-50 transition-colors"
+              >
+                <p className={`${KPI_LABEL} text-orange-700/80`}>eBay fees</p>
+                <p className="text-lg lg:text-xl font-black text-orange-700 tabular-nums">
+                  €{formatEUR(ebayFeeStats.ebayFeeEur)}
+                </p>
+                <p className="text-[10px] lg:text-xs font-semibold text-orange-800/70 mt-0.5">
+                  Transaktionsgebühren · {ebayFeeStats.saleCount} sale{ebayFeeStats.saleCount === 1 ? '' : 's'}
+                </p>
+              </button>
+              <button
+                type="button"
+                onClick={() => openPlatformSales('ebay')}
+                className="rounded-xl border border-orange-200 bg-orange-50/80 px-3 py-2.5 lg:px-4 lg:py-3 text-left hover:bg-orange-50 transition-colors"
+              >
+                <p className={`${KPI_LABEL} text-orange-700/80`}>Ad fees</p>
+                <p className="text-lg lg:text-xl font-black text-orange-700 tabular-nums">
+                  €{formatEUR(ebayFeeStats.adFeeEur)}
+                </p>
+                <p className="text-[10px] lg:text-xs font-semibold text-orange-800/70 mt-0.5">
+                  Anzeigengebühr / Promoted Listings
+                </p>
+              </button>
+              <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 lg:px-4 lg:py-3">
+                <p className={KPI_LABEL}>eBay take</p>
+                <p className="text-lg lg:text-xl font-black text-slate-900 tabular-nums">
+                  €{formatEUR(ebayFeeStats.takeEur)}
+                </p>
+                <p className="text-[10px] lg:text-xs font-semibold text-slate-500 mt-0.5">
+                  Buyer paid €{formatEUR(ebayFeeStats.grossEur)} · kept €{formatEUR(ebayFeeStats.netEur)}
+                </p>
+              </div>
+              <div className="rounded-xl border border-orange-200 bg-orange-50/80 px-3 py-2.5 lg:px-4 lg:py-3">
+                <p className={`${KPI_LABEL} text-orange-700/80 flex items-center gap-1`}>
+                  <Percent size={11} /> Avg lost on eBay
+                </p>
+                <p className="text-lg lg:text-xl font-black text-orange-700 tabular-nums">
+                  {ebayFeeStats.avgTakePct != null ? `${formatEUR(ebayFeeStats.avgTakePct)}%` : '—'}
+                </p>
+                <p className="text-[10px] lg:text-xs font-semibold text-orange-800/70 mt-0.5">
+                  {ebayFeeStats.avgTakePct != null
+                    ? `€150 sale → keep ~€${formatEUR(150 * (1 - ebayFeeStats.avgTakePct / 100))}`
+                    : 'Needs Hub payout (buyer total vs Bestelleinnahmen)'}
+                </p>
+              </div>
+            </div>
+          )}
           {(platformReconciliation.needingTagRevenue > 0 ||
             platformReconciliation.misclassifiedEbay.length > 0 ||
             platformReconciliation.zeroSellPrice.length > 0) && (
@@ -1581,6 +1677,7 @@ const Dashboard: React.FC<Props> = ({
           range={{ start: startDate, end: endDate }}
           rangeLabel={periodLabel}
           profitGoal={monthlyGoal}
+          taxMode={taxMode}
         />
       </Suspense>
       </>
@@ -1627,7 +1724,9 @@ const Dashboard: React.FC<Props> = ({
             </div>
             <div className="p-3 rounded-xl bg-slate-50 col-span-2 text-xs text-slate-600 space-y-1">
               <p>
-                <span className="font-bold">Sale profit</span> (sell − buy − fees): €{formatEUR(financialDetailModal.itemProfit)}
+                <span className="font-bold">Sale profit</span>
+                {' · '}
+                {taxModeProfitCaption(taxMode)} €{formatEUR(financialDetailModal.itemProfit)}
               </p>
               {financialDetailModal.expTotal > 0 && (
                 <p>
@@ -1661,9 +1760,8 @@ const Dashboard: React.FC<Props> = ({
                     </div>
                     <div className="divide-y divide-slate-100">
                       {group.items.map((item) => {
-                        const sell = Number(item.sellPrice) || 0;
+                        const { sell, fee } = resolveSaleProfitParts(item);
                         const buy = Number(item.buyPrice) || 0;
-                        const fee = Number(item.feeAmount) || 0;
                         const profit = calculateItemProfit(item);
                         return (
                           <div key={item.id} className="px-3 py-2.5 space-y-0.5">
@@ -1693,9 +1791,8 @@ const Dashboard: React.FC<Props> = ({
                   Sold items ({financialDetailModal.items.length})
                 </p>
                 {financialDetailModal.items.map((item) => {
-                  const sell = Number(item.sellPrice) || 0;
+                  const { sell, fee } = resolveSaleProfitParts(item);
                   const buy = Number(item.buyPrice) || 0;
-                  const fee = Number(item.feeAmount) || 0;
                   const profit = calculateItemProfit(item);
                   const soldOn = item.sellDate ? toLocalCalendarDateKey(item.sellDate) : '';
                   return (

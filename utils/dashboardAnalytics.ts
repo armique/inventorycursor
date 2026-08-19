@@ -1,4 +1,4 @@
-import type { InventoryItem, Expense } from '../types';
+import type { Expense, InventoryItem, TaxMode } from '../types';
 import { ItemStatus } from '../types';
 import { computeItemProfitBeforeOverhead, shouldSkipForAggregatedSaleLine } from '../services/financialAggregation';
 
@@ -10,7 +10,7 @@ export function filterByDateRange(iso: string | undefined, range: DateRange): bo
   return t >= range.start.getTime() && t <= range.end.getTime();
 }
 
-export function profitByPlatform(items: InventoryItem[], range: DateRange) {
+export function profitByPlatform(items: InventoryItem[], range: DateRange, taxMode: TaxMode = 'SmallBusiness') {
   const map = new Map<string, { revenue: number; profit: number; count: number }>();
   for (const i of items) {
     if (i.status !== ItemStatus.SOLD || shouldSkipForAggregatedSaleLine(i, items)) continue;
@@ -18,20 +18,20 @@ export function profitByPlatform(items: InventoryItem[], range: DateRange) {
     const key = i.platformSold || 'Unknown';
     const cur = map.get(key) || { revenue: 0, profit: 0, count: 0 };
     cur.revenue += Number(i.sellPrice || 0);
-    cur.profit += computeItemProfitBeforeOverhead(i, items);
+    cur.profit += computeItemProfitBeforeOverhead(i, taxMode);
     cur.count += 1;
     map.set(key, cur);
   }
   return [...map.entries()].map(([platform, v]) => ({ platform, ...v }));
 }
 
-export function profitByCategoryTrend(items: InventoryItem[], range: DateRange) {
+export function profitByCategoryTrend(items: InventoryItem[], range: DateRange, taxMode: TaxMode = 'SmallBusiness') {
   const map = new Map<string, number>();
   for (const i of items) {
     if (i.status !== ItemStatus.SOLD || shouldSkipForAggregatedSaleLine(i, items)) continue;
     if (!filterByDateRange(i.sellDate, range)) continue;
     const cat = i.category || 'Other';
-    map.set(cat, (map.get(cat) || 0) + computeItemProfitBeforeOverhead(i, items));
+    map.set(cat, (map.get(cat) || 0) + computeItemProfitBeforeOverhead(i, taxMode));
   }
   return [...map.entries()]
     .map(([category, profit]) => ({ category, profit }))
@@ -79,12 +79,18 @@ export function inventoryValuation(items: InventoryItem[]) {
   return { count, buyTotal, estSellTotal, potentialProfit: estSellTotal - buyTotal };
 }
 
-export function profitGoalProgress(items: InventoryItem[], expenses: Expense[], range: DateRange, goalProfit: number) {
+export function profitGoalProgress(
+  items: InventoryItem[],
+  expenses: Expense[],
+  range: DateRange,
+  goalProfit: number,
+  taxMode: TaxMode = 'SmallBusiness'
+) {
   let profit = 0;
   for (const i of items) {
     if (i.status !== ItemStatus.SOLD || shouldSkipForAggregatedSaleLine(i, items)) continue;
     if (!filterByDateRange(i.sellDate, range)) continue;
-    profit += computeItemProfitBeforeOverhead(i, items);
+    profit += computeItemProfitBeforeOverhead(i, taxMode);
   }
   for (const e of expenses) {
     if (!filterByDateRange(e.date, range)) continue;

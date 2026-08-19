@@ -17,6 +17,7 @@
     { "source": "/api/parse-kleinanzeigen-chat-screenshot", "destination": "/api/gemini?route=ka-screenshot" },
     { "source": "/api/ebay-order", "destination": "/api/ebay?route=order" },
     { "source": "/api/ebay-orders", "destination": "/api/ebay?route=orders" },
+    { "source": "/api/ebay-finances", "destination": "/api/ebay?route=finances" },
     { "source": "/api/ebay-purchases", "destination": "/api/ebay?route=purchases" },
     { "source": "/api/ebay-listings", "destination": "/api/ebay?route=listings" },
     { "source": "/sitemap.xml", "destination": "/api/sitemap.xml" },

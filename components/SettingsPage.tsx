@@ -1088,7 +1088,8 @@ const SettingsPage: React.FC<Props> = ({
                       <div>
                          <p className="text-sm font-black text-slate-900">Connect eBay account</p>
                          <p className="text-xs text-slate-500 mt-0.5">
-                            Scopes: fulfillment + inventory (read). Syncs to cloud for phone + desktop.
+                            Scopes: orders, inventory, and finances (fee/net payout). Reconnect if you connected
+                            before finances was added — needed for the 2025+ order archive. Syncs to cloud for phone + desktop.
                          </p>
                       </div>
                       {(() => {

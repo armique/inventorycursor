@@ -4,6 +4,8 @@
  */
 import { InventoryItem, ItemStatus, TaxMode } from '../types';
 import { isRealizedDisposal } from '../utils/itemDisposition';
+import { calculateSaleProfit } from '../utils/saleProfit';
+import { netPayoutAfterRefund, saleProceedsFeeTotal } from '../utils/saleProceeds';
 
 export function roundMoney(n: number): number {
   const x = Number(n);
@@ -314,20 +316,55 @@ export function getEffectiveSellPriceForProfit(item: InventoryItem): number {
   return roundMoney(Math.max(0, sell - getSellerShippingDeduction(item)));
 }
 
+/**
+ * Hub / screenshot Bestelleinnahmen already have ads, eBay fee, label, and refunds out.
+ * Margin is tax-mode profit on that net vs EK — never subtract those costs a second time.
+ */
+function coerceTaxMode(taxMode: unknown): TaxMode {
+  if (taxMode === 'RegularVAT' || taxMode === 'DifferentialVAT' || taxMode === 'SmallBusiness') return taxMode;
+  return 'SmallBusiness';
+}
+
+function trustedSaleProceeds(item: InventoryItem): NonNullable<InventoryItem['saleProceeds']> | null {
+  const p = item.saleProceeds;
+  if (!p || p.feesEstimated) return null;
+  if (p.source !== 'ebay_seller_hub' && p.source !== 'ebay_screenshot' && p.source !== 'ebay_order') return null;
+  return p;
+}
+
+export function resolveSaleProfitParts(item: InventoryItem): { sell: number; fee: number } {
+  const p = trustedSaleProceeds(item);
+  if (p) {
+    const net = netPayoutAfterRefund(
+      p.buyerTotalEur ?? item.sellPrice,
+      saleProceedsFeeTotal(p),
+      p.netPayoutEur,
+      p.refundEur ?? 0
+    );
+    if (net != null && Number.isFinite(net)) {
+      return { sell: roundMoney(net), fee: 0 };
+    }
+  }
+  const sell = getEffectiveSellPriceForProfit(item);
+  let fee = Number(item.feeAmount) || 0;
+  const label = roundMoney(Math.abs(Number(item.saleProceeds?.shippingLabelEur) || 0));
+  if (getSellerShippingDeduction(item) >= 0.01 && label >= 0.01 && fee + 0.001 >= label) {
+    fee = roundMoney(Math.max(0, fee - label));
+  }
+  return { sell, fee };
+}
+
+/** Sold tab always shows this — cash in pocket, no VAT taken out. Dashboard applies TaxMode. */
+export const POCKET_PROFIT_TAX_MODE: TaxMode = 'SmallBusiness';
+
 /** Per-line profit (fees included) for dashboard / checks — matches SaleModal logic. */
 export function computeItemProfitBeforeOverhead(item: InventoryItem, taxMode: TaxMode): number {
-  const sell = getEffectiveSellPriceForProfit(item);
   const buy = Number(item.buyPrice) || 0;
-  const fee = Number(item.feeAmount) || 0;
-  if (taxMode === 'RegularVAT') {
-    const netSell = sell / 1.19;
-    return roundMoney(netSell - buy - fee);
-  }
-  if (taxMode === 'DifferentialVAT') {
-    const margin = sell - buy;
-    if (margin <= 0) return roundMoney(margin - fee);
-    const tax = margin - margin / 1.19;
-    return roundMoney(margin - tax - fee);
-  }
-  return roundMoney(sell - buy - fee);
+  const { sell, fee } = resolveSaleProfitParts(item);
+  return roundMoney(calculateSaleProfit(sell, buy, fee, coerceTaxMode(taxMode)));
+}
+
+/** Green Sold-tab margin: Bestelleinnahmen − EK. Ignores Kleinunt./Diff./VAT. */
+export function computeSoldTabMargin(item: InventoryItem): number {
+  return computeItemProfitBeforeOverhead(item, POCKET_PROFIT_TAX_MODE);
 }

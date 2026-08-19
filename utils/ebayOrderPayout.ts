@@ -13,7 +13,7 @@ export interface LinePayout {
   netKnown: boolean;
   /**
    * True when fee came from Flip Coach % (API orders have no fee breakdown).
-   * Exact fees still come from CSV/financial events when present.
+   * Exact fees still come from Finances API / CSV / Hub when present.
    */
   feeEstimated: boolean;
 }

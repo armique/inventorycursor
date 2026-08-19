@@ -12,17 +12,20 @@ import { buildFinanzamtWareRows } from '../services/finanzamtExportService';
 import { calculateSaleProfit } from '../utils/saleProfit';
 import { getLinePayout } from '../utils/ebayOrderPayout';
 import { applyEbayOrderMatchToItem, shouldCorrectSalePlatformToEbay } from '../utils/applyEbayOrderMatch';
+import { findMatchingOrdersForItem } from '../utils/ebayOrderMatch';
 import { countSalesByPlatform } from '../utils/salePlatform';
 import { buildOrderLinkAnalysis } from '../utils/ebayOrderLinkAnalysis';
-import { classifyTransactionType, sumFinancialEventNet, getOrderEffectiveNet, isOrderFullyRefunded, sumOrderSaleProceeds } from '../utils/ebayOrderFinancial';
+import { classifyTransactionType, sumFinancialEventNet, getOrderEffectiveNet, isOrderFullyRefunded, sumOrderSaleProceeds, hubRefundDisplay } from '../utils/ebayOrderFinancial';
 import {
   applyEbaySaleAdjustmentToItem,
+  allocateFullRefundRestockLoss,
   buildAdjustmentFromEvent,
   buildRestockAfterRefundAdjustment,
   getAdjustmentSuggestionLabel,
   getOriginalSellPrice,
   hasRestockAfterRefundAdjustment,
   isRefundLikeAdjustmentKind,
+  splitEqualEur,
   sumAdjustmentAmounts,
 } from '../utils/ebaySaleAdjustments';
 import type { EbayOrderFinancialEvent, EbayOrderRecord } from '../services/ebayOrderIndex';
@@ -134,6 +137,9 @@ function runSaleRevertTests(): void {
   assert(next.ebayOrderLineKey === undefined, 'clears ebay order line key');
   assert(next.profit === undefined, 'clears profit');
   assert(next.customer === undefined, 'clears customer');
+  assert((next.ebaySaleCycles?.length || 0) === 1, 'archives reverted sale into a cycle');
+  assert(next.ebaySaleCycles![0].ebayOrderId === '12-345', 'cycle keeps the closed order id');
+  assert(next.ebaySaleCycles![0].reason === 'manual_unsold', 'manual unsold cycle reason');
 
   const pc = baseItem({
     id: 'pc-1',
@@ -192,6 +198,84 @@ function runSaleRevertTests(): void {
   const fans = merged.updates.find((i) => i.id === 'fan-1');
   assert(fans?.quantity === 5, 'merges split sold qty back into leftover stock');
   assert(merged.deleteIds.includes('fan-1-sold-1710000000000'), 'drops split sold row');
+
+  const erstattetOrder: EbayOrderRecord = {
+    orderId: '03-55555-00001',
+    creationDate: '2026-08-01',
+    buyer: { username: 'b' },
+    lineItems: [{ sku: null, title: 'Kit', lineItemCost: 45.19 }],
+    grossTotal: 45.19,
+    netTotal: -6.19,
+    financialEvents: [
+      { id: 's', date: '2026-08-01', kind: 'sale', amount: 45.19, transactionType: 'Bestellung', source: 'hub', importedAt: '' },
+      { id: 'l', date: '2026-08-01', kind: 'fee', amount: -6.19, transactionType: 'Versandetikett', source: 'hub', importedAt: '' },
+      { id: 'r', date: '2026-08-02', kind: 'refund', amount: -45.19, transactionType: 'Erstattet', source: 'hub', importedAt: '' },
+    ],
+    sources: ['hub'],
+    importedAt: '',
+  };
+  assert(hubRefundDisplay(erstattetOrder).kind === 'full', 'Hub Erstattet is a full refund');
+  const ramSold = baseItem({
+    id: 'ram-sold',
+    name: 'RAM kit',
+    buyPrice: 12,
+    status: ItemStatus.SOLD,
+    sellPrice: 45.19,
+    ebayOrderId: '03-55555-00001',
+  });
+  const ramRestock = applyUnsoldRestock([ramSold], ['ram-sold'], { refundOrders: [erstattetOrder] });
+  const ramBack = ramRestock.updates.find((i) => i.id === 'ram-sold');
+  assert(ramBack?.status === ItemStatus.IN_STOCK, 'full refund restock returns item');
+  assertClose(ramBack!.buyPrice, 18.19, 'Erstattet leftover net added to buy price');
+  assert(ramBack!.comment2.includes('Hub Erstattet +€6.19'), 'documents leftover loss on restock');
+  assert(ramBack!.ebayOrderId === undefined, 'Hub restock clears live order id for a later resale');
+  assert(ramBack!.ebaySaleCycles?.[0]?.ebayOrderId === '03-55555-00001', 'Hub restock archives closed order');
+  assert(ramBack!.ebaySaleCycles?.[0]?.reason === 'erstattet', 'Hub Erstattet cycle reason');
+  assertClose(ramBack!.ebaySaleCycles![0].leftoverLossEur ?? 0, 6.19, 'cycle records leftover EK');
+
+  const pcRef = baseItem({
+    id: 'pc-ref',
+    name: 'Refund PC',
+    isPC: true,
+    componentIds: ['cpu-ref', 'ssd-ref'],
+    status: ItemStatus.SOLD,
+    sellDate: '2026-08-01',
+    ebayOrderId: '03-55555-00001',
+    buyPrice: 40,
+  });
+  const cpuRef = baseItem({
+    id: 'cpu-ref',
+    name: 'CPU',
+    parentContainerId: 'pc-ref',
+    status: ItemStatus.SOLD,
+    sellDate: '2026-08-01',
+    buyPrice: 20,
+    ebayOrderId: '03-55555-00001',
+  });
+  const ssdRef = baseItem({
+    id: 'ssd-ref',
+    name: 'SSD',
+    parentContainerId: 'pc-ref',
+    status: ItemStatus.SOLD,
+    sellDate: '2026-08-01',
+    buyPrice: 20,
+    ebayOrderId: '03-55555-00001',
+  });
+  const shares = splitEqualEur(6.19, 2);
+  assertClose(shares[0] + shares[1], 6.19, 'equal split remainder sums to loss');
+  const pcRestock = applyUnsoldRestock([pcRef, cpuRef, ssdRef], ['pc-ref'], { refundOrders: [erstattetOrder] });
+  const cpuBack = pcRestock.updates.find((i) => i.id === 'cpu-ref');
+  const ssdBack = pcRestock.updates.find((i) => i.id === 'ssd-ref');
+  const pcBack = pcRestock.updates.find((i) => i.id === 'pc-ref');
+  assertClose(cpuBack!.buyPrice, 20 + shares[0], 'PC restock splits leftover onto first part');
+  assertClose(ssdBack!.buyPrice, 20 + shares[1], 'PC restock splits leftover onto second part');
+  assertClose(pcBack!.buyPrice, cpuBack!.buyPrice + ssdBack!.buyPrice, 'parent buy price resynced from parts');
+  const alloc = allocateFullRefundRestockLoss({
+    items: [pcRef, cpuRef, ssdRef],
+    restockIds: ['pc-ref'],
+    orders: [erstattetOrder],
+  });
+  assertClose(alloc.get('cpu-ref')! + alloc.get('ssd-ref')!, 6.19, 'bundle allocation covers full leftover');
 }
 
 function runTradeActionHistoryTests(): void {
@@ -255,6 +339,28 @@ function runProfitTests(): void {
     hasFee: false,
   });
   assertClose(computeItemProfitBeforeOverhead(withShipping, 'SmallBusiness'), 57.31, 'seller shipping deducted from received');
+  const hubNetAlreadyAfterLabel = baseItem({
+    status: ItemStatus.SOLD,
+    buyPrice: 12.91,
+    sellPrice: 39,
+    feeAmount: 6.19,
+    hasFee: true,
+    saleProceeds: {
+      capturedAt: '2026-08-19T00:00:00.000Z',
+      source: 'ebay_seller_hub',
+      itemGrossEur: 39,
+      buyerShippingEur: 6.19,
+      buyerTotalEur: 45.19,
+      shippingLabelEur: 6.19,
+      netPayoutEur: 39,
+      feesEstimated: false,
+    },
+  });
+  assertClose(
+    computeItemProfitBeforeOverhead(hubNetAlreadyAfterLabel, 'SmallBusiness'),
+    26.09,
+    'Hub Bestelleinnahmen already exclude the label — do not subtract shipping twice'
+  );
   assert(isRealizedDisposal(gifted), 'gift is realized disposal');
   assert(dispositionDate({ ...gifted, sellDate: '2025-07-04' }) === '2025-07-04', 'gift uses sellDate');
 }
@@ -289,8 +395,9 @@ function runEbayPayoutTests(): void {
   };
   const applied = applyEbayOrderMatchToItem(item, match, 'SmallBusiness');
   assert(applied.status === ItemStatus.SOLD, 'ebay apply marks sold');
-  assertClose(applied.sellPrice!, 80, 'ebay apply uses net payout');
-  assertClose(applied.profit!, 30, 'ebay apply profit: net sell 80 - buy 50 (fee already in net)');
+  assertClose(applied.sellPrice!, 100, 'ebay apply books buyer/gross so fees stay visible');
+  assertClose(applied.feeAmount!, 20, 'ebay apply stores marketplace fees');
+  assertClose(applied.profit!, 30, 'ebay apply profit: gross 100 - fees 20 - buy 50');
   assert(applied.ebayOrderId === 'ORD-1', 'links order id');
   assert(applied.platformSold === 'ebay.de', 'sets ebay platform');
   assert(applied.paymentType === 'ebay.de', 'sets ebay payment');
@@ -602,7 +709,7 @@ function runCsvImportTests(): void {
     orderId: '26-14576-17166',
     creationDate: '2026-05-06',
     buyer: { username: 'dawiest123', fullName: 'Thomas Wiest' },
-    lineItems: [{ sku: null, title: 'Nvidia Quadro P400 3x Mini DP 2GB GDDR5 Grafikkarte', lineItemCost: 20 }],
+    lineItems: [{ sku: 'SKU-P400', listingId: 'listing-p400', title: 'Nvidia Quadro P400 3x Mini DP 2GB GDDR5 Grafikkarte', lineItemCost: 20 }],
     grossTotal: 26.19,
     financialEvents: [
       { id: 'gpu-sale', date: '2026-05-06', kind: 'sale', amount: 23.63, transactionType: 'Bestellung', source: 'csv', importedAt: '' },
@@ -639,6 +746,12 @@ function runCsvImportTests(): void {
     profit: 13.63,
     ebayOrderId: '26-14576-17166',
     platformSold: 'ebay.de',
+    listedOnEbay: true,
+    ebayListingId: 'listing-p400',
+    ebaySku: 'SKU-P400',
+    customer: { name: 'Thomas Wiest', address: '' },
+    ebayUsername: 'dawiest123',
+    specs: { Chip: 'P400' },
   });
   const restockAdj = buildRestockAfterRefundAdjustment(soldGpu, refundedGpu, -6.73);
   assert(restockAdj.kind === 'restock_after_refund', 'restock adjustment kind');
@@ -649,11 +762,144 @@ function runCsvImportTests(): void {
   assertClose(restocked.buyPrice, 16.73, 'buy price includes cancellation fee');
   assert(restocked.sellPrice === undefined, 'clears sell price after restock');
   assert(restocked.profit === undefined, 'clears profit after restock');
-  assert(restocked.ebayOrderId === '26-14576-17166', 'keeps order id for audit');
-  assert(hasRestockAfterRefundAdjustment(restocked), 'stores restock adjustment');
+  assert(restocked.ebayOrderId === undefined, 'clears live order id so a later eBay sale can bind');
+  assert(restocked.originalSellPrice === undefined, 'clears live original sell for the next buyer');
+  assert(restocked.customer === undefined, 'clears live buyer after restock');
+  assert(!hasRestockAfterRefundAdjustment(restocked), 'restock adjustment lives on the closed cycle');
+  assert((restocked.ebaySaleCycles?.length || 0) === 1, 'archives the refunded sale');
+  const closedCycle = restocked.ebaySaleCycles![0];
+  assert(closedCycle.ebayOrderId === '26-14576-17166', 'cycle keeps refunded order id');
+  assert(closedCycle.reason === 'erstattet', 'cycle reason is full refund restock');
+  assert(closedCycle.customer?.name === 'Thomas Wiest', 'cycle keeps first buyer');
+  assertClose(closedCycle.originalSellPrice!, 23.63, 'cycle keeps original VK');
+  assertClose(closedCycle.leftoverLossEur!, 6.73, 'cycle records leftover EK');
+  assert(
+    (closedCycle.ebaySaleAdjustments || []).some((a) => a.kind === 'restock_after_refund'),
+    'cycle stores restock adjustment'
+  );
+  assert(restocked.ebayListingId === 'listing-p400', 'keeps listing id after restock');
+  assert(restocked.ebaySku === 'SKU-P400', 'keeps SKU after restock');
+  assert(restocked.listedOnEbay === true, 'keeps listed flag after restock');
+  assert(restocked.specs?.Chip === 'P400', 'keeps listing specs after restock');
   assert(restocked.comment2.includes('Buy price +€6.73'), 'documents fee in comment');
+  const restockAgain = applyEbaySaleAdjustmentToItem(restocked, restockAdj, 'SmallBusiness');
+  assert((restockAgain.ebaySaleCycles?.length || 0) === 1, 'second restock of same order is idempotent');
+  assertClose(restockAgain.buyPrice, 16.73, 'does not double leftover EK');
+
+  const secondSale: EbayOrderRecord = {
+    orderId: '03-99999-22222',
+    creationDate: '2026-06-10',
+    buyer: { username: 'annaneu', fullName: 'Anna Neu' },
+    lineItems: [
+      {
+        sku: 'SKU-P400',
+        listingId: 'listing-p400',
+        title: 'Nvidia Quadro P400 3x Mini DP 2GB GDDR5 Grafikkarte',
+        lineItemCost: 40,
+      },
+    ],
+    grossTotal: 40,
+    financialEvents: [
+      { id: 'gpu2-sale', date: '2026-06-10', kind: 'sale', amount: 40, transactionType: 'Bestellung', source: 'csv', importedAt: '' },
+    ],
+    sources: ['csv'],
+    importedAt: '',
+  };
+  const matchesAfterRestock = findMatchingOrdersForItem(restocked, [refundedGpu, secondSale]);
+  assert(
+    matchesAfterRestock.every((m) => m.order.orderId !== refundedGpu.orderId),
+    'does not rematch the refunded order after restock'
+  );
+  assert(
+    matchesAfterRestock.some((m) => m.order.orderId === secondSale.orderId),
+    'matches the new buyer order by listing id'
+  );
+  const rematchOld = applyEbayOrderMatchToItem(
+    restocked,
+    { order: refundedGpu, lineItem: refundedGpu.lineItems[0], matchScore: 1000, matchKind: 'listingId' },
+    'SmallBusiness'
+  );
+  assert(rematchOld.ebayOrderId === undefined, 'refuses to rebind a closed-cycle order');
+  assert(rematchOld.status === ItemStatus.IN_STOCK, 'closed-cycle rematch leaves item in stock');
+
+  const resold = applyEbayOrderMatchToItem(
+    restocked,
+    { order: secondSale, lineItem: secondSale.lineItems[0], matchScore: 1000, matchKind: 'listingId' },
+    'SmallBusiness'
+  );
+  assert(resold.status === ItemStatus.SOLD, 'second sale marks sold');
+  assert(resold.ebayOrderId === secondSale.orderId, 'live order is the new buyer');
+  assert(resold.customer?.name === 'Anna Neu', 'live buyer is the new buyer');
+  assert(resold.ebayUsername === 'annaneu', 'live username is the new buyer');
+  assertClose(resold.originalSellPrice!, 40, 'new sale records its own original VK');
+  assertClose(resold.sellPrice!, 40, 'new sale records its own sell price');
+  assert((resold.ebaySaleCycles?.length || 0) === 1, 'prior cycle still present after resale');
+  assert(resold.ebaySaleCycles![0].ebayOrderId === '26-14576-17166', 'history still has first buyer order');
+  assertClose(resold.buyPrice, 16.73, 'resale keeps capitalized leftover EK');
+
+  const resaleAnalysis = buildOrderLinkAnalysis([restocked], [refundedGpu, secondSale]);
+  assert(
+    resaleAnalysis.suggestions.some(
+      (s) => s.kind === 'mark_sold' && s.match.order.orderId === secondSale.orderId
+    ),
+    'Hub mark-sold binds the new order after restock'
+  );
+  assert(
+    !resaleAnalysis.suggestions.some((s) => s.match.order.orderId === refundedGpu.orderId),
+    'Hub does not suggest the refunded order after restock'
+  );
+
+  const cycleFaRows = buildFinanzamtWareRows([resold]);
+  assert(
+    cycleFaRows.some(
+      (r) => r.Zeilenart === 'Vorheriger Verkauf (geschlossen)' && r.eBay_Bestellnr === '26-14576-17166'
+    ),
+    'finanzamt emits closed-cycle audit row'
+  );
+  const liveFa = cycleFaRows.find((r) => r.Zeilenart !== 'Vorheriger Verkauf (geschlossen)');
+  assert(liveFa?.eBay_Bestellnr === secondSale.orderId, 'finanzamt live row is the current sale');
+  assert(liveFa?.Kunde_Name === 'Anna Neu', 'finanzamt live row has the new buyer');
+
   const gpuAnalysis = buildOrderLinkAnalysis([soldGpu], [refundedGpu]);
   assert(gpuAnalysis.suggestions.some((s) => s.adjustment?.kind === 'restock_after_refund'), 'suggests restock for refunded sold GPU');
+
+  const bundlePartA = baseItem({
+    id: 'bundle-a',
+    buyPrice: 10,
+    status: ItemStatus.SOLD,
+    sellPrice: 12,
+    ebayOrderId: '26-14576-17166',
+    platformSold: 'ebay.de',
+    parentContainerId: 'bundle-pc',
+  });
+  const bundlePartB = baseItem({
+    id: 'bundle-b',
+    buyPrice: 10,
+    status: ItemStatus.SOLD,
+    sellPrice: 12,
+    ebayOrderId: '26-14576-17166',
+    platformSold: 'ebay.de',
+    parentContainerId: 'bundle-pc',
+  });
+  const bundlePc = baseItem({
+    id: 'bundle-pc',
+    name: 'Refund PC',
+    isPC: true,
+    componentIds: ['bundle-a', 'bundle-b'],
+    status: ItemStatus.SOLD,
+    sellPrice: 24,
+    ebayOrderId: '26-14576-17166',
+    platformSold: 'ebay.de',
+  });
+  const bundleAnalysis = buildOrderLinkAnalysis([bundlePc, bundlePartA, bundlePartB], [refundedGpu]);
+  const bundleRestocks = bundleAnalysis.suggestions.filter((s) => s.adjustment?.kind === 'restock_after_refund');
+  assert(bundleRestocks.length === 2, 'restock suggestions skip the PC shell when parts are linked');
+  assert(
+    bundleRestocks.every((s) => s.item.id !== 'bundle-pc'),
+    'does not capitalize leftover on the PC parent row'
+  );
+  const splitLoss = bundleRestocks.reduce((s, row) => s + (row.adjustment?.buyPriceDelta ?? 0), 0);
+  assertClose(splitLoss, 6.73, 'sales-sync restock splits leftover equally across bundle parts');
 
   assert(matchesEbayToolSearch('p400', ['Nvidia Quadro P400', '26-14576-17166']), 'ebay tool search matches haystack');
   assert(!matchesEbayToolSearch('rtx', ['Nvidia Quadro P400']), 'ebay tool search rejects non-match');
@@ -661,6 +907,8 @@ function runCsvImportTests(): void {
 
 function runAdjustmentTests(): void {
   assert(classifyTransactionType('Refund', -20) === 'return', 'classifies negative refund as return');
+  assert(classifyTransactionType('Erstattet', -45.19) === 'return', 'classifies Hub Erstattet as return');
+  assert(classifyTransactionType('Teilweise erstattet', -5) === 'return', 'classifies Teilweise erstattet as return');
   assert(classifyTransactionType('Storniert', null) === 'cancellation', 'classifies cancellation');
 
   const events: EbayOrderFinancialEvent[] = [

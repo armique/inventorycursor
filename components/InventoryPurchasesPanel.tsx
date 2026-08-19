@@ -12,7 +12,6 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import {
   AlertCircle,
   AlertTriangle,
@@ -636,12 +635,6 @@ export function useInventoryPurchases({
           {syncing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
           Sync eBay
         </button>
-        <Link
-          to="/panel/ebay-store-pull?tab=purchases"
-          className="shrink-0 text-[10px] font-bold text-indigo-600 hover:underline px-1"
-        >
-          Tools
-        </Link>
       </div>
       {syncProgress && <EbayToolProgressBar {...syncProgress} tone="indigo" />}
       {(error || message) && (

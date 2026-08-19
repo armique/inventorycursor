@@ -24,15 +24,17 @@ export function saleFieldsFromHubPayout(payout: EbaySellerHubPayout): SellerHubS
           ? roundMoney(payout.itemGrossEur)
           : null;
   const feeAmount = roundMoney(
-    (payout.transactionFeeEur ?? 0) + (payout.adFeeEur ?? 0) + (payout.otherFeeEur ?? 0)
+    (payout.transactionFeeEur ?? 0) +
+      (payout.adFeeEur ?? 0) +
+      (payout.otherFeeEur ?? 0) +
+      (payout.shippingLabelEur ?? 0)
   );
-  const label = payout.shippingLabelEur != null ? roundMoney(payout.shippingLabelEur) : 0;
   return {
     sellPrice,
     feeAmount,
     hasFee: feeAmount >= 0.01,
-    sellerPaidShipping: label >= 0.01,
-    sellerShippingAmount: label,
+    sellerPaidShipping: false,
+    sellerShippingAmount: 0,
     saleProceeds: saleProceedsFromHubPayout(payout),
     ebayOrderId: payout.orderId || undefined,
   };

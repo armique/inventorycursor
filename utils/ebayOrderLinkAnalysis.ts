@@ -10,8 +10,12 @@ import {
   getAppliedEventIds,
   getEffectiveSellPrice,
   hasRestockAfterRefundAdjustment,
+  orderCancellationCostAbs,
   round2,
+  splitEqualEur,
 } from './ebaySaleAdjustments';
+import { getChildren } from '../services/financialAggregation';
+import { claimedLineKeysFromSaleCycles } from './itemSaleCycle';
 
 export type OrderLinkSuggestionKind = 'mark_sold' | 'link' | 'reprice' | 'adjustment';
 
@@ -108,6 +112,27 @@ function isSoldEbayCandidate(item: InventoryItem): boolean {
   );
 }
 
+/** Best line on an order this row is already bound to — including refunded/cancelled. */
+function matchAlreadyLinkedOrder(item: InventoryItem, order: EbayOrderRecord): EbayOrderMatch | null {
+  if (!order.lineItems.length) return null;
+  let best: EbayOrderMatch | null = null;
+  for (const line of order.lineItems) {
+    const ann = scoreItemAgainstOrderLine(item, order, line);
+    const candidate: EbayOrderMatch = {
+      order,
+      lineItem: line,
+      matchScore: ann.matchScore,
+      matchKind: ann.matchKind,
+    };
+    if (!best || candidate.matchScore > best.matchScore) best = candidate;
+  }
+  if (!best) return null;
+  if (order.lineItems.length === 1 && best.matchScore <= 0) {
+    return { ...best, matchScore: 500, matchKind: best.matchKind || 'title' };
+  }
+  return best;
+}
+
 function isMarkSoldCandidate(item: InventoryItem): boolean {
   if (item.isPC || item.isBundle) return false;
   if (item.status !== ItemStatus.IN_STOCK && item.status !== ItemStatus.ORDERED) return false;
@@ -179,6 +204,21 @@ export function buildClaimedLineKeys(items: InventoryItem[], orders: EbayOrderRe
   }
 
   const claimed = new Set<string>();
+  for (const key of claimedLineKeysFromSaleCycles(items)) claimed.add(key);
+  for (const item of items) {
+    for (const cycle of item.ebaySaleCycles || []) {
+      const oid = cycle.ebayOrderId?.trim();
+      if (!oid) continue;
+      const order = ordersByNormId.get(normalizeEbayOrderId(oid));
+      if (!order) continue;
+      if (cycle.ebayOrderLineKey?.trim()) {
+        claimed.add(cycle.ebayOrderLineKey.trim());
+        continue;
+      }
+      const lines = order.lineItems.length ? order.lineItems : [{ sku: null, title: '(no title)' }];
+      for (const line of lines) claimed.add(lineItemClaimKey(order.orderId, line));
+    }
+  }
   for (const [orderId, linked] of linkedByOrderId) {
     const order = ordersByNormId.get(normalizeEbayOrderId(orderId));
     if (!order) continue;
@@ -500,6 +540,60 @@ function findAdjustmentSuggestions(
   );
 }
 
+function prorateRestockAfterRefundSuggestions(
+  suggestions: OrderLinkSuggestion[],
+  items: InventoryItem[],
+  ordersById: Map<string, EbayOrderRecord>
+): void {
+  const restockIdx: number[] = [];
+  for (let i = 0; i < suggestions.length; i++) {
+    if (suggestions[i].adjustment?.kind === 'restock_after_refund') restockIdx.push(i);
+  }
+  if (!restockIdx.length) return;
+
+  const byOrder = new Map<string, number[]>();
+  for (const i of restockIdx) {
+    const oid = suggestions[i].adjustment?.orderId || '';
+    if (!oid) continue;
+    const list = byOrder.get(oid) || [];
+    list.push(i);
+    byOrder.set(oid, list);
+  }
+
+  const drop = new Set<number>();
+  for (const [orderId, idxs] of byOrder) {
+    const order = ordersById.get(orderId);
+    if (!order) continue;
+    const members = idxs.map((i) => suggestions[i].item);
+    for (const i of idxs) {
+      const item = suggestions[i].item;
+      if (!item.isPC && !item.isBundle) continue;
+      const childIds = new Set(getChildren(item, items).map((c) => c.id));
+      if (members.some((m) => childIds.has(m.id))) drop.add(i);
+    }
+    const keep = idxs.filter((i) => !drop.has(i));
+    if (!keep.length) continue;
+    const net = getOrderEffectiveNet(order) ?? 0;
+    const loss = orderCancellationCostAbs(net);
+    const shares = splitEqualEur(loss, keep.length);
+    keep.forEach((si, k) => {
+      const item = suggestions[si].item;
+      const adj = buildRestockAfterRefundAdjustment(item, order, net, { buyPriceDelta: shares[k] });
+      suggestions[si] = {
+        ...suggestions[si],
+        adjustment: adj,
+        adjustmentReason: adj.reason,
+        suggestedBuyPrice: adj.buyPriceAfter,
+        priceDelta: adj.amount,
+      };
+    });
+  }
+
+  for (let i = suggestions.length - 1; i >= 0; i--) {
+    if (drop.has(i)) suggestions.splice(i, 1);
+  }
+}
+
 export function buildOrderLinkAnalysis(items: InventoryItem[], orders: EbayOrderRecord[]): OrderLinkAnalysisResult {
   const inStockItems = items.filter(isMarkSoldCandidate);
   const soldEbay = items.filter(isSoldEbayCandidate);
@@ -525,20 +619,12 @@ export function buildOrderLinkAnalysis(items: InventoryItem[], orders: EbayOrder
   });
 
   // 3) Already linked — post-sale refunds/returns or payout drift.
+  // Do not use findMatchingOrdersForItem here: that helper skips fully
+  // refunded/cancelled orders so a later resale cannot rematch them.
   for (const item of alreadyLinked) {
     const order = ordersById.get(item.ebayOrderId!.trim());
     if (!order) continue;
-    const matches = findMatchingOrdersForItem(item, [order], 0);
-    const match =
-      matches[0] ??
-      (order.lineItems.length === 1
-        ? {
-            order,
-            lineItem: order.lineItems[0],
-            matchScore: 500,
-            matchKind: 'title' as const,
-          }
-        : null);
+    const match = matchAlreadyLinkedOrder(item, order);
     if (!match) continue;
 
     const beforeCount = suggestions.length;
@@ -557,6 +643,8 @@ export function buildOrderLinkAnalysis(items: InventoryItem[], orders: EbayOrder
 
     suggestions.push(makeSuggestion('reprice', item, match, match.matchScore + 100));
   }
+
+  prorateRestockAfterRefundSuggestions(suggestions, items, ordersById);
 
   suggestions.sort((a, b) => {
     const kindDiff = KIND_SORT[a.kind] - KIND_SORT[b.kind];

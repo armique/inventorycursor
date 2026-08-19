@@ -9,10 +9,23 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { 
   Edit2, Search, CheckSquare, Square, X, Check, Trash2, Calendar, Package, Plus, Minus, Receipt, Monitor, ArrowUp, ArrowDown, ArrowUpDown, Tag, Info, Layers, ListTree, ChevronRight, ShoppingBag, Settings2, RotateCcw, RotateCw, HeartCrack, ListPlus, ArrowRightLeft, Archive, History, MoreHorizontal, Filter, FilterX, TrendingUp, Wallet, Download, FileSpreadsheet, Globe, CreditCard, Hourglass, AlertCircle, XCircle, Hammer, Share2, Copy, Sliders, Image as ImageIcon, ImageOff, FileText, Clock, Upload, Percent, CalendarRange, Wrench, Loader2, FolderInput, CalendarDays, Eye, Unlink, BoxSelect, ChevronUp, ChevronDown, StickyNote, ListChecks, Sparkles, ArrowRight, Columns2, List, AlertTriangle, Home, Handshake, Gavel, Megaphone,   Camera, Gift, User, Images, Scissors, GripVertical, RefreshCw, Calculator, Inbox, MessageSquare, ExternalLink, Bookmark, ShoppingCart
 } from 'lucide-react';
-import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, TaxMode, BulkImportRecord } from '../types';
+import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, BulkImportRecord } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
-import { computeItemProfitBeforeOverhead, getChildren, getItemDisplayFeeAmount, getItemDisplayShippingAmount, getSoldContainerDisplayTotals, shouldHideContainerChildInList, containerOrChildMatchesSearch, shouldSurfaceSoldContainerPartInList, soldContainerPartDispositionDate, matchesInventoryCategoryPin, inventorySubcategoryAliasesMatch } from '../services/financialAggregation';
+import { computeSoldTabMargin, getChildren, getItemDisplayShippingAmount, getSoldContainerDisplayTotals, POCKET_PROFIT_TAX_MODE, shouldHideContainerChildInList, containerOrChildMatchesSearch, shouldSurfaceSoldContainerPartInList, soldContainerPartDispositionDate, matchesInventoryCategoryPin, inventorySubcategoryAliasesMatch } from '../services/financialAggregation';
 import { SaleProceedsTrigger } from './SaleProceedsPopover';
+import { saleColumnSplit, saleProceedsFromItemFields, saleProceedsFeeTotal, netPayoutAfterRefund, applyManualSellerShipping, canEditManualSellerShipping, type SaleColumnSplit } from '../utils/saleProceeds';
+import { sumOrderRefundEur } from '../utils/ebayOrderFinancial';
+import { hydrateHubArchiveIndex, loadHubArchiveIndex, findHubArchiveOrderById } from '../services/ebayHubArchiveIndex';
+import { appendHubBreakdownApplyLog } from '../services/ebayHubBreakdownApplyLog';
+import { invalidateEbaySalesSyncPeekCache } from '../services/ebaySalesSync';
+import HubSplitApplyModal from './HubSplitApplyModal';
+import {
+  buildHubBreakdownReplacePlan,
+  hubBreakdownActionDetails,
+  hubBreakdownItemsToSave,
+  hubOrderIdFromItem,
+  type HubBreakdownReplaceRow,
+} from '../utils/replaceItemSaleProceedsFromHub';
 import { itemMatchesSalePlatformFilter, isMissingExplicitSalePlatform, MISSING_PLATFORM_FILTER, SALE_PLATFORM_OPTIONS, formatItemSalePlatform, formatSalePlatformLabel } from '../utils/salePlatform';
 import { expandUpdatesWithContainerSaleMeta } from '../utils/containerSaleCascade';
 import { HIERARCHY_CATEGORIES } from '../services/constants';
@@ -80,7 +93,8 @@ const ebaySoldSearchUrl = (query: string) =>
 import SaleModal from './SaleModal';
 import EbayOrdersBindModal from './EbayOrdersBindModal';
 import ReturnModal from './ReturnModal';
-import { applyUnsoldRestock } from '../services/saleRevert';
+import SaleCycleHistory from './SaleCycleHistory';
+import { applyUnsoldRestock, loadRefundOrdersForRestock } from '../services/saleRevert';
 import TradeModal from './TradeModal';
 import GiftModal from './GiftModal';
 import CrossPostingModal from './CrossPostingModal';
@@ -146,7 +160,7 @@ interface Props {
   pageTitle: string;
   allowedStatuses: ItemStatus[];
   businessSettings: BusinessSettings;
-  onBusinessSettingsChange: (settings: BusinessSettings) => void;
+  onBusinessSettingsChange?: (settings: BusinessSettings) => void;
   categories: Record<string, string[]>;
   categoryFields?: Record<string, string[]>; 
   persistenceKey?: string;
@@ -159,7 +173,7 @@ interface Props {
 const EMPTY_TIME_GAUGE_SORT_MAP = new Map<string, number>();
 const EMPTY_COMPAT_COUNT_MAP = new Map<string, number>();
 
-type ColumnId = 'select' | 'item' | 'presence' | 'parseSpecs' | 'category' | 'status' | 'buyPrice' | 'sellPrice' | 'storePrice' | 'profit' | 'buyDate' | 'timeGauge' | 'sellDate' | 'salePlatform' | 'actions';
+type ColumnId = 'select' | 'item' | 'presence' | 'parseSpecs' | 'category' | 'status' | 'buyPrice' | 'sellPrice' | 'suggestedHubSplit' | 'storePrice' | 'profit' | 'buyDate' | 'timeGauge' | 'sellDate' | 'salePlatform' | 'actions';
 type TimeFilter = 'ALL' | 'THIS_WEEK' | 'LAST_WEEK' | 'THIS_MONTH' | 'LAST_MONTH' | 'LAST_30' | 'LAST_90' | 'THIS_YEAR' | 'LAST_YEAR';
 
 function getTimeFilterDateRange(timeFilter: TimeFilter, nowInput = new Date()): { start: Date; end: Date } {
@@ -373,6 +387,7 @@ const DEFAULT_WIDTHS: Record<string, number> = {
   status: 82,
   buyPrice: 76,
   sellPrice: 76,
+  suggestedHubSplit: 118,
   storePrice: 84,
   profit: 76,
   buyDate: 90,
@@ -390,6 +405,7 @@ const ALL_COLUMNS: { id: ColumnId; label: string }[] = [
   { id: 'status', label: 'State' },
   { id: 'buyPrice', label: 'Buy Price' },
   { id: 'sellPrice', label: 'Sell Price' },
+  { id: 'suggestedHubSplit', label: 'Hub sell' },
   { id: 'storePrice', label: 'Storefront Price' },
   { id: 'profit', label: 'Margin' },
   { id: 'buyDate', label: 'Acquired' },
@@ -398,6 +414,78 @@ const ALL_COLUMNS: { id: ColumnId; label: string }[] = [
   // Actions merged into Flags — kept for legacy saved layouts only
   { id: 'actions', label: 'Actions' },
 ];
+
+function SellSplitLines({
+  split,
+  showFees,
+}: {
+  split: SaleColumnSplit;
+  showFees: boolean;
+}) {
+  return (
+    <>
+      <span className="underline decoration-dotted decoration-slate-300 underline-offset-2 text-slate-900">
+        €{formatEUR(split.totalEur)}
+      </span>
+      {showFees && split.adFeeEur >= 0.01 && (
+        <span className="text-[9px] font-bold text-orange-600 tabular-nums whitespace-nowrap">
+          −€{formatEUR(split.adFeeEur)} ads
+        </span>
+      )}
+      {showFees && split.ebayFeeEur >= 0.01 && (
+        <span className="text-[9px] font-bold text-orange-600 tabular-nums whitespace-nowrap">
+          −€{formatEUR(split.ebayFeeEur)} eBay
+        </span>
+      )}
+      {showFees && split.otherFeeEur >= 0.01 && (
+        <span className="text-[9px] font-bold text-orange-600 tabular-nums whitespace-nowrap">
+          −€{formatEUR(split.otherFeeEur)} fees
+        </span>
+      )}
+      {split.shippingEur >= 0.01 && (
+        <span className="text-[9px] font-bold text-sky-700 tabular-nums whitespace-nowrap">
+          −€{formatEUR(split.shippingEur)} shipping
+        </span>
+      )}
+      {split.refundEur >= 0.01 && (
+        <span className="text-[9px] font-bold text-rose-600 tabular-nums whitespace-nowrap">
+          −€{formatEUR(split.refundEur)} refund
+        </span>
+      )}
+    </>
+  );
+}
+
+function hubRefundFallbackEur(item: InventoryItem): number {
+  const orderId = hubOrderIdFromItem(item);
+  if (!orderId) return 0;
+  const order = findHubArchiveOrderById(orderId);
+  if (!order) return 0;
+  return sumOrderRefundEur(order);
+}
+
+function itemWithHubRefundOverlay(item: InventoryItem): InventoryItem {
+  const refund = hubRefundFallbackEur(item);
+  if (refund < 0.01) return item;
+  if (Math.abs(Number(item.saleProceeds?.refundEur) || 0) >= 0.01) return item;
+  const current = saleProceedsFromItemFields(item);
+  const net = netPayoutAfterRefund(
+    current.buyerTotalEur ?? item.sellPrice,
+    saleProceedsFeeTotal(current),
+    current.netPayoutEur,
+    refund
+  );
+  return {
+    ...item,
+    saleProceeds: {
+      ...current,
+      source: current.source === 'inferred' ? 'ebay_seller_hub' : current.source,
+      feesEstimated: false,
+      refundEur: refund,
+      netPayoutEur: net,
+    },
+  };
+}
 
 const MOBILE_ACTIVE_SORT_OPTIONS = [
   { key: 'buyDate', label: 'Acquired' },
@@ -673,7 +761,9 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
       if (!stamped && !inRecord) return false;
     } else {
       let matchesStatus = false;
-      if (statusFilter === 'ACTIVE') {
+      if (searchActive) {
+        matchesStatus = true;
+      } else if (statusFilter === 'ACTIVE') {
         matchesStatus =
           item.status === ItemStatus.IN_STOCK ||
           item.status === ItemStatus.ORDERED ||
@@ -735,16 +825,15 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
             categoryFilter,
             subCategoryFilter
           );
-        if (!surface) return false;
+        if (!surface && !(searchActive && matchesInventorySearch(item, query))) return false;
       }
     }
     // Orphan "in composition" rows (no parent container) respect the visibility toggle.
     if (!bulkBatchActive && !searchActive && !showInComposition && item.status === ItemStatus.IN_COMPOSITION) return false;
 
-    // Category pins stay strict during search: Bundle + "MT" only matches Bundle items that
-    // contain "MT". Clear the pin (or pick All) to search across categories.
+    // Search ignores leftover category pins so a name lookup still finds the row.
     // Dedicated bulk-batch view also ignores leftover category pins.
-    if (!bulkBatchActive && (categoryFilter !== 'ALL' || subCategoryFilter)) {
+    if (!bulkBatchActive && !searchActive && (categoryFilter !== 'ALL' || subCategoryFilter)) {
       if (!matchesInventoryCategoryPin(item, categoryFilter, subCategoryFilter)) return false;
     }
 
@@ -776,14 +865,14 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
       if (itemDate < dateRange.start || itemDate > dateRange.end) return false;
     }
 
-    if (statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS') {
+    if (!searchActive && statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS') {
       if (salePlatformFilter !== 'ALL') {
         if (salePlatformFilter === MISSING_PLATFORM_FILTER) {
           if (!isMissingExplicitSalePlatform(item)) return false;
         } else if (!itemMatchesSalePlatformFilter(item, salePlatformFilter as Platform)) return false;
       }
       if (salePaymentFilter !== 'ALL' && item.paymentType !== salePaymentFilter) return false;
-      if (!searchActive && isAmountFilterActive(amountFilter) && !itemMatchesAmountFilter(item, amountFilter)) {
+      if (isAmountFilterActive(amountFilter) && !itemMatchesAmountFilter(item, amountFilter)) {
         return false;
       }
     }
@@ -856,7 +945,6 @@ const InventoryList: React.FC<Props> = ({
   pageTitle, 
   allowedStatuses,
   businessSettings,
-  onBusinessSettingsChange,
   categories = HIERARCHY_CATEGORIES,
   categoryFields = {}, 
   persistenceKey = 'default_inv',
@@ -969,6 +1057,57 @@ const InventoryList: React.FC<Props> = ({
 
   // Visibility toggle for orphan "In Composition" items (container children always nest under parent)
   const [showInComposition, setShowInComposition] = useState<boolean>(() => loadState<boolean>('show_in_composition', false));
+  /** When on, sell/margin cells also show ads, eBay fee, and shipping lines. */
+  const [showPriceBreakdown, setShowPriceBreakdown] = useState<boolean>(() => loadState<boolean>('show_price_breakdown', false));
+  const [hubArchiveVersion, setHubArchiveVersion] = useState(0);
+  const [hubSplitPreview, setHubSplitPreview] = useState<HubBreakdownReplaceRow[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const bump = () => {
+      if (!cancelled) setHubArchiveVersion((v) => v + 1);
+    };
+    window.addEventListener('ebay-hub-archive-updated', bump);
+    void hydrateHubArchiveIndex().then(bump);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('ebay-hub-archive-updated', bump);
+    };
+  }, []);
+
+  const hubReplaceByItemId = useMemo(() => {
+    const wantSold = splitView || statusFilter === 'SOLD' || statusFilter === 'ALL';
+    if (!wantSold) return new Map<string, HubBreakdownReplaceRow>();
+    const orders = loadHubArchiveIndex().orders;
+    if (!orders.length) return new Map<string, HubBreakdownReplaceRow>();
+    const plan = buildHubBreakdownReplacePlan(items, orders, POCKET_PROFIT_TAX_MODE);
+    return new Map(plan.map((row) => [row.itemId, row]));
+  }, [items, hubArchiveVersion, splitView, statusFilter]);
+
+  const applyHubSplitPlan = (plan: HubBreakdownReplaceRow[]) => {
+    if (!plan.length) return;
+    const detailsByItemId: Record<string, string> = {};
+    for (const row of plan) detailsByItemId[row.itemId] = hubBreakdownActionDetails(row);
+    onUpdate(hubBreakdownItemsToSave(plan), undefined, {
+      skipMembershipSync: true,
+      skipContainerSync: true,
+      flushCloud: true,
+      actionNote: { action: 'Hub fee split approved', detailsByItemId },
+    });
+    appendHubBreakdownApplyLog(
+      plan.map((row) => ({
+        at: new Date().toISOString(),
+        itemId: row.itemId,
+        itemName: row.itemName,
+        orderId: row.orderId,
+        sellDate: row.nextItem.sellDate,
+        total: row.after.total,
+        net: row.after.net,
+      }))
+    );
+    invalidateEbaySalesSyncPeekCache();
+    setHubSplitPreview(null);
+  };
 
   /** Collapsed bundle/PC rows — open by default; user closes only if they want. */
   const [collapsedBundles, setCollapsedBundles] = useState<Set<string>>(() => new Set());
@@ -1013,7 +1152,7 @@ const InventoryList: React.FC<Props> = ({
     () => new Set(loadState<ColumnId[]>('manual_width_cols', []).filter((id) => id === 'item'))
   );
 
-  const defaultColumnOrder: ColumnId[] = ['select', 'item', 'presence', 'category', 'status', 'buyPrice', 'sellPrice', 'storePrice', 'profit', 'buyDate', 'timeGauge', 'sellDate'];
+  const defaultColumnOrder: ColumnId[] = ['select', 'item', 'presence', 'category', 'status', 'buyPrice', 'sellPrice', 'suggestedHubSplit', 'storePrice', 'profit', 'buyDate', 'timeGauge', 'sellDate'];
   const [columnOrder, setColumnOrder] = useState<ColumnId[]>(() => {
     const saved = loadState<ColumnId[]>('column_order', defaultColumnOrder);
     const base = saved && saved.length > 0 ? saved : defaultColumnOrder;
@@ -1027,6 +1166,11 @@ const InventoryList: React.FC<Props> = ({
       const sell = next.indexOf('sellPrice');
       if (sell >= 0) next.splice(sell + 1, 0, 'storePrice');
       else next.splice(Math.max(0, next.length - 1), 0, 'storePrice');
+    }
+    if (!next.includes('suggestedHubSplit')) {
+      const sell = next.indexOf('sellPrice');
+      if (sell >= 0) next.splice(sell + 1, 0, 'suggestedHubSplit');
+      else next.splice(Math.max(0, next.length - 1), 0, 'suggestedHubSplit');
     }
     // Remove legacy / merged-away columns
     next = next.filter(id => id !== 'salePlatform' && id !== 'parseSpecs' && id !== 'actions');
@@ -1449,6 +1593,7 @@ const InventoryList: React.FC<Props> = ({
       localStorage.setItem(`${k}_spec_filters`, JSON.stringify(specFilters));
       localStorage.setItem(`${k}_spec_range_filters`, JSON.stringify(specRangeFilters));
       localStorage.setItem(`${k}_show_in_composition`, JSON.stringify(showInComposition));
+      localStorage.setItem(`${k}_show_price_breakdown`, JSON.stringify(showPriceBreakdown));
       localStorage.setItem(`${k}_column_order`, JSON.stringify(columnOrder));
       localStorage.setItem(`${k}_hidden_columns`, JSON.stringify(hiddenColumnIds));
       localStorage.setItem(`${k}_split_view`, JSON.stringify(splitView));
@@ -1460,7 +1605,7 @@ const InventoryList: React.FC<Props> = ({
   }, [
     searchTerm, timeFilter, statusFilter, categoryFilter, subCategoryFilter, sortConfig, columnWidths,
     manualWidthColumns, salePlatformFilter, salePaymentFilter, amountFilter, specFilters, specRangeFilters, showInComposition,
-    columnOrder, hiddenColumnIds, splitView, quickCategoryPins, persistenceKey,
+    showPriceBreakdown, columnOrder, hiddenColumnIds, splitView, quickCategoryPins, persistenceKey,
   ]);
 
   // Ensure matching nested bundles reopen if the user had collapsed them
@@ -1984,7 +2129,7 @@ const InventoryList: React.FC<Props> = ({
   };
 
   const applyOrderMatchToItem = (item: InventoryItem, match: EbayOrderMatch) => {
-    const updated = applyEbayOrderMatchToItem(item, match, businessSettings.taxMode);
+    const updated = applyEbayOrderMatchToItem(item, match, POCKET_PROFIT_TAX_MODE);
     onUpdate([updated]);
     setToast(`Applied order ${match.order.orderId} to ${item.name}`);
     setTimeout(() => setToast((prev) => (prev?.startsWith('Applied order') ? null : prev)), 2200);
@@ -1998,10 +2143,13 @@ const InventoryList: React.FC<Props> = ({
       if (hiddenColumnIds.includes(id) || ALWAYS_HIDDEN.includes(id)) return false;
       // Active stock: no State / Sell / Margin / Sold Date (those belong on Sold)
       if (
-        (id === 'sellDate' || id === 'status' || id === 'sellPrice' || id === 'profit') &&
+        (id === 'sellDate' || id === 'status' || id === 'sellPrice' || id === 'profit' || id === 'suggestedHubSplit') &&
         !splitView &&
         statusFilter === 'ACTIVE'
       ) {
+        return false;
+      }
+      if (id === 'suggestedHubSplit' && !splitView && statusFilter !== 'SOLD' && statusFilter !== 'ALL') {
         return false;
       }
       // In pure SOLD mode: hide STOCK AGE gauge (irrelevant once item is sold)
@@ -2013,7 +2161,12 @@ const InventoryList: React.FC<Props> = ({
   const activeInventoryColumns = useMemo(
     () =>
       visibleColumns.filter(
-        (id) => id !== 'status' && id !== 'sellPrice' && id !== 'profit' && id !== 'sellDate'
+        (id) =>
+          id !== 'status' &&
+          id !== 'sellPrice' &&
+          id !== 'suggestedHubSplit' &&
+          id !== 'profit' &&
+          id !== 'sellDate'
       ),
     [visibleColumns]
   );
@@ -2400,10 +2553,7 @@ const InventoryList: React.FC<Props> = ({
     if (!showFinancials) return null;
     
     let totalGross = 0;
-    let totalTax = 0;
-    let totalNetRevenue = 0;
     let totalProfit = 0;
-    let cashMargin = 0;
     let totalFees = 0;
 
     const soldItems = (splitView ? sortedSoldItems : sortedItems).filter((i) => isRealizedDisposal(i));
@@ -2412,50 +2562,27 @@ const InventoryList: React.FC<Props> = ({
     soldAtomicItems.forEach(item => {
         const sell = item.sellPrice || 0;
         if (sell === 0) return;
-        
-        let tax = 0;
-        let netSell = sell;
-
-        if (businessSettings.taxMode === 'RegularVAT') {
-            netSell = sell / 1.19;
-            tax = sell - netSell;
-        } else if (businessSettings.taxMode === 'DifferentialVAT') {
-            const buy = item.buyPrice || 0;
-            const margin = sell - buy;
-            if (margin > 0) {
-                const netMargin = margin / 1.19;
-                tax = margin - netMargin;
-            }
-            netSell = sell - tax;
-        }
-        
         totalGross += sell;
-        totalTax += tax;
-        totalNetRevenue += netSell;
         totalFees += Number(item.feeAmount) || 0;
-        cashMargin += computeItemProfitBeforeOverhead(item, 'SmallBusiness');
+        totalProfit += computeSoldTabMargin(itemWithHubRefundOverlay(item));
     });
 
-    soldAtomicItems.forEach(item => {
-        totalProfit += computeItemProfitBeforeOverhead(item, businessSettings.taxMode);
-    });
-
-    return { totalGross, totalTax, totalNetRevenue, totalProfit, cashMargin, totalFees };
-  }, [sortedItems, sortedSoldItems, splitView, businessSettings.taxMode, showFinancials]);
+    return { totalGross, totalTax: 0, totalNetRevenue: 0, totalProfit, cashMargin: totalProfit, totalFees };
+  }, [sortedItems, sortedSoldItems, splitView, showFinancials, hubArchiveVersion]);
 
   const profitForDisplay = useCallback(
     (item: InventoryItem): number | null => {
       if (item.isPC || item.isBundle) return null;
-      if (!showFinancials || item.sellPrice == null) return item.profit ?? null;
-      return computeItemProfitBeforeOverhead(item, businessSettings.taxMode);
+      if (item.sellPrice == null) return item.profit ?? null;
+      return computeSoldTabMargin(itemWithHubRefundOverlay(item));
     },
-    [showFinancials, businessSettings.taxMode]
+    [hubArchiveVersion]
   );
 
   // -- HANDLERS --
 
   const handleHeaderSort = (columnId: ColumnId) => {
-    if (columnId === 'actions' || columnId === 'select' || columnId === 'parseSpecs') return;
+    if (columnId === 'actions' || columnId === 'select' || columnId === 'parseSpecs' || columnId === 'suggestedHubSplit') return;
     
     setSortConfig(prev => {
       // If clicking same column, toggle direction
@@ -2565,6 +2692,13 @@ const InventoryList: React.FC<Props> = ({
     onUpdate([{ ...item, ...updates }]);
     setEditingCell(null);
   };
+
+  const saveSellerShipping = useCallback(
+    (item: InventoryItem, amount: number) => {
+      onUpdate([applyManualSellerShipping(item, amount)]);
+    },
+    [onUpdate]
+  );
 
   const handleSelectAll = useCallback(() => {
     runSelectionUpdate((prev) => {
@@ -4043,6 +4177,7 @@ const InventoryList: React.FC<Props> = ({
                         </div>
                       );
                    })()}
+                   <SaleCycleHistory item={item} compact />
                    {item.status !== ItemStatus.SOLD && isRealizedDisposal(item) && (item.customer?.name || item.giftRecipient || item.ebayUsername || item.ebayOrderId) && (
                       <p
                         className="text-[9px] text-slate-600 font-medium mt-1.5 flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100"
@@ -4208,7 +4343,7 @@ const InventoryList: React.FC<Props> = ({
                                                 ? 'text-red-500'
                                                 : 'text-slate-400'
                                           }`}
-                                          title="Component margin after fees/shipping when recorded"
+                                          title="Component margin (same as the green Margin column)"
                                         >
                                           ({(childProfit || 0) > 0 ? '+' : ''}
                                           {formatEUR(childProfit || 0)})
@@ -4382,11 +4517,14 @@ const InventoryList: React.FC<Props> = ({
         const isEditingSell = editingCell?.itemId === item.id && editingCell?.field === 'sellPrice';
         const soldContainerSell =
           (item.isPC || item.isBundle) && isRealizedDisposal(item)
-            ? getSoldContainerDisplayTotals(item, items, businessSettings.taxMode).sellPrice
+            ? getSoldContainerDisplayTotals(item, items, POCKET_PROFIT_TAX_MODE).sellPrice
             : null;
         const displaySellPrice = soldContainerSell ?? item.sellPrice;
-        const feeAmt = getItemDisplayFeeAmount(item, items);
-        const shipAmt = getItemDisplayShippingAmount(item, items);
+        const split = saleColumnSplit(item, {
+          displaySellEur: displaySellPrice,
+          shippingFallbackEur: getItemDisplayShippingAmount(item, items),
+          refundFallbackEur: hubRefundFallbackEur(item),
+        });
         return (
           <td
             key={id}
@@ -4395,7 +4533,9 @@ const InventoryList: React.FC<Props> = ({
             title={
               soldContainerSell != null
                 ? 'Bundle total sell price (sum of components)'
-                : 'Click for fees & shipping split · double-click to edit'
+                : canEditManualSellerShipping(item)
+                  ? 'Click to add shipping you paid · double-click to edit sell price'
+                  : 'Click for fees & shipping split · double-click to edit'
             }
             onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, 'sellPrice', item.sellPrice || 0); }}
           >
@@ -4416,21 +4556,56 @@ const InventoryList: React.FC<Props> = ({
                 item={item}
                 className="flex flex-col items-start leading-tight gap-0.5 text-left w-full"
                 onDoubleClick={(e) => { e.stopPropagation(); startEditing(item, 'sellPrice', item.sellPrice || 0); }}
+                onSaveShipping={
+                  canEditManualSellerShipping(item)
+                    ? (amount) => saveSellerShipping(item, amount)
+                    : undefined
+                }
               >
-                <span className="underline decoration-dotted decoration-slate-300 underline-offset-2">€{formatEUR(displaySellPrice)}</span>
-                {feeAmt > 0 && (
-                  <span className="text-[9px] font-bold text-amber-700 tabular-nums whitespace-nowrap">
-                    −€{formatEUR(feeAmt)} fees
-                  </span>
-                )}
-                {shipAmt > 0 && (
-                  <span className="text-[9px] font-bold text-sky-700 tabular-nums whitespace-nowrap">
-                    −€{formatEUR(shipAmt)} shipping
+                {split ? (
+                  <SellSplitLines split={split} showFees={showPriceBreakdown} />
+                ) : (
+                  <span className="underline decoration-dotted decoration-slate-300 underline-offset-2 text-slate-900">
+                    €{formatEUR(displaySellPrice)}
                   </span>
                 )}
               </SaleProceedsTrigger>
             ) : (
               '-'
+            )}
+          </td>
+        );
+      }
+      case 'suggestedHubSplit': {
+        const row = hubReplaceByItemId.get(item.id);
+        if (!row) {
+          return (
+            <td key={id} className="text-left text-slate-300" style={style}>
+              —
+            </td>
+          );
+        }
+        const split = saleColumnSplit(row.nextItem, {
+          displaySellEur: row.nextItem.sellPrice,
+          shippingFallbackEur: getItemDisplayShippingAmount(row.nextItem, items),
+        });
+        return (
+          <td
+            key={id}
+            className="text-left font-bold cursor-pointer hover:bg-emerald-50/70 transition-colors bg-emerald-50/30"
+            style={style}
+            title={`Suggested Hub sell cell for ${row.orderId} — click to review before applying`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setHubSplitPreview([row]);
+            }}
+          >
+            {split ? (
+              <div className="flex flex-col items-start leading-tight gap-0.5 text-left w-full">
+                <SellSplitLines split={split} showFees />
+              </div>
+            ) : (
+              '—'
             )}
           </td>
         );
@@ -4468,15 +4643,10 @@ const InventoryList: React.FC<Props> = ({
       case 'profit': {
         const soldContainerProfit =
           (item.isPC || item.isBundle) && isRealizedDisposal(item)
-            ? getSoldContainerDisplayTotals(item, items, businessSettings.taxMode).profit
+            ? getSoldContainerDisplayTotals(item, items, POCKET_PROFIT_TAX_MODE).profit
             : null;
         const displayProfit = soldContainerProfit ?? profitForDisplay(item);
-        const feeAmt = getItemDisplayFeeAmount(item, items);
-        const shipAmt = getItemDisplayShippingAmount(item, items);
-        const feeHint =
-          feeAmt > 0 || shipAmt > 0
-            ? `Profit = sell − buy − fees − shipping.${feeAmt > 0 ? ` €${formatEUR(feeAmt)} marketplace fees.` : ''}${shipAmt > 0 ? ` €${formatEUR(shipAmt)} shipping you paid.` : ''}`
-            : 'Profit = sell − buy − fees (when recorded).';
+        const marginHint = 'Margin = Bestelleinnahmen − EK. No VAT taken out.';
         if (item.isPC || item.isBundle) {
           if (soldContainerProfit != null) {
             return (
@@ -4484,21 +4654,9 @@ const InventoryList: React.FC<Props> = ({
                 key={id}
                 className={`text-left font-black ${soldContainerProfit > 0 ? 'text-emerald-600' : soldContainerProfit < 0 ? 'text-red-500' : 'text-slate-300'}`}
                 style={style}
-                title={`Bundle total profit (sum of component margins). ${feeHint}`}
+                title={`Bundle total margin. ${marginHint}`}
               >
-                <div className="flex flex-col items-start leading-tight gap-0.5">
-                  <span>€{formatEUR(soldContainerProfit)}</span>
-                  {feeAmt > 0 && (
-                    <span className="text-[9px] font-bold text-amber-700 tabular-nums whitespace-nowrap">
-                      −€{formatEUR(feeAmt)} fees
-                    </span>
-                  )}
-                  {shipAmt > 0 && (
-                    <span className="text-[9px] font-bold text-sky-700 tabular-nums whitespace-nowrap">
-                      −€{formatEUR(shipAmt)} shipping
-                    </span>
-                  )}
-                </div>
+                €{formatEUR(soldContainerProfit)}
               </td>
             );
           }
@@ -4513,25 +4671,9 @@ const InventoryList: React.FC<Props> = ({
             key={id}
             className={`text-left font-black ${displayProfit && displayProfit > 0 ? 'text-emerald-600' : displayProfit && displayProfit < 0 ? 'text-red-500' : 'text-slate-300'}`}
             style={style}
-            title={feeHint}
+            title={marginHint}
           >
-            {displayProfit != null ? (
-              <div className="flex flex-col items-start leading-tight gap-0.5">
-                <span>€{formatEUR(displayProfit)}</span>
-                {feeAmt > 0 && (
-                  <span className="text-[9px] font-bold text-amber-700 tabular-nums whitespace-nowrap">
-                    −€{formatEUR(feeAmt)} fees
-                  </span>
-                )}
-                {shipAmt > 0 && (
-                  <span className="text-[9px] font-bold text-sky-700 tabular-nums whitespace-nowrap">
-                    −€{formatEUR(shipAmt)} shipping
-                  </span>
-                )}
-              </div>
-            ) : (
-              '-'
-            )}
+            {displayProfit != null ? `€${formatEUR(displayProfit)}` : '-'}
           </td>
         );
       }
@@ -5077,12 +5219,7 @@ const InventoryList: React.FC<Props> = ({
     <div className="flex-1 min-h-0 h-full flex flex-col gap-1 overflow-hidden relative">
       {showFinancials && financialStats && !splitView ? (
         <div className="hidden lg:block shrink-0">
-          <SoldFinancialBar
-            stats={financialStats}
-            taxMode={businessSettings.taxMode}
-            businessSettings={businessSettings}
-            onBusinessSettingsChange={onBusinessSettingsChange}
-          />
+          <SoldFinancialBar stats={financialStats} />
         </div>
       ) : null}
 
@@ -5933,6 +6070,24 @@ const InventoryList: React.FC<Props> = ({
                         )}
                      </div>
                      <div className="p-3 space-y-3 max-h-[min(65vh,380px)] overflow-y-auto">
+                        <button
+                           type="button"
+                           onClick={() => setShowPriceBreakdown((prev) => !prev)}
+                           className={`w-full inline-flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg border text-[11px] font-black uppercase tracking-wide ${
+                             showPriceBreakdown
+                               ? 'border-amber-400 bg-amber-50 text-amber-800'
+                               : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300'
+                           }`}
+                           title={showPriceBreakdown ? 'Hide ads, eBay fee, and shipping under sell price' : 'Show ads, eBay fee, and shipping under sell price'}
+                        >
+                           <span className="inline-flex items-center gap-1.5">
+                              <Receipt size={12} />
+                              Price breakdown
+                           </span>
+                           <span className={`text-[10px] ${showPriceBreakdown ? 'text-amber-700' : 'text-slate-400'}`}>
+                             {showPriceBreakdown ? 'On' : 'Off'}
+                           </span>
+                        </button>
                         <div className="flex flex-wrap gap-1.5">
                            <button type="button" onClick={() => { setCategoryFilter('ALL'); setSubCategoryFilter(''); }} className={`px-2 py-1 rounded-lg text-xs font-bold ${categoryFilter === 'ALL' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>All</button>
                            {Object.keys(categories).map(cat => (
@@ -6248,6 +6403,21 @@ const InventoryList: React.FC<Props> = ({
         onClose={() => setShowMobileFiltersSheet(false)}
       >
         <div className="space-y-4 pb-6">
+          <button
+            type="button"
+            onClick={() => setShowPriceBreakdown((prev) => !prev)}
+            className={`w-full inline-flex items-center justify-between gap-2 px-3 py-3 rounded-xl border text-[11px] font-black uppercase ${
+              showPriceBreakdown
+                ? 'border-amber-400 bg-amber-50 text-amber-800'
+                : 'border-slate-200 bg-white text-slate-700'
+            }`}
+          >
+            <span className="inline-flex items-center gap-2">
+              <Receipt size={14} />
+              Price breakdown
+            </span>
+            <span>{showPriceBreakdown ? 'On' : 'Off'}</span>
+          </button>
           <div className="space-y-2">
             <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Category</p>
             <select
@@ -6433,7 +6603,9 @@ const InventoryList: React.FC<Props> = ({
               <p className="text-xs text-slate-400 mt-1">Try clearing search or filters</p>
             </div>
           ) : (
-            sortedItems.map((item) => (
+            sortedItems.map((item) => {
+              const hubRow = hubReplaceByItemId.get(item.id);
+              return (
               <div
                 key={item.id}
                 className={
@@ -6448,6 +6620,15 @@ const InventoryList: React.FC<Props> = ({
                 suggestedEbayList={suggestedEbayById.get(item.id)?.ebayList}
                 suggestedKleinList={suggestedEbayById.get(item.id)?.kleinList}
                 suggestedFeePct={suggestedEbayById.get(item.id)?.feePct}
+                showPriceBreakdown={showPriceBreakdown}
+                refundFallbackEur={hubRefundFallbackEur(item)}
+                hubSuggestedSplit={hubRow ? saleColumnSplit(hubRow.nextItem) : null}
+                onApplyHubSplit={hubRow ? () => setHubSplitPreview([hubRow]) : undefined}
+                onSaveShipping={
+                  canEditManualSellerShipping(item)
+                    ? (amount) => saveSellerShipping(item, amount)
+                    : undefined
+                }
                 selected={selectedIdSet.has(item.id)}
                 onToggleSelect={() => toggleSelect(item.id)}
                 actions={{
@@ -6495,7 +6676,8 @@ const InventoryList: React.FC<Props> = ({
                 }}
               />
               </div>
-            ))
+            );
+            })
           )}
       </div>
 
@@ -6608,13 +6790,7 @@ const InventoryList: React.FC<Props> = ({
             paneLabel="Sold"
             paneExtra={
               financialStats ? (
-                <SoldFinancialBar
-                  stats={financialStats}
-                  taxMode={businessSettings.taxMode}
-                  businessSettings={businessSettings}
-                  onBusinessSettingsChange={onBusinessSettingsChange}
-                  compact
-                />
+                <SoldFinancialBar stats={financialStats} compact />
               ) : null
             }
             scrollRef={soldTableRef}
@@ -7096,7 +7272,7 @@ const InventoryList: React.FC<Props> = ({
                         <AlertCircle size={28} className="mx-auto text-slate-300"/>
                         <p className="text-sm font-bold text-slate-600">No cached orders match this item.</p>
                         <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                           Run an API backfill or import a Seller Hub CSV in <span className="font-bold text-slate-600">eBay Store Pull → Sales sync</span>, then try again.
+                           Fetch new Seller Hub orders in <span className="font-bold text-slate-600">eBay Tools</span>, then try again.
                         </p>
                         <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
                            <button
@@ -7179,7 +7355,7 @@ const InventoryList: React.FC<Props> = ({
       {showEbayOrdersModal && (
         <EbayOrdersBindModal
           items={items}
-          taxMode={businessSettings.taxMode}
+          taxMode={POCKET_PROFIT_TAX_MODE}
           onUpdate={onUpdate}
           onClose={() => setShowEbayOrdersModal(false)}
           onBound={(_updated, remainingOpen) => {
@@ -7191,10 +7367,18 @@ const InventoryList: React.FC<Props> = ({
         />
       )}
 
+      {hubSplitPreview && hubSplitPreview.length > 0 && (
+        <HubSplitApplyModal
+          rows={hubSplitPreview}
+          onClose={() => setHubSplitPreview(null)}
+          onConfirm={applyHubSplitPlan}
+        />
+      )}
       {itemToSell && (
          <SaleModal 
-            item={itemToSell} 
-            taxMode={businessSettings.taxMode}
+            item={itemToSell}
+            inventoryItems={items}
+            taxMode={POCKET_PROFIT_TAX_MODE}
             mode="sell"
             onSave={(updated, splitOff) => { 
                // Selling one nested part: detach from parent, leave remaining parts in the group.
@@ -7337,7 +7521,8 @@ const InventoryList: React.FC<Props> = ({
       {itemToEditBuyer && (
          <SaleModal
             item={itemToEditBuyer}
-            taxMode={businessSettings.taxMode}
+            inventoryItems={items}
+            taxMode={POCKET_PROFIT_TAX_MODE}
             mode="editBuyer"
             onSave={(updated) => {
               const updates =
@@ -7358,7 +7543,7 @@ const InventoryList: React.FC<Props> = ({
                const { updates, deleteIds } = applyUnsoldRestock(
                  items,
                  updatedItems.map((i) => i.id),
-                 { patches: updatedItems }
+                 { patches: updatedItems, refundOrders: loadRefundOrdersForRestock() }
                );
                onUpdate(updates, deleteIds.length ? deleteIds : undefined);
                setStatusFilter('ACTIVE');
@@ -7391,7 +7576,7 @@ const InventoryList: React.FC<Props> = ({
       {itemToGift && (
          <GiftModal
             item={itemToGift}
-            taxMode={businessSettings.taxMode}
+            taxMode={POCKET_PROFIT_TAX_MODE}
             onSave={(updated) => {
                onUpdate([updated]);
                setItemToGift(null);
@@ -7704,23 +7889,10 @@ type SoldFinancialBarProps = {
     cashMargin: number;
     totalFees: number;
   };
-  taxMode: TaxMode;
-  businessSettings: BusinessSettings;
-  onBusinessSettingsChange: (settings: BusinessSettings) => void;
   compact?: boolean;
 };
 
-const SoldFinancialBar: React.FC<SoldFinancialBarProps> = ({
-  stats,
-  taxMode,
-  businessSettings,
-  onBusinessSettingsChange,
-  compact,
-}) => {
-  const profitLabel =
-    taxMode === 'SmallBusiness' ? 'Cash profit' : taxMode === 'DifferentialVAT' ? 'After diff. VAT' : 'After VAT';
-  const showCashMargin = taxMode !== 'SmallBusiness';
-
+const SoldFinancialBar: React.FC<SoldFinancialBarProps> = ({ stats, compact }) => {
   return (
     <div
       className={`shrink-0 flex flex-wrap items-center gap-x-3 gap-y-1 px-2 py-1.5 rounded-lg border border-slate-200 bg-white ${
@@ -7734,62 +7906,21 @@ const SoldFinancialBar: React.FC<SoldFinancialBarProps> = ({
       {stats.totalFees > 0 && (
         <span
           className="inline-flex items-baseline gap-1"
-          title="Marketplace fees (eBay etc.) deducted from profit: sell − buy − fees"
+          title="Marketplace fees already out of Bestelleinnahmen / margin"
         >
           <span className="text-[9px] font-black uppercase text-amber-600">Fees</span>
           <span className="font-black text-amber-700">−€{formatEUR(stats.totalFees)}</span>
         </span>
       )}
-      {taxMode !== 'SmallBusiness' && (
-        <span className="inline-flex items-baseline gap-1">
-          <span className="text-[9px] font-black uppercase text-slate-400">VAT</span>
-          <span className="font-black text-red-500">-€{formatEUR(stats.totalTax)}</span>
-        </span>
-      )}
-      {showCashMargin && (
-        <span className="inline-flex items-baseline gap-1" title="Sell − buy − fees (no VAT reserve)">
-          <span className="text-[9px] font-black uppercase text-slate-400">Cash</span>
-          <span className="font-black text-slate-700">€{formatEUR(stats.cashMargin)}</span>
-        </span>
-      )}
-      <span className="inline-flex items-baseline gap-1">
-        <span className="text-[9px] font-black uppercase text-slate-400">{profitLabel}</span>
+      <span
+        className={`inline-flex items-baseline gap-1 ${compact ? '' : 'ml-auto'}`}
+        title="Bestelleinnahmen − EK. No VAT taken out."
+      >
+        <span className="text-[9px] font-black uppercase text-slate-400">Margin</span>
         <span className={`font-black ${stats.totalProfit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
           {stats.totalProfit >= 0 ? '+' : ''}€{formatEUR(stats.totalProfit)}
         </span>
       </span>
-      <div className={`${compact ? '' : 'ml-auto'} flex rounded-md border border-slate-200 bg-slate-50 p-0.5`}>
-        <button
-          type="button"
-          onClick={() => onBusinessSettingsChange({ ...businessSettings, taxMode: 'SmallBusiness' })}
-          className={`px-2 py-0.5 rounded text-[9px] font-black uppercase transition-all ${
-            taxMode === 'SmallBusiness' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'
-          }`}
-          title="Cash income — no VAT reserve on margin"
-        >
-          Kleinunt.
-        </button>
-        <button
-          type="button"
-          onClick={() => onBusinessSettingsChange({ ...businessSettings, taxMode: 'DifferentialVAT' })}
-          className={`px-2 py-0.5 rounded text-[9px] font-black uppercase transition-all ${
-            taxMode === 'DifferentialVAT' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'
-          }`}
-          title="Differenzbesteuerung — VAT on margin"
-        >
-          Diff.
-        </button>
-        <button
-          type="button"
-          onClick={() => onBusinessSettingsChange({ ...businessSettings, taxMode: 'RegularVAT' })}
-          className={`px-2 py-0.5 rounded text-[9px] font-black uppercase transition-all ${
-            taxMode === 'RegularVAT' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'
-          }`}
-          title="Regular 19% VAT on sell price"
-        >
-          VAT
-        </button>
-      </div>
     </div>
   );
 };
@@ -7933,7 +8064,7 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
             <tr className="bg-slate-50/80 border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-widest backdrop-blur-sm">
               {visibleColumns.map((colId) => {
                 const rawW = columnWidths[colId] || DEFAULT_WIDTHS[colId];
-                const sortable = !['actions', 'select', 'parseSpecs'].includes(colId);
+                const sortable = !['actions', 'select', 'parseSpecs', 'suggestedHubSplit'].includes(colId);
                 const canDrag = colId !== 'select';
                 const isDragging = draggingColumnId === colId;
                 const isDragOver = dragOverColumnId === colId && draggingColumnId !== colId;
@@ -8006,6 +8137,13 @@ const InventoryListTablePane: React.FC<InventoryListTablePaneProps> = ({
                       ) : colId === 'parseSpecs' ? (
                         <span className="flex items-center justify-start gap-1 truncate" title="Parse tech specs with AI">
                           <Sparkles size={12} className="text-amber-500" /> Parse
+                        </span>
+                      ) : colId === 'suggestedHubSplit' ? (
+                        <span
+                          className="flex items-center justify-start gap-1 w-full truncate"
+                          title="Suggested Hub sell cell when the current breakdown does not match Seller Hub"
+                        >
+                          Hub sell
                         </span>
                       ) : colId === 'timeGauge' ? (
                         <span

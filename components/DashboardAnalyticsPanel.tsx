@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { Download, Target, Package, TrendingUp } from 'lucide-react';
-import type { InventoryItem, Expense } from '../types';
+import { Download, Target, Package, TrendingUp, Percent } from 'lucide-react';
+import type { InventoryItem, Expense, TaxMode } from '../types';
+import { ItemStatus } from '../types';
 import { formatEUR } from '../utils/formatMoney';
 import {
   profitByPlatform,
@@ -10,8 +11,11 @@ import {
   sellThroughRate,
   inventoryValuation,
   profitGoalProgress,
+  filterByDateRange,
   type DateRange,
 } from '../utils/dashboardAnalytics';
+import { summarizeEbayMarketplaceCosts } from '../utils/ebayMarketplaceStats';
+import { shouldSkipForAggregatedSaleLine } from '../services/financialAggregation';
 import { summarizePriceLab, getOrRebuildItemSalesPool } from '../utils/itemSalesPool';
 import PlatformBadge from './PlatformBadge';
 import { Link } from 'react-router-dom';
@@ -22,16 +26,32 @@ interface Props {
   range: DateRange;
   rangeLabel: string;
   profitGoal: number;
+  taxMode?: TaxMode;
 }
 
-const DashboardAnalyticsPanel: React.FC<Props> = ({ items, expenses, range, rangeLabel, profitGoal }) => {
-  const byPlatform = useMemo(() => profitByPlatform(items, range), [items, range]);
-  const byCategory = useMemo(() => profitByCategoryTrend(items, range), [items, range]);
+const TAX_MODE_SHORT: Record<TaxMode, string> = {
+  SmallBusiness: 'Kleinunternehmer',
+  DifferentialVAT: 'Diff. VAT',
+  RegularVAT: '19% VAT',
+};
+
+const DashboardAnalyticsPanel: React.FC<Props> = ({ items, expenses, range, rangeLabel, profitGoal, taxMode = 'SmallBusiness' }) => {
+  const byPlatform = useMemo(() => profitByPlatform(items, range, taxMode), [items, range, taxMode]);
+  const byCategory = useMemo(() => profitByCategoryTrend(items, range, taxMode), [items, range, taxMode]);
   const daysHist = useMemo(() => daysInStockHistogram(items), [items]);
   const sellThrough = useMemo(() => sellThroughRate(items, range), [items, range]);
   const valuation = useMemo(() => inventoryValuation(items), [items]);
-  const goal = useMemo(() => profitGoalProgress(items, expenses, range, profitGoal), [items, expenses, range, profitGoal]);
+  const goal = useMemo(() => profitGoalProgress(items, expenses, range, profitGoal, taxMode), [items, expenses, range, profitGoal, taxMode]);
   const priceLab = useMemo(() => summarizePriceLab(items, getOrRebuildItemSalesPool(items)), [items]);
+  const ebayFees = useMemo(() => {
+    const sold = items.filter(
+      (i) =>
+        i.status === ItemStatus.SOLD &&
+        filterByDateRange(i.sellDate, range) &&
+        !shouldSkipForAggregatedSaleLine(i, items)
+    );
+    return summarizeEbayMarketplaceCosts(sold);
+  }, [items, range]);
 
   const exportCsv = (filename: string, rows: Record<string, string | number>[]) => {
     if (!rows.length) return;
@@ -49,7 +69,12 @@ const DashboardAnalyticsPanel: React.FC<Props> = ({ items, expenses, range, rang
   return (
     <section className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h2 className="text-sm font-black uppercase tracking-widest text-slate-500">Extended analytics · {rangeLabel}</h2>
+        <h2 className="text-sm font-black uppercase tracking-widest text-slate-500">
+          Extended analytics · {rangeLabel}
+          <span className="ml-2 font-bold normal-case tracking-normal text-slate-400">
+            profit · {TAX_MODE_SHORT[taxMode]}
+          </span>
+        </h2>
         <button
           type="button"
           onClick={() => exportCsv(`profit-by-platform-${rangeLabel}.csv`, byPlatform)}
@@ -83,6 +108,35 @@ const DashboardAnalyticsPanel: React.FC<Props> = ({ items, expenses, range, rang
           <p className="text-xs text-slate-500">{valuation.count} in stock</p>
         </div>
       </div>
+
+      {ebayFees.saleCount > 0 && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="bg-orange-50 rounded-2xl border border-orange-200 p-4">
+            <p className="text-[10px] font-bold uppercase text-orange-700">eBay fees</p>
+            <p className="text-2xl font-black text-orange-700">€{formatEUR(ebayFees.ebayFeeEur)}</p>
+            <p className="text-xs text-orange-800/80">{ebayFees.saleCount} eBay sales</p>
+          </div>
+          <div className="bg-orange-50 rounded-2xl border border-orange-200 p-4">
+            <p className="text-[10px] font-bold uppercase text-orange-700">Ad fees</p>
+            <p className="text-2xl font-black text-orange-700">€{formatEUR(ebayFees.adFeeEur)}</p>
+            <p className="text-xs text-orange-800/80">Promoted Listings</p>
+          </div>
+          <div className="bg-white rounded-2xl border p-4">
+            <p className="text-[10px] font-bold uppercase text-slate-400">Buyer paid → kept</p>
+            <p className="text-2xl font-black text-slate-900">€{formatEUR(ebayFees.netEur)}</p>
+            <p className="text-xs text-slate-500">of €{formatEUR(ebayFees.grossEur)} gross</p>
+          </div>
+          <div className="bg-orange-50 rounded-2xl border border-orange-200 p-4">
+            <p className="text-[10px] font-bold uppercase text-orange-700 flex items-center gap-1">
+              <Percent size={12} /> Avg lost on eBay
+            </p>
+            <p className="text-2xl font-black text-orange-700">
+              {ebayFees.avgTakePct != null ? `${formatEUR(ebayFees.avgTakePct)}%` : '—'}
+            </p>
+            <p className="text-xs text-orange-800/80">€150 sale → keep ~€{ebayFees.avgTakePct != null ? formatEUR(150 * (1 - ebayFees.avgTakePct / 100)) : '—'}</p>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-2xl border p-4">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">

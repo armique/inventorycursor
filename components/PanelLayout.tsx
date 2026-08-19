@@ -287,8 +287,7 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
     location.pathname.startsWith('/panel/add/') ||
     location.pathname.startsWith('/panel/builder') ||
     location.pathname === '/panel/add-bulk' ||
-    location.pathname === '/panel/import' ||
-    (location.pathname === '/panel/ebay-store-pull' && location.search.includes('tab=import'));
+    location.pathname === '/panel/import';
 
   return (
     <div className="flex h-screen h-dvh max-h-dvh bg-slate-50 text-slate-900 font-sans overflow-hidden">
@@ -478,7 +477,8 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
         {!location.pathname.startsWith('/panel/inventory') &&
           !location.pathname.startsWith('/panel/edit') &&
           !location.pathname.startsWith('/panel/dealwatch') &&
-          !location.pathname.startsWith('/panel/3d-print') && (
+          !location.pathname.startsWith('/panel/3d-print') &&
+          !location.pathname.startsWith('/panel/ebay-store-pull') && (
           <div className="md:hidden mb-4">
             <GlobalSearch items={items} expenses={expenses} businessSettings={businessSettings} />
           </div>

@@ -1,10 +1,11 @@
 /**
- * Cache of eBay orders, built from two possible sources:
- *  - eBay Fulfillment API backfill (services/ebayOrderBackfill.ts)
+ * Cache of eBay orders, built from three possible sources:
+ *  - eBay Fulfillment API backfill (services/ebayOrderBackfill.ts) — ID, buyer, address, line items
+ *  - eBay Finances API (services/ebayFinancesBackfill.ts) — ads / eBay fee / shipping label / net
  *  - Seller Hub / Payments CSV import (services/ebayOrderCsvImport.ts)
  *
  * Orders are deduplicated and merged by orderId so both sources can fill in
- * gaps in each other (API gives buyer/address reliably; CSV can carry net
+ * gaps in each other (API gives buyer/address reliably; CSV/Finances can carry net
  * amounts after fees that the Fulfillment API does not expose).
  *
  * Two storage layers:
@@ -25,10 +26,14 @@ import {
   mergeFinancialEvents,
   sumFinancialEventNet,
 } from '../utils/ebayOrderFinancial';
+import { findHubArchiveOrderById } from './ebayHubArchiveIndex';
 
 const STORAGE_KEY = 'ebay_order_index_v1';
 
-export type EbayOrderSource = 'api' | 'csv';
+/** Inclusive start of the in-app eBay order archive used for Finanzamt history. */
+export const EBAY_ORDER_ARCHIVE_FROM = '2025-01-01';
+
+export type EbayOrderSource = 'api' | 'csv' | 'hub';
 
 export type EbayOrderFinancialEventKind =
   | 'sale'
@@ -105,6 +110,14 @@ export interface EbayOrderIndexMeta {
     isComplete?: boolean;
   };
   csvImports?: { fileName: string; rowCount: number; orderCount: number; importedAt: string }[];
+  financesBackfill?: {
+    fromDate: string;
+    toDate: string;
+    completedThroughDate?: string;
+    lastRunAt: string;
+    isComplete?: boolean;
+    transactionCount?: number;
+  };
 }
 
 function emptyMeta(): EbayOrderIndexMeta {
@@ -257,6 +270,18 @@ export function setApiBackfillMeta(patch: NonNullable<EbayOrderIndexMeta['apiBac
   saveRaw(orders, { ...meta, apiBackfill: patch, updatedAt: new Date().toISOString() });
 }
 
+export function setFinancesBackfillMeta(patch: NonNullable<EbayOrderIndexMeta['financesBackfill']>): void {
+  const { orders, meta } = loadRaw();
+  saveRaw(orders, { ...meta, financesBackfill: patch, updatedAt: new Date().toISOString() });
+}
+
+/** True when the cache has a real fee/net split (Finances, CSV, or Seller Hub) — not a Flip Coach guess. */
+export function orderHasFeeBreakdown(order: EbayOrderRecord): boolean {
+  if ((order.financialEvents || []).some((e) => e.kind === 'fee' && e.amount < -0.001)) return true;
+  if (order.netTotal != null && order.grossTotal != null && order.netTotal < order.grossTotal - 0.01) return true;
+  return false;
+}
+
 export function addCsvImportMeta(entry: { fileName: string; rowCount: number; orderCount: number }): void {
   const { orders, meta } = loadRaw();
   const csvImports = [...(meta.csvImports || []), { ...entry, importedAt: new Date().toISOString() }].slice(-20);
@@ -315,6 +340,9 @@ export interface EbayOrderIndexStats {
   apiOnlyCount: number;
   csvOnlyCount: number;
   bothCount: number;
+  withFeesCount: number;
+  withAddressCount: number;
+  withBuyerNameCount: number;
 }
 
 export interface CloudPullResult {
@@ -398,6 +426,8 @@ export async function clearEbayOrderIndexEverywhere(): Promise<void> {
 export function findEbayOrderById(orderId: string): EbayOrderRecord | null {
   const key = orderId.trim().toLowerCase();
   if (!key) return null;
+  const hub = findHubArchiveOrderById(orderId);
+  if (hub) return hub;
   const { orders } = loadRaw();
   return orders.find((o) => o.orderId.trim().toLowerCase() === key) ?? null;
 }
@@ -409,6 +439,9 @@ export function getOrderIndexStats(): EbayOrderIndexStats {
   let apiOnlyCount = 0;
   let csvOnlyCount = 0;
   let bothCount = 0;
+  let withFeesCount = 0;
+  let withAddressCount = 0;
+  let withBuyerNameCount = 0;
   for (const o of orders) {
     if (o.creationDate) {
       if (!oldest || o.creationDate < oldest) oldest = o.creationDate;
@@ -419,6 +452,19 @@ export function getOrderIndexStats(): EbayOrderIndexStats {
     if (hasApi && hasCsv) bothCount++;
     else if (hasApi) apiOnlyCount++;
     else if (hasCsv) csvOnlyCount++;
+    if (orderHasFeeBreakdown(o)) withFeesCount++;
+    if (o.buyer.address?.trim()) withAddressCount++;
+    if (o.buyer.fullName?.trim() || o.buyer.username?.trim()) withBuyerNameCount++;
   }
-  return { count: orders.length, oldestDate: oldest, newestDate: newest, apiOnlyCount, csvOnlyCount, bothCount };
+  return {
+    count: orders.length,
+    oldestDate: oldest,
+    newestDate: newest,
+    apiOnlyCount,
+    csvOnlyCount,
+    bothCount,
+    withFeesCount,
+    withAddressCount,
+    withBuyerNameCount,
+  };
 }

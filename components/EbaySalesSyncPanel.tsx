@@ -9,10 +9,8 @@ import {
   TrendingDown,
 } from 'lucide-react';
 import { InventoryItem, TaxMode } from '../types';
-import { loadEbayOrderIndex, getSuggestedBackfillRange } from '../services/ebayOrderIndex';
-import { runEbaySalesSync, peekEbaySalesSync } from '../services/ebaySalesSync';
-import { hasEbayToken } from '../services/ebayService';
-import type { BackfillProgress } from '../services/ebayOrderBackfill';
+import { loadOrdersForSalesSync, runEbaySalesSync, peekEbaySalesSync, invalidateEbaySalesSyncPeekCache } from '../services/ebaySalesSync';
+import { hydrateHubArchiveIndex } from '../services/ebayHubArchiveIndex';
 import { applyEbayOrderMatchToItem } from '../utils/applyEbayOrderMatch';
 import { applyEbaySaleAdjustmentToItem, isRestockAfterRefundAdjustment, getAdjustmentSuggestionLabel, getAdjustmentSuggestionBadgeClass, summarizeAdjustmentSuggestions, isRefundLikeAdjustmentKind } from '../utils/ebaySaleAdjustments';
 import {
@@ -20,10 +18,8 @@ import {
   type OrderLinkSuggestion,
   type OrderLinkSuggestionKind,
 } from '../utils/ebayOrderLinkAnalysis';
-import { invalidateEbaySalesSyncPeekCache } from '../services/ebaySalesSync';
 import { formatEUR } from '../utils/formatMoney';
 import { matchesEbayToolSearch } from '../utils/ebayToolSearch';
-import EbayToolProgressBar from './EbayToolProgressBar';
 import EbayToolSearchInput from './EbayToolSearchInput';
 import EbaySalesMatchReviewModal from './EbaySalesMatchReviewModal';
 
@@ -103,17 +99,10 @@ const EbaySalesSyncPanel: React.FC<Props> = ({
   const [search, setSearch] = useState('');
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [fetchProgress, setFetchProgress] = useState<BackfillProgress | null>(null);
   const [reviewRow, setReviewRow] = useState<OrderLinkSuggestion | null>(null);
-  const cancelRef = useRef<{ cancelled: boolean }>({ cancelled: false });
   const autoRanRef = useRef(false);
   const itemsRef = useRef(items);
   itemsRef.current = items;
-
-  const syncHint = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
-    return getSuggestedBackfillRange('2025-02-01', today);
-  }, [cacheVersion, stats?.cachedOrders]);
 
   const applyAnalysis = useCallback(
     (result: ReturnType<typeof peekEbaySalesSync>, info?: string) => {
@@ -137,7 +126,7 @@ const EbaySalesSyncPanel: React.FC<Props> = ({
         info ||
           (result.suggestions.length
             ? `Found ${result.suggestions.length} suggestion(s)${parts.length ? ` — ${parts.join(', ')}` : ''}.`
-            : 'All caught up — no inventory rows need updating against cached orders.')
+            : 'All caught up — no inventory rows need updating against Hub orders.')
       );
     },
     []
@@ -148,42 +137,25 @@ const EbaySalesSyncPanel: React.FC<Props> = ({
       setSyncing(true);
       setError(null);
       setMessage(null);
-      setFetchProgress(null);
-      cancelRef.current = { cancelled: false };
       try {
-        const { orders: before } = loadEbayOrderIndex();
-        if (!before.length && skipFetch) {
-          setError('No cached orders yet — expand “Order cache setup” below and run a backfill or import CSV first.');
+        const before = loadOrdersForSalesSync();
+        if (!before.length) {
+          setError(
+            'No Seller Hub orders yet — load ebay-order-archive.json below, or fetch new Hub orders (needs debug Chrome).'
+          );
           return;
         }
 
-        const result = await runEbaySalesSync(items, {
-          skipFetch,
-          onFetchProgress: setFetchProgress,
-          cancelToken: cancelRef.current,
-        });
-
-        if (result.fetch?.error) {
-          setError(result.fetch.error);
-        }
-
-        let info: string | undefined;
-        if (result.fetch && !result.fetch.error && !result.fetch.cancelled) {
-          const f = result.fetch;
-          const rangeBit = f.from && f.to ? `${f.from} → ${f.to}` : null;
-          const kind = f.isIncremental ? 'New orders only' : 'Full history pull';
-          info = `${kind}${rangeBit ? ` (${rangeBit})` : ''} · ${f.ordersFetched} from eBay · ${f.added} new, ${f.merged} updated · ${result.analysis.suggestions.length} suggestion(s).`;
-          onCacheUpdated?.();
-        } else if (result.fetchSkipped && result.fetchSkippedReason) {
-          info = `${result.fetchSkippedReason} · ${result.analysis.suggestions.length} suggestion(s) from cache.`;
-        }
-
-        applyAnalysis(result.analysis, info);
+        const result = await runEbaySalesSync(items, { skipFetch: true });
+        applyAnalysis(
+          result.analysis,
+          `Matched ${before.length} Hub order(s) · ${result.analysis.suggestions.length} suggestion(s).`
+        );
+        if (!skipFetch) onCacheUpdated?.();
       } catch (e: unknown) {
         setError((e as Error)?.message || 'Sales sync failed.');
       } finally {
         setSyncing(false);
-        setTimeout(() => setFetchProgress(null), 800);
       }
     },
     [items, applyAnalysis, onCacheUpdated]
@@ -192,11 +164,11 @@ const EbaySalesSyncPanel: React.FC<Props> = ({
   const rematchFromCache = useCallback(
     (infoPrefix?: string) => {
       invalidateEbaySalesSyncPeekCache();
-      const { orders } = loadEbayOrderIndex();
+      const orders = loadOrdersForSalesSync();
       if (!orders.length) {
         applyAnalysis(
           buildOrderLinkAnalysis(itemsRef.current, []),
-          infoPrefix || 'Order cache is empty — import or backfill orders below to get match suggestions.'
+          infoPrefix || 'Hub ledger is empty — load the dump or fetch new Hub orders below.'
         );
         onRematchComplete?.({ orderCount: 0, suggestionCount: 0 });
         return;
@@ -217,8 +189,8 @@ const EbaySalesSyncPanel: React.FC<Props> = ({
         result,
         infoPrefix ||
           (result.suggestions.length
-            ? `Matched ${orders.length} cached order(s) · ${result.suggestions.length} suggestion(s) to review${detail}.`
-            : `Matched ${orders.length} cached order(s) — no inventory rows need updating.`)
+            ? `Matched ${orders.length} Hub order(s) · ${result.suggestions.length} suggestion(s) to review${detail}.`
+            : `Matched ${orders.length} Hub order(s) — no inventory rows need updating.`)
       );
       onRematchComplete?.({ orderCount: orders.length, suggestionCount: result.suggestions.length });
     },
@@ -227,25 +199,31 @@ const EbaySalesSyncPanel: React.FC<Props> = ({
 
   // On open: analyze cache once when idle — skip auto-run for very large caches (user clicks Re-match).
   useEffect(() => {
-    if (autoRanRef.current) return;
-    autoRanRef.current = true;
-    const { orders } = loadEbayOrderIndex();
-    if (!orders.length) return;
-    if (orders.length > 400) {
-      setMessage(
-        `Large order cache (${orders.length}) — click “Re-match cache only” when you want suggestions (avoids freezing on open).`
-      );
-      return;
-    }
+    let cancelled = false;
     const run = () => {
+      if (cancelled || autoRanRef.current) return;
+      autoRanRef.current = true;
+      const orders = loadOrdersForSalesSync();
+      if (!orders.length) return;
+      if (orders.length > 400) {
+        setMessage(
+          `Large Hub ledger (${orders.length}) — click “Match inventory” when you want suggestions (avoids freezing on open).`
+        );
+        return;
+      }
       rematchFromCache();
     };
-    if (typeof requestIdleCallback === 'function') {
-      const id = requestIdleCallback(run, { timeout: 4000 });
-      return () => cancelIdleCallback(id);
-    }
-    const t = window.setTimeout(run, 600);
-    return () => clearTimeout(t);
+    void hydrateHubArchiveIndex().then(() => {
+      if (cancelled) return;
+      if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(run, { timeout: 4000 });
+        return;
+      }
+      window.setTimeout(run, 600);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [rematchFromCache]);
 
   // Explicit rematch when parent bumps cache (CSV import, API backfill, clear).
@@ -264,9 +242,11 @@ const EbaySalesSyncPanel: React.FC<Props> = ({
       timer = window.setTimeout(() => rematchFromCache(), 750);
     };
     window.addEventListener('ebay-order-index-updated', refreshFromCache);
+    window.addEventListener('ebay-hub-archive-updated', refreshFromCache);
     return () => {
       if (timer != null) window.clearTimeout(timer);
       window.removeEventListener('ebay-order-index-updated', refreshFromCache);
+      window.removeEventListener('ebay-hub-archive-updated', refreshFromCache);
     };
   }, [rematchFromCache]);
 
@@ -337,8 +317,6 @@ const EbaySalesSyncPanel: React.FC<Props> = ({
     }
   };
 
-  const tokenReady = hasEbayToken();
-
   return (
     <div
       id="ebay-sales-sync-panel"
@@ -351,12 +329,11 @@ const EbaySalesSyncPanel: React.FC<Props> = ({
         <div className="flex-1 min-w-0">
           <h3 className="text-sm font-black text-slate-900">eBay sales sync</h3>
           <p className="text-xs text-slate-600 mt-1">
-            Matches your inventory against cached eBay orders. Catches items you{' '}
-            <span className="font-bold">forgot to mark sold</span>, links missing order IDs on past sales (by SKU, title, or
-            sell price), and
-            fixes sell prices to the <span className="font-bold">net payout</span> (after fees) when Payments CSV
-            data is in the cache, and documents <span className="font-bold">returns, refunds, and cancellations</span>{' '}
-            as auditable adjustments without erasing the original sale. Nothing applies until you confirm.
+            Matches inventory to the <span className="font-bold">Seller Hub ledger</span> — buyer total, shipping,
+            ads, eBay fee, label, and net. Catches items you{' '}
+            <span className="font-bold">forgot to mark sold</span>, links missing order IDs, and documents{' '}
+            <span className="font-bold">returns and refunds</span>. Nothing applies until you confirm. New Hub
+            sales come from the bookmarklet in the ledger below — not the eBay API.
           </p>
         </div>
       </div>
@@ -364,7 +341,7 @@ const EbaySalesSyncPanel: React.FC<Props> = ({
       {stats && (
         <div className="shrink-0 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
           {[
-            { label: 'Cached orders', value: stats.cachedOrders },
+            { label: 'Hub orders', value: stats.cachedOrders },
             { label: 'In stock', value: stats.inStockItems },
             { label: 'Mark sold', value: counts.mark_sold, highlight: counts.mark_sold > 0 },
             { label: 'Link order', value: counts.link, highlight: counts.link > 0 },
@@ -387,31 +364,12 @@ const EbaySalesSyncPanel: React.FC<Props> = ({
       <div className="shrink-0 flex flex-wrap items-center gap-2">
         <button
           type="button"
-          onClick={() => void runSync(false)}
-          disabled={syncing || applying || !tokenReady}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-[11px] font-black uppercase tracking-widest hover:bg-indigo-700 disabled:opacity-50"
-          title={
-            !tokenReady
-              ? 'Add eBay token in Settings'
-              : syncHint.isIncremental
-                ? `Only fetch orders since ${syncHint.from} (skips older history already in cache)`
-                : `First sync will fetch history since ${syncHint.from}`
-          }
-        >
-          {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-          {syncing
-            ? 'Syncing…'
-            : syncHint.isIncremental
-              ? `Sync new since ${syncHint.from}`
-              : 'Sync sales (first full fetch)'}
-        </button>
-        <button
-          type="button"
           onClick={() => void runSync(true)}
           disabled={syncing || applying}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-700 text-[11px] font-black uppercase tracking-widest hover:bg-slate-50 disabled:opacity-50"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-[11px] font-black uppercase tracking-widest hover:bg-indigo-700 disabled:opacity-50"
         >
-          Re-match cache only
+          {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+          {syncing ? 'Matching…' : 'Match inventory'}
         </button>
         {suggestions.length > 0 && (
           <>
@@ -457,32 +415,6 @@ const EbaySalesSyncPanel: React.FC<Props> = ({
           placeholder="Search item, order ID, buyer, SKU, listing…"
           matchCount={visible.length}
           totalCount={activeBeforeSearch.length}
-        />
-      )}
-
-      {!tokenReady && (
-        <p className="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          Add an eBay OAuth token to fetch new orders automatically. You can still use{' '}
-          <span className="font-black">Re-match cache only</span> on your existing {stats?.cachedOrders ?? 0} cached
-          orders.
-        </p>
-      )}
-
-      {stats && stats.netDataOrders === 0 && stats.cachedOrders > 0 && (
-        <p className="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          Import <span className="font-black">Seller Hub → Payments → All transactions</span> CSV in Order cache
-          setup below for true bottom-line payouts and to detect <span className="font-black">returns/refunds</span>{' '}
-          (re-import after new refunds — adjustments appear in Sales sync).
-        </p>
-      )}
-
-      {fetchProgress && (
-        <EbayToolProgressBar
-          label={`Fetching new orders (chunk ${fetchProgress.chunkIndex + 1}/${fetchProgress.chunkCount})`}
-          done={fetchProgress.chunkIndex + 1}
-          total={fetchProgress.chunkCount}
-          detail={`${fetchProgress.rangeLabel} · ${fetchProgress.ordersFetchedTotal} total`}
-          tone="blue"
         />
       )}
 
@@ -673,17 +605,17 @@ const EbaySalesSyncPanel: React.FC<Props> = ({
 
       {suggestions.length === 0 && (stats?.cachedOrders ?? 0) === 0 && (
         <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 px-4 py-5 text-center space-y-2">
-          <p className="text-sm font-bold text-indigo-950">No cached eBay orders yet</p>
+          <p className="text-sm font-bold text-indigo-950">No Seller Hub orders yet</p>
           <p className="text-xs text-indigo-900/80 max-w-lg mx-auto">
-            Expand <span className="font-bold">Order cache setup</span> below and run an API backfill or import a Seller Hub CSV.
-            Your sold inventory items stay in the list — only the imported order history was cleared.
+            Load <span className="font-mono">ebay-order-archive.json</span> below, or fetch new Hub sales (debug Chrome
+            logged into eBay.de). That ledger is the Finanzamt record — not the API.
           </p>
         </div>
       )}
 
       {suggestions.length === 0 && (stats?.cachedOrders ?? 0) > 0 && (
         <p className="text-sm text-slate-500 text-center py-6">
-          All caught up — no inventory rows need updating against cached orders.
+          All caught up — no inventory rows need updating against Hub orders.
         </p>
       )}
 

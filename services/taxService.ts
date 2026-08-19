@@ -5,6 +5,7 @@ import {
   shouldSkipContainerForPurchaseCogs,
 } from './financialAggregation';
 import { isOperatingExpense, isFilamentStockExpense, FILAMENT_STOCK_EXPENSE_CATEGORY } from '../utils/expenseCategories';
+import { saleProceedsFeeTotal } from '../utils/saleProceeds';
 
 function itemCountsForTaxExport(item: InventoryItem, items: InventoryItem[]): boolean {
   if (item.isDraft) return false;
@@ -66,6 +67,10 @@ export const calculateTaxSummary = (items: InventoryItem[], expenses: Expense[],
     if (item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED && item.status !== ItemStatus.GIFTED) return;
 
     let itemRevenue = Number(item.sellPrice) || 0;
+    const buyerTotal = Number(item.saleProceeds?.buyerTotalEur);
+    const refundEur = Math.abs(Number(item.saleProceeds?.refundEur) || 0);
+    const booksAreBuyerTotal =
+      Number.isFinite(buyerTotal) && Math.abs(itemRevenue - buyerTotal) < 0.05;
 
     if (taxMode === 'RegularVAT') {
       const netAmount = itemRevenue / 1.19;
@@ -86,6 +91,11 @@ export const calculateTaxSummary = (items: InventoryItem[], expenses: Expense[],
 
     if (item.hasFee && item.feeAmount) {
       fees += Number(item.feeAmount) || 0;
+    } else if (item.saleProceeds && !item.saleProceeds.feesEstimated) {
+      fees += saleProceedsFeeTotal(item.saleProceeds);
+    }
+    if (booksAreBuyerTotal && refundEur >= 0.01) {
+      fees += refundEur;
     }
   });
 

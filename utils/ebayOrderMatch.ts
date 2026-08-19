@@ -1,6 +1,8 @@
 import type { InventoryItem } from '../types';
 import type { EbayOrderLineItem, EbayOrderRecord } from '../services/ebayOrderIndex';
 import { scoreListingTitleMatch } from './ebayListingMatch';
+import { isOrderCancelled, isOrderFullyRefunded } from './ebayOrderFinancial';
+import { itemAlreadyClosedSaleOrder } from './itemSaleCycle';
 
 export type EbayOrderMatchKind = 'listingId' | 'sku' | 'title' | 'recent';
 
@@ -103,6 +105,7 @@ export function listRecentEbayOrdersForSale(
 
   const results: EbayOrderMatch[] = [];
   for (const order of pool) {
+    if (skipOrderForNewSale(item, order)) continue;
     const age = orderAgeDays(order.creationDate);
     for (const line of order.lineItems) {
       const ann = annotateLineMatch(item, order, line);
@@ -119,6 +122,12 @@ export function listRecentEbayOrdersForSale(
   return results;
 }
 
+function skipOrderForNewSale(item: InventoryItem, order: EbayOrderRecord): boolean {
+  if (itemAlreadyClosedSaleOrder(item, order.orderId)) return true;
+  if (isOrderFullyRefunded(order) || isOrderCancelled(order)) return true;
+  return false;
+}
+
 /** Find cached orders whose line items likely correspond to this inventory item (score-ranked). */
 export function findMatchingOrdersForItem(
   item: InventoryItem,
@@ -128,6 +137,7 @@ export function findMatchingOrdersForItem(
   const results: EbayOrderMatch[] = [];
 
   for (const order of orders) {
+    if (skipOrderForNewSale(item, order)) continue;
     const recency = orderRecencyBoost(order.creationDate);
     const age = orderAgeDays(order.creationDate);
     for (const line of order.lineItems) {
@@ -163,4 +173,52 @@ export function findMatchingOrdersForItem(
   }
 
   return results.sort((a, b) => b.matchScore - a.matchScore);
+}
+
+function saleLineKey(orderId: string, line: EbayOrderLineItem): string {
+  return `${orderId}::${(line.sku || line.title || '').trim().toLowerCase()}`;
+}
+
+/**
+ * Mark-as-sold list: name/SKU/listing matches first (so a Toshiba 1TB HDD
+ * surfaces immediately), then other recent orders for a manual pick.
+ */
+export function listEbayOrdersForItemSale(
+  item: InventoryItem,
+  orders: EbayOrderRecord[],
+  options?: { days?: number; limit?: number; claimedKeys?: Iterable<string> }
+): EbayOrderMatch[] {
+  const limit = options?.limit ?? 12;
+  const claimed = new Set(
+    [...(options?.claimedKeys || [])].map((k) => String(k).trim().toLowerCase()).filter(Boolean)
+  );
+  if (item.ebayOrderLineKey) claimed.add(item.ebayOrderLineKey.trim().toLowerCase());
+
+  const unused = (match: EbayOrderMatch) => {
+    const key = saleLineKey(match.order.orderId, match.lineItem);
+    if (claimed.has(key)) return false;
+    if (item.ebayOrderId && match.order.orderId === item.ebayOrderId) return false;
+    return true;
+  };
+
+  const ranked = findMatchingOrdersForItem(item, orders, 28).filter(unused);
+  const recent = listRecentEbayOrdersForSale(item, orders, {
+    days: options?.days ?? 90,
+    limit: Math.max(limit * 3, 24),
+  }).filter(unused);
+
+  const seen = new Set<string>();
+  const out: EbayOrderMatch[] = [];
+  for (const match of [...ranked, ...recent]) {
+    const key = saleLineKey(match.order.orderId, match.lineItem);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(match);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+export function isStrongEbayOrderMatch(match: EbayOrderMatch): boolean {
+  return match.matchKind !== 'recent' && match.matchScore >= 40;
 }

@@ -40,6 +40,7 @@ import {
   paymentAfterPlatformChange,
 } from '../utils/purchaseSource';
 import { SALE_PLATFORM_OPTIONS } from '../utils/salePlatform';
+import { applyManualSellerShipping, canEditManualSellerShipping } from '../utils/saleProceeds';
 import {
   filesToDataUrls,
   getItemUserPhotoUrls,
@@ -78,6 +79,7 @@ import KleinanzeigenBuyChatProofFields from './KleinanzeigenBuyChatProofFields';
 import SourceLinkIcons from './SourceLinkIcons';
 import ProofAttachmentsPanel from './ProofAttachmentsPanel';
 import CostOriginPanel from './CostOriginPanel';
+import SaleCycleHistory from './SaleCycleHistory';
 import { resolveItemSourceLinks } from '../utils/sourceLinks';
 import { ADD_FLOW_INPUT, ADD_FLOW_LABEL, ADD_FLOW_PANEL } from './addFlowShared';
 import { searchProductPhotos, type ImageSearchResult } from '../services/imageSearchService';
@@ -180,6 +182,11 @@ const ListingStudioModal: React.FC<Props> = ({
   );
   const [storePriceText, setStorePriceText] = useState(
     item.storePrice != null ? String(item.storePrice) : ''
+  );
+  const [shippingText, setShippingText] = useState(
+    item.sellerPaidShipping && item.sellerShippingAmount != null
+      ? String(item.sellerShippingAmount)
+      : ''
   );
   const [buyDate, setBuyDate] = useState(item.buyDate || '');
   const [sellDate, setSellDate] = useState(item.sellDate || '');
@@ -420,6 +427,11 @@ const ListingStudioModal: React.FC<Props> = ({
     setBuyPriceText(item.buyPrice != null && item.buyPrice !== 0 ? String(item.buyPrice) : '');
     setSellPriceText(item.sellPrice != null ? String(item.sellPrice) : '');
     setStorePriceText(item.storePrice != null ? String(item.storePrice) : '');
+    setShippingText(
+      item.sellerPaidShipping && item.sellerShippingAmount != null
+        ? String(item.sellerShippingAmount)
+        : ''
+    );
     setBuyDate(item.buyDate || '');
     setSellDate(item.sellDate || '');
     setQuantityText(item.quantity != null ? String(item.quantity) : '');
@@ -558,6 +570,28 @@ const ListingStudioModal: React.FC<Props> = ({
     if (!Number.isFinite(n)) return;
     setText(String(n));
     void persistPatch({ [field]: n });
+  };
+
+  const commitShippingField = (raw: string) => {
+    if (raw.trim() === '') {
+      setShippingText('');
+      const next = applyManualSellerShipping(item, 0);
+      void persistPatch({
+        sellerPaidShipping: false,
+        sellerShippingAmount: 0,
+        saleProceeds: next.saleProceeds,
+      });
+      return;
+    }
+    const n = parseLocaleNumber(raw);
+    if (!Number.isFinite(n)) return;
+    const next = applyManualSellerShipping(item, n);
+    setShippingText(next.sellerPaidShipping ? String(next.sellerShippingAmount) : '');
+    void persistPatch({
+      sellerPaidShipping: next.sellerPaidShipping,
+      sellerShippingAmount: next.sellerPaidShipping ? next.sellerShippingAmount : 0,
+      saleProceeds: next.saleProceeds,
+    });
   };
 
   const handleReceiptUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1291,7 +1325,15 @@ const ListingStudioModal: React.FC<Props> = ({
             </section>
 
             <div className={`${ADD_FLOW_PANEL} p-2.5 space-y-1.5`}>
-              <div className="grid grid-cols-3 gap-1.5 text-[11px]">
+              {(() => {
+                const showShip = canEditManualSellerShipping({
+                  ...item,
+                  status,
+                  platformSold: platformSold || undefined,
+                  paymentType: paymentType || undefined,
+                });
+                return (
+              <div className={`grid gap-1.5 text-[11px] ${showShip ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-3'}`}>
                 <label className="block space-y-0.5">
                   <span className="text-[9px] font-black uppercase text-slate-400">Buy €</span>
                   <input
@@ -1316,6 +1358,21 @@ const ListingStudioModal: React.FC<Props> = ({
                     onBlur={() => commitMoneyField(sellPriceText, 'sellPrice', setSellPriceText)}
                   />
                 </label>
+                {showShip && (
+                <label className="block space-y-0.5">
+                  <span className="text-[9px] font-black uppercase text-sky-600">Ship €</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    className="w-full px-2 py-1.5 rounded-lg bg-sky-50 border border-sky-200 font-bold text-sky-900 outline-none focus:border-sky-400"
+                    value={shippingText}
+                    placeholder="0.00"
+                    title="Postage you paid (Kleinanzeigen / in person). Comes out of margin."
+                    onChange={(e) => setShippingText(e.target.value)}
+                    onBlur={() => commitShippingField(shippingText)}
+                  />
+                </label>
+                )}
                 <label className="block space-y-0.5">
                   <span className="text-[9px] font-black uppercase text-slate-400">Store €</span>
                   <input
@@ -1329,6 +1386,8 @@ const ListingStudioModal: React.FC<Props> = ({
                   />
                 </label>
               </div>
+                );
+              })()}
               <div className="grid grid-cols-3 gap-1.5 text-[11px]">
                 <label className="block space-y-0.5">
                   <span className="text-[9px] font-black uppercase text-slate-400">Buy date</span>
@@ -1762,6 +1821,7 @@ const ListingStudioModal: React.FC<Props> = ({
 
                 <div className="pt-1 border-t border-slate-200/80 space-y-1.5">
                   <p className="text-[9px] font-black uppercase text-slate-400">Sale / buyer</p>
+                  <SaleCycleHistory item={item} />
                   <div className="grid grid-cols-2 gap-1.5">
                     <label className="block space-y-0.5">
                       <span className="text-[9px] font-black uppercase text-slate-400">Sold on</span>

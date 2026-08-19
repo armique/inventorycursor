@@ -1,4 +1,4 @@
-import type { InventoryItem } from '../types';
+import type { InventoryItem, TaxMode } from '../types';
 import { formatEUR } from './formatMoney';
 import { computeItemProfitBeforeOverhead } from '../services/financialAggregation';
 
@@ -12,7 +12,8 @@ export type BundleComponentProfit = {
 /** Per-component margin inside a sold bundle (#47). */
 export function bundleComponentBreakdown(
   container: InventoryItem,
-  allItems: InventoryItem[]
+  allItems: InventoryItem[],
+  taxMode: TaxMode = 'SmallBusiness'
 ): BundleComponentProfit[] {
   if (!container.componentIds?.length) return [];
   const children = container.componentIds
@@ -22,7 +23,7 @@ export function bundleComponentBreakdown(
 
   const totalBuy = children.reduce((s, c) => s + Number(c.buyPrice || 0), 0);
   const containerSell = Number(container.sellPrice || 0);
-  const totalProfit = computeItemProfitBeforeOverhead(container, allItems);
+  const totalProfit = computeItemProfitBeforeOverhead(container, taxMode);
 
   return children.map((item) => {
     const buyPrice = Number(item.buyPrice || 0);

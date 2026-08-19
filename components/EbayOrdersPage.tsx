@@ -1,20 +1,16 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   CheckCircle2,
   Loader2,
   Package,
-  RefreshCw,
   Search,
   ShoppingCart,
 } from 'lucide-react';
 import { InventoryItem, TaxMode } from '../types';
-import { hasEbayToken } from '../services/ebayService';
-import { isCloudEnabled } from '../services/firebaseService';
-import { loadEbayOrderIndex, pullOrderIndexFromCloud } from '../services/ebayOrderIndex';
-import { invalidateEbaySalesSyncPeekCache, runEbaySalesSync } from '../services/ebaySalesSync';
-import type { BackfillProgress } from '../services/ebayOrderBackfill';
-import { applyEbayOrderMatchToItem } from '../utils/applyEbayOrderMatch';
+import { loadOrdersForSalesSync, invalidateEbaySalesSyncPeekCache } from '../services/ebaySalesSync';
+import { hydrateHubArchiveIndex, loadHubArchiveIndex } from '../services/ebayHubArchiveIndex';
+import { bindEbayOrderExact } from '../utils/bindEbayOrderExact';
 import {
   buildBindCandidateIndex,
   countOpenEbayOrderLines,
@@ -26,7 +22,6 @@ import {
 } from '../utils/ebayOpenOrders';
 import { formatEUR } from '../utils/formatMoney';
 import { matchesEbayToolSearch } from '../utils/ebayToolSearch';
-import EbayToolProgressBar from './EbayToolProgressBar';
 import EbayToolSearchInput from './EbayToolSearchInput';
 
 type Props = {
@@ -54,44 +49,24 @@ const EbayOrdersPage: React.FC<Props> = ({ items, taxMode, onUpdate, embedded = 
   const [applyingKey, setApplyingKey] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [syncing, setSyncing] = useState(false);
-  const [fetchProgress, setFetchProgress] = useState<BackfillProgress | null>(null);
-  const [tokenReady, setTokenReady] = useState(() => hasEbayToken());
-  const cancelRef = useRef({ cancelled: false });
-
   const [visibleLimit, setVisibleLimit] = useState(30);
   const [scoreReady, setScoreReady] = useState(false);
 
   const bumpCache = useCallback(() => setCacheTick((n) => n + 1), []);
 
   useEffect(() => {
-    const refresh = () => setTokenReady(hasEbayToken());
-    window.addEventListener('focus', refresh);
-    window.addEventListener('storage', refresh);
-    window.addEventListener('ebay-config-updated', refresh);
     const onIndex = () => bumpCache();
     window.addEventListener('ebay-order-index-updated', onIndex);
+    window.addEventListener('ebay-hub-archive-updated', onIndex);
+    void hydrateHubArchiveIndex().then(() => bumpCache());
     return () => {
-      window.removeEventListener('focus', refresh);
-      window.removeEventListener('storage', refresh);
-      window.removeEventListener('ebay-config-updated', refresh);
       window.removeEventListener('ebay-order-index-updated', onIndex);
+      window.removeEventListener('ebay-hub-archive-updated', onIndex);
     };
   }, [bumpCache]);
 
-  useEffect(() => {
-    if (!isCloudEnabled() || loadEbayOrderIndex().orders.length > 0) return;
-    let cancelled = false;
-    void pullOrderIndexFromCloud().then((result) => {
-      if (cancelled || result.error || result.skipped || !result.pulled) return;
-      bumpCache();
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [bumpCache]);
-
-  const { orders, meta } = useMemo(() => loadEbayOrderIndex(), [cacheTick]);
+  const orders = useMemo(() => loadOrdersForSalesSync(), [cacheTick]);
+  const hubMeta = useMemo(() => loadHubArchiveIndex().meta, [cacheTick]);
 
   const rows = useMemo(() => listOpenEbayOrderLines(items, orders), [items, orders]);
   const bindIndex = useMemo(
@@ -161,18 +136,27 @@ const EbayOrdersPage: React.FC<Props> = ({ items, taxMode, onUpdate, embedded = 
           matchScore: 0,
           matchKind: 'title' as const,
         };
-        const next = applyEbayOrderMatchToItem(
+        const result = await bindEbayOrderExact(
           item,
           { order: row.order, lineItem: row.lineItem, matchScore, matchKind },
           taxMode
         );
+        if (result.ok === false) {
+          setError(result.hint);
+          return;
+        }
+        const next = result.item;
         onUpdate([next]);
         invalidateEbaySalesSyncPeekCache();
         setPickKey(null);
         setPickQuery('');
-        setMessage(`Linked “${item.name}” → sold · order ${row.order.orderId} left the list.`);
+        setMessage(
+          result.source === 'seller_hub'
+            ? `Linked “${item.name}” with Seller Hub payout · ads / fees / label stored · order ${row.order.orderId} left the list.`
+            : `Linked “${item.name}” → sold · order ${row.order.orderId} left the list.`
+        );
         const nextItems = items.map((i) => (i.id === next.id ? next : i));
-        const remaining = countOpenEbayOrderLines(nextItems, loadEbayOrderIndex().orders);
+        const remaining = countOpenEbayOrderLines(nextItems, loadOrdersForSalesSync());
         onBound?.(next, remaining);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not link order.');
@@ -182,38 +166,6 @@ const EbayOrdersPage: React.FC<Props> = ({ items, taxMode, onUpdate, embedded = 
     },
     [onUpdate, taxMode, items, onBound]
   );
-
-  const syncOrders = useCallback(async () => {
-    setSyncing(true);
-    setError(null);
-    setMessage(null);
-    setFetchProgress(null);
-    cancelRef.current = { cancelled: false };
-    try {
-      const result = await runEbaySalesSync(items, {
-        skipFetch: !hasEbayToken(),
-        onFetchProgress: setFetchProgress,
-        cancelToken: cancelRef.current,
-      });
-      bumpCache();
-      if (result.fetch?.error) {
-        setError(result.fetch.error);
-        return;
-      }
-      if (result.fetch && !result.fetch.error && !result.fetch.cancelled) {
-        setMessage(
-          `Fetched ${result.fetch.ordersFetched} · ${result.fetch.added} new, ${result.fetch.merged} updated.`
-        );
-      } else if (result.fetchSkippedReason) {
-        setMessage(result.fetchSkippedReason);
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Sync failed.');
-    } finally {
-      setSyncing(false);
-      window.setTimeout(() => setFetchProgress(null), 800);
-    }
-  }, [items, bumpCache]);
 
   return (
     <div className={`${embedded ? 'h-full' : 'flex-1 min-h-0'} flex flex-col overflow-hidden bg-slate-50`}>
@@ -225,9 +177,7 @@ const EbayOrdersPage: React.FC<Props> = ({ items, taxMode, onUpdate, embedded = 
             </h1>
             <p className="text-[11px] text-slate-500 font-semibold">
               {rows.length} open · bind a stock item to mark it sold and drop the order
-              {meta.apiBackfill?.completedThroughDate
-                ? ` · cache through ${meta.apiBackfill.completedThroughDate}`
-                : ''}
+              {hubMeta.updatedAt ? ` · Hub ledger ${hubMeta.updatedAt.slice(0, 10)}` : ''}
             </p>
           </div>
         )}
@@ -236,20 +186,11 @@ const EbayOrdersPage: React.FC<Props> = ({ items, taxMode, onUpdate, embedded = 
             {rows.length} open order{rows.length === 1 ? '' : 's'} · bind to mark sold
           </p>
         )}
-        <button
-          type="button"
-          disabled={syncing}
-          onClick={() => void syncOrders()}
-          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider disabled:opacity-50"
-        >
-          {syncing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
-          {tokenReady ? 'Sync eBay' : 'Refresh cache'}
-        </button>
         <Link
-          to="/panel/ebay-store-pull?tab=orders"
-          className="text-[10px] font-black uppercase tracking-wider text-slate-500 hover:text-slate-900"
+          to="/panel/ebay-store-pull"
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider"
         >
-          Cache setup
+          Fetch Hub ledger
         </Link>
       </div>
 
@@ -261,14 +202,6 @@ const EbayOrdersPage: React.FC<Props> = ({ items, taxMode, onUpdate, embedded = 
           matchCount={filteredCount}
           totalCount={rows.length}
         />
-        {fetchProgress && (
-          <EbayToolProgressBar
-            label={`Fetching orders (chunk ${fetchProgress.chunkIndex + 1}/${fetchProgress.chunkCount})`}
-            done={fetchProgress.chunkIndex + 1}
-            total={fetchProgress.chunkCount}
-            detail={`${fetchProgress.rangeLabel} · ${fetchProgress.ordersFetchedTotal} total`}
-          />
-        )}
         {message && (
           <p className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5">
             {message}
@@ -279,19 +212,11 @@ const EbayOrdersPage: React.FC<Props> = ({ items, taxMode, onUpdate, embedded = 
             {error}
           </p>
         )}
-        {!tokenReady && (
-          <p className="text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
-            No eBay token — showing cached orders. Add OAuth in Settings, or import CSV under Cache setup.
-          </p>
-        )}
-      </div>
-
-      <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
         {orders.length === 0 && (
           <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-10 text-center">
-            <p className="text-sm font-black text-slate-800">No eBay orders in cache yet</p>
+            <p className="text-sm font-black text-slate-800">No Seller Hub orders yet</p>
             <p className="text-[12px] text-slate-500 font-semibold mt-1">
-              Sync from eBay or import a Seller Hub CSV in Cache setup.
+              Load the Hub dump or fetch new sales from eBay Tools → Sales sync.
             </p>
           </div>
         )}

@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
   ChevronDown,
@@ -370,11 +369,7 @@ const FilamentStockPanel: React.FC<Props> = ({ selectedSpoolId, onSelectSpool, p
           <div>
             <h2 className="text-lg font-black text-slate-900">Filament stock</h2>
             <p className="text-xs text-slate-500 mt-0.5 max-w-xl">
-              Each spool tracks weight, €/kg, and where filament went. Amazon — manual entry here. eBay — use{' '}
-              <Link to="/panel/ebay-store-pull?tab=purchases" className="text-indigo-600 font-bold hover:underline">
-                eBay → Purchases
-              </Link>{' '}
-              tab to link buyer orders.
+              Each spool tracks weight, €/kg, and where filament went. Amazon — manual entry here.
             </p>
           </div>
         </div>

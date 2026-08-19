@@ -1,7 +1,9 @@
 import { InventoryItem, ItemStatus, TaxMode, type EbaySaleAdjustment, type EbaySaleAdjustmentKind, type PriceHistoryEntry } from '../types';
 import type { EbayOrderRecord } from '../services/ebayOrderIndex';
 import type { EbayOrderFinancialEvent } from '../services/ebayOrderIndex';
-import { describeFinancialEvent } from './ebayOrderFinancial';
+import { describeFinancialEvent, getOrderEffectiveNet, hubRefundDisplay } from './ebayOrderFinancial';
+import { getChildren, getParentContainer } from '../services/financialAggregation';
+import { archiveActiveSaleAndClear } from './itemSaleCycle';
 import { calculateSaleProfit } from './saleProfit';
 
 export function getOriginalSellPrice(item: InventoryItem): number | null {
@@ -97,26 +99,121 @@ export function hasRestockAfterRefundAdjustment(item: InventoryItem): boolean {
   return (item.ebaySaleAdjustments || []).some(isRestockAfterRefundAdjustment);
 }
 
+/** Split EUR across n recipients with remainder cents on the first items. */
+export function splitEqualEur(total: number, count: number): number[] {
+  if (count <= 0) return [];
+  if (!Number.isFinite(total) || total < 0.005) return Array.from({ length: count }, () => 0);
+  const cents = Math.round(total * 100);
+  const base = Math.floor(cents / count);
+  let rem = cents - base * count;
+  return Array.from({ length: count }, () => {
+    const extra = rem > 0 ? 1 : 0;
+    rem -= extra;
+    return round2((base + extra) / 100);
+  });
+}
+
 /** Cancellation / refund loss on order (positive EUR) — e.g. DHL label when net Bestelleinnahmen is negative. */
 export function orderCancellationCostAbs(orderNet: number): number {
   if (!Number.isFinite(orderNet) || orderNet >= -0.01) return 0;
   return round2(Math.abs(orderNet));
 }
 
+function itemEbayOrderId(item: InventoryItem, allItems: InventoryItem[]): string {
+  const direct = (item.ebayOrderId || '').trim();
+  if (direct) return direct;
+  return (getParentContainer(item, allItems)?.ebayOrderId || '').trim();
+}
+
+/**
+ * After a Hub "Erstattet" (full refund), leftover negative Bestelleinnahmen
+ * (label / ads / fees) is added to buy price. A PC/bundle splits that loss equally
+ * across its parts; a single item takes the whole amount.
+ */
+export function allocateFullRefundRestockLoss(args: {
+  items: InventoryItem[];
+  restockIds: string[];
+  orders: EbayOrderRecord[];
+}): Map<string, number> {
+  const { items, restockIds, orders } = args;
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const ordersById = new Map(orders.map((o) => [o.orderId, o]));
+  const restocked = new Set(restockIds.filter((id) => byId.has(id)));
+  for (const id of [...restocked]) {
+    const item = byId.get(id);
+    if (!item || (!item.isPC && !item.isBundle)) continue;
+    for (const child of getChildren(item, items)) restocked.add(child.id);
+  }
+
+  const out = new Map<string, number>();
+  const handledOrders = new Set<string>();
+  const consider = [...restocked].map((id) => byId.get(id)).filter((i): i is InventoryItem => Boolean(i));
+
+  for (const item of consider) {
+    const oid = itemEbayOrderId(item, items);
+    if (!oid || handledOrders.has(oid)) continue;
+    handledOrders.add(oid);
+    const order = ordersById.get(oid);
+    if (!order) continue;
+    if (hubRefundDisplay(order).kind !== 'full') continue;
+    const loss = orderCancellationCostAbs(getOrderEffectiveNet(order) ?? 0);
+    if (loss < 0.01) continue;
+
+    const alreadyCapitalized = items.some((row) => {
+      if (
+        (row.ebaySaleAdjustments || []).some(
+          (a) => a.kind === 'restock_after_refund' && a.orderId === oid && (a.buyPriceDelta ?? 0) > 0.005
+        )
+      ) {
+        return true;
+      }
+      return (row.ebaySaleCycles || []).some(
+        (c) => (c.ebayOrderId || '') === oid && (c.leftoverLossEur ?? 0) > 0.005
+      );
+    });
+    if (alreadyCapitalized) continue;
+
+    const container = item.isPC || item.isBundle ? item : getParentContainer(item, items);
+    let pool: InventoryItem[];
+    if (container && (container.isPC || container.isBundle)) {
+      pool = getChildren(container, items).filter((c) => !c.isPC && !c.isBundle);
+      if (!pool.length) pool = [container];
+    } else {
+      pool = items.filter((row) => !row.isPC && !row.isBundle && itemEbayOrderId(row, items) === oid);
+      if (!pool.length) {
+        pool = consider.filter((row) => !row.isPC && !row.isBundle && itemEbayOrderId(row, items) === oid);
+      }
+    }
+
+    const shares = splitEqualEur(loss, pool.length);
+    pool.forEach((part, idx) => {
+      if (!restocked.has(part.id)) return;
+      const share = shares[idx] ?? 0;
+      if (share >= 0.01) out.set(part.id, round2((out.get(part.id) || 0) + share));
+    });
+  }
+
+  return out;
+}
+
 export function buildRestockAfterRefundAdjustment(
   item: InventoryItem,
   order: EbayOrderRecord,
-  orderNet: number
+  orderNet: number,
+  options?: { buyPriceDelta?: number }
 ): EbaySaleAdjustment {
   const sellBefore = getEffectiveSellPrice(item) ?? item.sellPrice ?? 0;
   const buyBefore = round2(item.buyPrice);
-  const buyDelta = orderCancellationCostAbs(orderNet);
+  const buyDelta =
+    options?.buyPriceDelta != null && Number.isFinite(options.buyPriceDelta)
+      ? round2(Math.max(0, options.buyPriceDelta))
+      : orderCancellationCostAbs(orderNet);
   const buyAfter = round2(buyBefore + buyDelta);
   const date = order.lastModifiedDate || order.creationDate || new Date().toISOString().split('T')[0];
   const reason =
     buyDelta > 0
-      ? `Full refund on order ${order.orderId} — €${buyDelta.toFixed(2)} cancellation cost added to buy price (DHL label & fees)`
-      : `Full refund on order ${order.orderId} — item returned to active inventory`;
+      ? `Erstattet on order ${order.orderId} — €${buyDelta.toFixed(2)} leftover Bestelleinnahmen (label/fees) added to buy price`
+      : `Erstattet on order ${order.orderId} — item returned to active inventory`;
 
   return {
     id: `adj-restock-${order.orderId}-${item.id}`,
@@ -169,31 +266,39 @@ export function applyRestockAfterRefundToItem(
   if (existing.some((a) => a.id === adjustment.id || (a.eventId && a.eventId === adjustment.eventId))) {
     return item;
   }
+  if (
+    (item.ebaySaleCycles || []).some(
+      (c) => c.reason === 'erstattet' && (c.ebayOrderId || '') === adjustment.orderId
+    )
+  ) {
+    return item;
+  }
 
   const buyBefore = adjustment.buyPriceBefore ?? item.buyPrice;
   const buyAfter = adjustment.buyPriceAfter ?? round2(buyBefore + (adjustment.buyPriceDelta ?? 0));
-  const originalSell =
-    item.originalSellPrice ??
-    (item.sellPrice != null ? item.sellPrice : adjustment.sellPriceBefore);
-
-  return {
+  const leftover = adjustment.buyPriceDelta ?? 0;
+  const withAdj: InventoryItem = {
     ...item,
-    status: ItemStatus.IN_STOCK,
-    buyPrice: buyAfter,
-    sellPrice: undefined,
-    profit: undefined,
-    sellDate: undefined,
-    platformSold: undefined,
-    paymentType: undefined,
-    feeAmount: undefined,
-    hasFee: false,
-    customer: undefined,
-    invoiceNumber: undefined,
-    originalSellPrice: originalSell,
-    workflowStage: item.listedOnEbay ? 'Listed' : item.workflowStage === 'Sold' || item.workflowStage === 'Shipped' ? 'Ready' : item.workflowStage,
-    comment2: appendRefundNote(item.comment2, adjustment),
-    priceHistory: appendBuyPriceHistory(item, buyBefore, buyAfter, adjustment.date),
+    originalSellPrice:
+      item.originalSellPrice ??
+      (item.sellPrice != null ? item.sellPrice : adjustment.sellPriceBefore),
     ebaySaleAdjustments: [...existing, adjustment],
+  };
+  const archived = archiveActiveSaleAndClear(withAdj, 'erstattet', {
+    leftoverLossEur: leftover,
+    refundKind: 'full',
+    buyPriceAfter: buyAfter,
+    status: ItemStatus.IN_STOCK,
+    comment2: appendRefundNote(item.comment2, adjustment),
+  });
+  return {
+    ...archived,
+    workflowStage: item.listedOnEbay
+      ? 'Listed'
+      : item.workflowStage === 'Sold' || item.workflowStage === 'Shipped'
+        ? 'Ready'
+        : item.workflowStage,
+    priceHistory: appendBuyPriceHistory(archived, buyBefore, buyAfter, adjustment.date),
   };
 }
 

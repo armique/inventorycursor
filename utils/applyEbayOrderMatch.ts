@@ -5,8 +5,10 @@ import { getLinePayout } from './ebayOrderPayout';
 import { calculateSaleProfit } from './saleProfit';
 import { hasPostSaleRefund, sumOrderSaleProceeds } from './ebayOrderFinancial';
 import { lineItemClaimKey } from './ebayOrderLinkAnalysis';
-import { saleProceedsFromOrder } from './saleProceeds';
+import { saleProceedsFeeTotal, saleProceedsFromOrder } from './saleProceeds';
 import { isCrucialRamListingText, patchCrucialRamInvoiceSale } from './crucialRamInvoiceSaleFix';
+import { roundMoney } from '../services/financialAggregation';
+import { itemAlreadyClosedSaleOrder } from './itemSaleCycle';
 
 /** True when linking an eBay order should correct platform/payment to eBay. */
 export function shouldCorrectSalePlatformToEbay(item: InventoryItem): boolean {
@@ -22,10 +24,26 @@ export function applyEbayOrderMatchToItem(
   match: EbayOrderMatch,
   taxMode: TaxMode
 ): InventoryItem {
+  if (itemAlreadyClosedSaleOrder(item, match.order.orderId)) return item;
   const { order, lineItem } = match;
   const payout = getLinePayout(order, lineItem);
-  const feeForProfit = payout.netKnown ? 0 : payout.fee;
-  const profit = calculateSaleProfit(payout.sellPrice, item.buyPrice, feeForProfit, taxMode);
+  const proceeds = saleProceedsFromOrder(order, lineItem);
+  const refunded = hasPostSaleRefund(order);
+  const exactFees = !payout.feeEstimated && (payout.netKnown || saleProceedsFeeTotal(proceeds) >= 0.01);
+
+  const buyerTotal =
+    payout.buyerTotal ?? payout.gross ?? proceeds.buyerTotalEur ?? payout.sellPrice;
+  const itemizedFees = saleProceedsFeeTotal(proceeds);
+  const feeForExact =
+    itemizedFees >= 0.01
+      ? itemizedFees
+      : payout.netKnown && payout.net != null
+        ? roundMoney(Math.max(0, buyerTotal - payout.net))
+        : payout.fee;
+
+  const sellForBooks = refunded || !exactFees ? payout.sellPrice : buyerTotal;
+  const feeForProfit = refunded ? 0 : exactFees ? feeForExact : payout.fee;
+  const profit = calculateSaleProfit(sellForBooks, item.buyPrice, feeForProfit, taxMode);
 
   const customer = customerFromEbayOrder(order);
   const hadKleinanzeigenSale =
@@ -33,18 +51,20 @@ export function applyEbayOrderMatchToItem(
 
   const originalSellPrice =
     item.originalSellPrice ??
-    (hasPostSaleRefund(order)
+    (refunded
       ? sumOrderSaleProceeds(order) ?? payout.sellPrice
       : item.sellPrice != null && item.ebayOrderId === order.orderId
         ? item.sellPrice
-        : payout.sellPrice);
+        : exactFees
+          ? buyerTotal
+          : payout.sellPrice);
 
   const next: InventoryItem = {
     ...item,
     status:
       item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED ? ItemStatus.SOLD : item.status,
     originalSellPrice,
-    sellPrice: payout.sellPrice,
+    sellPrice: sellForBooks,
     sellDate: order.creationDate || item.sellDate || new Date().toISOString().split('T')[0],
     platformSold: shouldCorrectSalePlatformToEbay(item) ? 'ebay.de' : item.platformSold || 'ebay.de',
     paymentType: shouldCorrectSalePlatformToEbay(item) ? 'ebay.de' : item.paymentType || 'ebay.de',
@@ -56,9 +76,11 @@ export function applyEbayOrderMatchToItem(
     ebayOrderLineKey: lineItemClaimKey(order.orderId, lineItem),
     ebaySku: lineItem.sku || item.ebaySku,
     ebayListingId: lineItem.listingId || item.ebayListingId,
-    hasFee: !payout.netKnown && Boolean(payout.fee),
-    feeAmount: payout.netKnown ? 0 : payout.fee,
-    saleProceeds: saleProceedsFromOrder(order, lineItem),
+    hasFee: refunded ? false : Boolean(feeForProfit),
+    feeAmount: refunded ? 0 : feeForProfit,
+    sellerPaidShipping: exactFees && !refunded ? false : item.sellerPaidShipping,
+    sellerShippingAmount: exactFees && !refunded ? undefined : item.sellerShippingAmount,
+    saleProceeds: proceeds,
   };
 
   if (hadKleinanzeigenSale) {
@@ -67,7 +89,7 @@ export function applyEbayOrderMatchToItem(
   }
 
   if (
-    !hasPostSaleRefund(order) &&
+    !refunded &&
     isCrucialRamListingText(lineItem.title) &&
     (Math.abs((payout.net ?? payout.sellPrice) - 107.73) < 0.02 ||
       Math.abs((order.grossTotal ?? 0) - 138.93) < 0.02 ||

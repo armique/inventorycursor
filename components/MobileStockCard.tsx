@@ -23,6 +23,8 @@ import {
 import type { InventoryItem } from '../types';
 import { ItemStatus } from '../types';
 import { formatEUR } from '../utils/formatMoney';
+import { saleColumnSplit, canEditManualSellerShipping } from '../utils/saleProceeds';
+import { SellerShippingEditorDialog } from './SaleProceedsPopover';
 import { getItemUserPhotoCount } from '../utils/imageImport';
 import { computePriceAnalyzer } from '../utils/listingWatch';
 import ItemThumbnail from './ItemThumbnail';
@@ -69,6 +71,15 @@ export const MobileStockCard: React.FC<{
   suggestedEbayList?: number | null;
   suggestedKleinList?: number | null;
   suggestedFeePct?: number | null;
+  /** When on, compact row also lists ads / eBay / shipping under the sell price. */
+  showPriceBreakdown?: boolean;
+  /** Hub refund not yet stamped on the sold row. */
+  refundFallbackEur?: number;
+  /** Hub sell-cell preview when the current breakdown does not match Seller Hub. */
+  hubSuggestedSplit?: ReturnType<typeof saleColumnSplit>;
+  onApplyHubSplit?: () => void;
+  /** Non-eBay sold rows — tap sell price to type shipping you paid. */
+  onSaveShipping?: (amount: number) => void;
   selected?: boolean;
   onToggleSelect?: () => void;
   actions: MobileStockCardActions;
@@ -80,12 +91,18 @@ export const MobileStockCard: React.FC<{
   suggestedEbayList,
   suggestedKleinList,
   suggestedFeePct,
+  showPriceBreakdown = false,
+  refundFallbackEur = 0,
+  hubSuggestedSplit = null,
+  onApplyHubSplit,
+  onSaveShipping,
   selected,
   onToggleSelect,
   actions,
   purchaseActions,
 }) => {
   const [moreOpen, setMoreOpen] = React.useState(false);
+  const [shippingOpen, setShippingOpen] = React.useState(false);
   const photoCount = getItemUserPhotoCount(item);
   const hasPhotos = photoCount > 0;
   const inStock = item.status === ItemStatus.IN_STOCK;
@@ -168,17 +185,73 @@ export const MobileStockCard: React.FC<{
                   </span>
                 )}
                 €{formatEUR(item.buyPrice)}
-                {item.sellPrice != null ? ` · aim €${formatEUR(item.sellPrice)}` : ''}
+                {item.sellPrice != null ? (
+                  <>
+                    {' · '}
+                    {onSaveShipping && canEditManualSellerShipping(item) ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShippingOpen(true);
+                        }}
+                        className="underline decoration-dotted decoration-sky-400 underline-offset-2 text-slate-800"
+                      >
+                        €{formatEUR(saleColumnSplit(item, { refundFallbackEur })?.totalEur ?? item.sellPrice)}
+                      </button>
+                    ) : (
+                      `€${formatEUR(saleColumnSplit(item, { refundFallbackEur })?.totalEur ?? item.sellPrice)}`
+                    )}
+                  </>
+                ) : null}
+                {(() => {
+                  const split = saleColumnSplit(item, { refundFallbackEur });
+                  if (!split) return null;
+                  return (
+                    <>
+                      {showPriceBreakdown && split.adFeeEur >= 0.01 ? (
+                        <span className="text-orange-600"> · −€{formatEUR(split.adFeeEur)} ads</span>
+                      ) : null}
+                      {showPriceBreakdown && split.ebayFeeEur >= 0.01 ? (
+                        <span className="text-orange-600"> · −€{formatEUR(split.ebayFeeEur)} eBay</span>
+                      ) : null}
+                      {split.shippingEur >= 0.01 ? (
+                        <span className="text-sky-700"> · −€{formatEUR(split.shippingEur)} ship</span>
+                      ) : null}
+                      {split.refundEur >= 0.01 ? (
+                        <span className="text-rose-600"> · −€{formatEUR(split.refundEur)} refund</span>
+                      ) : null}
+                    </>
+                  );
+                })()}
+                {hubSuggestedSplit && onApplyHubSplit ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onApplyHubSplit();
+                    }}
+                    className="mt-1 block text-left text-[10px] font-bold text-emerald-800"
+                  >
+                    Hub sell €{formatEUR(hubSuggestedSplit.totalEur)}
+                    {hubSuggestedSplit.adFeeEur >= 0.01
+                      ? ` · −€${formatEUR(hubSuggestedSplit.adFeeEur)} ads`
+                      : ''}
+                    {hubSuggestedSplit.ebayFeeEur >= 0.01
+                      ? ` · −€${formatEUR(hubSuggestedSplit.ebayFeeEur)} eBay`
+                      : ''}
+                    {hubSuggestedSplit.shippingEur >= 0.01
+                      ? ` · −€${formatEUR(hubSuggestedSplit.shippingEur)} ship`
+                      : ''}
+                    {hubSuggestedSplit.refundEur >= 0.01
+                      ? ` · −€${formatEUR(hubSuggestedSplit.refundEur)} refund`
+                      : ''}
+                  </button>
+                ) : null}
                 {profit != null ? (
                   <span className={profit >= 0 ? ' text-emerald-600' : ' text-rose-600'}>
                     {' '}
                     ({profit >= 0 ? '+' : ''}€{formatEUR(profit)})
-                  </span>
-                ) : null}
-                {(Number(item.feeAmount) || 0) > 0 ? (
-                  <span className="text-amber-700">
-                    {' '}
-                    · fees −€{formatEUR(Number(item.feeAmount))}
                   </span>
                 ) : null}
                 {item.subCategory || item.category
@@ -549,6 +622,16 @@ export const MobileStockCard: React.FC<{
         </div>
       </MobileSheetShell>
       )}
+      {shippingOpen && onSaveShipping ? (
+        <SellerShippingEditorDialog
+          item={item}
+          onSave={(amount) => {
+            onSaveShipping(amount);
+            setShippingOpen(false);
+          }}
+          onClose={() => setShippingOpen(false)}
+        />
+      ) : null}
     </>
   );
 };

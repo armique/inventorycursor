@@ -6,6 +6,7 @@
 import { matchEbayListingsForItem } from '../utils/ebayListingMatch';
 import { ensureEbayListings } from './ebayListingIndex';
 import { roundPriceCentsTo99 } from '../utils/ebayPrice';
+import type { EbayFinanceTransaction } from '../utils/ebayFinancesMap';
 
 // We point to our own server route. The server handles the actual call to api.ebay.com
 const PROXY_BASE = '/api/ebay';
@@ -329,6 +330,29 @@ export const listEbayOrders = async (fromDate?: string, toDate?: string): Promis
     throw new Error(data.error || `Failed to fetch orders: ${res.status}`);
   }
   return data.orders || [];
+};
+
+/** Sell Finances API rows (fee breakdown, ads, shipping labels, net). Requires sell.finances scope. */
+export const listEbayFinanceTransactions = async (
+  fromDate?: string,
+  toDate?: string
+): Promise<EbayFinanceTransaction[]> => {
+  const token = await ensureFreshEbayToken();
+  if (!token) {
+    throw new Error('eBay not connected. Open Settings → Listings sync → Connect eBay.');
+  }
+  const res = await fetch('/api/ebay-finances', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, fromDate, toDate }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data.error || `Failed to fetch finances: ${res.status}`) as Error & { code?: string };
+    err.code = data.code || (res.status === 403 ? 'insufficient_scope' : undefined);
+    throw err;
+  }
+  return data.transactions || [];
 };
 
 /** Buyer-side purchase line from Trading API GetOrders. */

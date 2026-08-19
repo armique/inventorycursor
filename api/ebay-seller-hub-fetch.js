@@ -28,7 +28,7 @@ function bodyOf(req) {
   return req.body;
 }
 
-function runScrape(payload, timeoutMs = 90000) {
+function runScrape(payload, timeoutMs = 60000) {
   const script = resolve(process.cwd(), 'scripts/ebay-seller-hub-fetch.mjs');
   return new Promise((resolvePromise) => {
     const child = spawn(process.execPath, [script], {
@@ -116,7 +116,7 @@ export default async function handler(req, res) {
       ok: false,
       code: 'local_only',
       openUrl: EBAY_SELLER_HUB_ORDERS_URL,
-      hint: 'Live Seller Hub scrape runs on npm run dev with Chrome --remote-debugging-port=9222. Paste the payout block here, or use it locally.',
+      hint: 'Live Seller Hub scrape needs npm run dev:ebay (dedicated Chrome on port 9222). Click Bind again after that Chrome is logged into eBay.de.',
     });
   }
 

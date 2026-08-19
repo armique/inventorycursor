@@ -78,11 +78,12 @@ function ebayAppConfig() {
   };
 }
 
-/** User OAuth scopes for seller order + inventory read. */
+/** User OAuth scopes for seller order + inventory + payout/fee read. */
 const EBAY_USER_SCOPES = [
   'https://api.ebay.com/oauth/api_scope',
   'https://api.ebay.com/oauth/api_scope/sell.fulfillment.readonly',
   'https://api.ebay.com/oauth/api_scope/sell.inventory.readonly',
+  'https://api.ebay.com/oauth/api_scope/sell.finances',
 ].join(' ');
 
 function ebayAuthHost(env) {
@@ -925,6 +926,71 @@ async function handleEbayOrders(req, res) {
   }
 }
 
+async function handleEbayFinances(req, res) {
+  let token;
+  let fromDate;
+  let toDate;
+  if (req.method === 'POST') {
+    const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+    token = body.token || (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    fromDate = body.fromDate || body.from;
+    toDate = body.toDate || body.to;
+  } else {
+    token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || req.query?.token;
+    fromDate = req.query?.fromDate || req.query?.from;
+    toDate = req.query?.toDate || req.query?.to;
+  }
+  if (!token) return res.status(400).json({ error: 'Missing token.' });
+
+  const now = new Date();
+  const to = toDate ? new Date(`${toDate}T23:59:59.999Z`) : now;
+  const from = fromDate
+    ? new Date(`${fromDate}T00:00:00.000Z`)
+    : new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+  const filter = `transactionDate:[${from.toISOString()}..${to.toISOString()}]`;
+  const all = [];
+  let offset = 0;
+  const limit = 200;
+
+  try {
+    for (;;) {
+      const url = `https://apiz.ebay.com/sell/finances/v1/transaction?limit=${limit}&offset=${offset}&filter=${encodeURIComponent(filter)}`;
+      const ebayRes = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'X-EBAY-C-MARKETPLACE-ID': 'EBAY_DE',
+        },
+      });
+      if (ebayRes.status === 401) return res.status(401).json({ error: 'eBay token expired or invalid.' });
+      if (ebayRes.status === 403) {
+        const errText = await ebayRes.text();
+        return res.status(403).json({
+          error:
+            'eBay token is missing sell.finances. Reconnect eBay in Settings so the app can fetch ads, fees, and net payout.',
+          code: 'insufficient_scope',
+          detail: errText.slice(0, 240),
+        });
+      }
+      if (!ebayRes.ok) {
+        const errText = await ebayRes.text();
+        return res.status(ebayRes.status).json({ error: errText.slice(0, 400) });
+      }
+      const data = await ebayRes.json();
+      const txs = data.transactions || [];
+      for (const tx of txs) all.push(tx);
+      if (txs.length < limit) break;
+      offset += limit;
+      if (offset > 20000) break;
+    }
+    return res.status(200).json({ transactions: all, count: all.length });
+  } catch (e) {
+    return res.status(500).json({ error: e instanceof Error ? e.message : 'Failed to fetch eBay finances' });
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.method === 'OPTIONS') {
@@ -938,6 +1004,7 @@ export default async function handler(req, res) {
 
   const route = String(req.query?.route || 'order').trim();
   if (route === 'orders') return handleEbayOrders(req, res);
+  if (route === 'finances') return handleEbayFinances(req, res);
   if (route === 'purchases') return handleEbayPurchases(req, res);
   if (route === 'listings') return handleEbayListings(req, res);
   if (route === 'listing_by_id') return handleEbayListingById(req, res);

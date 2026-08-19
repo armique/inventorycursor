@@ -1,6 +1,6 @@
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { X, Euro, CheckCircle2, ChevronDown, Upload, ImagePlus, Loader2, Truck, Receipt, ExternalLink } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { X, Euro, CheckCircle2, ChevronDown, Upload, ImagePlus, Loader2, Truck, Receipt, ExternalLink, Search } from 'lucide-react';
 import { parseEbayOrderFromImageInput } from '../services/ebayOrderScreenshotAI';
 import { mapKleinanzeigenPaymentMethod, parseKleinanzeigenChatFromImageInput } from '../services/kleinanzeigenChatScreenshotAI';
 import { fetchEbayOrder, hasEbayToken } from '../services/ebayService';
@@ -8,13 +8,16 @@ import { findEbayOrderById, loadEbayOrderIndex } from '../services/ebayOrderInde
 import { refreshRecentEbayOrders } from '../services/ebayOrderBackfill';
 import { customerFromEbayOrder } from '../utils/ebayOrderBuyerData';
 import { ebayScreenshotSaleFields } from '../utils/ebayScreenshotSaleFields';
-import { listRecentEbayOrdersForSale, type EbayOrderMatch } from '../utils/ebayOrderMatch';
+import { isStrongEbayOrderMatch, listEbayOrdersForItemSale, type EbayOrderMatch } from '../utils/ebayOrderMatch';
+import { buildClaimedLineKeys } from '../utils/ebayOrderLinkAnalysis';
+import { bindEbayOrderExact } from '../utils/bindEbayOrderExact';
 import { getLinePayout, estimateEbayMarketplaceFee } from '../utils/ebayOrderPayout';
 import { persistSaleProofImage, urlNeedsPhotoArchive } from '../services/inventoryImageStorage';
 import { InventoryItem, ItemStatus, PaymentType, CustomerInfo, Platform, TaxMode, SaleProceedsBreakdown } from '../types';
 import { SALE_PLATFORM_OPTIONS } from '../utils/salePlatform';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 import { saleProceedsFromOrder, saleProceedsFromScreenshot, resolveSaleProceeds, saleProceedsHasDetail } from '../utils/saleProceeds';
+import { computeItemProfitBeforeOverhead, roundMoney } from '../services/financialAggregation';
 import {
   EBAY_SELLER_HUB_ORDERS_URL,
   parseEbaySellerHubPayoutText,
@@ -28,11 +31,29 @@ import { SaleProceedsDialog } from './SaleProceedsPopover';
 
 interface Props {
   item: InventoryItem;
+  /** Full inventory — used to hide orders already bound to another row. */
+  inventoryItems?: InventoryItem[];
   taxMode?: TaxMode;
   /** sell = mark in-stock item sold; editBuyer = update buyer/sale metadata on already-sold item */
   mode?: 'sell' | 'editBuyer';
   onSave: (updatedItem: InventoryItem, splitOffItem?: InventoryItem) => void | Promise<void>;
   onClose: () => void;
+}
+
+async function readClipboardImageFile(): Promise<File | null> {
+  if (!navigator.clipboard || !('read' in navigator.clipboard)) return null;
+  try {
+    const items = await navigator.clipboard.read();
+    for (const item of items) {
+      const type = item.types.find((t) => t.startsWith('image/'));
+      if (!type) continue;
+      const blob = await item.getType(type);
+      return new File([blob], 'seller-hub.png', { type });
+    }
+  } catch {
+    /* permission or empty clipboard */
+  }
+  return null;
 }
 
 const PAYMENT_METHODS: PaymentType[] = [
@@ -47,7 +68,14 @@ const PAYMENT_METHODS: PaymentType[] = [
   'Other'
 ];
 
-const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 'sell', onSave, onClose }) => {
+const SaleModal: React.FC<Props> = ({
+  item,
+  inventoryItems,
+  taxMode = 'SmallBusiness',
+  mode = 'sell',
+  onSave,
+  onClose,
+}) => {
   const isEditBuyer = mode === 'editBuyer';
   const [salePrice, setSalePrice] = useState<string>(item.sellPrice != null ? String(item.sellPrice) : '');
   const [saleDate, setSaleDate] = useState(item.sellDate || new Date().toISOString().split('T')[0]);
@@ -101,11 +129,14 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
   const [orderIdLookupLoading, setOrderIdLookupLoading] = useState(false);
   const [orderIdLookupMessage, setOrderIdLookupMessage] = useState<string | null>(null);
   const [orderMatchSuggestions, setOrderMatchSuggestions] = useState<EbayOrderMatch[]>([]);
+  const [orderFilter, setOrderFilter] = useState('');
   const [orderRefreshLoading, setOrderRefreshLoading] = useState(false);
   const [hubFetching, setHubFetching] = useState(false);
   const [hubPaste, setHubPaste] = useState('');
   const [hubMessage, setHubMessage] = useState<string | null>(null);
   const [hubCandidates, setHubCandidates] = useState<SellerHubFetchCandidate[]>([]);
+  const [hubWaitingForPaste, setHubWaitingForPaste] = useState(false);
+  const [hubClipboardReading, setHubClipboardReading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const didLiveOrderFetchRef = useRef(false);
@@ -117,15 +148,27 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
         setOrderMatchSuggestions([]);
         return [];
       }
-      // Newest first — seller picks the right order; name badges are hints only.
-      const matches = listRecentEbayOrdersForSale(item, orders, { days: 45, limit: 12 });
+      const claimed = new Set<string>();
+      if (inventoryItems?.length) {
+        for (const key of buildClaimedLineKeys(inventoryItems, orders)) claimed.add(key);
+        for (const other of inventoryItems) {
+          if (other.id === item.id) continue;
+          const lineKey = other.ebayOrderLineKey?.trim();
+          if (lineKey) claimed.add(lineKey.toLowerCase());
+        }
+      }
+      const matches = listEbayOrdersForItemSale(item, orders, {
+        days: 90,
+        limit: 12,
+        claimedKeys: claimed,
+      });
       setOrderMatchSuggestions(matches);
       return matches;
     } catch {
       setOrderMatchSuggestions([]);
       return [];
     }
-  }, [item]);
+  }, [item, inventoryItems]);
 
   const applySuggestedOrder = useCallback((match: EbayOrderMatch) => {
     const payout = getLinePayout(match.order, match.lineItem);
@@ -177,6 +220,56 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
     );
   }, [item.ebaySku, item.ebayListingId]);
 
+  const bindMatchAsSold = useCallback(
+    async (match: EbayOrderMatch) => {
+      if (saving || hubFetching) return;
+      setSaving(true);
+      setHubFetching(true);
+      setSaveError(null);
+      setHubMessage('Reading Seller Hub — price breakdown, username, order, shipping address…');
+      setOrderIdLookupMessage('Reading Seller Hub…');
+      try {
+        const result = await bindEbayOrderExact(item, match, taxMode);
+        if (!result.ok) {
+          setHubMessage(result.hint);
+          setSaveError(result.hint);
+          setHubCandidates(result.candidates || []);
+          setEbayOrderId(match.order.orderId);
+          setOrderIdLookupMessage(result.hint);
+          return;
+        }
+        await onSave(isEditBuyer ? result.item : { ...result.item, storeVisible: false });
+        onClose();
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : 'Could not bind eBay order');
+      } finally {
+        setSaving(false);
+        setHubFetching(false);
+      }
+    },
+    [item, taxMode, onSave, onClose, saving, hubFetching, isEditBuyer]
+  );
+
+  const visibleOrderSuggestions = useMemo(() => {
+    const q = orderFilter.trim().toLowerCase();
+    if (!q) return orderMatchSuggestions;
+    return orderMatchSuggestions.filter((match) => {
+      const hay = [
+        match.lineItem.title,
+        match.lineItem.sku,
+        match.order.orderId,
+        match.order.buyer.username,
+        match.order.buyer.fullName,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [orderFilter, orderMatchSuggestions]);
+
+  const bestOrderMatch = visibleOrderSuggestions.find((m) => isStrongEbayOrderMatch(m)) ?? null;
+
   // Cache recent orders immediately; once per modal, live-fetch then refresh the newest-first list.
   useEffect(() => {
     if (platformSold !== 'ebay.de') {
@@ -201,8 +294,11 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
           return;
         }
         if (result.ordersFetched > 0 || matches.length > 0) {
+          const ranked = matches.filter((m) => isStrongEbayOrderMatch(m)).length;
           setOrderIdLookupMessage(
-            `Updated from eBay · ${result.ordersFetched} recent · ${matches.length} listed (newest first) — tap to fill`
+            ranked > 0
+              ? `Updated from eBay · ${matches.length} listed · ${ranked} name match${ranked === 1 ? '' : 'es'} — Bind · sold or tap to fill`
+              : `Updated from eBay · ${result.ordersFetched} recent · ${matches.length} listed — search or tap to fill`
           );
         }
       } catch (e: unknown) {
@@ -435,16 +531,16 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
     else loadKleinanzeigenChatFile(file);
   };
 
-  const handleParseOrderScreenshot = async () => {
-    const src = orderScreenshotSource.trim();
-    if (!src) {
-      setOrderScreenshotError('Paste an Imgur/direct image URL or upload a screenshot.');
-      return;
+  const applyScreenshotParse = useCallback(async (src: string) => {
+    const trimmed = src.trim();
+    if (!trimmed) {
+      setOrderScreenshotError('Paste a screenshot or upload a photo of the Seller Hub payout.');
+      return false;
     }
     setOrderScreenshotError(null);
     setOrderScreenshotParsing(true);
     try {
-      const data = await parseEbayOrderFromImageInput(src);
+      const data = await parseEbayOrderFromImageInput(trimmed);
       setPlatformSold('ebay.de');
       setPaymentType('ebay.de');
       if (data.ebayOrderId) setEbayOrderId(data.ebayOrderId);
@@ -471,11 +567,19 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
       });
       setSaleProceedsDraft(saleProceedsFromScreenshot(money));
       if (data.saleDate) setSaleDate(data.saleDate);
+      setHubWaitingForPaste(false);
+      setHubMessage('Filled from screenshot — check buyer total, fees, and net.');
+      return true;
     } catch (err: unknown) {
       setOrderScreenshotError(err instanceof Error ? err.message : 'Parse failed');
+      return false;
     } finally {
       setOrderScreenshotParsing(false);
     }
+  }, []);
+
+  const handleParseOrderScreenshot = async () => {
+    await applyScreenshotParse(orderScreenshotSource);
   };
 
   const applyHubPayout = useCallback((payout: EbaySellerHubPayout, sourceLabel: string) => {
@@ -499,15 +603,85 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
     });
     setSaleProceedsDraft(fields.saleProceeds);
     if (fields.ebayOrderId) setEbayOrderId(fields.ebayOrderId);
+    if (payout.username) setEbayUsername(payout.username);
+    if (payout.fullName || payout.address) {
+      setCustomer((prev) => ({
+        ...prev,
+        name: payout.fullName || prev.name,
+        address: payout.address || prev.address,
+      }));
+    }
     setPlatformSold('ebay.de');
     setPaymentType('ebay.de');
     const net = payout.netPayoutEur != null ? formatEUR(payout.netPayoutEur) : '—';
     const gross = fields.sellPrice != null ? formatEUR(fields.sellPrice) : '—';
+    const who = payout.username ? ` · @${payout.username}` : '';
     setHubMessage(
-      `Filled ${sourceLabel}: buyer €${gross} − eBay €${formatEUR(payout.transactionFeeEur ?? 0)} − ads €${formatEUR(payout.adFeeEur ?? 0)} − label €${formatEUR(fields.sellerShippingAmount)} = net €${net}`
+      `Filled ${sourceLabel}${who}: buyer €${gross} − eBay €${formatEUR(payout.transactionFeeEur ?? 0)} − ads €${formatEUR(payout.adFeeEur ?? 0)} − label €${formatEUR(payout.shippingLabelEur ?? 0)} = net €${net}`
     );
     setHubCandidates([]);
+    setHubWaitingForPaste(false);
   }, []);
+
+  const tryFillFromHubText = useCallback(
+    (raw: string): boolean => {
+      const text = raw.trim();
+      if (!text) return false;
+      const payout = parseEbaySellerHubPayoutText(text);
+      if (!payoutLooksComplete(payout)) return false;
+      applyHubPayout(payout, 'from pasted payout');
+      setHubPaste(text);
+      return true;
+    },
+    [applyHubPayout]
+  );
+
+  const handleFillFromClipboard = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = Boolean(opts?.silent);
+    if (!silent) {
+      setHubClipboardReading(true);
+      setHubMessage(null);
+    }
+    try {
+      const image = await readClipboardImageFile();
+      if (image) {
+        if (!silent) setHubMessage('Screenshot on clipboard — parsing with AI…');
+        const src = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(String(reader.result || ''));
+          reader.onerror = () => reject(new Error('Could not read screenshot'));
+          reader.readAsDataURL(image);
+        });
+        setOrderScreenshotSource(src);
+        const ok = await applyScreenshotParse(src);
+        if (ok) return;
+      }
+      let text = '';
+      try {
+        text = (await navigator.clipboard.readText()).trim();
+      } catch {
+        text = '';
+      }
+      if (tryFillFromHubText(text || hubPaste)) return;
+      if (silent) return;
+      if (text) {
+        setHubPaste(text);
+        setHubMessage(
+          'Clipboard text is not a full payout yet. Copy from “Vom Käufer bezahlt” through “Bestelleinnahmen”, then paste again.'
+        );
+        return;
+      }
+      setHubMessage(
+        'Clipboard is empty. In Seller Hub copy the payout, or screenshot it, then click this button again (or press Ctrl+V here).'
+      );
+    } catch (err: unknown) {
+      if (!silent) {
+        setHubMessage(err instanceof Error ? err.message : 'Could not read clipboard.');
+      }
+    } finally {
+      if (!silent) setHubClipboardReading(false);
+    }
+  }, [applyScreenshotParse, hubPaste, tryFillFromHubText]);
 
   const handleFetchSellerHub = async (orderIdOverride?: string) => {
     setHubFetching(true);
@@ -525,35 +699,60 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
         return;
       }
       setHubCandidates(result.candidates || []);
-      const openOnFail =
-        result.code === 'cdp_unavailable' ||
-        result.code === 'not_logged_in' ||
-        result.code === 'local_only' ||
-        result.code === 'parse_failed';
-      if (openOnFail && result.openUrl) {
-        window.open(result.openUrl, '_blank', 'noopener');
-      }
-      setHubMessage(result.hint || result.error || `Seller Hub: ${result.code}`);
-    } catch (err: unknown) {
-      window.open(EBAY_SELLER_HUB_ORDERS_URL, '_blank', 'noopener');
       setHubMessage(
-        err instanceof Error
-          ? err.message
-          : 'Could not reach Seller Hub scrape. Paste the payout block, or run npm run dev with Chrome on port 9222.'
+        result.code === 'local_only' || result.code === 'cdp_unavailable'
+          ? 'Start once with npm run dev:ebay, log into eBay.de in that Chrome, then click Bind again.'
+          : result.hint || result.error || `Seller Hub: ${result.code}`
+      );
+    } catch {
+      setHubMessage(
+        'Could not read Seller Hub. Keep the eBay Chrome window logged in and click Bind again.'
       );
     } finally {
       setHubFetching(false);
     }
   };
 
-  const handleParseHubPaste = () => {
-    const payout = parseEbaySellerHubPayoutText(hubPaste);
-    if (!payoutLooksComplete(payout)) {
-      setHubMessage('Paste the block from Vom Käufer bezahlt through Bestelleinnahmen.');
-      return;
-    }
-    applyHubPayout(payout, 'from pasted payout');
-  };
+  useEffect(() => {
+    if (platformSold !== 'ebay.de') return;
+
+    const onPaste = (event: ClipboardEvent) => {
+      const image = [...(event.clipboardData?.items || [])].find((entry) =>
+        entry.type.startsWith('image/')
+      );
+      if (image) {
+        const file = image.getAsFile();
+        if (file) {
+          event.preventDefault();
+          setHubMessage('Screenshot pasted — parsing with AI…');
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const src = String(reader.result || '');
+            setOrderScreenshotSource(src);
+            void applyScreenshotParse(src);
+          };
+          reader.readAsDataURL(file);
+        }
+        return;
+      }
+      const text = event.clipboardData?.getData('text/plain') || '';
+      if (tryFillFromHubText(text)) {
+        event.preventDefault();
+      }
+    };
+
+    const onFocus = () => {
+      if (!hubWaitingForPaste) return;
+      void handleFillFromClipboard({ silent: true });
+    };
+
+    window.addEventListener('paste', onPaste);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      window.removeEventListener('paste', onPaste);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [applyScreenshotParse, handleFillFromClipboard, hubWaitingForPaste, platformSold, tryFillFromHubText]);
 
   const handleParseKleinanzeigenChat = async () => {
     const src = kleinanzeigenChatImage.trim();
@@ -586,20 +785,6 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
     }
   };
 
-  const calculateProfit = (sell: number, buy: number, fee: number) => {
-    if (taxMode === 'RegularVAT') {
-      const netSell = sell / 1.19;
-      return netSell - buy - fee;
-    }
-    if (taxMode === 'DifferentialVAT') {
-      const margin = sell - buy;
-      if (margin <= 0) return margin - fee;
-      const tax = margin - (margin / 1.19);
-      return margin - tax - fee;
-    }
-    return sell - buy - fee;
-  };
-
   const handleSave = async () => {
     if (saving) return;
     const finalFee = hasFee ? feeAmount : 0;
@@ -620,8 +805,25 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
     const totalBuyPrice = isBatchItem ? item.buyPrice * qtySold : item.buyPrice;
     const revenueForProfit =
       totalSellPrice != null ? Math.max(0, totalSellPrice - finalShipping) : undefined;
+    const profitDraft: InventoryItem = {
+      ...item,
+      sellPrice: totalSellPrice,
+      buyPrice: isBatchItem ? totalBuyPrice : item.buyPrice,
+      hasFee,
+      feeAmount: finalFee,
+      sellerPaidShipping: finalShipping > 0,
+      sellerShippingAmount: finalShipping > 0 ? finalShipping : undefined,
+      saleProceeds: saleProceedsDraft
+        ? {
+            ...saleProceedsDraft,
+            shippingLabelEur: finalShipping > 0 ? finalShipping : saleProceedsDraft.shippingLabelEur,
+          }
+        : item.saleProceeds,
+    };
     const profit =
-      revenueForProfit != null ? calculateProfit(revenueForProfit, totalBuyPrice, finalFee) : item.profit;
+      revenueForProfit != null
+        ? roundMoney(computeItemProfitBeforeOverhead(profitDraft, taxMode))
+        : item.profit;
 
     const splitSoldId =
       isBatchItem && qtySold < item.quantity! ? `${item.id}-sold-${Date.now()}` : item.id;
@@ -745,16 +947,13 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
     sellerPaidShipping && sellerShippingAmount.trim() !== ''
       ? Math.max(0, parseLocaleNumber(sellerShippingAmount) || 0)
       : 0;
-  const previewRevenue =
-    previewReceived != null ? Math.max(0, previewReceived - previewShipping) : null;
   const previewBuy =
     item.quantity != null && item.quantity > 1 ? item.buyPrice * previewQty : item.buyPrice;
   const previewFee = hasFee ? feeAmount : 0;
-  const previewProfit =
-    previewRevenue != null ? calculateProfit(previewRevenue, previewBuy, previewFee) : null;
-  const previewProceeds = resolveSaleProceeds({
+  const previewDraft: InventoryItem = {
     ...item,
     sellPrice: previewReceived ?? item.sellPrice,
+    buyPrice: previewBuy,
     feeAmount: previewFee,
     hasFee: previewFee > 0,
     sellerPaidShipping: previewShipping > 0,
@@ -762,7 +961,10 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
     saleProceeds: saleProceedsDraft
       ? { ...saleProceedsDraft, shippingLabelEur: previewShipping || saleProceedsDraft.shippingLabelEur }
       : item.saleProceeds,
-  });
+  };
+  const previewProfit =
+    previewReceived != null ? roundMoney(computeItemProfitBeforeOverhead(previewDraft, taxMode)) : null;
+  const previewProceeds = resolveSaleProceeds(previewDraft);
   const canOpenProceeds = saleProceedsHasDetail(previewProceeds);
 
   const isBatchItem = !isEditBuyer && item.quantity != null && item.quantity > 1;
@@ -1062,7 +1264,7 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
                 <div className="flex items-center gap-1.5">
                   <Receipt size={12} className="text-indigo-600 shrink-0" />
                   <p className="text-[9px] font-black uppercase tracking-wider text-indigo-800">
-                    Recent eBay orders
+                    Match eBay order
                   </p>
                   {orderRefreshLoading && (
                     <span className="inline-flex items-center gap-1 text-[9px] font-bold text-indigo-600 ml-auto">
@@ -1070,79 +1272,136 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
                       Fetching…
                     </span>
                   )}
+                  {hubFetching && !orderRefreshLoading && (
+                    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-700 ml-auto">
+                      <Loader2 size={10} className="animate-spin" />
+                      Hub: payout · user · address
+                    </span>
+                  )}
                 </div>
                 {orderMatchSuggestions.length === 0 ? (
                   <p className="text-[10px] text-indigo-900/70 leading-snug">
                     {orderRefreshLoading
                       ? 'Fetching recent eBay orders…'
-                      : 'No recent orders in cache yet. Wait for fetch, or paste an Order ID below and click Load.'}
+                      : 'No recent orders in cache yet. Wait for fetch, or paste an Order ID below and click Load. Order-first bind is also in eBay Orders.'}
                   </p>
                 ) : (
-                  <div className="space-y-1.5 max-h-52 overflow-y-auto pr-0.5">
-                    {orderMatchSuggestions.map((match) => {
-                      const key = `${match.order.orderId}:${match.lineItem.sku || match.lineItem.title}`;
-                      const payout = getLinePayout(match.order, match.lineItem);
-                      const active = pickedOrderKey === key;
-                      return (
-                        <button
-                          key={key}
-                          type="button"
-                          onClick={() => applySuggestedOrder(match)}
-                          className={`w-full text-left rounded-lg border px-2.5 py-2 transition-colors ${
-                            active
-                              ? 'border-indigo-500 bg-white ring-1 ring-indigo-300'
-                              : 'border-indigo-100/80 bg-white/80 hover:border-indigo-300 hover:bg-white'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <p className="text-[11px] font-bold text-slate-900 line-clamp-2 leading-snug">
-                              {match.lineItem.title}
-                            </p>
-                            <div className="flex flex-col items-end gap-0.5 shrink-0">
-                              <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-700">
-                                {match.orderAgeDays == null
-                                  ? 'Recent'
-                                  : match.orderAgeDays <= 0
-                                    ? 'Today'
-                                    : match.orderAgeDays === 1
-                                      ? '1d ago'
-                                      : `${match.orderAgeDays}d ago`}
-                              </span>
-                              {match.matchKind !== 'recent' && (
-                                <span
-                                  className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full ${
-                                    match.matchKind === 'listingId'
-                                      ? 'bg-emerald-50 text-emerald-700'
-                                      : match.matchKind === 'sku'
-                                        ? 'bg-sky-50 text-sky-700'
-                                        : 'bg-amber-50 text-amber-800'
-                                  }`}
+                  <div className="space-y-1.5">
+                    <div className="relative">
+                      <Search
+                        size={12}
+                        className="absolute left-2 top-1/2 -translate-y-1/2 text-indigo-400"
+                      />
+                      <input
+                        value={orderFilter}
+                        onChange={(e) => setOrderFilter(e.target.value)}
+                        placeholder="Filter: Toshiba, 1TB, order id…"
+                        className="w-full pl-7 pr-2 py-1.5 rounded-lg border border-indigo-100 bg-white text-[10px] font-semibold outline-none focus:border-indigo-400"
+                      />
+                    </div>
+                    {visibleOrderSuggestions.length === 0 ? (
+                      <p className="text-[10px] text-indigo-900/70">No cached orders match that filter.</p>
+                    ) : (
+                      <div className="space-y-1.5 max-h-60 overflow-y-auto pr-0.5">
+                        {visibleOrderSuggestions.map((match) => {
+                          const key = `${match.order.orderId}:${match.lineItem.sku || match.lineItem.title}`;
+                          const payout = getLinePayout(match.order, match.lineItem);
+                          const active = pickedOrderKey === key;
+                          const strong = isStrongEbayOrderMatch(match);
+                          const isBest = bestOrderMatch === match;
+                          return (
+                            <div
+                              key={key}
+                              className={`rounded-lg border px-2.5 py-2 ${
+                                isBest
+                                  ? 'border-emerald-400 bg-emerald-50/80 ring-1 ring-emerald-200'
+                                  : active
+                                    ? 'border-indigo-500 bg-white ring-1 ring-indigo-300'
+                                    : 'border-indigo-100/80 bg-white/80'
+                              }`}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => applySuggestedOrder(match)}
+                                className="w-full text-left"
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <p className="text-[11px] font-bold text-slate-900 line-clamp-2 leading-snug">
+                                    {match.lineItem.title}
+                                  </p>
+                                  <div className="flex flex-col items-end gap-0.5 shrink-0">
+                                    <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-700">
+                                      {match.orderAgeDays == null
+                                        ? 'Recent'
+                                        : match.orderAgeDays <= 0
+                                          ? 'Today'
+                                          : match.orderAgeDays === 1
+                                            ? '1d ago'
+                                            : `${match.orderAgeDays}d ago`}
+                                    </span>
+                                    {match.matchKind !== 'recent' && (
+                                      <span
+                                        className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full ${
+                                          match.matchKind === 'listingId'
+                                            ? 'bg-emerald-50 text-emerald-700'
+                                            : match.matchKind === 'sku'
+                                              ? 'bg-sky-50 text-sky-700'
+                                              : 'bg-amber-50 text-amber-800'
+                                        }`}
+                                      >
+                                        {match.matchKind === 'listingId'
+                                          ? 'Listing'
+                                          : match.matchKind === 'sku'
+                                            ? 'SKU'
+                                            : 'Name match'}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <p className="text-[10px] text-slate-500 mt-0.5 tabular-nums">
+                                  {match.order.orderId} · {match.order.creationDate || 'no date'} ·{' '}
+                                  {match.order.buyer.username || match.order.buyer.fullName || 'buyer?'}
+                                </p>
+                                <p className="text-[10px] font-bold text-slate-700 mt-0.5 tabular-nums">
+                                  {payout.buyerTotal != null ? `Käufer €${formatEUR(payout.buyerTotal)}` : ''}
+                                  {payout.fee > 0
+                                    ? `${payout.buyerTotal != null ? ' · ' : ''}${payout.feeEstimated ? '~' : ''}€${formatEUR(payout.fee)} Gebühren`
+                                    : ''}
+                                  {payout.netKnown && payout.net != null
+                                    ? ` · Netto €${formatEUR(payout.net)}`
+                                    : payout.feeEstimated
+                                      ? ' · Netto geschätzt'
+                                      : ''}
+                                </p>
+                              </button>
+                              {strong ? (
+                                <button
+                                  type="button"
+                                  disabled={saving || hubFetching}
+                                  onClick={() => void bindMatchAsSold(match)}
+                                  className="mt-1.5 w-full py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-black uppercase tracking-wider disabled:opacity-50 inline-flex items-center justify-center gap-1"
                                 >
-                                  {match.matchKind === 'listingId'
-                                    ? 'Listing'
-                                    : match.matchKind === 'sku'
-                                      ? 'SKU'
-                                      : 'Name hint'}
-                                </span>
+                                  {saving || hubFetching ? (
+                                    <Loader2 size={11} className="animate-spin" />
+                                  ) : (
+                                    <CheckCircle2 size={11} />
+                                  )}
+                                  {saving || hubFetching
+                                    ? 'Binding — reading Hub…'
+                                    : isEditBuyer
+                                      ? 'Bind order'
+                                      : 'Bind · sold'}
+                                </button>
+                              ) : (
+                                <p className="text-[9px] font-black uppercase text-indigo-700 mt-1">
+                                  {active ? 'Selected — review & confirm sale' : 'Tap to fill sale from this order'}
+                                </p>
                               )}
                             </div>
-                          </div>
-                          <p className="text-[10px] text-slate-500 mt-0.5 tabular-nums">
-                            {match.order.orderId} · {match.order.creationDate || 'no date'} ·{' '}
-                            {match.order.buyer.username || match.order.buyer.fullName || 'buyer?'}
-                            {payout.sellPrice > 0 ? ` · €${formatEUR(payout.sellPrice)}` : ''}
-                            {payout.fee > 0
-                              ? payout.feeEstimated
-                                ? ` · ~€${formatEUR(payout.fee)} fees est.`
-                                : ` · €${formatEUR(payout.fee)} fees`
-                              : ''}
-                          </p>
-                          <p className="text-[9px] font-black uppercase text-indigo-700 mt-1">
-                            {active ? 'Selected — review & confirm sale' : 'Tap to fill sale from this order'}
-                          </p>
-                        </button>
-                      );
-                    })}
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1154,9 +1413,11 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
                     Seller Hub payout
                   </p>
                 </div>
-                <p className="text-[10px] text-amber-950/70 leading-snug">
-                  Opens this year’s orders, finds this listing, and fills buyer total, eBay fee, ads, shipping
-                  label, and net remainder.
+                <p className="text-[10px] text-amber-950/80 leading-snug">
+                  <span className="font-bold">Bind · sold</span> is one click: it reads payout, username,
+                  order id, and shipping address from Seller Hub (plus the eBay order API). Start once with{' '}
+                  <span className="font-bold">npm run dev:ebay</span> and stay logged into eBay.de in that
+                  Chrome window.
                 </p>
                 <div className="grid grid-cols-[1.4fr_1fr] gap-1.5">
                   <button
@@ -1165,8 +1426,8 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
                     disabled={hubFetching}
                     className="py-2.5 min-h-[44px] rounded-xl bg-amber-700 text-white text-[9px] font-extrabold uppercase hover:bg-amber-800 disabled:opacity-50 flex items-center justify-center gap-1.5"
                   >
-                    {hubFetching ? <Loader2 size={14} className="animate-spin" /> : <ExternalLink size={14} />}
-                    {hubFetching ? 'Reading Hub…' : 'From Seller Hub'}
+                    {hubFetching ? <Loader2 size={14} className="animate-spin" /> : null}
+                    {hubFetching ? 'Reading Hub…' : 'Read Hub now'}
                   </button>
                   <a
                     href={
@@ -1180,21 +1441,6 @@ const SaleModal: React.FC<Props> = ({ item, taxMode = 'SmallBusiness', mode = 's
                     Open Hub
                   </a>
                 </div>
-                <textarea
-                  rows={3}
-                  placeholder="Or paste: Vom Käufer bezahlt … Bestelleinnahmen"
-                  className="w-full px-2.5 py-2 bg-white border border-amber-100 rounded-xl text-[10px] font-semibold resize-none outline-none focus:border-amber-400"
-                  value={hubPaste}
-                  onChange={(e) => setHubPaste(e.target.value)}
-                />
-                <button
-                  type="button"
-                  onClick={handleParseHubPaste}
-                  disabled={!hubPaste.trim()}
-                  className="w-full py-2 min-h-[40px] rounded-xl border border-amber-200 bg-white text-amber-900 text-[9px] font-extrabold uppercase hover:bg-amber-50 disabled:opacity-50"
-                >
-                  Parse pasted payout
-                </button>
                 {hubCandidates.length > 0 && (
                   <div className="space-y-1">
                     {hubCandidates.map((c) => (

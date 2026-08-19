@@ -63,6 +63,8 @@ import { runDailyBackupIfDue } from './services/backupService';
 import { pullOrderIndexFromCloud } from './services/ebayOrderIndex';
 import { pullPurchaseIndexFromCloud } from './services/ebayPurchaseIndex';
 import { ensureEbayListings, pullListingIndexFromCloud } from './services/ebayListingIndex';
+import { hydrateHubArchiveIndex } from './services/ebayHubArchiveIndex';
+import { syncHubArchiveWithCloud } from './services/ebayHubArchiveSync';
 import { ensureKaListings } from './services/kleinanzeigenListingIndex';
 import { DEFAULT_CATEGORIES } from './services/constants';
 import { migrateCategoriesRecord, migrateContainerItem } from './utils/containerTaxonomy';
@@ -78,7 +80,7 @@ import { syncContainerSaleMetaToChildren } from './utils/containerSaleCascade';
 import { enforceContainerMembershipInvariants, findEmptyContainerShellIds } from './utils/containerMembershipInvariants';
 import { applyTradeRevert } from './services/tradeRevert';
 import { mergeTradeActionEntries } from './services/tradeActionHistory';
-import { applyUnsoldRestock, pruneActionHistory } from './services/saleRevert';
+import { applyUnsoldRestock, loadRefundOrdersForRestock, pruneActionHistory } from './services/saleRevert';
 import { saveOAuthResult } from './services/githubBackupService';
 import { exchangeEbayAuthorizationCode } from './services/ebayService';
 import { generateExpensesFromRecurring } from './services/recurringExpenseService';
@@ -111,6 +113,8 @@ import {
 } from './utils/backfillContainerBuyDates';
 import { applyHealthInsuranceLedger } from './utils/healthInsuranceLedger';
 import { applyCrucialRamInvoiceSaleFix } from './utils/crucialRamInvoiceSaleFix';
+import { restoreIntegralRamKit, INTEGRAL_RAM_KIT_ID } from './utils/restoreIntegralRamKit';
+import { addRecentItemId } from './services/recentItemsService';
 import { mergeBusinessSettings } from './utils/mergeBusinessSettings';
 import {
   markInvoiceBusinessProfileDone,
@@ -909,13 +913,14 @@ const App: React.FC = () => {
     const migratedInv = inv.map(migrateContainerItem);
     const { items: filledInv, updatedCount: filledCount } = backfillContainerBuyDates(migratedInv);
     const ramFix = applyCrucialRamInvoiceSaleFix(filledInv, businessSettingsRef.current.taxMode);
-    if (filledCount > 0 || ramFix.changed) {
+    const integralKit = restoreIntegralRamKit(ramFix.changed ? ramFix.items : filledInv, tr);
+    if (filledCount > 0 || ramFix.changed || integralKit.changed) {
       requestFastCloudFlush();
       hasUnsavedChanges.current = true;
-      if (ramFix.changed) pendingCloudPushAfterRemoteRef.current = true;
+      if (ramFix.changed || integralKit.changed) pendingCloudPushAfterRemoteRef.current = true;
     }
-    setItems(ramFix.changed ? ramFix.items : filledInv);
-    setTrash(tr.map(migrateContainerItem));
+    setItems(integralKit.items);
+    setTrash(integralKit.trash.map(migrateContainerItem));
     setExpenses(exp);
     setRecurringExpenses(recurring);
     const { settings: mergedSettings, keptLocalFilled } = mergeBusinessSettings(
@@ -1057,6 +1062,18 @@ const App: React.FC = () => {
     hasUnsavedChanges.current = true;
     requestFastCloudFlush();
   }, [appState, items, businessSettings.taxMode, requestFastCloudFlush]);
+
+  // Hub approve dropped this sold kit — put it back at the original Feb 2025 prices.
+  useEffect(() => {
+    if (appState !== 'READY') return;
+    const next = restoreIntegralRamKit(items, trash);
+    if (!next.changed) return;
+    addRecentItemId(INTEGRAL_RAM_KIT_ID);
+    setItems(next.items);
+    setTrash(next.trash);
+    hasUnsavedChanges.current = true;
+    requestFastCloudFlush();
+  }, [appState, items, trash, requestFastCloudFlush]);
 
   // Enrich history rows with chat URL / screenshot from member items (legacy sessions).
   useEffect(() => {
@@ -1202,13 +1219,21 @@ const App: React.FC = () => {
     })();
   }, [authUser, applyRemoteData, getSyncSnapshot]);
 
-  // Re-hydrate eBay caches (orders / purchases / active listings) from Firestore when local is empty.
+  // Restore the Seller Hub ledger from IndexedDB even when signed out / localhost.
+  useEffect(() => {
+    void hydrateHubArchiveIndex().catch((e) => console.warn('Hub archive hydrate failed:', e));
+  }, []);
+
+  // Re-hydrate eBay caches (orders / purchases / listings / Hub ledger) from Firestore.
   useEffect(() => {
     if (!authUser || !isCloudEnabled() || ebayOrderIndexPulledRef.current) return;
     ebayOrderIndexPulledRef.current = true;
     void pullOrderIndexFromCloud().catch((e) => console.warn('eBay order index cloud pull failed:', e));
     void pullPurchaseIndexFromCloud().catch((e) => console.warn('eBay purchase index cloud pull failed:', e));
     void pullListingIndexFromCloud().catch((e) => console.warn('eBay listing index cloud pull failed:', e));
+    void hydrateHubArchiveIndex()
+      .then(() => syncHubArchiveWithCloud())
+      .catch((e) => console.warn('Hub archive cloud sync failed:', e));
   }, [authUser]);
 
   // Keep eBay active-listing cache fresh for photo import:
@@ -1745,7 +1770,11 @@ const App: React.FC = () => {
           if (idx >= 0) {
             nextItems[idx] = final;
             if (recordAction) {
-              if (oldItem?.status !== final.status) {
+              const note = options?.actionNote;
+              if (note?.action) {
+                const details = note.detailsByItemId?.[final.id] ?? note.details;
+                actionEntries.push(makeActionEntry(note.action, final, details));
+              } else if (oldItem?.status !== final.status) {
                 actionEntries.push(makeActionEntry(`Status changed: ${oldItem?.status || '-'} -> ${final.status}`, final));
               } else {
                 actionEntries.push(makeActionEntry('Item updated', final));
@@ -1753,7 +1782,15 @@ const App: React.FC = () => {
             }
           } else {
             nextItems.push(final);
-            if (recordAction) actionEntries.push(makeActionEntry('Item created', final));
+            if (recordAction) {
+              const note = options?.actionNote;
+              if (note?.action) {
+                const details = note.detailsByItemId?.[final.id] ?? note.details;
+                actionEntries.push(makeActionEntry(note.action, final, details));
+              } else {
+                actionEntries.push(makeActionEntry('Item created', final));
+              }
+            }
           }
         });
 
@@ -2129,7 +2166,9 @@ const App: React.FC = () => {
         return;
       }
       if (!window.confirm(`Revert sale for "${item.name}"? Item returns to In Stock; sale data is cleared.`)) return;
-      const { updates, deleteIds } = applyUnsoldRestock(items, [entry.itemId]);
+      const { updates, deleteIds } = applyUnsoldRestock(items, [entry.itemId], {
+        refundOrders: loadRefundOrdersForRestock(),
+      });
       handleUpdate(updates, deleteIds.length ? deleteIds : undefined, { skipActionLog: true });
       addActionEntries([makeActionEntry('Sale reverted', item, 'Restored to In Stock from action history.')]);
     },
@@ -2348,6 +2387,7 @@ const App: React.FC = () => {
                 dashboardPreferences={dashboardPrefs}
                 onDashboardPreferencesChange={setDashboardPrefs}
                 onUpdateItems={handleUpdate}
+                onBusinessSettingsChange={handleBusinessSettingsChange}
               />
             }
           />

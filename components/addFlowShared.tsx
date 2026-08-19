@@ -8,7 +8,6 @@ import {
   Layers,
   Printer,
   CloudUpload,
-  PackageSearch,
   ChevronRight,
   ArrowLeft,
   Save,
@@ -78,14 +77,6 @@ export const ADD_OPTIONS: AddOption[] = [
     hint: 'Spreadsheet',
     to: '/panel/import',
     icon: <CloudUpload size={22} strokeWidth={1.75} />,
-    group: 'import',
-  },
-  {
-    id: 'ebay',
-    label: 'eBay import',
-    hint: 'Missing items',
-    to: '/panel/ebay-store-pull?tab=import',
-    icon: <PackageSearch size={22} strokeWidth={1.75} />,
     group: 'import',
   },
 ];

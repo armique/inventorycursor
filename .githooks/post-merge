@@ -1,0 +1,4 @@
+#!/bin/sh
+# Auto-push to origin after merge so pull+merge stays in sync.
+branch=$(git symbolic-ref --short HEAD 2>/dev/null) || exit 0
+git push origin "$branch"

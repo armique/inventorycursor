@@ -22,6 +22,13 @@ import {
   isBundleSoldOnParentOnly,
 } from './financialAggregation';
 import { formatAdjustmentsForFinanzamt, getOriginalSellPrice, sumAdjustmentAmounts } from '../utils/ebaySaleAdjustments';
+import { formatSaleCycleSummary } from '../utils/itemSaleCycle';
+import type { ItemSaleCycle } from '../types';
+import {
+  resolveSaleProceeds,
+  saleProceedsFeeTotal,
+  saleProceedsSourceLabel,
+} from '../utils/saleProceeds';
 import {
   FILAMENT_STOCK_EXPENSE_CATEGORY,
   filterInventoryStockExpenses,
@@ -96,6 +103,10 @@ export type FinanzamtWareRow = {
   Korrektur_Summe_EUR: number | '';
   Effektiver_VK_EUR: number | '';
   'Gebühren_Verkauf_EUR': number | '';
+  Käufer_bezahlt_EUR: number | '';
+  Marktplatzgebühren_EUR: number | '';
+  Bestelleinnahmen_EUR: number | '';
+  Zahlen_Quelle: string;
   Gewinn_EUR: number | '';
   eBay_Bestellnr: string;
   Korrektur_Nachweis: string;
@@ -143,6 +154,12 @@ function buildWareRow(
   const effectiveVk =
     item.sellPrice !== undefined && item.sellPrice !== null ? round2(Number(item.sellPrice)) : null;
   const adjustmentNote = formatAdjustmentsForFinanzamt(item);
+  const proceeds = resolveSaleProceeds(item);
+  const marketplaceFees = proceeds && !proceeds.feesEstimated ? saleProceedsFeeTotal(proceeds) : 0;
+  const bookedFee =
+    item.feeAmount !== undefined && item.feeAmount !== null && Number(item.feeAmount) !== 0
+      ? round2(Number(item.feeAmount))
+      : '';
 
   return {
     Zeilenart: zeilenart,
@@ -157,10 +174,17 @@ function buildWareRow(
     Ursprünglicher_VK_EUR: originalVk != null ? round2(originalVk) : effectiveVk ?? '',
     Korrektur_Summe_EUR: correctionSum !== 0 ? round2(correctionSum) : '',
     Effektiver_VK_EUR: effectiveVk ?? '',
-    'Gebühren_Verkauf_EUR':
-      item.feeAmount !== undefined && item.feeAmount !== null && Number(item.feeAmount) !== 0
-        ? round2(Number(item.feeAmount))
+    'Gebühren_Verkauf_EUR': bookedFee,
+    Käufer_bezahlt_EUR:
+      proceeds?.buyerTotalEur != null && Math.abs(proceeds.buyerTotalEur) >= 0.01
+        ? round2(proceeds.buyerTotalEur)
         : '',
+    Marktplatzgebühren_EUR: marketplaceFees >= 0.01 ? round2(marketplaceFees) : '',
+    Bestelleinnahmen_EUR:
+      proceeds?.netPayoutEur != null && !proceeds.feesEstimated
+        ? round2(proceeds.netPayoutEur)
+        : '',
+    Zahlen_Quelle: saleProceedsSourceLabel(proceeds),
     Gewinn_EUR:
       item.profit !== undefined && item.profit !== null ? round2(Number(item.profit)) : '',
     Paket_oder_PC: paketName,
@@ -177,6 +201,65 @@ function buildWareRow(
     Nachweise_Anzahl: formatProofSummary(item),
     Nachweise_Links: formatProofUrlsForExport(item),
     Bemerkung: comment,
+  };
+}
+
+function buildCycleWareRow(
+  item: InventoryItem,
+  cycle: ItemSaleCycle,
+  ctx: { paketName: string; rolle: string; stückliste: string }
+): FinanzamtWareRow {
+  const proceeds = cycle.saleProceeds;
+  const leftover = cycle.leftoverLossEur ?? 0;
+  const correction =
+    (cycle.ebaySaleAdjustments || []).reduce((s, a) => s + (Number(a.amount) || 0), 0) || leftover;
+  return {
+    Zeilenart: 'Vorheriger Verkauf (geschlossen)',
+    Bezeichnung: item.name,
+    Kategorie: item.category || '',
+    Unterkategorie: item.subCategory || '',
+    Status: cycle.reason === 'erstattet' ? 'Erstattet / Restock' : 'Unsold / Restock',
+    Einkaufsdatum: item.buyDate || '',
+    Verkaufsdatum: cycle.sellDate || cycle.closedAt.slice(0, 10),
+    Einkaufspreis_EUR: round2(cycle.buyPriceAtClose),
+    Verkaufspreis_EUR: cycle.sellPrice != null ? round2(cycle.sellPrice) : '',
+    Ursprünglicher_VK_EUR:
+      cycle.originalSellPrice != null
+        ? round2(cycle.originalSellPrice)
+        : cycle.sellPrice != null
+          ? round2(cycle.sellPrice)
+          : '',
+    Korrektur_Summe_EUR: correction ? round2(correction) : leftover >= 0.01 ? round2(-leftover) : '',
+    Effektiver_VK_EUR:
+      proceeds?.netPayoutEur != null && Number.isFinite(proceeds.netPayoutEur)
+        ? round2(proceeds.netPayoutEur)
+        : '',
+    'Gebühren_Verkauf_EUR': cycle.feeAmount != null && cycle.feeAmount !== 0 ? round2(cycle.feeAmount) : '',
+    Käufer_bezahlt_EUR:
+      proceeds?.buyerTotalEur != null && Math.abs(proceeds.buyerTotalEur) >= 0.01
+        ? round2(proceeds.buyerTotalEur)
+        : '',
+    Marktplatzgebühren_EUR: '',
+    Bestelleinnahmen_EUR:
+      proceeds?.netPayoutEur != null && !proceeds.feesEstimated ? round2(proceeds.netPayoutEur) : '',
+    Zahlen_Quelle: saleProceedsSourceLabel(proceeds),
+    Gewinn_EUR: cycle.profit != null ? round2(cycle.profit) : '',
+    Paket_oder_PC: ctx.paketName,
+    Rolle_im_Paket: ctx.rolle,
+    Stückliste_Komponenten: ctx.stückliste,
+    Verkaufsplattform: dePlatform(cycle.platformSold),
+    Zahlungsart_Verkauf: dePayment(cycle.paymentType),
+    Einkauf_Lieferant: item.vendor || '',
+    Rechnungsnummer: cycle.invoiceNumber || '',
+    Kunde_Name: cycle.customer?.name || '',
+    eBay_Bestellnr: cycle.ebayOrderId || '',
+    Korrektur_Nachweis: [cycle.reasonLabel, leftover >= 0.01 ? `EK leftover +€${leftover.toFixed(2)}` : '']
+      .filter(Boolean)
+      .join(' · '),
+    Quelle_Link: '',
+    Nachweise_Anzahl: '',
+    Nachweise_Links: '',
+    Bemerkung: `Same inventory row sold again later. ${formatSaleCycleSummary(cycle)}`,
   };
 }
 
@@ -224,6 +307,9 @@ export function buildFinanzamtWareRows(items: InventoryItem[]): FinanzamtWareRow
     }
 
     rows.push(buildWareRow(item, list, { paketName, rolle, stückliste }));
+    for (const cycle of item.ebaySaleCycles || []) {
+      rows.push(buildCycleWareRow(item, cycle, { paketName, rolle, stückliste }));
+    }
   }
 
   return rows;
@@ -331,8 +417,12 @@ function instructionSheetRows(companyName: string, exportedAt: string, periodNot
     ['Bezeichnung', 'Artikelbezeichnung wie in der App.'],
     ['Einkaufsdatum / Verkaufsdatum', 'Nachweis Zeitraum; leer, wenn noch nicht verkauft.'],
     ['Einkaufspreis_EUR / Verkaufspreis_EUR', 'Netto-Beträge wie erfasst (Steuerlogik bitte mit Steuerberater abstimmen).'],
-    ['Gebühren_Verkauf_EUR', 'z. B. Marktplatzgebühren, auf die Komponente oder das Paket verteilt.'],
-    ['Gewinn_EUR', 'Wie in der App berechnet (Verkauf − EK − Gebühr, falls erfasst).'],
+    ['Gebühren_Verkauf_EUR', 'Nur wenn die App die Gebühr extra vom Verkaufspreis abzieht (sonst leer — dann ist VK oft schon die Auszahlung).'],
+    ['Käufer_bezahlt_EUR', 'Was der Käufer bei eBay gezahlt hat (Vom Käufer bezahlt), falls aus Abrechnung/Hub bekannt.'],
+    ['Marktplatzgebühren_EUR', 'Summe Transaktion + Anzeigen + Versandetikett + sonstige eBay-Gebühren. Nur echte Abrechnung, keine Flip-Coach-Schätzung.'],
+    ['Bestelleinnahmen_EUR', 'Auszahlung / Bestelleinnahmen laut eBay. Gewinn in der App = diese Netto-Summe minus Einkauf, wenn so gebunden.'],
+    ['Zahlen_Quelle', 'eBay-Abrechnung / Seller Hub / Screenshot = belegbar. „geschätzt“ nicht für EÜR verwenden — Hub-Payout nachziehen.'],
+    ['Gewinn_EUR', 'Wie in der App berechnet (Verkauf − EK − gebuchte Gebühr).'],
     ['Paket_oder_PC', 'Name des übergeordneten Pakets/PCs, falls zutreffend.'],
     ['', ''],
     ['Google Tabellen', ''],
@@ -383,6 +473,10 @@ const WARE_HEADER_ORDER: (keyof FinanzamtWareRow)[] = [
   'Korrektur_Summe_EUR',
   'Effektiver_VK_EUR',
   'Gebühren_Verkauf_EUR',
+  'Käufer_bezahlt_EUR',
+  'Marktplatzgebühren_EUR',
+  'Bestelleinnahmen_EUR',
+  'Zahlen_Quelle',
   'Gewinn_EUR',
   'Paket_oder_PC',
   'Rolle_im_Paket',
@@ -605,14 +699,16 @@ export async function exportFinanzamtWorkbook(
   const wareRows = buildFinanzamtWareRows(exportItems);
   const wareHeaders = WARE_HEADER_ORDER.map(String);
   const wareData = wareRows.map(wareRowToArray);
-  const wareMoneyIdx = [7, 8, 9, 10];
+  const wareMoneyIdx = WARE_HEADER_ORDER.map((key, i) => (String(key).endsWith('_EUR') ? i : -1)).filter(
+    (i) => i >= 0
+  );
   addStyledTableSheet(
     wb,
     SHEET_WARE,
     wareHeaders,
     wareData,
     wareMoneyIdx,
-    [16, 28, 14, 14, 14, 12, 12, 12, 12, 12, 12, 22, 40, 48, 14, 18, 16, 14, 22, 36]
+    [16, 28, 14, 14, 14, 12, 12, 12, 12, 12, 12, 12, 14, 14, 14, 14, 22, 12, 22, 40, 48, 14, 18, 16, 14, 22, 36]
   );
 
   const paketRows = buildFinanzamtPaketSummaryRows(exportItems);

@@ -11,6 +11,7 @@ import {
   findItemsForOpenOrderLine,
   listOpenEbayOrderLines,
 } from '../utils/ebayOpenOrders';
+import { isStrongEbayOrderMatch, listEbayOrdersForItemSale } from '../utils/ebayOrderMatch';
 
 function item(partial: Partial<InventoryItem> & Pick<InventoryItem, 'id' | 'name'>): InventoryItem {
   return {
@@ -214,6 +215,48 @@ assert.equal(
   recentSuggestions.length,
   0,
   'recency-only must not suggest every in-stock item'
+);
+
+const toshibaStock = item({ id: 'hdd-toshiba', name: 'Toshiba 1TB HDD' });
+const toshibaOrder: EbayOrderRecord = {
+  orderId: 'ord-toshiba',
+  creationDate: '2026-08-18',
+  buyer: { username: 'hdd-buyer' },
+  lineItems: [{ sku: null, title: 'TOSHIBA 1TB 3.5" SATA Internal HDD Hard Drive', lineItemCost: 32 }],
+  sources: ['api'],
+  importedAt: '2026-08-18T12:00:00.000Z',
+};
+const newerUnrelated: EbayOrderRecord = {
+  orderId: 'ord-newer-ram',
+  creationDate: '2026-08-19',
+  buyer: { username: 'ram-buyer' },
+  lineItems: [{ sku: null, title: 'Kingston 16GB DDR4 Desktop RAM', lineItemCost: 28 }],
+  sources: ['api'],
+  importedAt: '2026-08-19T12:00:00.000Z',
+};
+const saleList = listEbayOrdersForItemSale(toshibaStock, [newerUnrelated, toshibaOrder, otherOrder]);
+assert.equal(saleList[0]?.order.orderId, 'ord-toshiba', 'Toshiba 1TB HDD must rank above newer unrelated orders');
+assert.ok(isStrongEbayOrderMatch(saleList[0]), 'Toshiba title match must be Bind · sold strength');
+
+const boundToshiba = applyEbayOrderMatchToItem(
+  toshibaStock,
+  {
+    order: toshibaOrder,
+    lineItem: toshibaOrder.lineItems[0],
+    matchScore: saleList[0].matchScore,
+    matchKind: 'title',
+  },
+  'SmallBusiness'
+);
+assert.equal(boundToshiba.ebayOrderId, 'ord-toshiba');
+const afterToshibaClaim = listEbayOrdersForItemSale(
+  item({ id: 'hdd-toshiba-2', name: 'Toshiba 1TB HDD' }),
+  [toshibaOrder, newerUnrelated],
+  { claimedKeys: [boundToshiba.ebayOrderLineKey || ''] }
+);
+assert.ok(
+  !afterToshibaClaim.some((m) => m.order.orderId === 'ord-toshiba'),
+  'already-bound Toshiba order must not appear for a second stock row'
 );
 
 console.log('verify-ebay-open-orders: all checks passed');

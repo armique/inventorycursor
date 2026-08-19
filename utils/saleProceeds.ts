@@ -1,13 +1,16 @@
 import type { InventoryItem, SaleProceedsBreakdown } from '../types';
+import { ItemStatus } from '../types';
+import { hasEbaySaleSignals, resolveSalePlatform } from './salePlatform';
 import type { EbayOrderLineItem, EbayOrderRecord } from '../services/ebayOrderIndex';
 import { roundMoney } from '../services/financialAggregation';
 import { getLinePayout } from './ebayOrderPayout';
+import { sumOrderRefundEur } from './ebayOrderFinancial';
 import type { EbayScreenshotSaleFields } from './ebayScreenshotSaleFields';
 import type { EbaySellerHubPayout } from '../lib/ebaySellerHubPayout';
 
 const LABEL_RE = /versandetikett|shipping\s*label|shippinglabel|versandlabel/i;
-const ADS_RE = /anzeige|promot|ads|werbung|insertion/i;
-const TX_RE = /transaktion|verkaufsgebühr|verkaufsgebuehr|final value|provision/i;
+const ADS_RE = /anzeige|promot|ads|werbung|insertion|ad_fee/i;
+const TX_RE = /transaktion|verkaufsgebühr|verkaufsgebuehr|final.value|final_value|provision/i;
 
 function n(value: number | null | undefined): number | null {
   if (value == null || !Number.isFinite(value)) return null;
@@ -20,6 +23,45 @@ function sumKnown(...values: Array<number | null | undefined>): number | null {
   return roundMoney(parts.reduce((s, v) => s + v, 0));
 }
 
+function isTrustedEbayProceeds(p: InventoryItem['saleProceeds'] | null | undefined): boolean {
+  if (!p || p.feesEstimated) return false;
+  return p.source === 'ebay_seller_hub' || p.source === 'ebay_screenshot' || p.source === 'ebay_order';
+}
+
+/** Kleinanzeigen / in-person / other — shipping is typed in by you, not Seller Hub. */
+export function canEditManualSellerShipping(
+  item: Pick<
+    InventoryItem,
+    'status' | 'platformSold' | 'paymentType' | 'ebayOrderId' | 'ebayUsername' | 'saleProceeds'
+  >
+): boolean {
+  if (item.status !== ItemStatus.SOLD && item.status !== ItemStatus.TRADED) return false;
+  if (resolveSalePlatform(item) === 'ebay.de' || hasEbaySaleSignals(item)) return false;
+  if (isTrustedEbayProceeds(item.saleProceeds)) return false;
+  return true;
+}
+
+/** Stamp the shipping you paid on a non-eBay sale (deducted from pocket margin). */
+export function applyManualSellerShipping(item: InventoryItem, amount: number): InventoryItem {
+  const shipping = roundMoney(Math.max(0, Number.isFinite(amount) ? amount : 0));
+  const paid = shipping >= 0.01;
+  const next: InventoryItem = {
+    ...item,
+    sellerPaidShipping: paid,
+    sellerShippingAmount: paid ? shipping : undefined,
+  };
+  if (isTrustedEbayProceeds(item.saleProceeds)) return next;
+  const inferred = saleProceedsFromItemFields(next);
+  return {
+    ...next,
+    saleProceeds: {
+      ...inferred,
+      source: item.saleProceeds?.source === 'inferred' || !item.saleProceeds ? 'inferred' : item.saleProceeds.source,
+      shippingLabelEur: paid ? shipping : null,
+    },
+  };
+}
+
 export function saleProceedsHasDetail(p: SaleProceedsBreakdown | null | undefined): boolean {
   if (!p) return false;
   return [
@@ -29,7 +71,53 @@ export function saleProceedsHasDetail(p: SaleProceedsBreakdown | null | undefine
     p.shippingLabelEur,
     p.otherFeeEur,
     p.netPayoutEur,
+    p.buyerTotalEur,
+    p.refundEur,
   ].some((v) => v != null && Number.isFinite(v) && Math.abs(v) >= 0.01);
+}
+
+/** Sum of marketplace fee buckets (tx + ads + label + other). */
+export function saleProceedsFeeTotal(p: SaleProceedsBreakdown | null | undefined): number {
+  if (!p) return 0;
+  return roundMoney(
+    Math.abs(p.transactionFeeEur ?? 0) +
+      Math.abs(p.adFeeEur ?? 0) +
+      Math.abs(p.shippingLabelEur ?? 0) +
+      Math.abs(p.otherFeeEur ?? 0)
+  );
+}
+
+/** Hub/list net: subtract a goodwill refund when stored net is still the pre-refund payout. */
+export function netPayoutAfterRefund(
+  total: number | null | undefined,
+  feeTotal: number,
+  knownNet: number | null | undefined,
+  refundEur: number
+): number | null {
+  const refund = refundEur >= 0.01 ? roundMoney(refundEur) : 0;
+  const fees = roundMoney(Math.abs(feeTotal) || 0);
+  const preRefund =
+    knownNet != null && Number.isFinite(knownNet)
+      ? roundMoney(knownNet)
+      : total != null && Number.isFinite(total)
+        ? roundMoney(total - fees)
+        : null;
+  if (preRefund == null) return null;
+  if (refund < 0.01) return preRefund;
+  const impliedPreRefund = total != null && Number.isFinite(total) ? roundMoney(total - fees) : null;
+  if (impliedPreRefund != null && Math.abs(preRefund - impliedPreRefund) < 0.05) {
+    return roundMoney(preRefund - refund);
+  }
+  return preRefund;
+}
+
+export function saleProceedsSourceLabel(p: SaleProceedsBreakdown | null | undefined): string {
+  if (!p) return '';
+  if (p.feesEstimated) return 'geschätzt — nicht EÜR-maßgeblich';
+  if (p.source === 'ebay_seller_hub') return 'Seller Hub';
+  if (p.source === 'ebay_screenshot') return 'Screenshot';
+  if (p.source === 'ebay_order') return 'eBay-Abrechnung';
+  return 'aus App-Feldern';
 }
 
 export function saleProceedsFromScreenshot(
@@ -139,18 +227,22 @@ export function saleProceedsFromOrder(
       ? roundMoney(buyerTotalEur - itemGrossEur)
       : n(order.shippingCost);
   const feeTotal = tx + ads + other;
-  const transactionFeeEur = n(tx) ?? (feeTotal <= 0 && payout.fee > 0 && label <= 0 ? n(payout.fee) : null);
+  const useEstimatedFee = payout.feeEstimated;
+  const transactionFeeEur =
+    n(tx) ?? (!useEstimatedFee && feeTotal <= 0 && payout.fee > 0 && label <= 0 ? n(payout.fee) : null);
   return {
     capturedAt: new Date().toISOString(),
-    source: 'ebay_order',
+    source: order.sources?.includes('hub') ? 'ebay_seller_hub' : 'ebay_order',
     itemGrossEur,
     buyerShippingEur,
     buyerTotalEur,
-    transactionFeeEur,
-    adFeeEur: n(ads),
+    transactionFeeEur: useEstimatedFee ? null : transactionFeeEur,
+    adFeeEur: useEstimatedFee ? null : n(ads),
     shippingLabelEur: n(label),
-    otherFeeEur: n(other),
-    netPayoutEur: n(payout.net) ?? n(payout.sellPrice),
+    otherFeeEur: useEstimatedFee ? null : n(other),
+    refundEur: n(sumOrderRefundEur(order)) || null,
+    netPayoutEur: payout.netKnown ? n(payout.net) : null,
+    feesEstimated: useEstimatedFee,
   };
 }
 
@@ -166,11 +258,21 @@ export function saleProceedsFromItemFields(item: InventoryItem): SaleProceedsBre
       : itemGrossEur != null && shippingLabelEur != null && stored?.source === 'ebay_screenshot'
         ? roundMoney(itemGrossEur + (buyerShippingEur ?? 0))
         : itemGrossEur;
+  const refundEur = n(stored?.refundEur);
   const netPayoutEur =
-    n(stored?.netPayoutEur) ??
-    (itemGrossEur != null
-      ? roundMoney(itemGrossEur - (fee ?? 0) - (shippingLabelEur ?? 0))
-      : null);
+    n(stored?.netPayoutEur) != null
+      ? netPayoutAfterRefund(
+          buyerTotalEur,
+          Math.abs(n(stored?.transactionFeeEur) ?? fee ?? 0) +
+            Math.abs(n(stored?.adFeeEur) ?? 0) +
+            Math.abs(n(stored?.shippingLabelEur) ?? shippingLabelEur ?? 0) +
+            Math.abs(n(stored?.otherFeeEur) ?? 0),
+          n(stored?.netPayoutEur),
+          refundEur ?? 0
+        )
+      : itemGrossEur != null
+        ? roundMoney(itemGrossEur - (fee ?? 0) - (shippingLabelEur ?? 0) - (refundEur ?? 0))
+        : null;
   return {
     capturedAt: stored?.capturedAt || new Date().toISOString(),
     source: stored?.source || 'inferred',
@@ -181,13 +283,58 @@ export function saleProceedsFromItemFields(item: InventoryItem): SaleProceedsBre
     adFeeEur: n(stored?.adFeeEur),
     shippingLabelEur: n(stored?.shippingLabelEur) ?? shippingLabelEur,
     otherFeeEur: n(stored?.otherFeeEur),
+    refundEur: n(stored?.refundEur),
     netPayoutEur,
+    feesEstimated: stored?.feesEstimated,
   };
 }
 
 export function resolveSaleProceeds(item: InventoryItem): SaleProceedsBreakdown | null {
   const merged = saleProceedsFromItemFields(item);
   return saleProceedsHasDetail(merged) || merged.itemGrossEur != null ? merged : null;
+}
+
+export type SaleColumnSplit = {
+  totalEur: number;
+  adFeeEur: number;
+  ebayFeeEur: number;
+  otherFeeEur: number;
+  shippingEur: number;
+  refundEur: number;
+  netEur: number | null;
+};
+
+/** List-column split: buyer total, orange marketplace fees, shipping label, refund, net. */
+export function saleColumnSplit(
+  item: InventoryItem,
+  extras?: { displaySellEur?: number | null; shippingFallbackEur?: number; refundFallbackEur?: number }
+): SaleColumnSplit | null {
+  const display = extras?.displaySellEur ?? item.sellPrice;
+  if (display == null || !Number.isFinite(display)) return null;
+  const p = resolveSaleProceeds(item);
+  const total = n(p?.buyerTotalEur) ?? roundMoney(display);
+  let adFeeEur = Math.abs(n(p?.adFeeEur) ?? 0);
+  let ebayFeeEur = Math.abs(n(p?.transactionFeeEur) ?? 0);
+  let otherFeeEur = Math.abs(n(p?.otherFeeEur) ?? 0);
+  let shippingEur = Math.abs(n(p?.shippingLabelEur) ?? 0);
+  if (shippingEur < 0.005) shippingEur = Math.abs(extras?.shippingFallbackEur ?? 0);
+  if (adFeeEur < 0.005 && ebayFeeEur < 0.005 && otherFeeEur < 0.005) {
+    const lumped = Math.abs(Number(item.feeAmount) || 0);
+    const labelInFees = !item.sellerPaidShipping && (p?.shippingLabelEur != null || shippingEur >= 0.005);
+    ebayFeeEur = Math.max(0, roundMoney(lumped - (labelInFees ? shippingEur : 0)));
+  }
+  const refundEur = Math.max(Math.abs(n(p?.refundEur) ?? 0), Math.abs(extras?.refundFallbackEur ?? 0));
+  const feeTotal = adFeeEur + ebayFeeEur + otherFeeEur + shippingEur;
+  const netEur = netPayoutAfterRefund(total, feeTotal, n(p?.netPayoutEur), refundEur);
+  return {
+    totalEur: total,
+    adFeeEur,
+    ebayFeeEur,
+    otherFeeEur,
+    shippingEur,
+    refundEur,
+    netEur,
+  };
 }
 
 export type SaleProceedsRow = {
@@ -220,6 +367,9 @@ export function saleProceedsRows(p: SaleProceedsBreakdown): SaleProceedsRow[] {
   }
   if (p.shippingLabelEur != null && Math.abs(p.shippingLabelEur) >= 0.01) {
     rows.push({ id: 'label', label: 'Versandetikett', amount: -Math.abs(p.shippingLabelEur), tone: 'out' });
+  }
+  if (p.refundEur != null && Math.abs(p.refundEur) >= 0.01) {
+    rows.push({ id: 'refund', label: 'Erstattet', amount: -Math.abs(p.refundEur), tone: 'out' });
   }
   if (p.netPayoutEur != null) {
     rows.push({ id: 'net', label: 'Bestelleinnahmen', amount: p.netPayoutEur, tone: 'net' });

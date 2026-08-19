@@ -251,6 +251,14 @@ export async function collectFirestoreFreeQuotaSnapshot(options?: {
     } catch {
       /* optional */
     }
+
+    try {
+      const hub = await sumCollectionDocBytes(['users', user.uid, 'ebayHubArchive']);
+      firestoreBytes += hub.bytes;
+      syncDocs += hub.docs;
+    } catch {
+      /* optional */
+    }
   } else {
     firestoreNote = 'Sign in to measure your Firestore documents.';
   }

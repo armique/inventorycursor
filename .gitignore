@@ -37,5 +37,8 @@ scripts/secrets/
 scripts/output/
 scripts/.env.browser-scrape
 
+# Local eBay order archive (buyer addresses — do not commit)
+data/ebay-orders/
+
 .vercel
 .env*

@@ -1,6 +1,6 @@
 import type { EbayOrderFinancialEvent, EbayOrderRecord } from '../services/ebayOrderIndex';
 
-const REFUND_RE = /refund|rückerstattung|rueckerstattung|return|retoure|chargeback|reversal/i;
+const REFUND_RE = /refund|rückerstattung|rueckerstattung|erstattet|return|retoure|chargeback|reversal/i;
 const CREDIT_RE = /credit|gutschrift|storno/i;
 const CANCEL_RE = /cancel|cancellation|storniert|annull/i;
 const FEE_RE = /fee|gebühr|gebuehr|advert|werbung|promotion|insertion|anzeige/i;
@@ -73,8 +73,98 @@ export function hasPostSaleRefund(order: EbayOrderRecord): boolean {
   );
 }
 
-/** True when signed net is zero or negative after a return/refund on the order. */
+/** Positive EUR returned to the buyer (refund / return events). */
+export function sumOrderRefundEur(order: EbayOrderRecord): number {
+  const sum = (order.financialEvents || [])
+    .filter((e) => e.kind === 'refund' || e.kind === 'return')
+    .reduce((s, e) => s + Math.abs(Number(e.amount) || 0), 0);
+  return Math.round(sum * 100) / 100;
+}
+
+export type HubRefundKind = 'none' | 'partial' | 'full' | 'flagged';
+
+export interface HubRefundDisplay {
+  kind: HubRefundKind;
+  /** Hub badge: "Erstattet" or "Teilweise erstattet". */
+  label: string | null;
+  refundEur: number;
+}
+
+function hubRefundHaystack(order: EbayOrderRecord): string {
+  const events = (order.financialEvents || [])
+    .filter((e) => e.kind === 'refund' || e.kind === 'return' || e.kind === 'cancellation')
+    .map((e) => `${e.transactionType || ''} ${e.description || ''}`)
+    .join('\n');
+  return `${events}\n${order.orderPaymentStatus || ''}\n${order.cancelState || ''}`;
+}
+
+/**
+ * Seller Hub has two refund stamps: "Teilweise erstattet" (partial) and "Erstattet" (full).
+ * Prefer those event labels over orderPaymentStatus (Hub often stamps FULLY_REFUNDED on goodwill refunds).
+ */
+export function hubRefundStatusFromLabels(order: EbayOrderRecord): 'full' | 'partial' | null {
+  const hay = hubRefundHaystack(order);
+  if (/teilweise\s+erstattet|partial(?:ly)?\s+refund|PARTIALLY_REFUNDED/i.test(hay)) return 'partial';
+  if (/\berstattet\b|vollständig\s+erstattet|full(?:ly)?\s+refund/i.test(hay)) return 'full';
+  return null;
+}
+
+/**
+ * Hub list text often says "Erstattet" even for a €5 goodwill refund.
+ * Prefer labeled Hub events; otherwise use refund amount vs buyer total / leftover net.
+ */
+export function hubRefundDisplay(order: EbayOrderRecord): HubRefundDisplay {
+  const refundEur = sumOrderRefundEur(order);
+  const labeled = hubRefundStatusFromLabels(order);
+  const gross = order.grossTotal ?? sumOrderSaleProceeds(order);
+  const net = getOrderEffectiveNet(order);
+  const goodwillPartial =
+    refundEur >= 0.01 &&
+    gross != null &&
+    refundEur + 0.05 < Math.abs(gross) &&
+    (net == null || net > 0.01);
+
+  if (labeled === 'partial' || (labeled === 'full' && goodwillPartial)) {
+    return { kind: 'partial', label: 'Teilweise erstattet', refundEur };
+  }
+  if (labeled === 'full') return { kind: 'full', label: 'Erstattet', refundEur };
+
+  const payment = (order.orderPaymentStatus || '').replace(/_/g, ' ');
+  const flagged = /refund/i.test(payment);
+  const partialByStatus = /partial/i.test(payment);
+
+  if (refundEur >= 0.01) {
+    const coveredGross = gross != null && refundEur + 0.05 >= Math.abs(gross);
+    if (coveredGross || isOrderFullyRefunded(order)) {
+      return { kind: 'full', label: 'Erstattet', refundEur };
+    }
+    return { kind: 'partial', label: 'Teilweise erstattet', refundEur };
+  }
+
+  if (partialByStatus) return { kind: 'partial', label: 'Teilweise erstattet', refundEur: 0 };
+  if (isOrderFullyRefunded(order)) return { kind: 'full', label: 'Erstattet', refundEur: 0 };
+  if (flagged) return { kind: 'flagged', label: 'refund noted', refundEur: 0 };
+  return { kind: 'none', label: null, refundEur: 0 };
+}
+
+/** True when Hub stamped a full refund, or signed net is zero/negative after a return. */
 export function isOrderFullyRefunded(order: EbayOrderRecord): boolean {
+  const labeled = hubRefundStatusFromLabels(order);
+  if (labeled === 'full') {
+    const refundEur = sumOrderRefundEur(order);
+    const gross = order.grossTotal ?? sumOrderSaleProceeds(order);
+    const net = getOrderEffectiveNet(order);
+    if (
+      refundEur >= 0.01 &&
+      gross != null &&
+      refundEur + 0.05 < Math.abs(gross) &&
+      (net == null || net > 0.01)
+    ) {
+      return false;
+    }
+    return true;
+  }
+  if (labeled === 'partial') return false;
   if (!hasPostSaleRefund(order)) return false;
   const net = getOrderEffectiveNet(order);
   if (net == null) return false;

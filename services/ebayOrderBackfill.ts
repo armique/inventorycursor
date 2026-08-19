@@ -1,6 +1,6 @@
 /**
  * Chunked backfill of eBay Fulfillment API orders across a long date range
- * (e.g. since Feb 2025), written incrementally into the local order index
+ * (e.g. since Jan 2025), written incrementally into the local order index
  * so progress survives if a chunk fails or the run is cancelled.
  */
 

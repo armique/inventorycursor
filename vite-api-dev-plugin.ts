@@ -39,13 +39,15 @@ function readRequestBody(req: IncomingMessage): Promise<string> {
 }
 
 async function loadHandler(pathname: string): Promise<{ handler: (req: ApiRequest, res: ApiResponse) => Promise<void>; route?: string } | null> {
-  if (pathname === '/api/ebay' || pathname === '/api/ebay-order' || pathname === '/api/ebay-orders' || pathname === '/api/ebay-purchases' || pathname === '/api/ebay-listings') {
+  if (pathname === '/api/ebay' || pathname === '/api/ebay-order' || pathname === '/api/ebay-orders' || pathname === '/api/ebay-finances' || pathname === '/api/ebay-purchases' || pathname === '/api/ebay-listings') {
     const mod = await import('./api/ebay.js');
     const route =
       pathname === '/api/ebay-order'
         ? 'order'
         : pathname === '/api/ebay-orders'
           ? 'orders'
+          : pathname === '/api/ebay-finances'
+            ? 'finances'
           : pathname === '/api/ebay-purchases'
             ? 'purchases'
           : pathname === '/api/ebay-listings'
@@ -71,6 +73,14 @@ async function loadHandler(pathname: string): Promise<{ handler: (req: ApiReques
   }
   if (pathname === '/api/ebay-seller-hub-fetch') {
     const mod = await import('./api/ebay-seller-hub-fetch.js');
+    return { handler: mod.default };
+  }
+  if (pathname === '/api/ebay-hub-archive-sync') {
+    const mod = await import('./api/ebay-hub-archive-sync.js');
+    return { handler: mod.default };
+  }
+  if (pathname === '/api/ebay-hub-browser-ingest') {
+    const mod = await import('./api/ebay-hub-browser-ingest.js');
     return { handler: mod.default };
   }
   if (pathname === '/api/gemini' || pathname === '/api/parse-ebay-order-screenshot' || pathname === '/api/parse-kleinanzeigen-chat-screenshot') {

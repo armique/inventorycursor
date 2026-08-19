@@ -30,6 +30,9 @@ function getActionTone(action: string): ActionTone {
   if (a.includes('revert') || a.includes('undo') || a.includes('redo')) {
     return { badge: 'bg-sky-50 text-sky-900 border-sky-200', dot: 'bg-sky-500' };
   }
+  if (a.includes('hub') || a.includes('split')) {
+    return { badge: 'bg-orange-50 text-orange-900 border-orange-200', dot: 'bg-orange-500' };
+  }
   if (a.includes('updated') || a.includes('changed')) {
     return { badge: 'bg-blue-50 text-blue-900 border-blue-200', dot: 'bg-blue-500' };
   }

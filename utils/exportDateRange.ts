@@ -98,7 +98,12 @@ export function itemTouchesExportRange(item: InventoryItem, start: string, end: 
   const buy = normalizeToYMD(item.buyDate);
   const sell = normalizeToYMD(item.sellDate);
   const container = normalizeToYMD(item.containerSoldDate);
-  return ymdInRange(buy, start, end) || ymdInRange(sell, start, end) || ymdInRange(container, start, end);
+  if (ymdInRange(buy, start, end) || ymdInRange(sell, start, end) || ymdInRange(container, start, end)) {
+    return true;
+  }
+  return (item.ebaySaleCycles || []).some((cycle) =>
+    ymdInRange(normalizeToYMD(cycle.sellDate || cycle.closedAt.slice(0, 10)), start, end)
+  );
 }
 
 /**

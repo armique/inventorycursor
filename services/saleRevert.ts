@@ -1,7 +1,14 @@
-import type { ActionHistoryEntry, InventoryItem } from '../types';
+import type { ActionHistoryEntry, InventoryItem, ItemSaleCycleReason } from '../types';
 import { ItemStatus } from '../types';
+import type { EbayOrderRecord } from './ebayOrderIndex';
+import { loadEbayOrderIndex } from './ebayOrderIndex';
+import { mergeHubOverApiOrders } from './ebayHubArchiveIndex';
 import { getChildren, getParentContainer } from './financialAggregation';
+import { syncContainerBuyTotalsFromComponents } from './containerAggregates';
 import { isRealizedDisposal } from '../utils/itemDisposition';
+import { allocateFullRefundRestockLoss, round2 } from '../utils/ebaySaleAdjustments';
+import { archiveActiveSaleAndClear } from '../utils/itemSaleCycle';
+import { hubRefundDisplay } from '../utils/ebayOrderFinancial';
 
 const ARCHIVE_KEY = 'action_history_archive_v1';
 const RETENTION_DAYS = 90;
@@ -39,6 +46,15 @@ export function isRestockableSale(item: Pick<InventoryItem, 'status'> | undefine
   return item?.status === ItemStatus.SOLD || item?.status === ItemStatus.GIFTED;
 }
 
+/** Hub ledger first, then Fulfillment/API cache — used when restocking after Erstattet. */
+export function loadRefundOrdersForRestock(): EbayOrderRecord[] {
+  try {
+    return mergeHubOverApiOrders(loadEbayOrderIndex().orders);
+  } catch {
+    return [];
+  }
+}
+
 export function appendReturnedNote(comment2?: string): string {
   const current = comment2 || '';
   if (RETURNED_NOTE_RE.test(current)) return current;
@@ -49,35 +65,58 @@ export function hasReturnedNote(comment2?: string): boolean {
   return RETURNED_NOTE_RE.test(comment2 || '');
 }
 
-/** Clear sale/gift fields and put the row back in stock. */
-export function restockItemFields(
-  item: InventoryItem,
-  options?: { status?: ItemStatus; comment2?: string }
-): InventoryItem {
+function appendRefundLossNote(comment2: string | undefined, delta: number, orderId?: string): string {
+  const tag = `[Hub Erstattet +€${delta.toFixed(2)} EK${orderId ? ` ${orderId}` : ''}]`;
+  const current = comment2 || '';
+  if (current.includes(tag) || (orderId && current.includes(`Hub Erstattet`) && current.includes(orderId))) {
+    return current;
+  }
+  return current.trim() ? `${current.trim()} ${tag}` : tag;
+}
+
+function applyBuyPriceLoss(item: InventoryItem, delta: number, orderId?: string): InventoryItem {
+  if (delta < 0.01) return item;
+  const buyBefore = round2(item.buyPrice);
+  const buyAfter = round2(buyBefore + delta);
   return {
     ...item,
-    status: options?.status ?? ItemStatus.IN_STOCK,
-    comment2: options?.comment2 ?? item.comment2,
-    sellPrice: undefined,
-    sellDate: undefined,
-    profit: undefined,
-    platformSold: undefined,
-    paymentType: undefined,
-    feeAmount: undefined,
-    hasFee: false,
-    sellerPaidShipping: false,
-    sellerShippingAmount: undefined,
-    saleProceeds: undefined,
-    invoiceNumber: undefined,
-    customer: undefined,
-    giftRecipient: undefined,
-    giftRelation: undefined,
-    ebayOrderId: undefined,
-    ebayOrderLineKey: undefined,
-    originalSellPrice: undefined,
-    ebaySaleAdjustments: undefined,
-    containerSoldDate: undefined,
-    ebayUsername: undefined,
+    buyPrice: buyAfter,
+    comment2: appendRefundLossNote(item.comment2, delta, orderId),
+    priceHistory: [
+      ...(item.priceHistory || []),
+      {
+        date: new Date().toISOString(),
+        type: 'buy',
+        price: buyAfter,
+        previousPrice: buyBefore,
+      },
+    ],
+  };
+}
+
+/** Clear live sale fields, archive that sale into ebaySaleCycles, keep listing specs. */
+export function restockItemFields(
+  item: InventoryItem,
+  options?: {
+    status?: ItemStatus;
+    comment2?: string;
+    cycleReason?: ItemSaleCycleReason;
+    leftoverLossEur?: number;
+    refundEur?: number;
+    refundKind?: 'full' | 'partial';
+    buyPriceAfter?: number;
+  }
+): InventoryItem {
+  const archived = archiveActiveSaleAndClear(item, options?.cycleReason ?? 'manual_unsold', {
+    leftoverLossEur: options?.leftoverLossEur,
+    refundEur: options?.refundEur,
+    refundKind: options?.refundKind,
+    buyPriceAfter: options?.buyPriceAfter,
+    status: options?.status,
+    comment2: options?.comment2,
+  });
+  return {
+    ...archived,
     name: item.name.replace(SOLD_QTY_NAME_RE, '').trim() || item.name,
   };
 }
@@ -89,6 +128,28 @@ export function applySaleRevert(items: InventoryItem[], itemId: string): Invento
     if (!isRestockableSale(i)) return i;
     return restockItemFields(i, { comment2: appendReturnedNote(i.comment2) });
   });
+}
+
+function cycleMetaFromOrder(
+  orderId: string | undefined,
+  orders: EbayOrderRecord[] | undefined
+): {
+  cycleReason: ItemSaleCycleReason;
+  leftoverLossEur?: number;
+  refundEur?: number;
+  refundKind?: 'full' | 'partial';
+} {
+  if (!orderId) return { cycleReason: 'manual_unsold' };
+  const order = (orders || []).find((o) => o.orderId === orderId);
+  if (!order) return { cycleReason: 'manual_unsold' };
+  const refund = hubRefundDisplay(order);
+  if (refund.kind === 'full') {
+    return { cycleReason: 'erstattet', refundEur: refund.refundEur, refundKind: 'full' };
+  }
+  if (refund.kind === 'partial') {
+    return { cycleReason: 'return', refundEur: refund.refundEur, refundKind: 'partial' };
+  }
+  return { cycleReason: 'manual_unsold' };
 }
 
 function originalIdFromSplitSold(id: string): string | null {
@@ -103,13 +164,18 @@ function originalIdFromSplitSold(id: string): string | null {
 export function applyUnsoldRestock(
   items: InventoryItem[],
   targetIds: string[],
-  options?: { patches?: InventoryItem[] }
+  options?: { patches?: InventoryItem[]; refundOrders?: EbayOrderRecord[] }
 ): { updates: InventoryItem[]; deleteIds: string[] } {
   const byId = new Map(items.map((i) => [i.id, i]));
   const patchById = new Map((options?.patches || []).map((p) => [p.id, p]));
   const targets = new Set(targetIds.filter(Boolean));
   const changed = new Map<string, InventoryItem>();
   const deleteIds: string[] = [];
+  const lossById = allocateFullRefundRestockLoss({
+    items,
+    restockIds: [...targets],
+    orders: options?.refundOrders || [],
+  });
 
   const write = (item: InventoryItem) => {
     byId.set(item.id, item);
@@ -121,22 +187,38 @@ export function applyUnsoldRestock(
     if (!current) continue;
     const patch = patchById.get(id);
     const base = patch ? { ...current, ...patch } : current;
-    const restocked = restockItemFields(base, {
+    const orderId = (current.ebayOrderId || '').trim() || undefined;
+    const cycleMeta = cycleMetaFromOrder(orderId, options?.refundOrders);
+    const leftover = lossById.get(id) || 0;
+    const snapshotBase = { ...current, buyPrice: base.buyPrice, comment2: base.comment2 };
+    let restocked = restockItemFields(snapshotBase, {
       status: ItemStatus.IN_STOCK,
       comment2: appendReturnedNote(base.comment2),
+      cycleReason: cycleMeta.cycleReason,
+      leftoverLossEur: leftover,
+      refundEur: cycleMeta.refundEur,
+      refundKind: cycleMeta.refundKind,
     });
+    restocked = applyBuyPriceLoss(restocked, leftover, orderId);
     write(restocked);
 
     if (restocked.isPC || restocked.isBundle) {
-      for (const child of getChildren(restocked, items)) {
+      for (const child of getChildren(current, items)) {
         if (child.isPC || child.isBundle) continue;
-        const childBase = byId.get(child.id) || child;
-        write(
-          restockItemFields(childBase, {
-            status: ItemStatus.IN_COMPOSITION,
-            comment2: appendReturnedNote(childBase.comment2),
-          })
-        );
+        const childOrig = byId.get(child.id) || child;
+        const childOrderId = (childOrig.ebayOrderId || orderId || '').trim() || undefined;
+        const childMeta = cycleMetaFromOrder(childOrderId, options?.refundOrders);
+        const childLeftover = lossById.get(child.id) || 0;
+        let nextChild = restockItemFields(childOrig, {
+          status: ItemStatus.IN_COMPOSITION,
+          comment2: appendReturnedNote(childOrig.comment2),
+          cycleReason: childMeta.cycleReason,
+          leftoverLossEur: childLeftover,
+          refundEur: childMeta.refundEur,
+          refundKind: childMeta.refundKind,
+        });
+        nextChild = applyBuyPriceLoss(nextChild, childLeftover, childOrderId);
+        write(nextChild);
       }
     }
   }
@@ -180,6 +262,17 @@ export function applyUnsoldRestock(
     deleteIds.push(item.id);
     changed.delete(item.id);
     byId.delete(item.id);
+  }
+
+  const merged = items.map((i) => byId.get(i.id) || i).filter((i) => !deleteIds.includes(i.id));
+  const synced = syncContainerBuyTotalsFromComponents(merged, [...changed.keys()]);
+  for (const row of synced) {
+    const prev = byId.get(row.id);
+    if (!prev) continue;
+    if (Math.abs((prev.buyPrice || 0) - (row.buyPrice || 0)) >= 0.01) {
+      byId.set(row.id, row);
+      changed.set(row.id, row);
+    }
   }
 
   return { updates: [...changed.values()], deleteIds };

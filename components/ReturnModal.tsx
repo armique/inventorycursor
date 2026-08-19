@@ -71,6 +71,7 @@ const ReturnModal: React.FC<Props> = ({ items, onConfirm, onClose }) => {
           <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-xs text-slate-500 leading-relaxed">
             <p><span className="font-bold text-slate-700">Action:</span> Selected items will be moved back to <span className="font-bold text-blue-600">Active Inventory</span>.</p>
             <p className="mt-1">Sales, trade, and gift data (price, date, profit) will be cleared.</p>
+            <p className="mt-1">A Hub <span className="font-bold text-slate-700">Erstattet</span> (full refund) with leftover negative Bestelleinnahmen adds that loss to buy price — split equally across a PC/bundle&apos;s parts.</p>
           </div>
 
           <div className="space-y-4">
