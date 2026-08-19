@@ -40,6 +40,8 @@ export type DealwatchListing = {
   shippingKnown?: boolean;
   shippingPossible?: boolean;
   pickupOnly?: boolean;
+  rejected?: boolean;
+  rejectReason?: string;
   url: string;
   image?: string;
   condition?: string;
@@ -101,6 +103,7 @@ export type DealwatchStore = {
 
 export type ListingsResult = {
   items: DealwatchListing[];
+  rejectedItems?: DealwatchListing[];
   matched?: number;
   rejected?: number;
   best?: number;

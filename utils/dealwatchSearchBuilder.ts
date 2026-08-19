@@ -44,6 +44,22 @@ export type CompiledSearchBuilder = {
   constructor: SearchBuilderSelection;
 };
 
+export function specBrand(label: string): 'intel' | 'amd' | null {
+  const t = String(label || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+  if (!t) return null;
+  if (/^(lga|1150|1151|1155|1200|1700|1851|2011|2066)/.test(t)) return 'intel';
+  if (/^(coreultra|corei[3579]|i[3579])/.test(t)) return 'intel';
+  if (/^(am\d|tr4|strx|fm\d|ryzen|threadripper)/.test(t)) return 'amd';
+  if (/^(z|h|q|w)\d/.test(t)) return 'intel';
+  if (/^b(36|46|56|66|76|86)/.test(t)) return 'intel';
+  if (/^x(79|99|299)/.test(t)) return 'intel';
+  if (/^[ax]\d/.test(t)) return 'amd';
+  if (/^b(35|45|55|65)/.test(t)) return 'amd';
+  return null;
+}
+
 export function slugifyPill(label: string): string {
   const slug = String(label || '')
     .toLowerCase()

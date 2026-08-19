@@ -3655,13 +3655,13 @@ function mapBrowseItems(rawItems = []) {
   }).filter(Boolean);
 }
 
-function passesListingRules(item, query, { ignoreBudget = false } = {}) {
-  if (titleHasSuche(item.title)) return false;
+function listingRejectReason(item, query, { ignoreBudget = false } = {}) {
+  if (titleHasSuche(item.title)) return 'suche';
   if (!ignoreBudget) {
-    if (item.price < (query.minPrice || 1) || item.price > query.maxPrice) return false;
+    if (item.price < (query.minPrice || 1) || item.price > query.maxPrice) return 'price';
   }
   const isKa = item.marketplace === 'kleinanzeigen' || query.marketplace === 'kleinanzeigen';
-  if (!isKa && item.feedback < query.minFeedback) return false;
+  if (!isKa && item.feedback < query.minFeedback) return 'feedback';
   if (isBlockedListing(
     item.sourceText,
     item.condition,
@@ -3671,13 +3671,28 @@ function passesListingRules(item, query, { ignoreBudget = false } = {}) {
     query.categoryId,
     query.includeCapacities,
   )) {
-    return false;
+    return 'filter';
   }
   if (query.condition === 'used' && !(String(item.conditionId) === '3000' || /gebraucht|used|sehr gut|gut|in ordnung/i.test(item.condition))) {
-    return false;
+    return 'condition';
   }
-  if (!query.explore && item.isAuction && !endsTodayInBerlin(item.endDate)) return false;
-  return true;
+  if (!query.explore && item.isAuction && !endsTodayInBerlin(item.endDate)) return 'auction';
+  return '';
+}
+
+function passesListingRules(item, query, opts = {}) {
+  return !listingRejectReason(item, query, opts);
+}
+
+function partitionByListingRules(items, query) {
+  const accepted = [];
+  const rejected = [];
+  for (const item of items || []) {
+    const reason = listingRejectReason(item, query);
+    if (reason) rejected.push({ ...item, rejected: true, rejectReason: reason });
+    else accepted.push(item);
+  }
+  return { accepted, rejected };
 }
 
 function passesExploreRules(item, query) {
@@ -3971,16 +3986,19 @@ async function searchKleinanzeigenListings(query) {
     if (!byId.has(ad.id)) byId.set(ad.id, ad);
   }
   const unique = [...byId.values()];
-  const accepted = unique.filter(item => passesListingRules(item, query));
+  const { accepted, rejected } = partitionByListingRules(unique, query);
   const resultItems = finalizeListingItems(accepted, query.maxPrice)
+    .sort((a, b) => a.price - b.price || a.total - b.total);
+  const rejectedItems = finalizeListingItems(rejected, query.maxPrice)
     .sort((a, b) => a.price - b.price || a.total - b.total);
 
   return {
     items: resultItems,
+    rejectedItems,
     suggestions: [],
     suggestionMeta: null,
     scanned: unique.length,
-    rejected: unique.length - accepted.length,
+    rejected: rejected.length,
     totalAvailable: unique.length,
     remindersScheduled: 0,
     telegramConfigured: telegramConfigured(),
@@ -3999,8 +4017,9 @@ async function searchListings(query) {
   const data = await fetchBrowseItemSummaries(query);
   const scanned = data.itemSummaries || [];
   const items = mapBrowseItems(scanned).map(item => ({ ...item, marketplace: 'ebay' }));
-  const accepted = items.filter(item => passesListingRules(item, query));
+  const { accepted, rejected } = partitionByListingRules(items, query);
   const resultItems = finalizeListingItems(accepted, query.maxPrice);
+  const rejectedItems = finalizeListingItems(rejected, query.maxPrice);
   const remindersScheduled = query.alerts
     ? resultItems.filter(item => item.isAuction).filter(item => scheduleAuctionReminder(item, true)).length
     : 0;
@@ -4026,10 +4045,11 @@ async function searchListings(query) {
 
   return {
     items: resultItems,
+    rejectedItems,
     suggestions,
     suggestionMeta,
     scanned: scanned.length,
-    rejected: scanned.length - accepted.length,
+    rejected: rejected.length,
     totalAvailable: Number(data.total) || scanned.length,
     remindersScheduled,
     telegramConfigured: telegramConfigured(),

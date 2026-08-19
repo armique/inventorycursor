@@ -2,6 +2,9 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Bell,
   ExternalLink,
+  Grid3x3,
+  LayoutGrid,
+  List,
   Loader2,
   Plus,
   Radar,
@@ -42,8 +45,40 @@ import {
   type BuilderLibrary,
   type SearchBuilderDraft,
 } from '../../utils/dealwatchSearchBuilder';
+import {
+  isPickupOnlyListing,
+  rejectReasonLabel,
+} from '../../utils/dealwatchListingFlags';
 
 type DealwatchTab = 'matches' | 'watchlist' | 'trash' | 'ka-buys' | 'ka-sales';
+type ListingView = 'small' | 'list' | 'large';
+
+const LISTING_VIEW_KEY = 'dealwatch_listing_view_v1';
+const SHOW_REJECTED_KEY = 'dealwatch_show_rejected_v1';
+const HIDE_PICKUP_KEY = 'dealwatchHidePickupOnly';
+
+function readFlag(key: string, onValue = '1'): boolean {
+  try {
+    return localStorage.getItem(key) === onValue;
+  } catch {
+    return false;
+  }
+}
+const LISTING_VIEWS: { id: ListingView; label: string; Icon: typeof LayoutGrid }[] = [
+  { id: 'small', label: 'Small tiles', Icon: Grid3x3 },
+  { id: 'list', label: 'List', Icon: List },
+  { id: 'large', label: 'Large tiles', Icon: LayoutGrid },
+];
+
+function readListingView(): ListingView {
+  try {
+    const raw = localStorage.getItem(LISTING_VIEW_KEY);
+    if (raw === 'small' || raw === 'list' || raw === 'large') return raw;
+  } catch {
+    /* ignore */
+  }
+  return 'large';
+}
 
 function euros(value?: number) {
   if (value == null || !Number.isFinite(Number(value))) return '—';
@@ -71,8 +106,12 @@ export type DealwatchWorkspaceProps = {
 
 const DealwatchWorkspaceCore: React.FC<DealwatchWorkspaceProps> = ({ embedded = false }) => {
   const [tab, setTab] = useState<DealwatchTab>('matches');
+  const [listingView, setListingView] = useState<ListingView>(() => readListingView());
+  const [showRejected, setShowRejected] = useState(() => readFlag(SHOW_REJECTED_KEY));
+  const [hidePickupOnly, setHidePickupOnly] = useState(() => readFlag(HIDE_PICKUP_KEY));
   const [store, setStore] = useState<DealwatchStore | null>(null);
   const [items, setItems] = useState<DealwatchListing[]>([]);
+  const [rejectedItems, setRejectedItems] = useState<DealwatchListing[]>([]);
   const [metrics, setMetrics] = useState({ matched: 0, rejected: 0, best: 0 });
   const [watchIds, setWatchIds] = useState<Set<string>>(new Set());
   const [kaBuys, setKaBuys] = useState<DealwatchKaRecord[]>([]);
@@ -97,6 +136,18 @@ const DealwatchWorkspaceCore: React.FC<DealwatchWorkspaceProps> = ({ embedded = 
   const compiled = useMemo(() => compileSearchBuilder(draft, library), [draft, library]);
   const dirty = useMemo(() => isBuilderDirty(draft, library, active), [draft, library, active]);
   const alertsOn = store?.alerts !== false;
+  const visibleMatches = useMemo(() => {
+    const pool = showRejected ? [...items, ...rejectedItems] : items;
+    return hidePickupOnly ? pool.filter((item) => !isPickupOnlyListing(item)) : pool;
+  }, [hidePickupOnly, items, rejectedItems, showRejected]);
+  const visibleWatchlist = useMemo(() => {
+    const pool = watchlist as DealwatchListing[];
+    return hidePickupOnly ? pool.filter((item) => !isPickupOnlyListing(item)) : pool;
+  }, [hidePickupOnly, watchlist]);
+  const pickupHiddenCount = useMemo(() => {
+    const pool = showRejected ? [...items, ...rejectedItems] : items;
+    return hidePickupOnly ? pool.filter(isPickupOnlyListing).length : 0;
+  }, [hidePickupOnly, items, rejectedItems, showRejected]);
 
   const payloadFromDraft = useCallback(
     (base?: DealwatchSearch | null) => ({
@@ -118,6 +169,23 @@ const DealwatchWorkspaceCore: React.FC<DealwatchWorkspaceProps> = ({ embedded = 
   useEffect(() => {
     saveBuilderLibrary(library);
   }, [library]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LISTING_VIEW_KEY, listingView);
+    } catch {
+      /* ignore */
+    }
+  }, [listingView]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SHOW_REJECTED_KEY, showRejected ? '1' : '0');
+      localStorage.setItem(HIDE_PICKUP_KEY, hidePickupOnly ? '1' : '0');
+    } catch {
+      /* ignore */
+    }
+  }, [showRejected, hidePickupOnly]);
 
   const applyStore = useCallback((next: DealwatchStore) => {
     setStore(next);
@@ -144,9 +212,10 @@ const DealwatchWorkspaceCore: React.FC<DealwatchWorkspaceProps> = ({ embedded = 
       try {
         const result = await fetchListings(listingParamsFromSearch(search, alertsOn));
         setItems(result.items || []);
+        setRejectedItems(result.rejectedItems || []);
         setMetrics({
           matched: Number(result.matched ?? result.items?.length ?? 0),
-          rejected: Number(result.rejected ?? 0),
+          rejected: Number(result.rejected ?? result.rejectedItems?.length ?? 0),
           best: Number(result.best ?? 0),
         });
         if (result.watchlistIds) setWatchIds(new Set(result.watchlistIds.map(String)));
@@ -339,7 +408,7 @@ const DealwatchWorkspaceCore: React.FC<DealwatchWorkspaceProps> = ({ embedded = 
       {!embedded && (
         <div className="shrink-0 flex items-center justify-between gap-3 px-3 py-2 border-b border-slate-100 bg-slate-50/80">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="p-1.5 rounded-lg bg-slate-900 text-white shrink-0">
+            <span className="p-1.5 rounded-none bg-slate-900 text-white shrink-0">
               <Radar size={14} />
             </span>
             <div className="min-w-0">
@@ -354,7 +423,7 @@ const DealwatchWorkspaceCore: React.FC<DealwatchWorkspaceProps> = ({ embedded = 
               href="/dealwatch/explore.html"
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase tracking-wider text-slate-600 hover:bg-slate-50"
+              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-none border border-slate-200 bg-white text-[10px] font-black uppercase tracking-wider text-slate-600 hover:bg-slate-50"
             >
               Free search <ExternalLink size={12} />
             </a>
@@ -362,7 +431,7 @@ const DealwatchWorkspaceCore: React.FC<DealwatchWorkspaceProps> = ({ embedded = 
               href="/dealwatch/compare.html"
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase tracking-wider text-slate-600 hover:bg-slate-50"
+              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-none border border-slate-200 bg-white text-[10px] font-black uppercase tracking-wider text-slate-600 hover:bg-slate-50"
             >
               Compare <ExternalLink size={12} />
             </a>
@@ -388,7 +457,7 @@ const DealwatchWorkspaceCore: React.FC<DealwatchWorkspaceProps> = ({ embedded = 
               return (
                 <div
                   key={search.id}
-                  className={`group flex items-stretch gap-1 rounded-lg ${
+                  className={`group flex items-stretch gap-1 rounded-none ${
                     activeRow ? 'bg-white text-slate-900' : 'hover:bg-white/10'
                   }`}
                 >
@@ -429,7 +498,7 @@ const DealwatchWorkspaceCore: React.FC<DealwatchWorkspaceProps> = ({ embedded = 
                 key={t.id}
                 type="button"
                 onClick={() => setTab(t.id)}
-                className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider ${
+                className={`px-2.5 py-1.5 rounded-none text-[10px] font-black uppercase tracking-wider ${
                   tab === t.id ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
                 }`}
               >
@@ -441,10 +510,58 @@ const DealwatchWorkspaceCore: React.FC<DealwatchWorkspaceProps> = ({ embedded = 
               </button>
             ))}
             <div className="ml-auto flex items-center gap-1.5">
+              {(tab === 'matches' || tab === 'watchlist') && (
+                <div className="flex border border-slate-200 bg-white">
+                  {LISTING_VIEWS.map(({ id, label, Icon }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      title={label}
+                      aria-label={label}
+                      aria-pressed={listingView === id}
+                      onClick={() => setListingView(id)}
+                      className={`px-2 py-1.5 ${
+                        listingView === id ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50'
+                      }`}
+                    >
+                      <Icon size={14} />
+                    </button>
+                  ))}
+                </div>
+              )}
+              {tab === 'matches' && (
+                <button
+                  type="button"
+                  aria-pressed={showRejected}
+                  onClick={() => setShowRejected((v) => !v)}
+                  className={`px-2 py-1.5 border text-[10px] font-black uppercase tracking-wider ${
+                    showRejected
+                      ? 'border-rose-300 bg-rose-50 text-rose-800'
+                      : 'border-slate-200 bg-white text-slate-500'
+                  }`}
+                >
+                  {showRejected ? 'Hide rejected' : 'Show rejected'}
+                  {metrics.rejected ? ` ${metrics.rejected}` : ''}
+                </button>
+              )}
+              {(tab === 'matches' || tab === 'watchlist') && (
+                <button
+                  type="button"
+                  aria-pressed={hidePickupOnly}
+                  onClick={() => setHidePickupOnly((v) => !v)}
+                  className={`px-2 py-1.5 border text-[10px] font-black uppercase tracking-wider ${
+                    hidePickupOnly
+                      ? 'border-amber-300 bg-amber-50 text-amber-800'
+                      : 'border-slate-200 bg-white text-slate-500'
+                  }`}
+                >
+                  {hidePickupOnly ? 'Show Nur Abholung' : 'Hide Nur Abholung'}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => void onToggleAlerts()}
-                className={`inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border text-[10px] font-black uppercase tracking-wider ${
+                className={`inline-flex items-center gap-1 px-2 py-1.5 rounded-none border text-[10px] font-black uppercase tracking-wider ${
                   alertsOn
                     ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
                     : 'border-slate-200 bg-white text-slate-500'
@@ -454,8 +571,8 @@ const DealwatchWorkspaceCore: React.FC<DealwatchWorkspaceProps> = ({ embedded = 
               </button>
               {embedded && (
                 <>
-                  <a href="/dealwatch/explore.html" target="_blank" rel="noreferrer" className="px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase text-slate-600">Explore</a>
-                  <a href="/dealwatch/compare.html" target="_blank" rel="noreferrer" className="px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase text-slate-600">Compare</a>
+                  <a href="/dealwatch/explore.html" target="_blank" rel="noreferrer" className="px-2 py-1.5 rounded-none border border-slate-200 bg-white text-[10px] font-black uppercase text-slate-600">Explore</a>
+                  <a href="/dealwatch/compare.html" target="_blank" rel="noreferrer" className="px-2 py-1.5 rounded-none border border-slate-200 bg-white text-[10px] font-black uppercase text-slate-600">Compare</a>
                 </>
               )}
             </div>
@@ -476,16 +593,16 @@ const DealwatchWorkspaceCore: React.FC<DealwatchWorkspaceProps> = ({ embedded = 
                 onSaveAsNew={() => void onSaveAsNew()}
               />
               <div className="flex flex-wrap gap-3 text-[11px] font-semibold text-slate-500 items-center">
-                <span>Lots <strong className="text-slate-800">{metrics.matched || items.length}</strong></span>
+                <span>Lots <strong className="text-slate-800">{visibleMatches.length}</strong></span>
                 <span>Best <strong className="text-slate-800">{metrics.best || '—'}</strong></span>
-                <span>Rejected <strong className="text-slate-800">{metrics.rejected || '—'}</strong></span>
+                <span>Rejected <strong className="text-slate-800">{metrics.rejected || rejectedItems.length || '—'}</strong></span>
                 <span>Last scan {lastScan ? new Date(lastScan).toLocaleTimeString() : '—'}</span>
                 {note && <span className="text-slate-700">{note}</span>}
                 <button
                   type="button"
                   disabled={scanning || !active}
                   onClick={() => active && void scan(active)}
-                  className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase tracking-wider text-slate-600 disabled:opacity-50"
+                  className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-none border border-slate-200 bg-white text-[10px] font-black uppercase tracking-wider text-slate-600 disabled:opacity-50"
                 >
                   <RefreshCw size={12} />
                   Rescan saved
@@ -498,17 +615,31 @@ const DealwatchWorkspaceCore: React.FC<DealwatchWorkspaceProps> = ({ embedded = 
           <div className="flex-1 min-h-0 overflow-y-auto p-3">
             {tab === 'matches' && (
               <ListingGrid
-                items={items}
+                view={listingView}
+                items={visibleMatches}
                 watchIds={watchIds}
-                empty={scanning ? 'Scanning…' : 'No matches — adjust filters and scan.'}
+                empty={
+                  scanning
+                    ? 'Scanning…'
+                    : pickupHiddenCount
+                      ? `${pickupHiddenCount} lot${pickupHiddenCount === 1 ? '' : 's'} hidden as Nur Abholung. Show them to see pickup-only ads.`
+                      : !showRejected && rejectedItems.length
+                        ? `${rejectedItems.length} rejected by filters. Show rejected to see them.`
+                        : 'No matches — adjust filters and scan.'
+                }
                 onToggleWatch={onToggleWatch}
               />
             )}
             {tab === 'watchlist' && (
               <ListingGrid
-                items={watchlist as DealwatchListing[]}
+                view={listingView}
+                items={visibleWatchlist}
                 watchIds={watchIds}
-                empty="Watchlist is empty."
+                empty={
+                  hidePickupOnly && watchlist.length
+                    ? 'Nur Abholung ads are hidden.'
+                    : 'Watchlist is empty.'
+                }
                 onToggleWatch={onToggleWatch}
               />
             )}
@@ -524,7 +655,7 @@ const DealwatchWorkspaceCore: React.FC<DealwatchWorkspaceProps> = ({ embedded = 
                     <button
                       type="button"
                       onClick={() => void onRestore(search.id)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-700 hover:bg-slate-50"
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-none border border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-700 hover:bg-slate-50"
                     >
                       <RotateCcw size={12} /> Restore
                     </button>
@@ -545,73 +676,197 @@ function EmptyState({ text }: { text: string }) {
   return <p className="text-sm font-semibold text-slate-500 py-10 text-center">{text}</p>;
 }
 
+function ListingFlags({ item }: { item: DealwatchListing }) {
+  const pickup = isPickupOnlyListing(item);
+  return (
+    <>
+      {item.rejected && (
+        <span className="px-1.5 py-0.5 bg-rose-600 text-white text-[9px] font-black uppercase">
+          {rejectReasonLabel(item.rejectReason)}
+        </span>
+      )}
+      {pickup && (
+        <span className="px-1.5 py-0.5 bg-amber-600 text-white text-[9px] font-black uppercase">
+          Abholung
+        </span>
+      )}
+    </>
+  );
+}
+
 function ListingGrid({
+  view,
   items,
   watchIds,
   empty,
   onToggleWatch,
 }: {
+  view: ListingView;
   items: DealwatchListing[];
   watchIds: Set<string>;
   empty: string;
   onToggleWatch: (item: DealwatchListing) => void;
 }) {
   if (!items.length) return <EmptyState text={empty} />;
+
+  if (view === 'list') {
+    return (
+      <div className="flex flex-col gap-1.5">
+        {items.map((item) => {
+          const watched = watchIds.has(String(item.id));
+          const isKa = item.marketplace === 'kleinanzeigen' || /kleinanzeigen\.de/i.test(item.url || '');
+          return (
+            <article
+              key={item.id}
+              className={`flex items-center gap-3 border bg-white px-2 py-1.5 ${
+                item.rejected ? 'border-rose-300' : item.isNew ? 'border-emerald-300' : 'border-slate-200'
+              }`}
+            >
+              <div className="w-16 h-16 shrink-0 bg-slate-100 overflow-hidden relative">
+                {item.image ? (
+                  <img src={item.image} alt="" className="w-full h-full object-cover" loading="lazy" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-slate-300 text-[10px] font-bold">
+                    —
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-black text-slate-900 tabular-nums">
+                    {euros(item.total ?? item.price)}
+                  </p>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    {isKa ? 'KA' : 'eBay'}
+                  </span>
+                  {item.isNew && (
+                    <span className="px-1 py-0.5 bg-emerald-600 text-white text-[9px] font-black uppercase">
+                      New
+                    </span>
+                  )}
+                  <ListingFlags item={item} />
+                </div>
+                <h3 className="text-sm font-bold text-slate-800 truncate">{item.title}</h3>
+                <p className="text-[11px] text-slate-500 truncate">
+                  {item.condition || '—'}
+                  {item.seller ? ` · ${item.seller}` : ''}
+                  {item.location ? ` · ${item.location}` : ''}
+                </p>
+              </div>
+              <a
+                href={item.url}
+                target="_blank"
+                rel="noreferrer"
+                className="shrink-0 inline-flex items-center justify-center gap-1 px-2.5 py-2 bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider"
+              >
+                Open <ExternalLink size={12} />
+              </a>
+              <button
+                type="button"
+                onClick={() => onToggleWatch(item)}
+                className={`shrink-0 px-2.5 py-2 border text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1 ${
+                  watched
+                    ? 'border-amber-300 bg-amber-50 text-amber-800'
+                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <Star size={12} className={watched ? 'fill-current' : ''} />
+                {watched ? 'Watching' : 'Watch'}
+              </button>
+            </article>
+          );
+        })}
+      </div>
+    );
+  }
+
+  const compact = view === 'small';
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+    <div
+      className={
+        compact
+          ? 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2'
+          : 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3'
+      }
+    >
       {items.map((item) => {
         const watched = watchIds.has(String(item.id));
         const isKa = item.marketplace === 'kleinanzeigen' || /kleinanzeigen\.de/i.test(item.url || '');
         return (
           <article
             key={item.id}
-            className={`rounded-xl border overflow-hidden bg-white flex flex-col ${
-              item.isNew ? 'border-emerald-300 ring-1 ring-emerald-100' : 'border-slate-200'
+            className={`border overflow-hidden bg-white flex flex-col ${
+              item.rejected
+                ? 'border-rose-300'
+                : item.isNew
+                  ? 'border-emerald-300 ring-1 ring-emerald-100'
+                  : 'border-slate-200'
             }`}
           >
-            <div className="aspect-[16/10] bg-slate-100 relative overflow-hidden">
+            <div className={`${compact ? 'aspect-square' : 'aspect-[16/10]'} bg-slate-100 relative overflow-hidden`}>
               {item.image ? (
                 <img src={item.image} alt="" className="w-full h-full object-cover" loading="lazy" />
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-slate-300 text-xs font-bold">No image</div>
+                <div className="w-full h-full flex items-center justify-center text-slate-300 text-xs font-bold">
+                  No image
+                </div>
               )}
               {item.isNew && (
-                <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-black uppercase">New</span>
+                <span className="absolute top-2 left-2 px-1.5 py-0.5 bg-emerald-600 text-white text-[10px] font-black uppercase">
+                  New
+                </span>
               )}
+              <div className="absolute top-2 right-2 flex flex-col items-end gap-1">
+                <ListingFlags item={item} />
+              </div>
             </div>
-            <div className="p-3 flex-1 flex flex-col gap-2">
+            <div className={`${compact ? 'p-2 gap-1' : 'p-3 gap-2'} flex-1 flex flex-col`}>
               <div className="flex items-start justify-between gap-2">
-                <p className="text-lg font-black text-slate-900 tracking-tight">{euros(item.total ?? item.price)}</p>
+                <p
+                  className={`${compact ? 'text-sm' : 'text-lg'} font-black text-slate-900 tracking-tight`}
+                >
+                  {euros(item.total ?? item.price)}
+                </p>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 shrink-0">
                   {isKa ? 'KA' : 'eBay'}
                 </span>
               </div>
-              <h3 className="text-sm font-bold text-slate-800 line-clamp-2 leading-snug">{item.title}</h3>
-              <p className="text-[11px] text-slate-500 line-clamp-1">
-                {item.condition || '—'}
-                {item.seller ? ` · ${item.seller}` : ''}
-                {item.location ? ` · ${item.location}` : ''}
-              </p>
-              <div className="mt-auto flex items-center gap-2 pt-1">
+              <h3
+                className={`${compact ? 'text-xs line-clamp-2' : 'text-sm line-clamp-2'} font-bold text-slate-800 leading-snug`}
+              >
+                {item.title}
+              </h3>
+              {!compact && (
+                <p className="text-[11px] text-slate-500 line-clamp-1">
+                  {item.condition || '—'}
+                  {item.seller ? ` · ${item.seller}` : ''}
+                  {item.location ? ` · ${item.location}` : ''}
+                </p>
+              )}
+              <div className={`mt-auto flex items-center gap-1.5 ${compact ? 'pt-0.5' : 'pt-1'}`}>
                 <a
                   href={item.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex-1 inline-flex items-center justify-center gap-1 px-2.5 py-2 rounded-lg bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider"
+                  className={`flex-1 inline-flex items-center justify-center gap-1 ${
+                    compact ? 'px-1.5 py-1.5' : 'px-2.5 py-2'
+                  } bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider`}
                 >
-                  Open <ExternalLink size={12} />
+                  Open {compact ? null : <ExternalLink size={12} />}
                 </a>
                 <button
                   type="button"
+                  title={watched ? 'Watching' : 'Watch'}
+                  aria-label={watched ? 'Watching' : 'Watch'}
                   onClick={() => onToggleWatch(item)}
-                  className={`px-2.5 py-2 rounded-lg border text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1 ${
+                  className={`${compact ? 'px-1.5 py-1.5' : 'px-2.5 py-2'} border text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1 ${
                     watched
                       ? 'border-amber-300 bg-amber-50 text-amber-800'
                       : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   <Star size={12} className={watched ? 'fill-current' : ''} />
-                  {watched ? 'Watching' : 'Watch'}
+                  {compact ? null : watched ? 'Watching' : 'Watch'}
                 </button>
               </div>
             </div>

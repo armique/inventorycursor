@@ -18,7 +18,18 @@ import {
   readSearchConstructor,
   removeBuilderFacet,
   snapKaRadius,
+  specBrand,
 } from '../utils/dealwatchSearchBuilder';
+
+assert.equal(specBrand('LGA 1700'), 'intel');
+assert.equal(specBrand('LGA1851'), 'intel');
+assert.equal(specBrand('AM4'), 'amd');
+assert.equal(specBrand('AM5'), 'amd');
+assert.equal(specBrand('B450'), 'amd');
+assert.equal(specBrand('B760'), 'intel');
+assert.equal(specBrand('Z790'), 'intel');
+assert.equal(specBrand('X570'), 'amd');
+assert.equal(specBrand('ATX'), null);
 
 const library = defaultBuilderLibrary();
 const motherboard = library.categories.find((c) => c.id === 'motherboard');

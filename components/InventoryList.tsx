@@ -80,6 +80,7 @@ const ebaySoldSearchUrl = (query: string) =>
 import SaleModal from './SaleModal';
 import EbayOrdersBindModal from './EbayOrdersBindModal';
 import ReturnModal from './ReturnModal';
+import { applyUnsoldRestock } from '../services/saleRevert';
 import TradeModal from './TradeModal';
 import GiftModal from './GiftModal';
 import CrossPostingModal from './CrossPostingModal';
@@ -7354,7 +7355,14 @@ const InventoryList: React.FC<Props> = ({
          <ReturnModal
             items={[itemToReturn]}
             onConfirm={(updatedItems) => {
-               onUpdate(updatedItems);
+               const { updates, deleteIds } = applyUnsoldRestock(
+                 items,
+                 updatedItems.map((i) => i.id),
+                 { patches: updatedItems }
+               );
+               onUpdate(updates, deleteIds.length ? deleteIds : undefined);
+               setStatusFilter('ACTIVE');
+               setSplitView(false);
                setItemToReturn(null);
             }}
             onClose={() => setItemToReturn(null)}

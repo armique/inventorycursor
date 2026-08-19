@@ -4,7 +4,7 @@
  */
 import { ItemStatus, type InventoryItem, type ActionHistoryEntry } from '../types';
 import { applyTradeRevert, stripTradeContextFromComment2 } from '../services/tradeRevert';
-import { applySaleRevert } from '../services/saleRevert';
+import { applySaleRevert, applyUnsoldRestock } from '../services/saleRevert';
 import { mergeTradeActionEntries } from '../services/tradeActionHistory';
 import { allocateRemainderEuros } from '../services/tradeAllocation';
 import { computeItemProfitBeforeOverhead, roundMoney } from '../services/financialAggregation';
@@ -134,6 +134,64 @@ function runSaleRevertTests(): void {
   assert(next.ebayOrderLineKey === undefined, 'clears ebay order line key');
   assert(next.profit === undefined, 'clears profit');
   assert(next.customer === undefined, 'clears customer');
+
+  const pc = baseItem({
+    id: 'pc-1',
+    name: 'Office PC',
+    isPC: true,
+    componentIds: ['gpu-1'],
+    status: ItemStatus.SOLD,
+    sellDate: '2025-07-02',
+    sellPrice: 200,
+  });
+  const gpu = baseItem({
+    id: 'gpu-1',
+    name: 'GTX 1080',
+    parentContainerId: 'pc-1',
+    status: ItemStatus.SOLD,
+    sellDate: '2025-07-02',
+    sellPrice: 200,
+  });
+  const bundleRestock = applyUnsoldRestock([pc, gpu], ['pc-1']);
+  const restockedPc = bundleRestock.updates.find((i) => i.id === 'pc-1');
+  const restockedGpu = bundleRestock.updates.find((i) => i.id === 'gpu-1');
+  assert(restockedPc?.status === ItemStatus.IN_STOCK, 'unsold PC returns to inventory');
+  assert(restockedGpu?.status === ItemStatus.IN_COMPOSITION, 'unsold PC restocks children');
+  assert(restockedGpu?.sellPrice === undefined, 'clears child sell price');
+
+  const soldParent = baseItem({
+    id: 'pc-2',
+    name: 'Sold PC',
+    isPC: true,
+    componentIds: ['ram-1'],
+    status: ItemStatus.SOLD,
+  });
+  const nestedSold = baseItem({
+    id: 'ram-1',
+    name: 'RAM',
+    parentContainerId: 'pc-2',
+    status: ItemStatus.SOLD,
+    sellPrice: 40,
+  });
+  const detached = applyUnsoldRestock([soldParent, nestedSold], ['ram-1']);
+  const ram = detached.updates.find((i) => i.id === 'ram-1');
+  const parentAfter = detached.updates.find((i) => i.id === 'pc-2');
+  assert(ram?.status === ItemStatus.IN_STOCK, 'unsold nested part returns to inventory');
+  assert(ram?.parentContainerId === undefined, 'detaches from still-sold parent');
+  assert(parentAfter?.componentIds?.includes('ram-1') !== true, 'removes part from sold parent list');
+
+  const leftover = baseItem({ id: 'fan-1', name: 'Fans', quantity: 3, status: ItemStatus.IN_STOCK });
+  const splitSold = baseItem({
+    id: 'fan-1-sold-1710000000000',
+    name: 'Fans (Sold x2)',
+    quantity: 2,
+    status: ItemStatus.SOLD,
+    sellPrice: 20,
+  });
+  const merged = applyUnsoldRestock([leftover, splitSold], ['fan-1-sold-1710000000000']);
+  const fans = merged.updates.find((i) => i.id === 'fan-1');
+  assert(fans?.quantity === 5, 'merges split sold qty back into leftover stock');
+  assert(merged.deleteIds.includes('fan-1-sold-1710000000000'), 'drops split sold row');
 }
 
 function runTradeActionHistoryTests(): void {

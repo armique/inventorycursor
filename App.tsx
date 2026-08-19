@@ -78,8 +78,7 @@ import { syncContainerSaleMetaToChildren } from './utils/containerSaleCascade';
 import { enforceContainerMembershipInvariants, findEmptyContainerShellIds } from './utils/containerMembershipInvariants';
 import { applyTradeRevert } from './services/tradeRevert';
 import { mergeTradeActionEntries } from './services/tradeActionHistory';
-import { applySaleRevert } from './services/saleRevert';
-import { pruneActionHistory } from './services/saleRevert';
+import { applyUnsoldRestock, pruneActionHistory } from './services/saleRevert';
 import { saveOAuthResult } from './services/githubBackupService';
 import { exchangeEbayAuthorizationCode } from './services/ebayService';
 import { generateExpensesFromRecurring } from './services/recurringExpenseService';
@@ -774,6 +773,16 @@ const App: React.FC = () => {
           byId.set(r.id, kept);
         }
         return;
+      }
+
+      // Same-device restock: a lagging sold shard must not put the item back in Sold.
+      if (!localDisposed && remoteDisposed) {
+        const localRestocked = /\[Returned /i.test(String(local.comment2 || ''));
+        if (hasUnsavedChanges.current || localRestocked) {
+          const kept = applyLargeFieldPlaceholders(local, r);
+          byId.set(r.id, kept);
+          return;
+        }
       }
 
       let changed = false;
@@ -2115,14 +2124,13 @@ const App: React.FC = () => {
     (entry: ActionHistoryEntry) => {
       if (!entry.itemId || !entry.action.includes('Sold')) return;
       const item = items.find((i) => i.id === entry.itemId);
-      if (!item || item.status !== ItemStatus.SOLD) {
+      if (!item || (item.status !== ItemStatus.SOLD && item.status !== ItemStatus.GIFTED)) {
         alert('Item is not sold anymore or was removed.');
         return;
       }
       if (!window.confirm(`Revert sale for "${item.name}"? Item returns to In Stock; sale data is cleared.`)) return;
-      const nextItems = applySaleRevert(items, entry.itemId);
-      const updated = nextItems.find((i) => i.id === entry.itemId);
-      if (updated) handleUpdate([updated], undefined, { skipActionLog: true });
+      const { updates, deleteIds } = applyUnsoldRestock(items, [entry.itemId]);
+      handleUpdate(updates, deleteIds.length ? deleteIds : undefined, { skipActionLog: true });
       addActionEntries([makeActionEntry('Sale reverted', item, 'Restored to In Stock from action history.')]);
     },
     [items, handleUpdate, addActionEntries]
