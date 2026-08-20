@@ -333,6 +333,7 @@ export function resolveSaleProceeds(item: InventoryItem): SaleProceedsBreakdown 
 
 export type SaleColumnSplit = {
   totalEur: number;
+  buyerShippingEur: number;
   adFeeEur: number;
   ebayFeeEur: number;
   otherFeeEur: number;
@@ -355,16 +356,33 @@ export function saleColumnSplit(
   let otherFeeEur = Math.abs(n(p?.otherFeeEur) ?? 0);
   let shippingEur = Math.abs(n(p?.shippingLabelEur) ?? 0);
   if (shippingEur < 0.005) shippingEur = Math.abs(extras?.shippingFallbackEur ?? 0);
-  if (adFeeEur < 0.005 && ebayFeeEur < 0.005 && otherFeeEur < 0.005) {
-    const lumped = Math.abs(Number(item.feeAmount) || 0);
+  const itemizedFees = adFeeEur >= 0.005 || ebayFeeEur >= 0.005 || otherFeeEur >= 0.005;
+  const lumped = Math.abs(Number(item.feeAmount) || 0);
+  if (!itemizedFees) {
     const labelInFees = !item.sellerPaidShipping && (p?.shippingLabelEur != null || shippingEur >= 0.005);
     ebayFeeEur = Math.max(0, roundMoney(lumped - (labelInFees ? shippingEur : 0)));
+  } else if (shippingEur < 0.005 && lumped >= 0.01) {
+    const extra = roundMoney(lumped - adFeeEur - ebayFeeEur - otherFeeEur);
+    if (extra >= 0.01) shippingEur = extra;
   }
   const refundEur = Math.max(Math.abs(n(p?.refundEur) ?? 0), Math.abs(extras?.refundFallbackEur ?? 0));
+  if (shippingEur < 0.005) {
+    const storedNet = n(p?.netPayoutEur);
+    if (storedNet != null) {
+      const implied = roundMoney(total - adFeeEur - ebayFeeEur - otherFeeEur - refundEur - storedNet);
+      if (implied >= 0.01 && implied < total - 0.005) {
+        if (!itemizedFees && ebayFeeEur + 0.001 >= implied) {
+          ebayFeeEur = roundMoney(Math.max(0, ebayFeeEur - implied));
+        }
+        shippingEur = implied;
+      }
+    }
+  }
   const feeTotal = adFeeEur + ebayFeeEur + otherFeeEur + shippingEur;
   const netEur = netPayoutAfterRefund(total, feeTotal, n(p?.netPayoutEur), refundEur);
   return {
     totalEur: total,
+    buyerShippingEur: Math.abs(n(p?.buyerShippingEur) ?? 0),
     adFeeEur,
     ebayFeeEur,
     otherFeeEur,

@@ -210,6 +210,9 @@ export const MobileStockCard: React.FC<{
                   const showFeeLines = shouldShowSellCellMarketplaceFees(item, showPriceBreakdown);
                   return (
                     <>
+                      {split.buyerShippingEur >= 0.01 ? (
+                        <span className="text-sky-700"> · incl. €{formatEUR(split.buyerShippingEur)} Versand</span>
+                      ) : null}
                       {showFeeLines && split.adFeeEur >= 0.01 ? (
                         <span className="text-orange-600"> · −€{formatEUR(split.adFeeEur)} ads</span>
                       ) : null}
@@ -221,6 +224,12 @@ export const MobileStockCard: React.FC<{
                       ) : null}
                       {split.refundEur >= 0.01 ? (
                         <span className="text-rose-600"> · −€{formatEUR(split.refundEur)} refund</span>
+                      ) : null}
+                      {profit != null ? (
+                        <span className={profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
+                          {' '}
+                          · {profit >= 0 ? '+' : '−'}€{formatEUR(Math.abs(profit))} profit
+                        </span>
                       ) : null}
                     </>
                   );
@@ -249,13 +258,7 @@ export const MobileStockCard: React.FC<{
                       : ''}
                   </button>
                 ) : null}
-                {profit != null ? (
-                  <span className={profit >= 0 ? ' text-emerald-600' : ' text-rose-600'}>
-                    {' '}
-                    ({profit >= 0 ? '+' : ''}€{formatEUR(profit)})
-                  </span>
-                ) : null}
-                {item.subCategory || item.category
+                {item.subCategory || item.category}
                   ? ` · ${item.subCategory || item.category}`
                   : ''}
               </p>

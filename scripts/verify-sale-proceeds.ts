@@ -261,6 +261,25 @@ assert.equal(saleColumnSplit(rx6500xt)?.adFeeEur, 4.2);
 assert.equal(saleColumnSplit(rx6500xt)?.ebayFeeEur, 7.1);
 assert.equal(saleColumnSplit(rx6500xt)?.shippingEur, 2.9);
 
+const rx6500xtNoLabel: InventoryItem = {
+  ...rx6500xt,
+  id: 'rx-6500-xt-no-label',
+  feeAmount: 11.3,
+  saleProceeds: {
+    capturedAt: '2026-08-20T00:00:00.000Z',
+    source: 'inferred',
+    itemGrossEur: 82.81,
+    buyerShippingEur: 6.19,
+    buyerTotalEur: 89,
+    transactionFeeEur: 7.1,
+    adFeeEur: 4.2,
+    netPayoutEur: 74.8,
+  },
+};
+const rx6500Split = saleColumnSplit(rx6500xtNoLabel);
+assert.equal(rx6500Split?.buyerShippingEur, 6.19, 'buyer Versand shows on sell cell');
+assert.equal(rx6500Split?.shippingEur, 2.9, 'seller label inferred from Bestelleinnahmen residual');
+
 const kleinanzeigenSold: InventoryItem = {
   id: 'ka-1',
   name: 'KA GPU',

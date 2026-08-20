@@ -418,15 +418,22 @@ const ALL_COLUMNS: { id: ColumnId; label: string }[] = [
 function SellSplitLines({
   split,
   showFees,
+  profitEur,
 }: {
   split: SaleColumnSplit;
   showFees: boolean;
+  profitEur?: number | null;
 }) {
   return (
     <>
       <span className="underline decoration-dotted decoration-slate-300 underline-offset-2 text-slate-900">
         €{formatEUR(split.totalEur)}
       </span>
+      {split.buyerShippingEur >= 0.01 && (
+        <span className="text-[9px] font-bold text-sky-700 tabular-nums whitespace-nowrap">
+          incl. €{formatEUR(split.buyerShippingEur)} Versand
+        </span>
+      )}
       {showFees && split.adFeeEur >= 0.01 && (
         <span className="text-[9px] font-bold text-orange-600 tabular-nums whitespace-nowrap">
           −€{formatEUR(split.adFeeEur)} ads
@@ -450,6 +457,15 @@ function SellSplitLines({
       {split.refundEur >= 0.01 && (
         <span className="text-[9px] font-bold text-rose-600 tabular-nums whitespace-nowrap">
           −€{formatEUR(split.refundEur)} refund
+        </span>
+      )}
+      {profitEur != null && Number.isFinite(profitEur) && (
+        <span
+          className={`text-[9px] font-black tabular-nums whitespace-nowrap ${
+            profitEur >= 0 ? 'text-emerald-600' : 'text-rose-600'
+          }`}
+        >
+          {profitEur >= 0 ? '+' : '−'}€{formatEUR(Math.abs(profitEur))} profit
         </span>
       )}
     </>
@@ -4515,11 +4531,15 @@ const InventoryList: React.FC<Props> = ({
         );
       case 'sellPrice': {
         const isEditingSell = editingCell?.itemId === item.id && editingCell?.field === 'sellPrice';
-        const soldContainerSell =
+        const soldContainerTotals =
           (item.isPC || item.isBundle) && isRealizedDisposal(item)
-            ? getSoldContainerDisplayTotals(item, items, POCKET_PROFIT_TAX_MODE).sellPrice
+            ? getSoldContainerDisplayTotals(item, items, POCKET_PROFIT_TAX_MODE)
             : null;
-        const displaySellPrice = soldContainerSell ?? item.sellPrice;
+        const displaySellPrice = soldContainerTotals?.sellPrice ?? item.sellPrice;
+        const sellCellProfit =
+          isSoldOrTradedOnly(item)
+            ? soldContainerTotals?.profit ?? computeSoldTabMargin(item)
+            : null;
         const split = saleColumnSplit(item, {
           displaySellEur: displaySellPrice,
           shippingFallbackEur: getItemDisplayShippingAmount(item, items),
@@ -4531,7 +4551,7 @@ const InventoryList: React.FC<Props> = ({
             className="text-left font-bold text-slate-600 cursor-pointer hover:bg-blue-50/30 transition-colors"
             style={style}
             title={
-              soldContainerSell != null
+              soldContainerTotals != null
                 ? 'Bundle total sell price (sum of components)'
                 : canEditManualSellerShipping(item)
                   ? 'Click to add shipping you paid · double-click to edit sell price'
@@ -4566,6 +4586,7 @@ const InventoryList: React.FC<Props> = ({
                   <SellSplitLines
                     split={split}
                     showFees={shouldShowSellCellMarketplaceFees(item, showPriceBreakdown)}
+                    profitEur={sellCellProfit}
                   />
                 ) : (
                   <span className="underline decoration-dotted decoration-slate-300 underline-offset-2 text-slate-900">
@@ -4605,7 +4626,11 @@ const InventoryList: React.FC<Props> = ({
           >
             {split ? (
               <div className="flex flex-col items-start leading-tight gap-0.5 text-left w-full">
-                <SellSplitLines split={split} showFees />
+                <SellSplitLines
+                  split={split}
+                  showFees
+                  profitEur={computeSoldTabMargin(row.nextItem)}
+                />
               </div>
             ) : (
               '—'
