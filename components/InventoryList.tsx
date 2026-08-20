@@ -4272,6 +4272,18 @@ const InventoryList: React.FC<Props> = ({
                           ? 'border-indigo-300 bg-indigo-50/40'
                           : 'border-violet-300 bg-violet-50/40'
                       }`}>
+                         {isSoldContainerRow && (
+                           <div className="flex items-center gap-2 px-1 pb-0.5 min-w-0">
+                             <span className="flex-1 min-w-0 text-[8px] font-bold uppercase tracking-wider text-slate-400">
+                               Part
+                             </span>
+                             <span className="shrink-0 w-[13.5rem] grid grid-cols-3 gap-x-1 text-right text-[8px] font-bold uppercase tracking-wider text-slate-400 tabular-nums">
+                               <span>EK</span>
+                               <span>Sold</span>
+                               <span>Profit</span>
+                             </span>
+                           </div>
+                         )}
                          {childItems.map((child) => {
                             const liveChild = itemsById.get(child.id) || child;
                             const childHit =
@@ -4282,7 +4294,7 @@ const InventoryList: React.FC<Props> = ({
                             return (
                             <div
                               key={`${liveChild.id}:${liveChild.name}`}
-                              className={`flex items-center gap-1 py-px px-1 rounded-sm transition-colors w-full min-w-0 ${
+                              className={`flex items-center gap-2 py-px px-1 rounded-sm transition-colors w-full min-w-0 ${
                                   childHit
                                     ? 'bg-amber-100/80 ring-1 ring-amber-200/80'
                                     : item.isPC
@@ -4333,46 +4345,40 @@ const InventoryList: React.FC<Props> = ({
                                 title="Click to edit · double-click to rename"
                                 className="flex-1 min-w-0 text-left group/child"
                               >
-                                <div className="flex items-center gap-1.5 min-w-0">
-                                <span className={`text-[11px] font-medium truncate min-w-0 ${
+                                <span className={`block text-[11px] font-medium truncate ${
                                   item.isPC
                                     ? 'text-indigo-900 group-hover/child:text-indigo-950'
                                     : 'text-violet-900 group-hover/child:text-violet-950'
                                 }`}>
                                   {liveChild.name}
                                 </span>
-                                <span className="text-[10px] font-semibold text-slate-500 shrink-0 tabular-nums flex items-center gap-1">
-                                  {!isSoldContainerRow && liveChild.buyPrice != null && (
-                                    <span className="text-slate-600">€{formatEUR(liveChild.buyPrice)}</span>
-                                  )}
-                                  {isSoldContainerRow && (
-                                    <>
-                                      <span className="text-slate-500">€{formatEUR(liveChild.buyPrice || 0)}</span>
-                                      <span className="text-slate-400">/</span>
-                                      <span className="text-slate-700">€{formatEUR(liveChild.sellPrice || 0)}</span>
-                                      {childProfit != null && (
-                                        <span
-                                          className={`${
-                                            (childProfit || 0) > 0
-                                              ? 'text-emerald-600'
-                                              : (childProfit || 0) < 0
-                                                ? 'text-red-500'
-                                                : 'text-slate-400'
-                                          }`}
-                                          title="Component margin (same as the green Margin column)"
-                                        >
-                                          ({(childProfit || 0) > 0 ? '+' : ''}
-                                          {formatEUR(childProfit || 0)})
-                                        </span>
-                                      )}
-                                    </>
-                                  )}
-                                </span>
-                                </div>
                               </button>
                               )}
-                              {!isSoldContainerRow && (
-                                <div className="ml-auto flex items-center gap-0.5 shrink-0">
+                              {isSoldContainerRow ? (
+                                <span className="shrink-0 w-[13.5rem] grid grid-cols-3 gap-x-1 text-right tabular-nums text-[10px] font-semibold leading-tight">
+                                  <span className="text-slate-500">€{formatEUR(liveChild.buyPrice || 0)}</span>
+                                  <span className="text-slate-800">€{formatEUR(liveChild.sellPrice || 0)}</span>
+                                  <span
+                                    className={
+                                      (childProfit || 0) > 0
+                                        ? 'text-emerald-600'
+                                        : (childProfit || 0) < 0
+                                          ? 'text-red-500'
+                                          : 'text-slate-400'
+                                    }
+                                    title="Component margin (same as the green Margin column)"
+                                  >
+                                    {(childProfit || 0) > 0 ? '+' : (childProfit || 0) < 0 ? '−' : ''}
+                                    €{formatEUR(Math.abs(childProfit || 0))}
+                                  </span>
+                                </span>
+                              ) : (
+                                <div className="ml-auto flex items-center gap-1.5 shrink-0">
+                                  {liveChild.buyPrice != null ? (
+                                    <span className="text-[10px] font-semibold text-slate-600 tabular-nums">
+                                      €{formatEUR(liveChild.buyPrice)}
+                                    </span>
+                                  ) : null}
                                   {liveChild.status === ItemStatus.IN_COMPOSITION ? (
                                     <button
                                       type="button"
@@ -4415,13 +4421,22 @@ const InventoryList: React.FC<Props> = ({
                            </p>
                          )}
                          {isSoldContainerRow && (
-                           <p className={`px-2 pt-0.5 text-[9px] font-bold uppercase tracking-wider ${
-                             item.isPC ? 'text-indigo-600/90' : 'text-violet-600/90'
-                           }`}>
-                             Split sell €{formatEUR(childItems.reduce((s, c) => s + (Number(c.sellPrice) || 0), 0))} ·
-                             total cost €{formatEUR(childItems.reduce((s, c) => s + (Number(c.buyPrice) || 0), 0))} ·
-                             {childItems.length} parts
-                           </p>
+                           <div className="flex items-center gap-2 px-1 pt-0.5 min-w-0">
+                             <span className={`flex-1 min-w-0 text-[9px] font-bold uppercase tracking-wider ${
+                               item.isPC ? 'text-indigo-600/90' : 'text-violet-600/90'
+                             }`}>
+                               {childItems.length} parts
+                             </span>
+                             <span className={`shrink-0 w-[13.5rem] grid grid-cols-3 gap-x-1 text-right tabular-nums text-[9px] font-bold ${
+                               item.isPC ? 'text-indigo-700' : 'text-violet-700'
+                             }`}>
+                               <span>€{formatEUR(childItems.reduce((s, c) => s + (Number((itemsById.get(c.id) || c).buyPrice) || 0), 0))}</span>
+                               <span>€{formatEUR(childItems.reduce((s, c) => s + (Number((itemsById.get(c.id) || c).sellPrice) || 0), 0))}</span>
+                               <span>
+                                 €{formatEUR(childItems.reduce((s, c) => s + (Number(profitForDisplay(itemsById.get(c.id) || c)) || 0), 0))}
+                               </span>
+                             </span>
+                           </div>
                          )}
                       </div>
                    )}
