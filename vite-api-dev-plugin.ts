@@ -76,12 +76,12 @@ async function loadHandler(pathname: string): Promise<{ handler: (req: ApiReques
     return { handler: mod.default };
   }
   if (pathname === '/api/ebay-hub-archive-sync') {
-    const mod = await import('./api/ebay-hub-archive-sync.js');
-    return { handler: mod.default };
+    const mod = await import('./api/ebay-seller-hub-fetch.js');
+    return { handler: mod.default, route: 'archive-sync' };
   }
   if (pathname === '/api/ebay-hub-browser-ingest') {
-    const mod = await import('./api/ebay-hub-browser-ingest.js');
-    return { handler: mod.default };
+    const mod = await import('./api/ebay-seller-hub-fetch.js');
+    return { handler: mod.default, route: 'browser-ingest' };
   }
   if (pathname === '/api/gemini' || pathname === '/api/parse-ebay-order-screenshot' || pathname === '/api/parse-kleinanzeigen-chat-screenshot') {
     const mod = await import('./api/gemini.js');
