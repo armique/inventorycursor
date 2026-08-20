@@ -258,7 +258,7 @@ export const MobileStockCard: React.FC<{
                       : ''}
                   </button>
                 ) : null}
-                {item.subCategory || item.category}
+                {item.subCategory || item.category
                   ? ` · ${item.subCategory || item.category}`
                   : ''}
               </p>
