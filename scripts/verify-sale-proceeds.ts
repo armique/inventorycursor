@@ -15,6 +15,8 @@ import {
   netPayoutAfterRefund,
   applyManualSellerShipping,
   canEditManualSellerShipping,
+  isTrustedEbayProceeds,
+  shouldShowSellCellMarketplaceFees,
 } from '../utils/saleProceeds';
 import { computeItemProfitBeforeOverhead, computeSoldTabMargin } from '../services/financialAggregation';
 import type { EbayOrderRecord } from '../services/ebayOrderIndex';
@@ -30,12 +32,34 @@ const money = ebayScreenshotSaleFields({
   buyerShippingEur: 6.19,
   ebayFeeEur: 11.29,
   adFeeEur: 13.72,
+  shippingLabelEur: 6.19,
   amountReceivedNetEur: 107.73,
 });
-const fromShot = saleProceedsFromScreenshot(money, 6.19);
+const fromShot = saleProceedsFromScreenshot(money, money.shippingLabelEur);
 assert.equal(fromShot.buyerTotalEur, 138.93, 'buyer total includes Versand');
 assert.equal(fromShot.netPayoutEur, 107.73, 'net payout');
 assert.equal(saleProceedsHasDetail(fromShot), true, 'screenshot has detail');
+assert.equal(fromShot.shippingLabelEur, 6.19, 'screenshot stores Versandetikett');
+assert.equal(isTrustedEbayProceeds(fromShot), true, 'screenshot is trusted like Hub');
+const shotItem: InventoryItem = {
+  id: 'shot-1',
+  name: 'RAM',
+  buyPrice: 40,
+  buyDate: '2024-01-01',
+  sellPrice: fromShot.buyerTotalEur ?? 138.93,
+  category: 'Components',
+  status: ItemStatus.SOLD,
+  comment1: '',
+  comment2: '',
+  hasFee: true,
+  feeAmount: 31.2,
+  saleProceeds: fromShot,
+};
+const shotSplit = saleColumnSplit(shotItem);
+assert.equal(shotSplit?.totalEur, 138.93, 'screenshot sell cell uses buyer total');
+assert.equal(shotSplit?.adFeeEur, 13.72);
+assert.equal(shotSplit?.ebayFeeEur, 11.29);
+assert.equal(shotSplit?.shippingEur, 6.19);
 const labels = saleProceedsRows(fromShot).map((r) => r.label);
 assert.ok(labels.includes('Transaktionsgebühren'), 'tx fee row');
 assert.ok(labels.includes('Anzeigengebühr'), 'ads row');
@@ -211,6 +235,32 @@ assert.equal(computeItemProfitBeforeOverhead(bluray, 'DifferentialVAT'), 22.1);
 assert.equal(computeItemProfitBeforeOverhead(bluray, 'RegularVAT'), 17.92);
 assert.equal(canEditManualSellerShipping(bluray), false, 'Hub eBay sales do not take typed shipping');
 
+const rx6500xt: InventoryItem = {
+  ...inferred,
+  id: 'rx-6500-xt',
+  name: 'AMD RADEON RX 6500 XT',
+  platformSold: 'ebay.de',
+  paymentType: 'ebay.de',
+  sellPrice: 89,
+  feeAmount: 14.2,
+  sellerPaidShipping: false,
+  sellerShippingAmount: undefined,
+  saleProceeds: {
+    capturedAt: '2026-08-20T00:00:00.000Z',
+    source: 'inferred',
+    buyerTotalEur: 89,
+    transactionFeeEur: 7.1,
+    adFeeEur: 4.2,
+    shippingLabelEur: 2.9,
+    netPayoutEur: 74.8,
+  },
+};
+assert.equal(isTrustedEbayProceeds(rx6500xt.saleProceeds), false, 'legacy screenshot kept inferred source');
+assert.equal(shouldShowSellCellMarketplaceFees(rx6500xt, false), true, 'RX 6500 XT sell cell shows Hub-style split');
+assert.equal(saleColumnSplit(rx6500xt)?.adFeeEur, 4.2);
+assert.equal(saleColumnSplit(rx6500xt)?.ebayFeeEur, 7.1);
+assert.equal(saleColumnSplit(rx6500xt)?.shippingEur, 2.9);
+
 const kleinanzeigenSold: InventoryItem = {
   id: 'ka-1',
   name: 'KA GPU',
@@ -225,6 +275,7 @@ const kleinanzeigenSold: InventoryItem = {
   platformSold: 'kleinanzeigen.de',
 };
 assert.equal(canEditManualSellerShipping(kleinanzeigenSold), true);
+assert.equal(shouldShowSellCellMarketplaceFees(kleinanzeigenSold, false), false, 'KA stays compact without toggle');
 assert.equal(computeSoldTabMargin(kleinanzeigenSold), 30);
 const kaShipped = applyManualSellerShipping(kleinanzeigenSold, 5.9);
 assert.equal(kaShipped.sellerPaidShipping, true);

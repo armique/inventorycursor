@@ -23,7 +23,7 @@ import {
 import type { InventoryItem } from '../types';
 import { ItemStatus } from '../types';
 import { formatEUR } from '../utils/formatMoney';
-import { saleColumnSplit, canEditManualSellerShipping } from '../utils/saleProceeds';
+import { saleColumnSplit, canEditManualSellerShipping, shouldShowSellCellMarketplaceFees } from '../utils/saleProceeds';
 import { SellerShippingEditorDialog } from './SaleProceedsPopover';
 import { getItemUserPhotoCount } from '../utils/imageImport';
 import { computePriceAnalyzer } from '../utils/listingWatch';
@@ -207,12 +207,13 @@ export const MobileStockCard: React.FC<{
                 {(() => {
                   const split = saleColumnSplit(item, { refundFallbackEur });
                   if (!split) return null;
+                  const showFeeLines = shouldShowSellCellMarketplaceFees(item, showPriceBreakdown);
                   return (
                     <>
-                      {showPriceBreakdown && split.adFeeEur >= 0.01 ? (
+                      {showFeeLines && split.adFeeEur >= 0.01 ? (
                         <span className="text-orange-600"> · −€{formatEUR(split.adFeeEur)} ads</span>
                       ) : null}
-                      {showPriceBreakdown && split.ebayFeeEur >= 0.01 ? (
+                      {showFeeLines && split.ebayFeeEur >= 0.01 ? (
                         <span className="text-orange-600"> · −€{formatEUR(split.ebayFeeEur)} eBay</span>
                       ) : null}
                       {split.shippingEur >= 0.01 ? (

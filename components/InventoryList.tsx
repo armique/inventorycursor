@@ -13,7 +13,7 @@ import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, Ite
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
 import { computeSoldTabMargin, getChildren, getItemDisplayShippingAmount, getSoldContainerDisplayTotals, POCKET_PROFIT_TAX_MODE, shouldHideContainerChildInList, containerOrChildMatchesSearch, shouldSurfaceSoldContainerPartInList, soldContainerPartDispositionDate, matchesInventoryCategoryPin, inventorySubcategoryAliasesMatch } from '../services/financialAggregation';
 import { SaleProceedsTrigger } from './SaleProceedsPopover';
-import { saleColumnSplit, saleProceedsFromItemFields, saleProceedsFeeTotal, netPayoutAfterRefund, applyManualSellerShipping, canEditManualSellerShipping, type SaleColumnSplit } from '../utils/saleProceeds';
+import { saleColumnSplit, saleProceedsFromItemFields, saleProceedsFeeTotal, netPayoutAfterRefund, applyManualSellerShipping, canEditManualSellerShipping, shouldShowSellCellMarketplaceFees, type SaleColumnSplit } from '../utils/saleProceeds';
 import { sumOrderRefundEur } from '../utils/ebayOrderFinancial';
 import { hydrateHubArchiveIndex, loadHubArchiveIndex, findHubArchiveOrderById } from '../services/ebayHubArchiveIndex';
 import { appendHubBreakdownApplyLog } from '../services/ebayHubBreakdownApplyLog';
@@ -1057,7 +1057,7 @@ const InventoryList: React.FC<Props> = ({
 
   // Visibility toggle for orphan "In Composition" items (container children always nest under parent)
   const [showInComposition, setShowInComposition] = useState<boolean>(() => loadState<boolean>('show_in_composition', false));
-  /** When on, sell/margin cells also show ads, eBay fee, and shipping lines. */
+  /** When on, every sell cell also shows ads / eBay fee. Hub and screenshot sales always show those lines. */
   const [showPriceBreakdown, setShowPriceBreakdown] = useState<boolean>(() => loadState<boolean>('show_price_breakdown', false));
   const [hubArchiveVersion, setHubArchiveVersion] = useState(0);
   const [hubSplitPreview, setHubSplitPreview] = useState<HubBreakdownReplaceRow[] | null>(null);
@@ -4563,7 +4563,10 @@ const InventoryList: React.FC<Props> = ({
                 }
               >
                 {split ? (
-                  <SellSplitLines split={split} showFees={showPriceBreakdown} />
+                  <SellSplitLines
+                    split={split}
+                    showFees={shouldShowSellCellMarketplaceFees(item, showPriceBreakdown)}
+                  />
                 ) : (
                   <span className="underline decoration-dotted decoration-slate-300 underline-offset-2 text-slate-900">
                     €{formatEUR(displaySellPrice)}

@@ -552,23 +552,30 @@ const SaleModal: React.FC<Props> = ({
         ...(data.phone && { phone: data.phone }),
       }));
       const money = ebayScreenshotSaleFields(data);
-      if (money.soldPriceExShippingEur != null) {
-        const fmtPrice = formatEUR(money.soldPriceExShippingEur);
+      const proceeds = saleProceedsFromScreenshot(money, money.shippingLabelEur);
+      const sellEur = proceeds.buyerTotalEur ?? money.soldPriceExShippingEur;
+      if (sellEur != null) {
+        const fmtPrice = formatEUR(sellEur);
         setSalePrice(fmtPrice);
         setUnitPrice(fmtPrice);
       }
-      setHasFee(money.hasFee);
-      setFeeAmount(money.totalFeesEur);
+      const feeAmount = roundMoney(
+        (money.ebayFeeEur ?? 0) + (money.adFeeEur ?? 0) + (money.shippingLabelEur ?? 0)
+      );
+      setHasFee(feeAmount >= 0.01);
+      setFeeAmount(feeAmount);
       setEbayFeeNote({
         ebayFeeEur: money.ebayFeeEur,
         adFeeEur: money.adFeeEur,
         amountReceivedNetEur: money.amountReceivedNetEur,
         buyerShippingEur: money.buyerShippingEur,
       });
-      setSaleProceedsDraft(saleProceedsFromScreenshot(money));
+      setSaleProceedsDraft(proceeds);
       if (data.saleDate) setSaleDate(data.saleDate);
       setHubWaitingForPaste(false);
-      setHubMessage('Filled from screenshot — check buyer total, fees, and net.');
+      setHubMessage(
+        `Filled from screenshot: buyer €${formatEUR(proceeds.buyerTotalEur ?? sellEur ?? 0)} − eBay €${formatEUR(money.ebayFeeEur ?? 0)} − ads €${formatEUR(money.adFeeEur ?? 0)} − label €${formatEUR(money.shippingLabelEur ?? 0)} = net €${formatEUR(proceeds.netPayoutEur ?? 0)}`
+      );
       return true;
     } catch (err: unknown) {
       setOrderScreenshotError(err instanceof Error ? err.message : 'Parse failed');

@@ -23,9 +23,46 @@ function sumKnown(...values: Array<number | null | undefined>): number | null {
   return roundMoney(parts.reduce((s, v) => s + v, 0));
 }
 
-function isTrustedEbayProceeds(p: InventoryItem['saleProceeds'] | null | undefined): boolean {
+/** Hub, screenshot, or bound eBay order with real fee buckets — not Flip Coach estimates. */
+export function isTrustedEbayProceeds(p: InventoryItem['saleProceeds'] | null | undefined): boolean {
   if (!p || p.feesEstimated) return false;
   return p.source === 'ebay_seller_hub' || p.source === 'ebay_screenshot' || p.source === 'ebay_order';
+}
+
+function absEur(value: number | null | undefined): number {
+  return Math.abs(Number(value) || 0);
+}
+
+/**
+ * Sell cell shows ads / eBay fee lines. Hub + screenshot are trusted; older eBay sales
+ * often still have the split (or a lump feeAmount) with source "inferred".
+ */
+export function shouldShowSellCellMarketplaceFees(
+  item: Pick<
+    InventoryItem,
+    | 'saleProceeds'
+    | 'platformSold'
+    | 'paymentType'
+    | 'ebayOrderId'
+    | 'ebayUsername'
+    | 'ebayOrderScreenshotUrl'
+    | 'feeAmount'
+    | 'hasFee'
+  >,
+  showPriceBreakdown = false
+): boolean {
+  if (showPriceBreakdown) return true;
+  if (isTrustedEbayProceeds(item.saleProceeds)) return true;
+  const p = item.saleProceeds;
+  if (p && !p.feesEstimated) {
+    if (absEur(p.adFeeEur) >= 0.01 || absEur(p.transactionFeeEur) >= 0.01 || absEur(p.otherFeeEur) >= 0.01) {
+      return true;
+    }
+  }
+  const ebaySale =
+    resolveSalePlatform(item) === 'ebay.de' || Boolean(String(item.ebayOrderScreenshotUrl || '').trim());
+  if (!ebaySale) return false;
+  return absEur(item.feeAmount) >= 0.01 || Boolean(item.hasFee) || saleProceedsHasDetail(p);
 }
 
 /** Kleinanzeigen / in-person / other — shipping is typed in by you, not Seller Hub. */

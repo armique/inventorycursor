@@ -28,6 +28,8 @@ export interface ParsedEbayOrderScreenshot {
   ebayFeeEur?: number | null;
   /** Anzeigengebühr / promoted listing ads only. */
   adFeeEur?: number | null;
+  /** Seller Versandetikett (label you paid) — not buyer Versand. */
+  shippingLabelEur?: number | null;
   /** Seller Auszahlung after fees — display only, not sellPrice. */
   amountReceivedNetEur?: number | null;
   /** ISO calendar date YYYY-MM-DD from "Verkauft" / "Sold" when visible. */
@@ -100,6 +102,7 @@ function normalizeParsed(raw: unknown): ParsedEbayOrderScreenshot {
     buyerShippingEur: parseExtractedEurAmount(o.buyerShippingEur),
     ebayFeeEur: parseExtractedEurAmount(o.ebayFeeEur),
     adFeeEur: parseExtractedEurAmount(o.adFeeEur),
+    shippingLabelEur: parseExtractedEurAmount(o.shippingLabelEur),
     amountReceivedNetEur: parseExtractedEurAmount(o.amountReceivedNetEur),
     saleDate: parseExtractedSaleDate(o.saleDate),
   };
