@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { InventoryItem, ItemStatus, BusinessSettings, Platform, PaymentType, ItemUpdateOptions, CustomerInfo, BulkImportRecord } from '../types';
 import { isRealizedDisposal, isSoldOrTradedOnly } from '../utils/itemDisposition';
-import { computeSoldTabMargin, getChildren, getItemDisplayShippingAmount, getSoldContainerDisplayTotals, POCKET_PROFIT_TAX_MODE, shouldHideContainerChildInList, containerOrChildMatchesSearch, shouldSurfaceSoldContainerPartInList, soldContainerPartDispositionDate, matchesInventoryCategoryPin, inventorySubcategoryAliasesMatch } from '../services/financialAggregation';
+import { computeSoldTabMargin, getChildren, getItemDisplayShippingAmount, getSoldContainerDisplayTotals, POCKET_PROFIT_TAX_MODE, shouldHideContainerChildInList, containerOrChildMatchesSearch, shouldSurfaceSoldContainerPartInList, itemMatchesActiveInventoryTab, soldContainerPartDispositionDate, matchesInventoryCategoryPin, inventorySubcategoryAliasesMatch } from '../services/financialAggregation';
 import { SaleProceedsTrigger } from './SaleProceedsPopover';
 import { saleColumnSplit, saleProceedsFromItemFields, saleProceedsFeeTotal, netPayoutAfterRefund, applyManualSellerShipping, canEditManualSellerShipping, shouldShowSellCellMarketplaceFees, type SaleColumnSplit } from '../utils/saleProceeds';
 import { sumOrderRefundEur } from '../utils/ebayOrderFinancial';
@@ -94,6 +94,7 @@ import SaleModal from './SaleModal';
 import EbayOrdersBindModal from './EbayOrdersBindModal';
 import ReturnModal from './ReturnModal';
 import SaleCycleHistory from './SaleCycleHistory';
+import BuyPriceHistory, { BuyPriceBumpBadge } from './BuyPriceHistory';
 import { applyUnsoldRestock, loadRefundOrdersForRestock } from '../services/saleRevert';
 import TradeModal from './TradeModal';
 import GiftModal from './GiftModal';
@@ -429,11 +430,6 @@ function SellSplitLines({
       <span className="underline decoration-dotted decoration-slate-300 underline-offset-2 text-slate-900">
         €{formatEUR(split.totalEur)}
       </span>
-      {split.buyerShippingEur >= 0.01 && (
-        <span className="text-[9px] font-bold text-sky-700 tabular-nums whitespace-nowrap">
-          incl. €{formatEUR(split.buyerShippingEur)} Versand
-        </span>
-      )}
       {showFees && split.adFeeEur >= 0.01 && (
         <span className="text-[9px] font-bold text-orange-600 tabular-nums whitespace-nowrap">
           −€{formatEUR(split.adFeeEur)} ads
@@ -776,14 +772,10 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
       const inRecord = bulkImportItemIds?.has(item.id) === true;
       if (!stamped && !inRecord) return false;
     } else {
+      // Search must still respect Active / Sold / Drafts — never leak other tabs.
       let matchesStatus = false;
-      if (searchActive) {
-        matchesStatus = true;
-      } else if (statusFilter === 'ACTIVE') {
-        matchesStatus =
-          item.status === ItemStatus.IN_STOCK ||
-          item.status === ItemStatus.ORDERED ||
-          item.status === ItemStatus.IN_COMPOSITION;
+      if (statusFilter === 'ACTIVE') {
+        matchesStatus = itemMatchesActiveInventoryTab(item, items);
       } else if (statusFilter === 'SOLD') {
         matchesStatus = isRealizedDisposal(item);
         // Parts inside a sold PC/bundle stay IN_COMPOSITION; surface them when the user
@@ -841,7 +833,9 @@ function filterAndSortInventoryItems(params: InventoryListFilterParams): Invento
             categoryFilter,
             subCategoryFilter
           );
-        if (!surface && !(searchActive && matchesInventorySearch(item, query))) return false;
+        // Never promote nested parts to top-level during search — the parent row
+        // already matches via containerOrChildMatchesSearch, which caused duplicates.
+        if (!surface) return false;
       }
     }
     // Orphan "in composition" rows (no parent container) respect the visibility toggle.
@@ -2278,7 +2272,7 @@ const InventoryList: React.FC<Props> = ({
     const searchLower = searchTerm.toLowerCase();
     return items.filter(item => {
       let matchesStatus = false;
-      if (statusFilter === 'ACTIVE') matchesStatus = item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED || item.status === ItemStatus.IN_COMPOSITION;
+      if (statusFilter === 'ACTIVE') matchesStatus = itemMatchesActiveInventoryTab(item, items);
       else if (statusFilter === 'SOLD') {
         matchesStatus = isRealizedDisposal(item);
         if (
@@ -2533,9 +2527,6 @@ const InventoryList: React.FC<Props> = ({
     [editingCell, editValue, listingGenId, parsingSingleId, priceSuggestId, collapsedBundles, quickBundleSeed, activeBgCardItemIds, itemAiCardCounts, aiCardRegenConfirmId, items]
   );
 
-  const showFinancials =
-    splitView || (statusFilter !== 'ACTIVE' && statusFilter !== 'DRAFTS' && statusFilter !== 'PURCHASES');
-
   const missingPlatformSoldCount = useMemo(() => {
     const list = splitView ? sortedSoldItems : sortedItems;
     return list.filter((i) => isMissingExplicitSalePlatform(i)).length;
@@ -2563,28 +2554,6 @@ const InventoryList: React.FC<Props> = ({
     Object.entries(specRangeFilters).forEach(([, r]) => { if (r && (r.min !== undefined || r.max !== undefined)) n++; });
     return n;
   }, [specFilters, specRangeFilters, categoryFilter, subCategoryFilter]);
-
-
-  const financialStats = useMemo(() => {
-    if (!showFinancials) return null;
-    
-    let totalGross = 0;
-    let totalProfit = 0;
-    let totalFees = 0;
-
-    const soldItems = (splitView ? sortedSoldItems : sortedItems).filter((i) => isRealizedDisposal(i));
-    const soldAtomicItems = soldItems.filter(i => !i.isPC && !i.isBundle);
-    
-    soldAtomicItems.forEach(item => {
-        const sell = item.sellPrice || 0;
-        if (sell === 0) return;
-        totalGross += sell;
-        totalFees += Number(item.feeAmount) || 0;
-        totalProfit += computeSoldTabMargin(itemWithHubRefundOverlay(item));
-    });
-
-    return { totalGross, totalTax: 0, totalNetRevenue: 0, totalProfit, cashMargin: totalProfit, totalFees };
-  }, [sortedItems, sortedSoldItems, splitView, showFinancials, hubArchiveVersion]);
 
   const profitForDisplay = useCallback(
     (item: InventoryItem): number | null => {
@@ -3385,7 +3354,6 @@ const InventoryList: React.FC<Props> = ({
         : [next];
     startTransition(() => {
       onUpdate(updates, undefined, {
-        skipUndo: true,
         skipActionLog: true,
         skipContainerSync: true,
       });
@@ -3900,9 +3868,6 @@ const InventoryList: React.FC<Props> = ({
                 </button>
               )}
               {item.status === ItemStatus.IN_STOCK && (
-                <button type="button" onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToSell(item); }} className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100`} title="Mark Sold"><ShoppingBag size={13} strokeWidth={2.25} /></button>
-              )}
-              {item.status === ItemStatus.IN_STOCK && (
                 <button type="button" onClick={(e) => { e.stopPropagation(); addRecentItemId(item.id); setItemToTrade(item); }} className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100`} title="Trade"><ArrowRightLeft size={13} strokeWidth={2.25} /></button>
               )}
               {item.status === ItemStatus.IN_STOCK && (
@@ -3917,7 +3882,6 @@ const InventoryList: React.FC<Props> = ({
               {(item.status === ItemStatus.SOLD || item.status === ItemStatus.GIFTED) && (
                 <button type="button" onClick={(e) => { e.stopPropagation(); setItemToReturn(item); }} className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100`} title={item.status === ItemStatus.GIFTED ? 'Undo gift' : 'Mark Unsold / Return'}><RotateCcw size={13} strokeWidth={2.25} /></button>
               )}
-              <button type="button" onClick={(e) => { e.stopPropagation(); setItemToDelete(item); }} className={`${iconBtn} shrink-0 flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 hover:border-red-300 hover:bg-red-50 hover:text-red-600`} title="Delete"><Trash2 size={13} strokeWidth={2.25} /></button>
             </div>
           </td>
         );
@@ -4041,6 +4005,37 @@ const InventoryList: React.FC<Props> = ({
                           {item.name}
                         </p>
                       )}
+                      {!item.parentContainerId && (
+                          <div className="ml-auto flex items-center gap-1.5 shrink-0">
+                            {(item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  addRecentItemId(item.id);
+                                  setItemToSell(item);
+                                }}
+                                className="h-6 w-6 inline-flex items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-900 transition-colors"
+                                title="Mark Sold"
+                                aria-label={`Mark ${item.name} sold`}
+                              >
+                                <ShoppingBag size={12} strokeWidth={2.25} />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setItemToDelete(item);
+                              }}
+                              className="h-6 w-6 inline-flex items-center justify-center rounded-md border border-slate-200 bg-white text-slate-400 hover:border-red-300 hover:bg-red-50 hover:text-red-600 transition-colors"
+                              title="Delete"
+                              aria-label={`Delete ${item.name}`}
+                            >
+                              <Trash2 size={12} strokeWidth={2.25} />
+                            </button>
+                          </div>
+                        )}
                    </div>
                    <div
                      className="flex items-center gap-1 flex-wrap mt-0.5"
@@ -4054,7 +4049,6 @@ const InventoryList: React.FC<Props> = ({
                        onPatch={(patch) =>
                          onUpdate([{ ...item, ...patch }], undefined, {
                            skipActionLog: true,
-                           skipUndo: true,
                          })
                        }
                      />
@@ -4194,6 +4188,7 @@ const InventoryList: React.FC<Props> = ({
                       );
                    })()}
                    <SaleCycleHistory item={item} compact />
+                   <BuyPriceHistory item={item} compact />
                    {item.status !== ItemStatus.SOLD && isRealizedDisposal(item) && (item.customer?.name || item.giftRecipient || item.ebayUsername || item.ebayOrderId) && (
                       <p
                         className="text-[9px] text-slate-600 font-medium mt-1.5 flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100"
@@ -4356,7 +4351,10 @@ const InventoryList: React.FC<Props> = ({
                               )}
                               {isSoldContainerRow ? (
                                 <span className="shrink-0 w-[13.5rem] grid grid-cols-3 gap-x-1 text-right tabular-nums text-[10px] font-semibold leading-tight">
-                                  <span className="text-slate-500">€{formatEUR(liveChild.buyPrice || 0)}</span>
+                                  <span className="text-slate-500 inline-flex items-center justify-end gap-0.5">
+                                    €{formatEUR(liveChild.buyPrice || 0)}
+                                    <BuyPriceBumpBadge item={liveChild} />
+                                  </span>
                                   <span className="text-slate-800">€{formatEUR(liveChild.sellPrice || 0)}</span>
                                   <span
                                     className={
@@ -4375,8 +4373,9 @@ const InventoryList: React.FC<Props> = ({
                               ) : (
                                 <div className="ml-auto flex items-center gap-1.5 shrink-0">
                                   {liveChild.buyPrice != null ? (
-                                    <span className="text-[10px] font-semibold text-slate-600 tabular-nums">
+                                    <span className="text-[10px] font-semibold text-slate-600 tabular-nums inline-flex items-center gap-0.5">
                                       €{formatEUR(liveChild.buyPrice)}
+                                      <BuyPriceBumpBadge item={liveChild} />
                                     </span>
                                   ) : null}
                                   {liveChild.status === ItemStatus.IN_COMPOSITION ? (
@@ -4540,7 +4539,10 @@ const InventoryList: React.FC<Props> = ({
                  onClick={e => e.stopPropagation()}
                />
             ) : (
-               `€${formatEUR(item.buyPrice)}`
+              <span className="inline-flex items-center flex-wrap gap-0.5">
+                <span>€{formatEUR(item.buyPrice)}</span>
+                <BuyPriceBumpBadge item={item} />
+              </span>
             )}
           </td>
         );
@@ -5260,12 +5262,6 @@ const InventoryList: React.FC<Props> = ({
 
   return (
     <div className="flex-1 min-h-0 h-full flex flex-col gap-1 overflow-hidden relative">
-      {showFinancials && financialStats && !splitView ? (
-        <div className="hidden lg:block shrink-0">
-          <SoldFinancialBar stats={financialStats} />
-        </div>
-      ) : null}
-
       <header className="shrink-0 space-y-1">
          {bulkImportFilterId && (
            <div className="rounded-xl border border-violet-200 bg-violet-50 text-sm overflow-hidden">
@@ -6714,7 +6710,6 @@ const InventoryList: React.FC<Props> = ({
                   onPatchAccessory: (it, patch) =>
                     onUpdate([{ ...it, ...patch }], undefined, {
                       skipActionLog: true,
-                      skipUndo: true,
                     }),
                 }}
               />
@@ -6831,11 +6826,7 @@ const InventoryList: React.FC<Props> = ({
             paneItems={sortedSoldItems}
             paneStatus="SOLD"
             paneLabel="Sold"
-            paneExtra={
-              financialStats ? (
-                <SoldFinancialBar stats={financialStats} compact />
-              ) : null
-            }
+            paneExtra={null}
             scrollRef={soldTableRef}
             visibleColumns={visibleColumns}
             columnWidths={effectiveColumnWidths}
@@ -7588,7 +7579,24 @@ const InventoryList: React.FC<Props> = ({
                  updatedItems.map((i) => i.id),
                  { patches: updatedItems, refundOrders: loadRefundOrdersForRestock() }
                );
-               onUpdate(updates, deleteIds.length ? deleteIds : undefined);
+               const detailsByItemId: Record<string, string> = {};
+               for (const u of updates) {
+                 const before = items.find((i) => i.id === u.id);
+                 if (!before) continue;
+                 const delta = Math.round(((Number(u.buyPrice) || 0) - (Number(before.buyPrice) || 0)) * 100) / 100;
+                 detailsByItemId[u.id] =
+                   delta >= 0.01
+                     ? `Restored to In Stock · +€${delta.toFixed(2)} EK (return/cancellation fees)`
+                     : 'Restored to In Stock';
+               }
+               onUpdate(updates, deleteIds.length ? deleteIds : undefined, {
+                 flushCloud: true,
+                 skipFieldPreserve: true,
+                 actionNote: {
+                   action: 'Marked unsold / returned',
+                   detailsByItemId,
+                 },
+               });
                setStatusFilter('ACTIVE');
                setSplitView(false);
                setItemToReturn(null);
@@ -7609,7 +7617,7 @@ const InventoryList: React.FC<Props> = ({
             item={itemToTrade}
             categoryFields={categoryFields}
             onSave={(updatedOriginal, newItems) => {
-               onUpdate([updatedOriginal, ...newItems]);
+               onUpdate([updatedOriginal, ...newItems], undefined, { flushCloud: true });
                setItemToTrade(null);
             }}
             onClose={() => setItemToTrade(null)}
@@ -7621,7 +7629,15 @@ const InventoryList: React.FC<Props> = ({
             item={itemToGift}
             taxMode={POCKET_PROFIT_TAX_MODE}
             onSave={(updated) => {
-               onUpdate([updated]);
+               onUpdate([updated], undefined, {
+                 flushCloud: true,
+                 actionNote: {
+                   action: 'Gifted / Privatentnahme',
+                   details: updated.giftRecipient
+                     ? `To ${updated.giftRecipient}${updated.giftRelation ? ` (${updated.giftRelation})` : ''}`
+                     : undefined,
+                 },
+               });
                setItemToGift(null);
             }}
             onClose={() => setItemToGift(null)}
@@ -7922,51 +7938,6 @@ const InventoryTableRow = React.memo(
     prev.itemFlexWidth === next.itemFlexWidth &&
     prev.soakSpacer === next.soakSpacer
 );
-
-type SoldFinancialBarProps = {
-  stats: {
-    totalGross: number;
-    totalTax: number;
-    totalNetRevenue: number;
-    totalProfit: number;
-    cashMargin: number;
-    totalFees: number;
-  };
-  compact?: boolean;
-};
-
-const SoldFinancialBar: React.FC<SoldFinancialBarProps> = ({ stats, compact }) => {
-  return (
-    <div
-      className={`shrink-0 flex flex-wrap items-center gap-x-3 gap-y-1 px-2 py-1.5 rounded-lg border border-slate-200 bg-white ${
-        compact ? 'text-[10px]' : 'text-[11px]'
-      }`}
-    >
-      <span className="inline-flex items-baseline gap-1">
-        <span className="text-[9px] font-black uppercase text-slate-400">Gross</span>
-        <span className="font-black text-slate-900">€{formatEUR(stats.totalGross)}</span>
-      </span>
-      {stats.totalFees > 0 && (
-        <span
-          className="inline-flex items-baseline gap-1"
-          title="Marketplace fees already out of Bestelleinnahmen / margin"
-        >
-          <span className="text-[9px] font-black uppercase text-amber-600">Fees</span>
-          <span className="font-black text-amber-700">−€{formatEUR(stats.totalFees)}</span>
-        </span>
-      )}
-      <span
-        className={`inline-flex items-baseline gap-1 ${compact ? '' : 'ml-auto'}`}
-        title="Bestelleinnahmen − EK. No VAT taken out."
-      >
-        <span className="text-[9px] font-black uppercase text-slate-400">Margin</span>
-        <span className={`font-black ${stats.totalProfit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-          {stats.totalProfit >= 0 ? '+' : ''}€{formatEUR(stats.totalProfit)}
-        </span>
-      </span>
-    </div>
-  );
-};
 
 type InventoryListTablePaneProps = {
   paneItems: InventoryItem[];

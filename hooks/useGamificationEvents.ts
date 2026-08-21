@@ -7,19 +7,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Expense, InventoryItem, TaxMode } from '../types';
 import { isRealizedDisposal } from '../utils/itemDisposition';
 import { computeItemProfitBeforeOverhead, roundMoney } from '../services/financialAggregation';
-import { buildReinvestData } from '../utils/reinvestAnalysis';
-import { computeReinvestPricing, defaultMarginForGroup } from '../utils/reinvestPricing';
-import { loadReinvestFees } from '../utils/reinvestFees';
 import { localWeekKey } from '../utils/flipCoachMissions';
-import { todayLocalDateKey } from '../utils/calendarDate';
 import {
-  addToBank,
   applyCirculationCredit,
   applyPurchaseDebit,
   computeMonthNetProfit,
   effectiveBankSplitPct,
   suggestTakeAmount,
-  takeToPocket,
   type GamificationState,
 } from '../utils/gamification';
 
@@ -32,16 +26,6 @@ export type GamificationEvent =
       suggestedTake: number;
       /** Already applied automatically by the time the toast shows — shown for transparency. */
       circulationCredit: number;
-    }
-  | {
-      kind: 'expansion-signal';
-      id: string;
-      groupKey: string;
-      label: string;
-      buyMax: number;
-      sellHint: number;
-      sampleSize: number;
-      avgDaysToSell: number;
     }
   | { kind: 'digest-ready'; id: string };
 
@@ -167,36 +151,6 @@ export function useGamificationEvents({
     // Only `items` / arming should retrigger this diff — expenses/taxMode are read fresh each time.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, eventsArmed]);
-
-  // "Expansion signal" — at most once per day, only when a real up-trending gap exists.
-  useEffect(() => {
-    if (!eventsArmed || !allowProactiveEvents) return;
-    const today = todayLocalDateKey();
-    if (gamification.lastExpansionSignalAt === today) return;
-    const data = buildReinvestData(items);
-    const candidate = data.variants.find(
-      (g) => g.kind === 'variant' && g.confidence !== 'low' && g.trend === 'up' && g.currentStock < g.targetStock,
-    );
-    if (!candidate) return;
-    const fees = loadReinvestFees();
-    const pricing = computeReinvestPricing(candidate, fees, defaultMarginForGroup(candidate));
-    if (pricing.suggestedMaxBuy == null) return;
-    setQueue((q) => [
-      ...q,
-      {
-        kind: 'expansion-signal',
-        id: `expansion-${candidate.key}-${today}`,
-        groupKey: candidate.key,
-        label: candidate.label,
-        buyMax: pricing.suggestedMaxBuy,
-        sellHint: pricing.sellKa || pricing.sellEbay,
-        sampleSize: candidate.soldCount,
-        avgDaysToSell: candidate.avgDaysToSell,
-      },
-    ]);
-    updateGamification((prev) => ({ ...prev, lastExpansionSignalAt: today }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, gamification.lastExpansionSignalAt, eventsArmed, allowProactiveEvents]);
 
   // Weekly digest ready — once per ISO week, only once there's at least some sold history.
   useEffect(() => {

@@ -135,6 +135,8 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
   /** Inventory/trash use internal scroll + docked bulk bar; eBay tools / EST / bulk entry use full-width workspace layout. */
   const isDockedPanelPage =
     /^\/panel\/(inventory|trash|ebay-store-pull|ebay-orders|est|dealwatch|add-bulk|3d-print)(\/|$)/.test(location.pathname);
+  /** Stock list: no breadcrumb / locale / settings strip — ACTIVE|SOLD|INBOX is the first row. */
+  const hidePanelChrome = location.pathname.startsWith('/panel/inventory');
 
   const requireAuth = isCloudEnabled && authReady && !authUser;
 
@@ -523,30 +525,32 @@ const PanelLayout: React.FC<PanelLayoutProps> = ({ isCloudEnabled, authUser, aut
         <div
           className={`flex-1 min-h-0 flex flex-col ${isDockedPanelPage ? 'overflow-hidden' : 'overflow-y-auto'}`}
         >
-          <div
-            className={`shrink-0 flex items-center justify-between gap-2 ${
-              isDockedPanelPage ? 'py-0 mb-0.5' : 'px-4 md:px-8 pt-4'
-            }`}
-          >
-            <div className={isDockedPanelPage ? 'hidden md:block min-w-0' : 'min-w-0'}>
-              <PanelBreadcrumbs />
+          {!hidePanelChrome && (
+            <div
+              className={`shrink-0 flex items-center justify-between gap-2 ${
+                isDockedPanelPage ? 'py-0 mb-0.5' : 'px-4 md:px-8 pt-4'
+              }`}
+            >
+              <div className={isDockedPanelPage ? 'hidden md:block min-w-0' : 'min-w-0'}>
+                <PanelBreadcrumbs />
+              </div>
+              <div className="flex items-center gap-1.5 ml-auto">
+                <div className="flex rounded-lg border border-slate-200 bg-white p-0.5 text-[10px] font-black uppercase">
+                  <button type="button" onClick={() => setLocale('en')} className={`px-2 py-1 rounded ${locale === 'en' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>EN</button>
+                  <button type="button" onClick={() => setLocale('de')} className={`px-2 py-1 rounded ${locale === 'de' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>DE</button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => openSettings()}
+                  className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                  title="Settings"
+                  aria-label="Open settings"
+                >
+                  <Settings size={16} />
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-1.5 ml-auto">
-              <div className="flex rounded-lg border border-slate-200 bg-white p-0.5 text-[10px] font-black uppercase">
-              <button type="button" onClick={() => setLocale('en')} className={`px-2 py-1 rounded ${locale === 'en' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>EN</button>
-              <button type="button" onClick={() => setLocale('de')} className={`px-2 py-1 rounded ${locale === 'de' ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>DE</button>
-                          </div>
-              <button
-                type="button"
-                onClick={() => openSettings()}
-                className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-                title="Settings"
-                aria-label="Open settings"
-              >
-                <Settings size={16} />
-              </button>
-            </div>
-          </div>
+          )}
           <div
             className={
               isDockedPanelPage

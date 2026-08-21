@@ -277,7 +277,7 @@ const rx6500xtNoLabel: InventoryItem = {
   },
 };
 const rx6500Split = saleColumnSplit(rx6500xtNoLabel);
-assert.equal(rx6500Split?.buyerShippingEur, 6.19, 'buyer Versand shows on sell cell');
+assert.equal(rx6500Split?.buyerShippingEur, 6.19, 'buyer Versand still stored on the split');
 assert.equal(rx6500Split?.shippingEur, 2.9, 'seller label inferred from Bestelleinnahmen residual');
 
 const kleinanzeigenSold: InventoryItem = {

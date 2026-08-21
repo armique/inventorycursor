@@ -9,6 +9,7 @@ import { isRealizedDisposal } from '../utils/itemDisposition';
 import { allocateFullRefundRestockLoss, round2 } from '../utils/ebaySaleAdjustments';
 import { archiveActiveSaleAndClear } from '../utils/itemSaleCycle';
 import { hubRefundDisplay } from '../utils/ebayOrderFinancial';
+import { appendBuyPriceChange } from './priceHistory';
 
 const ARCHIVE_KEY = 'action_history_archive_v1';
 const RETENTION_DAYS = 90;
@@ -78,20 +79,19 @@ function applyBuyPriceLoss(item: InventoryItem, delta: number, orderId?: string)
   if (delta < 0.01) return item;
   const buyBefore = round2(item.buyPrice);
   const buyAfter = round2(buyBefore + delta);
-  return {
+  const withNote = {
     ...item,
-    buyPrice: buyAfter,
     comment2: appendRefundLossNote(item.comment2, delta, orderId),
-    priceHistory: [
-      ...(item.priceHistory || []),
-      {
-        date: new Date().toISOString(),
-        type: 'buy',
-        price: buyAfter,
-        previousPrice: buyBefore,
-      },
-    ],
   };
+  return appendBuyPriceChange(withNote, {
+    buyBefore,
+    buyAfter,
+    reason: orderId ? 'hub_erstattet' : 'restock_loss',
+    reasonLabel: orderId
+      ? `Erstattet — fees/shipping +€${delta.toFixed(2)} EK · #${orderId}`
+      : `Unsold / return — +€${delta.toFixed(2)} EK`,
+    orderId,
+  });
 }
 
 /** Clear live sale fields, archive that sale into ebaySaleCycles, keep listing specs. */
@@ -190,7 +190,10 @@ export function applyUnsoldRestock(
     const orderId = (current.ebayOrderId || '').trim() || undefined;
     const cycleMeta = cycleMetaFromOrder(orderId, options?.refundOrders);
     const leftover = lossById.get(id) || 0;
-    const snapshotBase = { ...current, buyPrice: base.buyPrice, comment2: base.comment2 };
+    // ReturnModal (and similar) may raise buyPrice for cancellation/return fees before confirm.
+    // Keep the original EK for the sale archive, then record the fee as its own buy-price history row.
+    const manualFee = round2(Math.max(0, (Number(base.buyPrice) || 0) - (Number(current.buyPrice) || 0)));
+    const snapshotBase = { ...current, comment2: base.comment2 };
     let restocked = restockItemFields(snapshotBase, {
       status: ItemStatus.IN_STOCK,
       comment2: appendReturnedNote(base.comment2),
@@ -199,6 +202,16 @@ export function applyUnsoldRestock(
       refundEur: cycleMeta.refundEur,
       refundKind: cycleMeta.refundKind,
     });
+    if (manualFee >= 0.01) {
+      const buyBefore = round2(restocked.buyPrice);
+      restocked = appendBuyPriceChange(restocked, {
+        buyBefore,
+        buyAfter: round2(buyBefore + manualFee),
+        reason: 'restock_loss',
+        reasonLabel: `Return / cancellation fee +€${manualFee.toFixed(2)} EK`,
+        orderId,
+      });
+    }
     restocked = applyBuyPriceLoss(restocked, leftover, orderId);
     write(restocked);
 
@@ -218,7 +231,22 @@ export function applyUnsoldRestock(
           refundKind: childMeta.refundKind,
         });
         nextChild = applyBuyPriceLoss(nextChild, childLeftover, childOrderId);
+        // Always re-nest under the restocked PC so Active list doesn't also show a standalone.
+        nextChild = {
+          ...nextChild,
+          parentContainerId: restocked.id,
+          status: ItemStatus.IN_COMPOSITION,
+        };
         write(nextChild);
+      }
+      const childIds = getChildren(current, items)
+        .filter((c) => !c.isPC && !c.isBundle)
+        .map((c) => c.id);
+      if (childIds.length) {
+        write({
+          ...byId.get(restocked.id)!,
+          componentIds: Array.from(new Set([...(restocked.componentIds || []), ...childIds])),
+        });
       }
     }
   }

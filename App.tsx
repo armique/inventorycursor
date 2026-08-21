@@ -73,7 +73,7 @@ import {
   renameCategoryInCatalog,
   renameSubcategoryInCatalog,
 } from './utils/categoryRename';
-import { appendPriceHistoryIfChanged } from './services/priceHistory';
+import { appendPriceHistoryIfChanged, mergeItemAuditFields } from './services/priceHistory';
 import { computeItemProfitBeforeOverhead } from './services/financialAggregation';
 import { syncContainerBuyTotalsFromComponents } from './services/containerAggregates';
 import { syncContainerSaleMetaToChildren } from './utils/containerSaleCascade';
@@ -92,7 +92,7 @@ import {
   withLocalEbayOAuthOnSettings,
 } from './utils/marketplaceCredentialsSync';
 import { UndoToastProvider, useUndoToastContext } from './context/UndoToastContext';
-import { appendUndoHistory } from './utils/appendUndoHistory';
+import { appendUndoHistory, makeUndoSnapshot, type UndoSnapshot } from './utils/appendUndoHistory';
 import { persistSnapshotToLocalStorage, scheduleBackgroundWork } from './services/backgroundPersistence';
 import { scheduleItemSalesPoolRebuild } from './utils/itemSalesPool';
 import { buildStoreCatalog } from './utils/storefrontCatalog';
@@ -114,6 +114,8 @@ import {
 import { applyHealthInsuranceLedger } from './utils/healthInsuranceLedger';
 import { applyCrucialRamInvoiceSaleFix } from './utils/crucialRamInvoiceSaleFix';
 import { restoreIntegralRamKit, INTEGRAL_RAM_KIT_ID } from './utils/restoreIntegralRamKit';
+import { restoreAsusA320mPcSale } from './utils/restoreAsusA320mPcSale';
+import { healActiveContainerPartMembership } from './utils/healActiveContainerPartMembership';
 import { addRecentItemId } from './services/recentItemsService';
 import { mergeBusinessSettings } from './utils/mergeBusinessSettings';
 import {
@@ -166,6 +168,9 @@ const PRESERVE_FROM_OLD_IF_UPDATE_MISSING: (keyof InventoryItem)[] = [
   'kleinanzeigenSellerProfileUrl',
   'bulkImportId',
   'costOrigin',
+  'priceHistory',
+  'ebaySaleCycles',
+  'ebaySaleAdjustments',
   'source', 'lastModifiedBy', 'aiReviewStatus',
   'printStage', 'reserved', 'photosReady',
 ];
@@ -207,7 +212,8 @@ function applyPreservedFields(oldItem: InventoryItem | undefined, merged: Invent
       final[k as string] = oldVal;
     }
   }
-  return final as unknown as InventoryItem;
+  // Always union audit trails — a partial save must not wipe restock / trade history.
+  return mergeItemAuditFields(final as unknown as InventoryItem, oldItem);
 }
 
 function EbayOAuthCallback() {
@@ -625,6 +631,10 @@ const App: React.FC = () => {
   const remoteSnapshotSeenRef = useRef(false);
   const itemsRef = useRef(items);
   const trashRef = useRef(trash);
+  /** After cloud/remote apply, drop session undo so redo doesn't resurrect stale pre-sync snapshots. */
+  const clearUndoStackRef = useRef(false);
+  const historyRef = useRef<UndoSnapshot[]>([]);
+  const historyIndexRef = useRef(-1);
   const expensesRef = useRef(expenses);
   const recurringExpensesRef = useRef(recurringExpenses);
   const categoriesRef = useRef(categories);
@@ -771,20 +781,28 @@ const App: React.FC = () => {
       if (localDisposed && !remoteDisposed) {
         const kept = applyLargeFieldPlaceholders(local, r);
         const localBid = (local.bulkImportId || '').trim();
-        if (localBid && !(kept.bulkImportId || '').trim()) {
-          byId.set(r.id, { ...kept, bulkImportId: localBid });
-        } else {
-          byId.set(r.id, kept);
-        }
+        let next =
+          localBid && !(kept.bulkImportId || '').trim()
+            ? { ...kept, bulkImportId: localBid }
+            : kept;
+        next = mergeItemAuditFields(next, r);
+        byId.set(r.id, next);
         return;
       }
 
       // Same-device restock: a lagging sold shard must not put the item back in Sold.
+      // Exception: an intentional sale restore (clears [Returned], stamps [Sale restored …])
+      // must win over a local Active restock copy.
       if (!localDisposed && remoteDisposed) {
         const localRestocked = /\[Returned /i.test(String(local.comment2 || ''));
+        const remoteRestored = /\[Sale restored /i.test(String(r.comment2 || ''));
+        if (remoteRestored) {
+          byId.set(r.id, mergeItemAuditFields(applyLargeFieldPlaceholders(r, local), local));
+          return;
+        }
         if (hasUnsavedChanges.current || localRestocked) {
           const kept = applyLargeFieldPlaceholders(local, r);
-          byId.set(r.id, kept);
+          byId.set(r.id, mergeItemAuditFields(kept, r));
           return;
         }
       }
@@ -811,7 +829,9 @@ const App: React.FC = () => {
       if (withBuyDate.buyDate !== out.buyDate) {
         changed = true;
       }
-      byId.set(r.id, changed ? withBuyDate : r);
+      // Never drop buy-price / sale-cycle history when either side has richer audit data.
+      const withHistory = mergeItemAuditFields(changed ? withBuyDate : r, local);
+      byId.set(r.id, withHistory);
     });
     return Array.from(byId.values());
   }, []);
@@ -914,13 +934,24 @@ const App: React.FC = () => {
     const { items: filledInv, updatedCount: filledCount } = backfillContainerBuyDates(migratedInv);
     const ramFix = applyCrucialRamInvoiceSaleFix(filledInv, businessSettingsRef.current.taxMode);
     const integralKit = restoreIntegralRamKit(ramFix.changed ? ramFix.items : filledInv, tr);
-    if (filledCount > 0 || ramFix.changed || integralKit.changed) {
+    const asusPc = restoreAsusA320mPcSale(integralKit.items);
+    const healedParts = healActiveContainerPartMembership(asusPc.items);
+    if (filledCount > 0 || ramFix.changed || integralKit.changed || asusPc.changed || healedParts.changed) {
       requestFastCloudFlush();
       hasUnsavedChanges.current = true;
-      if (ramFix.changed || integralKit.changed) pendingCloudPushAfterRemoteRef.current = true;
+      if (ramFix.changed || integralKit.changed || asusPc.changed || healedParts.changed) {
+        pendingCloudPushAfterRemoteRef.current = true;
+      }
     }
-    setItems(integralKit.items);
-    setTrash(integralKit.trash.map(migrateContainerItem));
+    let nextTrash = integralKit.trash.map(migrateContainerItem);
+    if (healedParts.toTrash.length) {
+      for (const row of healedParts.toTrash.map(migrateContainerItem)) {
+        if (!nextTrash.some((t) => t.id === row.id)) nextTrash.push(row);
+      }
+    }
+    setItems(healedParts.items);
+    setTrash(nextTrash);
+    clearUndoStackRef.current = true;
     setExpenses(exp);
     setRecurringExpenses(recurring);
     const { settings: mergedSettings, keptLocalFilled } = mergeBusinessSettings(
@@ -1074,6 +1105,34 @@ const App: React.FC = () => {
     hasUnsavedChanges.current = true;
     requestFastCloudFlush();
   }, [appState, items, trash, requestFastCloudFlush]);
+
+  // Accidental restock of ASUS A320M PC — restore Oct 2025 sale at EK €152.72 / VK €279.90.
+  useEffect(() => {
+    if (appState !== 'READY' || items.length === 0) return;
+    const next = restoreAsusA320mPcSale(items);
+    if (!next.changed) return;
+    clearUndoStackRef.current = true;
+    setItems(next.items);
+    hasUnsavedChanges.current = true;
+    requestFastCloudFlush();
+  }, [appState, items, requestFastCloudFlush]);
+
+  // After return/restock: nest Active PC parts and drop ghost standalone duplicates.
+  useEffect(() => {
+    if (appState !== 'READY' || items.length === 0) return;
+    const next = healActiveContainerPartMembership(items);
+    if (!next.changed) return;
+    clearUndoStackRef.current = true;
+    setItems(next.items);
+    if (next.toTrash.length) {
+      setTrash((prev) => {
+        const ids = new Set(prev.map((t) => t.id));
+        return [...prev, ...next.toTrash.filter((t) => !ids.has(t.id))];
+      });
+    }
+    hasUnsavedChanges.current = true;
+    requestFastCloudFlush();
+  }, [appState, items, requestFastCloudFlush]);
 
   // Enrich history rows with chat URL / screenshot from member items (legacy sessions).
   useEffect(() => {
@@ -1707,12 +1766,49 @@ const App: React.FC = () => {
   };
 
   // ... Data Modifiers ...
-  const [history, setHistory] = useState<InventoryItem[][]>([]);
+  const [history, setHistory] = useState<UndoSnapshot[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
-  const historyIndexRef = useRef(-1);
+  useEffect(() => {
+    historyRef.current = history;
+  }, [history]);
   useEffect(() => {
     historyIndexRef.current = historyIndex;
   }, [historyIndex]);
+
+  /** Keep undo stack in sync with refs (avoids stale index when setState batches). */
+  const pushUndoSnapshot = useCallback(
+    (
+      currentItems: InventoryItem[],
+      nextItems: InventoryItem[],
+      currentTrash?: InventoryItem[],
+      nextTrash?: InventoryItem[]
+    ) => {
+      const fromTrash = currentTrash ?? trashRef.current;
+      const toTrash = nextTrash ?? trashRef.current;
+      const { base, nextIdx } = appendUndoHistory(
+        historyRef.current,
+        historyIndexRef.current,
+        makeUndoSnapshot(currentItems, fromTrash),
+        makeUndoSnapshot(nextItems, toTrash)
+      );
+      historyRef.current = base;
+      historyIndexRef.current = nextIdx;
+      setHistory(base);
+      setHistoryIndex(nextIdx);
+    },
+    []
+  );
+
+  // Cloud remounted inventory — start a fresh undo baseline from the applied snapshot.
+  useEffect(() => {
+    if (!clearUndoStackRef.current) return;
+    clearUndoStackRef.current = false;
+    const snap = makeUndoSnapshot(items, trashRef.current);
+    historyRef.current = [snap];
+    historyIndexRef.current = 0;
+    setHistory([snap]);
+    setHistoryIndex(0);
+  }, [items]);
 
   const addActionEntries = useCallback((entries: ActionHistoryEntry[]) => {
     if (!entries.length) return;
@@ -1751,6 +1847,13 @@ const App: React.FC = () => {
     setItems(currentItems => {
         let nextItems = [...currentItems];
         const actionEntries: ActionHistoryEntry[] = [];
+        const trashBefore = trashRef.current;
+        let nextTrash = trashBefore;
+        const addToTrash = (rows: InventoryItem[]) => {
+          if (!rows.length) return;
+          const existing = new Set(nextTrash.map((t) => t.id));
+          nextTrash = [...nextTrash, ...rows.filter((r) => !existing.has(r.id))];
+        };
         itemsToApply.forEach(u => {
           const idx = nextItems.findIndex(i => i.id === u.id);
           const oldItem = idx >= 0 ? nextItems[idx] : undefined;
@@ -1820,7 +1923,7 @@ const App: React.FC = () => {
         if (deleteIds && deleteIds.length > 0) {
            const toTrash = nextItems.filter(i => deleteIds.includes(i.id));
            if (toTrash.length > 0) {
-              setTrash(prev => [...prev, ...toTrash]);
+              addToTrash(toTrash);
               if (recordAction) toTrash.forEach((i) => actionEntries.push(makeActionEntry('Item moved to trash', i)));
            }
            nextItems = nextItems.filter(i => !deleteIds.includes(i.id));
@@ -1833,7 +1936,7 @@ const App: React.FC = () => {
             if (enforced.deleteIds.length > 0) {
               const removed = nextItems.filter((i) => enforced.deleteIds.includes(i.id));
               if (removed.length > 0) {
-                setTrash((prev) => [...prev, ...removed]);
+                addToTrash(removed);
                 if (recordAction) {
                   removed.forEach((i) => actionEntries.push(makeActionEntry('Item moved to trash', i)));
                 }
@@ -1850,7 +1953,7 @@ const App: React.FC = () => {
           if (emptyShellIds.length > 0) {
             const removed = nextItems.filter((i) => emptyShellIds.includes(i.id));
             if (removed.length > 0) {
-              setTrash((prev) => [...prev, ...removed]);
+              addToTrash(removed);
               if (recordAction) {
                 removed.forEach((i) =>
                   actionEntries.push(makeActionEntry('Empty container removed', i)),
@@ -1872,21 +1975,18 @@ const App: React.FC = () => {
         // Always cascade Sold-on / payment from sold PC/bundle → parts (even when
         // buy-total sync is skipped for lightweight platform quick-picks).
         nextItems = syncContainerSaleMetaToChildren(nextItems, touchedIds);
+        if (nextTrash !== trashBefore) {
+          trashRef.current = nextTrash;
+          setTrash(nextTrash);
+        }
         if (recordUndo) {
-          let nextIdx = historyIndexRef.current;
-          setHistory((prev) => {
-            const { base, nextIdx: idx } = appendUndoHistory(prev, historyIndexRef.current, currentItems, nextItems);
-            nextIdx = idx;
-            return base;
-          });
-          historyIndexRef.current = nextIdx;
-          setHistoryIndex(nextIdx);
+          pushUndoSnapshot(currentItems, nextItems, trashBefore, nextTrash);
         }
         hasUnsavedChanges.current = true;
         if (actionEntriesMerged.length > 0) addActionEntries(actionEntriesMerged);
         return nextItems;
     });
-  }, [addActionEntries, businessSettings.taxMode, requestFastCloudFlush]);
+  }, [addActionEntries, businessSettings.taxMode, pushUndoSnapshot, requestFastCloudFlush]);
 
   const handleRestoreItems = useCallback((updatedItems: InventoryItem[]) => {
     setItems(updatedItems);
@@ -1910,27 +2010,63 @@ const App: React.FC = () => {
     if (!item) return;
     handleUpdate([], [id]);
     showUndoRef.current('Moved to trash', () => {
-      setTrash((prev) => prev.filter((i) => i.id !== id));
-      handleUpdate([item], undefined, { skipActionLog: true, skipUndo: true });
+      // Prefer stack undo so trash + inventory stay consistent and redo still works.
+      const tip = historyRef.current[historyIndexRef.current];
+      const prev = historyRef.current[historyIndexRef.current - 1];
+      if (
+        tip &&
+        prev &&
+        !tip.items.some((i) => i.id === id) &&
+        prev.items.some((i) => i.id === id)
+      ) {
+        const newIndex = historyIndexRef.current - 1;
+        historyIndexRef.current = newIndex;
+        setHistoryIndex(newIndex);
+        setItems(prev.items);
+        trashRef.current = prev.trash;
+        setTrash(prev.trash);
+        hasUnsavedChanges.current = true;
+        requestFastCloudFlush();
+        addActionEntries([makeActionEntry('Restored from trash', item, 'Undid delete')]);
+        return;
+      }
+      setTrash((prevTrash) => prevTrash.filter((i) => i.id !== id));
+      handleUpdate([item], undefined, {
+        skipUndo: true,
+        flushCloud: true,
+        actionNote: { action: 'Restored from trash', details: 'Undid delete' },
+      });
     });
-  }, [items, handleUpdate]);
+  }, [items, handleUpdate, addActionEntries, requestFastCloudFlush]);
   const handleUndo = () => {
-    if (historyIndex > 0) {
-      const newIndex = historyIndex - 1;
-      historyIndexRef.current = newIndex;
-      setHistoryIndex(newIndex);
-      setItems(history[newIndex]);
-      addActionEntries([makeActionEntry('Undo action')]);
-    }
+    const idx = historyIndexRef.current;
+    if (idx <= 0) return;
+    const newIndex = idx - 1;
+    const snapshot = historyRef.current[newIndex];
+    if (!snapshot) return;
+    historyIndexRef.current = newIndex;
+    setHistoryIndex(newIndex);
+    setItems(snapshot.items);
+    trashRef.current = snapshot.trash;
+    setTrash(snapshot.trash);
+    hasUnsavedChanges.current = true;
+    requestFastCloudFlush();
+    addActionEntries([makeActionEntry('Undo action')]);
   };
   const handleRedo = () => {
-    if (historyIndex < history.length - 1) {
-      const newIndex = historyIndex + 1;
-      historyIndexRef.current = newIndex;
-      setHistoryIndex(newIndex);
-      setItems(history[newIndex]);
-      addActionEntries([makeActionEntry('Redo action')]);
-    }
+    const idx = historyIndexRef.current;
+    if (idx >= historyRef.current.length - 1) return;
+    const newIndex = idx + 1;
+    const snapshot = historyRef.current[newIndex];
+    if (!snapshot) return;
+    historyIndexRef.current = newIndex;
+    setHistoryIndex(newIndex);
+    setItems(snapshot.items);
+    trashRef.current = snapshot.trash;
+    setTrash(snapshot.trash);
+    hasUnsavedChanges.current = true;
+    requestFastCloudFlush();
+    addActionEntries([makeActionEntry('Redo action')]);
   };
   const handleAddExpense = (expense: Expense) => {
     setExpenses(prev => [...prev, expense]);
@@ -2013,11 +2149,40 @@ const App: React.FC = () => {
   };
 
   const handleRestoreFromTrash = (ids: string[]) => {
-    const toRestore = trash.filter(i => ids.includes(i.id));
-    setTrash(prev => prev.filter(i => !ids.includes(i.id)));
-    setItems(prev => [...prev, ...toRestore]);
+    const trashBefore = trashRef.current;
+    const toRestore = trashBefore.filter((i) => ids.includes(i.id));
+    if (!toRestore.length) return;
+    const nextTrash = trashBefore.filter((i) => !ids.includes(i.id));
+    setItems((currentItems) => {
+      const nextItems = [...currentItems];
+      for (const item of toRestore) {
+        if (!nextItems.some((i) => i.id === item.id)) nextItems.push(item);
+      }
+      trashRef.current = nextTrash;
+      setTrash(nextTrash);
+      pushUndoSnapshot(currentItems, nextItems, trashBefore, nextTrash);
+      addActionEntries(toRestore.map((i) => makeActionEntry('Restored from trash', i)));
+      hasUnsavedChanges.current = true;
+      return nextItems;
+    });
+    requestFastCloudFlush();
   };
-  const handlePermanentDelete = (ids: string[]) => { setTrash(prev => prev.filter(i => !ids.includes(i.id))); };
+  const handlePermanentDelete = (ids: string[]) => {
+    const trashBefore = trashRef.current;
+    const removed = trashBefore.filter((i) => ids.includes(i.id));
+    if (!removed.length) return;
+    const nextTrash = trashBefore.filter((i) => !ids.includes(i.id));
+    pushUndoSnapshot(itemsRef.current, itemsRef.current, trashBefore, nextTrash);
+    trashRef.current = nextTrash;
+    setTrash(nextTrash);
+    hasUnsavedChanges.current = true;
+    requestFastCloudFlush();
+    addActionEntries(
+      removed.map((i) =>
+        makeActionEntry('Permanently deleted', i, 'Removed from trash (undo restores to trash)')
+      )
+    );
+  };
 
   const handleRestoreBackup = useCallback(async (data: {
     inventory?: InventoryItem[];
@@ -2053,6 +2218,7 @@ const App: React.FC = () => {
     bulkImportsRef.current = mergedBI;
     isRemoteUpdate.current = true;
     setItems(inv);
+    clearUndoStackRef.current = true;
     setTrash(tr);
     setExpenses(exp);
     setMonthlyGoal(goal);
@@ -2169,10 +2335,16 @@ const App: React.FC = () => {
       const { updates, deleteIds } = applyUnsoldRestock(items, [entry.itemId], {
         refundOrders: loadRefundOrdersForRestock(),
       });
-      handleUpdate(updates, deleteIds.length ? deleteIds : undefined, { skipActionLog: true });
-      addActionEntries([makeActionEntry('Sale reverted', item, 'Restored to In Stock from action history.')]);
+      handleUpdate(updates, deleteIds.length ? deleteIds : undefined, {
+        flushCloud: true,
+        skipFieldPreserve: true,
+        actionNote: {
+          action: 'Sale reverted',
+          details: 'Restored to In Stock from action history.',
+        },
+      });
     },
-    [items, handleUpdate, addActionEntries]
+    [items, handleUpdate]
   );
 
   const handleRevertTrade = useCallback(
@@ -2190,6 +2362,7 @@ const App: React.FC = () => {
       if (!window.confirm(msg)) return;
 
       setItems((currentItems) => {
+        const trashBefore = trashRef.current;
         const res = applyTradeRevert(
           currentItems,
           entry.itemId!,
@@ -2206,7 +2379,10 @@ const App: React.FC = () => {
           ...res.removedIds,
         ]);
 
-        setTrash((prev) => prev.filter((t) => !res.removedIds.includes(t.id)));
+        // Received trade lines leave inventory; keep them out of trash so undo restores from snapshot only.
+        const nextTrash = trashBefore.filter((t) => !res.removedIds.includes(t.id));
+        trashRef.current = nextTrash;
+        setTrash(nextTrash);
 
         setActionHistory((prev) =>
           [
@@ -2219,19 +2395,12 @@ const App: React.FC = () => {
           ].slice(-ACTION_HISTORY_LIMIT)
         );
 
-        let nextIdx = historyIndexRef.current;
-        setHistory((prev) => {
-          const { base, nextIdx: idx } = appendUndoHistory(prev, historyIndexRef.current, currentItems, nextItems);
-          nextIdx = idx;
-          return base;
-        });
-        historyIndexRef.current = nextIdx;
-        setHistoryIndex(nextIdx);
+        pushUndoSnapshot(currentItems, nextItems, trashBefore, nextTrash);
         hasUnsavedChanges.current = true;
         return nextItems;
       });
     },
-    [items, businessSettings.taxMode]
+    [items, businessSettings.taxMode, pushUndoSnapshot]
   );
 
   const isConfigured = isCloudEnabled();
@@ -2432,7 +2601,7 @@ const App: React.FC = () => {
           <Route path="add-bulk" element={<BulkItemForm onSave={handleUpdate} onBulkImportComplete={handleBulkImportComplete} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="edit/:id" element={<EditItemRoute onSave={handleUpdate} items={items} categories={categories} onAddCategory={handleAddCategory} categoryFields={categoryFields} />} />
           <Route path="builder" element={<BuilderEntry items={items} onSave={handleUpdate} />} />
-          <Route path="3d-print" element={<ThreeDPrintPage items={items} onSave={handleUpdate} onRemoveItems={(ids) => handleUpdate([], ids, { skipUndo: true })} categories={categories} onAddExpense={handleAddExpense} isAdmin={isAdminUser} />} />
+          <Route path="3d-print" element={<ThreeDPrintPage items={items} onSave={handleUpdate} onRemoveItems={(ids) => handleUpdate([], ids)} categories={categories} onAddExpense={handleAddExpense} isAdmin={isAdminUser} />} />
           <Route path="sell-today" element={<SellTodayPage items={items} onUpdate={handleUpdate} />} />
           <Route
             path="ebay-orders"

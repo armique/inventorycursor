@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PartyPopper, TrendingUp, Newspaper, X } from 'lucide-react';
+import { PartyPopper, Newspaper, X } from 'lucide-react';
 import { formatEURPrefix } from '../../utils/formatMoney';
 import type { GamificationEvent } from '../../hooks/useGamificationEvents';
 
@@ -10,7 +10,7 @@ type Props = {
   onResolveDealClosed: (event: Extract<GamificationEvent, { kind: 'deal-closed' }>, choice: 'take' | 'keep') => void;
 };
 
-/** Proactive game-event toast — deal closed / expansion signal / weekly digest ready.
+/** Proactive game-event toast — deal closed / weekly digest ready.
  * Styled like components/UndoToastBar.tsx; mounted once in PanelLayout so it's visible anywhere
  * in /panel/*, since a sale can be confirmed from several different pages. */
 const GamificationEventLayer: React.FC<Props> = ({ event, onDismiss, onResolveDealClosed }) => {
@@ -54,37 +54,6 @@ const GamificationEventLayer: React.FC<Props> = ({ event, onDismiss, onResolveDe
               className="px-3 py-2 rounded-xl border border-slate-600 text-xs font-black uppercase tracking-wide hover:bg-slate-800"
             >
               Leave in circulation
-            </button>
-          </div>
-        </>
-      )}
-
-      {event.kind === 'expansion-signal' && (
-        <>
-          <p className="flex items-center gap-2 text-sm font-black">
-            <TrendingUp size={18} className="text-emerald-300" /> Things are looking up — worth expanding?
-          </p>
-          <p className="mt-1 text-xs text-slate-300 font-semibold">
-            Buy "{event.label}" for ~{formatEURPrefix(event.buyMax)} → typical sale ~{formatEURPrefix(event.sellHint)}{' '}
-            (based on {event.sampleSize} similar deals, ~{Math.round(event.avgDaysToSell)}d to sell).
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                onDismiss();
-                navigate('/panel/reinvest');
-              }}
-              className="px-3 py-2 rounded-xl bg-white text-slate-900 text-xs font-black uppercase tracking-wide hover:bg-slate-100"
-            >
-              Show lots
-            </button>
-            <button
-              type="button"
-              onClick={onDismiss}
-              className="px-3 py-2 rounded-xl border border-slate-600 text-xs font-black uppercase tracking-wide hover:bg-slate-800"
-            >
-              Not now
             </button>
           </div>
         </>

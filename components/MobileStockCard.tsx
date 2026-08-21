@@ -23,6 +23,7 @@ import {
 import type { InventoryItem } from '../types';
 import { ItemStatus } from '../types';
 import { formatEUR } from '../utils/formatMoney';
+import { BuyPriceBumpBadge } from './BuyPriceHistory';
 import { saleColumnSplit, canEditManualSellerShipping, shouldShowSellCellMarketplaceFees } from '../utils/saleProceeds';
 import { SellerShippingEditorDialog } from './SaleProceedsPopover';
 import { getItemUserPhotoCount } from '../utils/imageImport';
@@ -185,6 +186,7 @@ export const MobileStockCard: React.FC<{
                   </span>
                 )}
                 €{formatEUR(item.buyPrice)}
+                <BuyPriceBumpBadge item={item} />
                 {item.sellPrice != null ? (
                   <>
                     {' · '}
@@ -210,9 +212,6 @@ export const MobileStockCard: React.FC<{
                   const showFeeLines = shouldShowSellCellMarketplaceFees(item, showPriceBreakdown);
                   return (
                     <>
-                      {split.buyerShippingEur >= 0.01 ? (
-                        <span className="text-sky-700"> · incl. €{formatEUR(split.buyerShippingEur)} Versand</span>
-                      ) : null}
                       {showFeeLines && split.adFeeEur >= 0.01 ? (
                         <span className="text-orange-600"> · −€{formatEUR(split.adFeeEur)} ads</span>
                       ) : null}

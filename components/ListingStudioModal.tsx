@@ -80,6 +80,7 @@ import SourceLinkIcons from './SourceLinkIcons';
 import ProofAttachmentsPanel from './ProofAttachmentsPanel';
 import CostOriginPanel from './CostOriginPanel';
 import SaleCycleHistory from './SaleCycleHistory';
+import BuyPriceHistory from './BuyPriceHistory';
 import { resolveItemSourceLinks } from '../utils/sourceLinks';
 import { ADD_FLOW_INPUT, ADD_FLOW_LABEL, ADD_FLOW_PANEL } from './addFlowShared';
 import { searchProductPhotos, type ImageSearchResult } from '../services/imageSearchService';
@@ -1822,6 +1823,7 @@ const ListingStudioModal: React.FC<Props> = ({
                 <div className="pt-1 border-t border-slate-200/80 space-y-1.5">
                   <p className="text-[9px] font-black uppercase text-slate-400">Sale / buyer</p>
                   <SaleCycleHistory item={item} />
+                  <BuyPriceHistory item={item} />
                   <div className="grid grid-cols-2 gap-1.5">
                     <label className="block space-y-0.5">
                       <span className="text-[9px] font-black uppercase text-slate-400">Sold on</span>

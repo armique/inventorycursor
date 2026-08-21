@@ -8,7 +8,7 @@ import {
   ShoppingBag,
   TrendingDown,
 } from 'lucide-react';
-import { InventoryItem, TaxMode } from '../types';
+import { InventoryItem, ItemUpdateOptions, TaxMode } from '../types';
 import { loadOrdersForSalesSync, runEbaySalesSync, peekEbaySalesSync, invalidateEbaySalesSyncPeekCache } from '../services/ebaySalesSync';
 import { hydrateHubArchiveIndex } from '../services/ebayHubArchiveIndex';
 import { applyEbayOrderMatchToItem } from '../utils/applyEbayOrderMatch';
@@ -26,7 +26,7 @@ import EbaySalesMatchReviewModal from './EbaySalesMatchReviewModal';
 interface Props {
   items: InventoryItem[];
   taxMode: TaxMode;
-  onUpdate: (items: InventoryItem[]) => void;
+  onUpdate: (items: InventoryItem[], deleteIds?: string[], options?: ItemUpdateOptions) => void;
   onCacheUpdated?: () => void;
   /** Bump when order cache changes (CSV import, API backfill, clear) to re-run matching. */
   cacheVersion?: number;
@@ -289,25 +289,45 @@ const EbaySalesSyncPanel: React.FC<Props> = ({
     try {
       const byId = new Map(items.map((i) => [i.id, i]));
       const updated = new Map<string, InventoryItem>();
+      const detailsByItemId: Record<string, string> = {};
       for (const row of rows) {
         const current = byId.get(row.item.id) ?? updated.get(row.item.id) ?? row.item;
         if (row.kind === 'adjustment' && row.adjustment) {
-          updated.set(row.item.id, applyEbaySaleAdjustmentToItem(current, row.adjustment, taxMode));
+          const next = applyEbaySaleAdjustmentToItem(current, row.adjustment, taxMode);
+          updated.set(row.item.id, next);
+          const fee = row.adjustment.buyPriceDelta;
+          const label = getAdjustmentSuggestionLabel(row.adjustment);
+          const oid = row.adjustment.orderId || row.match.order?.orderId || '—';
+          detailsByItemId[row.item.id] =
+            fee != null && fee > 0
+              ? `${label} · +€${formatEUR(fee)} EK · #${oid}`
+              : `${label} · #${oid}`;
         } else {
           updated.set(row.item.id, applyEbayOrderMatchToItem(current, row.match, taxMode));
+          detailsByItemId[row.item.id] = `${kindLabel(row.kind, row)} · #${row.match.order?.orderId || '—'}`;
         }
       }
-      onUpdate([...updated.values()]);
+      const restocked = rows.some((r) => isRestockRow(r));
+      onUpdate([...updated.values()], undefined, {
+        flushCloud: true,
+        skipFieldPreserve: restocked,
+        actionNote: {
+          action: restocked
+            ? 'eBay cancellation / restock applied'
+            : 'eBay Hub match applied',
+          detailsByItemId,
+        },
+      });
       setDismissed((prev) => {
         const next = new Set(prev);
         for (const row of rows) next.add(row.id);
         return next;
       });
       const marked = rows.filter((r) => r.kind === 'mark_sold').length;
-      const restocked = rows.filter((r) => isRestockRow(r)).length;
+      const restockCount = rows.filter((r) => isRestockRow(r)).length;
       const adjusted = rows.filter((r) => r.kind === 'adjustment' && !isRestockRow(r)).length;
       setMessage(
-        `Applied ${rows.length} row(s)${marked ? ` — ${marked} marked sold` : ''}${restocked ? ` — ${restocked} restocked after refund` : ''}${adjusted ? ` — ${adjusted} adjustment(s) documented` : ''}.`
+        `Applied ${rows.length} row(s)${marked ? ` — ${marked} marked sold` : ''}${restockCount ? ` — ${restockCount} restocked after refund` : ''}${adjusted ? ` — ${adjusted} adjustment(s) documented` : ''}.`
       );
       setReviewRow(null);
     } catch (e: unknown) {

@@ -89,12 +89,29 @@ export interface CustomerInfo {
   email?: string;
 }
 
+/** Why a buy-price row was written (restock fees, manual edit, etc.). */
+export type BuyPriceChangeReason =
+  | 'manual'
+  | 'restock_loss'
+  | 'hub_erstattet'
+  | 'refund_capitalize'
+  | 'container_resplit'
+  | 'other';
+
 /** Single entry in an item's price / sale history. */
 export interface PriceHistoryEntry {
   date: string;       // ISO date or datetime
   type: 'buy' | 'sell' | 'storePrice';
   price: number;
   previousPrice?: number;
+  /** Signed change (price − previousPrice). Stored so UI does not recompute. */
+  delta?: number;
+  /** Structured cause — especially restock / Erstattet capitalization into EK. */
+  reason?: BuyPriceChangeReason;
+  /** Human label, e.g. "Erstattet — fees/shipping +€6.19 EK". */
+  reasonLabel?: string;
+  /** eBay / Hub order id when the change came from a refund restock. */
+  orderId?: string;
 }
 
 /** Documented eBay post-sale change (return, refund, cancellation) — Finanzamt-auditable. */

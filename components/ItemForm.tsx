@@ -15,6 +15,7 @@ import { InventoryItem, ItemStatus, Platform, PaymentType } from '../types';
 import { SALE_PLATFORM_OPTIONS } from '../utils/salePlatform';
 import { formatEUR, parseLocaleNumber } from '../utils/formatMoney';
 import { SaleProceedsTrigger } from './SaleProceedsPopover';
+import BuyPriceHistory, { BuyPriceBumpBadge } from './BuyPriceHistory';
 import { buildCostOrigin } from '../utils/costOrigin';
 import { CATEGORY_IMAGES, getSpecOptions } from '../services/hardwareDB';
 import { generateItemSpecs, getSpecsAIProvider, suggestPriceFromSoldListings, type SoldPriceSuggestion } from '../services/specsAI';
@@ -1666,7 +1667,10 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                              />
                           </div>
                           <div className="space-y-1.5 flex-1 min-w-0">
-                             <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest">Buy (€)</label>
+                             <label className="text-[10px] font-black uppercase text-slate-400 ml-1 tracking-widest inline-flex items-center gap-1">
+                               Buy (€)
+                               <BuyPriceBumpBadge item={formData} />
+                             </label>
                              <input
                                 type="text"
                                 inputMode="decimal"
@@ -1688,6 +1692,7 @@ const ItemForm: React.FC<Props> = ({ onSave, items, initialData, categories, onA
                                   }
                                 }}
                              />
+                             <BuyPriceHistory item={formData} compact />
                           </div>
                           <div className="space-y-1.5 flex-1 min-w-0">
                              <label

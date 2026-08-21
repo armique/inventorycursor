@@ -1,4 +1,5 @@
-import { InventoryItem, ItemStatus, TaxMode, type EbaySaleAdjustment, type EbaySaleAdjustmentKind, type PriceHistoryEntry } from '../types';
+import { InventoryItem, ItemStatus, TaxMode, type EbaySaleAdjustment, type EbaySaleAdjustmentKind } from '../types';
+import { appendBuyPriceChange } from '../services/priceHistory';
 import type { EbayOrderRecord } from '../services/ebayOrderIndex';
 import type { EbayOrderFinancialEvent } from '../services/ebayOrderIndex';
 import { describeFinancialEvent, getOrderEffectiveNet, hubRefundDisplay } from './ebayOrderFinancial';
@@ -245,16 +246,17 @@ function appendBuyPriceHistory(
   item: InventoryItem,
   buyBefore: number,
   buyAfter: number,
-  date: string
-): PriceHistoryEntry[] {
-  const entries: PriceHistoryEntry[] = [...(item.priceHistory || [])];
-  entries.push({
+  date: string,
+  orderId?: string
+): InventoryItem {
+  return appendBuyPriceChange(item, {
+    buyBefore,
+    buyAfter,
+    reason: 'refund_capitalize',
+    reasonLabel: `Full refund — order loss capitalized +€${Math.max(0, buyAfter - buyBefore).toFixed(2)} EK`,
+    orderId,
     date: `${date}T12:00:00.000Z`,
-    type: 'buy',
-    price: buyAfter,
-    previousPrice: buyBefore,
   });
-  return entries;
 }
 
 /** Full refund — back to inventory; capitalize DHL/fees into buy price. */
@@ -291,14 +293,20 @@ export function applyRestockAfterRefundToItem(
     status: ItemStatus.IN_STOCK,
     comment2: appendRefundNote(item.comment2, adjustment),
   });
+  const withHist = appendBuyPriceHistory(
+    archived,
+    buyBefore,
+    buyAfter,
+    adjustment.date,
+    adjustment.orderId
+  );
   return {
-    ...archived,
+    ...withHist,
     workflowStage: item.listedOnEbay
       ? 'Listed'
       : item.workflowStage === 'Sold' || item.workflowStage === 'Shipped'
         ? 'Ready'
         : item.workflowStage,
-    priceHistory: appendBuyPriceHistory(archived, buyBefore, buyAfter, adjustment.date),
   };
 }
 

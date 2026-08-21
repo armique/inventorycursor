@@ -153,6 +153,15 @@ export function isPartOfRealizedContainer(item: InventoryItem, items: InventoryI
  * On SOLD + Components/GPU (etc.), show the nested part as its own row — otherwise the pin
  * only matches standalone GPUs and build sales look empty.
  */
+
+/** Active tab (and Active search): stock/ordered, plus composition only under Active parents. */
+export function itemMatchesActiveInventoryTab(item: InventoryItem, items: InventoryItem[]): boolean {
+  if (item.status === ItemStatus.IN_STOCK || item.status === ItemStatus.ORDERED) return true;
+  if (item.status !== ItemStatus.IN_COMPOSITION) return false;
+  // Parts under a sold/traded/gifted PC must not leak into Active search/results.
+  return !isPartOfRealizedContainer(item, items);
+}
+
 export function shouldSurfaceSoldContainerPartInList(
   item: InventoryItem,
   items: InventoryItem[],
